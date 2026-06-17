@@ -1254,7 +1254,8 @@
     function computeRefi(loan, inp){
       const cur = compute(loan);
       const payoff = cur.derived.currentBalance;
-      const curPI = cur.derived.monthlyPI;
+      const pm = cur.derived.paymentsMade;
+      const curPInow = cur.derived.monthlyPI;                 // current-phase payment
       const remainingMonths = cur.derived.monthsToMaturity;
       const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (inp.newTerm||120));
 
@@ -1272,45 +1273,68 @@
       const newComp = compute(newLoan);
       const newPI = newComp.derived.monthlyPI;
 
-      const monthlySavings = curPI - newPI;
-      const breakEven = monthlySavings>0 ? closingTotal/monthlySavings : Infinity;
+      // Upcoming rate reset on the CURRENT loan within the horizon (Hybrid ARM).
+      let armReset = null;
+      if(loan.rateType === "Hybrid ARM"){
+        for(let i=pm; i<cur.rows.length && (i-pm)<hold; i++){
+          if(cur.rows[i].isReset){ armReset = { monthsAway:i-pm, rate:cur.rows[i].rate, payment:cur.rows[i].payment, date:cur.rows[i].paymentDate }; break; }
+        }
+      }
 
-      // Total cost to retire the debt over the hold horizon = payments + balance left.
-      const curHold = sumOverHold(cur.rows, cur.derived.paymentsMade, hold);
+      // Month-by-month over the horizon using each loan's REAL scheduled payment
+      // that month — so the current ARM's post-reset jump is fully counted, and
+      // break-even reflects the true (rising) savings rather than the teaser rate.
+      const isBalloon = (r) => r && (r.type==="balloon" || r.type==="final");
+      let curPIsum=0, newPIsum=0, cum=0, beMonth=null, months=0;
+      for(let m=0; m<hold; m++){
+        const cr = cur.rows[pm+m], nr = newComp.rows[m];
+        if(!cr && !nr) break;
+        const curPay = (cr && !isBalloon(cr)) ? cr.payment : 0;
+        const newPay = (nr && !isBalloon(nr)) ? nr.payment : 0;
+        curPIsum += curPay; newPIsum += newPay;
+        cum += (curPay - newPay); months++;
+        if(beMonth===null && cum >= closingTotal) beMonth = m+1;
+      }
+      const breakEven = beMonth!==null ? beMonth : Infinity;
+      const avgSavings = months>0 ? (curPIsum - newPIsum)/months : 0;
+      const monthlySavingsNow = curPInow - newPI;
+
+      // Net economic benefit over the horizon = total cost to retire the debt
+      // (payments + balance still owed), current vs. new. ARM resets included.
+      const curHold = sumOverHold(cur.rows, pm, hold);
       const newHold = sumOverHold(newComp.rows, 0, hold);
-      const curCost = curHold.pi + curHold.endBal;
-      const newCost = outOfPocket + newHold.pi + newHold.endBal - (inp.cashOut||0);
-      const netBenefit = curCost - newCost;
+      const netBenefit = (curHold.pi + curHold.endBal) - (outOfPocket + newHold.pi + newHold.endBal - (inp.cashOut||0));
 
       let curRemInterest = 0;
-      for(let i=cur.derived.paymentsMade; i<cur.rows.length; i++) curRemInterest += cur.rows[i].interest;
+      for(let i=pm; i<cur.rows.length; i++) curRemInterest += cur.rows[i].interest;
       const newTotInterest = newComp.totalInterest;
 
-      // ---- Verdict ----
+      // ---- Verdict: driven by net benefit over the horizon (fully ARM-aware) ----
       let verdict, tone, reason;
-      const m = isFinite(breakEven) ? Math.ceil(breakEven) : null;
-      if(inp.cashOut>0 && monthlySavings<0){
-        verdict="Depends — cash-out"; tone="warn";
-        reason="Pulls "+fmtMoney(inp.cashOut)+" in cash but raises the payment by "+fmtMoney(-monthlySavings)+"/mo. Worth it only if you need the cash.";
-      } else if(monthlySavings<=0){
-        verdict="Don't refinance"; tone="bad";
-        reason="The new payment ("+fmtMoney(newPI)+") is higher than today's ("+fmtMoney(curPI)+") — no savings.";
-      } else if(netBenefit<=0){
-        verdict="Don't refinance"; tone="bad";
-        reason="The lower monthly payment comes from stretching the payoff — over "+hold+" months you'd actually pay "+fmtMoney(-netBenefit)+" MORE overall (mostly extra interest).";
-      } else if(breakEven>hold){
-        verdict="Don't refinance"; tone="bad";
-        reason="You save "+fmtMoney(monthlySavings)+"/mo, but the "+fmtMoney(closingTotal)+" in costs isn't recouped within "+hold+" months (break-even ~"+m+" months).";
+      const beTxt = isFinite(breakEven) ? ("~"+breakEven+" month"+(breakEven===1?"":"s")) : "never on cash flow";
+      if(netBenefit > 0){
+        tone="good";
+        const strong = isFinite(breakEven) && breakEven <= Math.max(12, hold/3);
+        verdict = strong ? "Refinance" : "Refinance — modest";
+        reason = "Net benefit of "+fmtMoney(netBenefit)+" over your "+hold+"-month horizon"
+               + (closingTotal>0 ? ", recouping the "+fmtMoney(closingTotal)+" in costs in "+beTxt : "") + ".";
+        if(armReset) reason += " It locks out the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" month"+(armReset.monthsAway===1?"":"s")+" (its payment would jump to "+fmtMoney(armReset.payment)+").";
+        if(inp.cashOut>0) reason += " Includes "+fmtMoney(inp.cashOut)+" cash-out.";
       } else {
-        const strong = breakEven <= Math.max(12, hold/3);
-        verdict = strong ? "Refinance" : "Refinance — modest"; tone="good";
-        reason="Save "+fmtMoney(monthlySavings)+"/mo, break even in ~"+m+" months, and net "+fmtMoney(netBenefit)+" over your "+hold+"-month horizon.";
+        tone="bad";
+        if(inp.cashOut>0){
+          verdict="Depends — cash-out";
+          reason="Over "+hold+" months this costs "+fmtMoney(-netBenefit)+" more, but frees "+fmtMoney(inp.cashOut)+" in cash.";
+        } else {
+          verdict="Don't refinance";
+          reason="Over "+hold+" months you'd pay "+fmtMoney(-netBenefit)+" more overall"+(monthlySavingsNow>0 ? " — the lower monthly payment is outweighed by extra interest over the longer payoff" : "")+".";
+        }
+        if(armReset) reason += " (This already accounts for the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
       }
-      if(inp.cashOut>0 && monthlySavings>=0) reason += " Includes "+fmtMoney(inp.cashOut)+" cash-out.";
 
-      return { payoff, curPI, newPI, monthlySavings, breakEven, closingTotal, outOfPocket, newAmount,
+      return { payoff, curPInow, newPI, monthlySavingsNow, avgSavings, breakEven, closingTotal, outOfPocket, newAmount,
         remainingMonths, hold, netBenefit, curRemInterest, newTotInterest, verdict, tone, reason,
-        newLoan, cur, cashOut:inp.cashOut||0 };
+        newLoan, cur, cashOut:inp.cashOut||0, armReset };
     }
 
     // ---- Refi render helpers ----
@@ -1331,9 +1355,20 @@
     }
 
     function renderRefi(loan){
-      const d = compute(loan).derived;
+      const cur = compute(loan);
+      const d = cur.derived;
       const defRate = (loan.annualRate!=null) ? +(loan.annualRate*100).toFixed(3) : "";
       const defTerm = Math.min(120, d.monthsToMaturity||120) || 120;
+      let resetNote = "";
+      if(loan.rateType === "Hybrid ARM"){
+        for(let i=d.paymentsMade; i<cur.rows.length; i++){
+          if(cur.rows[i].isReset){
+            resetNote = '<div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">'+
+              'Rate resets to <strong>'+fmtPct(cur.rows[i].rate)+'</strong> in '+(i-d.paymentsMade)+' months — payment jumps to <strong>'+fmtMoney(cur.rows[i].payment)+'</strong>.</div>';
+            break;
+          }
+        }
+      }
       dom.refiView.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Refinance Analysis</h2>'+
@@ -1352,7 +1387,7 @@
               refiStat("Current monthly P&amp;I", fmtMoney(d.monthlyPI))+
               refiStat("Remaining term", (d.monthsToMaturity||0)+" months")+
               refiStat("Matures", fmtDateUS(d.maturityDate))+
-            '</dl>'+
+            '</dl>'+ resetNote +
           '</div>'+
           '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
             '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
@@ -1383,8 +1418,23 @@
                     : r.tone==="bad"  ? "border-rose-300 bg-rose-50 text-rose-900"
                     : "border-amber-300 bg-amber-50 text-amber-900";
       const icon = r.tone==="good" ? "&#10003;" : r.tone==="bad" ? "&#10007;" : "!";
-      const dMo = r.monthlySavings>=0 ? "−"+fmtMoney(r.monthlySavings) : "+"+fmtMoney(-r.monthlySavings);
+      const signMoney = (n) => (n>=0?"−":"+")+fmtMoney(Math.abs(n));   // savings as −$, increase as +$
       const dNet = r.netBenefit>=0 ? "+"+fmtMoney(r.netBenefit) : "−"+fmtMoney(-r.netBenefit);
+      const cards = [
+        refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)),
+        refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"),
+      ];
+      if(r.armReset){
+        const afterSav = r.armReset.payment - r.newPI;   // savings once the reset hits
+        cards.push(refiCard("After reset (mo "+r.armReset.monthsAway+")", signMoney(afterSav)+" / mo",
+          "vs reset pmt "+fmtMoney(r.armReset.payment)+" @ "+fmtPct(r.armReset.rate), afterSav>=0?"good":"bad"));
+      }
+      cards.push(refiCard("Break-even", isFinite(r.breakEven)?r.breakEven+" mo":"never", "to recoup costs"));
+      cards.push(refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad"));
+      cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), r.cashOut>0?("incl "+fmtMoney(r.cashOut)+" cash-out"):"payoff + costs"));
+      cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), r.outOfPocket>0?"paid up front":"rolled into loan"));
+      cards.push(refiCard("New Rate", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate)));
+      cards.push(refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest)));
       el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
           '<div class="flex items-center gap-3">'+
@@ -1393,16 +1443,7 @@
             '<p class="text-sm opacity-90">'+r.reason+'</p></div>'+
           '</div>'+
         '</div>'+
-        '<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">'+
-          refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPI))+
-          refiCard("Monthly Change", dMo, r.monthlySavings>=0?"saved / month":"more / month", r.monthlySavings>=0?"good":"bad")+
-          refiCard("Break-even", isFinite(r.breakEven)?Math.ceil(r.breakEven)+" mo":"never", "to recoup costs")+
-          refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad")+
-          refiCard("New Loan Amount", fmtMoney(r.newAmount), r.cashOut>0?("incl "+fmtMoney(r.cashOut)+" cash-out"):"payoff + costs")+
-          refiCard("Closing Costs", fmtMoney(r.closingTotal), r.outOfPocket>0?"paid up front":"rolled into loan")+
-          refiCard("New Rate", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate))+
-          refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest))+
-        '</div>';
+        '<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">'+ cards.join("") +'</div>';
     }
 
     function saveRefiAsLoan(loan){
