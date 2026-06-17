@@ -323,8 +323,8 @@
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
       { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
-      { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",         type:"yn",     kind:"input" },
-      { sec:"Loan Terms", key:"ioMonths",           label:"IO Period (Months)",           type:"int",    kind:"input", cond:(l)=>l.interestOnly==="Y", aliases:["IO Period Remaining (Months)"] },
+      { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
+      { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index (if Floating/ARM)",      type:"text",   kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Floating Rate Index","Index (if Floating)"] },
       { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
@@ -491,7 +491,7 @@
       const remaining = amort - startM;
       if(remaining <= 0 || !balance) return 0;
       const start = accrualStartParts(loan);
-      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
       const dr = rate / 360;
       let lower = 0, upper = balance * 2 + 1;
       for(let i=0; i<100 && (upper-lower) >= 0.0001; i++){
@@ -514,7 +514,7 @@
     function buildSchedule(loan){
       const start = accrualStartParts(loan);                 // first accrual month
       const fpParts = isoToParts(loan.firstPaymentDate);     // payment dates (in arrears)
-      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const rows = [];
       const segments = [];
@@ -584,7 +584,7 @@
       const maturity = fp ? addMonths(fp, term-1) : null;
       const maturityDate = maturity ? partsToISO(maturity.y, maturity.mo, maturity.d) : "";
       const monthsToMaturity = Math.max(0, term - paymentsMade);
-      const originalIO = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      const originalIO = Math.max(0, loan.ioMonths||0);
 
       // Rate and amortizing payment in effect at the current month.
       const curIdx = Math.min(Math.max(paymentsMade, 0), Math.max(term-1, 0));
@@ -605,6 +605,7 @@
         derived: {
           currentBalance, maturityDate, monthlyPI, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
+          interestOnly: originalIO > 0 ? "Y" : "N",
           currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
       };
@@ -620,7 +621,7 @@
     function emptyLoan(){
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
-      l.rateType = "Fixed"; l.interestOnly = "N"; l.propertyType = "Multifamily";
+      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily";
       return l;
     }
     function loanLabel(l){
@@ -657,21 +658,21 @@
           propertyType:"Multifamily", lenderName:"Bellwether Enterprise (Fannie)", loanNumber:"",
           originalAmount:11392000, annualRate:0.047, rateType:"Fixed",
           originationDate:"2017-07-31", firstPaymentDate:"2017-09-01",
-          loanTermMonths:180, amortizationMonths:360, interestOnly:"N", ioMonths:null,
+          loanTermMonths:180, amortizationMonths:360, ioMonths:0,
           replacementReserve:1522,
         }),
         mk({ propertyName:"Sample — Standard 30-Year", propertyType:"Multifamily", lenderName:"Sample Bank",
           originalAmount:250000, annualRate:0.065, rateType:"Fixed",
           originationDate:"2026-01-01", firstPaymentDate:"2026-02-01",
-          loanTermMonths:360, amortizationMonths:360, interestOnly:"N" }),
+          loanTermMonths:360, amortizationMonths:360, ioMonths:0 }),
         mk({ propertyName:"Sample — 10-Yr Balloon / 30-Yr Amort", propertyType:"Office", lenderName:"Sample Bank",
           originalAmount:1200000, annualRate:0.0725, rateType:"Fixed",
           originationDate:"2026-03-01", firstPaymentDate:"2026-04-01",
-          loanTermMonths:120, amortizationMonths:360, interestOnly:"N" }),
+          loanTermMonths:120, amortizationMonths:360, ioMonths:0 }),
         mk({ propertyName:"Sample — 5-Yr IO Hybrid", propertyType:"Mixed-Use", lenderName:"Sample Bank",
           originalAmount:500000, annualRate:0.0575, rateType:"Fixed",
           originationDate:"2026-06-01", firstPaymentDate:"2026-07-01",
-          loanTermMonths:180, amortizationMonths:360, interestOnly:"Y", ioMonths:60 }),
+          loanTermMonths:180, amortizationMonths:360, ioMonths:60 }),
         demoARM(),
       ];
     }
@@ -682,7 +683,7 @@
         originalAmount:1000000, annualRate:0.031, rateType:"Hybrid ARM",
         index:"5-Year Treasury", spread:0.02625, rateFloor:0.031,
         originationDate:"2021-01-01", firstPaymentDate:"2021-02-01",
-        loanTermMonths:120, amortizationMonths:360, interestOnly:"N",
+        loanTermMonths:120, amortizationMonths:360, ioMonths:0,
         armInitialFixedMonths:60, armAdjustFreqMonths:60, armAssumedIndex:0.0416,
       });
     }
@@ -738,12 +739,12 @@
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
       dom.kpiGrid.innerHTML =
         kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
-        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate)) : (loan.interestOnly==="Y" ? "Amortizing (post-IO)" : "Actual/360 solved") }) +
+        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate)) : ((loan.ioMonths||0)>0 ? "Amortizing (post-IO)" : "Actual/360 solved") }) +
         kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: d.paymentsMade + " payments made" }) +
         kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(loan.annualRate) }) +
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
-        kpiCard("Interest-Only", loan.interestOnly==="Y" ? (loan.ioMonths||0)+" mo" : "None", { sub: loan.interestOnly==="Y" ? "then amortizes" : "amortizing" }) +
+        kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? "then amortizes" : "amortizing" }) +
         kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? ((loan.index||"index")+" + spread") : "fixed rate" });
     }
 
@@ -931,17 +932,16 @@
     }
 
     function applyConditionalVisibility(){
-      const interestOnly = (el("f_interestOnly")||{}).value;
       const rateType = (el("f_rateType")||{}).value;
       INPUT_FIELDS.forEach(f => {
         if(!f.cond) return;
         const wrap = dom.loanForm.querySelector('[data-fieldwrap="'+f.key+'"]');
         if(!wrap) return;
-        wrap.hidden = !f.cond({ interestOnly, rateType });
+        wrap.hidden = !f.cond({ rateType });
       });
     }
     function onFormChange(e){
-      if(e.target && (e.target.id==="f_interestOnly" || e.target.id==="f_rateType")) applyConditionalVisibility();
+      if(e.target && e.target.id==="f_rateType") applyConditionalVisibility();
     }
 
     function readForm(){
@@ -1036,8 +1036,8 @@
       if(!l.amortizationMonths || l.amortizationMonths<=0) return "Amortization Period (months) is required.";
       if(!l.loanTermMonths || l.loanTermMonths<=0) return "Loan Term (months) is required.";
       if(l.loanTermMonths > l.amortizationMonths) return "Loan Term cannot exceed the Amortization Period.";
-      if(l.interestOnly==="Y" && (l.ioMonths==null || l.ioMonths<0)) return "Enter the IO Period (months) for an interest-only loan.";
-      if(l.interestOnly==="Y" && l.ioMonths >= l.amortizationMonths) return "IO Period must be shorter than the Amortization Period.";
+      if(l.ioMonths != null && l.ioMonths < 0) return "Interest-Only Period (months) cannot be negative.";
+      if((l.ioMonths||0) >= l.amortizationMonths) return "Interest-Only Period must be shorter than the Amortization Period.";
       if(l.rateType==="Hybrid ARM"){
         if(!l.armInitialFixedMonths || l.armInitialFixedMonths<=0) return "Initial Fixed Period (months) is required for a Hybrid ARM.";
         if(!l.armAdjustFreqMonths || l.armAdjustFreqMonths<=0) return "Adjustment Frequency (months) is required for a Hybrid ARM.";
