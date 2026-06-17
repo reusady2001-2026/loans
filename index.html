@@ -368,12 +368,6 @@
 
     const INPUT_FIELDS = FIELDS.filter(f => f.kind === "input");
 
-    // Loan-term inputs reused by the refinance calculator for the proposed new
-    // loan (the amount is computed; dates default to today), in display order.
-    const REFI_TERM_FIELDS = ["rateType","annualRate","amortizationMonths","loanTermMonths","ioMonths",
-      "index","spread","rateFloor","rateCap","armInitialFixedMonths","armAdjustFreqMonths","armAssumedIndex"]
-      .map(k => INPUT_FIELDS.find(f => f.key === k)).filter(Boolean);
-
     // label (and aliases) -> field, for Excel import matching.
     const LABEL_TO_FIELD = {};
     const normLabel = (s) => String(s).toLowerCase().replace(/[\s–—\-_/()]+/g," ").replace(/&/g,"and").trim();
@@ -861,19 +855,28 @@
       else node.value = v==null ? "" : v;
     }
 
-    function renderForm(){
+    // Build the full loan input form (all four sections) for a given id prefix.
+    // Shared by the Add/Edit form and the refinance calculator's new-loan panel.
+    function buildFormFieldsets(prefix){
       const inputSecs = ["Loan Identification","Loan Terms","Escrows & Reserves (Monthly)","Additional Fees (Monthly)"];
-      let html = "";
-      inputSecs.forEach(sec => {
+      return inputSecs.map(sec => {
         const fields = INPUT_FIELDS.filter(f => f.sec === sec);
-        html += '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
+        return '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
           '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">'+escapeHtml(sec)+'</legend>'+
           '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
-            fields.map(f => fieldInputHtml(f, "f_")).join("")+
+            fields.map(f => fieldInputHtml(f, prefix)).join("")+
           '</div></fieldset>';
-      });
-      dom.loanForm.innerHTML = html;
+      }).join("");
+    }
+    // Read every input field for a prefix into a loan object.
+    function readFields(prefix, base){
+      const out = Object.assign({}, base||{});
+      INPUT_FIELDS.forEach(f => { const node = el(prefix+f.key); if(node) out[f.key] = parseValue(f.type, node.value); });
+      return out;
+    }
 
+    function renderForm(){
+      dom.loanForm.innerHTML = buildFormFieldsets("f_");
       INPUT_FIELDS.forEach(f => setFieldValue("f_"+f.key, f.type, state.draft[f.key]));
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
@@ -958,14 +961,7 @@
       if(e.target && e.target.id==="f_rateType") applyConditionalVisibility();
     }
 
-    function readForm(){
-      const out = Object.assign({}, state.draft);
-      INPUT_FIELDS.forEach(f => {
-        const node = el("f_"+f.key); if(!node) return;
-        out[f.key] = parseValue(f.type, node.value);
-      });
-      return out;
-    }
+    function readForm(){ return readFields("f_", state.draft); }
 
     /* ================================================================
        8. VIEW DISPATCH
@@ -1246,14 +1242,11 @@
       const pct = (id) => { const v = parseFloat((el(id)||{}).value); return isNaN(v) ? null : v/100; };
       const intv = (id) => { const v = parseInt((el(id)||{}).value, 10); return isNaN(v) ? null : v; };
       const money = (id) => { const v = parseFloat(String((el(id)||{}).value).replace(/[$,\s]/g,"")); return isNaN(v) ? 0 : v; };
-      // Proposed new-loan terms (Fixed / Floating / Hybrid ARM), read via the registry.
-      const terms = {};
-      REFI_TERM_FIELDS.forEach(f => { terms[f.key] = parseValue(f.type, (el("rf_"+f.key)||{}).value); });
-      return Object.assign(terms, {
+      return {
+        newLoan: readFields("rf_", {}),                       // the full proposed loan
         closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
-        cashOut: money("r_cashOut"), rollIn: ((el("r_rollIn")||{}).value || "Y") === "Y",
         holdMonths: intv("r_hold") || 0,
-      });
+      };
     }
 
     // Sum the next `count` payments and capture the balance at that horizon.
@@ -1269,36 +1262,37 @@
       const cur = compute(loan);
       const payoff = cur.derived.currentBalance;
       const pm = cur.derived.paymentsMade;
-      const curPInow = cur.derived.monthlyPI;                 // current-phase payment
+      const curPInow = cur.derived.monthlyPI;
       const remainingMonths = cur.derived.monthsToMaturity;
-      const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (inp.loanTermMonths||120));
 
-      const baseNeed = payoff + (inp.cashOut||0);
-      const closingTotal = (inp.closingCosts||0) + (inp.pointsPct||0)*baseNeed;
-      const outOfPocket = inp.rollIn ? 0 : closingTotal;
-      const newAmount = baseNeed + (inp.rollIn ? closingTotal : 0);
-
-      // Proposed new loan — any rate type (Fixed / Floating / Hybrid ARM).
+      // Proposed new loan = a complete loan record (any rate type). Fill blanks
+      // with sensible refinance defaults (amount = payoff, dates = today).
       const today = todayParts(), fpm = addMonths(today, 1);
-      const newLoan = {
-        originalAmount:newAmount, rateType:inp.rateType||"Fixed", annualRate:inp.annualRate||0,
-        originationDate:partsToISO(today.y,today.mo,today.d), firstPaymentDate:partsToISO(fpm.y,fpm.mo,1),
-        amortizationMonths:inp.amortizationMonths||360, loanTermMonths:inp.loanTermMonths||inp.amortizationMonths||360, ioMonths:inp.ioMonths||0,
-        index:inp.index, spread:inp.spread, rateFloor:inp.rateFloor, rateCap:inp.rateCap,
-        armInitialFixedMonths:inp.armInitialFixedMonths, armAdjustFreqMonths:inp.armAdjustFreqMonths, armAssumedIndex:inp.armAssumedIndex,
-      };
+      const newLoan = Object.assign({}, inp.newLoan);
+      if(!newLoan.originalAmount) newLoan.originalAmount = payoff;
+      if(!newLoan.originationDate) newLoan.originationDate = partsToISO(today.y,today.mo,today.d);
+      if(!newLoan.firstPaymentDate) newLoan.firstPaymentDate = partsToISO(fpm.y,fpm.mo,1);
+      if(!newLoan.rateType) newLoan.rateType = "Fixed";
+      if(!newLoan.amortizationMonths) newLoan.amortizationMonths = 360;
+      if(!newLoan.loanTermMonths) newLoan.loanTermMonths = newLoan.amortizationMonths;
+
+      const Pnew = newLoan.originalAmount;
+      const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (newLoan.loanTermMonths||120));
+      const closingTotal = (inp.closingCosts||0) + (inp.pointsPct||0)*Pnew;
+      const cashAtClose = Pnew - payoff - closingTotal;     // +: cash to borrower; −: cash needed at close
+      const isCashOut = cashAtClose > 1;
+
       const newComp = compute(newLoan);
       const newPI = newComp.derived.monthlyPI;
 
-      // Upcoming rate reset on the proposed NEW loan (if a Hybrid ARM), for display.
+      // Upcoming reset on the proposed NEW loan (if a Hybrid ARM), for display.
       let newReset = null;
       if(newLoan.rateType === "Hybrid ARM"){
         for(let i=0; i<newComp.rows.length && i<hold; i++){
           if(newComp.rows[i].isReset){ newReset = { monthsAway:i, rate:newComp.rows[i].rate, payment:newComp.rows[i].payment }; break; }
         }
       }
-
-      // Upcoming rate reset on the CURRENT loan within the horizon (Hybrid ARM).
+      // Upcoming reset on the CURRENT loan within the horizon (Hybrid ARM).
       let armReset = null;
       if(loan.rateType === "Hybrid ARM"){
         for(let i=pm; i<cur.rows.length && (i-pm)<hold; i++){
@@ -1306,35 +1300,34 @@
         }
       }
 
-      // Month-by-month over the horizon using each loan's REAL scheduled payment
-      // that month — so the current ARM's post-reset jump is fully counted, and
-      // break-even reflects the true (rising) savings rather than the teaser rate.
+      // Month-by-month over the horizon using each loan's REAL scheduled payment,
+      // so a current ARM's post-reset jump is fully counted in break-even.
       const isBalloon = (r) => r && (r.type==="balloon" || r.type==="final");
-      let curPIsum=0, newPIsum=0, cum=0, beMonth=null, months=0;
+      let cum=0, beMonth=null;
       for(let m=0; m<hold; m++){
         const cr = cur.rows[pm+m], nr = newComp.rows[m];
         if(!cr && !nr) break;
         const curPay = (cr && !isBalloon(cr)) ? cr.payment : 0;
         const newPay = (nr && !isBalloon(nr)) ? nr.payment : 0;
-        curPIsum += curPay; newPIsum += newPay;
-        cum += (curPay - newPay); months++;
+        cum += (curPay - newPay);
         if(beMonth===null && cum >= closingTotal) beMonth = m+1;
       }
       const breakEven = beMonth!==null ? beMonth : Infinity;
-      const avgSavings = months>0 ? (curPIsum - newPIsum)/months : 0;
       const monthlySavingsNow = curPInow - newPI;
 
-      // Net economic benefit over the horizon = total cost to retire the debt
-      // (payments + balance still owed), current vs. new. ARM resets included.
+      // Net benefit over the horizon = total cost to retire the debt, current vs. new.
+      // New cost folds in the net cash at close (payoff + costs − new proceeds).
       const curHold = sumOverHold(cur.rows, pm, hold);
       const newHold = sumOverHold(newComp.rows, 0, hold);
-      const netBenefit = (curHold.pi + curHold.endBal) - (outOfPocket + newHold.pi + newHold.endBal - (inp.cashOut||0));
+      const curCost = curHold.pi + curHold.endBal;
+      const newCost = (payoff + closingTotal - Pnew) + newHold.pi + newHold.endBal;
+      const netBenefit = curCost - newCost;
 
       let curRemInterest = 0;
       for(let i=pm; i<cur.rows.length; i++) curRemInterest += cur.rows[i].interest;
       const newTotInterest = newComp.totalInterest;
 
-      // ---- Verdict: driven by net benefit over the horizon (fully ARM-aware) ----
+      // ---- Verdict ----
       let verdict, tone, reason;
       const beTxt = isFinite(breakEven) ? ("~"+breakEven+" month"+(breakEven===1?"":"s")) : "never on cash flow";
       if(netBenefit > 0){
@@ -1344,12 +1337,12 @@
         reason = "Net benefit of "+fmtMoney(netBenefit)+" over your "+hold+"-month horizon"
                + (closingTotal>0 ? ", recouping the "+fmtMoney(closingTotal)+" in costs in "+beTxt : "") + ".";
         if(armReset) reason += " It locks out the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" month"+(armReset.monthsAway===1?"":"s")+" (its payment would jump to "+fmtMoney(armReset.payment)+").";
-        if(inp.cashOut>0) reason += " Includes "+fmtMoney(inp.cashOut)+" cash-out.";
+        if(isCashOut) reason += " Frees "+fmtMoney(cashAtClose)+" cash at closing.";
       } else {
         tone="bad";
-        if(inp.cashOut>0){
+        if(isCashOut){
           verdict="Depends — cash-out";
-          reason="Over "+hold+" months this costs "+fmtMoney(-netBenefit)+" more, but frees "+fmtMoney(inp.cashOut)+" in cash.";
+          reason="Over "+hold+" months this costs "+fmtMoney(-netBenefit)+" more, but frees "+fmtMoney(cashAtClose)+" in cash at closing.";
         } else {
           verdict="Don't refinance";
           reason="Over "+hold+" months you'd pay "+fmtMoney(-netBenefit)+" more overall"+(monthlySavingsNow>0 ? " — the lower monthly payment is outweighed by extra interest over the longer payoff" : "")+".";
@@ -1357,9 +1350,9 @@
         if(armReset) reason += " (This already accounts for the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
       }
 
-      return { payoff, curPInow, newPI, monthlySavingsNow, avgSavings, breakEven, closingTotal, outOfPocket, newAmount,
+      return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
         remainingMonths, hold, netBenefit, curRemInterest, newTotInterest, verdict, tone, reason,
-        newLoan, cur, cashOut:inp.cashOut||0, armReset, newReset };
+        newLoan, newComp, cur, armReset, newReset };
     }
 
     // ---- Refi render helpers ----
@@ -1382,8 +1375,8 @@
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
-      const defRate = (loan.annualRate!=null) ? +(loan.annualRate*100).toFixed(3) : "";
       const defTerm = Math.min(120, d.monthsToMaturity||120) || 120;
+      const today = todayParts(), fpm = addMonths(today, 1);
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
         for(let i=d.paymentsMade; i<cur.rows.length; i++){
@@ -1403,54 +1396,50 @@
             '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>'+
           '</div>'+
         '</div>'+
-        '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">'+
-          '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
-            '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Current Loan</h3>'+
-            '<dl class="space-y-1.5 text-sm">'+
-              refiStat("Payoff balance", fmtMoney(d.currentBalance))+
-              refiStat("Current rate", fmtPct(d.currentRate))+
-              refiStat("Current monthly P&amp;I", fmtMoney(d.monthlyPI))+
-              refiStat("Remaining term", (d.monthsToMaturity||0)+" months")+
-              refiStat("Matures", fmtDateUS(d.maturityDate))+
-            '</dl>'+ resetNote +
-          '</div>'+
-          '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
-            '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
-            '<p class="mb-3 text-[11px] text-slate-400">Model the refinance as Fixed, Floating, or a Hybrid ARM.</p>'+
-            '<div id="refiTerms" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
-              REFI_TERM_FIELDS.map(f => fieldInputHtml(f, "rf_")).join("")+
-            '</div>'+
-            '<div class="my-3 h-px bg-slate-200"></div>'+
-            '<div id="refiCosts" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
-              refiField("r_closingCosts","Closing Costs ($)", 0, "")+
-              refiField("r_points","Points", 0, "% of loan", true)+
-              refiField("r_cashOut","Cash-Out ($)", 0, "pull equity")+
-              '<div><label for="r_rollIn" class="mb-1 block text-xs font-medium text-slate-600">Roll Costs In?</label>'+
-                '<select id="r_rollIn" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"><option value="Y">Yes</option><option value="N">No</option></select></div>'+
-              refiField("r_hold","Expected Hold (mo)", d.monthsToMaturity||"", "decision horizon")+
-            '</div>'+
+        '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
+          '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Current Loan</h3>'+
+          '<dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">'+
+            refiStat("Payoff balance", fmtMoney(d.currentBalance))+
+            refiStat("Current rate", fmtPct(d.currentRate))+
+            refiStat("Monthly P&amp;I", fmtMoney(d.monthlyPI))+
+            refiStat("Remaining", (d.monthsToMaturity||0)+" mo")+
+            refiStat("Matures", fmtDateUS(d.maturityDate))+
+          '</dl>'+ resetNote +
+        '</div>'+
+        '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+          '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
+          '<p class="mb-4 text-[11px] text-slate-400">Fill it out exactly like a new loan — Fixed, Floating, or Hybrid ARM. The amount defaults to the payoff; raise it to pull cash out.</p>'+
+          '<div id="refiForm" class="space-y-5">'+
+            buildFormFieldsets("rf_")+
+            '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
+              '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">Refinance Transaction</legend>'+
+              '<div id="refiCosts" class="grid grid-cols-1 sm:grid-cols-3 gap-4">'+
+                refiField("r_closingCosts","Closing Costs ($)", 0, "lender + legal + title")+
+                refiField("r_points","Points", 0, "% of new loan", true)+
+                refiField("r_hold","Expected Hold (months)", d.monthsToMaturity||"", "your decision horizon")+
+              '</div>'+
+            '</fieldset>'+
           '</div>'+
         '</div>'+
         '<div id="refiResults"></div>';
 
-      // Default the proposed loan to a fixed loan at today's rate; pre-fill the
-      // floating/ARM fields from the current loan so switching type is easy.
-      const draft = Object.assign(emptyLoan(), {
-        rateType:"Fixed", annualRate: loan.annualRate, amortizationMonths:360, loanTermMonths:defTerm, ioMonths:0,
-        index: loan.index||"5-Year Treasury", spread: loan.spread, rateFloor: loan.rateFloor, rateCap: loan.rateCap,
-        armInitialFixedMonths: loan.armInitialFixedMonths||60, armAdjustFreqMonths: loan.armAdjustFreqMonths||60, armAssumedIndex: loan.armAssumedIndex,
+      // Default the proposed loan: same property/escrows/fees as the current loan,
+      // terms reset to a fresh fixed loan at today's rate, amount = payoff.
+      const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
+        propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
+        originalAmount: d.currentBalance, rateType: "Fixed", annualRate: loan.annualRate,
+        amortizationMonths: 360, loanTermMonths: defTerm, ioMonths: 0,
+        originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
       });
-      REFI_TERM_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
+      INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
 
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
-      const onTerms = () => { applyVisibility(el("refiTerms"), "rf_"); recomputeRefi(loan); };
-      el("refiTerms").addEventListener("input", onTerms);
-      el("refiTerms").addEventListener("change", onTerms);
-      el("refiCosts").addEventListener("input", () => recomputeRefi(loan));
-      el("refiCosts").addEventListener("change", () => recomputeRefi(loan));
-      applyVisibility(el("refiTerms"), "rf_");
-      injectTreasuryFetch(el("refiTerms"), "rf_", "rfFetchTreasuryBtn");
+      const onForm = () => { applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan); };
+      el("refiForm").addEventListener("input", onForm);
+      el("refiForm").addEventListener("change", onForm);
+      applyVisibility(el("refiForm"), "rf_");
+      injectTreasuryFetch(el("refiForm"), "rf_", "rfFetchTreasuryBtn");
       recomputeRefi(loan);
     }
 
@@ -1477,8 +1466,9 @@
       }
       cards.push(refiCard("Break-even", isFinite(r.breakEven)?r.breakEven+" mo":"never", "to recoup costs"));
       cards.push(refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad"));
-      cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), r.cashOut>0?("incl "+fmtMoney(r.cashOut)+" cash-out"):"payoff + costs"));
-      cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), r.outOfPocket>0?"paid up front":"rolled into loan"));
+      const amtSub = r.cashAtClose>1 ? ("frees "+fmtMoney(r.cashAtClose)+" cash") : (r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff");
+      cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), amtSub));
+      cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
       cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate)));
       cards.push(refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest)));
       el("refiResults").innerHTML =
@@ -1493,21 +1483,14 @@
     }
 
     function saveRefiAsLoan(loan){
-      const inp = refiInputs();
-      const r = computeRefi(loan, inp);
+      // The proposed loan is already a complete loan record — just read, fill any
+      // blank dates, validate, and add it to the portfolio.
+      const nl = readFields("rf_", { _id: uid() });
       const today = todayParts(), fpm = addMonths(today, 1);
-      const nl = Object.assign(emptyLoan(), { _id: uid() }, {
-        propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)",
-        propertyAddress: loan.propertyAddress || "", propertyType: loan.propertyType || "Multifamily",
-        lenderName: loan.lenderName || "",
-        originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
-        originalAmount: r.newAmount,
-        rateType: inp.rateType||"Fixed", annualRate: inp.annualRate||0,
-        amortizationMonths: inp.amortizationMonths||360, loanTermMonths: inp.loanTermMonths||inp.amortizationMonths||360, ioMonths: inp.ioMonths||0,
-        index: inp.index, spread: inp.spread, rateFloor: inp.rateFloor, rateCap: inp.rateCap,
-        armInitialFixedMonths: inp.armInitialFixedMonths, armAdjustFreqMonths: inp.armAdjustFreqMonths, armAssumedIndex: inp.armAssumedIndex,
-        escrowTax: loan.escrowTax, escrowInsurance: loan.escrowInsurance, replacementReserve: loan.replacementReserve,
-      });
+      if(!nl.originationDate) nl.originationDate = partsToISO(today.y,today.mo,today.d);
+      if(!nl.firstPaymentDate) nl.firstPaymentDate = partsToISO(fpm.y,fpm.mo,1);
+      const err = validateLoan(nl);
+      if(err){ toast(err, "info"); return; }
       loans.push(nl); state.activeId = nl._id; save();
       toast("Saved refinanced loan", "check"); setMode("view");
     }
