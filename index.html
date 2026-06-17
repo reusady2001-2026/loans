@@ -119,10 +119,9 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
               Export Excel
             </button>
-            <button id="refiBtn" type="button" title="Refinancing calculator — planned for a future release" class="relative inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed">
+            <button id="refiBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6M21 22v-6h-6M21 8a9 9 0 0 0-15-3.5L3 8M3 16a9 9 0 0 0 15 3.5L21 16"/></svg>
               Refi Calculator
-              <span class="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">Soon</span>
             </button>
           </div>
         </div>
@@ -215,6 +214,9 @@
         <div id="formError" class="hidden mx-5 mt-4 items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
         <form id="loanForm" class="p-5 space-y-8" novalidate></form>
       </section>
+
+      <!-- ===================== REFINANCE CALCULATOR ===================== -->
+      <section id="refiView" class="space-y-6" hidden></section>
 
       <p class="text-center text-xs text-slate-400">
         All records are stored locally in your browser. Interest accrues Actual/360 (real calendar days, leap years included). Demonstration tool — not financial advice.
@@ -697,7 +699,7 @@
       loanSelect:el("loanSelect"), loanCountLabel:el("loanCountLabel"), xlsxDot:el("xlsxDot"),
       addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
       importBtn:el("importBtn"), importInput:el("importInput"), exportBtn:el("exportBtn"), refiBtn:el("refiBtn"),
-      emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"),
+      emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"), refiView:el("refiView"),
       kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
       scheduleMeta:el("scheduleMeta"), scheduleBody:el("scheduleBody"), exportCsvBtn:el("exportCsvBtn"),
       formTitle:el("formTitle"), loanForm:el("loanForm"), formError:el("formError"),
@@ -966,10 +968,12 @@
 
       dom.editBtn.disabled = !loan || state.mode!=="view";
       dom.removeBtn.disabled = !loan || state.mode!=="view";
+      dom.refiBtn.disabled = !loan || state.mode!=="view";
 
       dom.emptyState.hidden = !(state.mode==="empty" || (!hasLoans && state.mode!=="add"));
       dom.loanView.hidden = !(state.mode==="view" && loan);
       dom.formView.hidden = !(state.mode==="edit" || state.mode==="add");
+      dom.refiView.hidden = !(state.mode==="refi" && loan);
 
       if(state.mode==="view" && loan){
         const result = compute(loan);
@@ -981,6 +985,8 @@
         dom.formTitle.textContent = state.mode==="add" ? "Add Loan" : "Edit Loan — " + loanLabel(getLoan(state.activeId)||{});
         hideFormError();
         renderForm();
+      } else if(state.mode==="refi" && loan){
+        renderRefi(loan);
       }
     }
 
@@ -1214,6 +1220,208 @@
     function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; }
 
     /* ================================================================
+       11b. REFINANCE CALCULATOR  (verdict: should you refinance?)
+       ================================================================ */
+    function startRefi(){
+      const loan = getLoan(state.activeId);
+      if(!loan){ toast("Select a loan to refinance first", "info"); return; }
+      state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
+    }
+    function closeRefi(){ setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty"); }
+
+    // Read the new-loan inputs. Rates/points are entered as plain percents.
+    function refiInputs(){
+      const pct = (id) => { const v = parseFloat((el(id)||{}).value); return isNaN(v) ? null : v/100; };
+      const intv = (id) => { const v = parseInt((el(id)||{}).value, 10); return isNaN(v) ? null : v; };
+      const money = (id) => { const v = parseFloat(String((el(id)||{}).value).replace(/[$,\s]/g,"")); return isNaN(v) ? 0 : v; };
+      return {
+        newRate: pct("r_newRate"), newAmort: intv("r_newAmort"), newTerm: intv("r_newTerm"),
+        newIO: intv("r_newIO") || 0, closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
+        cashOut: money("r_cashOut"), rollIn: ((el("r_rollIn")||{}).value || "Y") === "Y",
+        holdMonths: intv("r_hold") || 0,
+      };
+    }
+
+    // Sum the next `count` payments and capture the balance at that horizon.
+    function sumOverHold(rows, startIdx, count){
+      let pi = 0, endBal = null;
+      const end = Math.min(rows.length, startIdx + count);
+      for(let i=startIdx; i<end; i++){ pi += rows[i].payment; endBal = rows[i].endingBalance; }
+      if(endBal == null) endBal = (startIdx>0 && rows[startIdx-1]) ? rows[startIdx-1].endingBalance : (rows[0] ? rows[0].startingBalance : 0);
+      return { pi, endBal };
+    }
+
+    function computeRefi(loan, inp){
+      const cur = compute(loan);
+      const payoff = cur.derived.currentBalance;
+      const curPI = cur.derived.monthlyPI;
+      const remainingMonths = cur.derived.monthsToMaturity;
+      const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (inp.newTerm||120));
+
+      const baseNeed = payoff + (inp.cashOut||0);
+      const closingTotal = (inp.closingCosts||0) + (inp.pointsPct||0)*baseNeed;
+      const outOfPocket = inp.rollIn ? 0 : closingTotal;
+      const newAmount = baseNeed + (inp.rollIn ? closingTotal : 0);
+
+      const today = todayParts(), fpm = addMonths(today, 1);
+      const newLoan = {
+        originalAmount:newAmount, annualRate:inp.newRate||0, rateType:"Fixed",
+        originationDate:partsToISO(today.y,today.mo,today.d), firstPaymentDate:partsToISO(fpm.y,fpm.mo,1),
+        amortizationMonths:inp.newAmort||360, loanTermMonths:inp.newTerm||inp.newAmort||360, ioMonths:inp.newIO||0,
+      };
+      const newComp = compute(newLoan);
+      const newPI = newComp.derived.monthlyPI;
+
+      const monthlySavings = curPI - newPI;
+      const breakEven = monthlySavings>0 ? closingTotal/monthlySavings : Infinity;
+
+      // Total cost to retire the debt over the hold horizon = payments + balance left.
+      const curHold = sumOverHold(cur.rows, cur.derived.paymentsMade, hold);
+      const newHold = sumOverHold(newComp.rows, 0, hold);
+      const curCost = curHold.pi + curHold.endBal;
+      const newCost = outOfPocket + newHold.pi + newHold.endBal - (inp.cashOut||0);
+      const netBenefit = curCost - newCost;
+
+      let curRemInterest = 0;
+      for(let i=cur.derived.paymentsMade; i<cur.rows.length; i++) curRemInterest += cur.rows[i].interest;
+      const newTotInterest = newComp.totalInterest;
+
+      // ---- Verdict ----
+      let verdict, tone, reason;
+      const m = isFinite(breakEven) ? Math.ceil(breakEven) : null;
+      if(inp.cashOut>0 && monthlySavings<0){
+        verdict="Depends — cash-out"; tone="warn";
+        reason="Pulls "+fmtMoney(inp.cashOut)+" in cash but raises the payment by "+fmtMoney(-monthlySavings)+"/mo. Worth it only if you need the cash.";
+      } else if(monthlySavings<=0){
+        verdict="Don't refinance"; tone="bad";
+        reason="The new payment ("+fmtMoney(newPI)+") is higher than today's ("+fmtMoney(curPI)+") — no savings.";
+      } else if(netBenefit<=0){
+        verdict="Don't refinance"; tone="bad";
+        reason="The lower monthly payment comes from stretching the payoff — over "+hold+" months you'd actually pay "+fmtMoney(-netBenefit)+" MORE overall (mostly extra interest).";
+      } else if(breakEven>hold){
+        verdict="Don't refinance"; tone="bad";
+        reason="You save "+fmtMoney(monthlySavings)+"/mo, but the "+fmtMoney(closingTotal)+" in costs isn't recouped within "+hold+" months (break-even ~"+m+" months).";
+      } else {
+        const strong = breakEven <= Math.max(12, hold/3);
+        verdict = strong ? "Refinance" : "Refinance — modest"; tone="good";
+        reason="Save "+fmtMoney(monthlySavings)+"/mo, break even in ~"+m+" months, and net "+fmtMoney(netBenefit)+" over your "+hold+"-month horizon.";
+      }
+      if(inp.cashOut>0 && monthlySavings>=0) reason += " Includes "+fmtMoney(inp.cashOut)+" cash-out.";
+
+      return { payoff, curPI, newPI, monthlySavings, breakEven, closingTotal, outOfPocket, newAmount,
+        remainingMonths, hold, netBenefit, curRemInterest, newTotInterest, verdict, tone, reason,
+        newLoan, cur, cashOut:inp.cashOut||0 };
+    }
+
+    // ---- Refi render helpers ----
+    function refiStat(label, val){ return '<div class="flex justify-between gap-3"><dt class="text-slate-500">'+label+'</dt><dd class="font-semibold text-slate-900 tabular-nums">'+val+'</dd></div>'; }
+    function refiField(id, label, value, hint, pct){
+      const suffix = pct ? '<span class="ml-1 text-xs text-slate-400">%</span>' : '';
+      return '<div><label for="'+id+'" class="mb-1 block text-xs font-medium text-slate-600">'+label+'</label>'+
+        '<div class="flex items-center"><input id="'+id+'" type="text" inputmode="decimal" value="'+(value==null?"":value)+'" '+
+        'class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" />'+suffix+'</div>'+
+        (hint?'<p class="mt-0.5 text-[11px] text-slate-400">'+hint+'</p>':'')+'</div>';
+    }
+    function refiCard(label, val, sub, tone){
+      const vc = tone==="good"?"text-emerald-700":tone==="bad"?"text-rose-700":"text-slate-900";
+      return '<div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">'+
+        '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">'+label+'</p>'+
+        '<p class="mt-1 text-lg font-bold tabular-nums '+vc+'">'+val+'</p>'+
+        (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
+    }
+
+    function renderRefi(loan){
+      const d = compute(loan).derived;
+      const defRate = (loan.annualRate!=null) ? +(loan.annualRate*100).toFixed(3) : "";
+      const defTerm = Math.min(120, d.monthsToMaturity||120) || 120;
+      dom.refiView.innerHTML =
+        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
+          '<div><h2 class="text-lg font-bold text-slate-900">Refinance Analysis</h2>'+
+            '<p class="text-sm text-slate-500">'+escapeHtml(loanLabel(loan))+' — should you refinance?</p></div>'+
+          '<div class="flex gap-2">'+
+            '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
+            '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">'+
+          '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
+            '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Current Loan</h3>'+
+            '<dl class="space-y-1.5 text-sm">'+
+              refiStat("Payoff balance", fmtMoney(d.currentBalance))+
+              refiStat("Current rate", fmtPct(d.currentRate))+
+              refiStat("Current monthly P&amp;I", fmtMoney(d.monthlyPI))+
+              refiStat("Remaining term", (d.monthsToMaturity||0)+" months")+
+              refiStat("Matures", fmtDateUS(d.maturityDate))+
+            '</dl>'+
+          '</div>'+
+          '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+            '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
+            '<div id="refiInputs" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
+              refiField("r_newRate","New Rate", defRate, "", true)+
+              refiField("r_newAmort","Amortization (mo)", 360, "")+
+              refiField("r_newTerm","Loan Term (mo)", defTerm, "balloon")+
+              refiField("r_newIO","Interest-Only (mo)", 0, "")+
+              refiField("r_closingCosts","Closing Costs ($)", 0, "")+
+              refiField("r_points","Points", 0, "% of loan", true)+
+              refiField("r_cashOut","Cash-Out ($)", 0, "pull equity")+
+              '<div><label for="r_rollIn" class="mb-1 block text-xs font-medium text-slate-600">Roll Costs In?</label>'+
+                '<select id="r_rollIn" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"><option value="Y">Yes</option><option value="N">No</option></select></div>'+
+              refiField("r_hold","Expected Hold (mo)", d.monthsToMaturity||"", "decision horizon")+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div id="refiResults"></div>';
+      el("refiCloseBtn").addEventListener("click", closeRefi);
+      el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
+      el("refiInputs").addEventListener("input", () => recomputeRefi(loan));
+      recomputeRefi(loan);
+    }
+
+    function recomputeRefi(loan){
+      const r = computeRefi(loan, refiInputs());
+      const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                    : r.tone==="bad"  ? "border-rose-300 bg-rose-50 text-rose-900"
+                    : "border-amber-300 bg-amber-50 text-amber-900";
+      const icon = r.tone==="good" ? "&#10003;" : r.tone==="bad" ? "&#10007;" : "!";
+      const dMo = r.monthlySavings>=0 ? "−"+fmtMoney(r.monthlySavings) : "+"+fmtMoney(-r.monthlySavings);
+      const dNet = r.netBenefit>=0 ? "+"+fmtMoney(r.netBenefit) : "−"+fmtMoney(-r.netBenefit);
+      el("refiResults").innerHTML =
+        '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
+          '<div class="flex items-center gap-3">'+
+            '<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/70 text-xl font-black">'+icon+'</span>'+
+            '<div><p class="text-xl font-extrabold leading-tight">'+r.verdict+'</p>'+
+            '<p class="text-sm opacity-90">'+r.reason+'</p></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">'+
+          refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPI))+
+          refiCard("Monthly Change", dMo, r.monthlySavings>=0?"saved / month":"more / month", r.monthlySavings>=0?"good":"bad")+
+          refiCard("Break-even", isFinite(r.breakEven)?Math.ceil(r.breakEven)+" mo":"never", "to recoup costs")+
+          refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad")+
+          refiCard("New Loan Amount", fmtMoney(r.newAmount), r.cashOut>0?("incl "+fmtMoney(r.cashOut)+" cash-out"):"payoff + costs")+
+          refiCard("Closing Costs", fmtMoney(r.closingTotal), r.outOfPocket>0?"paid up front":"rolled into loan")+
+          refiCard("New Rate", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate))+
+          refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest))+
+        '</div>';
+    }
+
+    function saveRefiAsLoan(loan){
+      const inp = refiInputs();
+      const r = computeRefi(loan, inp);
+      const today = todayParts(), fpm = addMonths(today, 1);
+      const nl = Object.assign(emptyLoan(), { _id: uid() }, {
+        propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)",
+        propertyAddress: loan.propertyAddress || "", propertyType: loan.propertyType || "Multifamily",
+        lenderName: loan.lenderName || "", originalAmount: r.newAmount, annualRate: inp.newRate||0, rateType:"Fixed",
+        originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
+        amortizationMonths: inp.newAmort||360, loanTermMonths: inp.newTerm||inp.newAmort||360, ioMonths: inp.newIO||0,
+        escrowTax: loan.escrowTax, escrowInsurance: loan.escrowInsurance, replacementReserve: loan.replacementReserve,
+      });
+      loans.push(nl); state.activeId = nl._id; save();
+      toast("Saved refinanced loan", "check"); setMode("view");
+    }
+
+    /* ================================================================
        12. EVENTS
        ================================================================ */
     dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
@@ -1226,7 +1434,7 @@
     dom.exportBtn.addEventListener("click", exportExcel);
     dom.importBtn.addEventListener("click", () => dom.importInput.click());
     dom.importInput.addEventListener("change", (e) => { const f=e.target.files[0]; if(f) importExcel(f); e.target.value=""; });
-    dom.refiBtn.addEventListener("click", () => toast("Refi calculator is coming in a future release", "info"));
+    dom.refiBtn.addEventListener("click", startRefi);
     dom.confirmCancel.addEventListener("click", closeConfirm);
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
