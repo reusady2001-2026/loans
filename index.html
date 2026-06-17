@@ -257,7 +257,7 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
-    const STORAGE_KEY = "ldsHub.loans.v3";
+    const STORAGE_KEY = "ldsHub.loans.v4";
     const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -319,7 +319,7 @@
 
       // ---- Loan Terms (inputs the app trusts) ----
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
-      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", required:true, hint:"e.g. 4.70" },
+      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", required:true, hint:"e.g. 4.70", cond:(l)=>l.rateType!=="Floating" },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
@@ -327,13 +327,13 @@
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
-      { sec:"Loan Terms", key:"index",              label:"Index (if Floating/ARM)",      type:"text",   kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Floating Rate Index","Index (if Floating)"] },
+      { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
+      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", hint:"fetched live for US indexes", aliases:["Assumed Index at Reset"] },
       { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"armInitialFixedMonths", label:"Initial Fixed Period (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 for a 5/5" },
       { sec:"Loan Terms", key:"armAdjustFreqMonths",   label:"Adjustment Frequency (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 = every 5 yrs" },
-      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Assumed Index at Reset",        type:"pct", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"5-yr Treasury — use Fetch" },
 
       // ---- Escrows & Reserves (Monthly) ----
       { sec:"Escrows & Reserves (Monthly)", key:"escrowTax",        label:"Real Estate Tax Escrow ($/mo)", type:"money", kind:"input" },
@@ -422,6 +422,7 @@
         case "pct":   return fmtPct(v);
         case "date":  return fmtDateUS(v);
         case "yn":    return v==="Y" ? "Yes" : v==="N" ? "No" : "—";
+        case "index": return (INDEX_BY_ID[v] && INDEX_BY_ID[v].label) || fmtText(v);
         default:      return fmtText(v);
       }
     }
@@ -454,23 +455,51 @@
       return { y, mo };
     }
 
-    // ---- Rate phases (Hybrid ARM) ----
-    // Reset rate = clamp( Max(floor, assumed index + margin), cap ).
-    function resetRate(loan){
-      const margin = loan.spread || 0;
-      const floor = loan.rateFloor || 0;
-      const idx = (loan.armAssumedIndex==null || loan.armAssumedIndex==="") ? null : loan.armAssumedIndex;
-      let r = (idx==null) ? floor : (idx + margin);
-      r = Math.max(floor, r);
-      if(loan.rateCap) r = Math.min(loan.rateCap, r);
+    // ---- Reference-rate indexes (US feeds are live + CORS-enabled) ----
+    const INDEX_CATALOG = [
+      { id:"prime",  label:"US Prime Rate",             live:true,  src:"prime",    fallback:6.63 },
+      { id:"sofr",   label:"SOFR (overnight)",          live:true,  src:"nyfed",    path:"secured/sofr",   fallback:3.63 },
+      { id:"effr",   label:"Fed Funds (EFFR)",          live:true,  src:"nyfed",    path:"unsecured/effr", fallback:3.63 },
+      { id:"ust1y",  label:"US Treasury 1-Year (CMT)",  live:true,  src:"treasury", field:"BC_1YEAR",      fallback:4.00 },
+      { id:"ust2y",  label:"US Treasury 2-Year (CMT)",  live:true,  src:"treasury", field:"BC_2YEAR",      fallback:4.05 },
+      { id:"ust3y",  label:"US Treasury 3-Year (CMT)",  live:true,  src:"treasury", field:"BC_3YEAR",      fallback:4.10 },
+      { id:"ust5y",  label:"US Treasury 5-Year (CMT)",  live:true,  src:"treasury", field:"BC_5YEAR",      fallback:4.16 },
+      { id:"ust7y",  label:"US Treasury 7-Year (CMT)",  live:true,  src:"treasury", field:"BC_7YEAR",      fallback:4.30 },
+      { id:"ust10y", label:"US Treasury 10-Year (CMT)", live:true,  src:"treasury", field:"BC_10YEAR",     fallback:4.40 },
+      { id:"other",  label:"Other / Custom (enter value)", live:false, fallback:5.00 },
+    ];
+    const INDEX_BY_ID = {}; INDEX_CATALOG.forEach(i => INDEX_BY_ID[i.id] = i);
+    const INDEX_CACHE = {};            // id -> { value(%), date }
+    const INDEX_INFLIGHT = {};
+
+    // Index level (decimal). Floating uses the live current value first (the
+    // rate floats with the market); a Hybrid ARM's stored value is the user's
+    // future-reset assumption, so it wins and defaults to live.
+    function indexLevel(loan){
+      const cat = INDEX_BY_ID[loan.index];
+      const stored = (loan.armAssumedIndex!=null && loan.armAssumedIndex!=="") ? loan.armAssumedIndex : null;
+      const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
+      const fallback = cat ? cat.fallback/100 : 0;
+      if(loan.rateType === "Hybrid ARM") return (stored!=null) ? stored : (live!=null ? live : fallback);
+      return (live!=null) ? live : (stored!=null ? stored : fallback);
+    }
+    // All-in floating / reset rate = clamp( index + spread, floor, cap ).
+    function allInRate(loan){
+      let r = indexLevel(loan) + (loan.spread||0);
+      if(loan.rateFloor) r = Math.max(loan.rateFloor, r);
+      if(loan.rateCap)   r = Math.min(loan.rateCap, r);
       return r;
     }
+
+    // ---- Rate phases ----
+    function resetRate(loan){ return allInRate(loan); }          // Hybrid ARM reset
     // Annual rate in effect at amortization month index m (0-based).
     function rateForMonth(loan, m){
       if(loan.rateType === "Hybrid ARM"){
         const initFixed = loan.armInitialFixedMonths || 0;
-        return (m < initFixed) ? (loan.annualRate||0) : resetRate(loan);
+        return (m < initFixed) ? (loan.annualRate||0) : allInRate(loan);
       }
+      if(loan.rateType === "Floating") return allInRate(loan);   // index + spread, live
       return loan.annualRate || 0;
     }
     // A rate reset occurs at the end of the initial fixed period and every
@@ -623,7 +652,7 @@
     function emptyLoan(){
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
-      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily";
+      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr";
       return l;
     }
     function loanLabel(l){
@@ -633,17 +662,35 @@
     function save(){
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); } catch(e){ /* storage may be unavailable */ }
     }
+    // Normalize a loan's free-text index to a catalog id (older versions stored
+    // strings like "5-Year Treasury").
+    function migrateLoan(l){
+      if(l && l.index && !INDEX_BY_ID[l.index]){
+        const s = String(l.index).toLowerCase();
+        l.index = /5.?year|5yr|treasury/.test(s) ? "ust5y"
+                : /10.?year|10yr/.test(s) ? "ust10y"
+                : /sofr/.test(s) ? "sofr"
+                : /prime/.test(s) ? "prime"
+                : /fed.?fund|effr/.test(s) ? "effr" : "other";
+      }
+      return l;
+    }
     function load(){
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr; }
-        // Migrate from the prior version, preserving the user's loans and
-        // adding the ARM demo so the new loan type is visible once.
-        const oldRaw = localStorage.getItem("ldsHub.loans.v2");
+        if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr.map(migrateLoan); }
+        // Migrate from a prior version, preserving the user's loans.
+        const oldRaw = localStorage.getItem("ldsHub.loans.v3") || localStorage.getItem("ldsHub.loans.v2");
         if(oldRaw){
           const old = JSON.parse(oldRaw);
           if(Array.isArray(old) && old.length){
+            old.forEach(migrateLoan);
             if(!old.some(l => l.rateType==="Hybrid ARM")) old.push(demoARM());
+            if(!old.some(l => l.rateType==="Floating")) old.push(Object.assign(emptyLoan(), { _id: uid() }, {
+              propertyName:"Sample — Floating (SOFR + 2.50%)", propertyType:"Industrial", lenderName:"Sample Bank",
+              rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.03,
+              originalAmount:3000000, originationDate:"2025-01-01", firstPaymentDate:"2025-02-01",
+              loanTermMonths:120, amortizationMonths:360, ioMonths:0 }));
             localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
             return old;
           }
@@ -675,6 +722,10 @@
           originalAmount:500000, annualRate:0.0575, rateType:"Fixed",
           originationDate:"2026-06-01", firstPaymentDate:"2026-07-01",
           loanTermMonths:180, amortizationMonths:360, ioMonths:60 }),
+        mk({ propertyName:"Sample — Floating (SOFR + 2.50%)", propertyType:"Industrial", lenderName:"Sample Bank",
+          rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.03,
+          originalAmount:3000000, originationDate:"2025-01-01", firstPaymentDate:"2025-02-01",
+          loanTermMonths:120, amortizationMonths:360, ioMonths:0 }),
         demoARM(),
       ];
     }
@@ -683,7 +734,7 @@
       return Object.assign(emptyLoan(), { _id: uid() }, {
         propertyName:"Sample — 5/5 ARM Commercial Balloon", propertyType:"Office", lenderName:"Sample Bank",
         originalAmount:1000000, annualRate:0.031, rateType:"Hybrid ARM",
-        index:"5-Year Treasury", spread:0.02625, rateFloor:0.031,
+        index:"ust5y", spread:0.02625, rateFloor:0.031,
         originationDate:"2021-01-01", firstPaymentDate:"2021-02-01",
         loanTermMonths:120, amortizationMonths:360, ioMonths:0,
         armInitialFixedMonths:60, armAdjustFreqMonths:60, armAssumedIndex:0.0416,
@@ -743,11 +794,11 @@
         kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
         kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate)) : ((loan.ioMonths||0)>0 ? "Amortizing (post-IO)" : "Actual/360 solved") }) +
         kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: d.paymentsMade + " payments made" }) +
-        kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(loan.annualRate) }) +
+        kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(d.currentRate) }) +
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
         kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? "then amortizes" : "amortizing" }) +
-        kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? ((loan.index||"index")+" + spread") : "fixed rate" });
+        kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" });
     }
 
     function renderProfile(loan, result){
@@ -759,6 +810,8 @@
           let v;
           if(f.kind === "computed") v = computedVals[f.key];
           else v = loan[f.key];
+          // Show the live/effective index level when no manual override is stored.
+          if(f.key==="armAssumedIndex" && (v==null||v==="") && (loan.rateType==="Floating"||loan.rateType==="Hybrid ARM")) v = indexLevel(loan);
           const disp = displayValue(f.type, v);
           const isComputed = f.kind === "computed";
           return '<div class="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1.5">'+
@@ -830,6 +883,9 @@
       if(f.type==="select"){
         const opts = (f.options||[]).map(o => '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>').join("");
         control = '<select id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" '+base+'>'+opts+'</select>';
+      } else if(f.type==="index"){
+        const opts = INDEX_CATALOG.map(it => '<option value="'+it.id+'">'+escapeHtml(it.label)+(it.live?"":" — manual")+'</option>').join("");
+        control = '<select id="'+id+'" data-key="'+f.key+'" data-type="index" '+base+'>'+opts+'</select>';
       } else if(f.type==="yn"){
         control = '<select id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" '+base+'><option value="N">No</option><option value="Y">Yes</option></select>';
       } else if(f.type==="date"){
@@ -881,12 +937,62 @@
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
       applyConditionalVisibility();
-      injectTreasuryFetch(dom.loanForm, "f_", "fetchTreasuryBtn");
+      injectIndexFetch(dom.loanForm, "f_", "fetchIndexBtn");
     }
 
-    // Add a "Fetch live 5-yr Treasury" control beneath an Assumed Index field
-    // (works for both the loan form and the refinance calculator).
-    function injectTreasuryFetch(container, prefix, btnId){
+    // ---- Live index fetching (US feeds: NY Fed + U.S. Treasury, CORS-enabled) ----
+    async function fetchNyFed(path){
+      try {
+        const res = await fetch("https://markets.newyorkfed.org/api/rates/"+path+"/last/1.json");
+        if(!res.ok) return null;
+        const j = await res.json();
+        const r = j.refRates && j.refRates[0];
+        if(r && r.percentRate!=null) return { value: r.percentRate, date: String(r.effectiveDate||"").slice(0,10) };
+      } catch(e){}
+      return null;
+    }
+    async function fetchTreasuryField(field){
+      const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
+      const now = new Date();
+      for(let back=0; back<4; back++){
+        const d = new Date(now.getFullYear(), now.getMonth()-back, 1);
+        const ym = "" + d.getFullYear() + String(d.getMonth()+1).padStart(2,"0");
+        let text;
+        try { const res = await fetch(base + ym, { headers:{ "Accept":"application/xml" } }); if(!res.ok) continue; text = await res.text(); }
+        catch(e){ continue; }
+        const doc = new DOMParser().parseFromString(text, "application/xml");
+        const props = doc.getElementsByTagNameNS("*","properties");
+        let last = null;
+        for(let i=0; i<props.length; i++){
+          const dEl = props[i].getElementsByTagNameNS("*","NEW_DATE")[0];
+          const vEl = props[i].getElementsByTagNameNS("*",field)[0];
+          if(dEl && vEl && vEl.textContent.trim()!==""){ const val = parseFloat(vEl.textContent); if(!isNaN(val)) last = { value: val, date: dEl.textContent.slice(0,10) }; }
+        }
+        if(last) return last;
+      }
+      return null;
+    }
+    // Resolve one index id to a live { value%, date }, or null.
+    async function fetchIndexValue(id){
+      const cat = INDEX_BY_ID[id];
+      if(!cat || !cat.live) return null;
+      if(cat.src==="treasury") return await fetchTreasuryField(cat.field);
+      if(cat.src==="nyfed")    return await fetchNyFed(cat.path);
+      if(cat.src==="prime"){ const e = await fetchNyFed("unsecured/effr"); return e ? { value: +(e.value+3.00).toFixed(2), date: e.date } : null; }  // Prime ≈ Fed Funds + 3.00
+      return null;
+    }
+    // Populate the live cache for an index (once per session) and re-render.
+    function ensureIndexLive(id, cb){
+      const cat = INDEX_BY_ID[id];
+      if(!cat || !cat.live || INDEX_CACHE[id] || INDEX_INFLIGHT[id]) return;
+      INDEX_INFLIGHT[id] = true;
+      fetchIndexValue(id).then(r => { delete INDEX_INFLIGHT[id]; if(r){ INDEX_CACHE[id] = r; if(cb) cb(); } })
+                         .catch(() => { delete INDEX_INFLIGHT[id]; });
+    }
+
+    // "Fetch live rate" control beneath the Index Value field; pulls the index
+    // currently selected in the dropdown (shared by the loan + refi forms).
+    function injectIndexFetch(container, prefix, btnId){
       const wrap = container.querySelector('[data-fieldwrap="armAssumedIndex"]');
       if(!wrap || wrap.querySelector("#"+btnId)) return;
       const statusId = btnId+"Status";
@@ -895,55 +1001,35 @@
       bar.innerHTML =
         '<button type="button" id="'+btnId+'" class="inline-flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50">'+
           '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
-          'Fetch live 5-yr Treasury</button>'+
-        '<span id="'+statusId+'" class="text-[11px] text-slate-400">official U.S. Treasury feed · no key needed</span>';
+          'Fetch live rate</button>'+
+        '<span id="'+statusId+'" class="text-[11px] text-slate-400">live for US indexes</span>';
       wrap.appendChild(bar);
-      el(btnId).addEventListener("click", () => onFetchTreasury(prefix+"armAssumedIndex", statusId, btnId));
-    }
-    async function onFetchTreasury(inputId, statusId, btnId){
-      const btn = el(btnId), status = el(statusId), input = el(inputId);
-      if(!btn || !status) return;
-      btn.disabled = true; status.className = "text-[11px] text-slate-400"; status.textContent = "Fetching…";
-      try {
-        const r = await fetchTreasury5yr();
-        if(input) input.value = r.value;                 // pct field shows the percent number
-        status.className = "text-[11px] text-emerald-600";
-        status.textContent = "5-yr Treasury " + r.value + "% as of " + r.date;
-        toast("Fetched 5-yr Treasury: " + r.value + "%", "check");
-      } catch(e){
-        status.className = "text-[11px] text-rose-600";
-        status.textContent = "Couldn't fetch — enter the index manually";
-        toast("Live fetch failed; enter the index manually", "info");
-      } finally { btn.disabled = false; }
-    }
-    // Pull the latest 5-Year Treasury Constant Maturity from the U.S. Treasury's
-    // public daily par-yield feed (keyless, CORS-enabled). Returns {date, value%}.
-    async function fetchTreasury5yr(){
-      const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
-      const now = new Date();
-      for(let back=0; back<4; back++){
-        const d = new Date(now.getFullYear(), now.getMonth()-back, 1);
-        const ym = "" + d.getFullYear() + String(d.getMonth()+1).padStart(2,"0");
-        let text;
-        try {
-          const res = await fetch(base + ym, { headers:{ "Accept":"application/xml" } });
-          if(!res.ok) continue;
-          text = await res.text();
-        } catch(e){ continue; }
-        const doc = new DOMParser().parseFromString(text, "application/xml");
-        const props = doc.getElementsByTagNameNS("*","properties");
-        let last = null;
-        for(let i=0; i<props.length; i++){
-          const dEl = props[i].getElementsByTagNameNS("*","NEW_DATE")[0];
-          const vEl = props[i].getElementsByTagNameNS("*","BC_5YEAR")[0];
-          if(dEl && vEl && vEl.textContent.trim() !== ""){
-            const val = parseFloat(vEl.textContent);
-            if(!isNaN(val)) last = { date: dEl.textContent.slice(0,10), value: val };
-          }
-        }
-        if(last) return last;
+      el(btnId).addEventListener("click", () => onFetchIndex(prefix, statusId, btnId));
+      // Auto-fetch when the index changes, and once for the initial selection.
+      const sel = el(prefix+"index");
+      if(sel){
+        sel.addEventListener("change", () => onFetchIndex(prefix, statusId, btnId));
+        const cur = sel.value;
+        if(INDEX_BY_ID[cur] && INDEX_BY_ID[cur].live && !INDEX_CACHE[cur]) onFetchIndex(prefix, statusId, btnId);
       }
-      throw new Error("No 5-yr Treasury data");
+    }
+    async function onFetchIndex(prefix, statusId, btnId){
+      const btn = el(btnId), status = el(statusId), input = el(prefix+"armAssumedIndex");
+      const id = (el(prefix+"index")||{}).value, cat = INDEX_BY_ID[id];
+      if(!btn || !status) return;
+      if(!cat || !cat.live){ status.className="text-[11px] text-amber-600"; status.textContent = (cat?cat.label:"This index")+" has no live US feed — enter the value manually."; return; }
+      btn.disabled = true; status.className="text-[11px] text-slate-400"; status.textContent = "Fetching "+cat.label+"…";
+      try {
+        const r = await fetchIndexValue(id);
+        if(!r) throw new Error("no data");
+        INDEX_CACHE[id] = r;
+        if(input){ input.value = r.value; input.dispatchEvent(new Event("input", { bubbles:true })); }
+        status.className="text-[11px] text-emerald-600"; status.textContent = cat.label+": "+r.value+"% as of "+r.date;
+        toast("Fetched "+cat.label+": "+r.value+"%", "check");
+      } catch(e){
+        status.className="text-[11px] text-rose-600"; status.textContent = "Couldn't fetch — enter the value manually";
+        toast("Live fetch failed; enter the value manually", "info");
+      } finally { btn.disabled = false; }
     }
 
     // Show/hide conditional term fields (ARM/floating) within a container.
@@ -984,6 +1070,7 @@
       dom.refiView.hidden = !(state.mode==="refi" && loan);
 
       if(state.mode==="view" && loan){
+        if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM") ensureIndexLive(loan.index, render);
         const result = compute(loan);
         renderKPIs(loan, result);
         renderProfile(loan, result);
@@ -1044,7 +1131,12 @@
 
     function validateLoan(l){
       if(!l.originalAmount || l.originalAmount<=0) return "Original Loan Amount is required and must be greater than 0.";
-      if(l.annualRate==null || l.annualRate<0) return "Annual Interest Rate is required.";
+      if(l.rateType==="Floating"){
+        if(!l.index) return "Choose an Index for a floating-rate loan.";
+        if(l.spread==null) return "Enter the Spread / Margin over the index.";
+      } else if(l.annualRate==null || l.annualRate<0){
+        return "Annual Interest Rate is required.";
+      }
       if(!l.originationDate) return "Origination Date is required.";
       if(!l.firstPaymentDate) return "First Payment Date is required.";
       if(!l.amortizationMonths || l.amortizationMonths<=0) return "Amortization Period (months) is required.";
@@ -1439,12 +1531,15 @@
       el("refiForm").addEventListener("input", onForm);
       el("refiForm").addEventListener("change", onForm);
       applyVisibility(el("refiForm"), "rf_");
-      injectTreasuryFetch(el("refiForm"), "rf_", "rfFetchTreasuryBtn");
+      injectIndexFetch(el("refiForm"), "rf_", "rfFetchIndexBtn");
       recomputeRefi(loan);
     }
 
     function recomputeRefi(loan){
-      const r = computeRefi(loan, refiInputs());
+      const inp = refiInputs();
+      if(inp.newLoan && (inp.newLoan.rateType==="Floating" || inp.newLoan.rateType==="Hybrid ARM"))
+        ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
+      const r = computeRefi(loan, inp);
       const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
                     : r.tone==="bad"  ? "border-rose-300 bg-rose-50 text-rose-900"
                     : "border-amber-300 bg-amber-50 text-amber-900";
@@ -1469,7 +1564,7 @@
       const amtSub = r.cashAtClose>1 ? ("frees "+fmtMoney(r.cashAtClose)+" cash") : (r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff");
       cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), amtSub));
       cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
-      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate)));
+      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newComp.derived.currentRate), "was "+fmtPct(r.cur.derived.currentRate)));
       cards.push(refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest)));
       el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
