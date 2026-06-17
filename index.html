@@ -181,7 +181,7 @@
               <thead class="sticky top-0 z-10 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wide text-slate-500">
                 <tr class="border-b border-slate-200">
                   <th class="px-4 py-3 text-left font-semibold">#</th>
-                  <th class="px-4 py-3 text-left font-semibold">Calendar Month</th>
+                  <th class="px-4 py-3 text-left font-semibold">Accrual Month / Pays</th>
                   <th class="px-4 py-3 text-right font-semibold">Starting Balance</th>
                   <th class="px-4 py-3 text-center font-semibold">Days</th>
                   <th class="px-4 py-3 text-right font-semibold">Interest Charged</th>
@@ -427,9 +427,11 @@
     /* ================================================================
        4. FINANCIAL ENGINE  (Actual/360 + binary-search solver)
        ================================================================ */
-    function loanStartParts(loan){
-      // Schedule begins at the first payment month.
-      return isoToParts(loan.firstPaymentDate) || isoToParts(loan.originationDate) || todayParts();
+    // Payment is in arrears: a payment dated the 1st covers the PRIOR month's
+    // interest, so accrual begins the month before the first payment.
+    function accrualStartParts(loan){
+      const fp = isoToParts(loan.firstPaymentDate) || isoToParts(loan.originationDate) || todayParts();
+      return addMonths(fp, -1);
     }
     function monthPosition(startParts, offset){
       const total = startParts.mo + offset;
@@ -440,7 +442,7 @@
 
     // Simulate ending balance for a candidate payment across the full amort term.
     function simulateEndingBalance(loan, fixedPayment){
-      const start = loanStartParts(loan);
+      const start = accrualStartParts(loan);
       const dailyRate = (loan.annualRate||0) / 360;
       const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
       let balance = loan.originalAmount || 0;
@@ -465,7 +467,8 @@
     }
     // Build the displayed schedule (cuts off at loan term, balloon to $0.00).
     function buildSchedule(loan, fixedPayment){
-      const start = loanStartParts(loan);
+      const start = accrualStartParts(loan);                 // first accrual month
+      const fpParts = isoToParts(loan.firstPaymentDate);     // payment dates (in arrears)
       const dailyRate = (loan.annualRate||0) / 360;
       const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
       const rows = [];
@@ -480,6 +483,8 @@
         const interest = startingBalance * days * dailyRate;
         const isIO = m < io;
         const isFinal = m === term-1;
+        const payParts = fpParts ? addMonths(fpParts, m) : null;   // this row's payment date
+        const paymentDate = payParts ? partsToISO(payParts.y, payParts.mo, payParts.d) : "";
         let payment, principalPaid, type;
 
         if(isFinal){
@@ -494,7 +499,7 @@
           balance = startingBalance - principalPaid; type = "amort";
         }
         totalInterest += interest; totalPaid += payment;
-        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, startingBalance, days, interest, payment, principalPaid, endingBalance:balance, type });
+        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, interest, payment, principalPaid, endingBalance:balance, type });
       }
       return { rows, totalInterest, totalPaid };
     }
@@ -684,11 +689,12 @@
     function renderSchedule(loan, result){
       const d = result.derived;
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
-      const start = loanStartParts(loan);
+      const start = accrualStartParts(loan);
       const startLabel = MONTH_NAMES[start.mo]+" "+start.y;
       const end = result.rows.length ? result.rows[result.rows.length-1].label : "—";
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
-      dom.scheduleMeta.textContent = term + " months · " + startLabel + " – " + end +
+      dom.scheduleMeta.textContent = term + " months · accrues " + startLabel + " – " + end +
+        " · paid in arrears on the 1st of the next month" +
         (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
 
       const nowIndex = d.paymentsMade;   // last made payment number
@@ -706,7 +712,7 @@
         const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700">Now</span>' : '';
         return '<tr class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
-          '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-800">'+r.label+badge+nowBadge+'</td>'+
+          '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
           '<td class="px-4 py-2.5 text-center text-slate-400">'+r.days+'</td>'+
           '<td class="px-4 py-2.5 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
@@ -889,7 +895,7 @@
        ================================================================ */
     function exportScheduleCsv(){
       const loan = getLoan(state.activeId); if(!loan || !activeResult) return;
-      const header = ["Month #","Calendar Month","Starting Balance","Days in Month","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
+      const header = ["Month #","Accrual Month","Payment Date","Starting Balance","Days in Month","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
       const cell = (v) => { const s=String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
       const lines = [];
       lines.push(["Property", loanLabel(loan)].map(cell).join(","));
@@ -899,7 +905,7 @@
       lines.push(["Total Monthly Debt Service", activeResult.derived.totalDebtService.toFixed(2)].map(cell).join(","));
       lines.push("");
       lines.push(header.map(cell).join(","));
-      activeResult.rows.forEach(r => lines.push([r.index,r.label,r.startingBalance.toFixed(2),r.days,r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
+      activeResult.rows.forEach(r => lines.push([r.index,r.label,fmtDateUS(r.paymentDate),r.startingBalance.toFixed(2),r.days,r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
       downloadBlob("﻿"+lines.join("\r\n"), "schedule-"+slug(loanLabel(loan))+".csv", "text/csv;charset=utf-8;");
       toast("Schedule exported", "download");
     }
