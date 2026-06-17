@@ -636,7 +636,7 @@
         derived: {
           currentBalance, maturityDate, monthlyPI, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
-          interestOnly: originalIO > 0 ? "Y" : "N",
+          interestOnly: (term > 0 && originalIO >= term) ? "Y" : "N",
           currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
       };
