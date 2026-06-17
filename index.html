@@ -22,7 +22,7 @@
               500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b',
             },
           },
-          boxShadow: { glow: '0 0 0 1px rgba(99,102,241,0.35), 0 18px 40px -12px rgba(79,70,229,0.55)' },
+          boxShadow: { glow: '0 0 0 1px rgba(99,102,241,0.25), 0 18px 38px -14px rgba(79,70,229,0.55)' },
           keyframes: {
             'fade-up': { '0%':{opacity:'0',transform:'translateY(8px)'}, '100%':{opacity:'1',transform:'translateY(0)'} },
           },
@@ -38,23 +38,23 @@
 
   <style>
     .thin-scroll::-webkit-scrollbar{width:10px;height:10px}
-    .thin-scroll::-webkit-scrollbar-track{background:rgba(15,23,42,.4)}
-    .thin-scroll::-webkit-scrollbar-thumb{background:#334155;border-radius:9999px;border:2px solid rgba(15,23,42,.6)}
-    .thin-scroll::-webkit-scrollbar-thumb:hover{background:#475569}
+    .thin-scroll::-webkit-scrollbar-track{background:#f1f5f9}
+    .thin-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:9999px;border:2px solid #f1f5f9}
+    .thin-scroll::-webkit-scrollbar-thumb:hover{background:#94a3b8}
     .grid-backdrop{
       background-image:
-        radial-gradient(circle at 18% 12%, rgba(79,70,229,.20), transparent 42%),
-        radial-gradient(circle at 85% 0%, rgba(16,185,129,.12), transparent 45%);
+        radial-gradient(circle at 16% 8%, rgba(99,102,241,.10), transparent 40%),
+        radial-gradient(circle at 88% 0%, rgba(16,185,129,.07), transparent 44%);
     }
     [hidden]{display:none !important}
   </style>
 </head>
 
-<body class="min-h-screen bg-slate-950 text-slate-200 font-sans antialiased selection:bg-brand-500/30">
+<body class="min-h-screen bg-slate-100 text-slate-700 font-sans antialiased selection:bg-brand-200">
   <div class="grid-backdrop min-h-screen">
 
     <!-- ===================== HEADER ===================== -->
-    <header class="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur sticky top-0 z-30">
+    <header class="border-b border-slate-200 bg-white/80 backdrop-blur sticky top-0 z-30">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow">
@@ -63,12 +63,12 @@
             </svg>
           </div>
           <div>
-            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight">Loan Debt Service Hub</h1>
-            <p class="text-xs text-slate-400">Actual/360 engine &middot; computed balances &middot; Excel import / export</p>
+            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 leading-tight">Loan Debt Service Hub</h1>
+            <p class="text-xs text-slate-500">Actual/360 engine &middot; computed balances &middot; Excel import / export</p>
           </div>
         </div>
-        <div class="hidden md:flex items-center gap-2 text-xs text-slate-400">
-          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+        <div class="hidden md:flex items-center gap-2 text-xs text-slate-500">
+          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
           <span id="loanCountLabel">0 loans</span>
         </div>
       </div>
@@ -77,18 +77,18 @@
     <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
       <!-- ===================== TOOLBAR ===================== -->
-      <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 shadow-xl">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
         <div class="flex flex-col xl:flex-row xl:items-end gap-5">
           <!-- search / select -->
           <div class="flex-1 min-w-0">
-            <label for="loanSelect" class="block text-sm font-semibold text-slate-300 mb-2">Select a loan</label>
+            <label for="loanSelect" class="block text-sm font-semibold text-slate-700 mb-2">Select a loan</label>
             <div class="flex flex-col sm:flex-row gap-3">
               <div class="relative flex-1">
-                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
+                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 </span>
-                <select id="loanSelect" class="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950/70 pl-10 pr-9 py-3 text-base text-white outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40"></select>
-                <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
+                <select id="loanSelect" class="w-full appearance-none rounded-xl border border-slate-300 bg-white pl-10 pr-9 py-3 text-base text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"></select>
+                <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </span>
               </div>
@@ -97,44 +97,44 @@
 
           <!-- actions -->
           <div class="flex flex-wrap items-center gap-2">
-            <button id="addBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+            <button id="addBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
-            <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50 disabled:opacity-40 disabled:pointer-events-none">
+            <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               Edit
             </button>
-            <button id="removeBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-rose-400/50 disabled:opacity-40 disabled:pointer-events-none">
+            <button id="removeBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-rose-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
               Remove
             </button>
-            <span class="mx-1 hidden sm:block h-8 w-px bg-slate-700/70"></span>
-            <button id="importBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+            <span class="mx-1 hidden sm:block h-8 w-px bg-slate-200"></span>
+            <button id="importBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 9l5-5 5 5M12 4v12"/></svg>
               Import Excel
             </button>
             <input id="importInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
-            <button id="exportBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+            <button id="exportBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
               Export Excel
             </button>
-            <button id="refiBtn" type="button" title="Refinancing calculator — planned for a future release" class="relative inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed">
+            <button id="refiBtn" type="button" title="Refinancing calculator — planned for a future release" class="relative inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6M21 22v-6h-6M21 8a9 9 0 0 0-15-3.5L3 8M3 16a9 9 0 0 0 15 3.5L21 16"/></svg>
               Refi Calculator
-              <span class="ml-1 rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">Soon</span>
+              <span class="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">Soon</span>
             </button>
           </div>
         </div>
       </section>
 
       <!-- ===================== EMPTY STATE ===================== -->
-      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-10 text-center" hidden>
-        <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/70">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
+      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm" hidden>
+        <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
         </div>
-        <h2 class="text-lg font-semibold text-white">No loans yet</h2>
-        <p class="mt-1 text-sm text-slate-400">Click <span class="font-semibold text-brand-300">Add Loan</span> to create one, or <span class="font-semibold text-brand-300">Import Excel</span> to load a portfolio.</p>
+        <h2 class="text-lg font-semibold text-slate-900">No loans yet</h2>
+        <p class="mt-1 text-sm text-slate-500">Click <span class="font-semibold text-brand-600">Add Loan</span> to create one, or <span class="font-semibold text-brand-600">Import Excel</span> to load a portfolio.</p>
       </section>
 
       <!-- ===================== LOAN VIEW (read-only) ===================== -->
@@ -143,13 +143,13 @@
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
         <!-- Profile (all data, read-only) -->
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden">
-          <div class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
             <div>
-              <h2 class="text-base font-bold text-white">Loan Record</h2>
-              <p class="text-xs text-slate-400">All fields for the selected loan. Computed values are derived live by the app.</p>
+              <h2 class="text-base font-bold text-slate-900">Loan Record</h2>
+              <p class="text-xs text-slate-500">All fields for the selected loan. Computed values are derived live by the app.</p>
             </div>
-            <span class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs text-slate-300">
+            <span class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               Read-only
             </span>
@@ -158,19 +158,19 @@
         </div>
 
         <!-- Schedule -->
-        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
-              <h2 class="text-base font-bold text-white">Amortization Schedule</h2>
-              <p id="scheduleMeta" class="text-xs text-slate-400">—</p>
+              <h2 class="text-base font-bold text-slate-900">Amortization Schedule</h2>
+              <p id="scheduleMeta" class="text-xs text-slate-500">—</p>
             </div>
             <div class="flex items-center gap-3">
-              <div class="hidden md:flex items-center gap-3 text-xs text-slate-400">
-                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-400/70"></span>Interest-only</span>
-                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-sky-400/70"></span>Today</span>
-                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-400/70"></span>Balloon / final</span>
+              <div class="hidden md:flex items-center gap-3 text-xs text-slate-500">
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-300"></span>Interest-only</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-sky-300"></span>Today</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-300"></span>Balloon / final</span>
               </div>
-              <button id="exportCsvBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+              <button id="exportCsvBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                 Schedule CSV
               </button>
@@ -178,8 +178,8 @@
           </div>
           <div class="max-h-[34rem] overflow-auto thin-scroll">
             <table class="w-full text-sm">
-              <thead class="sticky top-0 z-10 bg-slate-900/95 backdrop-blur text-xs uppercase tracking-wide text-slate-400">
-                <tr class="border-b border-slate-800">
+              <thead class="sticky top-0 z-10 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wide text-slate-500">
+                <tr class="border-b border-slate-200">
                   <th class="px-4 py-3 text-left font-semibold">#</th>
                   <th class="px-4 py-3 text-left font-semibold">Calendar Month</th>
                   <th class="px-4 py-3 text-right font-semibold">Starting Balance</th>
@@ -190,55 +190,55 @@
                   <th class="px-4 py-3 text-right font-semibold">Ending Balance</th>
                 </tr>
               </thead>
-              <tbody id="scheduleBody" class="divide-y divide-slate-800/70 text-slate-200 tabular-nums"></tbody>
+              <tbody id="scheduleBody" class="divide-y divide-slate-100 text-slate-700 tabular-nums"></tbody>
             </table>
           </div>
         </div>
       </section>
 
       <!-- ===================== EDIT / ADD FORM ===================== -->
-      <section id="formView" class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden" hidden>
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+      <section id="formView" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" hidden>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 id="formTitle" class="text-base font-bold text-white">Edit Loan</h2>
-            <p class="text-xs text-slate-400">Only these inputs are stored. Balance, maturity, payments made, P&amp;I and debt service are computed by the app.</p>
+            <h2 id="formTitle" class="text-base font-bold text-slate-900">Edit Loan</h2>
+            <p class="text-xs text-slate-500">Only these inputs are stored. Balance, maturity, payments made, P&amp;I and debt service are computed by the app.</p>
           </div>
           <div class="flex items-center gap-2">
-            <button id="cancelBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98]">Cancel</button>
-            <button id="saveBtn" type="button" class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98]">
+            <button id="cancelBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98]">Cancel</button>
+            <button id="saveBtn" type="button" class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98]">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
               Save Loan
             </button>
           </div>
         </div>
-        <div id="formError" class="hidden mx-5 mt-4 items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300"></div>
+        <div id="formError" class="hidden mx-5 mt-4 items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
         <form id="loanForm" class="p-5 space-y-8" novalidate></form>
       </section>
 
-      <p class="text-center text-xs text-slate-500">
+      <p class="text-center text-xs text-slate-400">
         All records are stored locally in your browser. Interest accrues Actual/360 (real calendar days, leap years included). Demonstration tool — not financial advice.
       </p>
     </main>
 
-    <footer class="border-t border-slate-800/80 py-6">
-      <p class="text-center text-xs text-slate-500">Loan Debt Service Hub</p>
+    <footer class="border-t border-slate-200 py-6">
+      <p class="text-center text-xs text-slate-400">Loan Debt Service Hub</p>
     </footer>
   </div>
 
   <!-- Toast -->
   <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 opacity-0 transition-all duration-300">
-    <div class="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-100 shadow-2xl">
+    <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-xl">
       <span id="toastIcon"></span><span id="toastText"></span>
     </div>
   </div>
 
   <!-- Confirm modal -->
-  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-      <h3 id="confirmTitle" class="text-base font-bold text-white">Are you sure?</h3>
-      <p id="confirmText" class="mt-2 text-sm text-slate-400">This action cannot be undone.</p>
+  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <h3 id="confirmTitle" class="text-base font-bold text-slate-900">Are you sure?</h3>
+      <p id="confirmText" class="mt-2 text-sm text-slate-500">This action cannot be undone.</p>
       <div class="mt-5 flex justify-end gap-2">
-        <button id="confirmCancel" type="button" class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700">Cancel</button>
+        <button id="confirmCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
         <button id="confirmOk" type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Remove</button>
       </div>
     </div>
@@ -391,12 +391,9 @@
           return (u==="Y"||u==="YES"||u==="TRUE") ? "Y" : (u==="N"||u==="NO"||u==="FALSE") ? "N" : "";
         }
         case "date": {
-          // ISO already?
           if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-          // MM/DD/YYYY or M/D/YYYY
           let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
           if(m){ let yr = +m[3]; if(yr<100) yr += 2000; return partsToISO(yr, +m[1]-1, +m[2]); }
-          // Fallback: let Date try
           const dt = new Date(s);
           if(!isNaN(dt)) return partsToISO(dt.getFullYear(), dt.getMonth(), dt.getDate());
           return "";
@@ -631,16 +628,16 @@
     function kpiCard(label, value, opts){
       opts = opts || {};
       const highlight = opts.highlight;
-      const sub = opts.sub ? '<p class="mt-1 text-xs '+(highlight?"text-brand-100/90":"text-slate-400")+'">'+escapeHtml(opts.sub)+'</p>' : '';
+      const sub = opts.sub ? '<p class="mt-1 text-xs '+(highlight?"text-brand-100":"text-slate-500")+'">'+escapeHtml(opts.sub)+'</p>' : '';
       if(highlight){
-        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-600 to-brand-800 p-4 shadow-glow animate-fade-up">'+
+        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500 to-brand-700 p-4 shadow-glow animate-fade-up">'+
           '<div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>'+
           '<p class="text-xs font-semibold uppercase tracking-wide text-brand-100">'+escapeHtml(label)+'</p>'+
           '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
       }
-      return '<div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">'+
+      return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm animate-fade-up">'+
         '<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">'+escapeHtml(label)+'</p>'+
-        '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
+        '<p class="mt-2 text-2xl font-extrabold text-slate-900 tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
     }
 
     function renderKPIs(loan, result){
@@ -663,21 +660,20 @@
       let html = "";
       SECTIONS.forEach(sec => {
         const fieldsInSec = FIELDS.filter(f => f.sec === sec && (!f.cond || f.cond(loan) || f.kind==="computed"));
-        // For computed section, show all; for inputs, show all (blanks render as —).
         const rows = fieldsInSec.map(f => {
           let v;
           if(f.kind === "computed") v = computedVals[f.key];
           else v = loan[f.key];
           const disp = displayValue(f.type, v);
           const isComputed = f.kind === "computed";
-          return '<div class="flex items-baseline justify-between gap-3 border-b border-slate-800/60 py-1.5">'+
-            '<dt class="text-sm text-slate-400">'+escapeHtml(f.label)+
-              (isComputed ? ' <span class="ml-1 rounded bg-brand-500/15 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-300 align-middle">calc</span>' : '')+
+          return '<div class="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1.5">'+
+            '<dt class="text-sm text-slate-500">'+escapeHtml(f.label)+
+              (isComputed ? ' <span class="ml-1 rounded bg-brand-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-700 align-middle">calc</span>' : '')+
             '</dt>'+
-            '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-600":"text-slate-100")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
+            '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-300":"text-slate-900")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
           '</div>';
         }).join("");
-        const accent = sec==="Debt Service (Computed)" ? "text-brand-300" : "text-slate-300";
+        const accent = sec==="Debt Service (Computed)" ? "text-brand-700" : "text-slate-700";
         html += '<div class="break-inside-avoid">'+
           '<h3 class="mb-2 text-xs font-bold uppercase tracking-wider '+accent+'">'+escapeHtml(sec)+'</h3>'+
           '<dl>'+rows+'</dl></div>';
@@ -698,24 +694,24 @@
       const nowIndex = d.paymentsMade;   // last made payment number
       dom.scheduleBody.innerHTML = result.rows.map(r => {
         let cls;
-        if(r.type==="io") cls="bg-amber-500/5 hover:bg-amber-500/10";
-        else if(r.type==="balloon"||r.type==="final") cls="bg-emerald-500/10 hover:bg-emerald-500/15 font-semibold";
-        else cls="hover:bg-slate-800/50";
+        if(r.type==="io") cls="bg-amber-50 hover:bg-amber-100/70";
+        else if(r.type==="balloon"||r.type==="final") cls="bg-emerald-50 hover:bg-emerald-100/70 font-semibold";
+        else cls="hover:bg-slate-50";
         const isNow = r.index === nowIndex;
-        if(isNow) cls += " ring-1 ring-inset ring-sky-400/50 bg-sky-500/10";
+        if(isNow) cls += " ring-1 ring-inset ring-sky-300 bg-sky-50";
         const badge =
-          r.type==="io" ? ' <span class="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-300">IO</span>' :
-          r.type==="balloon" ? ' <span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">Balloon</span>' :
-          r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">Final</span>' : '';
-        const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-300">Now</span>' : '';
+          r.type==="io" ? ' <span class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">IO</span>' :
+          r.type==="balloon" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Balloon</span>' :
+          r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Final</span>' : '';
+        const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700">Now</span>' : '';
         return '<tr class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
-          '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-100">'+r.label+badge+nowBadge+'</td>'+
+          '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-800">'+r.label+badge+nowBadge+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
           '<td class="px-4 py-2.5 text-center text-slate-400">'+r.days+'</td>'+
-          '<td class="px-4 py-2.5 text-right text-amber-200/90">'+fmtMoney(r.interest)+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.payment)+'</td>'+
-          '<td class="px-4 py-2.5 text-right text-emerald-200/90">'+fmtMoney(r.principalPaid)+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.endingBalance)+'</td>'+
         '</tr>';
       }).join("");
@@ -729,7 +725,7 @@
     // ---- Edit / Add form ----
     function fieldInputHtml(f){
       const id = "f_"+f.key;
-      const base = 'class="w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"';
+      const base = 'class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"';
       let control;
       if(f.type==="select"){
         const opts = (f.options||[]).map(o => '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>').join("");
@@ -743,10 +739,10 @@
         const ph = f.hint ? 'placeholder="'+escapeHtml(f.hint)+'"' : '';
         control = '<input id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" type="text" autocomplete="off" '+inputmode+' '+ph+' '+base+' />';
       }
-      const suffix = f.type==="pct" ? '<span class="ml-1 text-xs text-slate-500">%</span>' : '';
-      const req = f.required ? ' <span class="text-rose-400">*</span>' : '';
+      const suffix = f.type==="pct" ? '<span class="ml-1 text-xs text-slate-400">%</span>' : '';
+      const req = f.required ? ' <span class="text-rose-500">*</span>' : '';
       return '<div data-fieldwrap="'+f.key+'">'+
-        '<label for="'+id+'" class="mb-1 block text-xs font-medium text-slate-400">'+escapeHtml(f.label)+req+'</label>'+
+        '<label for="'+id+'" class="mb-1 block text-xs font-medium text-slate-600">'+escapeHtml(f.label)+req+'</label>'+
         '<div class="flex items-center">'+control+suffix+'</div>'+
       '</div>';
     }
@@ -756,8 +752,8 @@
       let html = "";
       inputSecs.forEach(sec => {
         const fields = INPUT_FIELDS.filter(f => f.sec === sec);
-        html += '<fieldset class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">'+
-          '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-300">'+escapeHtml(sec)+'</legend>'+
+        html += '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
+          '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">'+escapeHtml(sec)+'</legend>'+
           '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
             fields.map(fieldInputHtml).join("")+
           '</div></fieldset>';
@@ -772,7 +768,6 @@
         else if(f.type==="money"||f.type==="int") node.value = (v==null||v==="") ? "" : v;
         else node.value = v==null ? "" : v;
       });
-      // Conditional visibility + live updates
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
       applyConditionalVisibility();
@@ -785,8 +780,7 @@
         if(!f.cond) return;
         const wrap = dom.loanForm.querySelector('[data-fieldwrap="'+f.key+'"]');
         if(!wrap) return;
-        const show = f.cond({ interestOnly, rateType });
-        wrap.hidden = !show;
+        wrap.hidden = !f.cond({ interestOnly, rateType });
       });
     }
     function onFormChange(e){
@@ -805,6 +799,7 @@
     /* ================================================================
        8. VIEW DISPATCH
        ================================================================ */
+    let activeResult = null;
     function setMode(mode){ state.mode = mode; render(); }
 
     function render(){
@@ -815,7 +810,6 @@
       dom.editBtn.disabled = !loan || state.mode!=="view";
       dom.removeBtn.disabled = !loan || state.mode!=="view";
 
-      // Toggle sections
       dom.emptyState.hidden = !(state.mode==="empty" || (!hasLoans && state.mode!=="add"));
       dom.loanView.hidden = !(state.mode==="view" && loan);
       dom.formView.hidden = !(state.mode==="edit" || state.mode==="add");
@@ -832,8 +826,6 @@
         renderForm();
       }
     }
-
-    let activeResult = null;
 
     /* ================================================================
        9. ACTIONS
@@ -913,7 +905,6 @@
     }
 
     function buildWorkbookAOA(){
-      // Columns: Section | Field | <one column per loan>
       const header = ["Section","Field"].concat(loans.map((l,i)=> loanLabel(l) || ("Loan "+(i+1))));
       const aoa = [["LOAN DEBT SERVICE"], [], header];
       const results = loans.map(compute);
@@ -973,7 +964,6 @@
       reader.readAsArrayBuffer(file);
     }
     function parseImportedAOA(aoa){
-      // Find header row containing a "Field" cell.
       let headerRow = -1, fieldCol = -1;
       for(let r=0; r<aoa.length; r++){
         for(let c=0; c<aoa[r].length; c++){
@@ -982,7 +972,6 @@
         if(headerRow>=0) break;
       }
       if(headerRow < 0) return [];
-      // Loan columns = non-empty header cells to the right of Field.
       const loanCols = [];
       for(let c=fieldCol+1; c<aoa[headerRow].length; c++){
         if(String(aoa[headerRow][c]).trim() !== "") loanCols.push(c);
@@ -993,14 +982,13 @@
       for(let r=headerRow+1; r<aoa.length; r++){
         const fname = aoa[r][fieldCol];
         const field = LABEL_TO_FIELD[normLabel(fname)];
-        if(!field) continue;                       // unknown or computed -> skip
+        if(!field) continue;
         loanCols.forEach((c, i) => {
           const raw = aoa[r][c];
           if(raw === "" || raw == null) return;
           drafts[i][field.key] = parseValue(field.type, raw);
         });
       }
-      // Keep only drafts that have at least an amount or a name.
       return drafts.filter(d => d.originalAmount || d.propertyName || d.loanNumber);
     }
     // Stable identity for merge-on-import: loan number first, else name+address.
@@ -1009,7 +997,7 @@
       if(ln) return "num:"+ln;
       const nm = String(l.propertyName||"").trim().toLowerCase();
       const ad = String(l.propertyAddress||"").trim().toLowerCase();
-      return (nm||ad) ? "pa:"+nm+"|"+ad : null;   // null => no identity, always add
+      return (nm||ad) ? "pa:"+nm+"|"+ad : null;
     }
     function mergeImported(drafts){
       let added=0, updated=0, firstId=null;
@@ -1018,7 +1006,7 @@
         const match = key ? loans.find(l => identityKey(l) === key) : null;
         if(match){
           const id = match._id;
-          Object.assign(match, d, { _id:id });   // update in place, keep id
+          Object.assign(match, d, { _id:id });
           updated++; if(!firstId) firstId = id;
         } else {
           loans.push(d); added++; if(!firstId) firstId = d._id;
@@ -1040,10 +1028,10 @@
       document.body.removeChild(a); URL.revokeObjectURL(url);
     }
     const ICONS = {
-      check:'<svg class="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-      trash:'<svg class="h-4 w-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
-      download:'<svg class="h-4 w-4 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
-      info:'<svg class="h-4 w-4 text-sky-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+      check:'<svg class="h-4 w-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+      trash:'<svg class="h-4 w-4 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+      download:'<svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+      info:'<svg class="h-4 w-4 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
     };
     let toastTimer = null;
     function toast(msg, icon){
@@ -1082,8 +1070,7 @@
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
     document.addEventListener("keydown", (e) => { if(e.key==="Escape" && !dom.confirmModal.classList.contains("hidden")) closeConfirm(); });
 
-    // Reflect SheetJS availability in the header dot.
-    if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-400"); dom.xlsxDot.classList.add("bg-amber-400"); }
+    if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-500"); dom.xlsxDot.classList.add("bg-amber-500"); }
 
     /* ================================================================
        13. INIT
