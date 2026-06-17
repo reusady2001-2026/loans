@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise Loan Amortization Hub</title>
+  <meta name="description" content="Dynamic commercial loan amortization schedule using an Actual/360 day-count engine and a binary-search payment solver." />
+
+  <!-- Tailwind CSS (Play CDN) keeps this app a single, self-contained file -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50:  '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc',
+              400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca',
+              800: '#3730a3', 900: '#312e81', 950: '#1e1b4b',
+            },
+          },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(99,102,241,0.35), 0 18px 40px -12px rgba(79,70,229,0.55)',
+          },
+          keyframes: {
+            'fade-up': {
+              '0%':   { opacity: '0', transform: 'translateY(8px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+          animation: {
+            'fade-up': 'fade-up 0.4s ease-out both',
+          },
+        },
+      },
+    };
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Subtle scrollbar styling for the schedule grid */
+    .thin-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+    .thin-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.4); }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; border: 2px solid rgba(15,23,42,0.6); }
+    .thin-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+    /* Decorative grid backdrop */
+    .grid-backdrop {
+      background-image:
+        radial-gradient(circle at 18% 12%, rgba(79,70,229,0.20), transparent 42%),
+        radial-gradient(circle at 85% 0%, rgba(16,185,129,0.12), transparent 45%);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-200 font-sans antialiased selection:bg-brand-500/30">
+  <div class="grid-backdrop min-h-screen">
+    <!-- ===================== HEADER ===================== -->
+    <header class="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur sticky top-0 z-30">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow">
+            <!-- bank / columns icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M10 10v8M14 10v8M18 10v8"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight">
+              Enterprise Loan Amortization Hub
+            </h1>
+            <p class="text-xs text-slate-400">Actual/360 day-count engine &middot; binary-search payment solver</p>
+          </div>
+        </div>
+        <div class="hidden md:flex items-center gap-2 text-xs text-slate-400">
+          <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          Engine ready
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+      <!-- ===================== SEARCH / LOAD ===================== -->
+      <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 shadow-xl">
+        <div class="flex flex-col lg:flex-row lg:items-end gap-5">
+          <div class="flex-1">
+            <label for="loanIdInput" class="block text-sm font-semibold text-slate-300 mb-2">
+              Enter Loan ID to Load
+            </label>
+            <div class="flex flex-col sm:flex-row gap-3">
+              <div class="relative flex-1">
+                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                  </svg>
+                </span>
+                <input
+                  id="loanIdInput"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="e.g. 1001"
+                  class="w-full rounded-xl border border-slate-700 bg-slate-950/70 pl-10 pr-4 py-3 text-base text-white placeholder-slate-500 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40"
+                />
+              </div>
+              <button
+                id="loadBtn"
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-6 py-3 font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M13 6l6 6-6 6"/>
+                </svg>
+                Load Loan
+              </button>
+            </div>
+
+            <!-- Inline error / not-found message -->
+            <div id="errorMsg" class="hidden mt-3 items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+              </svg>
+              <span id="errorMsgText">Loan ID not found.</span>
+            </div>
+          </div>
+
+          <!-- Quick-pick demo loans -->
+          <div class="lg:w-auto">
+            <span class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Demo portfolio</span>
+            <div id="quickPicks" class="flex flex-wrap gap-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== EMPTY STATE ===================== -->
+      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-10 text-center">
+        <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/70">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/>
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold text-white">No loan loaded yet</h2>
+        <p class="mt-1 text-sm text-slate-400">Enter a Loan ID above or pick one from the demo portfolio to generate a live amortization schedule.</p>
+      </section>
+
+      <!-- ===================== RESULTS ===================== -->
+      <section id="results" class="hidden space-y-8">
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <!-- Loan ID -->
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected Loan</p>
+            <p id="kpiLoanId" class="mt-2 text-2xl font-extrabold text-white">—</p>
+            <p id="kpiLoanName" class="mt-1 text-xs text-slate-400 leading-snug">—</p>
+          </div>
+          <!-- Principal -->
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Principal</p>
+            <p id="kpiPrincipal" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
+            <p id="kpiStart" class="mt-1 text-xs text-slate-400">Funds on —</p>
+          </div>
+          <!-- Interest Rate -->
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Interest Rate</p>
+            <p id="kpiRate" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
+            <p class="mt-1 text-xs text-slate-400">Actual/360 day-count</p>
+          </div>
+          <!-- Term -->
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Amort vs. Actual Term</p>
+            <p id="kpiTerm" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
+            <p id="kpiTermDetail" class="mt-1 text-xs text-slate-400">—</p>
+          </div>
+          <!-- Calculated Fixed Payment (highlighted) -->
+          <div class="relative col-span-2 lg:col-span-1 overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-600 to-brand-800 p-4 shadow-glow animate-fade-up">
+            <div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-100">Calculated Fixed Payment</p>
+            <p id="kpiPayment" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
+            <p class="mt-1 text-xs text-brand-100/90">Solved via binary search</p>
+          </div>
+        </div>
+
+        <!-- Secondary summary strip -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+            <p class="text-xs text-slate-500">Total of Payments</p>
+            <p id="sumTotalPaid" class="mt-1 text-lg font-bold text-slate-100 tabular-nums">—</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+            <p class="text-xs text-slate-500">Total Interest</p>
+            <p id="sumTotalInterest" class="mt-1 text-lg font-bold text-amber-300 tabular-nums">—</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+            <p class="text-xs text-slate-500">Interest-Only Window</p>
+            <p id="sumIoWindow" class="mt-1 text-lg font-bold text-slate-100 tabular-nums">—</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+            <p class="text-xs text-slate-500">Final / Balloon Payment</p>
+            <p id="sumBalloon" class="mt-1 text-lg font-bold text-emerald-300 tabular-nums">—</p>
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+            <div>
+              <h2 class="text-base font-bold text-white">Amortization Schedule</h2>
+              <p id="scheduleMeta" class="text-xs text-slate-400">—</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="hidden sm:flex items-center gap-3 text-xs text-slate-400">
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-400/70"></span>Interest-only</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-400/70"></span>Balloon / final</span>
+              </div>
+              <button
+                id="exportBtn"
+                type="button"
+                class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Export Table (CSV)
+              </button>
+            </div>
+          </div>
+
+          <div class="max-h-[34rem] overflow-auto thin-scroll">
+            <table class="w-full text-sm">
+              <thead class="sticky top-0 z-10 bg-slate-900/95 backdrop-blur text-xs uppercase tracking-wide text-slate-400">
+                <tr class="border-b border-slate-800">
+                  <th class="px-4 py-3 text-left font-semibold">#</th>
+                  <th class="px-4 py-3 text-left font-semibold">Calendar Month</th>
+                  <th class="px-4 py-3 text-right font-semibold">Starting Balance</th>
+                  <th class="px-4 py-3 text-center font-semibold">Days</th>
+                  <th class="px-4 py-3 text-right font-semibold">Interest Charged</th>
+                  <th class="px-4 py-3 text-right font-semibold">Scheduled Payment</th>
+                  <th class="px-4 py-3 text-right font-semibold">Principal Paid</th>
+                  <th class="px-4 py-3 text-right font-semibold">Ending Balance</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleBody" class="divide-y divide-slate-800/70 text-slate-200 tabular-nums"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="text-center text-xs text-slate-500">
+          Schedules are computed entirely in your browser. Interest accrues on an Actual/360 basis &mdash; each month's charge reflects the real number of calendar days, including leap years.
+        </p>
+      </section>
+    </main>
+
+    <footer class="border-t border-slate-800/80 py-6">
+      <p class="text-center text-xs text-slate-500">Enterprise Loan Amortization Hub &middot; Demonstration tool, not financial advice.</p>
+    </footer>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- ======================= APPLICATION JS ====================== -->
+  <!-- ============================================================= -->
+  <script>
+  (function () {
+    "use strict";
+
+    /* ------------------------------------------------------------------ */
+    /*  1. MOCK LOAN DATABASE  ("the Other Sheet")                        */
+    /*     startMonth is 0-indexed (0 = January) to match JS Date.        */
+    /* ------------------------------------------------------------------ */
+    const LOAN_DATABASE = [
+      {
+        id: "1001",
+        name: "Standard 30-Year, No Frills",
+        principal: 250000,
+        annualRate: 0.065,          // 6.50%
+        amortizationTerm: 360,      // months
+        loanTerm: 360,              // months (no balloon)
+        interestOnlyMonths: 0,
+        startYear: 2026,
+        startMonth: 0,              // January 2026
+      },
+      {
+        id: "1002",
+        name: "Commercial Balloon — 10-Yr Term on 30-Yr Amortization",
+        principal: 1200000,
+        annualRate: 0.0725,         // 7.25%
+        amortizationTerm: 360,
+        loanTerm: 120,              // 10-year balloon
+        interestOnlyMonths: 0,
+        startYear: 2026,
+        startMonth: 2,              // March 2026
+      },
+      {
+        id: "1003",
+        name: "Hybrid — 5 Years Interest-Only, then Amortizing Balloon",
+        principal: 500000,
+        annualRate: 0.0575,         // 5.75%
+        amortizationTerm: 360,
+        loanTerm: 180,              // 15-year balloon
+        interestOnlyMonths: 60,     // 5 years interest-only
+        startYear: 2026,
+        startMonth: 5,              // June 2026
+      },
+    ];
+
+    /* ------------------------------------------------------------------ */
+    /*  2. UTILITIES                                                      */
+    /* ------------------------------------------------------------------ */
+    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const currencyFmt = new Intl.NumberFormat("en-US", {
+      style: "currency", currency: "USD",
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    });
+    const fmtMoney = (n) => currencyFmt.format(n);
+
+    // Exact number of days in a given month. JS Date day 0 of next month
+    // rolls back to the last day of THIS month and handles leap years.
+    function daysInMonth(year, monthIndex) {
+      return new Date(year, monthIndex + 1, 0).getDate();
+    }
+
+    // Resolve the calendar position "offset" months after a loan's start.
+    function monthPosition(loan, offset) {
+      const absolute = loan.startMonth + offset;          // can exceed 11
+      const year = loan.startYear + Math.floor(absolute / 12);
+      const monthIndex = ((absolute % 12) + 12) % 12;
+      return { year, monthIndex };
+    }
+
+    function monthLabel(loan, offset) {
+      const { year, monthIndex } = monthPosition(loan, offset);
+      return MONTH_NAMES[monthIndex] + " " + year;
+    }
+
+    function termLabel(months) {
+      if (months % 12 === 0) return (months / 12) + "-yr";
+      return months + " mo";
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  3. FINANCIAL ENGINE                                               */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Simulate the loan across the FULL amortization term for a candidate
+     * fixed payment and return the balance remaining at the very end.
+     *
+     *  - Daily rate          = annualRate / 360
+     *  - Monthly interest    = balance * daysInThatMonth * dailyRate
+     *  - Interest-only months charge interest only (principal untouched)
+     *  - Amortizing months apply the candidate fixed payment
+     *
+     * A positive return means the payment was too small to fully amortize;
+     * a negative return means it overpaid. The binary search drives this
+     * value to ~0 at the end of the amortization term.
+     */
+    function simulateEndingBalance(loan, fixedPayment) {
+      const dailyRate = loan.annualRate / 360;
+      let balance = loan.principal;
+
+      for (let m = 0; m < loan.amortizationTerm; m++) {
+        const { year, monthIndex } = monthPosition(loan, m);
+        const days = daysInMonth(year, monthIndex);
+        const interest = balance * days * dailyRate;
+
+        if (m < loan.interestOnlyMonths) {
+          // Interest-only: payment == interest, principal is untouched.
+          continue;
+        }
+        // Amortizing month: principal reduction is payment net of interest.
+        balance += interest - fixedPayment;
+      }
+      return balance;
+    }
+
+    /**
+     * BINARY SEARCH payment solver.
+     * Finds the fixed monthly payment that amortizes the principal to $0.00
+     * at the end of the amortization term under the Actual/360 convention,
+     * which closed-form PMT cannot do because day counts vary month to month.
+     */
+    function solveFixedPayment(loan) {
+      // Degenerate guard: a loan that is interest-only for its entire
+      // amortization term never reduces principal, so there is no fixed
+      // amortizing payment to solve for.
+      if (loan.interestOnlyMonths >= loan.amortizationTerm) {
+        return 0;
+      }
+
+      let lower = 0;                    // floor guess
+      let upper = loan.principal * 2;   // generous ceiling guess
+      let mid = (lower + upper) / 2;
+
+      for (let i = 0; i < 100 && (upper - lower) >= 0.0001; i++) {
+        mid = (lower + upper) / 2;
+        const endingBalance = simulateEndingBalance(loan, mid);
+
+        if (endingBalance > 0) {
+          lower = mid;   // still owe money -> payment too low
+        } else {
+          upper = mid;   // overpaid -> payment too high
+        }
+      }
+      return (lower + upper) / 2;
+    }
+
+    /**
+     * Build the displayable schedule, cutting off at the loan term and
+     * forcing the final month to a balloon that lands exactly at $0.00.
+     */
+    function buildSchedule(loan, fixedPayment) {
+      const dailyRate = loan.annualRate / 360;
+      const rows = [];
+      let balance = loan.principal;
+
+      let totalInterest = 0;
+      let totalPaid = 0;
+
+      for (let m = 0; m < loan.loanTerm; m++) {
+        const { year, monthIndex } = monthPosition(loan, m);
+        const days = daysInMonth(year, monthIndex);
+        const startingBalance = balance;
+        const interest = startingBalance * days * dailyRate;
+
+        const isInterestOnly = m < loan.interestOnlyMonths;
+        const isFinal = m === loan.loanTerm - 1;
+
+        let payment, principalPaid, type;
+
+        if (isFinal) {
+          // Final month: retire the entire remaining balance plus its
+          // interest. Covers both a true balloon (loanTerm < amortTerm)
+          // and the natural last payment of a fully amortizing loan,
+          // and guarantees the ending balance is exactly $0.00.
+          principalPaid = startingBalance;
+          payment = startingBalance + interest;
+          balance = 0;
+          type = (loan.loanTerm < loan.amortizationTerm) ? "balloon" : "final";
+        } else if (isInterestOnly) {
+          // Interest-only: payment equals the interest, principal unchanged.
+          payment = interest;
+          principalPaid = 0;
+          // balance unchanged
+          type = "io";
+        } else {
+          // Standard amortizing month.
+          payment = fixedPayment;
+          principalPaid = payment - interest;
+          balance = startingBalance - principalPaid;
+          type = "amort";
+        }
+
+        totalInterest += interest;
+        totalPaid += payment;
+
+        rows.push({
+          index: m + 1,
+          label: monthLabel(loan, m),
+          startingBalance,
+          days,
+          interest,
+          payment,
+          principalPaid,
+          endingBalance: balance,
+          type,
+        });
+      }
+
+      return { rows, totalInterest, totalPaid };
+    }
+
+    /** Orchestrate: solve payment + build schedule for a loan. */
+    function computeLoan(loan) {
+      const fixedPayment = solveFixedPayment(loan);
+      const { rows, totalInterest, totalPaid } = buildSchedule(loan, fixedPayment);
+      return { fixedPayment, rows, totalInterest, totalPaid };
+    }
+
+    function findLoan(id) {
+      const needle = String(id).trim();
+      if (!needle) return null;
+      return LOAN_DATABASE.find((l) => l.id === needle) || null;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  4. DOM REFERENCES                                                 */
+    /* ------------------------------------------------------------------ */
+    const el = (id) => document.getElementById(id);
+    const dom = {
+      input: el("loanIdInput"),
+      loadBtn: el("loadBtn"),
+      exportBtn: el("exportBtn"),
+      quickPicks: el("quickPicks"),
+      errorMsg: el("errorMsg"),
+      errorMsgText: el("errorMsgText"),
+      emptyState: el("emptyState"),
+      results: el("results"),
+      // KPIs
+      kpiLoanId: el("kpiLoanId"),
+      kpiLoanName: el("kpiLoanName"),
+      kpiPrincipal: el("kpiPrincipal"),
+      kpiStart: el("kpiStart"),
+      kpiRate: el("kpiRate"),
+      kpiTerm: el("kpiTerm"),
+      kpiTermDetail: el("kpiTermDetail"),
+      kpiPayment: el("kpiPayment"),
+      // Summary
+      sumTotalPaid: el("sumTotalPaid"),
+      sumTotalInterest: el("sumTotalInterest"),
+      sumIoWindow: el("sumIoWindow"),
+      sumBalloon: el("sumBalloon"),
+      // Schedule
+      scheduleMeta: el("scheduleMeta"),
+      scheduleBody: el("scheduleBody"),
+    };
+
+    // Holds the currently rendered loan + computation for CSV export.
+    let activeView = null;
+
+    /* ------------------------------------------------------------------ */
+    /*  5. RENDERING                                                      */
+    /* ------------------------------------------------------------------ */
+    function showError(message) {
+      dom.errorMsgText.textContent = message;
+      dom.errorMsg.classList.remove("hidden");
+      dom.errorMsg.classList.add("flex");
+      dom.results.classList.add("hidden");
+      dom.emptyState.classList.remove("hidden");
+      activeView = null;
+    }
+
+    function clearError() {
+      dom.errorMsg.classList.add("hidden");
+      dom.errorMsg.classList.remove("flex");
+    }
+
+    function rowClasses(type) {
+      switch (type) {
+        case "io":
+          return "bg-amber-500/5 hover:bg-amber-500/10";
+        case "balloon":
+        case "final":
+          return "bg-emerald-500/10 hover:bg-emerald-500/15 font-semibold";
+        default:
+          return "hover:bg-slate-800/50";
+      }
+    }
+
+    function badge(type) {
+      if (type === "io")
+        return '<span class="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">IO</span>';
+      if (type === "balloon")
+        return '<span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">Balloon</span>';
+      if (type === "final")
+        return '<span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">Final</span>';
+      return "";
+    }
+
+    function renderSchedule(rows) {
+      const html = rows.map((r) => {
+        return (
+          '<tr class="' + rowClasses(r.type) + ' transition-colors">' +
+            '<td class="px-4 py-2.5 text-left text-slate-400">' + r.index + '</td>' +
+            '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-100">' + r.label + badge(r.type) + '</td>' +
+            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.startingBalance) + '</td>' +
+            '<td class="px-4 py-2.5 text-center text-slate-400">' + r.days + '</td>' +
+            '<td class="px-4 py-2.5 text-right text-amber-200/90">' + fmtMoney(r.interest) + '</td>' +
+            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.payment) + '</td>' +
+            '<td class="px-4 py-2.5 text-right text-emerald-200/90">' + fmtMoney(r.principalPaid) + '</td>' +
+            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.endingBalance) + '</td>' +
+          '</tr>'
+        );
+      }).join("");
+      dom.scheduleBody.innerHTML = html;
+    }
+
+    function render(loan) {
+      const view = computeLoan(loan);
+      activeView = { loan, view };
+
+      // KPI cards
+      dom.kpiLoanId.textContent = "#" + loan.id;
+      dom.kpiLoanName.textContent = loan.name;
+      dom.kpiPrincipal.textContent = fmtMoney(loan.principal);
+      dom.kpiStart.textContent = "Funds on " + monthLabel(loan, 0);
+      dom.kpiRate.textContent = (loan.annualRate * 100).toFixed(2) + "%";
+
+      const sameTerm = loan.loanTerm === loan.amortizationTerm;
+      dom.kpiTerm.textContent = termLabel(loan.amortizationTerm) + " / " + termLabel(loan.loanTerm);
+      dom.kpiTermDetail.textContent = sameTerm
+        ? "Fully amortizing"
+        : "Balloon at month " + loan.loanTerm;
+
+      dom.kpiPayment.textContent = fmtMoney(view.fixedPayment);
+
+      // Summary strip
+      dom.sumTotalPaid.textContent = fmtMoney(view.totalPaid);
+      dom.sumTotalInterest.textContent = fmtMoney(view.totalInterest);
+      dom.sumIoWindow.textContent = loan.interestOnlyMonths > 0
+        ? loan.interestOnlyMonths + " mo"
+        : "None";
+      const lastRow = view.rows[view.rows.length - 1];
+      dom.sumBalloon.textContent = fmtMoney(lastRow ? lastRow.payment : 0);
+
+      // Schedule
+      dom.scheduleMeta.textContent =
+        loan.loanTerm + " months · " + monthLabel(loan, 0) +
+        " – " + monthLabel(loan, loan.loanTerm - 1) +
+        (sameTerm ? "" : " · amortized as if " + loan.amortizationTerm + " months");
+      renderSchedule(view.rows);
+
+      // Toggle visibility
+      clearError();
+      dom.emptyState.classList.add("hidden");
+      dom.results.classList.remove("hidden");
+
+      // Reflect active selection in the quick-pick chips
+      highlightQuickPick(loan.id);
+    }
+
+    /** Load by id; show error if missing. */
+    function loadById(rawId, opts) {
+      const id = String(rawId == null ? "" : rawId).trim();
+      if (!id) {
+        // Empty input: reset to neutral empty state without an error.
+        clearError();
+        dom.results.classList.add("hidden");
+        dom.emptyState.classList.remove("hidden");
+        activeView = null;
+        highlightQuickPick(null);
+        return;
+      }
+      const loan = findLoan(id);
+      if (!loan) {
+        showError('Loan ID "' + id + '" was not found. Try 1001, 1002, or 1003.');
+        highlightQuickPick(null);
+        return;
+      }
+      if (opts && opts.syncInput) dom.input.value = loan.id;
+      render(loan);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  6. QUICK-PICK CHIPS                                               */
+    /* ------------------------------------------------------------------ */
+    function buildQuickPicks() {
+      dom.quickPicks.innerHTML = LOAN_DATABASE.map((l) =>
+        '<button type="button" data-id="' + l.id + '" ' +
+        'class="quick-pick rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-left transition hover:border-brand-500 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-400/50">' +
+          '<span class="block text-sm font-bold text-white">#' + l.id + '</span>' +
+          '<span class="block text-[11px] text-slate-400">' + fmtMoney(l.principal) + ' · ' + (l.annualRate * 100).toFixed(2) + '%</span>' +
+        '</button>'
+      ).join("");
+
+      dom.quickPicks.querySelectorAll(".quick-pick").forEach((btn) => {
+        btn.addEventListener("click", () => loadById(btn.dataset.id, { syncInput: true }));
+      });
+    }
+
+    function highlightQuickPick(activeId) {
+      dom.quickPicks.querySelectorAll(".quick-pick").forEach((btn) => {
+        const on = btn.dataset.id === activeId;
+        btn.classList.toggle("border-brand-500", on);
+        btn.classList.toggle("ring-2", on);
+        btn.classList.toggle("ring-brand-500/40", on);
+        btn.classList.toggle("bg-slate-800", on);
+      });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  7. CSV EXPORT                                                     */
+    /* ------------------------------------------------------------------ */
+    function csvCell(value) {
+      const s = String(value);
+      // Quote if the value contains comma, quote, or newline.
+      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
+    function exportCsv() {
+      if (!activeView) return;
+      const { loan, view } = activeView;
+
+      const header = [
+        "Month #", "Calendar Month", "Starting Balance", "Days in Month",
+        "Interest Charged", "Scheduled Payment", "Principal Paid", "Ending Balance",
+      ];
+
+      const lines = [];
+      // Metadata preamble for context in the exported file.
+      lines.push(["Loan ID", loan.id].map(csvCell).join(","));
+      lines.push(["Description", loan.name].map(csvCell).join(","));
+      lines.push(["Principal", loan.principal.toFixed(2)].map(csvCell).join(","));
+      lines.push(["Annual Rate", (loan.annualRate * 100).toFixed(4) + "%"].map(csvCell).join(","));
+      lines.push(["Amortization Term (months)", loan.amortizationTerm].map(csvCell).join(","));
+      lines.push(["Loan Term (months)", loan.loanTerm].map(csvCell).join(","));
+      lines.push(["Interest-Only Months", loan.interestOnlyMonths].map(csvCell).join(","));
+      lines.push(["Calculated Fixed Payment", view.fixedPayment.toFixed(2)].map(csvCell).join(","));
+      lines.push(""); // blank separator row
+      lines.push(header.map(csvCell).join(","));
+
+      view.rows.forEach((r) => {
+        lines.push([
+          r.index,
+          r.label,
+          r.startingBalance.toFixed(2),
+          r.days,
+          r.interest.toFixed(2),
+          r.payment.toFixed(2),
+          r.principalPaid.toFixed(2),
+          r.endingBalance.toFixed(2),
+        ].map(csvCell).join(","));
+      });
+
+      const csv = lines.join("\r\n");
+      // Prepend BOM so Excel reads UTF-8 currency/symbols correctly.
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "loan-" + loan.id + "-amortization.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  8. EVENT WIRING                                                   */
+    /* ------------------------------------------------------------------ */
+    // Debounced live load while typing.
+    let debounceTimer = null;
+    dom.input.addEventListener("input", () => {
+      clearError();
+      const value = dom.input.value.trim();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!value) {
+          loadById("");           // reset to empty state, no error
+        } else if (findLoan(value)) {
+          loadById(value);        // instant load on an exact match
+        }
+        // No match yet: stay quiet until the user commits (Enter / button).
+      }, 220);
+    });
+
+    // Explicit commit via Enter.
+    dom.input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        clearTimeout(debounceTimer);
+        loadById(dom.input.value);
+      }
+    });
+
+    dom.loadBtn.addEventListener("click", () => {
+      clearTimeout(debounceTimer);
+      loadById(dom.input.value);
+    });
+
+    dom.exportBtn.addEventListener("click", exportCsv);
+
+    /* ------------------------------------------------------------------ */
+    /*  9. INIT                                                           */
+    /* ------------------------------------------------------------------ */
+    buildQuickPicks();
+    // Preload the first demo loan so the dashboard is populated on arrival.
+    loadById(LOAN_DATABASE[0].id, { syncInput: true });
+  })();
+  </script>
+</body>
+</html>
