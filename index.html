@@ -184,6 +184,7 @@
                   <th class="px-4 py-3 text-left font-semibold">Accrual Month / Pays</th>
                   <th class="px-4 py-3 text-right font-semibold">Starting Balance</th>
                   <th class="px-4 py-3 text-center font-semibold">Days</th>
+                  <th class="px-4 py-3 text-right font-semibold">Rate</th>
                   <th class="px-4 py-3 text-right font-semibold">Interest Charged</th>
                   <th class="px-4 py-3 text-right font-semibold">Scheduled Payment</th>
                   <th class="px-4 py-3 text-right font-semibold">Principal Paid</th>
@@ -254,12 +255,18 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
-    const STORAGE_KEY = "ldsHub.loans.v2";
+    const STORAGE_KEY = "ldsHub.loans.v3";
     const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
     const fmtMoney = (n) => (n == null || isNaN(n)) ? "—" : moneyFmt.format(n);
-    const fmtPct   = (d) => (d == null || isNaN(d) || d === "") ? "—" : (d*100).toFixed(2) + "%";
+    const fmtPct   = (d) => {                     // 2–3 decimals (e.g. 4.70%, 2.625%)
+      if(d == null || isNaN(d) || d === "") return "—";
+      let s = (d*100).toFixed(3).replace(/0+$/,"").replace(/\.$/,"");
+      if(!s.includes(".")) s += ".00";
+      else { const dec = s.split(".")[1].length; if(dec < 2) s += "0".repeat(2-dec); }
+      return s + "%";
+    };
     const fmtInt   = (n) => (n == null || isNaN(n) || n === "") ? "—" : String(Math.round(n));
     const fmtText  = (s) => (s == null || s === "") ? "—" : String(s);
 
@@ -311,17 +318,20 @@
       // ---- Loan Terms (inputs the app trusts) ----
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
       { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", required:true, hint:"e.g. 4.70" },
-      { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating"] },
+      { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
       { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",         type:"yn",     kind:"input" },
       { sec:"Loan Terms", key:"ioMonths",           label:"IO Period (Months)",           type:"int",    kind:"input", cond:(l)=>l.interestOnly==="Y", aliases:["IO Period Remaining (Months)"] },
-      { sec:"Loan Terms", key:"index",              label:"Index (if Floating)",          type:"text",   kind:"input", cond:(l)=>l.rateType==="Floating" },
-      { sec:"Loan Terms", key:"spread",             label:"Spread Over Index",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
-      { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
-      { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
+      { sec:"Loan Terms", key:"index",              label:"Index (if Floating/ARM)",      type:"text",   kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Floating Rate Index","Index (if Floating)"] },
+      { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Spread Over Index","Contractual Margin","Margin"] },
+      { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
+      { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
+      { sec:"Loan Terms", key:"armInitialFixedMonths", label:"Initial Fixed Period (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 for a 5/5" },
+      { sec:"Loan Terms", key:"armAdjustFreqMonths",   label:"Adjustment Frequency (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 = every 5 yrs" },
+      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Assumed Index at Reset",        type:"pct", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"5-yr Treasury — use Fetch" },
 
       // ---- Escrows & Reserves (Monthly) ----
       { sec:"Escrows & Reserves (Monthly)", key:"escrowTax",        label:"Real Estate Tax Escrow ($/mo)", type:"money", kind:"input" },
@@ -350,6 +360,8 @@
       { sec:"Debt Service (Computed)", key:"originalIO",       label:"Original IO Period (Mo)",         type:"int",   kind:"computed" },
       { sec:"Debt Service (Computed)", key:"monthsToMaturity", label:"Months to Maturity",              type:"int",   kind:"computed" },
       { sec:"Debt Service (Computed)", key:"paymentsMade",     label:"P&I Payments Made",               type:"int",   kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"currentRate",      label:"Current Interest Rate",           type:"pct",   kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"resetRate",        label:"Reset Rate (Index + Margin)",     type:"pct",   kind:"computed", cond:(l)=>l.rateType==="Hybrid ARM" },
     ];
 
     const INPUT_FIELDS = FIELDS.filter(f => f.kind === "input");
@@ -440,50 +452,95 @@
       return { y, mo };
     }
 
-    // Simulate ending balance for a candidate payment across the full amort term.
-    function simulateEndingBalance(loan, fixedPayment){
-      const start = accrualStartParts(loan);
-      const dailyRate = (loan.annualRate||0) / 360;
-      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
-      let balance = loan.originalAmount || 0;
-      for(let m=0; m<loan.amortizationMonths; m++){
-        const { y, mo } = monthPosition(start, m);
-        const interest = balance * daysInMonth(y, mo) * dailyRate;
-        if(m < io) continue;                       // interest-only
-        balance += interest - fixedPayment;
-      }
-      return balance;
+    // ---- Rate phases (Hybrid ARM) ----
+    // Reset rate = clamp( Max(floor, assumed index + margin), cap ).
+    function resetRate(loan){
+      const margin = loan.spread || 0;
+      const floor = loan.rateFloor || 0;
+      const idx = (loan.armAssumedIndex==null || loan.armAssumedIndex==="") ? null : loan.armAssumedIndex;
+      let r = (idx==null) ? floor : (idx + margin);
+      r = Math.max(floor, r);
+      if(loan.rateCap) r = Math.min(loan.rateCap, r);
+      return r;
     }
-    // Binary-search the fixed amortizing payment that zeroes the balance.
-    function solveFixedPayment(loan){
+    // Annual rate in effect at amortization month index m (0-based).
+    function rateForMonth(loan, m){
+      if(loan.rateType === "Hybrid ARM"){
+        const initFixed = loan.armInitialFixedMonths || 0;
+        return (m < initFixed) ? (loan.annualRate||0) : resetRate(loan);
+      }
+      return loan.annualRate || 0;
+    }
+    // A rate reset occurs at the end of the initial fixed period and every
+    // adjustment-frequency months thereafter (recurring N/N ARM).
+    function isResetBoundary(loan, m){
+      if(loan.rateType !== "Hybrid ARM") return false;
+      const initFixed = loan.armInitialFixedMonths || 0;
+      const freq = loan.armAdjustFreqMonths || 0;
+      if(m < initFixed) return false;
+      if(m === initFixed) return true;
+      return freq > 0 && ((m - initFixed) % freq === 0);
+    }
+
+    // Binary-search the level payment that amortizes `balance` to $0 over the
+    // REMAINING amortization months (from month index startM to the end of the
+    // amortization term) at `rate`, on the Actual/360 calendar. Interest-only
+    // months at the very start of the loan are excluded from amortizing.
+    function solveSegmentPayment(loan, balance, startM, rate){
+      const amort = loan.amortizationMonths || 0;
+      const remaining = amort - startM;
+      if(remaining <= 0 || !balance) return 0;
+      const start = accrualStartParts(loan);
       const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
-      if(!loan.originalAmount || !loan.amortizationMonths || io >= loan.amortizationMonths) return 0;
-      let lower = 0, upper = loan.originalAmount * 2;
+      const dr = rate / 360;
+      let lower = 0, upper = balance * 2 + 1;
       for(let i=0; i<100 && (upper-lower) >= 0.0001; i++){
         const mid = (lower+upper)/2;
-        if(simulateEndingBalance(loan, mid) > 0) lower = mid; else upper = mid;
+        let b = balance;
+        for(let k=0; k<remaining; k++){
+          const am = startM + k;
+          const { y, mo } = monthPosition(start, am);
+          const interest = b * daysInMonth(y, mo) * dr;
+          if(am < io) continue;                 // interest-only: principal untouched
+          b += interest - mid;
+        }
+        if(b > 0) lower = mid; else upper = mid;
       }
       return (lower+upper)/2;
     }
-    // Build the displayed schedule (cuts off at loan term, balloon to $0.00).
-    function buildSchedule(loan, fixedPayment){
+
+    // Build the displayed schedule across all rate phases; cut off at the loan
+    // term with a balloon that lands the ending balance at exactly $0.00.
+    function buildSchedule(loan){
       const start = accrualStartParts(loan);                 // first accrual month
       const fpParts = isoToParts(loan.firstPaymentDate);     // payment dates (in arrears)
-      const dailyRate = (loan.annualRate||0) / 360;
       const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const rows = [];
+      const segments = [];
       let balance = loan.originalAmount || 0;
       let totalInterest = 0, totalPaid = 0;
-      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
+
+      // Initial segment payment, solved over the full amortization at month 0.
+      let currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0));
+      segments.push({ startMonth:0, rate:rateForMonth(loan,0), payment:currentPayment });
 
       for(let m=0; m<term; m++){
+        const isReset = isResetBoundary(loan, m);
+        if(isReset){
+          // Re-amortize the carried balance over the remaining amortization
+          // term at the new rate (the recalculation event).
+          currentPayment = solveSegmentPayment(loan, balance, m, rateForMonth(loan, m));
+          segments.push({ startMonth:m, rate:rateForMonth(loan,m), payment:currentPayment });
+        }
         const { y, mo } = monthPosition(start, m);
         const days = daysInMonth(y, mo);
+        const rate = rateForMonth(loan, m);
         const startingBalance = balance;
-        const interest = startingBalance * days * dailyRate;
+        const interest = startingBalance * days * (rate/360);
         const isIO = m < io;
         const isFinal = m === term-1;
-        const payParts = fpParts ? addMonths(fpParts, m) : null;   // this row's payment date
+        const payParts = fpParts ? addMonths(fpParts, m) : null;
         const paymentDate = payParts ? partsToISO(payParts.y, payParts.mo, payParts.d) : "";
         let payment, principalPaid, type;
 
@@ -495,19 +552,18 @@
         } else if(isIO){
           payment = interest; principalPaid = 0; type = "io";
         } else {
-          payment = fixedPayment; principalPaid = payment - interest;
+          payment = currentPayment; principalPaid = payment - interest;
           balance = startingBalance - principalPaid; type = "amort";
         }
         totalInterest += interest; totalPaid += payment;
-        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, interest, payment, principalPaid, endingBalance:balance, type });
+        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset });
       }
-      return { rows, totalInterest, totalPaid };
+      return { rows, totalInterest, totalPaid, segments };
     }
 
     // Full computation: schedule + all computed fields.
     function compute(loan){
-      const fixedPayment = solveFixedPayment(loan);
-      const { rows, totalInterest, totalPaid } = buildSchedule(loan, fixedPayment);
+      const { rows, totalInterest, totalPaid, segments } = buildSchedule(loan);
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const fp = isoToParts(loan.firstPaymentDate);
       const now = todayParts();
@@ -530,18 +586,26 @@
       const monthsToMaturity = Math.max(0, term - paymentsMade);
       const originalIO = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
 
+      // Rate and amortizing payment in effect at the current month.
+      const curIdx = Math.min(Math.max(paymentsMade, 0), Math.max(term-1, 0));
+      const curRow = rows[curIdx] || rows[rows.length-1] || null;
+      const currentRate = curRow ? curRow.rate : (loan.annualRate||0);
+      let monthlyPI = 0;
+      for(const s of segments){ if(s.startMonth <= curIdx) monthlyPI = s.payment; }
+      if(!monthlyPI && segments.length) monthlyPI = segments[0].payment;
+
       const escrowKeys = ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt"];
       const feeKeys = ["servicingFee","trusteeFee","otherFee1Amt","otherFee2Amt"];
       const sum = (keys) => keys.reduce((a,k)=> a + (Number(loan[k])||0), 0);
       const escrowTotal = sum(escrowKeys), feeTotal = sum(feeKeys);
-      const monthlyPI = fixedPayment;
       const totalDebtService = monthlyPI + escrowTotal + feeTotal;
 
       return {
-        fixedPayment, rows, totalInterest, totalPaid,
+        fixedPayment: monthlyPI, rows, totalInterest, totalPaid, segments,
         derived: {
           currentBalance, maturityDate, monthlyPI, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
+          currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
       };
     }
@@ -570,6 +634,17 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr; }
+        // Migrate from the prior version, preserving the user's loans and
+        // adding the ARM demo so the new loan type is visible once.
+        const oldRaw = localStorage.getItem("ldsHub.loans.v2");
+        if(oldRaw){
+          const old = JSON.parse(oldRaw);
+          if(Array.isArray(old) && old.length){
+            if(!old.some(l => l.rateType==="Hybrid ARM")) old.push(demoARM());
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
+            return old;
+          }
+        }
       } catch(e){}
       return seed();
     }
@@ -597,7 +672,19 @@
           originalAmount:500000, annualRate:0.0575, rateType:"Fixed",
           originationDate:"2026-06-01", firstPaymentDate:"2026-07-01",
           loanTermMonths:180, amortizationMonths:360, interestOnly:"Y", ioMonths:60 }),
+        demoARM(),
       ];
+    }
+    // 5/5 ARM commercial balloon demo, dated so the year-5 reset is in the past.
+    function demoARM(){
+      return Object.assign(emptyLoan(), { _id: uid() }, {
+        propertyName:"Sample — 5/5 ARM Commercial Balloon", propertyType:"Office", lenderName:"Sample Bank",
+        originalAmount:1000000, annualRate:0.031, rateType:"Hybrid ARM",
+        index:"5-Year Treasury", spread:0.02625, rateFloor:0.031,
+        originationDate:"2021-01-01", firstPaymentDate:"2021-02-01",
+        loanTermMonths:120, amortizationMonths:360, interestOnly:"N",
+        armInitialFixedMonths:60, armAdjustFreqMonths:60, armAssumedIndex:0.0416,
+      });
     }
     function getLoan(id){ return loans.find(l => l._id === id) || null; }
 
@@ -651,20 +738,20 @@
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
       dom.kpiGrid.innerHTML =
         kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
-        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.interestOnly==="Y" ? "Amortizing (post-IO)" : "Actual/360 solved" }) +
+        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate)) : (loan.interestOnly==="Y" ? "Amortizing (post-IO)" : "Actual/360 solved") }) +
         kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: d.paymentsMade + " payments made" }) +
         kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(loan.annualRate) }) +
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
         kpiCard("Interest-Only", loan.interestOnly==="Y" ? (loan.ioMonths||0)+" mo" : "None", { sub: loan.interestOnly==="Y" ? "then amortizes" : "amortizing" }) +
-        kpiCard("Rate Type", loan.rateType || "—", { sub: loan.rateType==="Floating" ? (loan.index||"index")+" + spread" : "fixed rate" });
+        kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? ((loan.index||"index")+" + spread") : "fixed rate" });
     }
 
     function renderProfile(loan, result){
       const computedVals = result.derived;
       let html = "";
       SECTIONS.forEach(sec => {
-        const fieldsInSec = FIELDS.filter(f => f.sec === sec && (!f.cond || f.cond(loan) || f.kind==="computed"));
+        const fieldsInSec = FIELDS.filter(f => f.sec === sec && (!f.cond || f.cond(loan)));
         const rows = fieldsInSec.map(f => {
           let v;
           if(f.kind === "computed") v = computedVals[f.key];
@@ -705,16 +792,19 @@
         else cls="hover:bg-slate-50";
         const isNow = r.index === nowIndex;
         if(isNow) cls += " ring-1 ring-inset ring-sky-300 bg-sky-50";
+        if(r.isReset) cls += " border-t-2 border-brand-300";
         const badge =
           r.type==="io" ? ' <span class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">IO</span>' :
           r.type==="balloon" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Balloon</span>' :
           r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Final</span>' : '';
         const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700">Now</span>' : '';
+        const resetBadge = r.isReset ? ' <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">Reset → '+fmtPct(r.rate)+'</span>' : '';
         return '<tr class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
-          '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
+          '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+resetBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
           '<td class="px-4 py-2.5 text-center text-slate-400">'+r.days+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-slate-500">'+fmtPct(r.rate)+'</td>'+
           '<td class="px-4 py-2.5 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.payment)+'</td>'+
           '<td class="px-4 py-2.5 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+'</td>'+
@@ -777,6 +867,67 @@
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
       applyConditionalVisibility();
+      injectTreasuryFetch();
+    }
+
+    // Add a "Fetch live 5-yr Treasury" control beneath the Assumed Index field.
+    function injectTreasuryFetch(){
+      const wrap = dom.loanForm.querySelector('[data-fieldwrap="armAssumedIndex"]');
+      if(!wrap || wrap.querySelector("#fetchTreasuryBtn")) return;
+      const bar = document.createElement("div");
+      bar.className = "mt-1.5 flex items-center gap-2 flex-wrap";
+      bar.innerHTML =
+        '<button type="button" id="fetchTreasuryBtn" class="inline-flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50">'+
+          '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
+          'Fetch live 5-yr Treasury</button>'+
+        '<span id="fetchTreasuryStatus" class="text-[11px] text-slate-400">official U.S. Treasury feed · no key needed</span>';
+      wrap.appendChild(bar);
+      el("fetchTreasuryBtn").addEventListener("click", onFetchTreasury);
+    }
+    async function onFetchTreasury(){
+      const btn = el("fetchTreasuryBtn"), status = el("fetchTreasuryStatus"), input = el("f_armAssumedIndex");
+      if(!btn || !status) return;
+      btn.disabled = true; status.className = "text-[11px] text-slate-400"; status.textContent = "Fetching…";
+      try {
+        const r = await fetchTreasury5yr();
+        if(input) input.value = r.value;                 // pct field shows the percent number
+        status.className = "text-[11px] text-emerald-600";
+        status.textContent = "5-yr Treasury " + r.value + "% as of " + r.date;
+        toast("Fetched 5-yr Treasury: " + r.value + "%", "check");
+      } catch(e){
+        status.className = "text-[11px] text-rose-600";
+        status.textContent = "Couldn't fetch — enter the index manually";
+        toast("Live fetch failed; enter the index manually", "info");
+      } finally { btn.disabled = false; }
+    }
+    // Pull the latest 5-Year Treasury Constant Maturity from the U.S. Treasury's
+    // public daily par-yield feed (keyless, CORS-enabled). Returns {date, value%}.
+    async function fetchTreasury5yr(){
+      const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
+      const now = new Date();
+      for(let back=0; back<4; back++){
+        const d = new Date(now.getFullYear(), now.getMonth()-back, 1);
+        const ym = "" + d.getFullYear() + String(d.getMonth()+1).padStart(2,"0");
+        let text;
+        try {
+          const res = await fetch(base + ym, { headers:{ "Accept":"application/xml" } });
+          if(!res.ok) continue;
+          text = await res.text();
+        } catch(e){ continue; }
+        const doc = new DOMParser().parseFromString(text, "application/xml");
+        const props = doc.getElementsByTagNameNS("*","properties");
+        let last = null;
+        for(let i=0; i<props.length; i++){
+          const dEl = props[i].getElementsByTagNameNS("*","NEW_DATE")[0];
+          const vEl = props[i].getElementsByTagNameNS("*","BC_5YEAR")[0];
+          if(dEl && vEl && vEl.textContent.trim() !== ""){
+            const val = parseFloat(vEl.textContent);
+            if(!isNaN(val)) last = { date: dEl.textContent.slice(0,10), value: val };
+          }
+        }
+        if(last) return last;
+      }
+      throw new Error("No 5-yr Treasury data");
     }
 
     function applyConditionalVisibility(){
@@ -887,6 +1038,11 @@
       if(l.loanTermMonths > l.amortizationMonths) return "Loan Term cannot exceed the Amortization Period.";
       if(l.interestOnly==="Y" && (l.ioMonths==null || l.ioMonths<0)) return "Enter the IO Period (months) for an interest-only loan.";
       if(l.interestOnly==="Y" && l.ioMonths >= l.amortizationMonths) return "IO Period must be shorter than the Amortization Period.";
+      if(l.rateType==="Hybrid ARM"){
+        if(!l.armInitialFixedMonths || l.armInitialFixedMonths<=0) return "Initial Fixed Period (months) is required for a Hybrid ARM.";
+        if(!l.armAdjustFreqMonths || l.armAdjustFreqMonths<=0) return "Adjustment Frequency (months) is required for a Hybrid ARM.";
+        if(l.armInitialFixedMonths >= l.amortizationMonths) return "Initial Fixed Period must be shorter than the Amortization Period.";
+      }
       return null;
     }
 
@@ -895,7 +1051,7 @@
        ================================================================ */
     function exportScheduleCsv(){
       const loan = getLoan(state.activeId); if(!loan || !activeResult) return;
-      const header = ["Month #","Accrual Month","Payment Date","Starting Balance","Days in Month","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
+      const header = ["Month #","Accrual Month","Payment Date","Starting Balance","Days in Month","Rate","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
       const cell = (v) => { const s=String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
       const lines = [];
       lines.push(["Property", loanLabel(loan)].map(cell).join(","));
@@ -905,7 +1061,7 @@
       lines.push(["Total Monthly Debt Service", activeResult.derived.totalDebtService.toFixed(2)].map(cell).join(","));
       lines.push("");
       lines.push(header.map(cell).join(","));
-      activeResult.rows.forEach(r => lines.push([r.index,r.label,fmtDateUS(r.paymentDate),r.startingBalance.toFixed(2),r.days,r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
+      activeResult.rows.forEach(r => lines.push([r.index,r.label,fmtDateUS(r.paymentDate),r.startingBalance.toFixed(2),r.days,(r.rate*100).toFixed(4)+"%",r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
       downloadBlob("﻿"+lines.join("\r\n"), "schedule-"+slug(loanLabel(loan))+".csv", "text/csv;charset=utf-8;");
       toast("Schedule exported", "download");
     }
