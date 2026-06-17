@@ -368,6 +368,12 @@
 
     const INPUT_FIELDS = FIELDS.filter(f => f.kind === "input");
 
+    // Loan-term inputs reused by the refinance calculator for the proposed new
+    // loan (the amount is computed; dates default to today), in display order.
+    const REFI_TERM_FIELDS = ["rateType","annualRate","amortizationMonths","loanTermMonths","ioMonths",
+      "index","spread","rateFloor","rateCap","armInitialFixedMonths","armAdjustFreqMonths","armAssumedIndex"]
+      .map(k => INPUT_FIELDS.find(f => f.key === k)).filter(Boolean);
+
     // label (and aliases) -> field, for Excel import matching.
     const LABEL_TO_FIELD = {};
     const normLabel = (s) => String(s).toLowerCase().replace(/[\s–—\-_/()]+/g," ").replace(/&/g,"and").trim();
@@ -822,8 +828,9 @@
     }
 
     // ---- Edit / Add form ----
-    function fieldInputHtml(f){
-      const id = "f_"+f.key;
+    function fieldInputHtml(f, prefix){
+      prefix = prefix || "f_";
+      const id = prefix+f.key;
       const base = 'class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"';
       let control;
       if(f.type==="select"){
@@ -846,6 +853,14 @@
       '</div>';
     }
 
+    // Populate an input element from a stored value, formatting per type.
+    function setFieldValue(id, type, v){
+      const node = el(id); if(!node) return;
+      if(type==="pct") node.value = (v==null||v==="") ? "" : +((v*100).toFixed(6));
+      else if(type==="money"||type==="int") node.value = (v==null||v==="") ? "" : v;
+      else node.value = v==null ? "" : v;
+    }
+
     function renderForm(){
       const inputSecs = ["Loan Identification","Loan Terms","Escrows & Reserves (Monthly)","Additional Fees (Monthly)"];
       let html = "";
@@ -854,41 +869,36 @@
         html += '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
           '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">'+escapeHtml(sec)+'</legend>'+
           '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
-            fields.map(fieldInputHtml).join("")+
+            fields.map(f => fieldInputHtml(f, "f_")).join("")+
           '</div></fieldset>';
       });
       dom.loanForm.innerHTML = html;
 
-      // Populate values from draft
-      INPUT_FIELDS.forEach(f => {
-        const node = el("f_"+f.key); if(!node) return;
-        const v = state.draft[f.key];
-        if(f.type==="pct") node.value = (v==null||v==="") ? "" : +( (v*100).toFixed(6) );
-        else if(f.type==="money"||f.type==="int") node.value = (v==null||v==="") ? "" : v;
-        else node.value = v==null ? "" : v;
-      });
+      INPUT_FIELDS.forEach(f => setFieldValue("f_"+f.key, f.type, state.draft[f.key]));
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
       applyConditionalVisibility();
-      injectTreasuryFetch();
+      injectTreasuryFetch(dom.loanForm, "f_", "fetchTreasuryBtn");
     }
 
-    // Add a "Fetch live 5-yr Treasury" control beneath the Assumed Index field.
-    function injectTreasuryFetch(){
-      const wrap = dom.loanForm.querySelector('[data-fieldwrap="armAssumedIndex"]');
-      if(!wrap || wrap.querySelector("#fetchTreasuryBtn")) return;
+    // Add a "Fetch live 5-yr Treasury" control beneath an Assumed Index field
+    // (works for both the loan form and the refinance calculator).
+    function injectTreasuryFetch(container, prefix, btnId){
+      const wrap = container.querySelector('[data-fieldwrap="armAssumedIndex"]');
+      if(!wrap || wrap.querySelector("#"+btnId)) return;
+      const statusId = btnId+"Status";
       const bar = document.createElement("div");
       bar.className = "mt-1.5 flex items-center gap-2 flex-wrap";
       bar.innerHTML =
-        '<button type="button" id="fetchTreasuryBtn" class="inline-flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50">'+
+        '<button type="button" id="'+btnId+'" class="inline-flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50">'+
           '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
           'Fetch live 5-yr Treasury</button>'+
-        '<span id="fetchTreasuryStatus" class="text-[11px] text-slate-400">official U.S. Treasury feed · no key needed</span>';
+        '<span id="'+statusId+'" class="text-[11px] text-slate-400">official U.S. Treasury feed · no key needed</span>';
       wrap.appendChild(bar);
-      el("fetchTreasuryBtn").addEventListener("click", onFetchTreasury);
+      el(btnId).addEventListener("click", () => onFetchTreasury(prefix+"armAssumedIndex", statusId, btnId));
     }
-    async function onFetchTreasury(){
-      const btn = el("fetchTreasuryBtn"), status = el("fetchTreasuryStatus"), input = el("f_armAssumedIndex");
+    async function onFetchTreasury(inputId, statusId, btnId){
+      const btn = el(btnId), status = el(statusId), input = el(inputId);
       if(!btn || !status) return;
       btn.disabled = true; status.className = "text-[11px] text-slate-400"; status.textContent = "Fetching…";
       try {
@@ -933,15 +943,17 @@
       throw new Error("No 5-yr Treasury data");
     }
 
-    function applyConditionalVisibility(){
-      const rateType = (el("f_rateType")||{}).value;
+    // Show/hide conditional term fields (ARM/floating) within a container.
+    function applyVisibility(container, prefix){
+      const rateType = (el(prefix+"rateType")||{}).value;
       INPUT_FIELDS.forEach(f => {
         if(!f.cond) return;
-        const wrap = dom.loanForm.querySelector('[data-fieldwrap="'+f.key+'"]');
+        const wrap = container.querySelector('[data-fieldwrap="'+f.key+'"]');
         if(!wrap) return;
         wrap.hidden = !f.cond({ rateType });
       });
     }
+    function applyConditionalVisibility(){ applyVisibility(dom.loanForm, "f_"); }
     function onFormChange(e){
       if(e.target && e.target.id==="f_rateType") applyConditionalVisibility();
     }
@@ -1234,12 +1246,14 @@
       const pct = (id) => { const v = parseFloat((el(id)||{}).value); return isNaN(v) ? null : v/100; };
       const intv = (id) => { const v = parseInt((el(id)||{}).value, 10); return isNaN(v) ? null : v; };
       const money = (id) => { const v = parseFloat(String((el(id)||{}).value).replace(/[$,\s]/g,"")); return isNaN(v) ? 0 : v; };
-      return {
-        newRate: pct("r_newRate"), newAmort: intv("r_newAmort"), newTerm: intv("r_newTerm"),
-        newIO: intv("r_newIO") || 0, closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
+      // Proposed new-loan terms (Fixed / Floating / Hybrid ARM), read via the registry.
+      const terms = {};
+      REFI_TERM_FIELDS.forEach(f => { terms[f.key] = parseValue(f.type, (el("rf_"+f.key)||{}).value); });
+      return Object.assign(terms, {
+        closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
         cashOut: money("r_cashOut"), rollIn: ((el("r_rollIn")||{}).value || "Y") === "Y",
         holdMonths: intv("r_hold") || 0,
-      };
+      });
     }
 
     // Sum the next `count` payments and capture the balance at that horizon.
@@ -1257,21 +1271,32 @@
       const pm = cur.derived.paymentsMade;
       const curPInow = cur.derived.monthlyPI;                 // current-phase payment
       const remainingMonths = cur.derived.monthsToMaturity;
-      const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (inp.newTerm||120));
+      const hold = inp.holdMonths>0 ? inp.holdMonths : (remainingMonths || (inp.loanTermMonths||120));
 
       const baseNeed = payoff + (inp.cashOut||0);
       const closingTotal = (inp.closingCosts||0) + (inp.pointsPct||0)*baseNeed;
       const outOfPocket = inp.rollIn ? 0 : closingTotal;
       const newAmount = baseNeed + (inp.rollIn ? closingTotal : 0);
 
+      // Proposed new loan — any rate type (Fixed / Floating / Hybrid ARM).
       const today = todayParts(), fpm = addMonths(today, 1);
       const newLoan = {
-        originalAmount:newAmount, annualRate:inp.newRate||0, rateType:"Fixed",
+        originalAmount:newAmount, rateType:inp.rateType||"Fixed", annualRate:inp.annualRate||0,
         originationDate:partsToISO(today.y,today.mo,today.d), firstPaymentDate:partsToISO(fpm.y,fpm.mo,1),
-        amortizationMonths:inp.newAmort||360, loanTermMonths:inp.newTerm||inp.newAmort||360, ioMonths:inp.newIO||0,
+        amortizationMonths:inp.amortizationMonths||360, loanTermMonths:inp.loanTermMonths||inp.amortizationMonths||360, ioMonths:inp.ioMonths||0,
+        index:inp.index, spread:inp.spread, rateFloor:inp.rateFloor, rateCap:inp.rateCap,
+        armInitialFixedMonths:inp.armInitialFixedMonths, armAdjustFreqMonths:inp.armAdjustFreqMonths, armAssumedIndex:inp.armAssumedIndex,
       };
       const newComp = compute(newLoan);
       const newPI = newComp.derived.monthlyPI;
+
+      // Upcoming rate reset on the proposed NEW loan (if a Hybrid ARM), for display.
+      let newReset = null;
+      if(newLoan.rateType === "Hybrid ARM"){
+        for(let i=0; i<newComp.rows.length && i<hold; i++){
+          if(newComp.rows[i].isReset){ newReset = { monthsAway:i, rate:newComp.rows[i].rate, payment:newComp.rows[i].payment }; break; }
+        }
+      }
 
       // Upcoming rate reset on the CURRENT loan within the horizon (Hybrid ARM).
       let armReset = null;
@@ -1334,7 +1359,7 @@
 
       return { payoff, curPInow, newPI, monthlySavingsNow, avgSavings, breakEven, closingTotal, outOfPocket, newAmount,
         remainingMonths, hold, netBenefit, curRemInterest, newTotInterest, verdict, tone, reason,
-        newLoan, cur, cashOut:inp.cashOut||0, armReset };
+        newLoan, cur, cashOut:inp.cashOut||0, armReset, newReset };
     }
 
     // ---- Refi render helpers ----
@@ -1390,12 +1415,13 @@
             '</dl>'+ resetNote +
           '</div>'+
           '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
-            '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
-            '<div id="refiInputs" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
-              refiField("r_newRate","New Rate", defRate, "", true)+
-              refiField("r_newAmort","Amortization (mo)", 360, "")+
-              refiField("r_newTerm","Loan Term (mo)", defTerm, "balloon")+
-              refiField("r_newIO","Interest-Only (mo)", 0, "")+
+            '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
+            '<p class="mb-3 text-[11px] text-slate-400">Model the refinance as Fixed, Floating, or a Hybrid ARM.</p>'+
+            '<div id="refiTerms" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
+              REFI_TERM_FIELDS.map(f => fieldInputHtml(f, "rf_")).join("")+
+            '</div>'+
+            '<div class="my-3 h-px bg-slate-200"></div>'+
+            '<div id="refiCosts" class="grid grid-cols-2 sm:grid-cols-3 gap-3">'+
               refiField("r_closingCosts","Closing Costs ($)", 0, "")+
               refiField("r_points","Points", 0, "% of loan", true)+
               refiField("r_cashOut","Cash-Out ($)", 0, "pull equity")+
@@ -1406,9 +1432,25 @@
           '</div>'+
         '</div>'+
         '<div id="refiResults"></div>';
+
+      // Default the proposed loan to a fixed loan at today's rate; pre-fill the
+      // floating/ARM fields from the current loan so switching type is easy.
+      const draft = Object.assign(emptyLoan(), {
+        rateType:"Fixed", annualRate: loan.annualRate, amortizationMonths:360, loanTermMonths:defTerm, ioMonths:0,
+        index: loan.index||"5-Year Treasury", spread: loan.spread, rateFloor: loan.rateFloor, rateCap: loan.rateCap,
+        armInitialFixedMonths: loan.armInitialFixedMonths||60, armAdjustFreqMonths: loan.armAdjustFreqMonths||60, armAssumedIndex: loan.armAssumedIndex,
+      });
+      REFI_TERM_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
+
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
-      el("refiInputs").addEventListener("input", () => recomputeRefi(loan));
+      const onTerms = () => { applyVisibility(el("refiTerms"), "rf_"); recomputeRefi(loan); };
+      el("refiTerms").addEventListener("input", onTerms);
+      el("refiTerms").addEventListener("change", onTerms);
+      el("refiCosts").addEventListener("input", () => recomputeRefi(loan));
+      el("refiCosts").addEventListener("change", () => recomputeRefi(loan));
+      applyVisibility(el("refiTerms"), "rf_");
+      injectTreasuryFetch(el("refiTerms"), "rf_", "rfFetchTreasuryBtn");
       recomputeRefi(loan);
     }
 
@@ -1429,11 +1471,15 @@
         cards.push(refiCard("After reset (mo "+r.armReset.monthsAway+")", signMoney(afterSav)+" / mo",
           "vs reset pmt "+fmtMoney(r.armReset.payment)+" @ "+fmtPct(r.armReset.rate), afterSav>=0?"good":"bad"));
       }
+      if(r.newReset){
+        cards.push(refiCard("New loan resets (mo "+r.newReset.monthsAway+")", fmtPct(r.newReset.rate),
+          "new payment → "+fmtMoney(r.newReset.payment), "bad"));
+      }
       cards.push(refiCard("Break-even", isFinite(r.breakEven)?r.breakEven+" mo":"never", "to recoup costs"));
       cards.push(refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad"));
       cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), r.cashOut>0?("incl "+fmtMoney(r.cashOut)+" cash-out"):"payoff + costs"));
       cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), r.outOfPocket>0?"paid up front":"rolled into loan"));
-      cards.push(refiCard("New Rate", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate)));
+      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newLoan.annualRate), "was "+fmtPct(r.cur.derived.currentRate)));
       cards.push(refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest)));
       el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
@@ -1453,9 +1499,13 @@
       const nl = Object.assign(emptyLoan(), { _id: uid() }, {
         propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)",
         propertyAddress: loan.propertyAddress || "", propertyType: loan.propertyType || "Multifamily",
-        lenderName: loan.lenderName || "", originalAmount: r.newAmount, annualRate: inp.newRate||0, rateType:"Fixed",
+        lenderName: loan.lenderName || "",
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
-        amortizationMonths: inp.newAmort||360, loanTermMonths: inp.newTerm||inp.newAmort||360, ioMonths: inp.newIO||0,
+        originalAmount: r.newAmount,
+        rateType: inp.rateType||"Fixed", annualRate: inp.annualRate||0,
+        amortizationMonths: inp.amortizationMonths||360, loanTermMonths: inp.loanTermMonths||inp.amortizationMonths||360, ioMonths: inp.ioMonths||0,
+        index: inp.index, spread: inp.spread, rateFloor: inp.rateFloor, rateCap: inp.rateCap,
+        armInitialFixedMonths: inp.armInitialFixedMonths, armAdjustFreqMonths: inp.armAdjustFreqMonths, armAssumedIndex: inp.armAssumedIndex,
         escrowTax: loan.escrowTax, escrowInsurance: loan.escrowInsurance, replacementReserve: loan.replacementReserve,
       });
       loans.push(nl); state.activeId = nl._id; save();
