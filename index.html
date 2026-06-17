@@ -3,38 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Enterprise Loan Amortization Hub</title>
-  <meta name="description" content="Dynamic commercial loan amortization schedule using an Actual/360 day-count engine and a binary-search payment solver." />
+  <title>Loan Debt Service Hub</title>
+  <meta name="description" content="Commercial loan debt-service tracker with an Actual/360 amortization engine, editable loan records, and Excel import/export." />
 
-  <!-- Tailwind CSS (Play CDN) keeps this app a single, self-contained file -->
+  <!-- Tailwind (Play CDN) + SheetJS (Excel I/O) keep this a single self-contained file -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
             sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
-            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
           },
           colors: {
             brand: {
-              50:  '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc',
-              400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca',
-              800: '#3730a3', 900: '#312e81', 950: '#1e1b4b',
+              50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',
+              500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b',
             },
           },
-          boxShadow: {
-            glow: '0 0 0 1px rgba(99,102,241,0.35), 0 18px 40px -12px rgba(79,70,229,0.55)',
-          },
+          boxShadow: { glow: '0 0 0 1px rgba(99,102,241,0.35), 0 18px 40px -12px rgba(79,70,229,0.55)' },
           keyframes: {
-            'fade-up': {
-              '0%':   { opacity: '0', transform: 'translateY(8px)' },
-              '100%': { opacity: '1', transform: 'translateY(0)' },
-            },
+            'fade-up': { '0%':{opacity:'0',transform:'translateY(8px)'}, '100%':{opacity:'1',transform:'translateY(0)'} },
           },
-          animation: {
-            'fade-up': 'fade-up 0.4s ease-out both',
-          },
+          animation: { 'fade-up':'fade-up 0.35s ease-out both' },
         },
       },
     };
@@ -45,167 +37,124 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
   <style>
-    /* Subtle scrollbar styling for the schedule grid */
-    .thin-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
-    .thin-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.4); }
-    .thin-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; border: 2px solid rgba(15,23,42,0.6); }
-    .thin-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
-    /* Decorative grid backdrop */
-    .grid-backdrop {
+    .thin-scroll::-webkit-scrollbar{width:10px;height:10px}
+    .thin-scroll::-webkit-scrollbar-track{background:rgba(15,23,42,.4)}
+    .thin-scroll::-webkit-scrollbar-thumb{background:#334155;border-radius:9999px;border:2px solid rgba(15,23,42,.6)}
+    .thin-scroll::-webkit-scrollbar-thumb:hover{background:#475569}
+    .grid-backdrop{
       background-image:
-        radial-gradient(circle at 18% 12%, rgba(79,70,229,0.20), transparent 42%),
-        radial-gradient(circle at 85% 0%, rgba(16,185,129,0.12), transparent 45%);
+        radial-gradient(circle at 18% 12%, rgba(79,70,229,.20), transparent 42%),
+        radial-gradient(circle at 85% 0%, rgba(16,185,129,.12), transparent 45%);
     }
+    [hidden]{display:none !important}
   </style>
 </head>
 
 <body class="min-h-screen bg-slate-950 text-slate-200 font-sans antialiased selection:bg-brand-500/30">
   <div class="grid-backdrop min-h-screen">
+
     <!-- ===================== HEADER ===================== -->
     <header class="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur sticky top-0 z-30">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow">
-            <!-- bank / columns icon -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M10 10v8M14 10v8M18 10v8"/>
             </svg>
           </div>
           <div>
-            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight">
-              Enterprise Loan Amortization Hub
-            </h1>
-            <p class="text-xs text-slate-400">Actual/360 day-count engine &middot; binary-search payment solver</p>
+            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight">Loan Debt Service Hub</h1>
+            <p class="text-xs text-slate-400">Actual/360 engine &middot; computed balances &middot; Excel import / export</p>
           </div>
         </div>
         <div class="hidden md:flex items-center gap-2 text-xs text-slate-400">
-          <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          Engine ready
+          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+          <span id="loanCountLabel">0 loans</span>
         </div>
       </div>
     </header>
 
     <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
-      <!-- ===================== SEARCH / LOAD ===================== -->
+      <!-- ===================== TOOLBAR ===================== -->
       <section class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 shadow-xl">
-        <div class="flex flex-col lg:flex-row lg:items-end gap-5">
-          <div class="flex-1">
-            <label for="loanIdInput" class="block text-sm font-semibold text-slate-300 mb-2">
-              Enter Loan ID to Load
-            </label>
+        <div class="flex flex-col xl:flex-row xl:items-end gap-5">
+          <!-- search / select -->
+          <div class="flex-1 min-w-0">
+            <label for="loanSelect" class="block text-sm font-semibold text-slate-300 mb-2">Select a loan</label>
             <div class="flex flex-col sm:flex-row gap-3">
               <div class="relative flex-1">
                 <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 </span>
-                <input
-                  id="loanIdInput"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  placeholder="e.g. 1001"
-                  class="w-full rounded-xl border border-slate-700 bg-slate-950/70 pl-10 pr-4 py-3 text-base text-white placeholder-slate-500 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40"
-                />
+                <select id="loanSelect" class="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950/70 pl-10 pr-9 py-3 text-base text-white outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40"></select>
+                <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </span>
               </div>
-              <button
-                id="loadBtn"
-                type="button"
-                class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-6 py-3 font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M5 12h14M13 6l6 6-6 6"/>
-                </svg>
-                Load Loan
-              </button>
-            </div>
-
-            <!-- Inline error / not-found message -->
-            <div id="errorMsg" class="hidden mt-3 items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
-              </svg>
-              <span id="errorMsgText">Loan ID not found.</span>
             </div>
           </div>
 
-          <!-- Quick-pick demo loans -->
-          <div class="lg:w-auto">
-            <span class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Demo portfolio</span>
-            <div id="quickPicks" class="flex flex-wrap gap-2"></div>
+          <!-- actions -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="addBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Add Loan
+            </button>
+            <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50 disabled:opacity-40 disabled:pointer-events-none">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              Edit
+            </button>
+            <button id="removeBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-rose-400/50 disabled:opacity-40 disabled:pointer-events-none">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+              Remove
+            </button>
+            <span class="mx-1 hidden sm:block h-8 w-px bg-slate-700/70"></span>
+            <button id="importBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 9l5-5 5 5M12 4v12"/></svg>
+              Import Excel
+            </button>
+            <input id="importInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
+            <button id="exportBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Export Excel
+            </button>
+            <button id="refiBtn" type="button" title="Refinancing calculator — planned for a future release" class="relative inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6M21 22v-6h-6M21 8a9 9 0 0 0-15-3.5L3 8M3 16a9 9 0 0 0 15 3.5L21 16"/></svg>
+              Refi Calculator
+              <span class="ml-1 rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">Soon</span>
+            </button>
           </div>
         </div>
       </section>
 
       <!-- ===================== EMPTY STATE ===================== -->
-      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-10 text-center">
+      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-10 text-center" hidden>
         <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/70">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/>
-          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
         </div>
-        <h2 class="text-lg font-semibold text-white">No loan loaded yet</h2>
-        <p class="mt-1 text-sm text-slate-400">Enter a Loan ID above or pick one from the demo portfolio to generate a live amortization schedule.</p>
+        <h2 class="text-lg font-semibold text-white">No loans yet</h2>
+        <p class="mt-1 text-sm text-slate-400">Click <span class="font-semibold text-brand-300">Add Loan</span> to create one, or <span class="font-semibold text-brand-300">Import Excel</span> to load a portfolio.</p>
       </section>
 
-      <!-- ===================== RESULTS ===================== -->
-      <section id="results" class="hidden space-y-8">
+      <!-- ===================== LOAN VIEW (read-only) ===================== -->
+      <section id="loanView" class="space-y-8" hidden>
+        <!-- KPI cards -->
+        <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
-        <!-- KPI Cards -->
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <!-- Loan ID -->
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected Loan</p>
-            <p id="kpiLoanId" class="mt-2 text-2xl font-extrabold text-white">—</p>
-            <p id="kpiLoanName" class="mt-1 text-xs text-slate-400 leading-snug">—</p>
+        <!-- Profile (all data, read-only) -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden">
+          <div class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+            <div>
+              <h2 class="text-base font-bold text-white">Loan Record</h2>
+              <p class="text-xs text-slate-400">All fields for the selected loan. Computed values are derived live by the app.</p>
+            </div>
+            <span class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-xs text-slate-300">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Read-only
+            </span>
           </div>
-          <!-- Principal -->
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Principal</p>
-            <p id="kpiPrincipal" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
-            <p id="kpiStart" class="mt-1 text-xs text-slate-400">Funds on —</p>
-          </div>
-          <!-- Interest Rate -->
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Interest Rate</p>
-            <p id="kpiRate" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
-            <p class="mt-1 text-xs text-slate-400">Actual/360 day-count</p>
-          </div>
-          <!-- Term -->
-          <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Amort vs. Actual Term</p>
-            <p id="kpiTerm" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
-            <p id="kpiTermDetail" class="mt-1 text-xs text-slate-400">—</p>
-          </div>
-          <!-- Calculated Fixed Payment (highlighted) -->
-          <div class="relative col-span-2 lg:col-span-1 overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-600 to-brand-800 p-4 shadow-glow animate-fade-up">
-            <div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-brand-100">Calculated Fixed Payment</p>
-            <p id="kpiPayment" class="mt-2 text-2xl font-extrabold text-white tabular-nums">—</p>
-            <p class="mt-1 text-xs text-brand-100/90">Solved via binary search</p>
-          </div>
-        </div>
-
-        <!-- Secondary summary strip -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
-            <p class="text-xs text-slate-500">Total of Payments</p>
-            <p id="sumTotalPaid" class="mt-1 text-lg font-bold text-slate-100 tabular-nums">—</p>
-          </div>
-          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
-            <p class="text-xs text-slate-500">Total Interest</p>
-            <p id="sumTotalInterest" class="mt-1 text-lg font-bold text-amber-300 tabular-nums">—</p>
-          </div>
-          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
-            <p class="text-xs text-slate-500">Interest-Only Window</p>
-            <p id="sumIoWindow" class="mt-1 text-lg font-bold text-slate-100 tabular-nums">—</p>
-          </div>
-          <div class="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3">
-            <p class="text-xs text-slate-500">Final / Balloon Payment</p>
-            <p id="sumBalloon" class="mt-1 text-lg font-bold text-emerald-300 tabular-nums">—</p>
-          </div>
+          <div id="profileBody" class="p-5 grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-6"></div>
         </div>
 
         <!-- Schedule -->
@@ -216,23 +165,17 @@
               <p id="scheduleMeta" class="text-xs text-slate-400">—</p>
             </div>
             <div class="flex items-center gap-3">
-              <div class="hidden sm:flex items-center gap-3 text-xs text-slate-400">
+              <div class="hidden md:flex items-center gap-3 text-xs text-slate-400">
                 <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-400/70"></span>Interest-only</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-sky-400/70"></span>Today</span>
                 <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-400/70"></span>Balloon / final</span>
               </div>
-              <button
-                id="exportBtn"
-                type="button"
-                class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                Export Table (CSV)
+              <button id="exportCsvBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Schedule CSV
               </button>
             </div>
           </div>
-
           <div class="max-h-[34rem] overflow-auto thin-scroll">
             <table class="w-full text-sm">
               <thead class="sticky top-0 z-10 bg-slate-900/95 backdrop-blur text-xs uppercase tracking-wide text-slate-400">
@@ -251,16 +194,54 @@
             </table>
           </div>
         </div>
-
-        <p class="text-center text-xs text-slate-500">
-          Schedules are computed entirely in your browser. Interest accrues on an Actual/360 basis &mdash; each month's charge reflects the real number of calendar days, including leap years.
-        </p>
       </section>
+
+      <!-- ===================== EDIT / ADD FORM ===================== -->
+      <section id="formView" class="rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl overflow-hidden" hidden>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+          <div>
+            <h2 id="formTitle" class="text-base font-bold text-white">Edit Loan</h2>
+            <p class="text-xs text-slate-400">Only these inputs are stored. Balance, maturity, payments made, P&amp;I and debt service are computed by the app.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="cancelBtn" type="button" class="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 active:scale-[.98]">Cancel</button>
+            <button id="saveBtn" type="button" class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-900/40 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98]">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+              Save Loan
+            </button>
+          </div>
+        </div>
+        <div id="formError" class="hidden mx-5 mt-4 items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300"></div>
+        <form id="loanForm" class="p-5 space-y-8" novalidate></form>
+      </section>
+
+      <p class="text-center text-xs text-slate-500">
+        All records are stored locally in your browser. Interest accrues Actual/360 (real calendar days, leap years included). Demonstration tool — not financial advice.
+      </p>
     </main>
 
     <footer class="border-t border-slate-800/80 py-6">
-      <p class="text-center text-xs text-slate-500">Enterprise Loan Amortization Hub &middot; Demonstration tool, not financial advice.</p>
+      <p class="text-center text-xs text-slate-500">Loan Debt Service Hub</p>
     </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 opacity-0 transition-all duration-300">
+    <div class="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-100 shadow-2xl">
+      <span id="toastIcon"></span><span id="toastText"></span>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+      <h3 id="confirmTitle" class="text-base font-bold text-white">Are you sure?</h3>
+      <p id="confirmText" class="mt-2 text-sm text-slate-400">This action cannot be undone.</p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button id="confirmCancel" type="button" class="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700">Cancel</button>
+        <button id="confirmOk" type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Remove</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============================================================= -->
@@ -270,510 +251,847 @@
   (function () {
     "use strict";
 
-    /* ------------------------------------------------------------------ */
-    /*  1. MOCK LOAN DATABASE  ("the Other Sheet")                        */
-    /*     startMonth is 0-indexed (0 = January) to match JS Date.        */
-    /* ------------------------------------------------------------------ */
-    const LOAN_DATABASE = [
-      {
-        id: "1001",
-        name: "Standard 30-Year, No Frills",
-        principal: 250000,
-        annualRate: 0.065,          // 6.50%
-        amortizationTerm: 360,      // months
-        loanTerm: 360,              // months (no balloon)
-        interestOnlyMonths: 0,
-        startYear: 2026,
-        startMonth: 0,              // January 2026
-      },
-      {
-        id: "1002",
-        name: "Commercial Balloon — 10-Yr Term on 30-Yr Amortization",
-        principal: 1200000,
-        annualRate: 0.0725,         // 7.25%
-        amortizationTerm: 360,
-        loanTerm: 120,              // 10-year balloon
-        interestOnlyMonths: 0,
-        startYear: 2026,
-        startMonth: 2,              // March 2026
-      },
-      {
-        id: "1003",
-        name: "Hybrid — 5 Years Interest-Only, then Amortizing Balloon",
-        principal: 500000,
-        annualRate: 0.0575,         // 5.75%
-        amortizationTerm: 360,
-        loanTerm: 180,              // 15-year balloon
-        interestOnlyMonths: 60,     // 5 years interest-only
-        startYear: 2026,
-        startMonth: 5,              // June 2026
-      },
+    /* ================================================================
+       0. CONSTANTS & FORMATTERS
+       ================================================================ */
+    const STORAGE_KEY = "ldsHub.loans.v2";
+    const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
+    const fmtMoney = (n) => (n == null || isNaN(n)) ? "—" : moneyFmt.format(n);
+    const fmtPct   = (d) => (d == null || isNaN(d) || d === "") ? "—" : (d*100).toFixed(2) + "%";
+    const fmtInt   = (n) => (n == null || isNaN(n) || n === "") ? "—" : String(Math.round(n));
+    const fmtText  = (s) => (s == null || s === "") ? "—" : String(s);
+
+    /* ================================================================
+       1. DATE HELPERS  (dates stored as ISO "YYYY-MM-DD")
+       ================================================================ */
+    function isoToParts(iso){
+      if(!iso) return null;
+      const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if(!m) return null;
+      return { y:+m[1], mo:+m[2]-1, d:+m[3] };   // mo is 0-indexed
+    }
+    function partsToISO(y, mo, d){
+      const pad = (n) => String(n).padStart(2,"0");
+      return y + "-" + pad(mo+1) + "-" + pad(d);
+    }
+    function fmtDateUS(iso){
+      const p = isoToParts(iso);
+      if(!p) return "—";
+      const pad = (n) => String(n).padStart(2,"0");
+      return pad(p.mo+1) + "/" + pad(p.d) + "/" + p.y;
+    }
+    function daysInMonth(y, mo){ return new Date(y, mo+1, 0).getDate(); }   // handles leap years
+    // Add whole months to a {y,mo,d}; clamp day to the target month length.
+    function addMonths(parts, n){
+      const total = parts.mo + n;
+      const y = parts.y + Math.floor(total/12);
+      const mo = ((total%12)+12)%12;
+      const d = Math.min(parts.d, daysInMonth(y, mo));
+      return { y, mo, d };
+    }
+    function monthsBetween(a, b){ return (b.y - a.y)*12 + (b.mo - a.mo); }
+    function todayParts(){ const t = new Date(); return { y:t.getFullYear(), mo:t.getMonth(), d:t.getDate() }; }
+
+    /* ================================================================
+       2. FIELD REGISTRY  (single source of truth for form, profile,
+          Excel import/export). kind: 'input' | 'computed'.
+       ================================================================ */
+    const SECTIONS = ["Loan Identification","Loan Terms","Escrows & Reserves (Monthly)","Additional Fees (Monthly)","Debt Service (Computed)"];
+
+    const FIELDS = [
+      // ---- Loan Identification ----
+      { sec:"Loan Identification", key:"propertyName",    label:"Property Name",            type:"text",   kind:"input" },
+      { sec:"Loan Identification", key:"propertyAddress", label:"Property Address",         type:"text",   kind:"input" },
+      { sec:"Loan Identification", key:"propertyType",    label:"Property Type",            type:"select", kind:"input", options:["Office","Retail","Industrial","Multifamily","Mixed-Use","Other"] },
+      { sec:"Loan Identification", key:"lenderName",      label:"Lender Name",              type:"text",   kind:"input" },
+      { sec:"Loan Identification", key:"loanNumber",      label:"Loan Number",              type:"text",   kind:"input" },
+
+      // ---- Loan Terms (inputs the app trusts) ----
+      { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
+      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", required:true, hint:"e.g. 4.70" },
+      { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating"] },
+      { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
+      { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
+      { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
+      { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
+      { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",         type:"yn",     kind:"input" },
+      { sec:"Loan Terms", key:"ioMonths",           label:"IO Period (Months)",           type:"int",    kind:"input", cond:(l)=>l.interestOnly==="Y", aliases:["IO Period Remaining (Months)"] },
+      { sec:"Loan Terms", key:"index",              label:"Index (if Floating)",          type:"text",   kind:"input", cond:(l)=>l.rateType==="Floating" },
+      { sec:"Loan Terms", key:"spread",             label:"Spread Over Index",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
+      { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
+      { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating" },
+
+      // ---- Escrows & Reserves (Monthly) ----
+      { sec:"Escrows & Reserves (Monthly)", key:"escrowTax",        label:"Real Estate Tax Escrow ($/mo)", type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"escrowInsurance",  label:"Insurance Escrow ($/mo)",       type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"replacementReserve", label:"Replacement Reserve ($/mo)",  type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"tilcReserve",      label:"TI/LC Reserve ($/mo)",          type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"groundLease",      label:"Ground Lease Payment ($/mo)",   type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"otherEscrow1Desc", label:"Other Escrow 1 — Description",  type:"text",  kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"otherEscrow1Amt",  label:"Other Escrow 1 — Amount ($/mo)",type:"money", kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"otherEscrow2Desc", label:"Other Escrow 2 — Description",  type:"text",  kind:"input" },
+      { sec:"Escrows & Reserves (Monthly)", key:"otherEscrow2Amt",  label:"Other Escrow 2 — Amount ($/mo)",type:"money", kind:"input" },
+
+      // ---- Additional Fees (Monthly) ----
+      { sec:"Additional Fees (Monthly)", key:"servicingFee",   label:"Servicing Fee ($/mo)",        type:"money", kind:"input" },
+      { sec:"Additional Fees (Monthly)", key:"trusteeFee",     label:"Trustee Fee ($/mo)",          type:"money", kind:"input" },
+      { sec:"Additional Fees (Monthly)", key:"otherFee1Desc",  label:"Other Fee 1 — Description",   type:"text",  kind:"input" },
+      { sec:"Additional Fees (Monthly)", key:"otherFee1Amt",   label:"Other Fee 1 — Amount ($/mo)", type:"money", kind:"input" },
+      { sec:"Additional Fees (Monthly)", key:"otherFee2Desc",  label:"Other Fee 2 — Description",   type:"text",  kind:"input" },
+      { sec:"Additional Fees (Monthly)", key:"otherFee2Amt",   label:"Other Fee 2 — Amount ($/mo)", type:"money", kind:"input" },
+
+      // ---- Debt Service (Computed) ----
+      { sec:"Debt Service (Computed)", key:"currentBalance",   label:"Current Outstanding Balance ($)", type:"money", kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"maturityDate",     label:"Maturity Date",                   type:"date",  kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"monthlyPI",        label:"Monthly P&I Payment ($)",         type:"money", kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"totalDebtService", label:"Total Monthly Debt Service ($)",  type:"money", kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"originalIO",       label:"Original IO Period (Mo)",         type:"int",   kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"monthsToMaturity", label:"Months to Maturity",              type:"int",   kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"paymentsMade",     label:"P&I Payments Made",               type:"int",   kind:"computed" },
     ];
 
-    /* ------------------------------------------------------------------ */
-    /*  2. UTILITIES                                                      */
-    /* ------------------------------------------------------------------ */
-    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const INPUT_FIELDS = FIELDS.filter(f => f.kind === "input");
 
-    const currencyFmt = new Intl.NumberFormat("en-US", {
-      style: "currency", currency: "USD",
-      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    // label (and aliases) -> field, for Excel import matching.
+    const LABEL_TO_FIELD = {};
+    const normLabel = (s) => String(s).toLowerCase().replace(/[\s–—\-_/()]+/g," ").replace(/&/g,"and").trim();
+    INPUT_FIELDS.forEach(f => {
+      LABEL_TO_FIELD[normLabel(f.label)] = f;
+      (f.aliases || []).forEach(a => { LABEL_TO_FIELD[normLabel(a)] = f; });
     });
-    const fmtMoney = (n) => currencyFmt.format(n);
 
-    // Exact number of days in a given month. JS Date day 0 of next month
-    // rolls back to the last day of THIS month and handles leap years.
-    function daysInMonth(year, monthIndex) {
-      return new Date(year, monthIndex + 1, 0).getDate();
-    }
-
-    // Resolve the calendar position "offset" months after a loan's start.
-    function monthPosition(loan, offset) {
-      const absolute = loan.startMonth + offset;          // can exceed 11
-      const year = loan.startYear + Math.floor(absolute / 12);
-      const monthIndex = ((absolute % 12) + 12) % 12;
-      return { year, monthIndex };
-    }
-
-    function monthLabel(loan, offset) {
-      const { year, monthIndex } = monthPosition(loan, offset);
-      return MONTH_NAMES[monthIndex] + " " + year;
-    }
-
-    function termLabel(months) {
-      if (months % 12 === 0) return (months / 12) + "-yr";
-      return months + " mo";
-    }
-
-    /* ------------------------------------------------------------------ */
-    /*  3. FINANCIAL ENGINE                                               */
-    /* ------------------------------------------------------------------ */
-
-    /**
-     * Simulate the loan across the FULL amortization term for a candidate
-     * fixed payment and return the balance remaining at the very end.
-     *
-     *  - Daily rate          = annualRate / 360
-     *  - Monthly interest    = balance * daysInThatMonth * dailyRate
-     *  - Interest-only months charge interest only (principal untouched)
-     *  - Amortizing months apply the candidate fixed payment
-     *
-     * A positive return means the payment was too small to fully amortize;
-     * a negative return means it overpaid. The binary search drives this
-     * value to ~0 at the end of the amortization term.
-     */
-    function simulateEndingBalance(loan, fixedPayment) {
-      const dailyRate = loan.annualRate / 360;
-      let balance = loan.principal;
-
-      for (let m = 0; m < loan.amortizationTerm; m++) {
-        const { year, monthIndex } = monthPosition(loan, m);
-        const days = daysInMonth(year, monthIndex);
-        const interest = balance * days * dailyRate;
-
-        if (m < loan.interestOnlyMonths) {
-          // Interest-only: payment == interest, principal is untouched.
-          continue;
+    /* ================================================================
+       3. VALUE PARSING / DISPLAY per type
+       ================================================================ */
+    function parseValue(type, raw){
+      if(raw == null) return type==="text"||type==="select"||type==="yn"||type==="date" ? "" : null;
+      let s = String(raw).trim();
+      if(s === "") return type==="text"||type==="select"||type==="yn"||type==="date" ? "" : null;
+      switch(type){
+        case "money": {
+          const n = parseFloat(s.replace(/[$,\s]/g,""));
+          return isNaN(n) ? null : n;
         }
-        // Amortizing month: principal reduction is payment net of interest.
+        case "int": {
+          const n = parseFloat(s.replace(/[,\s]/g,""));
+          return isNaN(n) ? null : Math.round(n);
+        }
+        case "pct": {
+          // Accept "4.70%", "4.7", or decimal "0.047". >1 (or has %) => percent.
+          const hasPct = s.indexOf("%") >= 0;
+          const n = parseFloat(s.replace(/[%,\s]/g,""));
+          if(isNaN(n)) return null;
+          if(hasPct) return n/100;
+          return n > 1 ? n/100 : n;     // 4.7 -> 0.047 ; 0.047 -> 0.047
+        }
+        case "yn": {
+          const u = s.toUpperCase();
+          return (u==="Y"||u==="YES"||u==="TRUE") ? "Y" : (u==="N"||u==="NO"||u==="FALSE") ? "N" : "";
+        }
+        case "date": {
+          // ISO already?
+          if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+          // MM/DD/YYYY or M/D/YYYY
+          let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+          if(m){ let yr = +m[3]; if(yr<100) yr += 2000; return partsToISO(yr, +m[1]-1, +m[2]); }
+          // Fallback: let Date try
+          const dt = new Date(s);
+          if(!isNaN(dt)) return partsToISO(dt.getFullYear(), dt.getMonth(), dt.getDate());
+          return "";
+        }
+        default: return s;   // text / select
+      }
+    }
+    function displayValue(type, v){
+      switch(type){
+        case "money": return fmtMoney(v);
+        case "int":   return fmtInt(v);
+        case "pct":   return fmtPct(v);
+        case "date":  return fmtDateUS(v);
+        case "yn":    return v==="Y" ? "Yes" : v==="N" ? "No" : "—";
+        default:      return fmtText(v);
+      }
+    }
+    // For Excel cells: numbers stay numeric, others become readable strings.
+    function exportCellValue(type, v){
+      if(v == null || v === "") return "";
+      switch(type){
+        case "money": return v;                 // numeric
+        case "int":   return v;                 // numeric
+        case "pct":   return (v*100).toFixed(4).replace(/0+$/,"").replace(/\.$/,"") + "%";
+        case "date":  return fmtDateUS(v);
+        case "yn":    return v;
+        default:      return v;
+      }
+    }
+
+    /* ================================================================
+       4. FINANCIAL ENGINE  (Actual/360 + binary-search solver)
+       ================================================================ */
+    function loanStartParts(loan){
+      // Schedule begins at the first payment month.
+      return isoToParts(loan.firstPaymentDate) || isoToParts(loan.originationDate) || todayParts();
+    }
+    function monthPosition(startParts, offset){
+      const total = startParts.mo + offset;
+      const y = startParts.y + Math.floor(total/12);
+      const mo = ((total%12)+12)%12;
+      return { y, mo };
+    }
+
+    // Simulate ending balance for a candidate payment across the full amort term.
+    function simulateEndingBalance(loan, fixedPayment){
+      const start = loanStartParts(loan);
+      const dailyRate = (loan.annualRate||0) / 360;
+      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      let balance = loan.originalAmount || 0;
+      for(let m=0; m<loan.amortizationMonths; m++){
+        const { y, mo } = monthPosition(start, m);
+        const interest = balance * daysInMonth(y, mo) * dailyRate;
+        if(m < io) continue;                       // interest-only
         balance += interest - fixedPayment;
       }
       return balance;
     }
-
-    /**
-     * BINARY SEARCH payment solver.
-     * Finds the fixed monthly payment that amortizes the principal to $0.00
-     * at the end of the amortization term under the Actual/360 convention,
-     * which closed-form PMT cannot do because day counts vary month to month.
-     */
-    function solveFixedPayment(loan) {
-      // Degenerate guard: a loan that is interest-only for its entire
-      // amortization term never reduces principal, so there is no fixed
-      // amortizing payment to solve for.
-      if (loan.interestOnlyMonths >= loan.amortizationTerm) {
-        return 0;
+    // Binary-search the fixed amortizing payment that zeroes the balance.
+    function solveFixedPayment(loan){
+      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+      if(!loan.originalAmount || !loan.amortizationMonths || io >= loan.amortizationMonths) return 0;
+      let lower = 0, upper = loan.originalAmount * 2;
+      for(let i=0; i<100 && (upper-lower) >= 0.0001; i++){
+        const mid = (lower+upper)/2;
+        if(simulateEndingBalance(loan, mid) > 0) lower = mid; else upper = mid;
       }
-
-      let lower = 0;                    // floor guess
-      let upper = loan.principal * 2;   // generous ceiling guess
-      let mid = (lower + upper) / 2;
-
-      for (let i = 0; i < 100 && (upper - lower) >= 0.0001; i++) {
-        mid = (lower + upper) / 2;
-        const endingBalance = simulateEndingBalance(loan, mid);
-
-        if (endingBalance > 0) {
-          lower = mid;   // still owe money -> payment too low
-        } else {
-          upper = mid;   // overpaid -> payment too high
-        }
-      }
-      return (lower + upper) / 2;
+      return (lower+upper)/2;
     }
-
-    /**
-     * Build the displayable schedule, cutting off at the loan term and
-     * forcing the final month to a balloon that lands exactly at $0.00.
-     */
-    function buildSchedule(loan, fixedPayment) {
-      const dailyRate = loan.annualRate / 360;
+    // Build the displayed schedule (cuts off at loan term, balloon to $0.00).
+    function buildSchedule(loan, fixedPayment){
+      const start = loanStartParts(loan);
+      const dailyRate = (loan.annualRate||0) / 360;
+      const io = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
       const rows = [];
-      let balance = loan.principal;
+      let balance = loan.originalAmount || 0;
+      let totalInterest = 0, totalPaid = 0;
+      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
 
-      let totalInterest = 0;
-      let totalPaid = 0;
-
-      for (let m = 0; m < loan.loanTerm; m++) {
-        const { year, monthIndex } = monthPosition(loan, m);
-        const days = daysInMonth(year, monthIndex);
+      for(let m=0; m<term; m++){
+        const { y, mo } = monthPosition(start, m);
+        const days = daysInMonth(y, mo);
         const startingBalance = balance;
         const interest = startingBalance * days * dailyRate;
-
-        const isInterestOnly = m < loan.interestOnlyMonths;
-        const isFinal = m === loan.loanTerm - 1;
-
+        const isIO = m < io;
+        const isFinal = m === term-1;
         let payment, principalPaid, type;
 
-        if (isFinal) {
-          // Final month: retire the entire remaining balance plus its
-          // interest. Covers both a true balloon (loanTerm < amortTerm)
-          // and the natural last payment of a fully amortizing loan,
-          // and guarantees the ending balance is exactly $0.00.
+        if(isFinal){
           principalPaid = startingBalance;
           payment = startingBalance + interest;
           balance = 0;
-          type = (loan.loanTerm < loan.amortizationTerm) ? "balloon" : "final";
-        } else if (isInterestOnly) {
-          // Interest-only: payment equals the interest, principal unchanged.
-          payment = interest;
-          principalPaid = 0;
-          // balance unchanged
-          type = "io";
+          type = (term < loan.amortizationMonths) ? "balloon" : "final";
+        } else if(isIO){
+          payment = interest; principalPaid = 0; type = "io";
         } else {
-          // Standard amortizing month.
-          payment = fixedPayment;
-          principalPaid = payment - interest;
-          balance = startingBalance - principalPaid;
-          type = "amort";
+          payment = fixedPayment; principalPaid = payment - interest;
+          balance = startingBalance - principalPaid; type = "amort";
         }
-
-        totalInterest += interest;
-        totalPaid += payment;
-
-        rows.push({
-          index: m + 1,
-          label: monthLabel(loan, m),
-          startingBalance,
-          days,
-          interest,
-          payment,
-          principalPaid,
-          endingBalance: balance,
-          type,
-        });
+        totalInterest += interest; totalPaid += payment;
+        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, startingBalance, days, interest, payment, principalPaid, endingBalance:balance, type });
       }
-
       return { rows, totalInterest, totalPaid };
     }
 
-    /** Orchestrate: solve payment + build schedule for a loan. */
-    function computeLoan(loan) {
+    // Full computation: schedule + all computed fields.
+    function compute(loan){
       const fixedPayment = solveFixedPayment(loan);
       const { rows, totalInterest, totalPaid } = buildSchedule(loan, fixedPayment);
-      return { fixedPayment, rows, totalInterest, totalPaid };
+      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
+      const fp = isoToParts(loan.firstPaymentDate);
+      const now = todayParts();
+
+      // Payments made: count of payment dates on/before today.
+      let paymentsMade = 0;
+      if(fp){
+        const base = monthsBetween(fp, now);
+        paymentsMade = base + (now.d >= fp.d ? 1 : 0);
+        paymentsMade = Math.max(0, Math.min(term, paymentsMade));
+      }
+      // Current balance from the schedule position.
+      let currentBalance;
+      if(paymentsMade <= 0) currentBalance = loan.originalAmount || 0;
+      else if(paymentsMade >= rows.length) currentBalance = 0;
+      else currentBalance = rows[paymentsMade-1].endingBalance;
+
+      const maturity = fp ? addMonths(fp, term-1) : null;
+      const maturityDate = maturity ? partsToISO(maturity.y, maturity.mo, maturity.d) : "";
+      const monthsToMaturity = Math.max(0, term - paymentsMade);
+      const originalIO = (loan.interestOnly==="Y") ? (loan.ioMonths||0) : 0;
+
+      const escrowKeys = ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt"];
+      const feeKeys = ["servicingFee","trusteeFee","otherFee1Amt","otherFee2Amt"];
+      const sum = (keys) => keys.reduce((a,k)=> a + (Number(loan[k])||0), 0);
+      const escrowTotal = sum(escrowKeys), feeTotal = sum(feeKeys);
+      const monthlyPI = fixedPayment;
+      const totalDebtService = monthlyPI + escrowTotal + feeTotal;
+
+      return {
+        fixedPayment, rows, totalInterest, totalPaid,
+        derived: {
+          currentBalance, maturityDate, monthlyPI, totalDebtService,
+          originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
+        },
+      };
     }
 
-    function findLoan(id) {
-      const needle = String(id).trim();
-      if (!needle) return null;
-      return LOAN_DATABASE.find((l) => l.id === needle) || null;
+    /* ================================================================
+       5. MODEL / STATE  (persisted to localStorage)
+       ================================================================ */
+    let loans = [];
+    let state = { mode:"empty", activeId:null, draft:null };   // mode: empty|view|edit|add
+
+    function uid(){ return "ln_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+    function emptyLoan(){
+      const l = {};
+      INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
+      l.rateType = "Fixed"; l.interestOnly = "N"; l.propertyType = "Multifamily";
+      return l;
+    }
+    function loanLabel(l){
+      return l.propertyName || l.loanNumber || (l.lenderName ? l.lenderName+" loan" : "Untitled loan");
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  4. DOM REFERENCES                                                 */
-    /* ------------------------------------------------------------------ */
+    function save(){
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); } catch(e){ /* storage may be unavailable */ }
+    }
+    function load(){
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr; }
+      } catch(e){}
+      return seed();
+    }
+
+    function seed(){
+      const mk = (data) => Object.assign(emptyLoan(), { _id: uid() }, data);
+      return [
+        mk({
+          propertyName:"Villages of Whitewater", propertyAddress:"10400 Edgewood Rd, Harrison, OH 45030",
+          propertyType:"Multifamily", lenderName:"Bellwether Enterprise (Fannie)", loanNumber:"",
+          originalAmount:11392000, annualRate:0.047, rateType:"Fixed",
+          originationDate:"2017-07-31", firstPaymentDate:"2017-09-01",
+          loanTermMonths:180, amortizationMonths:360, interestOnly:"N", ioMonths:null,
+          replacementReserve:1522,
+        }),
+        mk({ propertyName:"Sample — Standard 30-Year", propertyType:"Multifamily", lenderName:"Sample Bank",
+          originalAmount:250000, annualRate:0.065, rateType:"Fixed",
+          originationDate:"2026-01-01", firstPaymentDate:"2026-02-01",
+          loanTermMonths:360, amortizationMonths:360, interestOnly:"N" }),
+        mk({ propertyName:"Sample — 10-Yr Balloon / 30-Yr Amort", propertyType:"Office", lenderName:"Sample Bank",
+          originalAmount:1200000, annualRate:0.0725, rateType:"Fixed",
+          originationDate:"2026-03-01", firstPaymentDate:"2026-04-01",
+          loanTermMonths:120, amortizationMonths:360, interestOnly:"N" }),
+        mk({ propertyName:"Sample — 5-Yr IO Hybrid", propertyType:"Mixed-Use", lenderName:"Sample Bank",
+          originalAmount:500000, annualRate:0.0575, rateType:"Fixed",
+          originationDate:"2026-06-01", firstPaymentDate:"2026-07-01",
+          loanTermMonths:180, amortizationMonths:360, interestOnly:"Y", ioMonths:60 }),
+      ];
+    }
+    function getLoan(id){ return loans.find(l => l._id === id) || null; }
+
+    /* ================================================================
+       6. DOM
+       ================================================================ */
     const el = (id) => document.getElementById(id);
     const dom = {
-      input: el("loanIdInput"),
-      loadBtn: el("loadBtn"),
-      exportBtn: el("exportBtn"),
-      quickPicks: el("quickPicks"),
-      errorMsg: el("errorMsg"),
-      errorMsgText: el("errorMsgText"),
-      emptyState: el("emptyState"),
-      results: el("results"),
-      // KPIs
-      kpiLoanId: el("kpiLoanId"),
-      kpiLoanName: el("kpiLoanName"),
-      kpiPrincipal: el("kpiPrincipal"),
-      kpiStart: el("kpiStart"),
-      kpiRate: el("kpiRate"),
-      kpiTerm: el("kpiTerm"),
-      kpiTermDetail: el("kpiTermDetail"),
-      kpiPayment: el("kpiPayment"),
-      // Summary
-      sumTotalPaid: el("sumTotalPaid"),
-      sumTotalInterest: el("sumTotalInterest"),
-      sumIoWindow: el("sumIoWindow"),
-      sumBalloon: el("sumBalloon"),
-      // Schedule
-      scheduleMeta: el("scheduleMeta"),
-      scheduleBody: el("scheduleBody"),
+      loanSelect:el("loanSelect"), loanCountLabel:el("loanCountLabel"), xlsxDot:el("xlsxDot"),
+      addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
+      importBtn:el("importBtn"), importInput:el("importInput"), exportBtn:el("exportBtn"), refiBtn:el("refiBtn"),
+      emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"),
+      kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
+      scheduleMeta:el("scheduleMeta"), scheduleBody:el("scheduleBody"), exportCsvBtn:el("exportCsvBtn"),
+      formTitle:el("formTitle"), loanForm:el("loanForm"), formError:el("formError"),
+      saveBtn:el("saveBtn"), cancelBtn:el("cancelBtn"),
+      toast:el("toast"), toastText:el("toastText"), toastIcon:el("toastIcon"),
+      confirmModal:el("confirmModal"), confirmTitle:el("confirmTitle"), confirmText:el("confirmText"),
+      confirmOk:el("confirmOk"), confirmCancel:el("confirmCancel"),
     };
 
-    // Holds the currently rendered loan + computation for CSV export.
-    let activeView = null;
-
-    /* ------------------------------------------------------------------ */
-    /*  5. RENDERING                                                      */
-    /* ------------------------------------------------------------------ */
-    function showError(message) {
-      dom.errorMsgText.textContent = message;
-      dom.errorMsg.classList.remove("hidden");
-      dom.errorMsg.classList.add("flex");
-      dom.results.classList.add("hidden");
-      dom.emptyState.classList.remove("hidden");
-      activeView = null;
-    }
-
-    function clearError() {
-      dom.errorMsg.classList.add("hidden");
-      dom.errorMsg.classList.remove("flex");
-    }
-
-    function rowClasses(type) {
-      switch (type) {
-        case "io":
-          return "bg-amber-500/5 hover:bg-amber-500/10";
-        case "balloon":
-        case "final":
-          return "bg-emerald-500/10 hover:bg-emerald-500/15 font-semibold";
-        default:
-          return "hover:bg-slate-800/50";
-      }
-    }
-
-    function badge(type) {
-      if (type === "io")
-        return '<span class="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">IO</span>';
-      if (type === "balloon")
-        return '<span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">Balloon</span>';
-      if (type === "final")
-        return '<span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">Final</span>';
-      return "";
-    }
-
-    function renderSchedule(rows) {
-      const html = rows.map((r) => {
-        return (
-          '<tr class="' + rowClasses(r.type) + ' transition-colors">' +
-            '<td class="px-4 py-2.5 text-left text-slate-400">' + r.index + '</td>' +
-            '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-100">' + r.label + badge(r.type) + '</td>' +
-            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.startingBalance) + '</td>' +
-            '<td class="px-4 py-2.5 text-center text-slate-400">' + r.days + '</td>' +
-            '<td class="px-4 py-2.5 text-right text-amber-200/90">' + fmtMoney(r.interest) + '</td>' +
-            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.payment) + '</td>' +
-            '<td class="px-4 py-2.5 text-right text-emerald-200/90">' + fmtMoney(r.principalPaid) + '</td>' +
-            '<td class="px-4 py-2.5 text-right">' + fmtMoney(r.endingBalance) + '</td>' +
-          '</tr>'
-        );
-      }).join("");
-      dom.scheduleBody.innerHTML = html;
-    }
-
-    function render(loan) {
-      const view = computeLoan(loan);
-      activeView = { loan, view };
-
-      // KPI cards
-      dom.kpiLoanId.textContent = "#" + loan.id;
-      dom.kpiLoanName.textContent = loan.name;
-      dom.kpiPrincipal.textContent = fmtMoney(loan.principal);
-      dom.kpiStart.textContent = "Funds on " + monthLabel(loan, 0);
-      dom.kpiRate.textContent = (loan.annualRate * 100).toFixed(2) + "%";
-
-      const sameTerm = loan.loanTerm === loan.amortizationTerm;
-      dom.kpiTerm.textContent = termLabel(loan.amortizationTerm) + " / " + termLabel(loan.loanTerm);
-      dom.kpiTermDetail.textContent = sameTerm
-        ? "Fully amortizing"
-        : "Balloon at month " + loan.loanTerm;
-
-      dom.kpiPayment.textContent = fmtMoney(view.fixedPayment);
-
-      // Summary strip
-      dom.sumTotalPaid.textContent = fmtMoney(view.totalPaid);
-      dom.sumTotalInterest.textContent = fmtMoney(view.totalInterest);
-      dom.sumIoWindow.textContent = loan.interestOnlyMonths > 0
-        ? loan.interestOnlyMonths + " mo"
-        : "None";
-      const lastRow = view.rows[view.rows.length - 1];
-      dom.sumBalloon.textContent = fmtMoney(lastRow ? lastRow.payment : 0);
-
-      // Schedule
-      dom.scheduleMeta.textContent =
-        loan.loanTerm + " months · " + monthLabel(loan, 0) +
-        " – " + monthLabel(loan, loan.loanTerm - 1) +
-        (sameTerm ? "" : " · amortized as if " + loan.amortizationTerm + " months");
-      renderSchedule(view.rows);
-
-      // Toggle visibility
-      clearError();
-      dom.emptyState.classList.add("hidden");
-      dom.results.classList.remove("hidden");
-
-      // Reflect active selection in the quick-pick chips
-      highlightQuickPick(loan.id);
-    }
-
-    /** Load by id; show error if missing. */
-    function loadById(rawId, opts) {
-      const id = String(rawId == null ? "" : rawId).trim();
-      if (!id) {
-        // Empty input: reset to neutral empty state without an error.
-        clearError();
-        dom.results.classList.add("hidden");
-        dom.emptyState.classList.remove("hidden");
-        activeView = null;
-        highlightQuickPick(null);
-        return;
-      }
-      const loan = findLoan(id);
-      if (!loan) {
-        showError('Loan ID "' + id + '" was not found. Try 1001, 1002, or 1003.');
-        highlightQuickPick(null);
-        return;
-      }
-      if (opts && opts.syncInput) dom.input.value = loan.id;
-      render(loan);
-    }
-
-    /* ------------------------------------------------------------------ */
-    /*  6. QUICK-PICK CHIPS                                               */
-    /* ------------------------------------------------------------------ */
-    function buildQuickPicks() {
-      dom.quickPicks.innerHTML = LOAN_DATABASE.map((l) =>
-        '<button type="button" data-id="' + l.id + '" ' +
-        'class="quick-pick rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-left transition hover:border-brand-500 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-400/50">' +
-          '<span class="block text-sm font-bold text-white">#' + l.id + '</span>' +
-          '<span class="block text-[11px] text-slate-400">' + fmtMoney(l.principal) + ' · ' + (l.annualRate * 100).toFixed(2) + '%</span>' +
-        '</button>'
+    /* ================================================================
+       7. RENDERING
+       ================================================================ */
+    function renderSelect(){
+      dom.loanSelect.innerHTML = loans.map(l =>
+        '<option value="'+l._id+'">'+escapeHtml(loanLabel(l)) + (l.loanNumber ? "  ·  #"+escapeHtml(l.loanNumber) : "") +'</option>'
       ).join("");
+      if(state.activeId) dom.loanSelect.value = state.activeId;
+      dom.loanCountLabel.textContent = loans.length + (loans.length===1 ? " loan" : " loans");
+    }
 
-      dom.quickPicks.querySelectorAll(".quick-pick").forEach((btn) => {
-        btn.addEventListener("click", () => loadById(btn.dataset.id, { syncInput: true }));
+    function kpiCard(label, value, opts){
+      opts = opts || {};
+      const highlight = opts.highlight;
+      const sub = opts.sub ? '<p class="mt-1 text-xs '+(highlight?"text-brand-100/90":"text-slate-400")+'">'+escapeHtml(opts.sub)+'</p>' : '';
+      if(highlight){
+        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-600 to-brand-800 p-4 shadow-glow animate-fade-up">'+
+          '<div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>'+
+          '<p class="text-xs font-semibold uppercase tracking-wide text-brand-100">'+escapeHtml(label)+'</p>'+
+          '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
+      }
+      return '<div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 animate-fade-up">'+
+        '<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">'+escapeHtml(label)+'</p>'+
+        '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
+    }
+
+    function renderKPIs(loan, result){
+      const d = result.derived;
+      const termTxt = termLabel(loan.amortizationMonths) + " / " + termLabel(loan.loanTermMonths);
+      const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
+      dom.kpiGrid.innerHTML =
+        kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
+        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.interestOnly==="Y" ? "Amortizing (post-IO)" : "Actual/360 solved" }) +
+        kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: d.paymentsMade + " payments made" }) +
+        kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(loan.annualRate) }) +
+        kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
+        kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
+        kpiCard("Interest-Only", loan.interestOnly==="Y" ? (loan.ioMonths||0)+" mo" : "None", { sub: loan.interestOnly==="Y" ? "then amortizes" : "amortizing" }) +
+        kpiCard("Rate Type", loan.rateType || "—", { sub: loan.rateType==="Floating" ? (loan.index||"index")+" + spread" : "fixed rate" });
+    }
+
+    function renderProfile(loan, result){
+      const computedVals = result.derived;
+      let html = "";
+      SECTIONS.forEach(sec => {
+        const fieldsInSec = FIELDS.filter(f => f.sec === sec && (!f.cond || f.cond(loan) || f.kind==="computed"));
+        // For computed section, show all; for inputs, show all (blanks render as —).
+        const rows = fieldsInSec.map(f => {
+          let v;
+          if(f.kind === "computed") v = computedVals[f.key];
+          else v = loan[f.key];
+          const disp = displayValue(f.type, v);
+          const isComputed = f.kind === "computed";
+          return '<div class="flex items-baseline justify-between gap-3 border-b border-slate-800/60 py-1.5">'+
+            '<dt class="text-sm text-slate-400">'+escapeHtml(f.label)+
+              (isComputed ? ' <span class="ml-1 rounded bg-brand-500/15 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-300 align-middle">calc</span>' : '')+
+            '</dt>'+
+            '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-600":"text-slate-100")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
+          '</div>';
+        }).join("");
+        const accent = sec==="Debt Service (Computed)" ? "text-brand-300" : "text-slate-300";
+        html += '<div class="break-inside-avoid">'+
+          '<h3 class="mb-2 text-xs font-bold uppercase tracking-wider '+accent+'">'+escapeHtml(sec)+'</h3>'+
+          '<dl>'+rows+'</dl></div>';
+      });
+      dom.profileBody.innerHTML = html;
+    }
+
+    function renderSchedule(loan, result){
+      const d = result.derived;
+      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
+      const start = loanStartParts(loan);
+      const startLabel = MONTH_NAMES[start.mo]+" "+start.y;
+      const end = result.rows.length ? result.rows[result.rows.length-1].label : "—";
+      const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
+      dom.scheduleMeta.textContent = term + " months · " + startLabel + " – " + end +
+        (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
+
+      const nowIndex = d.paymentsMade;   // last made payment number
+      dom.scheduleBody.innerHTML = result.rows.map(r => {
+        let cls;
+        if(r.type==="io") cls="bg-amber-500/5 hover:bg-amber-500/10";
+        else if(r.type==="balloon"||r.type==="final") cls="bg-emerald-500/10 hover:bg-emerald-500/15 font-semibold";
+        else cls="hover:bg-slate-800/50";
+        const isNow = r.index === nowIndex;
+        if(isNow) cls += " ring-1 ring-inset ring-sky-400/50 bg-sky-500/10";
+        const badge =
+          r.type==="io" ? ' <span class="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-300">IO</span>' :
+          r.type==="balloon" ? ' <span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">Balloon</span>' :
+          r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-300">Final</span>' : '';
+        const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-300">Now</span>' : '';
+        return '<tr class="'+cls+' transition-colors">'+
+          '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
+          '<td class="px-4 py-2.5 text-left whitespace-nowrap text-slate-100">'+r.label+badge+nowBadge+'</td>'+
+          '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
+          '<td class="px-4 py-2.5 text-center text-slate-400">'+r.days+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-amber-200/90">'+fmtMoney(r.interest)+'</td>'+
+          '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.payment)+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-emerald-200/90">'+fmtMoney(r.principalPaid)+'</td>'+
+          '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.endingBalance)+'</td>'+
+        '</tr>';
+      }).join("");
+    }
+
+    function termLabel(months){
+      if(!months) return "—";
+      return (months % 12 === 0) ? (months/12)+"-yr" : months+" mo";
+    }
+
+    // ---- Edit / Add form ----
+    function fieldInputHtml(f){
+      const id = "f_"+f.key;
+      const base = 'class="w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"';
+      let control;
+      if(f.type==="select"){
+        const opts = (f.options||[]).map(o => '<option value="'+escapeHtml(o)+'">'+escapeHtml(o)+'</option>').join("");
+        control = '<select id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" '+base+'>'+opts+'</select>';
+      } else if(f.type==="yn"){
+        control = '<select id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" '+base+'><option value="N">No</option><option value="Y">Yes</option></select>';
+      } else if(f.type==="date"){
+        control = '<input id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" type="date" '+base+' />';
+      } else {
+        const inputmode = (f.type==="money"||f.type==="int"||f.type==="pct") ? 'inputmode="decimal"' : '';
+        const ph = f.hint ? 'placeholder="'+escapeHtml(f.hint)+'"' : '';
+        control = '<input id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" type="text" autocomplete="off" '+inputmode+' '+ph+' '+base+' />';
+      }
+      const suffix = f.type==="pct" ? '<span class="ml-1 text-xs text-slate-500">%</span>' : '';
+      const req = f.required ? ' <span class="text-rose-400">*</span>' : '';
+      return '<div data-fieldwrap="'+f.key+'">'+
+        '<label for="'+id+'" class="mb-1 block text-xs font-medium text-slate-400">'+escapeHtml(f.label)+req+'</label>'+
+        '<div class="flex items-center">'+control+suffix+'</div>'+
+      '</div>';
+    }
+
+    function renderForm(){
+      const inputSecs = ["Loan Identification","Loan Terms","Escrows & Reserves (Monthly)","Additional Fees (Monthly)"];
+      let html = "";
+      inputSecs.forEach(sec => {
+        const fields = INPUT_FIELDS.filter(f => f.sec === sec);
+        html += '<fieldset class="rounded-xl border border-slate-800 bg-slate-900/40 p-4">'+
+          '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-300">'+escapeHtml(sec)+'</legend>'+
+          '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">'+
+            fields.map(fieldInputHtml).join("")+
+          '</div></fieldset>';
+      });
+      dom.loanForm.innerHTML = html;
+
+      // Populate values from draft
+      INPUT_FIELDS.forEach(f => {
+        const node = el("f_"+f.key); if(!node) return;
+        const v = state.draft[f.key];
+        if(f.type==="pct") node.value = (v==null||v==="") ? "" : +( (v*100).toFixed(6) );
+        else if(f.type==="money"||f.type==="int") node.value = (v==null||v==="") ? "" : v;
+        else node.value = v==null ? "" : v;
+      });
+      // Conditional visibility + live updates
+      dom.loanForm.addEventListener("input", onFormChange);
+      dom.loanForm.addEventListener("change", onFormChange);
+      applyConditionalVisibility();
+    }
+
+    function applyConditionalVisibility(){
+      const interestOnly = (el("f_interestOnly")||{}).value;
+      const rateType = (el("f_rateType")||{}).value;
+      INPUT_FIELDS.forEach(f => {
+        if(!f.cond) return;
+        const wrap = dom.loanForm.querySelector('[data-fieldwrap="'+f.key+'"]');
+        if(!wrap) return;
+        const show = f.cond({ interestOnly, rateType });
+        wrap.hidden = !show;
+      });
+    }
+    function onFormChange(e){
+      if(e.target && (e.target.id==="f_interestOnly" || e.target.id==="f_rateType")) applyConditionalVisibility();
+    }
+
+    function readForm(){
+      const out = Object.assign({}, state.draft);
+      INPUT_FIELDS.forEach(f => {
+        const node = el("f_"+f.key); if(!node) return;
+        out[f.key] = parseValue(f.type, node.value);
+      });
+      return out;
+    }
+
+    /* ================================================================
+       8. VIEW DISPATCH
+       ================================================================ */
+    function setMode(mode){ state.mode = mode; render(); }
+
+    function render(){
+      renderSelect();
+      const hasLoans = loans.length > 0;
+      const loan = getLoan(state.activeId);
+
+      dom.editBtn.disabled = !loan || state.mode!=="view";
+      dom.removeBtn.disabled = !loan || state.mode!=="view";
+
+      // Toggle sections
+      dom.emptyState.hidden = !(state.mode==="empty" || (!hasLoans && state.mode!=="add"));
+      dom.loanView.hidden = !(state.mode==="view" && loan);
+      dom.formView.hidden = !(state.mode==="edit" || state.mode==="add");
+
+      if(state.mode==="view" && loan){
+        const result = compute(loan);
+        renderKPIs(loan, result);
+        renderProfile(loan, result);
+        renderSchedule(loan, result);
+        activeResult = result;
+      } else if(state.mode==="edit" || state.mode==="add"){
+        dom.formTitle.textContent = state.mode==="add" ? "Add Loan" : "Edit Loan — " + loanLabel(getLoan(state.activeId)||{});
+        hideFormError();
+        renderForm();
+      }
+    }
+
+    let activeResult = null;
+
+    /* ================================================================
+       9. ACTIONS
+       ================================================================ */
+    function selectLoan(id){ state.activeId = id; if(loans.length) setMode("view"); else setMode("empty"); }
+
+    function startAdd(){
+      state.draft = Object.assign(emptyLoan(), { _id: uid() });
+      state.mode = "add";
+      render();
+      window.scrollTo({ top:0, behavior:"smooth" });
+    }
+    function startEdit(){
+      const loan = getLoan(state.activeId); if(!loan) return;
+      state.draft = JSON.parse(JSON.stringify(loan));
+      state.mode = "edit";
+      render();
+    }
+    function cancelForm(){
+      state.draft = null;
+      setMode(loans.length ? (getLoan(state.activeId) ? "view":"empty") : "empty");
+    }
+    function saveForm(){
+      const data = readForm();
+      const err = validateLoan(data);
+      if(err){ showFormError(err); return; }
+      const existing = getLoan(data._id);
+      if(existing){ Object.assign(existing, data); toast("Loan updated", "check"); }
+      else { loans.push(data); toast("Loan added", "check"); }
+      state.activeId = data._id;
+      state.draft = null;
+      save();
+      setMode("view");
+    }
+    function removeActive(){
+      const loan = getLoan(state.activeId); if(!loan) return;
+      confirmDialog("Remove “"+loanLabel(loan)+"”?", "This loan record will be permanently deleted from your browser.", () => {
+        loans = loans.filter(l => l._id !== loan._id);
+        state.activeId = loans.length ? loans[0]._id : null;
+        save();
+        toast("Loan removed", "trash");
+        setMode(loans.length ? "view" : "empty");
       });
     }
 
-    function highlightQuickPick(activeId) {
-      dom.quickPicks.querySelectorAll(".quick-pick").forEach((btn) => {
-        const on = btn.dataset.id === activeId;
-        btn.classList.toggle("border-brand-500", on);
-        btn.classList.toggle("ring-2", on);
-        btn.classList.toggle("ring-brand-500/40", on);
-        btn.classList.toggle("bg-slate-800", on);
-      });
+    function validateLoan(l){
+      if(!l.originalAmount || l.originalAmount<=0) return "Original Loan Amount is required and must be greater than 0.";
+      if(l.annualRate==null || l.annualRate<0) return "Annual Interest Rate is required.";
+      if(!l.originationDate) return "Origination Date is required.";
+      if(!l.firstPaymentDate) return "First Payment Date is required.";
+      if(!l.amortizationMonths || l.amortizationMonths<=0) return "Amortization Period (months) is required.";
+      if(!l.loanTermMonths || l.loanTermMonths<=0) return "Loan Term (months) is required.";
+      if(l.loanTermMonths > l.amortizationMonths) return "Loan Term cannot exceed the Amortization Period.";
+      if(l.interestOnly==="Y" && (l.ioMonths==null || l.ioMonths<0)) return "Enter the IO Period (months) for an interest-only loan.";
+      if(l.interestOnly==="Y" && l.ioMonths >= l.amortizationMonths) return "IO Period must be shorter than the Amortization Period.";
+      return null;
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  7. CSV EXPORT                                                     */
-    /* ------------------------------------------------------------------ */
-    function csvCell(value) {
-      const s = String(value);
-      // Quote if the value contains comma, quote, or newline.
-      if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-      return s;
-    }
-
-    function exportCsv() {
-      if (!activeView) return;
-      const { loan, view } = activeView;
-
-      const header = [
-        "Month #", "Calendar Month", "Starting Balance", "Days in Month",
-        "Interest Charged", "Scheduled Payment", "Principal Paid", "Ending Balance",
-      ];
-
+    /* ================================================================
+       10. CSV (single schedule) + EXCEL (all loans) I/O
+       ================================================================ */
+    function exportScheduleCsv(){
+      const loan = getLoan(state.activeId); if(!loan || !activeResult) return;
+      const header = ["Month #","Calendar Month","Starting Balance","Days in Month","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
+      const cell = (v) => { const s=String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
       const lines = [];
-      // Metadata preamble for context in the exported file.
-      lines.push(["Loan ID", loan.id].map(csvCell).join(","));
-      lines.push(["Description", loan.name].map(csvCell).join(","));
-      lines.push(["Principal", loan.principal.toFixed(2)].map(csvCell).join(","));
-      lines.push(["Annual Rate", (loan.annualRate * 100).toFixed(4) + "%"].map(csvCell).join(","));
-      lines.push(["Amortization Term (months)", loan.amortizationTerm].map(csvCell).join(","));
-      lines.push(["Loan Term (months)", loan.loanTerm].map(csvCell).join(","));
-      lines.push(["Interest-Only Months", loan.interestOnlyMonths].map(csvCell).join(","));
-      lines.push(["Calculated Fixed Payment", view.fixedPayment.toFixed(2)].map(csvCell).join(","));
-      lines.push(""); // blank separator row
-      lines.push(header.map(csvCell).join(","));
+      lines.push(["Property", loanLabel(loan)].map(cell).join(","));
+      lines.push(["Original Amount", (loan.originalAmount||0).toFixed(2)].map(cell).join(","));
+      lines.push(["Annual Rate", fmtPct(loan.annualRate)].map(cell).join(","));
+      lines.push(["Monthly P&I", activeResult.derived.monthlyPI.toFixed(2)].map(cell).join(","));
+      lines.push(["Total Monthly Debt Service", activeResult.derived.totalDebtService.toFixed(2)].map(cell).join(","));
+      lines.push("");
+      lines.push(header.map(cell).join(","));
+      activeResult.rows.forEach(r => lines.push([r.index,r.label,r.startingBalance.toFixed(2),r.days,r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
+      downloadBlob("﻿"+lines.join("\r\n"), "schedule-"+slug(loanLabel(loan))+".csv", "text/csv;charset=utf-8;");
+      toast("Schedule exported", "download");
+    }
 
-      view.rows.forEach((r) => {
-        lines.push([
-          r.index,
-          r.label,
-          r.startingBalance.toFixed(2),
-          r.days,
-          r.interest.toFixed(2),
-          r.payment.toFixed(2),
-          r.principalPaid.toFixed(2),
-          r.endingBalance.toFixed(2),
-        ].map(csvCell).join(","));
+    function buildWorkbookAOA(){
+      // Columns: Section | Field | <one column per loan>
+      const header = ["Section","Field"].concat(loans.map((l,i)=> loanLabel(l) || ("Loan "+(i+1))));
+      const aoa = [["LOAN DEBT SERVICE"], [], header];
+      const results = loans.map(compute);
+      let lastSec = null;
+      FIELDS.forEach(f => {
+        const secCell = (f.sec !== lastSec) ? f.sec : "";
+        lastSec = f.sec;
+        const row = [secCell, f.label];
+        loans.forEach((l, i) => {
+          let v;
+          if(f.kind==="computed") v = results[i].derived[f.key];
+          else v = l[f.key];
+          row.push(exportCellValue(f.type, v));
+        });
+        aoa.push(row);
       });
+      return aoa;
+    }
+    function exportExcel(){
+      if(!loans.length){ toast("No loans to export", "info"); return; }
+      if(typeof XLSX === "undefined"){ toast("Excel library unavailable — exporting CSV", "info"); return exportAllCsvFallback(); }
+      const aoa = buildWorkbookAOA();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{wch:26},{wch:34}].concat(loans.map(()=>({wch:24})));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Loan Debt Service");
+      XLSX.writeFile(wb, "loan-debt-service.xlsx");
+      toast(loans.length+" loan"+(loans.length>1?"s":"")+" exported to Excel", "download");
+    }
+    function exportAllCsvFallback(){
+      const aoa = buildWorkbookAOA();
+      const cell = (v) => { const s=(v==null?"":String(v)); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+      const csv = aoa.map(r => r.map(cell).join(",")).join("\r\n");
+      downloadBlob("﻿"+csv, "loan-debt-service.csv", "text/csv;charset=utf-8;");
+    }
 
-      const csv = lines.join("\r\n");
-      // Prepend BOM so Excel reads UTF-8 currency/symbols correctly.
-      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    function importExcel(file){
+      if(typeof XLSX === "undefined"){ toast("Excel library unavailable", "info"); return; }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:"" });
+          const imported = parseImportedAOA(aoa);
+          if(!imported.length){ toast("No loans found in that file", "info"); return; }
+          const res = mergeImported(imported);
+          state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
+          save();
+          toast("Imported "+imported.length+" loan"+(imported.length>1?"s":"")+" ("+res.added+" new, "+res.updated+" updated)", "check");
+          setMode("view");
+        } catch(err){
+          console.error(err);
+          toast("Could not read that file", "info");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    function parseImportedAOA(aoa){
+      // Find header row containing a "Field" cell.
+      let headerRow = -1, fieldCol = -1;
+      for(let r=0; r<aoa.length; r++){
+        for(let c=0; c<aoa[r].length; c++){
+          if(normLabel(aoa[r][c]) === "field"){ headerRow = r; fieldCol = c; break; }
+        }
+        if(headerRow>=0) break;
+      }
+      if(headerRow < 0) return [];
+      // Loan columns = non-empty header cells to the right of Field.
+      const loanCols = [];
+      for(let c=fieldCol+1; c<aoa[headerRow].length; c++){
+        if(String(aoa[headerRow][c]).trim() !== "") loanCols.push(c);
+      }
+      if(!loanCols.length) return [];
+
+      const drafts = loanCols.map(() => Object.assign(emptyLoan(), { _id: uid() }));
+      for(let r=headerRow+1; r<aoa.length; r++){
+        const fname = aoa[r][fieldCol];
+        const field = LABEL_TO_FIELD[normLabel(fname)];
+        if(!field) continue;                       // unknown or computed -> skip
+        loanCols.forEach((c, i) => {
+          const raw = aoa[r][c];
+          if(raw === "" || raw == null) return;
+          drafts[i][field.key] = parseValue(field.type, raw);
+        });
+      }
+      // Keep only drafts that have at least an amount or a name.
+      return drafts.filter(d => d.originalAmount || d.propertyName || d.loanNumber);
+    }
+    // Stable identity for merge-on-import: loan number first, else name+address.
+    function identityKey(l){
+      const ln = String(l.loanNumber||"").trim().toLowerCase();
+      if(ln) return "num:"+ln;
+      const nm = String(l.propertyName||"").trim().toLowerCase();
+      const ad = String(l.propertyAddress||"").trim().toLowerCase();
+      return (nm||ad) ? "pa:"+nm+"|"+ad : null;   // null => no identity, always add
+    }
+    function mergeImported(drafts){
+      let added=0, updated=0, firstId=null;
+      drafts.forEach(d => {
+        const key = identityKey(d);
+        const match = key ? loans.find(l => identityKey(l) === key) : null;
+        if(match){
+          const id = match._id;
+          Object.assign(match, d, { _id:id });   // update in place, keep id
+          updated++; if(!firstId) firstId = id;
+        } else {
+          loans.push(d); added++; if(!firstId) firstId = d._id;
+        }
+      });
+      return { added, updated, firstId };
+    }
+
+    /* ================================================================
+       11. SMALL UI HELPERS
+       ================================================================ */
+    function escapeHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+    function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40) || "loan"; }
+    function downloadBlob(content, filename, mime){
+      const blob = new Blob([content], { type:mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "loan-" + loan.id + "-amortization.csv";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
     }
+    const ICONS = {
+      check:'<svg class="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+      trash:'<svg class="h-4 w-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+      download:'<svg class="h-4 w-4 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+      info:'<svg class="h-4 w-4 text-sky-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
+    };
+    let toastTimer = null;
+    function toast(msg, icon){
+      dom.toastText.textContent = msg;
+      dom.toastIcon.innerHTML = ICONS[icon] || ICONS.info;
+      dom.toast.style.opacity = "1";       // centering handled by the -translate-x-1/2 class
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { dom.toast.style.opacity = "0"; }, 2600);
+    }
+    function showFormError(msg){ dom.formError.textContent = msg; dom.formError.classList.remove("hidden"); dom.formError.classList.add("flex"); window.scrollTo({top:0,behavior:"smooth"}); }
+    function hideFormError(){ dom.formError.classList.add("hidden"); dom.formError.classList.remove("flex"); }
 
-    /* ------------------------------------------------------------------ */
-    /*  8. EVENT WIRING                                                   */
-    /* ------------------------------------------------------------------ */
-    // Debounced live load while typing.
-    let debounceTimer = null;
-    dom.input.addEventListener("input", () => {
-      clearError();
-      const value = dom.input.value.trim();
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (!value) {
-          loadById("");           // reset to empty state, no error
-        } else if (findLoan(value)) {
-          loadById(value);        // instant load on an exact match
-        }
-        // No match yet: stay quiet until the user commits (Enter / button).
-      }, 220);
-    });
+    let confirmCb = null;
+    function confirmDialog(title, text, cb){
+      dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb;
+      dom.confirmModal.classList.remove("hidden"); dom.confirmModal.classList.add("flex");
+    }
+    function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; }
 
-    // Explicit commit via Enter.
-    dom.input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        clearTimeout(debounceTimer);
-        loadById(dom.input.value);
-      }
-    });
+    /* ================================================================
+       12. EVENTS
+       ================================================================ */
+    dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
+    dom.addBtn.addEventListener("click", startAdd);
+    dom.editBtn.addEventListener("click", startEdit);
+    dom.removeBtn.addEventListener("click", removeActive);
+    dom.saveBtn.addEventListener("click", saveForm);
+    dom.cancelBtn.addEventListener("click", cancelForm);
+    dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
+    dom.exportBtn.addEventListener("click", exportExcel);
+    dom.importBtn.addEventListener("click", () => dom.importInput.click());
+    dom.importInput.addEventListener("change", (e) => { const f=e.target.files[0]; if(f) importExcel(f); e.target.value=""; });
+    dom.refiBtn.addEventListener("click", () => toast("Refi calculator is coming in a future release", "info"));
+    dom.confirmCancel.addEventListener("click", closeConfirm);
+    dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
+    dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
+    document.addEventListener("keydown", (e) => { if(e.key==="Escape" && !dom.confirmModal.classList.contains("hidden")) closeConfirm(); });
 
-    dom.loadBtn.addEventListener("click", () => {
-      clearTimeout(debounceTimer);
-      loadById(dom.input.value);
-    });
+    // Reflect SheetJS availability in the header dot.
+    if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-400"); dom.xlsxDot.classList.add("bg-amber-400"); }
 
-    dom.exportBtn.addEventListener("click", exportCsv);
-
-    /* ------------------------------------------------------------------ */
-    /*  9. INIT                                                           */
-    /* ------------------------------------------------------------------ */
-    buildQuickPicks();
-    // Preload the first demo loan so the dashboard is populated on arrival.
-    loadById(LOAN_DATABASE[0].id, { syncInput: true });
+    /* ================================================================
+       13. INIT
+       ================================================================ */
+    loans = load();
+    state.activeId = loans.length ? loans[0]._id : null;
+    state.mode = loans.length ? "view" : "empty";
+    render();
   })();
   </script>
 </body>
