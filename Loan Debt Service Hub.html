@@ -364,7 +364,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
-    const STORAGE_KEY = "ldsHub.loans.v4";
+    const STORAGE_KEY = "ldsHub.loans.v5";
     const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -941,32 +941,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     function seed(){
       const mk = (data) => Object.assign(emptyLoan(), { _id: uid() }, data);
+      // Portfolio imported from the senior's "Loan Input" sheet (24 loans).
       return [
-        mk({
-          propertyName:"Villages of Whitewater", propertyAddress:"10400 Edgewood Rd, Harrison, OH 45030",
-          propertyType:"Multifamily", lenderName:"Bellwether Enterprise (Fannie)", loanNumber:"",
-          originalAmount:11392000, annualRate:0.047, rateType:"Fixed",
-          originationDate:"2017-07-31", firstPaymentDate:"2017-09-01",
-          loanTermMonths:180, amortizationMonths:360, ioMonths:0,
-          replacementReserve:1522,
-        }),
-        mk({ propertyName:"Sample — Standard 30-Year", propertyType:"Multifamily", lenderName:"Sample Bank",
-          originalAmount:250000, annualRate:0.065, rateType:"Fixed",
-          originationDate:"2026-01-01", firstPaymentDate:"2026-02-01",
-          loanTermMonths:360, amortizationMonths:360, ioMonths:0 }),
-        mk({ propertyName:"Sample — 10-Yr Balloon / 30-Yr Amort", propertyType:"Office", lenderName:"Sample Bank",
-          originalAmount:1200000, annualRate:0.0725, rateType:"Fixed",
-          originationDate:"2026-03-01", firstPaymentDate:"2026-04-01",
-          loanTermMonths:120, amortizationMonths:360, ioMonths:0 }),
-        mk({ propertyName:"Sample — 5-Yr IO Hybrid", propertyType:"Mixed-Use", lenderName:"Sample Bank",
-          originalAmount:500000, annualRate:0.0575, rateType:"Fixed",
-          originationDate:"2026-06-01", firstPaymentDate:"2026-07-01",
-          loanTermMonths:180, amortizationMonths:360, ioMonths:60 }),
-        mk({ propertyName:"Sample — Floating (SOFR + 2.50%)", propertyType:"Industrial", lenderName:"Sample Bank",
-          rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.03,
-          originalAmount:3000000, originationDate:"2025-01-01", firstPaymentDate:"2025-02-01",
-          loanTermMonths:120, amortizationMonths:360, ioMonths:0 }),
-        demoARM(),
+        mk({ propertyName:"Villages of Whitewater", propertyAddress:"10400 Edgewood Rd, Harrison, OH 45030", propertyType:"Multifamily", lenderName:"Bellwether Enterprise (Fannie)", originalAmount:11392000, annualRate:0.047, rateType:"Fixed", originationDate:"2017-07-31", firstPaymentDate:"2017-09-01", loanTermMonths:180, amortizationMonths:360, ioMonths:0, replacementReserve:1522 }),
+        mk({ propertyName:"Villages of Independence", propertyAddress:"10702 Brentridge Cir, Independence, KY 41051", propertyType:"Multifamily", lenderName:"Prudential Multifamily (Fannie)", originalAmount:14175000, annualRate:0.0523, rateType:"Fixed", originationDate:"2018-12-20", firstPaymentDate:"2019-02-01", loanTermMonths:180, amortizationMonths:360, ioMonths:0, replacementReserve:1822 }),
+        mk({ propertyName:"Villages of Burlington", propertyAddress:"1816 Bordeaux Blvd, Burlington, KY 41005", propertyType:"Multifamily", lenderName:"Prudential Multifamily Mortgage (Fannie)", loanNumber:"Fannie 891177", originalAmount:16125000, annualRate:0.0488, rateType:"Fixed", originationDate:"2019-02-22", firstPaymentDate:"2019-04-01", loanTermMonths:180, amortizationMonths:360, ioMonths:0, replacementReserve:1917 }),
+        mk({ propertyName:"Villages of Whitewater II", propertyAddress:"196 Maxwell Ln, Harrison, OH 45030", propertyType:"Multifamily", lenderName:"Bellwether Enterprise (Fannie)", originalAmount:10695000, annualRate:0.0383, rateType:"Fixed", originationDate:"2020-02-13", firstPaymentDate:"2020-04-01", loanTermMonths:149, amortizationMonths:360, ioMonths:0, replacementReserve:1267 }),
+        mk({ propertyName:"Villages of Florence", propertyAddress:"7391 Hopeful Church Rd, Florence, KY 41042", propertyType:"Multifamily", lenderName:"Prudential Multifamily Mortgage (Fannie)", loanNumber:"Fannie 891177 series", originalAmount:30375000, annualRate:0.0312, rateType:"Fixed", originationDate:"2020-11-12", firstPaymentDate:"2023-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:24 }),
+        mk({ propertyName:"Weaver Mill", propertyAddress:"308 Finn Ln, Florence, KY 41042", propertyType:"Multifamily", lenderName:"Prudential Multifamily (Fannie)", originalAmount:8339000, annualRate:0.0312, rateType:"Fixed", originationDate:"2020-11-12", firstPaymentDate:"2023-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:24, replacementReserve:883.33 }),
+        mk({ propertyName:"The Lofts at Lafayette Square", propertyAddress:"1119 Mississippi Ave, St. Louis, MO 63104", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892172", originalAmount:16631000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2270.83 }),
+        mk({ propertyName:"The Residences at Forest Park", propertyAddress:"4910 W Pine Boulevard, St. Louis, MO 63108", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892174", originalAmount:23788000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2395.83 }),
+        mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, replacementReserve:15723 }),
+        mk({ propertyName:"Village at Bridgewater", propertyAddress:"101 Griggs Dr, Bridgewater, NJ 08807", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:29000000, annualRate:0.0294, rateType:"Fixed", originationDate:"2020-10-29", firstPaymentDate:"2024-12-01", loanTermMonths:144, amortizationMonths:360, ioMonths:48, replacementReserve:3417 }),
+        mk({ propertyName:"40 N Euclid Ave", propertyAddress:"40 N Euclid Ave, St. Louis, MO", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:25296800, annualRate:0.0308, rateType:"Fixed", originationDate:"2020-12-22", firstPaymentDate:"2025-02-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, replacementReserve:1417.67 }),
+        mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2029-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:96 }),
+        mk({ propertyName:"Living Lofts (Middlesex)", propertyAddress:"150 Lincoln Boulevard, Middlesex, NJ", propertyType:"Multifamily", lenderName:"Investors Bank", originalAmount:35296600, annualRate:0.031, rateType:"Fixed", index:"ust5y", spread:0.0263, rateFloor:0.031, originationDate:"2021-06-01", firstPaymentDate:"2023-08-01", loanTermMonths:120, amortizationMonths:360, ioMonths:26 }),
+        mk({ propertyName:"Queens Gate Apartments", propertyType:"Multifamily", lenderName:"New York Community Bank", loanNumber:"161001828", originalAmount:48000000, annualRate:0.03, rateType:"Fixed", index:"prime", rateFloor:0.03, originationDate:"2021-10-29", firstPaymentDate:"2025-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48 }),
+        mk({ propertyName:"28-58 JFK Blvd (Bayonne)", propertyAddress:"28-58 John F. Kennedy Blvd, Bayonne, NJ 07002", propertyType:"Multifamily", lenderName:"Signature Bank", loanNumber:"0153490-080691", originalAmount:21700000, annualRate:0.034, rateType:"Fixed", index:"ust5y", spread:0.0275, originationDate:"2022-03-25", firstPaymentDate:"2025-05-10", loanTermMonths:120, amortizationMonths:360, ioMonths:36 }),
+        mk({ propertyName:"M Lofts", propertyAddress:"1107 Mississippi Ave, St. Louis, MO 63104", propertyType:"Multifamily", lenderName:"Santander Bank (Fannie)", loanNumber:"7216141", originalAmount:6370000, annualRate:0.0566, rateType:"Floating", index:"sofr", spread:0.0205, rateFloor:0.0255, originationDate:"2022-04-25", firstPaymentDate:"2023-06-01", loanTermMonths:60, amortizationMonths:360, ioMonths:12, replacementReserve:1383 }),
+        mk({ propertyName:"The Mint (Rahway)", propertyAddress:"81 & 84 Monroe Street, Rahway, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:58000000, annualRate:0.0652, rateType:"Fixed", originationDate:"2024-04-05", firstPaymentDate:"2027-04-05", loanTermMonths:60, amortizationMonths:360, ioMonths:36 }),
+        mk({ propertyName:"The Mews at Princeton", propertyAddress:"900 Wessex Pl, Princeton, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:107100000, annualRate:0.068, rateType:"Fixed", originationDate:"2024-04-16", firstPaymentDate:"2027-05-01", loanTermMonths:60, amortizationMonths:360, ioMonths:36 }),
+        mk({ propertyName:"Reatta Ranch", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", loanNumber:"20251209", originalAmount:47000000, annualRate:0.0611, rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.0575, originationDate:"2025-12-10", firstPaymentDate:"2028-12-09", loanTermMonths:36, ioMonths:36 }),
+        mk({ propertyName:"Heritage Key Villas", propertyAddress:"Kissimmee, FL (Osceola County)", propertyType:"Multifamily", lenderName:"Valley National Bank", originalAmount:61000000, annualRate:0.057, rateType:"Fixed", index:"ust5y", spread:0.02, rateFloor:0.057, originationDate:"2026-01-14", firstPaymentDate:"2027-03-01", loanTermMonths:121, amortizationMonths:360, ioMonths:12 }),
+        mk({ propertyName:"Avalon White Plains", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1613", originalAmount:96000000, annualRate:0.0536, rateType:"Floating", index:"sofr", spread:0.0175, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", loanTermMonths:36, ioMonths:36, replacementReserve:8480 }),
+        mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", loanTermMonths:36, ioMonths:36 }),
+        mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2031-04-10", loanTermMonths:85, amortizationMonths:360, ioMonths:60 }),
+        mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Fixed", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2027-05-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12 }),
       ];
     }
     // 5/5 ARM commercial balloon demo, dated so the year-5 reset is in the past.
