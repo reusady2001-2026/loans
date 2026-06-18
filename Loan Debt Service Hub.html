@@ -1536,7 +1536,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       // Refinancing is a capital-raise for the business. Two things decide it:
       // (1) do you pull cash out? — a benefit, since it's put to work in the
       // business; (2) what happens to the rate? — the price of that money. Same
-      // or lower rate = the capital is at your current cost of money or cheaper.
+      // or lower rate = the capital is at your current cost of money or better.
       const oldRate = cur.derived.currentRate, newRate = newComp.derived.currentRate;
       const rateUp = newRate > oldRate + 0.00005, rateDown = newRate < oldRate - 0.00005;
       const rateMove = (rateUp || rateDown) ? (fmtPct(oldRate)+" → "+fmtPct(newRate)) : ("stays at "+fmtPct(oldRate));
@@ -1544,9 +1544,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if(isCashOut){
         if(!rateUp){
           tone="good"; verdict="Good — refinance";
-          reason="You pull "+fmtMoney(cashAtClose)+" of tax-free capital"
-               + (rateDown ? " and your rate drops "+rateMove+" — cheaper money and more of it."
-                           : " at the same "+fmtPct(oldRate)+" rate — more cheap capital at no extra cost.")
+          reason="You pull "+fmtMoney(cashAtClose)+" of capital"
+               + (rateDown ? " and your rate drops "+rateMove+" — a lower rate and more of it."
+                           : " at the same "+fmtPct(oldRate)+" rate — more capital at no extra cost.")
                + " Put to work in the business, that's a win.";
         } else {
           tone="warn"; verdict="Your call";
@@ -1555,7 +1555,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       } else {
         if(rateDown){
           tone="good"; verdict="Good — refinance";
-          reason="No cash pulled, but your rate drops "+rateMove+" — cheaper debt on the same balance, saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
+          reason="No cash pulled, but your rate drops "+rateMove+" — a lower rate on the same balance, saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
         } else if(rateUp){
           tone="bad"; verdict="Don't refinance";
           reason="No cash pulled and the rate rises "+rateMove+" — you'd just pay more for the same money.";
@@ -1673,13 +1673,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const cards = [];
       // Lead with the money raised (the benefit), then the rate (the price).
       if(r.cashAtClose > 1){
-        cards.push(refiCard("Capital freed (tax-free)", fmtMoney(r.cashAtClose), "new loan "+fmtMoney(r.newAmount)+" − payoff", "good"));
+        cards.push(refiCard("Capital freed", fmtMoney(r.cashAtClose), "new loan "+fmtMoney(r.newAmount)+" − payoff", "good"));
       } else {
         cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount),
           r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff"));
       }
       cards.push(refiCard("Rate", fmtPct(oRate)+" → "+fmtPct(nRate),
-        nRate < oRate-0.00005 ? "lower — cheaper money" : (nRate > oRate+0.00005 ? "higher — pricier money" : "unchanged — same price"),
+        nRate < oRate-0.00005 ? "lower rate" : (nRate > oRate+0.00005 ? "higher rate" : "unchanged"),
         nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
       cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
       cards.push(refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"));
