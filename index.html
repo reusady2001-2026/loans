@@ -507,6 +507,36 @@
     function marketRate(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? marketBaseRate() + m.bps/10000 : null; }
     function marketLabel(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.label : ""; }
     function marketBps(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.bps : null; }
+    // Guess the multifamily market from a property address (offline, keyword based).
+    function detectMarket(addr){
+      if(!addr) return "";
+      const s = (" "+String(addr)+" ").toLowerCase();
+      const cityRules = [
+        ["miami","miami"],["fort lauderdale","miami"],["west palm","miami"],["boca raton","miami"],["hialeah","miami"],
+        ["dallas","dfw"],["fort worth","dfw"],["plano","dfw"],["irving","dfw"],["frisco","dfw"],
+        ["new york","ny_nnj"],["brooklyn","ny_nnj"],["bronx","ny_nnj"],["queens","ny_nnj"],["manhattan","ny_nnj"],["newark","ny_nnj"],["jersey city","ny_nnj"],
+        ["los angeles","la"],["long beach","la"],
+        ["san francisco","sfbay"],["oakland","sfbay"],["san jose","sfbay"],
+        ["boston","boston"],["washington","dc"],["seattle","seattle"],["san diego","sandiego"],["denver","denver"],
+        ["orlando","orlando"],["tampa","tampa"],["atlanta","atlanta"],["chicago","chicago"],["phoenix","phoenix"],
+        ["charlotte","charlotte"],["nashville","nashville"],["austin","austin"],["houston","houston"],
+        ["minneapolis","minneapolis"],["st. paul","minneapolis"],["saint paul","minneapolis"],
+      ];
+      for(let i=0;i<cityRules.length;i++){ if(s.indexOf(cityRules[i][0])>=0) return cityRules[i][1]; }
+      const stm = String(addr).match(/\b([A-Za-z]{2})\s+\d{5}/);     // "TX 75201" -> state
+      const st = stm ? stm[1].toLowerCase() : "";
+      const stateMap = { ny:"ny_nnj", nj:"ny_nnj", fl:"miami", tx:"dfw", ca:"la", ma:"boston", dc:"dc",
+                         wa:"seattle", co:"denver", ga:"atlanta", il:"chicago", az:"phoenix",
+                         nc:"charlotte", tn:"nashville", mn:"minneapolis" };
+      return stateMap[st] || "";
+    }
+    // Time-weighted average of the stated rate over a hold window — so a Hybrid
+    // ARM is judged on teaser AND post-reset, not just the initial rate.
+    function effRateOverHold(comp, startIdx, hold){
+      let sum=0, n=0;
+      for(let m=0;m<hold;m++){ const row=comp.rows[startIdx+m]; if(!row) break; sum += row.rate; n++; }
+      return n>0 ? sum/n : null;
+    }
 
     // Index level (decimal). Floating uses the live current value first (the
     // rate floats with the market); a Hybrid ARM's stored value is the user's
@@ -1465,40 +1495,48 @@
       // since it's put to work in the business; (2) is the rate good *for this
       // metro*? The yardstick is the local multifamily market rate (live 10-yr
       // Treasury + the metro's spread), not the borrower's old rate.
-      const oldRate = cur.derived.currentRate, newRate = newComp.derived.currentRate;
-      const rateMove = (Math.abs(newRate-oldRate)>0.00005) ? (fmtPct(oldRate)+" → "+fmtPct(newRate)) : ("stays at "+fmtPct(oldRate));
+      const oldRate0 = cur.derived.currentRate, newRate0 = newComp.derived.currentRate;   // initial/contract rates
+      // ARM-aware: judge on the rate actually paid over the hold (teaser + reset),
+      // not just the initial rate. For a fixed loan these equal the initial rate.
+      const newRate = effRateOverHold(newComp, 0, hold);
+      const oldRate = effRateOverHold(cur, pm, hold);
+      const newRateEff = (newRate!=null) ? newRate : newRate0;
+      const oldRateEff = (oldRate!=null) ? oldRate : oldRate0;
+      const newRateTxt = newReset
+        ? (fmtPct(newRate0)+" now, resetting to "+fmtPct(newReset.rate)+" in "+newReset.monthsAway+" mo — about "+fmtPct(newRateEff)+"/yr over your "+hold+"-mo hold")
+        : fmtPct(newRateEff);
       const market = inp.market || "";
       const mkt = marketRate(market), mLabel = marketLabel(market);
-      const belowMkt = mkt!=null && newRate < mkt - 0.0005;
-      const aboveMkt = mkt!=null && newRate > mkt + 0.0005;
+      const belowMkt = mkt!=null && newRateEff < mkt - 0.0005;
+      const aboveMkt = mkt!=null && newRateEff > mkt + 0.0005;
       const mTxt = mkt!=null ? ("the ~"+fmtPct(mkt)+" market for "+mLabel) : "the market";
       let verdict, tone, reason;
       if(isCashOut){
         if(!aboveMkt){
           tone="good"; verdict="Good — refinance";
-          reason="You raise "+fmtMoney(cashAtClose)+" of capital at "+fmtPct(newRate)
-               + (belowMkt ? ", below "+mTxt+" — a strong rate to pull money out at." : ", in line with "+mTxt+".")
+          reason="You raise "+fmtMoney(cashAtClose)+" of capital at "+newRateTxt
+               + (belowMkt ? " — below "+mTxt+", a strong rate to pull money out at." : ", in line with "+mTxt+".")
                + " Put to work in the business, that's a win.";
         } else {
           tone="warn"; verdict="Shop the rate";
-          reason="You raise "+fmtMoney(cashAtClose)+" of capital, but "+fmtPct(newRate)+" is above "+mTxt+" — push your lender toward the market rate before you sign.";
+          reason="You raise "+fmtMoney(cashAtClose)+" of capital at "+newRateTxt+" — above "+mTxt+". Push your lender toward the market rate before you sign.";
         }
       } else {
-        if(newRate < oldRate - 0.00005){
+        if(newRateEff < oldRateEff - 0.00005){
           tone="good"; verdict="Good — refinance";
-          reason="No cash pulled, but your rate drops "+rateMove+" — a lower rate on the same balance"
-               + (aboveMkt ? ", though "+fmtPct(newRate)+" is still above "+mTxt+", so you may be able to push lower." : belowMkt ? ", and it beats "+mTxt+"." : ", about in line with "+mTxt+".");
+          reason="No cash pulled, but your effective rate over the hold drops to "+newRateTxt+" — below what you hold now"
+               + (aboveMkt ? ", though still above "+mTxt+", so you may be able to push lower." : belowMkt ? ", and below "+mTxt+"." : ", about in line with "+mTxt+".");
         } else {
           tone="bad"; verdict="Don't refinance";
-          reason="No cash pulled and the rate "+(Math.abs(newRate-oldRate)<=0.00005 ? "stays the same" : "rises "+rateMove)
-               + (aboveMkt ? " — and "+fmtPct(newRate)+" is above "+mTxt+". Nothing to gain here." : " — nothing to gain.");
+          reason="No cash pulled and your effective rate over the hold ("+newRateTxt+") isn't below what you hold now"
+               + (aboveMkt ? " — and it's above "+mTxt+". Nothing to gain here." : " — nothing to gain.");
         }
       }
-      if(armReset) reason += " (Counts the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
+      if(armReset) reason += " (Your current loan resets to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months — already in the effective rate above.)";
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
         remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
-        marketId:market, mkt, belowMkt, aboveMkt,
+        marketId:market, mkt, belowMkt, aboveMkt, newRateInit:newRate0, newRateEff,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1519,6 +1557,7 @@
         (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
     }
 
+    let refiMarketAuto = true;   // false once the user overrides the auto-detected market
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
@@ -1564,7 +1603,7 @@
                 '<select id="r_market" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+
                   MULTIFAMILY_MARKETS.map(function(m){return '<option value="'+m.id+'">'+escapeHtml(m.label)+'</option>';}).join('')+
                 '</select>'+
-                '<p class="mt-0.5 text-[11px] text-slate-400">we judge your rate against this metro’s multifamily market (live 10-yr UST + a metro spread)</p></div>'+
+                '<p class="mt-0.5 text-[11px] text-slate-400">auto-detected from the property address — override if needed. Sets the market we judge your rate against (live 10-yr UST + metro spread).</p></div>'+
               '<div id="refiCosts" class="grid grid-cols-1 sm:grid-cols-3 gap-4">'+
                 refiField("r_closingCosts","Closing Costs ($)", 0, "lender + legal + title")+
                 refiField("r_points","Points", 0, "% of new loan", true)+
@@ -1585,6 +1624,11 @@
       });
       INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
 
+      // Auto-pick the multifamily market from the property's address (overridable).
+      refiMarketAuto = true;
+      const mEl0 = el("r_market");
+      if(mEl0){ mEl0.value = detectMarket(loan.propertyAddress); mEl0.addEventListener("change", () => { refiMarketAuto = false; }); }
+
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
       const onForm = () => { applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan); };
@@ -1596,6 +1640,8 @@
     }
 
     function recomputeRefi(loan){
+      // Keep the market in sync with the property address until the user overrides.
+      if(refiMarketAuto){ const mEl=el("r_market"); if(mEl) mEl.value = detectMarket((el("rf_propertyAddress")||{}).value || loan.propertyAddress); }
       const inp = refiInputs();
       if(inp.newLoan && (inp.newLoan.rateType==="Floating" || inp.newLoan.rateType==="Hybrid ARM"))
         ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
@@ -1620,7 +1666,7 @@
         nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
       if(r.mkt!=null){
         cards.push(refiCard("Market rate — "+marketLabel(r.marketId), fmtPct(r.mkt),
-          "10-yr UST + "+marketBps(r.marketId)+" bps · yours "+fmtPct(nRate),
+          "10-yr UST + "+marketBps(r.marketId)+" bps · yours "+fmtPct(r.newRateEff),
           r.aboveMkt ? "bad" : "good"));
       }
       cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
@@ -1631,8 +1677,9 @@
           "vs reset pmt "+fmtMoney(r.armReset.payment)+" @ "+fmtPct(r.armReset.rate), afterSav>=0?"good":"bad"));
       }
       if(r.newReset){
-        cards.push(refiCard("New loan resets (mo "+r.newReset.monthsAway+")", fmtPct(r.newReset.rate),
-          "new payment → "+fmtMoney(r.newReset.payment), "bad"));
+        cards.push(refiCard("ARM rate over hold", fmtPct(r.newRateEff),
+          "starts "+fmtPct(r.newRateInit)+" → "+fmtPct(r.newReset.rate)+" at mo "+r.newReset.monthsAway,
+          r.aboveMkt ? "bad" : "good"));
       }
       if(r.closingTotal>0) cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
       // Footnote — not the verdict. Extra interest is larger only because the loan is larger.
