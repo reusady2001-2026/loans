@@ -1848,8 +1848,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           "10-yr UST + "+marketBps(r.marketId)+" bps · yours "+fmtPct(r.newRateEff),
           r.aboveMkt ? "bad" : "good"));
       }
-      cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
-      cards.push(refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"));
+      // During an interest-only period the payment you actually make is interest
+      // only (lower); the amortizing payment kicks in after. Show that, instead
+      // of only the post-IO amortizing figure.
+      const newIO = Math.max(0, Number(r.newLoan.ioMonths)||0);
+      const ioRow = (newIO>0 && r.newComp.rows[0] && r.newComp.rows[0].type==="io") ? r.newComp.rows[0] : null;
+      const newNowPay = ioRow ? ioRow.payment : r.newPI;
+      const savingNow = r.curPInow - newNowPay;
+      if(ioRow){
+        cards.push(refiCard("New Monthly Payment", fmtMoney(newNowPay), "interest-only for "+newIO+" mo, then "+fmtMoney(r.newPI)));
+      } else {
+        cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
+      }
+      cards.push(refiCard("Monthly Change (now)", signMoney(savingNow), savingNow>=0?"saved / month":"more / month", savingNow>=0?"good":"bad"));
       if(r.armReset){
         const afterSav = r.armReset.payment - r.newPI;   // savings once the reset hits
         cards.push(refiCard("After reset (mo "+r.armReset.monthsAway+")", signMoney(afterSav)+" / mo",
