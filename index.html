@@ -1423,31 +1423,67 @@
         if(newComp.rows[m]) newHoldInterest += newComp.rows[m].interest;
       }
 
+      // ---- True cost of the freed cash (the headline for a cash-out) ----
+      // What the cash you pull out actually costs per year, fully amortized over
+      // the hold. We build the incremental cash-flow stream — cash received
+      // today, the extra payment each month vs. keeping the old loan, and the
+      // extra balance still owed at the horizon — and solve its IRR. Because the
+      // new rate also re-prices the OLD balance, this comes out as the new rate
+      // PLUS (rate up) or MINUS (rate down) that re-pricing. Reported as a
+      // nominal annual rate, so "no rate change" lands exactly at the loan rate.
+      const oldRate = cur.derived.currentRate, newRate = newComp.derived.currentRate;
+      let cashCostRate = null;
+      if(isCashOut){
+        const cf = [ -cashAtClose ];                 // you receive the cash today
+        let oEnd = payoff, nEnd = Pnew;
+        for(let m=0; m<hold; m++){
+          const cr = cur.rows[pm+m], nr = newComp.rows[m];
+          cf.push((nr?nr.payment:0) - (cr?cr.payment:0));   // extra you pay this month
+          if(cr) oEnd = cr.endingBalance;
+          if(nr) nEnd = nr.endingBalance;
+        }
+        cf[cf.length-1] += (nEnd - oEnd);             // settle the extra balance left at the horizon
+        const npv = (rt)=>{ let s=0; for(let t=0;t<cf.length;t++) s += cf[t]/Math.pow(1+rt,t); return s; };
+        let lo=-0.95, hi=1.0;                          // monthly rate; stream is [−,+,+,…]
+        for(let k=0;k<200;k++){ const mid=(lo+hi)/2; if(npv(mid)>0) lo=mid; else hi=mid; }
+        cashCostRate = ((lo+hi)/2)*12;                 // nominal annual, comparable to the loan rate
+      }
+
       // ---- Verdict ----
       let verdict, tone, reason;
-      const beTxt = isFinite(breakEven) ? ("~"+breakEven+" month"+(breakEven===1?"":"s")) : "never on cash flow";
-      if(netBenefit > 0){
-        tone="good";
-        const strong = isFinite(breakEven) && breakEven <= Math.max(12, hold/3);
-        verdict = strong ? "Refinance" : "Refinance — modest";
-        reason = "Net benefit of "+fmtMoney(netBenefit)+" over your "+hold+"-month horizon"
-               + (closingTotal>0 ? ", recouping the "+fmtMoney(closingTotal)+" in costs in "+beTxt : "") + ".";
-        if(armReset) reason += " It locks out the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" month"+(armReset.monthsAway===1?"":"s")+" (its payment would jump to "+fmtMoney(armReset.payment)+").";
-        if(isCashOut) reason += " Frees "+fmtMoney(cashAtClose)+" cash at closing.";
+      if(isCashOut){
+        // Refinancing is a capital-raise: judge the COST of the freed cash and
+        // assume it goes to work in the business. Cheaper than (or equal to)
+        // your current debt = clear win; pricier = your call vs. deal returns.
+        // The rate direction is the clean signal: same/lower rate = capital at
+        // your current cost of money or better; a higher rate also re-prices the
+        // existing balance, so it's a judgment call vs. your deal returns.
+        const cheap = newRate <= oldRate + 0.00005;
+        tone = cheap ? "good" : "warn";
+        verdict = cheap ? "Good — cheap capital" : "Your call — price the capital";
+        const rateMove = (Math.abs(newRate-oldRate)<0.00005) ? "holds at "+fmtPct(oldRate) : fmtPct(oldRate)+" → "+fmtPct(newRate);
+        reason = "You pull "+fmtMoney(cashAtClose)+" of tax-free capital and your rate "+rateMove+"."
+          + (cheap
+              ? " That's money at your current cost of debt or better — effective "+fmtPct(cashCostRate)+"/yr all-in. Put it to work."
+              : " The higher rate also re-prices your existing balance, so all-in the cash costs an effective "+fmtPct(cashCostRate)+"/yr — it pays only if it earns more than that in the business.");
+        if(armReset) reason += " (Already counts the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
       } else {
-        tone="bad";
-        if(isCashOut){
-          verdict="Depends — cash-out";
-          reason="It frees "+fmtMoney(cashAtClose)+" in cash at closing, but costs "+fmtMoney(-netBenefit)+" more over "+hold+" months all-in (payments plus any balance still owed): you borrow "+fmtMoney(cashAtClose)+" more than today's "+fmtMoney(payoff)+" payoff and re-amortize over a fresh "+Math.round((newLoan.amortizationMonths||360)/12)+"-year schedule, so even with a lower monthly payment less of it retires principal.";
+        // No cash pulled — it's purely a rate play on the balance you already owe.
+        if(newRate < oldRate - 0.00005){
+          tone="good"; verdict="Refinance — lower rate";
+          reason="No cash pulled, but your rate drops "+fmtPct(oldRate)+" → "+fmtPct(newRate)+", saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
+        } else if(newRate > oldRate + 0.00005){
+          tone="bad"; verdict="Don't refinance";
+          reason="No cash pulled and the rate goes up ("+fmtPct(oldRate)+" → "+fmtPct(newRate)+") — you'd just pay more for the same money.";
         } else {
-          verdict="Don't refinance";
-          reason="Over "+hold+" months you'd pay "+fmtMoney(-netBenefit)+" more all-in (payments plus any balance still owed)"+(monthlySavingsNow>0 ? " — the lower monthly payment is outweighed by the slower principal paydown on the fresh "+Math.round((newLoan.amortizationMonths||360)/12)+"-year amortization, leaving more debt to clear at the horizon" : "")+".";
+          tone="warn"; verdict="No real gain";
+          reason="No cash pulled and the rate is unchanged — refinancing just restarts the clock and books costs for nothing.";
         }
         if(armReset) reason += " (This already accounts for the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
       }
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
-        remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
+        remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, cashCostRate, verdict, tone, reason,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1549,11 +1585,22 @@
                     : "border-amber-300 bg-amber-50 text-amber-900";
       const icon = r.tone==="good" ? "&#10003;" : r.tone==="bad" ? "&#10007;" : "!";
       const signMoney = (n) => (n>=0?"−":"+")+fmtMoney(Math.abs(n));   // savings as −$, increase as +$
-      const dNet = r.netBenefit>=0 ? "+"+fmtMoney(r.netBenefit) : "−"+fmtMoney(-r.netBenefit);
-      const cards = [
-        refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)),
-        refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"),
-      ];
+      const oRate = r.cur.derived.currentRate, nRate = r.newComp.derived.currentRate;
+      const cards = [];
+      // Headline for a cash-out: what the freed money actually costs per year.
+      if(r.isCashOut && r.cashCostRate!=null){
+        cards.push(refiCard("Cost of freed capital", fmtPct(r.cashCostRate)+" / yr",
+          "all-in on "+fmtMoney(r.cashAtClose)+" pulled out",
+          nRate <= oRate+0.00005 ? "good" : undefined));
+        cards.push(refiCard("Capital freed (tax-free)", fmtMoney(r.cashAtClose), "new loan "+fmtMoney(r.newAmount)+" − payoff"));
+      } else {
+        cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount),
+          r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff"));
+      }
+      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(nRate), "was "+fmtPct(oRate),
+        nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
+      cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
+      cards.push(refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"));
       if(r.armReset){
         const afterSav = r.armReset.payment - r.newPI;   // savings once the reset hits
         cards.push(refiCard("After reset (mo "+r.armReset.monthsAway+")", signMoney(afterSav)+" / mo",
@@ -1563,13 +1610,10 @@
         cards.push(refiCard("New loan resets (mo "+r.newReset.monthsAway+")", fmtPct(r.newReset.rate),
           "new payment → "+fmtMoney(r.newReset.payment), "bad"));
       }
-      cards.push(refiCard("Break-even", isFinite(r.breakEven)?r.breakEven+" mo":"never", "to recoup costs"));
-      cards.push(refiCard("Net over "+r.hold+" mo", dNet, r.netBenefit>=0?"total benefit":"total cost", r.netBenefit>=0?"good":"bad"));
-      const amtSub = r.cashAtClose>1 ? ("frees "+fmtMoney(r.cashAtClose)+" cash") : (r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff");
-      cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), amtSub));
-      cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
-      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newComp.derived.currentRate), "was "+fmtPct(r.cur.derived.currentRate)));
-      cards.push(refiCard("Interest over "+r.hold+" mo", fmtMoney(r.newHoldInterest), "current pays "+fmtMoney(r.curHoldInterest), r.newHoldInterest<=r.curHoldInterest?"good":"bad"));
+      if(r.closingTotal>0) cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
+      // Footnote — not the verdict. Extra interest is larger only because the loan is larger.
+      cards.push(refiCard("Extra interest, "+r.hold+" mo", fmtMoney(r.newHoldInterest - r.curHoldInterest),
+        "just because the loan is bigger — not a loss"));
       el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
           '<div class="flex items-center gap-3">'+
