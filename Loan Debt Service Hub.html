@@ -426,7 +426,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
       // ---- Loan Terms (inputs the app trusts) ----
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
-      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"all-in rate — or set Index + Index Value + Spread to lock it as index + spread", cond:(l)=>l.rateType!=="Floating" },
+      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"actual locked rate from your loan docs", cond:(l)=>l.rateType==="Hybrid ARM" || (l.rateType==="Fixed" && l.isHistorical) },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
@@ -434,9 +434,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
-      { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
-      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Fixed: value locked at origination · Floating: live · ARM: assumed at reset", aliases:["Assumed Index at Reset"] },
-      { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", aliases:["Spread Over Index","Contractual Margin","Margin"] },
+      { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
+      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Floating: live · ARM: assumed at reset · Other index: enter the value", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM"||(l.rateType==="Fixed"&&!l.isHistorical&&l.index&&INDEX_BY_ID[l.index]&&!INDEX_BY_ID[l.index].live), aliases:["Assumed Index at Reset"] },
+      { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"armInitialFixedMonths", label:"Initial Fixed Period (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 for a 5/5" },
@@ -730,12 +730,33 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if(loan.rateCap)   r = Math.min(loan.rateCap, r);
       return r;
     }
-    // A Fixed loan is priced as index + spread, locked at origination (the stored
-    // index level never floats). Falls back to a directly-entered all-in rate for
-    // legacy loans that only have a number.
+    // Today's value of an index as a decimal (live if we have it, else the
+    // catalog fallback). This is the level a NEW fixed loan locks in at save.
+    function liveOrFallbackDecimal(id){
+      const cat = INDEX_BY_ID[id];
+      if(!cat) return 0;
+      const live = (cat.live && INDEX_CACHE[id]) ? INDEX_CACHE[id].value/100 : null;
+      return live!=null ? live : cat.fallback/100;
+    }
+    // A Fixed loan's rate IS the index value + spread, locked at origination — you
+    // never type it. The one exception is a HISTORICAL loan (already originated):
+    // we can't pull the index as of that past date, so it carries the actual rate
+    // you entered by hand. (A legacy loan with no index + spread also falls back
+    // to its typed rate, as a safety net.)
     function fixedRate(loan){
-      const hasIdxSpread = loan.index && loan.spread!=null && loan.spread!=="" && loan.armAssumedIndex!=null && loan.armAssumedIndex!=="";
-      return hasIdxSpread ? allInRate(loan) : (loan.annualRate || 0);
+      if(loan.isHistorical) return loan.annualRate || 0;
+      const hasIdxSpread = loan.index && INDEX_BY_ID[loan.index] && loan.spread!=null && loan.spread!=="";
+      if(!hasIdxSpread && loan.annualRate!=null) return loan.annualRate;
+      return allInRate(loan);
+    }
+    // At save, a new fixed origination freezes today's index value + spread as its
+    // rate. Historical loans (and other rate types) are left untouched.
+    function lockFixedRate(loan){
+      if(loan.rateType!=="Fixed" || loan.isHistorical) return;
+      if(!loan.index || !INDEX_BY_ID[loan.index] || loan.spread==null || loan.spread==="") return;
+      const cat = INDEX_BY_ID[loan.index];
+      if(cat.live) loan.armAssumedIndex = liveOrFallbackDecimal(loan.index);   // lock the live level; a custom "Other" index keeps the entered value
+      loan.annualRate = allInRate(loan);                                       // cache the resulting all-in rate
     }
 
     // ---- Rate phases ----
@@ -900,6 +921,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
       l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr";
+      l.isHistorical = false;   // new loans price off index + spread; historical loans carry a typed rate
       return l;
     }
     function loanLabel(l){
@@ -958,7 +980,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", loanTermMonths:36, ioMonths:36 }),
         mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2031-04-10", loanTermMonths:85, amortizationMonths:360, ioMonths:60 }),
         mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2027-05-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
-      ];
+      ].map(l => { if(l.rateType==="Fixed") l.isHistorical = true; return l; });   // the portfolio is all already-originated loans
     }
     // 5/5 ARM commercial balloon demo, dated so the year-5 reset is in the past.
     function demoARM(){
@@ -1164,6 +1186,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     function renderForm(){
       dom.loanForm.innerHTML = buildFormFieldsets("f_");
+      injectHistoricalControls(dom.loanForm, "f_", state.draft);
       INPUT_FIELDS.forEach(f => setFieldValue("f_"+f.key, f.type, state.draft[f.key]));
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
@@ -1263,22 +1286,82 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       } finally { btn.disabled = false; }
     }
 
-    // Show/hide conditional term fields (ARM/floating) within a container.
+    // Show/hide conditional term fields within a container, then refresh the
+    // live "locked rate" preview. Conditions can depend on rate type, the index,
+    // and whether the loan is flagged historical.
     function applyVisibility(container, prefix){
       const rateType = (el(prefix+"rateType")||{}).value;
+      const isHistorical = !!(el(prefix+"isHistorical")||{}).checked;
+      const index = (el(prefix+"index")||{}).value;
+      const ctx = { rateType, isHistorical, index };
       INPUT_FIELDS.forEach(f => {
         if(!f.cond) return;
         const wrap = container.querySelector('[data-fieldwrap="'+f.key+'"]');
         if(!wrap) return;
-        wrap.hidden = !f.cond({ rateType });
+        wrap.hidden = !f.cond(ctx);
       });
+      const histRow = container.querySelector('[data-histrow]');   // historical toggle: Fixed only
+      if(histRow) histRow.hidden = (rateType !== "Fixed");
+      updateRatePreview(prefix);
     }
     function applyConditionalVisibility(){ applyVisibility(dom.loanForm, "f_"); }
     function onFormChange(e){
-      if(e.target && e.target.id==="f_rateType") applyConditionalVisibility();
+      const id = e.target && e.target.id;
+      if(id==="f_rateType" || id==="f_isHistorical" || id==="f_index") applyConditionalVisibility();
+      else updateRatePreview("f_");
     }
 
-    function readForm(){ return readFields("f_", state.draft); }
+    // Inject the "historical loan" toggle + the live "locked rate" preview into
+    // the Loan Terms section. Add/Edit only — a refinance is always a new
+    // origination, so it never has a historical option.
+    function injectHistoricalControls(container, prefix, draft){
+      const annWrap = container.querySelector('[data-fieldwrap="annualRate"]');
+      if(!annWrap) return;
+      const grid = annWrap.parentNode;
+      const toggle = document.createElement("div");
+      toggle.setAttribute("data-histrow", "");
+      toggle.className = "sm:col-span-2 lg:col-span-3";
+      toggle.innerHTML =
+        '<label class="flex items-start gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer">'+
+          '<input id="'+prefix+'isHistorical" type="checkbox" class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500" '+(draft && draft.isHistorical ? "checked" : "")+' />'+
+          '<span><span class="font-semibold">This is a historical loan</span> — already originated, so type its actual locked rate. '+
+          'For a new loan, leave this off and the rate comes from the index + spread automatically.</span>'+
+        '</label>';
+      grid.insertBefore(toggle, grid.firstChild);
+      const preview = document.createElement("div");
+      preview.id = prefix+"ratePreview";
+      preview.className = "sm:col-span-2 lg:col-span-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800";
+      preview.hidden = true;
+      grid.appendChild(preview);
+    }
+    // The rate a NEW fixed loan will lock in = today's index value + spread.
+    function updateRatePreview(prefix){
+      const box = el(prefix+"ratePreview");
+      if(!box) return;
+      const rateType = (el(prefix+"rateType")||{}).value;
+      const isHistorical = !!(el(prefix+"isHistorical")||{}).checked;
+      if(rateType !== "Fixed" || isHistorical){ box.hidden = true; return; }
+      const l = readFields(prefix, {});
+      const cat = INDEX_BY_ID[l.index];
+      let lv;
+      if(cat && cat.live) lv = liveOrFallbackDecimal(l.index);                                  // live index: lock today's value
+      else lv = (l.armAssumedIndex!=null && l.armAssumedIndex!=="") ? l.armAssumedIndex : (cat?cat.fallback/100:0);   // custom "Other": entered value
+      let r = lv + (l.spread||0);
+      if(l.rateFloor) r = Math.max(l.rateFloor, r);
+      if(l.rateCap)   r = Math.min(l.rateCap, r);
+      const when = (cat && cat.live && INDEX_CACHE[l.index]) ? (" · live as of "+INDEX_CACHE[l.index].date)
+                 : (cat && cat.live) ? " · fetching live rate…" : "";
+      box.innerHTML = "Locked rate = <strong>"+(cat?escapeHtml(cat.label):"index")+"</strong> "+fmtPct(lv)+
+        " + spread "+fmtPct(l.spread||0)+" = <strong>"+fmtPct(r)+"</strong>"+when;
+      box.hidden = false;
+    }
+
+    function readForm(){
+      const data = readFields("f_", state.draft);
+      const cb = el("f_isHistorical");
+      data.isHistorical = (data.rateType==="Fixed") ? (cb ? cb.checked : !!(state.draft && state.draft.isHistorical)) : false;
+      return data;
+    }
 
     /* ================================================================
        8. VIEW DISPATCH
@@ -1341,6 +1424,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const data = readForm();
       const err = validateLoan(data);
       if(err){ showFormError(err); return; }
+      lockFixedRate(data);   // freeze a new fixed loan's rate at index + spread
       const existing = getLoan(data._id);
       if(existing){ Object.assign(existing, data); toast("Loan updated", "check"); }
       else { loans.push(data); toast("Loan added", "check"); }
@@ -1365,6 +1449,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if(l.rateType==="Floating"){
         if(!l.index) return "Choose an Index for a floating-rate loan.";
         if(l.spread==null) return "Enter the Spread / Margin over the index.";
+      } else if(l.rateType==="Fixed" && !l.isHistorical){
+        if(!l.index || !INDEX_BY_ID[l.index]) return "Choose an Index — a fixed rate is the index plus your spread (or tick “historical loan” to type the rate).";
+        if(l.spread==null) return "Enter the Spread / Margin over the index (or tick “historical loan” to type the rate).";
       } else if(l.annualRate==null || l.annualRate<0){
         return "Annual Interest Rate is required.";
       }
@@ -1488,7 +1575,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           drafts[i][field.key] = parseValue(field.type, raw);
         });
       }
-      return drafts.filter(d => d.originalAmount || d.propertyName || d.loanNumber);
+      // Imported loans are existing, already-originated loans: carry their actual
+      // rate rather than recomputing it from today's index + spread.
+      return drafts.filter(d => d.originalAmount || d.propertyName || d.loanNumber)
+                   .map(d => { d.isHistorical = true; return d; });
     }
     // Stable identity for merge-on-import: loan number first, else name+address.
     function identityKey(l){
@@ -1783,7 +1873,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       // terms reset to a fresh fixed loan at today's rate, amount = payoff.
       const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
         propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
-        originalAmount: d.currentBalance, rateType: "Fixed", annualRate: loan.annualRate,
+        originalAmount: d.currentBalance, rateType: "Fixed", annualRate: loan.annualRate, isHistorical: false,
         amortizationMonths: 360, loanTermMonths: defTerm, ioMonths: 0,
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
       });
@@ -1813,8 +1903,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     function recomputeRefi(loan){
       const inp = refiInputs();
-      if(inp.newLoan && (inp.newLoan.rateType==="Floating" || inp.newLoan.rateType==="Hybrid ARM"))
-        ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
+      // The proposed loan always prices off the live index + spread (Fixed too),
+      // so make sure its index is fetched.
+      if(inp.newLoan && inp.newLoan.index) ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
       ensureIndexLive("ust10y", () => recomputeRefi(loan));   // live base for the market benchmark
       const r = computeRefi(loan, inp);
       const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
@@ -1886,6 +1977,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if(!nl.firstPaymentDate) nl.firstPaymentDate = partsToISO(fpm.y,fpm.mo,1);
       const err = validateLoan(nl);
       if(err){ toast(err, "info"); return; }
+      lockFixedRate(nl);   // a refinance is a new origination: lock index + spread
       loans.push(nl); state.activeId = nl._id; save();
       toast("Saved refinanced loan", "check"); setMode("view");
     }
