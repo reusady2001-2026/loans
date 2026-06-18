@@ -6,9 +6,9 @@
   <title>Loan Debt Service Hub</title>
   <meta name="description" content="Commercial loan debt-service tracker with an Actual/360 amortization engine, editable loan records, and Excel import/export." />
 
-  <!-- Tailwind (Play CDN) + SheetJS (Excel I/O) keep this a single self-contained file -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Tailwind + SheetJS are vendored locally (vendor/) so the app runs fully offline -->
+  <script src="./vendor/tailwindcss.js"></script>
+  <script src="./vendor/xlsx.full.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -32,9 +32,7 @@
     };
   </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- No web fonts: use the native system font stack so the app is fully offline -->
 
   <style>
     .thin-scroll::-webkit-scrollbar{width:10px;height:10px}

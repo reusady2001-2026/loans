@@ -1,0 +1,41 @@
+{
+  "name": "loan-debt-service-hub",
+  "version": "1.0.0",
+  "description": "Commercial Loan Debt Service Hub — offline desktop app",
+  "main": "main.js",
+  "author": "BSI",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win portable",
+    "build:win-installer": "electron-builder --win nsis",
+    "build:linux": "electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "il.co.bsi.loandebtservice",
+    "productName": "Loan Debt Service Hub",
+    "files": [
+      "index.html",
+      "main.js",
+      "vendor/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  }
+}
