@@ -391,12 +391,14 @@
           return isNaN(n) ? null : Math.round(n);
         }
         case "pct": {
-          // Accept "4.70%", "4.7", or decimal "0.047". >1 (or has %) => percent.
-          const hasPct = s.indexOf("%") >= 0;
+          // A percent field always holds a percentage, never a raw decimal:
+          // "4.70%", "4.7", "1" and "0.5" mean 4.70%, 4.70%, 1.00% and 0.50%
+          // (→ 0.047, 0.047, 0.01, 0.005). The form shows the percent number and
+          // our Excel export writes "…%", so dividing by 100 is always correct
+          // and round-trips cleanly. (Old heuristic mis-read "1" as 100%.)
           const n = parseFloat(s.replace(/[%,\s]/g,""));
           if(isNaN(n)) return null;
-          if(hasPct) return n/100;
-          return n > 1 ? n/100 : n;     // 4.7 -> 0.047 ; 0.047 -> 0.047
+          return n/100;
         }
         case "yn": {
           const u = s.toUpperCase();
@@ -1413,9 +1415,13 @@
       const newCost = (payoff + closingTotal - Pnew) + newHold.pi + newHold.endBal;
       const netBenefit = curCost - newCost;
 
-      let curRemInterest = 0;
-      for(let i=pm; i<cur.rows.length; i++) curRemInterest += cur.rows[i].interest;
-      const newTotInterest = newComp.totalInterest;
+      // Interest each loan accrues over the SAME hold horizon (apples-to-apples,
+      // so a longer new term isn't charged for months past the horizon).
+      let curHoldInterest = 0, newHoldInterest = 0;
+      for(let m=0; m<hold; m++){
+        if(cur.rows[pm+m])  curHoldInterest += cur.rows[pm+m].interest;
+        if(newComp.rows[m]) newHoldInterest += newComp.rows[m].interest;
+      }
 
       // ---- Verdict ----
       let verdict, tone, reason;
@@ -1432,16 +1438,16 @@
         tone="bad";
         if(isCashOut){
           verdict="Depends — cash-out";
-          reason="Over "+hold+" months this costs "+fmtMoney(-netBenefit)+" more, but frees "+fmtMoney(cashAtClose)+" in cash at closing.";
+          reason="It frees "+fmtMoney(cashAtClose)+" in cash at closing, but costs "+fmtMoney(-netBenefit)+" more over "+hold+" months all-in (payments plus any balance still owed): you borrow "+fmtMoney(cashAtClose)+" more than today's "+fmtMoney(payoff)+" payoff and re-amortize over a fresh "+Math.round((newLoan.amortizationMonths||360)/12)+"-year schedule, so even with a lower monthly payment less of it retires principal.";
         } else {
           verdict="Don't refinance";
-          reason="Over "+hold+" months you'd pay "+fmtMoney(-netBenefit)+" more overall"+(monthlySavingsNow>0 ? " — the lower monthly payment is outweighed by extra interest over the longer payoff" : "")+".";
+          reason="Over "+hold+" months you'd pay "+fmtMoney(-netBenefit)+" more all-in (payments plus any balance still owed)"+(monthlySavingsNow>0 ? " — the lower monthly payment is outweighed by the slower principal paydown on the fresh "+Math.round((newLoan.amortizationMonths||360)/12)+"-year amortization, leaving more debt to clear at the horizon" : "")+".";
         }
         if(armReset) reason += " (This already accounts for the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
       }
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
-        remainingMonths, hold, netBenefit, curRemInterest, newTotInterest, verdict, tone, reason,
+        remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1563,7 +1569,7 @@
       cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount), amtSub));
       cards.push(refiCard("Closing Costs", fmtMoney(r.closingTotal), "lender + title + points"));
       cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(r.newComp.derived.currentRate), "was "+fmtPct(r.cur.derived.currentRate)));
-      cards.push(refiCard("Interest: new vs. left", fmtMoney(r.newTotInterest), "current left "+fmtMoney(r.curRemInterest)));
+      cards.push(refiCard("Interest over "+r.hold+" mo", fmtMoney(r.newHoldInterest), "current pays "+fmtMoney(r.curHoldInterest), r.newHoldInterest<=r.curHoldInterest?"good":"bad"));
       el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
           '<div class="flex items-center gap-3">'+
