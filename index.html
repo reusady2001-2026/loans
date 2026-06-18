@@ -1423,67 +1423,42 @@
         if(newComp.rows[m]) newHoldInterest += newComp.rows[m].interest;
       }
 
-      // ---- True cost of the freed cash (the headline for a cash-out) ----
-      // What the cash you pull out actually costs per year, fully amortized over
-      // the hold. We build the incremental cash-flow stream — cash received
-      // today, the extra payment each month vs. keeping the old loan, and the
-      // extra balance still owed at the horizon — and solve its IRR. Because the
-      // new rate also re-prices the OLD balance, this comes out as the new rate
-      // PLUS (rate up) or MINUS (rate down) that re-pricing. Reported as a
-      // nominal annual rate, so "no rate change" lands exactly at the loan rate.
+      // ---- Verdict: weigh the money you raise against the price of that money ----
+      // Refinancing is a capital-raise for the business. Two things decide it:
+      // (1) do you pull cash out? — a benefit, since it's put to work in the
+      // business; (2) what happens to the rate? — the price of that money. Same
+      // or lower rate = the capital is at your current cost of money or cheaper.
       const oldRate = cur.derived.currentRate, newRate = newComp.derived.currentRate;
-      let cashCostRate = null;
-      if(isCashOut){
-        const cf = [ -cashAtClose ];                 // you receive the cash today
-        let oEnd = payoff, nEnd = Pnew;
-        for(let m=0; m<hold; m++){
-          const cr = cur.rows[pm+m], nr = newComp.rows[m];
-          cf.push((nr?nr.payment:0) - (cr?cr.payment:0));   // extra you pay this month
-          if(cr) oEnd = cr.endingBalance;
-          if(nr) nEnd = nr.endingBalance;
-        }
-        cf[cf.length-1] += (nEnd - oEnd);             // settle the extra balance left at the horizon
-        const npv = (rt)=>{ let s=0; for(let t=0;t<cf.length;t++) s += cf[t]/Math.pow(1+rt,t); return s; };
-        let lo=-0.95, hi=1.0;                          // monthly rate; stream is [−,+,+,…]
-        for(let k=0;k<200;k++){ const mid=(lo+hi)/2; if(npv(mid)>0) lo=mid; else hi=mid; }
-        cashCostRate = ((lo+hi)/2)*12;                 // nominal annual, comparable to the loan rate
-      }
-
-      // ---- Verdict ----
+      const rateUp = newRate > oldRate + 0.00005, rateDown = newRate < oldRate - 0.00005;
+      const rateMove = (rateUp || rateDown) ? (fmtPct(oldRate)+" → "+fmtPct(newRate)) : ("stays at "+fmtPct(oldRate));
       let verdict, tone, reason;
       if(isCashOut){
-        // Refinancing is a capital-raise: judge the COST of the freed cash and
-        // assume it goes to work in the business. Cheaper than (or equal to)
-        // your current debt = clear win; pricier = your call vs. deal returns.
-        // The rate direction is the clean signal: same/lower rate = capital at
-        // your current cost of money or better; a higher rate also re-prices the
-        // existing balance, so it's a judgment call vs. your deal returns.
-        const cheap = newRate <= oldRate + 0.00005;
-        tone = cheap ? "good" : "warn";
-        verdict = cheap ? "Good — cheap capital" : "Your call — price the capital";
-        const rateMove = (Math.abs(newRate-oldRate)<0.00005) ? "holds at "+fmtPct(oldRate) : fmtPct(oldRate)+" → "+fmtPct(newRate);
-        reason = "You pull "+fmtMoney(cashAtClose)+" of tax-free capital and your rate "+rateMove+"."
-          + (cheap
-              ? " That's money at your current cost of debt or better — effective "+fmtPct(cashCostRate)+"/yr all-in. Put it to work."
-              : " The higher rate also re-prices your existing balance, so all-in the cash costs an effective "+fmtPct(cashCostRate)+"/yr — it pays only if it earns more than that in the business.");
-        if(armReset) reason += " (Already counts the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
-      } else {
-        // No cash pulled — it's purely a rate play on the balance you already owe.
-        if(newRate < oldRate - 0.00005){
-          tone="good"; verdict="Refinance — lower rate";
-          reason="No cash pulled, but your rate drops "+fmtPct(oldRate)+" → "+fmtPct(newRate)+", saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
-        } else if(newRate > oldRate + 0.00005){
-          tone="bad"; verdict="Don't refinance";
-          reason="No cash pulled and the rate goes up ("+fmtPct(oldRate)+" → "+fmtPct(newRate)+") — you'd just pay more for the same money.";
+        if(!rateUp){
+          tone="good"; verdict="Good — refinance";
+          reason="You pull "+fmtMoney(cashAtClose)+" of tax-free capital"
+               + (rateDown ? " and your rate drops "+rateMove+" — cheaper money and more of it."
+                           : " at the same "+fmtPct(oldRate)+" rate — more cheap capital at no extra cost.")
+               + " Put to work in the business, that's a win.";
         } else {
-          tone="warn"; verdict="No real gain";
-          reason="No cash pulled and the rate is unchanged — refinancing just restarts the clock and books costs for nothing.";
+          tone="warn"; verdict="Your call";
+          reason="You pull "+fmtMoney(cashAtClose)+" of capital, but your rate rises "+rateMove+" — which also lifts the cost on the balance you already owe. Worth it only if that capital earns more than the higher rate in the business.";
         }
-        if(armReset) reason += " (This already accounts for the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
+      } else {
+        if(rateDown){
+          tone="good"; verdict="Good — refinance";
+          reason="No cash pulled, but your rate drops "+rateMove+" — cheaper debt on the same balance, saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
+        } else if(rateUp){
+          tone="bad"; verdict="Don't refinance";
+          reason="No cash pulled and the rate rises "+rateMove+" — you'd just pay more for the same money.";
+        } else {
+          tone="bad"; verdict="Don't refinance";
+          reason="No cash pulled and the rate stays at "+fmtPct(oldRate)+" — nothing to gain, and you'd restart the clock and pay closing costs for it.";
+        }
       }
+      if(armReset) reason += " (Counts the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
-        remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, cashCostRate, verdict, tone, reason,
+        remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1587,17 +1562,15 @@
       const signMoney = (n) => (n>=0?"−":"+")+fmtMoney(Math.abs(n));   // savings as −$, increase as +$
       const oRate = r.cur.derived.currentRate, nRate = r.newComp.derived.currentRate;
       const cards = [];
-      // Headline for a cash-out: what the freed money actually costs per year.
-      if(r.isCashOut && r.cashCostRate!=null){
-        cards.push(refiCard("Cost of freed capital", fmtPct(r.cashCostRate)+" / yr",
-          "all-in on "+fmtMoney(r.cashAtClose)+" pulled out",
-          nRate <= oRate+0.00005 ? "good" : undefined));
-        cards.push(refiCard("Capital freed (tax-free)", fmtMoney(r.cashAtClose), "new loan "+fmtMoney(r.newAmount)+" − payoff"));
+      // Lead with the money raised (the benefit), then the rate (the price).
+      if(r.cashAtClose > 1){
+        cards.push(refiCard("Capital freed (tax-free)", fmtMoney(r.cashAtClose), "new loan "+fmtMoney(r.newAmount)+" − payoff", "good"));
       } else {
         cards.push(refiCard("New Loan Amount", fmtMoney(r.newAmount),
           r.cashAtClose<-1 ? ("bring "+fmtMoney(-r.cashAtClose)+" to close") : "straight payoff"));
       }
-      cards.push(refiCard("New Rate ("+(r.newLoan.rateType||"Fixed")+")", fmtPct(nRate), "was "+fmtPct(oRate),
+      cards.push(refiCard("Rate", fmtPct(oRate)+" → "+fmtPct(nRate),
+        nRate < oRate-0.00005 ? "lower — cheaper money" : (nRate > oRate+0.00005 ? "higher — pricier money" : "unchanged — same price"),
         nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
       cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
       cards.push(refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"));
