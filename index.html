@@ -139,6 +139,9 @@
         <!-- KPI cards -->
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
+        <!-- Floating-rate monthly re-pricing notice -->
+        <div id="floatBanner" hidden></div>
+
         <!-- Profile (all data, read-only) -->
         <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -326,7 +329,7 @@
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
-      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Floating: live · ARM: assumed at reset · Other index: enter the value", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM"||(l.rateType==="Fixed"&&!l.isHistorical&&l.index&&INDEX_BY_ID[l.index]&&!INDEX_BY_ID[l.index].live), aliases:["Assumed Index at Reset"] },
+      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Floating/ARM use the live index automatically — set this only to override or for a custom (Other) index", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM"||(l.rateType==="Fixed"&&!l.isHistorical&&l.index&&INDEX_BY_ID[l.index]&&!INDEX_BY_ID[l.index].live), aliases:["Assumed Index at Reset"] },
       { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
@@ -603,16 +606,40 @@
       return n>0 ? sum/n : null;
     }
 
-    // Index level (decimal). Floating uses the live current value first (the rate
-    // floats with the market). A Fixed or Hybrid ARM loan's stored value is the
-    // level LOCKED at origination (Fixed) or assumed at reset (ARM), so it wins.
+    // Index level (decimal). A Fixed loan's level is LOCKED at origination, so its
+    // stored value wins. Anything that floats — a Floating loan, or a Hybrid ARM
+    // once it's past the fixed term — uses this month's live snapshot (re-priced on
+    // the 1st of each month and held flat for the projection), then the live value,
+    // then a manually-assumed value, then the catalog fallback.
     function indexLevel(loan){
       const cat = INDEX_BY_ID[loan.index];
       const stored = (loan.armAssumedIndex!=null && loan.armAssumedIndex!=="") ? loan.armAssumedIndex : null;
+      const snap = (loan.floatIndexValue!=null && loan.floatIndexValue!=="") ? loan.floatIndexValue : null;
       const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
       const fallback = cat ? cat.fallback/100 : 0;
-      if(loan.rateType === "Hybrid ARM" || loan.rateType === "Fixed") return (stored!=null) ? stored : (live!=null ? live : fallback);
-      return (live!=null) ? live : (stored!=null ? stored : fallback);
+      if(loan.rateType === "Fixed") return (stored!=null) ? stored : (live!=null ? live : fallback);
+      return (snap!=null) ? snap : (live!=null) ? live : (stored!=null ? stored : fallback);
+    }
+    // First of the current calendar month, ISO — the date a floating rate re-prices.
+    function firstOfThisMonthISO(){ const t = todayParts(); return partsToISO(t.y, t.mo, 1); }
+    // Re-price a floating index on the 1st of each month: capture the live index
+    // for the new month and hold it flat until the next 1st. Applies to Floating
+    // loans and Hybrid ARMs (the adjustable phase reads the same snapshot).
+    function repriceFloatingIndex(loan){
+      if(loan.rateType !== "Floating" && loan.rateType !== "Hybrid ARM") return;
+      const cat = INDEX_BY_ID[loan.index];
+      const thisFirst = firstOfThisMonthISO();
+      const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
+      let changed = false;
+      if(loan.floatRepricedOn !== thisFirst){            // new month (or first ever): capture it
+        loan.floatIndexValue = (live!=null) ? live : (cat ? cat.fallback/100 : 0);
+        loan.floatIndexLive  = (live!=null);
+        loan.floatRepricedOn = thisFirst;
+        changed = true;
+      } else if(!loan.floatIndexLive && live!=null){     // same month, live value just arrived: upgrade
+        loan.floatIndexValue = live; loan.floatIndexLive = true; changed = true;
+      }
+      if(changed) save();
     }
     // All-in floating / reset rate = clamp( index + spread, floor, cap ).
     function allInRate(loan){
@@ -943,6 +970,49 @@
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
         kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? "then amortizes" : "amortizing" }) +
         kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" });
+    }
+
+    // Notice that a floating phase re-prices monthly at the live index. Shown for
+    // Floating loans (whole life) and Hybrid ARMs (once they pass the fixed term).
+    function renderFloatingBanner(loan, result){
+      const box = el("floatBanner");
+      if(!box) return;
+      if(loan.rateType!=="Floating" && loan.rateType!=="Hybrid ARM"){ box.hidden = true; box.innerHTML = ""; return; }
+      const cat = INDEX_BY_ID[loan.index];
+      const idxLabel = cat ? cat.label : "the index";
+      const idx = indexLevel(loan), adjRate = allInRate(loan);
+      const asOf = (loan.floatRepricedOn ? fmtDateUS(loan.floatRepricedOn) : fmtDateUS(firstOfThisMonthISO()));
+      const t = todayParts();
+      const nextISO = (t.mo===11) ? partsToISO(t.y+1,0,1) : partsToISO(t.y,t.mo+1,1);
+      const live = loan.floatIndexLive ? "live" : "offline estimate";
+      const floorTxt = loan.rateFloor ? (" · floor "+fmtPct(loan.rateFloor)) : "";
+      const capTxt   = loan.rateCap   ? (" · cap "+fmtPct(loan.rateCap))   : "";
+      const calc = escapeHtml(idxLabel)+" "+fmtPct(idx)+" ("+live+") + spread "+fmtPct(loan.spread||0)+floorTxt+capTxt;
+      let headline, body;
+      if(loan.rateType==="Floating"){
+        headline = "Floating rate — re-prices on the 1st of each month at "+escapeHtml(idxLabel)+".";
+        body = "This month: <span class=\"font-semibold\">"+fmtPct(adjRate)+"</span> = "+calc+
+               ". Held flat for the projection; next re-price "+fmtDateUS(nextISO)+".";
+      } else {
+        const pm = result.derived.paymentsMade, initFixed = loan.armInitialFixedMonths||0;
+        const freq = loan.armAdjustFreqMonths||0;
+        if(pm < initFixed){
+          const toReset = initFixed - pm;
+          headline = "Hybrid ARM — fixed at "+fmtPct(loan.annualRate)+" for "+toReset+" more month"+(toReset===1?"":"s")+", then floats at "+escapeHtml(idxLabel)+".";
+          body = "Its adjustable rate re-prices monthly at the live index — today that would be <span class=\"font-semibold\">"+fmtPct(adjRate)+"</span> = "+calc+
+                 ". Held flat for the projection; index refreshes "+fmtDateUS(nextISO)+".";
+        } else {
+          headline = "Hybrid ARM — now adjustable; the rate floats at "+escapeHtml(idxLabel)+(freq?(", resetting every "+freq+" months"):"")+".";
+          body = "The index re-prices on the 1st of each month — this month: <span class=\"font-semibold\">"+fmtPct(adjRate)+"</span> = "+calc+
+                 ". Held flat for the projection; next re-price "+fmtDateUS(nextISO)+".";
+        }
+      }
+      box.innerHTML =
+        '<div class="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-sm text-sky-900 flex items-start gap-3">'+
+          '<svg class="h-5 w-5 shrink-0 mt-0.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
+          '<span><span class="font-bold">'+headline+'</span> '+body+' <span class="text-sky-600">(captured '+asOf+', automatic)</span></span>'+
+        '</div>';
+      box.hidden = false;
     }
 
     function renderProfile(loan, result){
@@ -1276,9 +1346,11 @@
 
       if(state.mode==="view" && loan){
         if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM") ensureIndexLive(loan.index, render);
+        repriceFloatingIndex(loan);   // re-price the live index for the current month (floating + ARM)
         const result = compute(loan);
         renderKPIs(loan, result);
         renderProfile(loan, result);
+        renderFloatingBanner(loan, result);
         renderSchedule(loan, result);
         activeResult = result;
       } else if(state.mode==="edit" || state.mode==="add"){
@@ -1901,6 +1973,23 @@
     state.activeId = loans.length ? loans[0]._id : null;
     state.mode = loans.length ? "view" : "empty";
     render();
+
+    // Floating phases re-price on the 1st of each month. If the app is left open
+    // across a month boundary (or regains focus in a new month), refresh the live
+    // index and re-render so the schedule updates on its own.
+    (function floatingMonthlyWatch(){
+      let lastMonth = (()=>{ const t=todayParts(); return t.y+"-"+t.mo; })();
+      const check = () => {
+        const t = todayParts(), m = t.y+"-"+t.mo;
+        if(m !== lastMonth){
+          lastMonth = m;
+          Object.keys(INDEX_CACHE).forEach(k => delete INDEX_CACHE[k]);   // force a fresh fetch for the new month
+          if(state.mode==="view") render();
+        }
+      };
+      setInterval(check, 60*60*1000);   // hourly
+      document.addEventListener("visibilitychange", () => { if(!document.hidden) check(); });
+    })();
   })();
   </script>
 </body>
