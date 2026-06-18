@@ -609,6 +609,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       { id:"austin",      label:"Austin",                         bps:160 },
       { id:"houston",     label:"Houston",                        bps:162 },
       { id:"minneapolis", label:"Minneapolis–St. Paul",      bps:160 },
+      { id:"philadelphia", label:"Philadelphia",                  bps:150 },
+      { id:"baltimore",    label:"Baltimore",                     bps:158 },
+      { id:"hartford",     label:"Hartford",                      bps:165 },
+      { id:"portland",     label:"Portland, OR",                  bps:152 },
+      { id:"lasvegas",     label:"Las Vegas",                     bps:158 },
+      { id:"saltlake",     label:"Salt Lake City",                bps:152 },
+      { id:"sacramento",   label:"Sacramento",                    bps:148 },
+      { id:"sanantonio",   label:"San Antonio",                   bps:160 },
+      { id:"cincinnati",   label:"Cincinnati / Columbus, OH",     bps:175 },
+      { id:"detroit",      label:"Detroit",                       bps:180 },
+      { id:"stlouis",      label:"St. Louis / Kansas City",       bps:178 },
+      { id:"indianapolis", label:"Indianapolis",                  bps:175 },
+      { id:"milwaukee",    label:"Milwaukee",                     bps:180 },
+      { id:"neworleans",   label:"New Orleans",                   bps:180 },
+      { id:"birmingham",   label:"Birmingham",                    bps:185 },
+      { id:"secondary",    label:"Secondary / regional market",   bps:178 },
       { id:"other_small", label:"Other / smaller market",         bps:210 },
     ];
     const MULTIFAMILY_BY_ID = {}; MULTIFAMILY_MARKETS.forEach(m => MULTIFAMILY_BY_ID[m.id] = m);
@@ -616,28 +632,77 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     function marketRate(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? marketBaseRate() + m.bps/10000 : null; }
     function marketLabel(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.label : ""; }
     function marketBps(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.bps : null; }
-    // Guess the multifamily market from a property address (offline, keyword based).
+    // Pick the multifamily market from a (free-text, US) property address. Handles
+    // the formats the app actually holds — "Street, City, ST ZIP", "City, ST",
+    // "City, State", a bare city, or just a state. A city keyword wins, matched
+    // on the CITY segment (not the street — so "Washington St, Dallas, TX" is
+    // Dallas, not DC); otherwise the state's default metro; otherwise National.
+    // Offline — no geocoding service.
+    const STATE_MARKET = {
+      al:"birmingham", ak:"secondary", az:"phoenix", ar:"secondary", ca:"la", co:"denver",
+      ct:"hartford", de:"philadelphia", fl:"miami", ga:"atlanta", hi:"secondary", id:"secondary",
+      il:"chicago", in:"indianapolis", ia:"secondary", ks:"secondary", ky:"secondary", la:"neworleans",
+      me:"secondary", md:"baltimore", ma:"boston", mi:"detroit", mn:"minneapolis", ms:"secondary",
+      mo:"stlouis", mt:"secondary", ne:"secondary", nv:"lasvegas", nh:"boston", nj:"ny_nnj",
+      nm:"secondary", ny:"ny_nnj", nc:"charlotte", nd:"secondary", oh:"cincinnati", ok:"secondary",
+      or:"portland", pa:"philadelphia", ri:"boston", sc:"charlotte", sd:"secondary", tn:"nashville",
+      tx:"dfw", ut:"saltlake", vt:"secondary", va:"dc", wa:"seattle", wv:"secondary", wi:"milwaukee",
+      wy:"secondary", dc:"dc"
+    };
+    const STATE_NAMES = {
+      "alabama":"al","alaska":"ak","arizona":"az","arkansas":"ar","california":"ca","colorado":"co",
+      "connecticut":"ct","delaware":"de","florida":"fl","georgia":"ga","hawaii":"hi","idaho":"id",
+      "illinois":"il","indiana":"in","iowa":"ia","kansas":"ks","kentucky":"ky","louisiana":"la",
+      "maine":"me","maryland":"md","massachusetts":"ma","michigan":"mi","minnesota":"mn","mississippi":"ms",
+      "missouri":"mo","montana":"mt","nebraska":"ne","nevada":"nv","new hampshire":"nh","new jersey":"nj",
+      "new mexico":"nm","new york":"ny","north carolina":"nc","north dakota":"nd","ohio":"oh","oklahoma":"ok",
+      "oregon":"or","pennsylvania":"pa","rhode island":"ri","south carolina":"sc","south dakota":"sd",
+      "tennessee":"tn","texas":"tx","utah":"ut","vermont":"vt","virginia":"va","washington state":"wa",
+      "west virginia":"wv","wisconsin":"wi","wyoming":"wy"
+    };
+    const CITY_RULES = [
+      ["miami","miami"],["fort lauderdale","miami"],["west palm","miami"],["boca raton","miami"],["hialeah","miami"],
+      ["jacksonville","orlando"],["orlando","orlando"],["tampa","tampa"],["st. petersburg","tampa"],["saint petersburg","tampa"],
+      ["dallas","dfw"],["fort worth","dfw"],["plano","dfw"],["irving","dfw"],["frisco","dfw"],["arlington","dfw"],
+      ["houston","houston"],["austin","austin"],["san antonio","sanantonio"],
+      ["new york","ny_nnj"],["brooklyn","ny_nnj"],["bronx","ny_nnj"],["queens","ny_nnj"],["manhattan","ny_nnj"],
+      ["newark","ny_nnj"],["jersey city","ny_nnj"],["hoboken","ny_nnj"],
+      ["los angeles","la"],["long beach","la"],["sacramento","sacramento"],
+      ["san francisco","sfbay"],["oakland","sfbay"],["san jose","sfbay"],["san diego","sandiego"],
+      ["boston","boston"],["washington","dc"],["seattle","seattle"],["denver","denver"],
+      ["atlanta","atlanta"],["chicago","chicago"],["phoenix","phoenix"],["tucson","phoenix"],
+      ["charlotte","charlotte"],["raleigh","charlotte"],["nashville","nashville"],["memphis","nashville"],
+      ["minneapolis","minneapolis"],["st. paul","minneapolis"],["saint paul","minneapolis"],
+      ["philadelphia","philadelphia"],["baltimore","baltimore"],["hartford","hartford"],
+      ["portland","portland"],["las vegas","lasvegas"],["salt lake","saltlake"],
+      ["cincinnati","cincinnati"],["columbus","cincinnati"],["cleveland","cincinnati"],
+      ["detroit","detroit"],["st. louis","stlouis"],["saint louis","stlouis"],["kansas city","stlouis"],
+      ["indianapolis","indianapolis"],["milwaukee","milwaukee"],["new orleans","neworleans"],["birmingham","birmingham"],
+    ];
+    function stateFromAddress(raw){
+      let m = raw.match(/\b([A-Za-z]{2})\s+\d{5}(?:-\d{4})?\s*$/);   // "… TX 75201"
+      if(!m) m = raw.match(/,\s*([A-Za-z]{2})\s*$/);                 // "…, TX"
+      if(!m) m = raw.match(/\b([A-Za-z]{2})\s*$/);                   // ends "… TX"
+      if(m && STATE_MARKET[m[1].toLowerCase()]) return m[1].toLowerCase();
+      const low = raw.toLowerCase();
+      for(const nm in STATE_NAMES){ if(new RegExp("\\b"+nm.replace(/ /g,"\\s")+"\\b").test(low)) return STATE_NAMES[nm]; }
+      return "";
+    }
     function detectMarket(addr){
       if(!addr) return "";
-      const s = (" "+String(addr)+" ").toLowerCase();
-      const cityRules = [
-        ["miami","miami"],["fort lauderdale","miami"],["west palm","miami"],["boca raton","miami"],["hialeah","miami"],
-        ["dallas","dfw"],["fort worth","dfw"],["plano","dfw"],["irving","dfw"],["frisco","dfw"],
-        ["new york","ny_nnj"],["brooklyn","ny_nnj"],["bronx","ny_nnj"],["queens","ny_nnj"],["manhattan","ny_nnj"],["newark","ny_nnj"],["jersey city","ny_nnj"],
-        ["los angeles","la"],["long beach","la"],
-        ["san francisco","sfbay"],["oakland","sfbay"],["san jose","sfbay"],
-        ["boston","boston"],["washington","dc"],["seattle","seattle"],["san diego","sandiego"],["denver","denver"],
-        ["orlando","orlando"],["tampa","tampa"],["atlanta","atlanta"],["chicago","chicago"],["phoenix","phoenix"],
-        ["charlotte","charlotte"],["nashville","nashville"],["austin","austin"],["houston","houston"],
-        ["minneapolis","minneapolis"],["st. paul","minneapolis"],["saint paul","minneapolis"],
-      ];
-      for(let i=0;i<cityRules.length;i++){ if(s.indexOf(cityRules[i][0])>=0) return cityRules[i][1]; }
-      const stm = String(addr).match(/\b([A-Za-z]{2})\s+\d{5}/);     // "TX 75201" -> state
-      const st = stm ? stm[1].toLowerCase() : "";
-      const stateMap = { ny:"ny_nnj", nj:"ny_nnj", fl:"miami", tx:"dfw", ca:"la", ma:"boston", dc:"dc",
-                         wa:"seattle", co:"denver", ga:"atlanta", il:"chicago", az:"phoenix",
-                         nc:"charlotte", tn:"nashville", mn:"minneapolis" };
-      return stateMap[st] || "";
+      const raw = String(addr).trim();
+      if(!raw) return "";
+      const low = raw.toLowerCase();
+      const parts = raw.split(",").map(s=>s.trim()).filter(Boolean);
+      // City keyword on the city segment (the part just before "ST ZIP").
+      const cityHay = (parts.length>=2 ? parts[parts.length-2] : raw).toLowerCase();
+      for(let i=0;i<CITY_RULES.length;i++){ if(cityHay.indexOf(CITY_RULES[i][0])>=0) return CITY_RULES[i][1]; }
+      // Otherwise the state's default metro.
+      const st = stateFromAddress(raw);
+      if(st && STATE_MARKET[st]) return STATE_MARKET[st];
+      // Bare city name with no commas — try a keyword match on the whole string.
+      if(parts.length<2){ for(let i=0;i<CITY_RULES.length;i++){ if(low.indexOf(CITY_RULES[i][0])>=0) return CITY_RULES[i][1]; } }
+      return "";
     }
     // Time-weighted average of the stated rate over a hold window — so a Hybrid
     // ARM is judged on teaser AND post-reset, not just the initial rate.
@@ -1733,10 +1798,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       });
       INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
 
-      // Auto-pick the multifamily market from the property's address (overridable).
+      // Auto-pick the multifamily market from the property's address. Re-detect
+      // when the address is edited; lock to the user's pick once they override.
       refiMarketAuto = true;
-      const mEl0 = el("r_market");
-      if(mEl0){ mEl0.value = detectMarket(loan.propertyAddress); mEl0.addEventListener("change", () => { refiMarketAuto = false; }); }
+      const mEl0 = el("r_market"), addrEl0 = el("rf_propertyAddress");
+      if(mEl0){
+        mEl0.value = detectMarket(loan.propertyAddress);
+        const markManual = () => { refiMarketAuto = false; };
+        mEl0.addEventListener("change", markManual);
+        mEl0.addEventListener("input", markManual);
+        if(addrEl0) addrEl0.addEventListener("input", () => { if(refiMarketAuto) mEl0.value = detectMarket(addrEl0.value); });
+      }
 
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
@@ -1749,8 +1821,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
 
     function recomputeRefi(loan){
-      // Keep the market in sync with the property address until the user overrides.
-      if(refiMarketAuto){ const mEl=el("r_market"); if(mEl) mEl.value = detectMarket((el("rf_propertyAddress")||{}).value || loan.propertyAddress); }
       const inp = refiInputs();
       if(inp.newLoan && (inp.newLoan.rateType==="Floating" || inp.newLoan.rateType==="Hybrid ARM"))
         ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
