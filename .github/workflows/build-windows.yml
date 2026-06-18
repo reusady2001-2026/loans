@@ -1,0 +1,57 @@
+name: Build Windows desktop app
+
+# Builds the Electron desktop app into a portable Windows .exe on GitHub's own
+# Windows machines, then publishes it as a downloadable release. Nothing needs
+# to be installed locally — download the .exe from the release and double-click.
+
+on:
+  push:
+    branches: ["claude/awesome-ptolemy-4s9eez"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build portable Windows .exe
+        run: npm run build:win
+
+      - name: Show build output
+        shell: bash
+        run: ls -la release || true
+
+      # Always keep the .exe as a run artifact (works regardless of repo settings).
+      - name: Upload .exe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loan-Debt-Service-Hub-Windows
+          path: release/*.exe
+          if-no-files-found: error
+
+      # Publish a single, always-current "latest-desktop" release with a clean
+      # download link. Re-created on every successful build.
+      - name: Publish download release
+        if: github.ref == 'refs/heads/claude/awesome-ptolemy-4s9eez'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release delete latest-desktop --yes --cleanup-tag || true
+          gh release create latest-desktop release/*.exe \
+            --target "$GITHUB_SHA" \
+            --title "Loan Debt Service Hub — Windows desktop app" \
+            --notes "Portable Windows desktop app. Download the .exe below, double-click it — it runs offline, no install and no admin rights needed. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
