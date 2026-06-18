@@ -581,6 +581,42 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const INDEX_CACHE = {};            // id -> { value(%), date }
     const INDEX_INFLIGHT = {};
 
+    // ---- Multifamily loan-market benchmarks ----------------------------------
+    // We finance multifamily only, and a "good" rate is relative to the LOCAL
+    // market — a rate that's sharp in Dallas can be rich in Miami. The market
+    // rate = live 10-yr Treasury + a per-metro spread (bps). The bps are seeded
+    // estimates of where agency/perm multifamily debt prices in each metro;
+    // adjust them as the market moves (the 10-yr leg is fetched live).
+    const MULTIFAMILY_MARKETS = [
+      { id:"",            label:"National (no metro)",            bps:155 },
+      { id:"ny_nnj",      label:"New York / Northern New Jersey", bps:125 },
+      { id:"la",          label:"Los Angeles",                    bps:125 },
+      { id:"sfbay",       label:"San Francisco Bay Area",         bps:125 },
+      { id:"boston",      label:"Boston",                         bps:128 },
+      { id:"dc",          label:"Washington, DC",                 bps:130 },
+      { id:"seattle",     label:"Seattle",                        bps:132 },
+      { id:"sandiego",    label:"San Diego",                      bps:135 },
+      { id:"denver",      label:"Denver",                         bps:142 },
+      { id:"miami",       label:"Miami / South Florida",          bps:145 },
+      { id:"orlando",     label:"Orlando",                        bps:150 },
+      { id:"tampa",       label:"Tampa",                          bps:150 },
+      { id:"atlanta",     label:"Atlanta",                        bps:150 },
+      { id:"chicago",     label:"Chicago",                        bps:150 },
+      { id:"phoenix",     label:"Phoenix",                        bps:152 },
+      { id:"dfw",         label:"Dallas–Fort Worth",         bps:155 },
+      { id:"charlotte",   label:"Charlotte",                      bps:155 },
+      { id:"nashville",   label:"Nashville",                      bps:155 },
+      { id:"austin",      label:"Austin",                         bps:160 },
+      { id:"houston",     label:"Houston",                        bps:162 },
+      { id:"minneapolis", label:"Minneapolis–St. Paul",      bps:160 },
+      { id:"other_small", label:"Other / smaller market",         bps:210 },
+    ];
+    const MULTIFAMILY_BY_ID = {}; MULTIFAMILY_MARKETS.forEach(m => MULTIFAMILY_BY_ID[m.id] = m);
+    function marketBaseRate(){ return INDEX_CACHE["ust10y"] ? INDEX_CACHE["ust10y"].value/100 : INDEX_BY_ID["ust10y"].fallback/100; }
+    function marketRate(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? marketBaseRate() + m.bps/10000 : null; }
+    function marketLabel(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.label : ""; }
+    function marketBps(id){ const m = MULTIFAMILY_BY_ID[id]; return m ? m.bps : null; }
+
     // Index level (decimal). Floating uses the live current value first (the
     // rate floats with the market); a Hybrid ARM's stored value is the user's
     // future-reset assumption, so it wins and defaults to live.
@@ -1447,6 +1483,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         newLoan: readFields("rf_", {}),                       // the full proposed loan
         closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
         holdMonths: intv("r_hold") || 0,
+        market: (el("r_market")||{}).value || "",             // selected multifamily metro
       };
     }
 
@@ -1532,42 +1569,45 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if(newComp.rows[m]) newHoldInterest += newComp.rows[m].interest;
       }
 
-      // ---- Verdict: weigh the money you raise against the price of that money ----
-      // Refinancing is a capital-raise for the business. Two things decide it:
-      // (1) do you pull cash out? — a benefit, since it's put to work in the
-      // business; (2) what happens to the rate? — the price of that money. Same
-      // or lower rate = the capital is at your current cost of money or better.
+      // ---- Verdict: judge the rate against the LOCAL multifamily market -------
+      // Two things decide a refinance: (1) do you pull cash out? — a benefit,
+      // since it's put to work in the business; (2) is the rate good *for this
+      // metro*? The yardstick is the local multifamily market rate (live 10-yr
+      // Treasury + the metro's spread), not the borrower's old rate.
       const oldRate = cur.derived.currentRate, newRate = newComp.derived.currentRate;
-      const rateUp = newRate > oldRate + 0.00005, rateDown = newRate < oldRate - 0.00005;
-      const rateMove = (rateUp || rateDown) ? (fmtPct(oldRate)+" → "+fmtPct(newRate)) : ("stays at "+fmtPct(oldRate));
+      const rateMove = (Math.abs(newRate-oldRate)>0.00005) ? (fmtPct(oldRate)+" → "+fmtPct(newRate)) : ("stays at "+fmtPct(oldRate));
+      const market = inp.market || "";
+      const mkt = marketRate(market), mLabel = marketLabel(market);
+      const belowMkt = mkt!=null && newRate < mkt - 0.0005;
+      const aboveMkt = mkt!=null && newRate > mkt + 0.0005;
+      const mTxt = mkt!=null ? ("the ~"+fmtPct(mkt)+" market for "+mLabel) : "the market";
       let verdict, tone, reason;
       if(isCashOut){
-        if(!rateUp){
+        if(!aboveMkt){
           tone="good"; verdict="Good — refinance";
-          reason="You pull "+fmtMoney(cashAtClose)+" of capital"
-               + (rateDown ? " and your rate drops "+rateMove+" — a lower rate and more of it."
-                           : " at the same "+fmtPct(oldRate)+" rate — more capital at no extra cost.")
+          reason="You raise "+fmtMoney(cashAtClose)+" of capital at "+fmtPct(newRate)
+               + (belowMkt ? ", below "+mTxt+" — a strong rate to pull money out at." : ", in line with "+mTxt+".")
                + " Put to work in the business, that's a win.";
         } else {
-          tone="warn"; verdict="Your call";
-          reason="You pull "+fmtMoney(cashAtClose)+" of capital, but your rate rises "+rateMove+" — which also lifts the cost on the balance you already owe. Worth it only if that capital earns more than the higher rate in the business.";
+          tone="warn"; verdict="Shop the rate";
+          reason="You raise "+fmtMoney(cashAtClose)+" of capital, but "+fmtPct(newRate)+" is above "+mTxt+" — push your lender toward the market rate before you sign.";
         }
       } else {
-        if(rateDown){
+        if(newRate < oldRate - 0.00005){
           tone="good"; verdict="Good — refinance";
-          reason="No cash pulled, but your rate drops "+rateMove+" — a lower rate on the same balance, saving "+fmtMoney(curHoldInterest-newHoldInterest)+" in interest over "+hold+" months.";
-        } else if(rateUp){
-          tone="bad"; verdict="Don't refinance";
-          reason="No cash pulled and the rate rises "+rateMove+" — you'd just pay more for the same money.";
+          reason="No cash pulled, but your rate drops "+rateMove+" — a lower rate on the same balance"
+               + (aboveMkt ? ", though "+fmtPct(newRate)+" is still above "+mTxt+", so you may be able to push lower." : belowMkt ? ", and it beats "+mTxt+"." : ", about in line with "+mTxt+".");
         } else {
           tone="bad"; verdict="Don't refinance";
-          reason="No cash pulled and the rate stays at "+fmtPct(oldRate)+" — nothing to gain, and you'd restart the clock and pay closing costs for it.";
+          reason="No cash pulled and the rate "+(Math.abs(newRate-oldRate)<=0.00005 ? "stays the same" : "rises "+rateMove)
+               + (aboveMkt ? " — and "+fmtPct(newRate)+" is above "+mTxt+". Nothing to gain here." : " — nothing to gain.");
         }
       }
       if(armReset) reason += " (Counts the current loan's reset to "+fmtPct(armReset.rate)+" in "+armReset.monthsAway+" months.)";
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
         remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
+        marketId:market, mkt, belowMkt, aboveMkt,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1629,6 +1669,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
             buildFormFieldsets("rf_")+
             '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
               '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">Refinance Transaction</legend>'+
+              '<div class="mb-4"><label for="r_market" class="mb-1 block text-xs font-medium text-slate-600">Property market (multifamily)</label>'+
+                '<select id="r_market" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+
+                  MULTIFAMILY_MARKETS.map(function(m){return '<option value="'+m.id+'">'+escapeHtml(m.label)+'</option>';}).join('')+
+                '</select>'+
+                '<p class="mt-0.5 text-[11px] text-slate-400">we judge your rate against this metro’s multifamily market (live 10-yr UST + a metro spread)</p></div>'+
               '<div id="refiCosts" class="grid grid-cols-1 sm:grid-cols-3 gap-4">'+
                 refiField("r_closingCosts","Closing Costs ($)", 0, "lender + legal + title")+
                 refiField("r_points","Points", 0, "% of new loan", true)+
@@ -1663,6 +1708,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const inp = refiInputs();
       if(inp.newLoan && (inp.newLoan.rateType==="Floating" || inp.newLoan.rateType==="Hybrid ARM"))
         ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
+      ensureIndexLive("ust10y", () => recomputeRefi(loan));   // live base for the market benchmark
       const r = computeRefi(loan, inp);
       const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
                     : r.tone==="bad"  ? "border-rose-300 bg-rose-50 text-rose-900"
@@ -1681,6 +1727,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       cards.push(refiCard("Rate", fmtPct(oRate)+" → "+fmtPct(nRate),
         nRate < oRate-0.00005 ? "lower rate" : (nRate > oRate+0.00005 ? "higher rate" : "unchanged"),
         nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
+      if(r.mkt!=null){
+        cards.push(refiCard("Market rate — "+marketLabel(r.marketId), fmtPct(r.mkt),
+          "10-yr UST + "+marketBps(r.marketId)+" bps · yours "+fmtPct(nRate),
+          r.aboveMkt ? "bad" : "good"));
+      }
       cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
       cards.push(refiCard("Monthly Change (now)", signMoney(r.monthlySavingsNow), r.monthlySavingsNow>=0?"saved / month":"more / month", r.monthlySavingsNow>=0?"good":"bad"));
       if(r.armReset){
