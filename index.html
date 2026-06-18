@@ -255,7 +255,7 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
-    const STORAGE_KEY = "ldsHub.loans.v5";
+    const STORAGE_KEY = "ldsHub.loans.v6";
     const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -317,7 +317,7 @@
 
       // ---- Loan Terms (inputs the app trusts) ----
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
-      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", required:true, hint:"e.g. 4.70", cond:(l)=>l.rateType!=="Floating" },
+      { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"all-in rate — or set Index + Index Value + Spread to lock it as index + spread", cond:(l)=>l.rateType!=="Floating" },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
@@ -325,9 +325,9 @@
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
-      { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
-      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", hint:"fetched live for US indexes", aliases:["Assumed Index at Reset"] },
-      { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", aliases:["Spread Over Index","Contractual Margin","Margin"] },
+      { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
+      { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Fixed: value locked at origination · Floating: live · ARM: assumed at reset", aliases:["Assumed Index at Reset"] },
+      { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"armInitialFixedMonths", label:"Initial Fixed Period (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 for a 5/5" },
@@ -603,15 +603,15 @@
       return n>0 ? sum/n : null;
     }
 
-    // Index level (decimal). Floating uses the live current value first (the
-    // rate floats with the market); a Hybrid ARM's stored value is the user's
-    // future-reset assumption, so it wins and defaults to live.
+    // Index level (decimal). Floating uses the live current value first (the rate
+    // floats with the market). A Fixed or Hybrid ARM loan's stored value is the
+    // level LOCKED at origination (Fixed) or assumed at reset (ARM), so it wins.
     function indexLevel(loan){
       const cat = INDEX_BY_ID[loan.index];
       const stored = (loan.armAssumedIndex!=null && loan.armAssumedIndex!=="") ? loan.armAssumedIndex : null;
       const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
       const fallback = cat ? cat.fallback/100 : 0;
-      if(loan.rateType === "Hybrid ARM") return (stored!=null) ? stored : (live!=null ? live : fallback);
+      if(loan.rateType === "Hybrid ARM" || loan.rateType === "Fixed") return (stored!=null) ? stored : (live!=null ? live : fallback);
       return (live!=null) ? live : (stored!=null ? stored : fallback);
     }
     // All-in floating / reset rate = clamp( index + spread, floor, cap ).
@@ -620,6 +620,13 @@
       if(loan.rateFloor) r = Math.max(loan.rateFloor, r);
       if(loan.rateCap)   r = Math.min(loan.rateCap, r);
       return r;
+    }
+    // A Fixed loan is priced as index + spread, locked at origination (the stored
+    // index level never floats). Falls back to a directly-entered all-in rate for
+    // legacy loans that only have a number.
+    function fixedRate(loan){
+      const hasIdxSpread = loan.index && loan.spread!=null && loan.spread!=="" && loan.armAssumedIndex!=null && loan.armAssumedIndex!=="";
+      return hasIdxSpread ? allInRate(loan) : (loan.annualRate || 0);
     }
 
     // ---- Rate phases ----
@@ -631,7 +638,7 @@
         return (m < initFixed) ? (loan.annualRate||0) : allInRate(loan);
       }
       if(loan.rateType === "Floating") return allInRate(loan);   // index + spread, live
-      return loan.annualRate || 0;
+      return fixedRate(loan);                                    // Fixed: index + spread locked, else typed rate
     }
     // A rate reset occurs at the end of the initial fixed period and every
     // adjustment-frequency months thereafter (recurring N/N ARM).
@@ -810,24 +817,8 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr.map(migrateLoan); }
-        // Migrate from a prior version, preserving the user's loans.
-        const oldRaw = localStorage.getItem("ldsHub.loans.v3") || localStorage.getItem("ldsHub.loans.v2");
-        if(oldRaw){
-          const old = JSON.parse(oldRaw);
-          if(Array.isArray(old) && old.length){
-            old.forEach(migrateLoan);
-            if(!old.some(l => l.rateType==="Hybrid ARM")) old.push(demoARM());
-            if(!old.some(l => l.rateType==="Floating")) old.push(Object.assign(emptyLoan(), { _id: uid() }, {
-              propertyName:"Sample — Floating (SOFR + 2.50%)", propertyType:"Industrial", lenderName:"Sample Bank",
-              rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.03,
-              originalAmount:3000000, originationDate:"2025-01-01", firstPaymentDate:"2025-02-01",
-              loanTermMonths:120, amortizationMonths:360, ioMonths:0 }));
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
-            return old;
-          }
-        }
       } catch(e){}
-      return seed();
+      return seed();   // fresh install or new storage version -> load the portfolio
     }
 
     function seed(){
