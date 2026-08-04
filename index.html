@@ -1924,7 +1924,7 @@
         newLoan: readFields("rf_", {}),                       // the full proposed loan
         closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
         holdMonths: intv("r_hold") || 0,
-        baseTenor: refiTenorAuto ? "" : ((el("r_baseTenor")||{}).value || ""),   // "" = auto-match to the proposed loan
+        baseTenor: refiTenorAuto ? "" : ((el("r_baseTenor")||{}).value || ""),   // "" = auto-match to this loan's own tenor (same basis as the scan)
         baseValue: refiBaseManual   ? pct("r_baseValue") : null,   // operator override of the base value
         spread:    refiSpreadManual ? bps("r_spread")    : null,   // operator override of the spread (bps)
       };
@@ -2028,8 +2028,12 @@
         ? (fmtPct(newRate0)+" now, resetting to "+fmtPct(newReset.rate)+" in "+newReset.monthsAway+" mo — about "+fmtPct(newRateEff)+"/yr over your "+hold+"-mo hold")
         : fmtPct(newRateEff);
       // Yardstick = tenor-matched live base + spread from your own recent deals
-      // (both overridable by the operator). Judge the effective rate against it.
-      const mp = refiMarketParts(loan, newLoan, { tenorId: inp.baseTenor||null, baseValue: inp.baseValue, spread: inp.spread });
+      // (both overridable by the operator). The tenor auto-matches THIS loan's own
+      // term/type (Treasury by term, SOFR for floating) — the same basis the portfolio
+      // scan uses — so the scan preview and this calculator show the same market rate
+      // on open. (Pass the subject as the proposed here; a manual tenor pick still wins
+      // via inp.baseTenor.) Judge the effective rate against it.
+      const mp = refiMarketParts(loan, loan, { tenorId: inp.baseTenor||null, baseValue: inp.baseValue, spread: inp.spread });
       const mkt = mp.marketRate;
       const belowMkt = newRateEff < mkt - 0.0005;
       const aboveMkt = newRateEff > mkt + 0.0005;
@@ -2081,7 +2085,8 @@
         (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
     }
 
-    // Market-rate override flags: the base tenor auto-matches the proposed loan,
+    // Market-rate override flags: the base tenor auto-matches the loan's own term/type
+    // (Treasury by term, SOFR for floating — the same yardstick the portfolio scan uses),
     // the base value tracks the live Treasury/SOFR, and the spread is calibrated
     // from recent deals — each until the operator edits it.
     let refiTenorAuto = true, refiBaseManual = false, refiSpreadManual = false;
@@ -2166,10 +2171,13 @@
       });
       INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
 
-      // Market-rate legs start on auto (base tenor matches the proposed loan, base
-      // value tracks live, spread is calibrated from recent deals) until edited.
+      // Market-rate legs start on auto until edited. The base tenor matches THIS
+      // loan's own term/type (Treasury by term, SOFR for floating) — the exact same
+      // yardstick the portfolio Refinance scan shows — so the market rate you see in
+      // the scan preview and the one you see here on open are identical. The base
+      // value tracks live and the spread is calibrated from your recent deals.
       refiTenorAuto = true; refiBaseManual = false; refiSpreadManual = false;
-      const bt = el("r_baseTenor"); if(bt) bt.value = matchedTenorId(draft);
+      const bt = el("r_baseTenor"); if(bt) bt.value = matchedTenorId(loan);
 
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
