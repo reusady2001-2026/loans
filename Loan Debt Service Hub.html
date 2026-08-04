@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Loan Debt Service Hub</title>
+  <title>Living Residential — Loan Debt Service Hub</title>
   <meta name="description" content="Commercial loan debt-service tracker with an Actual/360 amortization engine, editable loan records, and Excel import/export." />
 
   <!-- Tailwind + SheetJS are vendored locally (vendor/) so the app runs fully offline -->
@@ -126,16 +126,30 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
             sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
           },
           colors: {
+            // Living Residential — leaf green + black
             brand: {
-              50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',
-              500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81',950:'#1e1b4b',
+              50:'#f4fae8',100:'#e6f4c9',200:'#d0e99a',300:'#b4db62',400:'#9ccb3d',
+              500:'#7fb62b',600:'#639420',700:'#4c721b',800:'#3e5a1b',900:'#354c1b',950:'#1b2a09',
+            },
+            ink: {
+              50:'#f6f7f6',100:'#e6e8e6',200:'#c9cdc9',300:'#a3aaa3',400:'#767e76',
+              500:'#565d56',600:'#434a43',700:'#363c36',800:'#1f231f',900:'#121412',950:'#080908',
             },
           },
-          boxShadow: { glow: '0 0 0 1px rgba(99,102,241,0.25), 0 18px 38px -14px rgba(79,70,229,0.55)' },
-          keyframes: {
-            'fade-up': { '0%':{opacity:'0',transform:'translateY(8px)'}, '100%':{opacity:'1',transform:'translateY(0)'} },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(127,182,43,0.28), 0 18px 40px -14px rgba(76,114,27,0.5)',
+            card: '0 1px 2px rgba(18,20,18,0.04), 0 12px 30px -18px rgba(18,20,18,0.25)',
           },
-          animation: { 'fade-up':'fade-up 0.35s ease-out both' },
+          keyframes: {
+            'fade-up': { '0%':{opacity:'0',transform:'translateY(10px)'}, '100%':{opacity:'1',transform:'translateY(0)'} },
+            'fade-in': { '0%':{opacity:'0'}, '100%':{opacity:'1'} },
+            'pop-in':  { '0%':{opacity:'0',transform:'scale(.97)'}, '100%':{opacity:'1',transform:'scale(1)'} },
+          },
+          animation: {
+            'fade-up':'fade-up 0.4s cubic-bezier(.21,.9,.37,1) both',
+            'fade-in':'fade-in 0.4s ease-out both',
+            'pop-in':'pop-in 0.35s cubic-bezier(.21,.9,.37,1) both',
+          },
         },
       },
     };
@@ -150,10 +164,25 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .thin-scroll::-webkit-scrollbar-thumb:hover{background:#94a3b8}
     .grid-backdrop{
       background-image:
-        radial-gradient(circle at 16% 8%, rgba(99,102,241,.10), transparent 40%),
-        radial-gradient(circle at 88% 0%, rgba(16,185,129,.07), transparent 44%);
+        radial-gradient(circle at 14% 6%, rgba(127,182,43,.14), transparent 42%),
+        radial-gradient(circle at 92% 0%, rgba(76,114,27,.10), transparent 46%),
+        radial-gradient(circle at 50% 120%, rgba(18,20,18,.05), transparent 55%);
     }
     [hidden]{display:none !important}
+    /* Flow: soft lift + smooth transitions on interactive surfaces */
+    .lift{transition:transform .18s ease, box-shadow .18s ease}
+    .lift:hover{transform:translateY(-2px)}
+    .press{transition:transform .1s ease}.press:active{transform:scale(.98)}
+    /* Stagger children as they fade up */
+    .stagger>*{animation:fade-up .5s cubic-bezier(.21,.9,.37,1) both}
+    .stagger>*:nth-child(1){animation-delay:.02s}.stagger>*:nth-child(2){animation-delay:.06s}
+    .stagger>*:nth-child(3){animation-delay:.10s}.stagger>*:nth-child(4){animation-delay:.14s}
+    .stagger>*:nth-child(5){animation-delay:.18s}.stagger>*:nth-child(6){animation-delay:.22s}
+    .stagger>*:nth-child(7){animation-delay:.26s}.stagger>*:nth-child(8){animation-delay:.30s}
+    @media (prefers-reduced-motion: reduce){
+      .stagger>*,.animate-fade-up,.animate-fade-in,.animate-pop-in{animation:none !important}
+      .lift{transition:none}
+    }
   </style>
 </head>
 
@@ -161,30 +190,45 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <div class="grid-backdrop min-h-screen">
 
     <!-- ===================== HEADER ===================== -->
-    <header class="border-b border-slate-200 bg-white/80 backdrop-blur sticky top-0 z-30">
-      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+    <header class="border-b border-ink-200/70 bg-white/85 backdrop-blur sticky top-0 z-30">
+      <div class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow">
+          <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow lift press">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M10 10v8M14 10v8M18 10v8"/>
             </svg>
           </div>
-          <div>
-            <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 leading-tight">Loan Debt Service Hub</h1>
-            <p class="text-xs text-slate-500">Actual/360 engine &middot; computed balances &middot; Excel import / export</p>
+          <div class="leading-tight">
+            <div class="flex items-baseline gap-1.5">
+              <span class="text-lg sm:text-2xl font-extrabold tracking-tight text-brand-600">LIVING</span>
+              <span class="text-lg sm:text-2xl font-extrabold tracking-[0.02em] text-ink-900">RESIDENTIAL</span>
+            </div>
+            <p class="text-[11px] sm:text-xs text-ink-400">Loan Debt Service Hub &middot; Actual/360 engine</p>
           </div>
         </div>
-        <div class="hidden md:flex items-center gap-2 text-xs text-slate-500">
-          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+        <div class="hidden md:flex items-center gap-2 text-xs text-ink-400">
+          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-brand-500"></span>
           <span id="loanCountLabel">0 loans</span>
         </div>
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
 
-      <!-- ===================== TOOLBAR ===================== -->
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+      <!-- ===================== SCOPE TOGGLE ===================== -->
+      <div class="flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max animate-fade-in">
+        <button id="scopePortfolioBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+          Whole Portfolio
+        </button>
+        <button id="scopeLoanBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M14 10v8M18 10v8"/></svg>
+          Specific Loan
+        </button>
+      </div>
+
+      <!-- ===================== TOOLBAR (Specific Loan) ===================== -->
+      <section id="loanToolbar" class="rounded-2xl border border-ink-200 bg-white p-5 sm:p-6 shadow-card lift animate-fade-up">
         <div class="flex flex-col xl:flex-row xl:items-end gap-5">
           <!-- search / select -->
           <div class="flex-1 min-w-0">
@@ -204,11 +248,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
           <!-- actions -->
           <div class="flex flex-wrap items-center gap-2">
-            <button id="portfolioBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-              Portfolio
-            </button>
-            <button id="addBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 transition hover:from-brand-400 hover:to-brand-500 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/60">
+            <button id="addBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-brand-500/30 press transition hover:from-brand-400 hover:to-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-400/60">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
@@ -250,7 +290,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <!-- ===================== LOAN VIEW (read-only) ===================== -->
       <section id="loanView" class="space-y-8" hidden>
         <!-- KPI cards -->
-        <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        <div id="kpiGrid" class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
         <!-- Floating-rate monthly re-pricing notice -->
         <div id="floatBanner" hidden></div>
@@ -1035,7 +1075,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const el = (id) => document.getElementById(id);
     const dom = {
       loanSelect:el("loanSelect"), loanCountLabel:el("loanCountLabel"), xlsxDot:el("xlsxDot"),
-      addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"), portfolioBtn:el("portfolioBtn"),
+      addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
+      scopePortfolioBtn:el("scopePortfolioBtn"), scopeLoanBtn:el("scopeLoanBtn"), loanToolbar:el("loanToolbar"),
       importBtn:el("importBtn"), importInput:el("importInput"), exportBtn:el("exportBtn"), refiBtn:el("refiBtn"),
       emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"), refiView:el("refiView"), portfolioView:el("portfolioView"),
       kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
@@ -1063,12 +1104,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const highlight = opts.highlight;
       const sub = opts.sub ? '<p class="mt-1 text-xs '+(highlight?"text-brand-100":"text-slate-500")+'">'+escapeHtml(opts.sub)+'</p>' : '';
       if(highlight){
-        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500 to-brand-700 p-4 shadow-glow animate-fade-up">'+
+        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500 to-brand-700 p-4 shadow-glow lift">'+
           '<div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>'+
           '<p class="text-xs font-semibold uppercase tracking-wide text-brand-100">'+escapeHtml(label)+'</p>'+
           '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
       }
-      return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm animate-fade-up">'+
+      return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-card lift">'+
         '<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">'+escapeHtml(label)+'</p>'+
         '<p class="mt-2 text-2xl font-extrabold text-slate-900 tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
     }
@@ -1593,6 +1634,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       dom.removeBtn.disabled = !loan || state.mode!=="view";
       dom.refiBtn.disabled = !loan || state.mode!=="view";
 
+      // Scope: "Whole Portfolio" shows only the dashboard; "Specific Loan" reveals
+      // the loan selector + single-loan views.
+      const portfolioScope = state.mode==="portfolio";
+      dom.loanToolbar.hidden = portfolioScope;
+      const onCls = "bg-brand-600 text-white shadow-sm shadow-brand-500/30";
+      const offCls = "text-ink-500 hover:bg-ink-50";
+      dom.scopePortfolioBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition "+(portfolioScope?onCls:offCls);
+      dom.scopeLoanBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition "+(portfolioScope?offCls:onCls);
+
       dom.emptyState.hidden = !((state.mode==="empty" || (!hasLoans && state.mode!=="add")) && state.mode!=="portfolio");
       dom.loanView.hidden = !(state.mode==="view" && loan);
       dom.formView.hidden = !(state.mode==="edit" || state.mode==="add");
@@ -1656,7 +1706,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const td=(v,e)=>'<td class="px-3 py-2 text-sm '+(e||'text-slate-700')+'">'+v+'</td>';
       const tdR=(v,e)=>'<td class="px-3 py-2 text-sm text-right tabular-nums '+(e||'text-slate-700')+'">'+v+'</td>';
       const tableCard=(title,sub,head,body)=>
-        '<div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+
+        '<div class="rounded-2xl border border-slate-200 bg-white shadow-card lift overflow-hidden animate-fade-up">'+
           '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+
           '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
         '</div>';
@@ -1690,7 +1740,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
             '<p class="text-sm text-slate-500">'+loans.length+' loans — where the whole book stands and your options</p></div>'+
           '<div class="text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</div>'+
         '</div>'+
-        '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
+        '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
         tableCard("All Loans","sorted by current balance — click a row to open it",
           '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows)+
@@ -2334,7 +2384,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     dom.importBtn.addEventListener("click", () => dom.importInput.click());
     dom.importInput.addEventListener("change", (e) => { const f=e.target.files[0]; if(f) importExcel(f); e.target.value=""; });
     dom.refiBtn.addEventListener("click", startRefi);
-    dom.portfolioBtn.addEventListener("click", () => setMode("portfolio"));
+    dom.scopePortfolioBtn.addEventListener("click", () => setMode("portfolio"));
+    dom.scopeLoanBtn.addEventListener("click", () => {
+      if(!loans.length){ setMode("empty"); return; }
+      if(!getLoan(state.activeId)) state.activeId = loans[0]._id;
+      setMode("view");
+    });
     dom.confirmCancel.addEventListener("click", closeConfirm);
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
@@ -2347,7 +2402,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
        ================================================================ */
     loans = load();
     state.activeId = loans.length ? loans[0]._id : null;
-    state.mode = loans.length ? "view" : "empty";
+    state.mode = loans.length ? "portfolio" : "empty";   // open on the whole-portfolio dashboard
     render();
 
     // Floating phases re-price on the 1st of each month. If the app is left open
