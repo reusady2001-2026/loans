@@ -65,7 +65,3 @@ jobs:
               --notes "$NOTES" \
               --latest
           fi
-          # One-time correction: v1.2.0 was published for a design-only change that
-          # should have been the 1.1.1 patch. Remove that stray release + tag (it is
-          # newer than the real latest, not older history). Harmless once it's gone.
-          gh release delete v1.2.0 --yes --cleanup-tag || true

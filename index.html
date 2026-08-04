@@ -370,7 +370,7 @@
       { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"actual locked rate from your loan docs", cond:(l)=>l.rateType==="Hybrid ARM" || (l.rateType==="Fixed" && l.isHistorical) },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
-      { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, aliases:["First P&I Date"] },
+      { sec:"Loan Terms", key:"firstPaymentDate",   label:"First P&I Date",               type:"date",   kind:"input", required:true, hint:"first principal+interest payment (after the IO period)", aliases:["First Payment Date"] },
       { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
@@ -408,6 +408,7 @@
       { sec:"Debt Service (Computed)", key:"monthlyPI",        label:"Monthly P&I Payment ($)",         type:"money", kind:"computed" },
       { sec:"Debt Service (Computed)", key:"totalDebtService", label:"Total Monthly Debt Service ($)",  type:"money", kind:"computed" },
       { sec:"Debt Service (Computed)", key:"originalIO",       label:"Original IO Period (Mo)",         type:"int",   kind:"computed" },
+      { sec:"Debt Service (Computed)", key:"ioRemaining",      label:"IO Period Remaining (Mo)",        type:"int",   kind:"computed" },
       { sec:"Debt Service (Computed)", key:"monthsToMaturity", label:"Months to Maturity",              type:"int",   kind:"computed" },
       { sec:"Debt Service (Computed)", key:"paymentsMade",     label:"P&I Payments Made",               type:"int",   kind:"computed" },
       { sec:"Debt Service (Computed)", key:"currentRate",      label:"Current Interest Rate",           type:"pct",   kind:"computed" },
@@ -494,8 +495,19 @@
        ================================================================ */
     // Payment is in arrears: a payment dated the 1st covers the PRIOR month's
     // interest, so accrual begins the month before the first payment.
+    // The senior's "First P&I Date" is the first PRINCIPAL + interest payment — it
+    // lands AFTER the interest-only period. The loan actually begins at origination:
+    // interest (and the IO clock) start then, and the first interest-only payment is
+    // ~IO months BEFORE the First P&I date. Anchor the whole schedule to that real
+    // first payment so the IO period, maturity, months-to-maturity, and payments-made
+    // all count from origination — not from the (later) First P&I date.
+    function firstPayParts(loan){
+      const fpd = isoToParts(loan.firstPaymentDate);
+      if(fpd) return addMonths(fpd, -Math.max(0, loan.ioMonths||0));   // back up over the IO period
+      return isoToParts(loan.originationDate) || null;                  // fallback: origination
+    }
     function accrualStartParts(loan){
-      const fp = isoToParts(loan.firstPaymentDate) || isoToParts(loan.originationDate) || todayParts();
+      const fp = firstPayParts(loan) || todayParts();
       return addMonths(fp, -1);
     }
     function monthPosition(startParts, offset){
@@ -776,8 +788,8 @@
     // Build the displayed schedule across all rate phases; cut off at the loan
     // term with a balloon that lands the ending balance at exactly $0.00.
     function buildSchedule(loan){
-      const start = accrualStartParts(loan);                 // first accrual month
-      const fpParts = isoToParts(loan.firstPaymentDate);     // payment dates (in arrears)
+      const start = accrualStartParts(loan);                 // first accrual month (origination)
+      const fpParts = firstPayParts(loan);                   // first (interest-only) payment date, in arrears
       const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const rows = [];
@@ -829,7 +841,7 @@
     function compute(loan){
       const { rows, totalInterest, totalPaid, segments } = buildSchedule(loan);
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
-      const fp = isoToParts(loan.firstPaymentDate);
+      const fp = firstPayParts(loan);                        // real first payment (origination-anchored)
       const now = todayParts();
 
       // Payments made: count of payment dates on/before today.
@@ -869,6 +881,7 @@
         derived: {
           currentBalance, maturityDate, monthlyPI, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
+          ioRemaining: Math.max(0, originalIO - paymentsMade),   // IO months still ahead
           interestOnly: (term > 0 && originalIO >= term) ? "Y" : "N",
           currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
