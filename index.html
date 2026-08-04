@@ -1187,6 +1187,144 @@
       }
       return null;
     }
+
+    /* ---- Part A: market rate from the operator's OWN recent deals -----------
+       The refinance yardstick = a tenor-matched live base (Treasury/SOFR) + a
+       spread calibrated from THIS book's recent originations (last 36 months),
+       weighted toward the subject property's location. Both legs are editable.
+       Historical Treasury (to back out a fixed deal's origination spread) is
+       fetched live per origination month and cached forever — it never changes,
+       and once fetched the calibration keeps working offline. ----------------- */
+    const CALIB_WINDOW_MONTHS = 36;
+    const TREASURY_HIST_KEY = "ldsHub.trezHist.v1";
+    let TREASURY_HIST = {};      // "YYYY-MM" -> { y3,y5,y7,y10 } (percent)
+    try { TREASURY_HIST = JSON.parse(localStorage.getItem(TREASURY_HIST_KEY)) || {}; } catch(e){ TREASURY_HIST = {}; }
+    const TREASURY_HIST_INFLIGHT = {};
+    function saveTrezHist(){ try { localStorage.setItem(TREASURY_HIST_KEY, JSON.stringify(TREASURY_HIST)); } catch(e){} }
+    // Fetch one month's curve (row nearest the 15th) for the 3/5/7/10-yr tenors.
+    async function fetchTreasuryMonth(y, mo){
+      const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
+      const ym = "" + y + String(mo+1).padStart(2,"0");
+      let text;
+      try { const res = await fetch(base + ym, { headers:{ "Accept":"application/xml" } }); if(!res.ok) return null; text = await res.text(); }
+      catch(e){ return null; }
+      const doc = new DOMParser().parseFromString(text, "application/xml");
+      const props = doc.getElementsByTagNameNS("*","properties");
+      const F = { y3:"BC_3YEAR", y5:"BC_5YEAR", y7:"BC_7YEAR", y10:"BC_10YEAR" };
+      let best=null, bestDist=99;
+      for(let i=0;i<props.length;i++){
+        const dEl = props[i].getElementsByTagNameNS("*","NEW_DATE")[0]; if(!dEl) continue;
+        const day = parseInt(dEl.textContent.slice(8,10),10) || 15;
+        const row = {}; let ok=false;
+        for(const k in F){ const v=props[i].getElementsByTagNameNS("*",F[k])[0]; const n=v?parseFloat(v.textContent):NaN; if(!isNaN(n)){ row[k]=n; ok=true; } }
+        const dist = Math.abs(day-15);
+        if(ok && dist<bestDist){ best=row; bestDist=dist; }
+      }
+      return best;
+    }
+    function ensureTreasuryMonth(y, mo, cb){
+      const key = y + "-" + String(mo+1).padStart(2,"0");
+      if(TREASURY_HIST[key] || TREASURY_HIST_INFLIGHT[key]) return;
+      const t = todayParts();
+      if(y>t.y || (y===t.y && mo>=t.mo)) return;   // the current month uses the live curve
+      TREASURY_HIST_INFLIGHT[key] = true;
+      fetchTreasuryMonth(y, mo).then(r => { delete TREASURY_HIST_INFLIGHT[key]; if(r){ TREASURY_HIST[key]=r; saveTrezHist(); if(cb) cb(); } })
+                               .catch(()=>{ delete TREASURY_HIST_INFLIGHT[key]; });
+    }
+    // The Treasury tenor a loan of this term/type prices over.
+    function matchedTenorId(loan){
+      if(loan && loan.rateType === "Floating") return "sofr";
+      const term = (loan && loan.rateType==="Hybrid ARM") ? (loan.armInitialFixedMonths||60)
+                 : ((loan && (loan.loanTermMonths || loan.amortizationMonths)) || 120);
+      if(term <= 42) return "ust3y";
+      if(term <= 66) return "ust5y";
+      if(term <= 96) return "ust7y";
+      return "ust10y";
+    }
+    const TENOR_KEY = { ust3y:"y3", ust5y:"y5", ust7y:"y7", ust10y:"y10" };
+    // Treasury value (decimal) for a tenor as of a month: live for the current
+    // month, cached history otherwise (null if not fetched yet).
+    function treasuryAt(tenorId, y, mo){
+      const t = todayParts();
+      if(y>t.y || (y===t.y && mo>=t.mo)){
+        const c = INDEX_CACHE[tenorId], cat = INDEX_BY_ID[tenorId];
+        return c ? c.value/100 : (cat ? cat.fallback/100 : null);
+      }
+      const row = TREASURY_HIST[y + "-" + String(mo+1).padStart(2,"0")];
+      const k = TENOR_KEY[tenorId];
+      return (row && k && row[k]!=null) ? row[k]/100 : null;
+    }
+    // Spread a single deal priced at, over its natural base. null if undetermined.
+    function dealImpliedSpread(loan){
+      const oi = isoToParts(loan.originationDate);
+      if(loan.rateType === "Floating")
+        return (loan.spread!=null && loan.spread!=="") ? { base:"sofr", spread:loan.spread } : null;
+      if(loan.rateType === "Hybrid ARM"){
+        if(loan.index && /^ust/.test(loan.index) && loan.spread!=null && loan.spread!=="") return { base:"ust", spread:loan.spread };
+        if(!oi) return null;
+        const b = treasuryAt(matchedTenorId(loan), oi.y, oi.mo);
+        return (b!=null) ? { base:"ust", spread:(loan.annualRate||0)-b } : null;
+      }
+      if(!oi) return null;                                   // Fixed
+      const b = treasuryAt(matchedTenorId(loan), oi.y, oi.mo);
+      return (b!=null) ? { base:"ust", spread:fixedRate(loan)-b } : null;
+    }
+    function recentDeals(){
+      const t = todayParts();
+      return loans.filter(l => {
+        const oi = isoToParts(l.originationDate); if(!oi) return false;
+        const age = (t.y-oi.y)*12 + (t.mo-oi.mo);
+        return age >= 0 && age <= CALIB_WINDOW_MONTHS;
+      });
+    }
+    // Fetch any historical Treasury needed to back out recent fixed deals' spreads.
+    function ensureCalibData(cb){
+      recentDeals().forEach(l => {
+        if(l.rateType==="Floating") return;
+        if(l.rateType==="Hybrid ARM" && l.index && /^ust/.test(l.index) && l.spread!=null && l.spread!=="") return;
+        const oi = isoToParts(l.originationDate); if(!oi) return;
+        ensureTreasuryMonth(oi.y, oi.mo, cb);
+      });
+    }
+    // Weighted-average spread of recent deals, leaning toward the subject's location
+    // (same metro > same state > elsewhere). baseKind: "ust" or "sofr".
+    function calibratedSpread(subject, baseKind){
+      const subjMkt = detectMarket(subject && subject.propertyAddress);
+      const subjSt  = stateFromAddress(String((subject && subject.propertyAddress) || ""));
+      const pool = [];
+      recentDeals().forEach(l => {
+        if(subject && l._id === subject._id) return;             // don't benchmark a loan against itself
+        const imp = dealImpliedSpread(l);
+        if(!imp || imp.base !== baseKind) return;
+        if(!(imp.spread > 0 && imp.spread < 0.08)) return;        // sanity bound (0–800 bps)
+        const mkt = detectMarket(l.propertyAddress);
+        const st  = stateFromAddress(String(l.propertyAddress||""));
+        const w = (subjMkt && mkt===subjMkt) ? 3 : (subjSt && st===subjSt) ? 2 : 1;
+        pool.push({ loan:l, spread:imp.spread, market:mkt, weight:w });
+      });
+      if(!pool.length) return null;
+      const sw = pool.reduce((a,p)=>a+p.weight,0);
+      const spread = pool.reduce((a,p)=>a+p.spread*p.weight,0)/sw;
+      pool.sort((a,b)=> b.weight-a.weight || String(b.loan.originationDate).localeCompare(String(a.loan.originationDate)));
+      return { spread, count:pool.length, nearCount:pool.filter(p=>p.weight>=2).length, subjMkt, deals:pool };
+    }
+    // Compose the yardstick: base (matched tenor, live) + spread (calibrated),
+    // each overridable via ov = { tenorId, baseValue(decimal), spread(decimal) }.
+    function refiMarketParts(subject, proposed, ov){
+      ov = ov || {};
+      const tenorId = ov.tenorId || matchedTenorId(proposed || subject);
+      const cat = INDEX_BY_ID[tenorId];
+      const liveBase = INDEX_CACHE[tenorId] ? INDEX_CACHE[tenorId].value/100 : (cat ? cat.fallback/100 : 0);
+      const baseValue = (ov.baseValue!=null) ? ov.baseValue : liveBase;
+      const baseKind = (tenorId==="sofr") ? "sofr" : "ust";
+      const calib = calibratedSpread(subject, baseKind);
+      const fallbackSpread = (marketBps(detectMarket(subject && subject.propertyAddress)) || 155)/10000;
+      const spread = (ov.spread!=null) ? ov.spread : (calib ? calib.spread : fallbackSpread);
+      return { tenorId, tenorLabel:(cat?cat.label:tenorId).replace(/ \(CMT\)/,""), baseValue, liveBase, baseKind,
+               spread, marketRate: baseValue + spread, calib,
+               baseAuto: ov.baseValue==null, spreadAuto: ov.spread==null, spreadHasComps: !!calib };
+    }
+
     // Resolve one index id to a live { value%, date }, or null.
     async function fetchIndexValue(id){
       const cat = INDEX_BY_ID[id];
@@ -1618,11 +1756,14 @@
       const pct = (id) => { const v = parseFloat((el(id)||{}).value); return isNaN(v) ? null : v/100; };
       const intv = (id) => { const v = parseInt((el(id)||{}).value, 10); return isNaN(v) ? null : v; };
       const money = (id) => { const v = parseFloat(String((el(id)||{}).value).replace(/[$,\s]/g,"")); return isNaN(v) ? 0 : v; };
+      const bps = (id) => { const v = parseFloat((el(id)||{}).value); return isNaN(v) ? null : v/10000; };
       return {
         newLoan: readFields("rf_", {}),                       // the full proposed loan
         closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
         holdMonths: intv("r_hold") || 0,
-        market: (el("r_market")||{}).value || "",             // selected multifamily metro
+        baseTenor: refiTenorAuto ? "" : ((el("r_baseTenor")||{}).value || ""),   // "" = auto-match to the proposed loan
+        baseValue: refiBaseManual   ? pct("r_baseValue") : null,   // operator override of the base value
+        spread:    refiSpreadManual ? bps("r_spread")    : null,   // operator override of the spread (bps)
       };
     }
 
@@ -1723,11 +1864,13 @@
       const newRateTxt = newReset
         ? (fmtPct(newRate0)+" now, resetting to "+fmtPct(newReset.rate)+" in "+newReset.monthsAway+" mo — about "+fmtPct(newRateEff)+"/yr over your "+hold+"-mo hold")
         : fmtPct(newRateEff);
-      const market = inp.market || "";
-      const mkt = marketRate(market), mLabel = marketLabel(market);
-      const belowMkt = mkt!=null && newRateEff < mkt - 0.0005;
-      const aboveMkt = mkt!=null && newRateEff > mkt + 0.0005;
-      const mTxt = mkt!=null ? ("the ~"+fmtPct(mkt)+" market for "+mLabel) : "the market";
+      // Yardstick = tenor-matched live base + spread from your own recent deals
+      // (both overridable by the operator). Judge the effective rate against it.
+      const mp = refiMarketParts(loan, newLoan, { tenorId: inp.baseTenor||null, baseValue: inp.baseValue, spread: inp.spread });
+      const mkt = mp.marketRate;
+      const belowMkt = newRateEff < mkt - 0.0005;
+      const aboveMkt = newRateEff > mkt + 0.0005;
+      const mTxt = "the ~"+fmtPct(mkt)+" market ("+mp.tenorLabel+" + "+Math.round(mp.spread*10000)+" bps)";
       let verdict, tone, reason;
       if(isCashOut){
         if(!aboveMkt){
@@ -1754,7 +1897,7 @@
 
       return { payoff, curPInow, newPI, monthlySavingsNow, breakEven, closingTotal, newAmount:Pnew, cashAtClose, isCashOut,
         remainingMonths, hold, netBenefit, curHoldInterest, newHoldInterest, verdict, tone, reason,
-        marketId:market, mkt, belowMkt, aboveMkt, newRateInit:newRate0, newRateEff,
+        mp, mkt, belowMkt, aboveMkt, newRateInit:newRate0, newRateEff,
         newLoan, newComp, cur, armReset, newReset };
     }
 
@@ -1775,7 +1918,10 @@
         (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
     }
 
-    let refiMarketAuto = true;   // false once the user overrides the auto-detected market
+    // Market-rate override flags: the base tenor auto-matches the proposed loan,
+    // the base value tracks the live Treasury/SOFR, and the spread is calibrated
+    // from recent deals — each until the operator edits it.
+    let refiTenorAuto = true, refiBaseManual = false, refiSpreadManual = false;
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
@@ -1817,11 +1963,26 @@
             buildFormFieldsets("rf_")+
             '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
               '<legend class="px-2 text-xs font-bold uppercase tracking-wider text-brand-700">Refinance Transaction</legend>'+
-              '<div class="mb-4"><label for="r_market" class="mb-1 block text-xs font-medium text-slate-600">Property market (multifamily)</label>'+
-                '<select id="r_market" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+
-                  MULTIFAMILY_MARKETS.map(function(m){return '<option value="'+m.id+'">'+escapeHtml(m.label)+'</option>';}).join('')+
-                '</select>'+
-                '<p class="mt-0.5 text-[11px] text-slate-400">auto-detected from the property address — override if needed. Sets the market we judge your rate against (live 10-yr UST + metro spread).</p></div>'+
+              '<div class="mb-4 rounded-lg border border-brand-200 bg-white p-3">'+
+                '<div class="flex items-center justify-between gap-2">'+
+                  '<span class="text-[11px] font-bold uppercase tracking-wide text-brand-700">Market rate (the yardstick)</span>'+
+                  '<span id="r_marketRate" class="text-lg font-bold tabular-nums text-slate-900">—</span>'+
+                '</div>'+
+                '<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">'+
+                  '<div><label for="r_baseTenor" class="mb-1 block text-[11px] font-medium text-slate-600">Base rate (live)</label>'+
+                    '<div class="flex items-center gap-2">'+
+                      '<select id="r_baseTenor" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+
+                        '<option value="ust3y">3-yr Treasury</option><option value="ust5y">5-yr Treasury</option>'+
+                        '<option value="ust7y">7-yr Treasury</option><option value="ust10y">10-yr Treasury</option>'+
+                        '<option value="sofr">SOFR</option>'+
+                      '</select>'+
+                      '<div class="flex items-center"><input id="r_baseValue" type="text" inputmode="decimal" class="w-16 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" /><span class="ml-1 text-xs text-slate-400">%</span></div>'+
+                    '</div></div>'+
+                  '<div><label for="r_spread" class="mb-1 block text-[11px] font-medium text-slate-600">Spread over base</label>'+
+                    '<div class="flex items-center"><input id="r_spread" type="text" inputmode="decimal" class="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" /><span class="ml-1 text-xs text-slate-400">bps</span></div></div>'+
+                '</div>'+
+                '<p id="r_spreadNote" class="mt-1.5 text-[11px] text-slate-400">—</p>'+
+              '</div>'+
               '<div id="refiCosts" class="grid grid-cols-1 sm:grid-cols-3 gap-4">'+
                 refiField("r_closingCosts","Closing Costs ($)", 0, "lender + legal + title")+
                 refiField("r_points","Points", 0, "% of new loan", true)+
@@ -1842,21 +2003,20 @@
       });
       INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
 
-      // Auto-pick the multifamily market from the property's address. Re-detect
-      // when the address is edited; lock to the user's pick once they override.
-      refiMarketAuto = true;
-      const mEl0 = el("r_market"), addrEl0 = el("rf_propertyAddress");
-      if(mEl0){
-        mEl0.value = detectMarket(loan.propertyAddress);
-        const markManual = () => { refiMarketAuto = false; };
-        mEl0.addEventListener("change", markManual);
-        mEl0.addEventListener("input", markManual);
-        if(addrEl0) addrEl0.addEventListener("input", () => { if(refiMarketAuto) mEl0.value = detectMarket(addrEl0.value); });
-      }
+      // Market-rate legs start on auto (base tenor matches the proposed loan, base
+      // value tracks live, spread is calibrated from recent deals) until edited.
+      refiTenorAuto = true; refiBaseManual = false; refiSpreadManual = false;
+      const bt = el("r_baseTenor"); if(bt) bt.value = matchedTenorId(draft);
 
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
-      const onForm = () => { applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan); };
+      const onForm = (e) => {
+        const id = e && e.target && e.target.id;
+        if(id==="r_baseValue") refiBaseManual = true;
+        if(id==="r_spread")    refiSpreadManual = true;
+        if(id==="r_baseTenor"){ refiTenorAuto = false; refiBaseManual = false; }   // new tenor → its live value
+        applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan);
+      };
       el("refiForm").addEventListener("input", onForm);
       el("refiForm").addEventListener("change", onForm);
       applyVisibility(el("refiForm"), "rf_");
@@ -1869,8 +2029,22 @@
       // The proposed loan always prices off the live index + spread (Fixed too),
       // so make sure its index is fetched.
       if(inp.newLoan && inp.newLoan.index) ensureIndexLive(inp.newLoan.index, () => recomputeRefi(loan));
-      ensureIndexLive("ust10y", () => recomputeRefi(loan));   // live base for the market benchmark
       const r = computeRefi(loan, inp);
+      ensureIndexLive(r.mp.tenorId, () => recomputeRefi(loan));   // live base for the market yardstick
+      ensureCalibData(() => recomputeRefi(loan));                 // historical Treasury for recent fixed deals
+
+      // Reflect the composed market rate back into the editable controls.
+      if(refiTenorAuto && el("r_baseTenor")) el("r_baseTenor").value = r.mp.tenorId;
+      if(!refiBaseManual && el("r_baseValue"))  el("r_baseValue").value  = +(r.mp.baseValue*100).toFixed(3);
+      if(!refiSpreadManual && el("r_spread"))   el("r_spread").value     = Math.round(r.mp.spread*10000);
+      if(el("r_marketRate")) el("r_marketRate").textContent = fmtPct(r.mp.marketRate);
+      if(el("r_spreadNote")){
+        const c = r.mp.calib;
+        const loc = marketLabel(detectMarket(loan.propertyAddress)) || "your area";
+        el("r_spreadNote").textContent = !r.mp.spreadAuto ? "custom spread — your quote (edit or clear to revert to your recent deals)"
+          : c ? ("spread = weighted avg of your "+c.count+" recent deal"+(c.count===1?"":"s")+" (last "+CALIB_WINDOW_MONTHS+" mo"+(c.nearCount?", "+c.nearCount+" near "+loc:"")+") — edit if you have a quote")
+          : "no recent comparable deals in the book — using a fallback; enter your quoted spread for accuracy";
+      }
       const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
                     : r.tone==="bad"  ? "border-rose-300 bg-rose-50 text-rose-900"
                     : "border-amber-300 bg-amber-50 text-amber-900";
@@ -1889,8 +2063,8 @@
         nRate < oRate-0.00005 ? "lower rate" : (nRate > oRate+0.00005 ? "higher rate" : "unchanged"),
         nRate < oRate-0.00005 ? "good" : (nRate > oRate+0.00005 ? "bad" : undefined)));
       if(r.mkt!=null){
-        cards.push(refiCard("Market rate — "+marketLabel(r.marketId), fmtPct(r.mkt),
-          "10-yr UST + "+marketBps(r.marketId)+" bps · yours "+fmtPct(r.newRateEff),
+        cards.push(refiCard("Market rate", fmtPct(r.mkt),
+          r.mp.tenorLabel+" + "+Math.round(r.mp.spread*10000)+" bps · yours "+fmtPct(r.newRateEff),
           r.aboveMkt ? "bad" : "good"));
       }
       // During an interest-only period the payment you actually make is interest
