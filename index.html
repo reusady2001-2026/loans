@@ -305,7 +305,11 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
-    const STORAGE_KEY = "ldsHub.loans.v6";
+    // Bumped v6 -> v7: the seed now carries a given Maturity Date per loan and the
+    // schedule is anchored to it. Existing installs saved loans BEFORE that field
+    // existed, so they must re-seed the corrected portfolio rather than keep stale
+    // data (which had no maturity and computed it the old, wrong way).
+    const STORAGE_KEY = "ldsHub.loans.v7";
     const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     const moneyFmt = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", minimumFractionDigits:2, maximumFractionDigits:2 });
