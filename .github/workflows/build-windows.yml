@@ -42,16 +42,26 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
 
-      # Publish a single, always-current "latest-desktop" release with a clean
-      # download link. Re-created on every successful build.
-      - name: Publish download release
+      # Publish this build as its OWN versioned release, taken from package.json.
+      # Older versions' releases are never deleted — every version stays available,
+      # and GitHub's /releases/latest link auto-points at the newest one. Re-running
+      # the same version only refreshes that version's .exe.
+      - name: Publish versioned release
         if: github.ref == 'refs/heads/claude/awesome-ptolemy-4s9eez'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release delete latest-desktop --yes --cleanup-tag || true
-          gh release create latest-desktop release/*.exe \
-            --target "$GITHUB_SHA" \
-            --title "Loan Debt Service Hub — Windows desktop app" \
-            --notes "Portable Windows desktop app. Download the .exe below, double-click it — it runs offline, no install and no admin rights needed. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          VER=$(node -p "require('./package.json').version")
+          TAG="v${VER}"
+          NOTES="Portable Windows desktop app (v${VER}). Download the .exe below, double-click it — it runs offline, no install and no admin rights needed. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/*.exe --clobber
+            gh release edit "$TAG" --latest
+          else
+            gh release create "$TAG" release/*.exe \
+              --target "$GITHUB_SHA" \
+              --title "Loan Debt Service Hub v${VER} — Windows desktop app" \
+              --notes "$NOTES" \
+              --latest
+          fi
