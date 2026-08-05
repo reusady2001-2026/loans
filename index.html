@@ -2293,8 +2293,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       const thR=(t)=>th(t,'text-right');
       const td=(v,e)=>'<td class="px-3 py-2 text-sm '+(e||'text-slate-700')+'">'+v+'</td>';
       const tdR=(v,e)=>'<td class="px-3 py-2 text-sm text-right tabular-nums '+(e||'text-slate-700')+'">'+v+'</td>';
-      const tableCard=(title,sub,head,body,headerRight)=>
-        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift animate-fade-up">'+
+      const tableCard=(title,sub,head,body,headerRight,cardClass)=>
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift animate-fade-up '+(cardClass||'')+'">'+
           '<div class="border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-3"><div class="min-w-0"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+(headerRight||'')+'</div>'+
           '<div class="overflow-x-auto rounded-b-2xl"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
         '</div>';
@@ -2361,7 +2361,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div id="forecastWrap">'+renderForecastCard(fcAnnual)+'</div>'+
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
         tableCard("All Loans","sorted by current balance — click a row to open it",
-          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl)+
+          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl, "relative z-40")+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
           '<tr>'+th("Property")+thR("Current")+thR("Market")+thR("Gap")+th("")+'</tr>', scanRows);
 
