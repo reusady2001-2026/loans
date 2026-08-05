@@ -1691,72 +1691,133 @@ table.events{width:100%;border-collapse:collapse;background:#fff;border:1px soli
 tr.soon td{background:#fffbeb}
 tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
 .empty{color:#94a3b8;text-align:center;padding:20px}
-@media print{body{background:#fff;padding:0}.printbtn{display:none}.chip,.wall,table.events{box-shadow:none}}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:22px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden}
+.segbtn{border:0;background:#fff;color:#334155;font-weight:700;font-size:13px;padding:8px 16px;cursor:pointer}
+.segbtn.on{background:#4c721b;color:#fff}
+.filt{position:relative;font-size:12.5px;color:#334155}
+details.filt>summary{list-style:none;cursor:pointer;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:8px 14px;font-weight:600;user-select:none;white-space:nowrap}
+details.filt>summary::-webkit-details-marker{display:none}
+details.filt[open]>summary{border-color:#7fb62b;box-shadow:0 0 0 2px rgba(127,182,43,.2)}
+.menu{position:absolute;z-index:20;top:calc(100% + 6px);left:0;min-width:240px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 12px 30px -10px rgba(0,0,0,.3);padding:8px}
+.opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:13px;cursor:pointer}
+.opt:hover{background:#f1f5f9}
+.search{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font-size:13px;margin-bottom:6px}
+.optlist{max-height:230px;overflow:auto}
+.amt input{width:78px;border:1px solid #cbd5e1;border-radius:8px;padding:7px 8px;font-size:12.5px}
+.filt select{border:1px solid #cbd5e1;border-radius:8px;padding:7px 8px;font-size:12.5px;background:#fff}
+.clearbtn{border:1px solid #cbd5e1;background:#fff;color:#64748b;font-weight:600;font-size:12.5px;padding:8px 12px;border-radius:9px;cursor:pointer}
+.clearbtn:hover{background:#f1f5f9}
+.calnav{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.navbtn{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:7px 12px;font-weight:700;cursor:pointer;color:#334155}
+.navbtn:hover{background:#f1f5f9}.navbtn.wide{margin-left:auto}
+.calnav select{border:1px solid #cbd5e1;border-radius:9px;padding:7px 10px;font-size:14px;font-weight:600;background:#fff}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px}
+.dow{font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;text-align:center;padding:4px 0}
+.cell{min-height:96px;border:1px solid #f1f5f9;border-radius:9px;padding:5px;background:#fcfdfb}
+.cell.empty{background:transparent;border:0;min-height:0}
+.cell.has{background:#fff;border-color:#e2e8f0}
+.cell.today{box-shadow:inset 0 0 0 2px #7fb62b}
+.cnum{font-size:12px;font-weight:700;color:#64748b;margin-bottom:3px}
+.cev{font-size:10.5px;line-height:1.25;border-left:3px solid;border-radius:4px;padding:2px 5px;margin-bottom:3px;background:#f8fafc;overflow:hidden;text-overflow:ellipsis}
+.cev b{font-weight:700}
+.callegend{margin-top:10px;font-size:12px;color:#64748b;display:flex;gap:16px}
+@media print{body{background:#fff;padding:0}.printbtn,.toolbar{display:none}.chip,.wall,table.events,.calgrid{box-shadow:none}}
 `;
-    // Build the calendar HTML (self-contained) and open it in a pop-out window.
+    const CAL_JS = `
+(function(){
+  var D = window.__CAL_DATA__ || {events:[],loans:[],lenders:[],nowY:2026,nowM:0,nowD:1,generated:''};
+  var app = document.getElementById('app');
+  var MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var TC={Maturity:'#b91c1c','ARM reset':'#b45309','IO ends':'#4c721b'};
+  var TB={Maturity:'#fee2e2','ARM reset':'#fef3c7','IO ends':'#eef7d8'};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;';});}
+  function money(n){return '$'+(Math.round(Number(n)||0)).toLocaleString('en-US');}
+  function usd(iso){var p=String(iso).split('-');return p[1]+'/'+p[2]+'/'+p[0];}
+  function away(y,m){return (y-D.nowY)*12+(m-D.nowM);}
+  var st={view:'list',lenders:{},loans:{},amtMin:null,amtMax:null,sort:'date',search:'',calY:null,calM:null};
+  function selCount(o){var n=0;for(var k in o){if(o[k])n++;}return n;}
+  function fEvents(){var lo=selCount(st.lenders)>0,lc=selCount(st.loans)>0;return D.events.filter(function(e){if(lo&&!st.lenders[e.lender])return false;if(lc&&!st.loans[e.loanId])return false;if(st.amtMin!=null&&e.amount<st.amtMin)return false;if(st.amtMax!=null&&e.amount>st.amtMax)return false;return true;});}
+  function sortEv(a){a=a.slice();if(st.sort==='amtAsc')a.sort(function(x,y){return x.amount-y.amount;});else if(st.sort==='amtDesc')a.sort(function(x,y){return y.amount-x.amount;});else a.sort(function(x,y){return x.iso<y.iso?-1:x.iso>y.iso?1:0;});return a;}
+  function headerHtml(){return '<header><div class="brand"><span class="lv">LIVING</span> <span class="rs">RESIDENTIAL</span></div><div><h1>Maturity &amp; Reset Calendar</h1><div class="sub">Balloons, ARM resets, and interest-only step-ups — generated '+esc(D.generated)+'</div></div></header>';}
+  function controlsHtml(){
+    var lo=D.lenders.map(function(l){return '<label class="opt"><input type="checkbox" data-lender="'+esc(l)+'"> '+esc(l)+'</label>';}).join('');
+    var ln=D.loans.map(function(l){return '<label class="opt" data-name="'+esc(l.name.toLowerCase())+'"><input type="checkbox" data-loan="'+esc(l.id)+'"> '+esc(l.name)+'</label>';}).join('');
+    return '<div class="toolbar"><div class="seg"><button class="segbtn on" data-view="list">List</button><button class="segbtn" data-view="calendar">Calendar</button></div>'
+     +'<details class="filt" id="fLender"><summary>Lender</summary><div class="menu">'+lo+'</div></details>'
+     +'<details class="filt" id="fLoan"><summary>Loans</summary><div class="menu"><input class="search" id="loanSearch" placeholder="Search loans..."><div class="optlist" id="loanOpts">'+ln+'</div></div></details>'
+     +'<span class="filt amt">Amount <input type="text" id="amtMin" placeholder="min"> – <input type="text" id="amtMax" placeholder="max"></span>'
+     +'<label class="filt">Sort <select id="sortSel"><option value="date">Date</option><option value="amtAsc">Smallest amount</option><option value="amtDesc">Largest amount</option></select></label>'
+     +'<button class="clearbtn" id="clearBtn">Clear</button><button class="printbtn" onclick="window.print()">Print</button></div>';
+  }
+  function chipsHtml(evs){var matSum=0,mat=0,res=0,io=0;evs.forEach(function(e){if(e.type==='Maturity')matSum+=e.amount;if(away(e.y,e.m)<=12){if(e.type==='Maturity')mat++;else if(e.type==='ARM reset')res++;else io++;}});
+    function chip(l,v,s){return '<div class="chip"><div class="chiplabel">'+l+'</div><div class="chipval">'+v+'</div><div class="chipsub">'+s+'</div></div>';}
+    var mc=evs.filter(function(e){return e.type==='Maturity';}).length;
+    return '<div class="chips">'+chip('Debt maturing (shown)',money(matSum),mc+' balloon'+(mc===1?'':'s'))+chip('Maturing (next 12 mo)',mat,'balloons coming due')+chip('ARM resets (next 12 mo)',res,'payment changes')+chip('IO step-ups (next 12 mo)',io,'interest-only ending')+'</div>';}
+  function listHtml(evs){
+    var wm={};evs.forEach(function(e){if(e.type==='Maturity'){wm[e.y]=(wm[e.y]||0)+e.amount;}});
+    var yrs=Object.keys(wm).map(Number).sort(function(a,b){return a-b;});var mx=yrs.reduce(function(m,y){return Math.max(m,wm[y]);},1)||1;
+    var wall=yrs.map(function(y){var soon=y<=D.nowY+1;return '<div class="wallrow"><div class="wallyear">'+y+'</div><div class="walltrack"><div class="wallbar" style="width:'+Math.max(2,wm[y]/mx*100).toFixed(1)+'%;'+(soon?'background:#b91c1c':'')+'"></div></div><div class="wallamt">'+money(wm[y])+'</div></div>';}).join('')||'<div class="empty">No maturities in the current filter.</div>';
+    var s=sortEv(evs),rows='',lastY=null,group=(st.sort==='date');
+    s.forEach(function(e){if(group&&e.y!==lastY){rows+='<tr class="yearrow"><td colspan="5">'+e.y+'</td></tr>';lastY=e.y;}var soon=away(e.y,e.m)<=12;rows+='<tr'+(soon?' class="soon"':'')+'><td class="nowrap">'+usd(e.iso)+'</td><td><span class="badge" style="color:'+TC[e.type]+';background:'+TB[e.type]+'">'+e.type+'</span></td><td>'+esc(e.loanName)+'</td><td class="num">'+money(e.amount)+'</td><td class="detail">'+esc(e.detail)+'</td></tr>';});
+    if(!s.length)rows='<tr><td colspan="5" class="empty">No events match the filter.</td></tr>';
+    return '<section><h2>Maturity wall — debt coming due by year</h2><div class="wall">'+wall+'</div></section><section><h2>Upcoming events</h2><table class="events"><thead><tr><th>Date</th><th>Event</th><th>Loan</th><th class="num">Amount</th><th>Detail</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+  }
+  function calHtml(evs){
+    if(st.calY==null){var fut=evs.filter(function(e){return away(e.y,e.m)>=0;}).sort(function(a,b){return a.iso<b.iso?-1:1;});var f=fut[0]||evs[0];if(f){st.calY=f.y;st.calM=f.m;}else{st.calY=D.nowY;st.calM=D.nowM;}}
+    var y=st.calY,m=st.calM,byDay={};evs.forEach(function(e){if(e.y===y&&e.m===m){(byDay[e.d]=byDay[e.d]||[]).push(e);}});
+    var fd=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate(),cells='';
+    for(var i=0;i<fd;i++)cells+='<div class="cell empty"></div>';
+    for(var day=1;day<=dim;day++){var evd=byDay[day]||[];var ch=evd.map(function(e){return '<div class="cev" style="border-color:'+TC[e.type]+'" title="'+esc(e.loanName+' — '+e.detail)+'"><b>'+esc(e.loanName)+'</b> '+e.type+' · '+money(e.amount)+'</div>';}).join('');var td=(y===D.nowY&&m===D.nowM&&day===D.nowD);cells+='<div class="cell'+(evd.length?' has':'')+(td?' today':'')+'"><div class="cnum">'+day+'</div>'+ch+'</div>';}
+    var dow=DOW.map(function(d){return '<div class="dow">'+d+'</div>';}).join('');
+    var ys='';for(var yy=D.nowY-1;yy<=D.nowY+12;yy++)ys+='<option value="'+yy+'"'+(yy===y?' selected':'')+'>'+yy+'</option>';
+    var ms=MON.map(function(nm,i){return '<option value="'+i+'"'+(i===m?' selected':'')+'>'+nm+'</option>';}).join('');
+    return '<section><div class="calnav"><button class="navbtn" id="calPrev">&#9664;</button><select id="calMsel">'+ms+'</select><select id="calYsel">'+ys+'</select><button class="navbtn" id="calNext">&#9654;</button><button class="navbtn wide" id="calNextEv">Next event &#9656;</button></div><div class="calgrid">'+dow+cells+'</div><div class="callegend"><span style="color:#b91c1c">&#9632;</span> Maturity <span style="color:#b45309">&#9632;</span> ARM reset <span style="color:#4c721b">&#9632;</span> IO ends</div></section>';
+  }
+  function renderContent(){var evs=fEvents();document.getElementById('content').innerHTML=chipsHtml(evs)+(st.view==='list'?listHtml(evs):calHtml(evs));}
+  function updateCounts(){var l=selCount(st.lenders),lo=selCount(st.loans);var a=document.querySelector('#fLender summary');if(a)a.textContent='Lender'+(l?' ('+l+')':'');var b=document.querySelector('#fLoan summary');if(b)b.textContent='Loans'+(lo?' ('+lo+')':'');}
+  function setSeg(){var bs=document.querySelectorAll('.segbtn');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('on',bs[i].getAttribute('data-view')===st.view);}
+  function filterLoanOpts(){var os=document.querySelectorAll('#loanOpts .opt');for(var i=0;i<os.length;i++)os[i].style.display=os[i].getAttribute('data-name').indexOf(st.search)>=0?'':'none';}
+  function parseAmt(v){v=String(v).replace(/[$,\\s]/g,'').toLowerCase();if(!v)return null;var mult=1,c=v.charAt(v.length-1);if(c==='m'){mult=1e6;v=v.slice(0,-1);}else if(c==='k'){mult=1e3;v=v.slice(0,-1);}var n=parseFloat(v);return isNaN(n)?null:n*mult;}
+  function stepMonth(dd){var m=st.calM+dd,y=st.calY;while(m<0){m+=12;y--;}while(m>11){m-=12;y++;}st.calM=m;st.calY=y;}
+  function jumpNext(){var evs=fEvents().slice().sort(function(a,b){return a.iso<b.iso?-1:1;});var cur=st.calY*12+st.calM;for(var i=0;i<evs.length;i++){if(evs[i].y*12+evs[i].m>cur){st.calY=evs[i].y;st.calM=evs[i].m;return;}}}
+  function clearAll(){st.lenders={};st.loans={};st.amtMin=null;st.amtMax=null;st.search='';var cb=document.querySelectorAll('[data-lender],[data-loan]');for(var i=0;i<cb.length;i++)cb[i].checked=false;var mn=document.getElementById('amtMin');if(mn)mn.value='';var mx=document.getElementById('amtMax');if(mx)mx.value='';var ls=document.getElementById('loanSearch');if(ls)ls.value='';filterLoanOpts();updateCounts();renderContent();}
+  document.addEventListener('change',function(e){var t=e.target;if(t.getAttribute&&t.getAttribute('data-lender')!=null){st.lenders[t.getAttribute('data-lender')]=t.checked;updateCounts();renderContent();}else if(t.getAttribute&&t.getAttribute('data-loan')!=null){st.loans[t.getAttribute('data-loan')]=t.checked;updateCounts();renderContent();}else if(t.id==='sortSel'){st.sort=t.value;renderContent();}else if(t.id==='calMsel'){st.calM=parseInt(t.value,10);renderContent();}else if(t.id==='calYsel'){st.calY=parseInt(t.value,10);renderContent();}});
+  document.addEventListener('input',function(e){var t=e.target;if(t.id==='loanSearch'){st.search=t.value.toLowerCase();filterLoanOpts();}else if(t.id==='amtMin'){st.amtMin=parseAmt(t.value);renderContent();}else if(t.id==='amtMax'){st.amtMax=parseAmt(t.value);renderContent();}});
+  document.addEventListener('click',function(e){var t=e.target.closest?e.target.closest('[data-view],#calPrev,#calNext,#calNextEv,#clearBtn'):null;if(!t)return;if(t.getAttribute('data-view')){if(t.getAttribute('data-view')==='calendar'&&st.view!=='calendar')st.calY=null;st.view=t.getAttribute('data-view');setSeg();renderContent();}else if(t.id==='calPrev'){stepMonth(-1);renderContent();}else if(t.id==='calNext'){stepMonth(1);renderContent();}else if(t.id==='calNextEv'){jumpNext();renderContent();}else if(t.id==='clearBtn'){clearAll();}});
+  app.innerHTML=headerHtml()+controlsHtml()+'<div id="content"></div>';
+  renderContent();
+})();
+`;
+    // Build the interactive calendar document (self-contained) and open it in a pop-out.
     function openMaturityCalendar(){
       const now = todayParts();
-      const data = loans.map(l => ({ loan:l, cur:compute(l) }));
+      const rows0 = loans.map(l => ({ loan:l, cur:compute(l) }));
       const monthsAway = (iso)=>{ const p=isoToParts(iso); return p ? (p.y-now.y)*12+(p.mo-now.mo) : 9999; };
-      const events = [], wallMap = {}; let totalDebt = 0;
-      data.forEach(({loan,cur}) => {
+      const events=[], loanMeta={}; let totalDebt=0;
+      rows0.forEach(({loan,cur}) => {
         const d = cur.derived, rows = cur.rows;
         totalDebt += d.currentBalance||0;
         const balloon = rows.length ? rows[rows.length-1].startingBalance : (d.currentBalance||0);
-        const mp = isoToParts(d.maturityDate);
-        if(mp){ wallMap[mp.y] = wallMap[mp.y] || {year:mp.y,amount:0,count:0}; wallMap[mp.y].amount+=balloon; wallMap[mp.y].count++; }
-        if(d.maturityDate && monthsAway(d.maturityDate)>=0)
-          events.push({iso:d.maturityDate,type:"Maturity",loan,amount:balloon,detail:"Balloon / payoff of "+fmtMoney(balloon)+" comes due"});
-        if(loan.rateType==="Hybrid ARM"){
-          for(let i=Math.max(0,d.paymentsMade); i<rows.length; i++){
-            if(rows[i].isReset && monthsAway(rows[i].paymentDate)>=0)
-              events.push({iso:rows[i].paymentDate,type:"ARM reset",loan,amount:rows[i].startingBalance,detail:"Rate resets to "+fmtPct(rows[i].rate)+" — payment to "+fmtMoney(rows[i].payment)+"/mo"});
-          }
-        }
+        const add=(iso,type,amount,detail)=>{ const p=isoToParts(iso); if(!p) return; events.push({iso,y:p.y,m:p.mo,d:p.d,type,loanId:loan._id,loanName:loanLabel(loan),lender:loan.lenderName||'—',amount,detail}); loanMeta[loan._id]={id:loan._id,name:loanLabel(loan),lender:loan.lenderName||'—'}; };
+        if(d.maturityDate && monthsAway(d.maturityDate)>=0) add(d.maturityDate,"Maturity",balloon,"Balloon / payoff of "+fmtMoney(balloon)+" comes due");
+        if(loan.rateType==="Hybrid ARM"){ for(let i=Math.max(0,d.paymentsMade); i<rows.length; i++){ if(rows[i].isReset && monthsAway(rows[i].paymentDate)>=0) add(rows[i].paymentDate,"ARM reset",rows[i].startingBalance,"Rate resets to "+fmtPct(rows[i].rate)+" — payment to "+fmtMoney(rows[i].payment)+"/mo"); } }
         const io=d.originalIO||0, term=loan.loanTermMonths||loan.amortizationMonths||0;
-        if(io>0 && io<term && io>=d.paymentsMade && rows[io] && monthsAway(rows[io].paymentDate)>=0)
-          events.push({iso:rows[io].paymentDate,type:"IO ends",loan,amount:rows[io].startingBalance,detail:"Interest-only ends — payment to "+fmtMoney(rows[io].payment)+"/mo (P&I)"});
+        if(io>0 && io<term && io>=d.paymentsMade && rows[io] && monthsAway(rows[io].paymentDate)>=0) add(rows[io].paymentDate,"IO ends",rows[io].startingBalance,"Interest-only ends — payment to "+fmtMoney(rows[io].payment)+"/mo (P&I)");
       });
-      events.sort((a,b)=> String(a.iso).localeCompare(String(b.iso)));
-      const wall = Object.values(wallMap).sort((a,b)=>a.year-b.year);
-      const maxYear = wall.reduce((m,w)=>Math.max(m,w.amount),0)||1;
-      const cnt = (type)=> events.filter(e=>e.type===type && monthsAway(e.iso)<=12).length;
-
-      const chip=(label,val,sub)=>'<div class="chip"><div class="chiplabel">'+label+'</div><div class="chipval">'+val+'</div><div class="chipsub">'+sub+'</div></div>';
-      const typeColor={Maturity:"#b91c1c","ARM reset":"#b45309","IO ends":"#4c721b"};
-      const typeBg={Maturity:"#fee2e2","ARM reset":"#fef3c7","IO ends":"#eef7d8"};
-      const wallHtml = wall.map(w => {
-        const soon = w.year <= now.y+1;
-        return '<div class="wallrow"><div class="wallyear">'+w.year+'</div>'+
-          '<div class="walltrack"><div class="wallbar" style="width:'+Math.max(2,(w.amount/maxYear*100)).toFixed(1)+'%;'+(soon?'background:#b91c1c':'')+'"></div></div>'+
-          '<div class="wallamt">'+fmtMoney(w.amount)+'<span class="wallcnt"> · '+w.count+' loan'+(w.count===1?'':'s')+'</span></div></div>';
-      }).join('') || '<div class="empty">No maturities recorded.</div>';
-      let evHtml='', lastYear=null;
-      events.forEach(e => { const p=isoToParts(e.iso); const soon=monthsAway(e.iso)<=12;
-        if(p.y!==lastYear){ evHtml+='<tr class="yearrow"><td colspan="5">'+p.y+'</td></tr>'; lastYear=p.y; }
-        evHtml+='<tr'+(soon?' class="soon"':'')+'><td class="nowrap">'+fmtDateUS(e.iso)+'</td>'+
-          '<td><span class="badge" style="color:'+typeColor[e.type]+';background:'+typeBg[e.type]+'">'+e.type+'</span></td>'+
-          '<td>'+escapeHtml(loanLabel(e.loan))+'</td><td class="num">'+fmtMoney(e.amount)+'</td>'+
-          '<td class="detail">'+escapeHtml(e.detail)+'</td></tr>';
-      });
-      if(!events.length) evHtml='<tr><td colspan="5" class="empty">No upcoming maturities, resets, or interest-only step-ups.</td></tr>';
-
-      const html='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+      events.sort((a,b)=> a.iso<b.iso?-1:a.iso>b.iso?1:0);
+      const loanList = Object.keys(loanMeta).map(k=>loanMeta[k]).sort((a,b)=>a.name.localeCompare(b.name));
+      const lenders = Array.from(new Set(loanList.map(l=>l.lender))).sort();
+      const payload = { generated: fmtDateUS(partsToISO(now.y,now.mo,now.d)), nowY:now.y, nowM:now.mo, nowD:now.d, totalDebt, loanCount:loans.length, events, loans:loanList, lenders };
+      const json = JSON.stringify(payload).replace(/</g,'\\u003c');
+      const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
         '<title>Maturity & Reset Calendar — Living Residential</title><style>'+CAL_CSS+'</style></head><body>'+
-        '<header><div class="brand"><span class="lv">LIVING</span> <span class="rs">RESIDENTIAL</span></div>'+
-          '<div><h1>Maturity &amp; Reset Calendar</h1><div class="sub">Every upcoming balloon, ARM reset, and interest-only step-up — generated '+fmtDateUS(partsToISO(now.y,now.mo,now.d))+'</div></div>'+
-          '<button class="printbtn" onclick="window.print()">Print</button></header>'+
-        '<section class="chips">'+
-          chip("Total debt outstanding", fmtMoney(totalDebt), loans.length+" loans")+
-          chip("Maturing (next 12 mo)", cnt("Maturity"), "balloons coming due")+
-          chip("ARM resets (next 12 mo)", cnt("ARM reset"), "payment changes")+
-          chip("IO step-ups (next 12 mo)", cnt("IO ends"), "interest-only ending")+
-        '</section>'+
-        '<section><h2>Maturity wall — debt coming due by year</h2><div class="wall">'+wallHtml+'</div></section>'+
-        '<section><h2>Upcoming events</h2><table class="events"><thead><tr><th>Date</th><th>Event</th><th>Loan</th><th class="num">Amount</th><th>Detail</th></tr></thead><tbody>'+evHtml+'</tbody></table></section>'+
+        '<div id="app"></div>'+
+        '<script>window.__CAL_DATA__='+json+';<\/script>'+
+        '<script>'+CAL_JS+'<\/script>'+
         '</body></html>';
-
-      const w = window.open('', 'ldsCalendar', 'width=1120,height=840');
+      const w = window.open('', 'ldsCalendar', 'width=1200,height=880');
       if(!w){ toast("Allow pop-ups to open the calendar window", "info"); return; }
       w.document.open(); w.document.write(html); w.document.close(); w.focus();
     }
