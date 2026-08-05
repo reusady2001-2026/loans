@@ -1844,6 +1844,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     function ldsGotoEvent(loanId, iso){
       const loan = getLoan(loanId); if(!loan) return;
       selectLoan(loanId);                          // leaves portfolio scope → loan view, renders the schedule
+      ldsRaiseSelf();                              // pull this window in front of the calendar pop-out
       const target = fmtDateUS(iso);
       requestAnimationFrame(() => {
         const body = dom.scheduleBody; if(!body) return;
@@ -1857,8 +1858,16 @@ tr[data-loan]:hover td{background:#eef2f7}
           found.classList.add(...hl);
           setTimeout(() => { found.classList.remove(...hl); }, 3500);
         }
-        try{ window.focus(); }catch(e){}
       });
+    }
+    // Bring this window to the front. In the desktop app the OS-level raise must
+    // go through the shell (window.ldsShell, added by the preload); in a plain
+    // browser we fall back to the best-effort window.focus().
+    function ldsRaiseSelf(){
+      try {
+        if(window.ldsShell && typeof window.ldsShell.focusMain === "function"){ window.ldsShell.focusMain(); return; }
+      } catch(e){}
+      try{ window.focus(); }catch(e){}
     }
     window.addEventListener("message", (ev) => {
       const m = ev.data;

@@ -1,7 +1,22 @@
 // Electron main process — wraps the offline Loan Debt Service Hub in a desktop
 // window. The whole UI/engine lives in index.html; this just hosts it.
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+
+// Bring a window to the very front of the screen — used when the calendar
+// pop-out asks the main window to surface itself after an event click. A page
+// calling window.focus() can't raise an OS window; only the main process can.
+function bringToFront(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();                                   // ensure visible + drawn on top
+  try { win.moveTop(); } catch (e) {}           // lift above sibling windows (the pop-out)
+  win.focus();                                  // give it keyboard focus
+  // On Windows a background window won't foreground itself on request; steal:true
+  // forces the app to the front, which is exactly the "pop in front of everything"
+  // behaviour we want here.
+  try { app.focus({ steal: true }); } catch (e) { try { app.focus(); } catch (e2) {} }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -14,6 +29,8 @@ function createWindow() {
     autoHideMenuBar: true,
     webPreferences: {
       // The renderer only needs the DOM + fetch; keep Node out of it for safety.
+      // The preload adds a tiny window.ldsShell bridge (raise-to-front only).
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
@@ -40,6 +57,12 @@ function createWindow() {
     return { action: 'deny' };
   });
 }
+
+// The renderer (via preload) asks its own window to come to the front — e.g. when
+// an event is clicked in the calendar pop-out and the loan is now showing behind it.
+ipcMain.on('lds:focus-main', (e) => {
+  bringToFront(BrowserWindow.fromWebContents(e.sender));
+});
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null); // no default menu bar
