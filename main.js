@@ -22,9 +22,21 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, 'index.html'));
 
-  // Open any external link (e.g. doc links) in the system browser, not in-app.
+  // Allow the app's own pop-out windows (e.g. the Maturity & Reset Calendar, opened
+  // via window.open('') and written to in-renderer); send external http(s) links to
+  // the system browser; deny everything else.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url);
+    if (url === 'about:blank' || url === '') {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 1120, height: 840, minWidth: 720, minHeight: 520,
+          autoHideMenuBar: true, backgroundColor: '#f6f8f2',
+          webPreferences: { contextIsolation: true, nodeIntegration: false },
+        },
+      };
+    }
+    if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' }; }
     return { action: 'deny' };
   });
 }

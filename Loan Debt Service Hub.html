@@ -1754,6 +1754,117 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
 
     /* ================================================================
+       8a. MATURITY & RESET CALENDAR  (pop-out window)
+       ================================================================ */
+    const CAL_CSS = `
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#0f1115;background:#f6f8f2;padding:28px;line-height:1.45}
+header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;border-bottom:3px solid #4c721b;padding-bottom:16px;margin-bottom:22px}
+.brand{font-weight:800;letter-spacing:.1em;font-size:13px;white-space:nowrap}
+.brand .lv{color:#4c721b}.brand .rs{color:#0f1115}
+header h1{font-size:22px;font-weight:800;line-height:1.1}
+.sub{color:#64748b;font-size:12.5px;margin-top:2px}
+.printbtn{margin-left:auto;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:600;font-size:13px;padding:8px 16px;border-radius:9px;cursor:pointer}
+.printbtn:hover{background:#f1f5f9}
+.chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:14px;margin-bottom:26px}
+.chip{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.chip:first-child{background:linear-gradient(135deg,#7fb62b,#4c721b);border-color:#4c721b;color:#fff}
+.chiplabel{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+.chip:first-child .chiplabel{color:#eaf5d5}
+.chipval{font-size:24px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
+.chipsub{font-size:11.5px;color:#94a3b8;margin-top:2px}
+.chip:first-child .chipsub{color:#dbeeb8}
+section{margin-bottom:26px}
+h2{font-size:15px;font-weight:800;margin-bottom:12px;color:#1e293b}
+.wall{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 18px}
+.wallrow{display:flex;align-items:center;gap:14px;padding:7px 0}
+.wallrow+.wallrow{border-top:1px solid #f1f5f9}
+.wallyear{width:52px;font-weight:800;font-size:14px}
+.walltrack{flex:1;background:#f1f5f9;border-radius:6px;height:20px;overflow:hidden}
+.wallbar{height:100%;background:#7fb62b;border-radius:6px}
+.wallamt{width:220px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;font-size:13.5px}
+.wallcnt{color:#94a3b8;font-weight:500}
+table.events{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;font-size:13px}
+.events th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc;padding:10px 14px;border-bottom:1px solid #e2e8f0}
+.events td{padding:10px 14px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.events .num,.events th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.nowrap{white-space:nowrap}.detail{color:#475569}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.yearrow td{background:#eef2f7;font-weight:800;font-size:12px;color:#334155;padding:6px 14px;letter-spacing:.03em}
+tr.soon td{background:#fffbeb}
+tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
+.empty{color:#94a3b8;text-align:center;padding:20px}
+@media print{body{background:#fff;padding:0}.printbtn{display:none}.chip,.wall,table.events{box-shadow:none}}
+`;
+    // Build the calendar HTML (self-contained) and open it in a pop-out window.
+    function openMaturityCalendar(){
+      const now = todayParts();
+      const data = loans.map(l => ({ loan:l, cur:compute(l) }));
+      const monthsAway = (iso)=>{ const p=isoToParts(iso); return p ? (p.y-now.y)*12+(p.mo-now.mo) : 9999; };
+      const events = [], wallMap = {}; let totalDebt = 0;
+      data.forEach(({loan,cur}) => {
+        const d = cur.derived, rows = cur.rows;
+        totalDebt += d.currentBalance||0;
+        const balloon = rows.length ? rows[rows.length-1].startingBalance : (d.currentBalance||0);
+        const mp = isoToParts(d.maturityDate);
+        if(mp){ wallMap[mp.y] = wallMap[mp.y] || {year:mp.y,amount:0,count:0}; wallMap[mp.y].amount+=balloon; wallMap[mp.y].count++; }
+        if(d.maturityDate && monthsAway(d.maturityDate)>=0)
+          events.push({iso:d.maturityDate,type:"Maturity",loan,amount:balloon,detail:"Balloon / payoff of "+fmtMoney(balloon)+" comes due"});
+        if(loan.rateType==="Hybrid ARM"){
+          for(let i=Math.max(0,d.paymentsMade); i<rows.length; i++){
+            if(rows[i].isReset && monthsAway(rows[i].paymentDate)>=0)
+              events.push({iso:rows[i].paymentDate,type:"ARM reset",loan,amount:rows[i].startingBalance,detail:"Rate resets to "+fmtPct(rows[i].rate)+" — payment to "+fmtMoney(rows[i].payment)+"/mo"});
+          }
+        }
+        const io=d.originalIO||0, term=loan.loanTermMonths||loan.amortizationMonths||0;
+        if(io>0 && io<term && io>=d.paymentsMade && rows[io] && monthsAway(rows[io].paymentDate)>=0)
+          events.push({iso:rows[io].paymentDate,type:"IO ends",loan,amount:rows[io].startingBalance,detail:"Interest-only ends — payment to "+fmtMoney(rows[io].payment)+"/mo (P&I)"});
+      });
+      events.sort((a,b)=> String(a.iso).localeCompare(String(b.iso)));
+      const wall = Object.values(wallMap).sort((a,b)=>a.year-b.year);
+      const maxYear = wall.reduce((m,w)=>Math.max(m,w.amount),0)||1;
+      const cnt = (type)=> events.filter(e=>e.type===type && monthsAway(e.iso)<=12).length;
+
+      const chip=(label,val,sub)=>'<div class="chip"><div class="chiplabel">'+label+'</div><div class="chipval">'+val+'</div><div class="chipsub">'+sub+'</div></div>';
+      const typeColor={Maturity:"#b91c1c","ARM reset":"#b45309","IO ends":"#4c721b"};
+      const typeBg={Maturity:"#fee2e2","ARM reset":"#fef3c7","IO ends":"#eef7d8"};
+      const wallHtml = wall.map(w => {
+        const soon = w.year <= now.y+1;
+        return '<div class="wallrow"><div class="wallyear">'+w.year+'</div>'+
+          '<div class="walltrack"><div class="wallbar" style="width:'+Math.max(2,(w.amount/maxYear*100)).toFixed(1)+'%;'+(soon?'background:#b91c1c':'')+'"></div></div>'+
+          '<div class="wallamt">'+fmtMoney(w.amount)+'<span class="wallcnt"> · '+w.count+' loan'+(w.count===1?'':'s')+'</span></div></div>';
+      }).join('') || '<div class="empty">No maturities recorded.</div>';
+      let evHtml='', lastYear=null;
+      events.forEach(e => { const p=isoToParts(e.iso); const soon=monthsAway(e.iso)<=12;
+        if(p.y!==lastYear){ evHtml+='<tr class="yearrow"><td colspan="5">'+p.y+'</td></tr>'; lastYear=p.y; }
+        evHtml+='<tr'+(soon?' class="soon"':'')+'><td class="nowrap">'+fmtDateUS(e.iso)+'</td>'+
+          '<td><span class="badge" style="color:'+typeColor[e.type]+';background:'+typeBg[e.type]+'">'+e.type+'</span></td>'+
+          '<td>'+escapeHtml(loanLabel(e.loan))+'</td><td class="num">'+fmtMoney(e.amount)+'</td>'+
+          '<td class="detail">'+escapeHtml(e.detail)+'</td></tr>';
+      });
+      if(!events.length) evHtml='<tr><td colspan="5" class="empty">No upcoming maturities, resets, or interest-only step-ups.</td></tr>';
+
+      const html='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+        '<title>Maturity & Reset Calendar — Living Residential</title><style>'+CAL_CSS+'</style></head><body>'+
+        '<header><div class="brand"><span class="lv">LIVING</span> <span class="rs">RESIDENTIAL</span></div>'+
+          '<div><h1>Maturity &amp; Reset Calendar</h1><div class="sub">Every upcoming balloon, ARM reset, and interest-only step-up — generated '+fmtDateUS(partsToISO(now.y,now.mo,now.d))+'</div></div>'+
+          '<button class="printbtn" onclick="window.print()">Print</button></header>'+
+        '<section class="chips">'+
+          chip("Total debt outstanding", fmtMoney(totalDebt), loans.length+" loans")+
+          chip("Maturing (next 12 mo)", cnt("Maturity"), "balloons coming due")+
+          chip("ARM resets (next 12 mo)", cnt("ARM reset"), "payment changes")+
+          chip("IO step-ups (next 12 mo)", cnt("IO ends"), "interest-only ending")+
+        '</section>'+
+        '<section><h2>Maturity wall — debt coming due by year</h2><div class="wall">'+wallHtml+'</div></section>'+
+        '<section><h2>Upcoming events</h2><table class="events"><thead><tr><th>Date</th><th>Event</th><th>Loan</th><th class="num">Amount</th><th>Detail</th></tr></thead><tbody>'+evHtml+'</tbody></table></section>'+
+        '</body></html>';
+
+      const w = window.open('', 'ldsCalendar', 'width=1120,height=840');
+      if(!w){ toast("Allow pop-ups to open the calendar window", "info"); return; }
+      w.document.open(); w.document.write(html); w.document.close(); w.focus();
+    }
+
+    /* ================================================================
        8b. PORTFOLIO OVERVIEW + REFINANCE SCAN
        ================================================================ */
     function renderPortfolio(){
@@ -1822,7 +1933,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Portfolio</h2>'+
             '<p class="text-sm text-slate-500">'+loans.length+' loans — where the whole book stands and your options</p></div>'+
-          '<div class="text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</div>'+
+          '<div class="flex items-center gap-3">'+
+            '<span class="hidden sm:inline text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</span>'+
+            '<button id="calendarBtn" type="button" class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-glow press lift">'+
+              '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>'+
+              'Maturity &amp; Reset Calendar</button>'+
+          '</div>'+
         '</div>'+
         '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
@@ -1833,6 +1949,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
+      const calBtn = el("calendarBtn"); if(calBtn) calBtn.addEventListener("click", openMaturityCalendar);
     }
 
     /* ================================================================
