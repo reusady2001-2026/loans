@@ -2267,17 +2267,18 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     // ---- Forward-looking insight: annual debt-service forecast + rate shock ----
     function projectAnnualDS(rows, years){
-      const nowY = todayParts().y, buckets = {}, out = [];
-      for(let y=nowY; y<nowY+years; y++) buckets[y] = 0;
+      const nowY = todayParts().y, ds = {}, po = {}, out = [];
+      for(let y=nowY; y<nowY+years; y++){ ds[y] = 0; po[y] = 0; }
       rows.forEach(({comp}) => {
         const ef = (comp.derived.escrowTotal||0) + (comp.derived.feeTotal||0);
         comp.rows.forEach(r => {
-          const p = isoToParts(r.paymentDate); if(!p || buckets[p.y]===undefined) return;
-          const pi = (r.type==="balloon" || r.type==="final") ? r.interest : r.payment;   // exclude the balloon payoff
-          buckets[p.y] += pi + ef;
+          const p = isoToParts(r.paymentDate); if(!p || ds[p.y]===undefined) return;
+          const pi = (r.type==="balloon" || r.type==="final") ? r.interest : r.payment;   // recurring only; balloon principal kept separate
+          ds[p.y] += pi + ef;
+          if(r.type==="balloon") po[p.y] += r.principalPaid;   // the balloon / maturity payoff
         });
       });
-      for(let y=nowY; y<nowY+years; y++) out.push({ year:y, total:buckets[y] });
+      for(let y=nowY; y<nowY+years; y++) out.push({ year:y, ds:ds[y], payoff:po[y] });
       return out;
     }
     function rateShockImpact(rows, bpsList){
@@ -2293,20 +2294,34 @@ tr[data-loan]:hover td{background:#eef2f7}
     function moneyShort(n){ n=Number(n)||0; const a=Math.abs(n);
       return a>=1e9 ? "$"+(n/1e9).toFixed(2)+"B" : a>=1e6 ? "$"+(n/1e6).toFixed(1)+"M" : a>=1e3 ? "$"+Math.round(n/1e3)+"K" : "$"+Math.round(n); }
     function renderForecastCard(series){
-      const max = series.reduce((m,s)=>Math.max(m,s.total), 1), nowY = todayParts().y;
+      const withPayoffs = !!state.forecastPayoffs, H = 150, nowY = todayParts().y;
+      const totalOf = s => s.ds + (withPayoffs ? s.payoff : 0);
+      const max = series.reduce((m,s)=>Math.max(m, totalOf(s)), 1);
       const bars = series.map(s => {
-        const px = Math.max(4, Math.round(s.total/max*150)), isNow = s.year===nowY;   // pixel height off a 150px scale
-        const grad = isNow ? "linear-gradient(to top,#4c721b,#7fb62b)" : "linear-gradient(to top,#7fb62b,#b4db62)";
-        return '<div class="group flex-1 flex flex-col items-center gap-1" title="'+s.year+': '+fmtMoney(s.total)+'">'+
-          '<div class="text-[9px] font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition tabular-nums whitespace-nowrap">'+moneyShort(s.total)+'</div>'+
-          '<div class="w-full max-w-[30px] rounded-t-md" style="height:'+px+'px;background:'+grad+'"></div>'+
+        const isNow = s.year===nowY;
+        const dsPx = Math.max(s.ds>0?3:0, Math.round(s.ds/max*H));
+        const poPx = (withPayoffs && s.payoff>0) ? Math.max(3, Math.round(s.payoff/max*H)) : 0;
+        const dsGrad = isNow ? "linear-gradient(to top,#4c721b,#7fb62b)" : "linear-gradient(to top,#7fb62b,#b4db62)";
+        const title = s.year+": "+fmtMoney(s.ds)+" debt service"+(s.payoff>0 ? " · "+fmtMoney(s.payoff)+" balloon due" : "");
+        const label = (withPayoffs && s.payoff>0) ? moneyShort(s.ds+s.payoff) : moneyShort(s.ds);
+        return '<div class="group flex-1 flex flex-col items-center gap-1" title="'+escapeHtml(title)+'">'+
+          '<div class="text-[9px] font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition tabular-nums whitespace-nowrap">'+label+'</div>'+
+          '<div class="w-full max-w-[30px] flex flex-col justify-end">'+
+            (poPx>0 ? '<div class="rounded-t-md" style="height:'+poPx+'px;background:linear-gradient(to top,#14161b,#4b5159)"></div>' : '')+
+            '<div class="'+(poPx>0?"":"rounded-t-md")+'" style="height:'+dsPx+'px;background:'+dsGrad+'"></div>'+
+          '</div>'+
           '<div class="text-[10px] '+(isNow?"font-bold text-brand-700":"text-slate-500")+' tabular-nums">’'+String(s.year).slice(2)+'</div>'+
         '</div>';
       }).join('');
+      const seg = (on,label) => '<button type="button" data-fc="'+(on?1:0)+'" class="px-2.5 py-1 text-[11px] font-bold rounded-md transition '+((withPayoffs===on)?"bg-white shadow-sm text-slate-900":"text-slate-500 hover:text-slate-700")+'">'+label+'</button>';
+      const toggle = '<div class="shrink-0 inline-flex items-center rounded-lg bg-slate-100 border border-slate-200 p-0.5">'+seg(false,"Recurring")+seg(true,"+ Payoffs")+'</div>';
+      const legend = withPayoffs
+        ? '<div class="flex items-center gap-4 mt-3 text-[10px] text-slate-500"><span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-sm" style="background:#7fb62b"></span>debt service</span><span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-sm" style="background:linear-gradient(to top,#14161b,#4b5159)"></span>balloon payoff</span></div>'
+        : '';
       return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-card lift h-full flex flex-col">'+
-        '<h3 class="text-base font-bold text-slate-900">Debt-Service Forecast</h3>'+
-        '<p class="text-xs text-slate-500">projected annual debt service (P&amp;I + escrows) — rises when interest-only ends, falls as loans mature</p>'+
-        '<div class="flex items-end justify-between gap-1.5 mt-auto pt-4">'+bars+'</div></div>';
+        '<div class="flex items-start justify-between gap-3"><div class="min-w-0"><h3 class="text-base font-bold text-slate-900">Debt-Service Forecast</h3>'+
+          '<p class="text-xs text-slate-500">projected annual debt service (P&amp;I + escrows)'+(withPayoffs?", with balloon payoffs stacked on top":" — excludes balloon payoffs")+'</p></div>'+toggle+'</div>'+
+        '<div class="flex items-end justify-between gap-1.5 mt-auto pt-4">'+bars+'</div>'+legend+'</div>';
     }
     function renderRateShockCard(rs){
       const col = (s) => { const now = s.bps===0;
@@ -2398,6 +2413,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</tr>'; }).join('');
 
       dom.alertsRail.innerHTML = renderAlertsRail(portfolioActionItems(rows, scan));
+      const fcSeries = projectAnnualDS(rows, 10);
       dom.portfolioView.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Portfolio</h2>'+
@@ -2409,7 +2425,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
         '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">'+
-          '<div class="lg:col-span-2 min-w-0">'+renderForecastCard(projectAnnualDS(rows, 10))+'</div>'+
+          '<div id="forecastWrap" class="lg:col-span-2 min-w-0">'+renderForecastCard(fcSeries)+'</div>'+
           '<div class="min-w-0">'+renderRateShockCard(rateShockImpact(rows, [0,100,200]))+'</div>'+
         '</div>'+
         tableCard("All Loans","sorted by current balance — click a row to open it",
@@ -2425,6 +2441,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(lf) lf.addEventListener("change", () => { const v = lf.value;
         dom.portfolioView.querySelectorAll('tr[data-lender]').forEach(tr => { tr.style.display = (!v || tr.getAttribute('data-lender')===v) ? '' : 'none'; });
         const c = el("lenderConc"); if(c) c.textContent = concText(v);
+      });
+      const fw = el("forecastWrap");
+      if(fw) fw.addEventListener("click", (e) => { const b = e.target.closest("[data-fc]"); if(!b) return;
+        state.forecastPayoffs = b.getAttribute("data-fc")==="1";
+        fw.innerHTML = renderForecastCard(fcSeries);
       });
     }
 
