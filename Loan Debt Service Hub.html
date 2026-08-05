@@ -979,13 +979,20 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const monthsToMaturity = Math.max(0, term - paymentsMade);
       const originalIO = Math.max(0, loan.ioMonths||0);
 
-      // Rate and amortizing payment in effect at the current month.
+      // Rate and payment in effect at the current month.
       const curIdx = Math.min(Math.max(paymentsMade, 0), Math.max(term-1, 0));
       const curRow = rows[curIdx] || rows[rows.length-1] || null;
       const currentRate = curRow ? curRow.rate : (loan.annualRate||0);
-      let monthlyPI = 0;
-      for(const s of segments){ if(s.startMonth <= curIdx) monthlyPI = s.payment; }
-      if(!monthlyPI && segments.length) monthlyPI = segments[0].payment;
+      // The level amortizing P&I — the payment once principal is being repaid.
+      let amortizingPI = 0;
+      for(const s of segments){ if(s.startMonth <= curIdx) amortizingPI = s.payment; }
+      if(!amortizingPI && segments.length) amortizingPI = segments[0].payment;
+      // What you ACTUALLY pay this month = principal + interest. During the interest-
+      // only period principal is 0, so the payment IS the interest — never $0 (a fully
+      // interest-only/bullet loan pays interest every month until the balloon). Once
+      // amortizing, it's the level P&I.
+      const inIONow = !!curRow && (curIdx < originalIO);
+      const monthlyPI = inIONow ? curRow.interest : (amortizingPI || (curRow ? curRow.payment : 0));
 
       const escrowKeys = ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt"];
       const feeKeys = ["servicingFee","trusteeFee","otherFee1Amt","otherFee2Amt"];
@@ -996,7 +1003,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return {
         fixedPayment: monthlyPI, rows, totalInterest, totalPaid, segments,
         derived: {
-          currentBalance, maturityDate, monthlyPI, totalDebtService,
+          currentBalance, maturityDate, monthlyPI, amortizingPI, inIONow, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
           ioRemaining: Math.max(0, originalIO - paymentsMade),   // IO months still ahead
           interestOnly: (term > 0 && originalIO >= term) ? "Y" : "N",
@@ -1141,7 +1148,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
       dom.kpiGrid.innerHTML =
         kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
-        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate)) : ((loan.ioMonths||0)>0 ? "Amortizing (post-IO)" : "Actual/360 solved") }) +
+        kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub:
+            d.inIONow ? (d.amortizingPI>0 ? "interest-only now → "+fmtMoney(d.amortizingPI)+"/mo" : "interest-only until the balloon")
+          : loan.rateType==="Hybrid ARM" ? ("current phase @ "+fmtPct(d.currentRate))
+          : ((loan.ioMonths||0)>0 ? "amortizing (post-IO)" : "Actual/360 solved") }) +
         kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: d.paymentsMade + " payments made" }) +
         kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(d.currentRate) }) +
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
@@ -2271,10 +2281,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<div id="refiResults"></div>';
 
       // Default the proposed loan: same property/escrows/fees as the current loan,
-      // terms reset to a fresh fixed loan at today's rate, amount = payoff.
+      // terms reset to a fresh fixed loan, amount = payoff. Critically, it is priced
+      // at TODAY'S MARKET rate — the tenor-matched live base + your calibrated spread
+      // (the same yardstick the scan and this page show) — NOT the old loan's rate.
+      // A fresh Fixed loan prices as index + spread, so we set the index to the matched
+      // tenor and the spread to the market spread; clear any inherited floor/cap so the
+      // rate lands exactly on the market. The operator can override with a real quote.
+      const mkt = refiMarketParts(loan, loan, {});
       const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
         propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
-        originalAmount: d.currentBalance, rateType: "Fixed", annualRate: loan.annualRate, isHistorical: false,
+        originalAmount: d.currentBalance, rateType: "Fixed", isHistorical: false,
+        index: mkt.tenorId, spread: mkt.spread, annualRate: mkt.marketRate, rateFloor: null, rateCap: null,
         amortizationMonths: 360, loanTermMonths: defTerm, ioMonths: 0,
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
       });
@@ -2355,7 +2372,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const newNowPay = ioRow ? ioRow.payment : r.newPI;
       const savingNow = r.curPInow - newNowPay;
       if(ioRow){
-        cards.push(refiCard("New Monthly Payment", fmtMoney(newNowPay), "interest-only for "+newIO+" mo, then "+fmtMoney(r.newPI)));
+        cards.push(refiCard("New Monthly Payment", fmtMoney(newNowPay), "interest-only for "+newIO+" mo, then "+fmtMoney(r.newComp.derived.amortizingPI)));
       } else {
         cards.push(refiCard("New Monthly P&I", fmtMoney(r.newPI), "was "+fmtMoney(r.curPInow)));
       }
