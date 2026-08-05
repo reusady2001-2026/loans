@@ -488,15 +488,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
               Remove
             </button>
             <span class="mx-1 hidden sm:block h-8 w-px bg-slate-200"></span>
-            <button id="importBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 9l5-5 5 5M12 4v12"/></svg>
-              Import Excel
-            </button>
-            <input id="importInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
-            <button id="exportBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-              Export Excel
-            </button>
             <button id="refiBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6M21 22v-6h-6M21 8a9 9 0 0 0-15-3.5L3 8M3 16a9 9 0 0 0 15 3.5L21 16"/></svg>
               Refi Calculator
@@ -1333,7 +1324,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       loanSelect:el("loanSelect"), loanCountLabel:el("loanCountLabel"), xlsxDot:el("xlsxDot"),
       addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
       scopePortfolioBtn:el("scopePortfolioBtn"), scopeLoanBtn:el("scopeLoanBtn"), loanToolbar:el("loanToolbar"), alertsRail:el("alertsRail"),
-      importBtn:el("importBtn"), importInput:el("importInput"), exportBtn:el("exportBtn"), refiBtn:el("refiBtn"),
+      refiBtn:el("refiBtn"),
       emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"), refiView:el("refiView"), portfolioView:el("portfolioView"),
       kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
       scheduleMeta:el("scheduleMeta"), scheduleBody:el("scheduleBody"), exportCsvBtn:el("exportCsvBtn"),
@@ -2311,6 +2302,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const series = bucketizeDS(annual, per);
       const totalOf = s => s.ds + (withPayoffs ? s.payoff : 0);
       const max = series.reduce((m,s)=>Math.max(m, totalOf(s)), 1);
+      const fill = series.length<=4 ? 82 : series.length<=6 ? 64 : series.length<=9 ? 50 : 42;   // fewer columns → wider bars
       const yy = y => "’"+String(y).slice(2);
       const bars = series.map(s => {
         const isNow = nowY>=s.y0 && nowY<=s.y1, one = s.y0===s.y1;
@@ -2322,7 +2314,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         const hover = (withPayoffs && s.payoff>0) ? moneyShort(s.ds+s.payoff) : moneyShort(s.ds);
         return '<div class="group flex-1 flex flex-col items-center gap-1" title="'+escapeHtml(title)+'">'+
           '<div class="text-[9px] font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition tabular-nums whitespace-nowrap">'+hover+'</div>'+
-          '<div class="w-full max-w-[34px] flex flex-col justify-end">'+
+          '<div class="flex flex-col justify-end" style="width:'+fill+'%;max-width:360px">'+
             (poPx>0 ? '<div class="rounded-t-md" style="height:'+poPx+'px;background:linear-gradient(to top,#14161b,#4b5159)"></div>' : '')+
             '<div class="'+(poPx>0?"":"rounded-t-md")+'" style="height:'+dsPx+'px;background:'+dsGrad+'"></div>'+
           '</div>'+
@@ -2411,9 +2403,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       const td=(v,e)=>'<td class="px-3 py-2 text-sm '+(e||'text-slate-700')+'">'+v+'</td>';
       const tdR=(v,e)=>'<td class="px-3 py-2 text-sm text-right tabular-nums '+(e||'text-slate-700')+'">'+v+'</td>';
       const tableCard=(title,sub,head,body,headerRight)=>
-        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift overflow-hidden animate-fade-up">'+
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift animate-fade-up">'+
           '<div class="border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-3"><div class="min-w-0"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+(headerRight||'')+'</div>'+
-          '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
+          '<div class="overflow-x-auto rounded-b-2xl"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
         '</div>';
 
       // ---- Lender concentration + filter (#4) ----
@@ -2423,11 +2415,22 @@ tr[data-loan]:hover td{background:#eef2f7}
       const topLender = lenderNames.reduce((a,b)=> lenderBal[b]>lenderBal[a]?b:a, lenderNames[0]||"—");
       const concText = (name) => { const who = name || topLender; const pct = totalBal>0 ? Math.round((lenderBal[who]||0)/totalBal*100) : 0;
         return (name ? "" : "Top: ") + who + " — " + pct + "% of book"; };
+      const selNow = state.lenderSel || {};
+      const selCount0 = lenderNames.filter(l => selNow[l]).length;
+      const optRows = lenderNames.map(l => '<label class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50 cursor-pointer"><input type="checkbox" data-lenderopt="'+escapeHtml(l)+'"'+(selNow[l]?' checked':'')+' class="accent-brand-600"><span class="flex-1 truncate text-xs text-slate-700">'+escapeHtml(l)+'</span><span class="text-[10px] tabular-nums text-slate-400 shrink-0">'+moneyShort(lenderBal[l]||0)+'</span></label>').join('');
       const lenderControl = '<div class="flex items-center gap-2 shrink-0">'+
-        '<span id="lenderConc" class="hidden md:inline text-xs text-slate-500 max-w-[240px] truncate">'+escapeHtml(concText(""))+'</span>'+
-        '<select id="lenderFilter" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 max-w-[190px]">'+
-          '<option value="">All lenders</option>'+lenderNames.map(l=>'<option value="'+escapeHtml(l)+'">'+escapeHtml(l)+'</option>').join('')+
-        '</select></div>';
+        '<span id="lenderConc" class="hidden lg:inline text-xs text-slate-500 max-w-[230px] truncate">'+escapeHtml(concText(""))+'</span>'+
+        '<details id="lenderDD" class="relative">'+
+          '<summary class="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 flex items-center gap-1.5 hover:bg-slate-50">'+
+            '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>'+
+            '<span id="lenderSum" class="whitespace-nowrap">'+(selCount0?selCount0+" lender"+(selCount0>1?"s":""):"All lenders")+'</span>'+
+            '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'+
+          '</summary>'+
+          '<div class="absolute right-0 z-30 mt-1 w-72 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">'+
+            '<div class="flex items-center justify-between px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Filter by lender</span><button type="button" id="lenderClear" class="text-[11px] font-semibold text-brand-700 hover:underline">Clear</button></div>'+
+            optRows+
+          '</div>'+
+        '</details></div>';
 
       // ---- Overview table (by balance) ----
       const ov = rows.slice().sort((a,b)=> (b.comp.derived.currentBalance||0)-(a.comp.derived.currentBalance||0));
@@ -2475,11 +2478,24 @@ tr[data-loan]:hover td{background:#eef2f7}
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
-      const lf = el("lenderFilter");
-      if(lf) lf.addEventListener("change", () => { const v = lf.value;
-        dom.portfolioView.querySelectorAll('tr[data-lender]').forEach(tr => { tr.style.display = (!v || tr.getAttribute('data-lender')===v) ? '' : 'none'; });
-        const c = el("lenderConc"); if(c) c.textContent = concText(v);
-      });
+      const applyLenderFilter = () => {
+        const sel = state.lenderSel || {};
+        const active = lenderNames.filter(l => sel[l]);
+        const set = new Set(active);
+        dom.portfolioView.querySelectorAll('tr[data-lender]').forEach(tr => { tr.style.display = (set.size===0 || set.has(tr.getAttribute('data-lender'))) ? '' : 'none'; });
+        const sm = el("lenderSum"); if(sm) sm.textContent = set.size ? (set.size+" lender"+(set.size>1?"s":"")) : "All lenders";
+        const c = el("lenderConc");
+        if(c){ if(set.size===0) c.textContent = concText("");
+          else { const bal = active.reduce((a,k)=>a+(lenderBal[k]||0),0); c.textContent = set.size+" selected — "+(totalBal>0?Math.round(bal/totalBal*100):0)+"% of book"; } }
+      };
+      const dd = el("lenderDD");
+      if(dd){
+        dd.addEventListener("change", (e) => { const cb = e.target.closest("[data-lenderopt]"); if(!cb) return;
+          if(!state.lenderSel) state.lenderSel = {}; state.lenderSel[cb.getAttribute("data-lenderopt")] = cb.checked; applyLenderFilter(); });
+        const clr = el("lenderClear");
+        if(clr) clr.addEventListener("click", (e) => { e.preventDefault(); state.lenderSel = {}; dd.querySelectorAll("[data-lenderopt]").forEach(cb => cb.checked=false); applyLenderFilter(); });
+      }
+      applyLenderFilter();   // re-apply any persisted selection after a re-render
       const fw = el("forecastWrap");
       if(fw) fw.addEventListener("click", (e) => {
         const p = e.target.closest("[data-fc]"), y = e.target.closest("[data-fcy]");
@@ -3199,9 +3215,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     dom.saveBtn.addEventListener("click", saveForm);
     dom.cancelBtn.addEventListener("click", cancelForm);
     dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
-    dom.exportBtn.addEventListener("click", exportExcel);
-    dom.importBtn.addEventListener("click", () => dom.importInput.click());
-    dom.importInput.addEventListener("change", (e) => { const f=e.target.files[0]; if(f) importExcel(f); e.target.value=""; });
+    // Excel import/export intentionally unwired for now — the UX needs a rethink (see TODO.md).
+    // exportExcel() / importExcel() remain defined below for when it's reworked.
     dom.refiBtn.addEventListener("click", startRefi);
     dom.scopePortfolioBtn.addEventListener("click", () => setMode("portfolio"));
     dom.scopeLoanBtn.addEventListener("click", () => {
