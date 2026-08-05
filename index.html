@@ -81,6 +81,218 @@
       .lift{transition:none}
     }
   </style>
+
+<!-- ============ DESIGN & MOTION ENHANCEMENT LAYER ============ -->
+  <style id="enhance">
+    :root{
+      --g1:#a7d24a; --g2:#7fb62b; --g3:#639420; --g4:#4c721b; --ink:#121412;
+    }
+
+    /* ---------- Ambient, slowly-drifting green aurora ---------- */
+    body{ background:#f7faf1 !important; }
+    .grid-backdrop{ position:relative; }
+    .grid-backdrop::before{
+      content:""; position:fixed; inset:-12%; z-index:-1; pointer-events:none;
+      background:
+        radial-gradient(38rem 38rem at 10% -6%, rgba(127,182,43,.22), transparent 60%),
+        radial-gradient(34rem 34rem at 94% 2%, rgba(76,114,27,.16), transparent 62%),
+        radial-gradient(42rem 42rem at 72% 112%, rgba(167,210,74,.18), transparent 60%);
+      animation:aurora 24s ease-in-out infinite alternate;
+      will-change:transform;
+    }
+    @keyframes aurora{
+      0%  { transform:translate3d(0,0,0)      scale(1);    }
+      50% { transform:translate3d(-2.2%,1.6%,0) scale(1.07); }
+      100%{ transform:translate3d(2.2%,-1.4%,0) scale(1.04); }
+    }
+
+    /* ---------- Header: soft glass ---------- */
+    header.boxline{
+      background:linear-gradient(180deg, rgba(255,255,255,.93), rgba(247,250,241,.80)) !important;
+    }
+
+    /* ---------- Black, reimagined ---------- */
+    /* 1. Remove the hard ink gradient line from the bottom of every box. */
+    .boxline::after{ content:none !important; display:none !important; }
+
+    /* 2. Black now lives as DEPTH: prominent green surfaces sink into a
+          near-black corner instead of being edged by a line. */
+    .bg-gradient-to-br.to-brand-700{
+      background-image:linear-gradient(135deg, var(--g2) 0%, var(--g4) 60%, #20241d 100%) !important;
+    }
+
+    /* 3. A soft ink vignette grounds the whole page from the bottom up. */
+    .grid-backdrop::after{
+      content:""; position:fixed; left:0; right:0; bottom:0; height:36vh; z-index:-1;
+      background:linear-gradient(180deg, transparent, rgba(18,20,18,.07));
+      pointer-events:none;
+    }
+
+    /* 4. The white is no longer flat white — cards fade toward a faint
+          ink-green so black quietly runs through the light surfaces too. */
+    main .boxline.bg-white{
+      background:linear-gradient(158deg, #ffffff 0%, #f6f8f2 46%, #e7ebe1 100%) !important;
+    }
+    /* Dark KPI figures pick up the ink→green gradient rather than pure black. */
+    #kpiGrid p.tabular-nums.text-slate-900,
+    #portfolioView p.tabular-nums.text-slate-900{
+      background:linear-gradient(118deg, #1c201b 0%, #2f3a24 52%, #4c721b 100%);
+      -webkit-background-clip:text; background-clip:text;
+      color:transparent; -webkit-text-fill-color:transparent;
+    }
+
+    /* ---------- Living green gradient surfaces ---------- */
+    .from-brand-500{
+      background-size:180% 180% !important;
+      animation:gradflow 9s ease-in-out infinite;
+    }
+    @keyframes gradflow{ 0%,100%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } }
+
+    /* Diagonal light sweep across the prominent green surfaces */
+    .shadow-glow{ position:relative; overflow:hidden; }
+    .shadow-glow::after{
+      content:""; position:absolute; top:0; bottom:0; left:-65%; width:45%;
+      background:linear-gradient(100deg, transparent, rgba(255,255,255,.40), transparent);
+      transform:skewX(-18deg); pointer-events:none; z-index:2;
+      animation:sheen 7.5s ease-in-out infinite;
+    }
+    .shadow-glow > *{ position:relative; z-index:3; }
+    /* Buttons with the sheen must not be squeezed below their label by flex */
+    button.shadow-glow, a.shadow-glow{ flex:0 0 auto; min-width:max-content; }
+    @keyframes sheen{ 0%{ left:-65%; } 16%{ left:130%; } 100%{ left:130%; } }
+
+    /* ---------- Cards: deeper, greener lift ---------- */
+    main .boxline{ transition:box-shadow .3s ease, transform .25s cubic-bezier(.2,.8,.25,1), border-color .25s ease; }
+    main .boxline:hover{ box-shadow:0 2px 4px rgba(18,20,18,.05), 0 24px 48px -24px rgba(76,114,27,.42); }
+
+    /* KPI cards get a green accent bar that draws in on hover */
+    #kpiGrid > div, #portfolioView .stagger > div{ position:relative; }
+    #kpiGrid > div::before, #portfolioView .stagger > div::before{
+      content:""; position:absolute; left:16px; right:16px; top:0; height:3px; border-radius:0 0 3px 3px;
+      background:linear-gradient(90deg, var(--g1), var(--g3)); opacity:.95;
+      transform:scaleX(0); transform-origin:left; transition:transform .4s cubic-bezier(.2,.8,.25,1);
+    }
+    #kpiGrid > div:hover::before, #portfolioView .stagger > div:hover::before{ transform:scaleX(1); }
+
+    /* ---------- Scope toggle: gradient active state that morphs ---------- */
+    #scopePortfolioBtn, #scopeLoanBtn{ transition:all .28s cubic-bezier(.2,.8,.25,1) !important; }
+    #scopePortfolioBtn.bg-brand-600, #scopeLoanBtn.bg-brand-600{
+      background:linear-gradient(135deg, var(--g2), var(--g4)) !important;
+      box-shadow:0 10px 22px -10px rgba(76,114,27,.65) !important;
+    }
+
+    /* ---------- Buttons ---------- */
+    #addBtn, #saveBtn, #calendarBtn, #refiSaveBtn{ transition:filter .2s ease, box-shadow .2s ease, transform .1s ease; }
+    #addBtn:hover, #saveBtn:hover, #calendarBtn:hover, #refiSaveBtn:hover{
+      filter:brightness(1.05); box-shadow:0 14px 28px -12px rgba(76,114,27,.6);
+    }
+    #editBtn, #importBtn, #exportBtn, #refiBtn, #exportCsvBtn{ transition:all .2s ease; }
+    #editBtn:hover, #importBtn:hover, #exportBtn:hover, #refiBtn:hover, #exportCsvBtn:hover{
+      border-color:var(--g2) !important; color:var(--g4) !important; background:rgba(127,182,43,.07) !important;
+    }
+
+    /* ---------- Table rows: green wash + accent rail ---------- */
+    #portfolioView tbody tr, #loanView tbody tr, #refiView tbody tr{
+      transition:background-color .18s ease, box-shadow .18s ease;
+    }
+    #portfolioView tbody tr:hover, #loanView tbody tr:hover, #refiView tbody tr:hover{
+      background:linear-gradient(90deg, rgba(127,182,43,.12), rgba(127,182,43,.03)) !important;
+      box-shadow:inset 3px 0 0 var(--g2);
+    }
+
+    /* ---------- Inputs ---------- */
+    select, input, textarea{ transition:border-color .2s ease, box-shadow .2s ease; }
+
+    /* ---------- Live status dot ---------- */
+    #xlsxDot{ position:relative; }
+    #xlsxDot::after{
+      content:""; position:absolute; inset:0; border-radius:9999px;
+      animation:dotpulse 2.4s ease-out infinite;
+    }
+    @keyframes dotpulse{
+      0%  { box-shadow:0 0 0 0 rgba(127,182,43,.55); }
+      70% { box-shadow:0 0 0 9px rgba(127,182,43,0); }
+      100%{ box-shadow:0 0 0 0 rgba(127,182,43,0); }
+    }
+
+    /* ---------- Modal entrance ---------- */
+    #confirmModal.flex{ animation:modalfade .2s ease both; }
+    #confirmModal.flex > div{ animation:modalpop .32s cubic-bezier(.2,.8,.25,1) both; }
+    @keyframes modalfade{ from{ opacity:0; } to{ opacity:1; } }
+    @keyframes modalpop{ from{ opacity:0; transform:translateY(10px) scale(.97); } to{ opacity:1; transform:none; } }
+
+    /* ---------- Green-tinted scrollbar ---------- */
+    .thin-scroll::-webkit-scrollbar-thumb{ background:#c7dba0 !important; }
+    .thin-scroll::-webkit-scrollbar-thumb:hover{ background:#9ccb3d !important; }
+
+    /* ---------- Scroll-reveal + staggered cascades ---------- */
+    [data-reveal]{
+      opacity:0; transform:translateY(22px) scale(.985);
+      transition:opacity .6s ease, transform .6s cubic-bezier(.2,.8,.25,1);
+      will-change:opacity, transform;
+    }
+    [data-reveal].in{ opacity:1; transform:none; }
+    /* rows come in from the side for a livelier cascade */
+    tbody tr[data-reveal]{ transform:translateX(-14px); }
+    tbody tr[data-reveal].in{ transform:none; }
+
+    /* ---------- Icon micro-motion on the toolbar ---------- */
+    button svg{ transition:transform .3s cubic-bezier(.2,.8,.25,1); }
+    #addBtn:hover svg{ transform:rotate(90deg); }
+    #saveBtn:hover svg{ transform:scale(1.12); }
+    #calendarBtn:hover svg{ transform:scale(1.14) rotate(-4deg); }
+    #importBtn:hover svg{ transform:translateY(-2px); }
+    #exportBtn:hover svg, #exportCsvBtn:hover svg{ transform:translateY(2px); }
+    #refiBtn:hover svg{ transform:rotate(-160deg); }
+    #removeBtn:hover svg{ transform:rotate(8deg); }
+
+    /* ---------- Logo keeps gently floating ---------- */
+    header .shadow-glow svg{ animation:bob 4.5s ease-in-out infinite; }
+    @keyframes bob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-3px); } }
+
+    /* Header title letters slide in on load */
+    header .leading-tight span{ display:inline-block; animation:dropin .7s cubic-bezier(.2,.8,.25,1) both; }
+    header .leading-tight span:nth-child(2){ animation-delay:.08s; }
+    @keyframes dropin{ from{ opacity:0; transform:translateY(-10px); } to{ opacity:1; transform:none; } }
+
+    /* ---------- Scroll progress bar ---------- */
+    #scrollProgress{
+      position:fixed; top:0; left:0; height:3px; width:0; z-index:60;
+      background:linear-gradient(90deg, var(--g1), var(--g2) 55%, var(--g3));
+      box-shadow:0 0 12px rgba(127,182,43,.6); border-radius:0 3px 3px 0;
+      transition:width .12s linear;
+    }
+
+    /* ---------- Header condenses as you scroll ---------- */
+    header.boxline{ transition:box-shadow .3s ease, background .3s ease; }
+    header.boxline > div{ transition:padding .3s cubic-bezier(.2,.8,.25,1); }
+    header.condensed{ box-shadow:0 12px 34px -20px rgba(18,20,18,.55); }
+    header.condensed > div{ padding-top:.6rem; padding-bottom:.6rem; }
+
+    /* ---------- Click pulse ring on buttons (no clipping) ---------- */
+    .om-pulse{
+      position:absolute; border-radius:9999px; border:2px solid rgba(127,182,43,.55);
+      pointer-events:none; z-index:4; animation:ompulse .6s ease-out forwards;
+    }
+    @keyframes ompulse{ 0%{ transform:scale(.35); opacity:.9; } 100%{ transform:scale(1.9); opacity:0; } }
+
+    /* ---------- Focus pulse on fields ---------- */
+    input:focus, select:focus, textarea:focus{ animation:focuspulse .55s ease-out; }
+    @keyframes focuspulse{ 0%{ box-shadow:0 0 0 0 rgba(127,182,43,.45); } 100%{ box-shadow:0 0 0 7px rgba(127,182,43,0); } }
+
+    /* ---------- Empty-state icon breathes ---------- */
+    #emptyState .rounded-2xl svg{ animation:breathe 3.2s ease-in-out infinite; }
+    @keyframes breathe{ 0%,100%{ transform:scale(1); opacity:.9; } 50%{ transform:scale(1.08); opacity:1; } }
+
+    @media (prefers-reduced-motion: reduce){
+      .grid-backdrop::before, .shadow-glow::after, .from-brand-500, #xlsxDot::after,
+      #confirmModal.flex, #confirmModal.flex > div, header .shadow-glow svg,
+      header .leading-tight span, .om-pulse, #emptyState .rounded-2xl svg,
+      input:focus, select:focus, textarea:focus{ animation:none !important; }
+      [data-reveal]{ opacity:1 !important; transform:none !important; transition:none !important; }
+      #scrollProgress, header.boxline > div{ transition:none !important; }
+    }
+  </style>
 </head>
 
 <body class="min-h-screen bg-slate-100 text-slate-700 font-sans antialiased selection:bg-brand-200">
@@ -2712,6 +2924,167 @@ tr[data-loan]:hover td{background:#eef2f7}
       setInterval(check, 60*60*1000);   // hourly
       document.addEventListener("visibilitychange", () => { if(!document.hidden) check(); });
     })();
+  })();
+  </script>
+
+<!-- ============ COUNT-UP MOTION (non-invasive) ============ -->
+  <script>
+  (function(){
+    "use strict";
+    var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function grouped(str){ return str.indexOf(',') >= 0; }
+    function format(v, decimals, group, pre, post){
+      var s = v.toFixed(decimals);
+      if(group){ var p = s.split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ','); s = p.join('.'); }
+      return pre + s + post;
+    }
+
+    function animate(el){
+      try{
+        var target = el.textContent;
+        if(el.__cuAnim) return;                 // mid-animation — ignore its own text writes
+        if(el.__cuShown === target) return;     // already settled on this value
+        el.__cuShown = target;
+        if(/[a-zA-Z]/.test(target)) return;     // skip labels like "Fixed", "Hybrid ARM", "5 yr / 30 yr"
+        var m = target.match(/-?\d[\d,]*(\.\d+)?/);
+        if(!m) return;
+        var raw = m[0], end = parseFloat(raw.replace(/,/g,''));
+        if(!isFinite(end)) return;
+        if(REDUCED || end === 0) return;
+        var decimals = (raw.split('.')[1] || '').length;
+        var group = grouped(raw);
+        var pre = target.slice(0, m.index), post = target.slice(m.index + raw.length);
+        var dur = 950, t0 = performance.now();
+        el.__cuAnim = true;
+        function step(now){
+          var t = Math.min(1, (now - t0) / dur);
+          var e = 1 - Math.pow(1 - t, 3);
+          el.textContent = format(end * e, decimals, group, pre, post);
+          if(t < 1){ requestAnimationFrame(step); }
+          else { el.textContent = target; el.__cuAnim = false; el.__cuShown = target; }
+        }
+        requestAnimationFrame(step);
+      }catch(e){ el.__cuShown = el.textContent; el.__cuAnim = false; }
+    }
+
+    function scan(){
+      var nodes = document.querySelectorAll('#kpiGrid p.tabular-nums, #portfolioView p.tabular-nums');
+      for(var i=0;i<nodes.length;i++) animate(nodes[i]);
+    }
+
+    function boot(){
+      var mo = new MutationObserver(function(){ scan(); });
+      var kg = document.getElementById('kpiGrid');
+      var pv = document.getElementById('portfolioView');
+      if(kg) mo.observe(kg, { childList:true, subtree:true });
+      if(pv) mo.observe(pv, { childList:true, subtree:true });
+      scan();
+    }
+    if(document.readyState !== 'loading') boot();
+    else document.addEventListener('DOMContentLoaded', boot);
+  })();
+  </script>
+
+<!-- ============ SCROLL-REVEAL + CASCADE ENGINE (non-invasive) ============ -->
+  <script>
+  (function(){
+    "use strict";
+    if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(en.isIntersecting){
+          en.target.classList.add('in');
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold:0.06, rootMargin:'0px 0px -6% 0px' });
+
+    // Elements worth animating in, and how much to stagger siblings (ms).
+    var GROUPS = [
+      { sel:'#kpiGrid > div',            step:70,  max:8  },
+      { sel:'#portfolioView .stagger > div', step:70, max:8 },
+      { sel:'#loanView tbody tr',        step:28,  max:22 },
+      { sel:'#portfolioView tbody tr',   step:28,  max:22 },
+      { sel:'#refiView tbody tr',        step:28,  max:22 },
+      { sel:'#profileBody > div',        step:35,  max:16 },
+      { sel:'#portfolioView .flex.flex-wrap > span', step:45, max:10 },
+      { sel:'main > section:not(#loanView):not(#portfolioView)', step:0, max:1 },
+      { sel:'#portfolioView > div.boxline, #loanView > div.boxline', step:60, max:6 }
+    ];
+
+    function tag(){
+      GROUPS.forEach(function(g){
+        var nodes = document.querySelectorAll(g.sel), idx = 0;
+        for(var i=0;i<nodes.length;i++){
+          var el = nodes[i];
+          if(el.hasAttribute('data-reveal')) continue;   // already handled
+          el.setAttribute('data-reveal','');
+          var d = Math.min(idx, g.max) * g.step;
+          if(d) el.style.transitionDelay = d + 'ms';
+          io.observe(el);
+          idx++;
+        }
+      });
+    }
+
+    function boot(){
+      tag();
+      var main = document.querySelector('main');
+      if(main){
+        var mo = new MutationObserver(function(){ tag(); });
+        mo.observe(main, { childList:true, subtree:true });
+      }
+    }
+    if(document.readyState !== 'loading') boot();
+    else document.addEventListener('DOMContentLoaded', boot);
+  })();
+  </script>
+
+<!-- ============ UI FX: progress bar, header condense, click pulse ============ -->
+  <script>
+  (function(){
+    "use strict";
+    var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Scroll progress bar + header condense
+    var bar = document.createElement('div'); bar.id = 'scrollProgress';
+    document.body.appendChild(bar);
+    var header = document.querySelector('header');
+    var ticking = false;
+    function onScroll(){
+      if(ticking) return; ticking = true;
+      requestAnimationFrame(function(){
+        var h = document.documentElement;
+        var max = h.scrollHeight - h.clientHeight;
+        var pct = max > 0 ? (h.scrollTop || window.pageYOffset) / max : 0;
+        bar.style.width = (pct * 100).toFixed(2) + '%';
+        if(header) header.classList.toggle('condensed', (h.scrollTop || window.pageYOffset) > 24);
+        ticking = false;
+      });
+    }
+    window.addEventListener('scroll', onScroll, { passive:true });
+    window.addEventListener('resize', onScroll);
+    onScroll();
+
+    // Click pulse ring — expands beyond the button, so no overflow clipping
+    if(!REDUCED){
+      document.addEventListener('click', function(e){
+        var b = e.target.closest('button');
+        if(!b) return;
+        if(getComputedStyle(b).position === 'static') b.style.position = 'relative';
+        var rect = b.getBoundingClientRect();
+        var size = Math.max(28, Math.min(rect.height * 1.3, 56));
+        var r = document.createElement('span');
+        r.className = 'om-pulse';
+        r.style.width = r.style.height = size + 'px';
+        r.style.left = (e.clientX - rect.left - size/2) + 'px';
+        r.style.top  = (e.clientY - rect.top  - size/2) + 'px';
+        b.appendChild(r);
+        setTimeout(function(){ if(r.parentNode) r.parentNode.removeChild(r); }, 620);
+      }, true);
+    }
   })();
   </script>
 </body>
