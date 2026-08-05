@@ -168,6 +168,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         radial-gradient(circle at 92% 0%, rgba(76,114,27,.10), transparent 46%),
         radial-gradient(circle at 50% 120%, rgba(18,20,18,.05), transparent 55%);
     }
+    /* Soft black gradient accent line along the bottom edge of a card/box. */
+    .boxline{position:relative}
+    .boxline::after{
+      content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px;pointer-events:none;z-index:1;
+      background:linear-gradient(90deg, transparent, rgba(15,17,21,.40) 22%, rgba(15,17,21,.64) 50%, rgba(15,17,21,.40) 78%, transparent);
+    }
     [hidden]{display:none !important}
     /* Flow: soft lift + smooth transitions on interactive surfaces */
     .lift{transition:transform .18s ease, box-shadow .18s ease}
@@ -190,7 +196,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <div class="grid-backdrop min-h-screen">
 
     <!-- ===================== HEADER ===================== -->
-    <header class="border-b border-ink-200/70 bg-white/85 backdrop-blur sticky top-0 z-30">
+    <header class="boxline border-b border-ink-200/70 bg-white/85 backdrop-blur sticky top-0 z-30">
       <div class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-glow lift press">
@@ -216,7 +222,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
 
       <!-- ===================== SCOPE TOGGLE ===================== -->
-      <div class="flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max animate-fade-in">
+      <div class="boxline flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max animate-fade-in">
         <button id="scopePortfolioBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
           Whole Portfolio
@@ -228,7 +234,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </div>
 
       <!-- ===================== TOOLBAR (Specific Loan) ===================== -->
-      <section id="loanToolbar" class="rounded-2xl border border-ink-200 bg-white p-5 sm:p-6 shadow-card lift animate-fade-up">
+      <section id="loanToolbar" class="boxline rounded-2xl border border-ink-200 bg-white p-5 sm:p-6 shadow-card lift animate-fade-up">
         <div class="flex flex-col xl:flex-row xl:items-end gap-5">
           <!-- search / select -->
           <div class="flex-1 min-w-0">
@@ -279,7 +285,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </section>
 
       <!-- ===================== EMPTY STATE ===================== -->
-      <section id="emptyState" class="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm" hidden>
+      <section id="emptyState" class="boxline rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm" hidden>
         <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-brand-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
         </div>
@@ -296,7 +302,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <div id="floatBanner" hidden></div>
 
         <!-- Profile (all data, read-only) -->
-        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
             <div>
               <h2 class="text-base font-bold text-slate-900">Loan Record</h2>
@@ -311,7 +317,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         </div>
 
         <!-- Schedule -->
-        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
               <h2 class="text-base font-bold text-slate-900">Amortization Schedule</h2>
@@ -351,7 +357,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </section>
 
       <!-- ===================== EDIT / ADD FORM ===================== -->
-      <section id="formView" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" hidden>
+      <section id="formView" class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" hidden>
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 id="formTitle" class="text-base font-bold text-slate-900">Edit Loan</h2>
@@ -1133,12 +1139,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const highlight = opts.highlight;
       const sub = opts.sub ? '<p class="mt-1 text-xs '+(highlight?"text-brand-100":"text-slate-500")+'">'+escapeHtml(opts.sub)+'</p>' : '';
       if(highlight){
-        return '<div class="relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500 to-brand-700 p-4 shadow-glow lift">'+
+        return '<div class="boxline relative overflow-hidden rounded-2xl border border-brand-400/40 bg-gradient-to-br from-brand-500 to-brand-700 p-4 shadow-glow lift">'+
           '<div class="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-xl"></div>'+
           '<p class="text-xs font-semibold uppercase tracking-wide text-brand-100">'+escapeHtml(label)+'</p>'+
           '<p class="mt-2 text-2xl font-extrabold text-white tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
       }
-      return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-card lift">'+
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-card lift">'+
         '<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">'+escapeHtml(label)+'</p>'+
         '<p class="mt-2 text-2xl font-extrabold text-slate-900 tabular-nums">'+escapeHtml(value)+'</p>'+sub+'</div>';
     }
@@ -1901,7 +1907,7 @@ tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
       const td=(v,e)=>'<td class="px-3 py-2 text-sm '+(e||'text-slate-700')+'">'+v+'</td>';
       const tdR=(v,e)=>'<td class="px-3 py-2 text-sm text-right tabular-nums '+(e||'text-slate-700')+'">'+v+'</td>';
       const tableCard=(title,sub,head,body)=>
-        '<div class="rounded-2xl border border-slate-200 bg-white shadow-card lift overflow-hidden animate-fade-up">'+
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift overflow-hidden animate-fade-up">'+
           '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+
           '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
         '</div>';
@@ -2368,7 +2374,7 @@ tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
     }
     function refiCard(label, val, sub, tone){
       const vc = tone==="good"?"text-emerald-700":tone==="bad"?"text-rose-700":"text-slate-900";
-      return '<div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">'+
+      return '<div class="boxline rounded-xl border border-slate-200 bg-white p-3 shadow-sm">'+
         '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">'+label+'</p>'+
         '<p class="mt-1 text-lg font-bold tabular-nums '+vc+'">'+val+'</p>'+
         (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
@@ -2441,7 +2447,7 @@ tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
             '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>'+
           '</div>'+
         '</div>'+
-        '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
+        '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
           '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Current Loan</h3>'+
           '<dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">'+
             refiStat("Payoff balance", fmtMoney(d.currentBalance))+
@@ -2451,7 +2457,7 @@ tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
             refiStat("Matures", fmtDateUS(d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
-        '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
           '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
           '<p class="mb-3 text-[11px] text-slate-400">Pre-filled to match your current loan&rsquo;s rate type and priced at today&rsquo;s market. Pick a term option — every field below stays editable for a real quote. The amount defaults to the payoff; raise it to pull cash out.</p>'+
           '<div class="mb-4"><p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700">New loan term</p>'+
@@ -2491,7 +2497,7 @@ tr.soon td.nowrap{box-shadow:inset 3px 0 0 #f59e0b}
           '</div>'+
         '</div>'+
         '<div id="refiResults"></div>'+
-        '<div id="refiScheduleWrap" class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hidden">'+
+        '<div id="refiScheduleWrap" class="boxline mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hidden">'+
           '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">'+
             '<div><h3 class="text-base font-bold text-slate-900">Proposed Loan — Amortization Schedule</h3>'+
               '<p id="refiScheduleMeta" class="text-xs text-slate-500">—</p></div>'+
