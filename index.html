@@ -324,22 +324,25 @@
 
     <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
 
-      <!-- ===================== SCOPE TOGGLE + CALENDAR ===================== -->
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-fade-in">
-        <div class="boxline flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max">
-          <button id="scopePortfolioBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-            Whole Portfolio
-          </button>
-          <button id="scopeLoanBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M14 10v8M18 10v8"/></svg>
-            Specific Loan
+      <!-- ============ SCOPE TOGGLE + CALENDAR (left)  ·  ALERTS RAIL (right) ============ -->
+      <div class="flex flex-col xl:flex-row xl:items-center gap-3 animate-fade-in">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
+          <div class="boxline flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max">
+            <button id="scopePortfolioBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+              Whole Portfolio
+            </button>
+            <button id="scopeLoanBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 10h16M5 10l7-6 7 6M6 10v8M14 10v8M18 10v8"/></svg>
+              Specific Loan
+            </button>
+          </div>
+          <button id="calendarBtn" type="button" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-glow press lift self-start sm:self-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            Maturity &amp; Reset Calendar
           </button>
         </div>
-        <button id="calendarBtn" type="button" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-glow press lift self-start sm:self-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-          Maturity &amp; Reset Calendar
-        </button>
+        <div id="alertsRail" class="xl:flex-1 xl:min-w-0 w-full" hidden></div>
       </div>
 
       <!-- ===================== TOOLBAR (Specific Loan) ===================== -->
@@ -1220,7 +1223,7 @@
     const dom = {
       loanSelect:el("loanSelect"), loanCountLabel:el("loanCountLabel"), xlsxDot:el("xlsxDot"),
       addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
-      scopePortfolioBtn:el("scopePortfolioBtn"), scopeLoanBtn:el("scopeLoanBtn"), loanToolbar:el("loanToolbar"),
+      scopePortfolioBtn:el("scopePortfolioBtn"), scopeLoanBtn:el("scopeLoanBtn"), loanToolbar:el("loanToolbar"), alertsRail:el("alertsRail"),
       importBtn:el("importBtn"), importInput:el("importInput"), exportBtn:el("exportBtn"), refiBtn:el("refiBtn"),
       emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"), refiView:el("refiView"), portfolioView:el("portfolioView"),
       kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
@@ -1837,6 +1840,7 @@
       // the loan selector + single-loan views.
       const portfolioScope = state.mode==="portfolio";
       dom.loanToolbar.hidden = portfolioScope;
+      if(dom.alertsRail) dom.alertsRail.hidden = !portfolioScope;   // the Needs-Attention rail lives on the overview only
       const onCls = "bg-brand-600 text-white shadow-sm shadow-brand-500/30";
       const offCls = "text-ink-500 hover:bg-ink-50";
       dom.scopePortfolioBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition "+(portfolioScope?onCls:offCls);
@@ -2122,38 +2126,34 @@ tr[data-loan]:hover td{background:#eef2f7}
       });
       return items;
     }
-    function renderAlertsBand(items){
+    function renderAlertsRail(items){
+      const bell = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 text-brand-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+      const head = '<div class="shrink-0 flex items-center gap-1.5 pl-1 pr-1.5">'+bell+
+        '<span class="font-bold text-slate-900 text-sm whitespace-nowrap">Needs Attention</span>'+
+        (items.length ? '<span class="rounded-full bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5">'+items.length+'</span>' : '')+'</div>';
       if(!items.length)
-        return '<div class="boxline rounded-2xl border border-ink-200 bg-white p-4 sm:p-5 shadow-card flex items-center gap-2.5 text-sm text-slate-600 animate-fade-up">'+
-          '<span class="inline-flex h-2.5 w-2.5 rounded-full bg-brand-500"></span><span class="font-semibold text-slate-800">All clear.</span> Nothing needs attention in the next 24 months.</div>';
+        return '<div class="boxline rounded-2xl border border-ink-200 bg-white px-4 py-3 shadow-card flex items-center gap-2 text-sm text-slate-600">'+
+          head+'<span class="inline-flex h-2 w-2 rounded-full bg-brand-500"></span><span class="font-semibold text-slate-800">All clear</span> — nothing in the next 24 months.</div>';
       const SEV = {
         red:   { bar:"#b91c1c", dot:"bg-rose-500",   chip:"bg-rose-50 text-rose-700" },
         orange:{ bar:"#c2410c", dot:"bg-orange-500", chip:"bg-orange-50 text-orange-700" },
         amber: { bar:"#b45309", dot:"bg-amber-500",  chip:"bg-amber-50 text-amber-700" },
         green: { bar:"#4c721b", dot:"bg-brand-500",  chip:"bg-brand-50 text-brand-700" }
       };
-      const MAX = 6, shown = items.slice(0, MAX);
       const card = (it) => { const s = SEV[it.sev];
         const soon = (it.kind!=="Refi" && it.ma<=3) ? " ring-1 ring-inset ring-rose-200" : "";
         const attr = it.action==="refi" ? 'data-alert-refi="'+it.id+'"' : 'data-alert-goto="'+it.id+'" data-alert-iso="'+escapeHtml(it.iso)+'"';
-        return '<button type="button" '+attr+' class="text-left rounded-xl border border-ink-200 bg-white/70 hover:bg-white px-3 py-2.5 flex items-start gap-2.5 transition'+soon+'" style="border-left:3px solid '+s.bar+'">'+
+        return '<button type="button" '+attr+' title="'+escapeHtml(it.name+" — "+it.line)+'" class="shrink-0 w-[15rem] text-left rounded-xl border border-ink-200 bg-white/70 hover:bg-white px-3 py-2 flex items-start gap-2 transition'+soon+'" style="border-left:3px solid '+s.bar+'">'+
           '<span class="mt-1 inline-flex h-2 w-2 shrink-0 rounded-full '+s.dot+'"></span>'+
           '<span class="min-w-0 flex-1">'+
-            '<span class="flex items-center gap-2"><span class="font-semibold text-slate-900 text-sm truncate">'+escapeHtml(it.name)+'</span>'+
-              '<span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+s.chip+'">'+it.kind+'</span></span>'+
-            '<span class="block text-xs text-slate-500 truncate">'+escapeHtml(it.line)+'</span>'+
+            '<span class="flex items-center gap-1.5"><span class="font-semibold text-slate-900 text-sm truncate">'+escapeHtml(it.name)+'</span>'+
+              '<span class="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide '+s.chip+'">'+it.kind+'</span></span>'+
+            '<span class="block text-[11px] text-slate-500 truncate">'+escapeHtml(it.line)+'</span>'+
           '</span></button>';
       };
-      return '<div class="boxline rounded-2xl border border-ink-200 bg-white p-4 sm:p-5 shadow-card animate-fade-up">'+
-        '<div class="flex items-center justify-between gap-3 mb-3">'+
-          '<div class="flex items-center gap-2">'+
-            '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-brand-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>'+
-            '<h3 class="text-base font-bold text-slate-900">Needs Attention</h3>'+
-            '<span class="rounded-full bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5">'+items.length+'</span>'+
-          '</div>'+
-          (items.length>MAX ? '<span class="text-xs text-slate-500">showing '+MAX+' of '+items.length+'</span>' : '')+
-        '</div>'+
-        '<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">'+shown.map(card).join('')+'</div>'+
+      return '<div class="boxline rounded-2xl border border-ink-200 bg-white pl-3 pr-2 py-2 shadow-card flex items-center gap-2 min-w-0">'+
+        head+
+        '<div class="flex items-stretch gap-2 overflow-x-auto flex-1 min-w-0 thin-scroll py-0.5">'+items.map(card).join('')+'</div>'+
       '</div>';
     }
     function renderPortfolio(){
@@ -2218,8 +2218,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           tdR((s.gap>=0?'+':'−')+fmtPct(Math.abs(s.gap)), gapCls)+ td(flag)+
         '</tr>'; }).join('');
 
-      const actionItems = portfolioActionItems(rows, scan);
-      const alertsBand = renderAlertsBand(actionItems);
+      dom.alertsRail.innerHTML = renderAlertsRail(portfolioActionItems(rows, scan));
       dom.portfolioView.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Portfolio</h2>'+
@@ -2228,7 +2227,6 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<span class="hidden sm:inline text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</span>'+
           '</div>'+
         '</div>'+
-        alertsBand +
         '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
         tableCard("All Loans","sorted by current balance — click a row to open it",
@@ -2238,8 +2236,8 @@ tr[data-loan]:hover td{background:#eef2f7}
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
-      dom.portfolioView.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
-      dom.portfolioView.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
+      dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
+      dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
     }
 
     /* ================================================================
