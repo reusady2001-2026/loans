@@ -643,6 +643,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       { id:"ust5y",  label:"US Treasury 5-Year (CMT)",  live:true,  src:"treasury", field:"BC_5YEAR",      fallback:4.16 },
       { id:"ust7y",  label:"US Treasury 7-Year (CMT)",  live:true,  src:"treasury", field:"BC_7YEAR",      fallback:4.30 },
       { id:"ust10y", label:"US Treasury 10-Year (CMT)", live:true,  src:"treasury", field:"BC_10YEAR",     fallback:4.40 },
+      { id:"ust20y", label:"US Treasury 20-Year (CMT)", live:true,  src:"treasury", field:"BC_20YEAR",     fallback:4.85 },
       { id:"other",  label:"Other / Custom (enter value)", live:false, fallback:5.00 },
     ];
     const INDEX_BY_ID = {}; INDEX_CATALOG.forEach(i => INDEX_BY_ID[i.id] = i);
@@ -1398,7 +1399,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       catch(e){ return null; }
       const doc = new DOMParser().parseFromString(text, "application/xml");
       const props = doc.getElementsByTagNameNS("*","properties");
-      const F = { y3:"BC_3YEAR", y5:"BC_5YEAR", y7:"BC_7YEAR", y10:"BC_10YEAR" };
+      const F = { y3:"BC_3YEAR", y5:"BC_5YEAR", y7:"BC_7YEAR", y10:"BC_10YEAR", y20:"BC_20YEAR" };
       let best=null, bestDist=99;
       for(let i=0;i<props.length;i++){
         const dEl = props[i].getElementsByTagNameNS("*","NEW_DATE")[0]; if(!dEl) continue;
@@ -1429,7 +1430,38 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if(term <= 96) return "ust7y";
       return "ust10y";
     }
-    const TENOR_KEY = { ust3y:"y3", ust5y:"y5", ust7y:"y7", ust10y:"y10" };
+    // ---- Refinance term ladder: Option 1 = same term, Option 2 = one rung longer ----
+    // Standard commercial refi terms are 3 / 5 / 10 / 15 yr. Option 2 steps up one
+    // rung; 15 is the top and STAYS 15 (for a 15-yr loan the two options are told
+    // apart by their base tenor below, not the term).
+    function steppedTermMonths(origMonths){
+      const y = (origMonths||0)/12;
+      if(y < 5)  return 60;    // 3-yr band  -> 5 yr
+      if(y < 10) return 120;   // 5–9-yr band -> 10 yr
+      return 180;              // 10-yr and up -> 15 yr (15 stays 15)
+    }
+    // The base rate a refinance of this rate-type + term prices over, per option:
+    //  • Floating -> SOFR at any term.  • Hybrid ARM -> its reset tenor (the balloon
+    //    term doesn't move it).  • Fixed -> Treasury by term, but the 20-yr Treasury
+    //    is used ONLY on Option 2's 15-yr term; Option 1 tops out at the 10-yr.
+    function refiTenorForTerm(loan, termMonths, isOption2){
+      const type = loan.rateType || "Fixed";
+      if(type === "Floating")  return "sofr";
+      if(type === "Hybrid ARM") return matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: loan.armInitialFixedMonths });
+      if(isOption2 && (termMonths||0) >= 156) return "ust20y";   // 13-yr+ stepped term -> 20-yr Treasury
+      return matchedTenorId({ rateType:"Fixed", loanTermMonths: termMonths });
+    }
+    // The two preset term choices offered in the refinance calculator.
+    function refiTermOptions(loan){
+      const orig = loan.loanTermMonths || loan.amortizationMonths || 120;
+      const t2 = steppedTermMonths(orig);
+      const yrs = (m)=> Math.round((m||0)/12);
+      return {
+        1: { term: orig, tenor: refiTenorForTerm(loan, orig, false), years: yrs(orig) },
+        2: { term: t2,   tenor: refiTenorForTerm(loan, t2,   true),  years: yrs(t2) },
+      };
+    }
+    const TENOR_KEY = { ust3y:"y3", ust5y:"y5", ust7y:"y7", ust10y:"y10", ust20y:"y20" };
     // Treasury value (decimal) for a tenor as of a month: live for the current
     // month, cached history otherwise (null if not fetched yet).
     function treasuryAt(tenorId, y, mo){
@@ -1474,11 +1506,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         ensureTreasuryMonth(oi.y, oi.mo, cb);
       });
     }
+    // Standard term buckets (yrs) used to term-match the spread comps.
+    const TERM_LADDER = [3,5,10,15];
+    function termBucketYears(months){
+      const y = (months||0)/12; let best = TERM_LADDER[0];
+      for(const t of TERM_LADDER) if(Math.abs(t-y) < Math.abs(best-y)) best = t;
+      return best;
+    }
     // Weighted-average spread of recent deals, leaning toward the subject's location
-    // (same metro > same state > elsewhere). baseKind: "ust" or "sofr".
-    function calibratedSpread(subject, baseKind){
+    // (same metro > same state > elsewhere) and — when a target refi term is given —
+    // toward deals of comparable term (a 3-yr deal barely informs a 10-yr refi). It
+    // never zeroes a deal out, so a thin term bucket widens instead of emptying.
+    function calibratedSpread(subject, baseKind, targetTermMonths){
       const subjMkt = detectMarket(subject && subject.propertyAddress);
       const subjSt  = stateFromAddress(String((subject && subject.propertyAddress) || ""));
+      const tgtBucket = targetTermMonths ? termBucketYears(targetTermMonths) : null;
       const pool = [];
       recentDeals().forEach(l => {
         if(subject && l._id === subject._id) return;             // don't benchmark a loan against itself
@@ -1487,14 +1529,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if(!(imp.spread > 0 && imp.spread < 0.08)) return;        // sanity bound (0–800 bps)
         const mkt = detectMarket(l.propertyAddress);
         const st  = stateFromAddress(String(l.propertyAddress||""));
-        const w = (subjMkt && mkt===subjMkt) ? 3 : (subjSt && st===subjSt) ? 2 : 1;
-        pool.push({ loan:l, spread:imp.spread, market:mkt, weight:w });
+        const wLoc = (subjMkt && mkt===subjMkt) ? 3 : (subjSt && st===subjSt) ? 2 : 1;
+        let wTerm = 1, sameTerm = true;
+        if(tgtBucket){
+          const lb = termBucketYears(l.loanTermMonths || l.amortizationMonths || 0);
+          const step = Math.abs(TERM_LADDER.indexOf(lb) - TERM_LADDER.indexOf(tgtBucket));
+          wTerm = step===0 ? 4 : step===1 ? 1 : 0.35;   // same term bucket dominates; far still counts a little
+          sameTerm = step===0;
+        }
+        pool.push({ loan:l, spread:imp.spread, market:mkt, weight:wLoc*wTerm, sameTerm });
       });
       if(!pool.length) return null;
       const sw = pool.reduce((a,p)=>a+p.weight,0);
       const spread = pool.reduce((a,p)=>a+p.spread*p.weight,0)/sw;
       pool.sort((a,b)=> b.weight-a.weight || String(b.loan.originationDate).localeCompare(String(a.loan.originationDate)));
-      return { spread, count:pool.length, nearCount:pool.filter(p=>p.weight>=2).length, subjMkt, deals:pool };
+      return { spread, count:pool.length, nearCount:pool.filter(p=>p.weight>=2).length,
+               termCount: tgtBucket ? pool.filter(p=>p.sameTerm).length : null, tgtBucket, subjMkt, deals:pool };
     }
     // Compose the yardstick: base (matched tenor, live) + spread (calibrated),
     // each overridable via ov = { tenorId, baseValue(decimal), spread(decimal) }.
@@ -1505,7 +1555,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const liveBase = INDEX_CACHE[tenorId] ? INDEX_CACHE[tenorId].value/100 : (cat ? cat.fallback/100 : 0);
       const baseValue = (ov.baseValue!=null) ? ov.baseValue : liveBase;
       const baseKind = (tenorId==="sofr") ? "sofr" : "ust";
-      const calib = calibratedSpread(subject, baseKind);
+      const calib = calibratedSpread(subject, baseKind, ov.termMonths);
       const fallbackSpread = (marketBps(detectMarket(subject && subject.propertyAddress)) || 155)/10000;
       const spread = (ov.spread!=null) ? ov.spread : (calib ? calib.spread : fallbackSpread);
       return { tenorId, tenorLabel:(cat?cat.label:tenorId).replace(/ \(CMT\)/,""), baseValue, liveBase, baseKind,
@@ -1707,7 +1757,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const rows = loans.map(l => ({ loan:l, comp:compute(l) }));
       // Keep live bases + recent-deal history flowing so the scan sharpens itself.
       ensureCalibData(render);
-      ["ust3y","ust5y","ust7y","ust10y","sofr"].forEach(t => ensureIndexLive(t, render));
+      ["ust3y","ust5y","ust7y","ust10y","ust20y","sofr"].forEach(t => ensureIndexLive(t, render));
 
       // ---- Aggregates over the whole book ----
       let totalBal=0, totalDS=0, totalOrig=0, rateWB=0;
@@ -1751,7 +1801,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '</tr>'; }).join('');
 
       // ---- Refinance scan: current rate vs today's market, per loan ----
-      const scan = rows.map(({loan,comp}) => { const d=comp.derived; const mp=refiMarketParts(loan, loan, {});
+      const scan = rows.map(({loan,comp}) => { const d=comp.derived; const mp=refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths||loan.amortizationMonths });
         return { loan, cur:d.currentRate||0, mkt:mp.marketRate, gap:(d.currentRate||0)-mp.marketRate }; })
         .sort((a,b)=> b.gap-a.gap);
       const candidates = scan.filter(s => s.gap > 0.0025);
@@ -2043,7 +2093,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         newLoan: readFields("rf_", {}),                       // the full proposed loan
         closingCosts: money("r_closingCosts"), pointsPct: pct("r_points") || 0,
         holdMonths: intv("r_hold") || 0,
-        baseTenor: refiTenorAuto ? "" : ((el("r_baseTenor")||{}).value || ""),   // "" = auto-match to this loan's own tenor (same basis as the scan)
+        baseTenor: (el("r_baseTenor")||{}).value || "",   // set by the term option; a manual pick overrides
         baseValue: refiBaseManual   ? pct("r_baseValue") : null,   // operator override of the base value
         spread:    refiSpreadManual ? bps("r_spread")    : null,   // operator override of the spread (bps)
       };
@@ -2152,7 +2202,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       // scan uses — so the scan preview and this calculator show the same market rate
       // on open. (Pass the subject as the proposed here; a manual tenor pick still wins
       // via inp.baseTenor.) Judge the effective rate against it.
-      const mp = refiMarketParts(loan, loan, { tenorId: inp.baseTenor||null, baseValue: inp.baseValue, spread: inp.spread });
+      const mp = refiMarketParts(loan, loan, { tenorId: inp.baseTenor||null, baseValue: inp.baseValue, spread: inp.spread, termMonths: newLoan.loanTermMonths||newLoan.amortizationMonths });
       const mkt = mp.marketRate;
       const belowMkt = newRateEff < mkt - 0.0005;
       const aboveMkt = newRateEff > mkt + 0.0005;
@@ -2204,16 +2254,51 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         (sub?'<p class="text-[11px] text-slate-400">'+sub+'</p>':'')+'</div>';
     }
 
-    // Market-rate override flags: the base tenor auto-matches the loan's own term/type
-    // (Treasury by term, SOFR for floating — the same yardstick the portfolio scan uses),
-    // the base value tracks the live Treasury/SOFR, and the spread is calibrated
-    // from recent deals — each until the operator edits it.
-    let refiTenorAuto = true, refiBaseManual = false, refiSpreadManual = false;
+    // Refinance calculator state: which term preset is active, plus flags for when
+    // the operator has hand-overridden the yardstick's base value or spread.
+    let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false;
+    function tenorShort(id){
+      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", prime:"Prime", effr:"EFFR" })[id]
+        || (INDEX_BY_ID[id] ? INDEX_BY_ID[id].label : id);
+    }
+    function refiOptBtnClass(active){
+      return "rounded-lg px-3 py-2 text-xs font-semibold press transition border "+
+        (active ? "border-brand-500 bg-brand-500 text-white shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50");
+    }
+    // Populate the proposed loan + market yardstick from one of the two term presets.
+    // The proposed loan follows the CURRENT loan's rate type and is priced at today's
+    // market for that option's tenor + term (Treasury by term, 20-yr on Option 2's
+    // 15-yr; SOFR for floating; the ARM's reset tenor). Everything stays editable.
+    function applyRefiOption(loan, n){
+      refiTermOption = n;
+      const d = compute(loan).derived;
+      const today = todayParts(), fpm = addMonths(today, 1);
+      const opt = refiTermOptions(loan)[n] || refiTermOptions(loan)[1];
+      const type = loan.rateType || "Fixed";
+      const mkt = refiMarketParts(loan,
+        { rateType:type, loanTermMonths:opt.term, armInitialFixedMonths:loan.armInitialFixedMonths },
+        { tenorId:opt.tenor, termMonths:opt.term });
+      const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
+        propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
+        originalAmount: d.currentBalance, isHistorical: false, rateType: type,
+        amortizationMonths: 360, loanTermMonths: opt.term, ioMonths: 0,
+        index: opt.tenor, spread: mkt.spread, annualRate: mkt.marketRate, rateFloor: null, rateCap: null,
+        originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
+      });
+      INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
+      refiBaseManual = false; refiSpreadManual = false;
+      const bt = el("r_baseTenor"); if(bt) bt.value = opt.tenor;
+      [1,2].forEach(k => { const b = document.querySelector('#refiTermToggle [data-refiopt="'+k+'"]'); if(b) b.className = refiOptBtnClass(k===n); });
+      if(el("refiForm")) applyVisibility(el("refiForm"), "rf_");
+      recomputeRefi(loan);
+    }
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
-      const defTerm = Math.min(120, d.monthsToMaturity||120) || 120;
-      const today = todayParts(), fpm = addMonths(today, 1);
+      refiTermOption = 1;                       // each loan opens on Option 1 (same term)
+      const opts = refiTermOptions(loan);
+      const optBtn = (n) => '<button type="button" data-refiopt="'+n+'" class="'+refiOptBtnClass(n===1)+'">'+
+        'Option '+n+' · '+opts[n].years+' yr @ '+tenorShort(opts[n].tenor)+'</button>';
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
         for(let i=d.paymentsMade; i<cur.rows.length; i++){
@@ -2245,7 +2330,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '</div>'+
         '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
           '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
-          '<p class="mb-4 text-[11px] text-slate-400">Fill it out exactly like a new loan — Fixed, Floating, or Hybrid ARM. The amount defaults to the payoff; raise it to pull cash out.</p>'+
+          '<p class="mb-3 text-[11px] text-slate-400">Pre-filled to match your current loan&rsquo;s rate type and priced at today&rsquo;s market. Pick a term option — every field below stays editable for a real quote. The amount defaults to the payoff; raise it to pull cash out.</p>'+
+          '<div class="mb-4"><p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700">New loan term</p>'+
+            '<div id="refiTermToggle" class="flex flex-wrap gap-2">'+optBtn(1)+optBtn(2)+'</div>'+
+            '<p class="mt-1 text-[11px] text-slate-400">Option 1 keeps your current term; Option 2 steps up a rung (3&rarr;5&rarr;10&rarr;15, 15 stays 15). Amortized over 360 mo.</p></div>'+
           '<div id="refiForm" class="space-y-5">'+
             buildFormFieldsets("rf_")+
             '<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4">'+
@@ -2261,6 +2349,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
                       '<select id="r_baseTenor" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+
                         '<option value="ust3y">3-yr Treasury</option><option value="ust5y">5-yr Treasury</option>'+
                         '<option value="ust7y">7-yr Treasury</option><option value="ust10y">10-yr Treasury</option>'+
+                        '<option value="ust20y">20-yr Treasury</option>'+
                         '<option value="sofr">SOFR</option>'+
                       '</select>'+
                       '<div class="flex items-center"><input id="r_baseValue" type="text" inputmode="decimal" class="w-16 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" /><span class="ml-1 text-xs text-slate-400">%</span></div>'+
@@ -2280,45 +2369,24 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '</div>'+
         '<div id="refiResults"></div>';
 
-      // Default the proposed loan: same property/escrows/fees as the current loan,
-      // terms reset to a fresh fixed loan, amount = payoff. Critically, it is priced
-      // at TODAY'S MARKET rate — the tenor-matched live base + your calibrated spread
-      // (the same yardstick the scan and this page show) — NOT the old loan's rate.
-      // A fresh Fixed loan prices as index + spread, so we set the index to the matched
-      // tenor and the spread to the market spread; clear any inherited floor/cap so the
-      // rate lands exactly on the market. The operator can override with a real quote.
-      const mkt = refiMarketParts(loan, loan, {});
-      const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
-        propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
-        originalAmount: d.currentBalance, rateType: "Fixed", isHistorical: false,
-        index: mkt.tenorId, spread: mkt.spread, annualRate: mkt.marketRate, rateFloor: null, rateCap: null,
-        amortizationMonths: 360, loanTermMonths: defTerm, ioMonths: 0,
-        originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
-      });
-      INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
-
-      // Market-rate legs start on auto until edited. The base tenor matches THIS
-      // loan's own term/type (Treasury by term, SOFR for floating) — the exact same
-      // yardstick the portfolio Refinance scan shows — so the market rate you see in
-      // the scan preview and the one you see here on open are identical. The base
-      // value tracks live and the spread is calibrated from your recent deals.
-      refiTenorAuto = true; refiBaseManual = false; refiSpreadManual = false;
-      const bt = el("r_baseTenor"); if(bt) bt.value = matchedTenorId(loan);
-
+      // The proposed loan is populated by the active term option (below), which follows
+      // the current loan's rate type and prices it at today's market for that option's
+      // tenor + term. See applyRefiOption().
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
         if(id==="r_baseValue") refiBaseManual = true;
         if(id==="r_spread")    refiSpreadManual = true;
-        if(id==="r_baseTenor"){ refiTenorAuto = false; refiBaseManual = false; }   // new tenor → its live value
+        if(id==="r_baseTenor")  refiBaseManual = false;   // new tenor → refresh its live base value
         applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan);
       };
       el("refiForm").addEventListener("input", onForm);
       el("refiForm").addEventListener("change", onForm);
-      applyVisibility(el("refiForm"), "rf_");
+      const tt = el("refiTermToggle");
+      if(tt) tt.addEventListener("click", (e) => { const b = e.target.closest("[data-refiopt]"); if(b) applyRefiOption(loan, Number(b.getAttribute("data-refiopt"))); });
       injectIndexFetch(el("refiForm"), "rf_", "rfFetchIndexBtn");
-      recomputeRefi(loan);
+      applyRefiOption(loan, 1);   // populate + price the default option (same term), then recompute
     }
 
     function recomputeRefi(loan){
@@ -2330,8 +2398,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       ensureIndexLive(r.mp.tenorId, () => recomputeRefi(loan));   // live base for the market yardstick
       ensureCalibData(() => recomputeRefi(loan));                 // historical Treasury for recent fixed deals
 
-      // Reflect the composed market rate back into the editable controls.
-      if(refiTenorAuto && el("r_baseTenor")) el("r_baseTenor").value = r.mp.tenorId;
+      // Reflect the composed market rate back into the editable controls. (The base
+      // tenor itself is set by the term option / a manual pick, so it's the source of
+      // truth and isn't reflected back here.)
       if(!refiBaseManual && el("r_baseValue"))  el("r_baseValue").value  = +(r.mp.baseValue*100).toFixed(3);
       if(!refiSpreadManual && el("r_spread"))   el("r_spread").value     = Math.round(r.mp.spread*10000);
       if(el("r_marketRate")) el("r_marketRate").textContent = fmtPct(r.mp.marketRate);
@@ -2339,7 +2408,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         const c = r.mp.calib;
         const loc = marketLabel(detectMarket(loan.propertyAddress)) || "your area";
         el("r_spreadNote").textContent = !r.mp.spreadAuto ? "custom spread — your quote (edit or clear to revert to your recent deals)"
-          : c ? ("spread = weighted avg of your "+c.count+" recent deal"+(c.count===1?"":"s")+" (last "+CALIB_WINDOW_MONTHS+" mo"+(c.nearCount?", "+c.nearCount+" near "+loc:"")+") — edit if you have a quote")
+          : c ? ("spread = weighted avg of your "+c.count+" recent deal"+(c.count===1?"":"s")+" (last "+CALIB_WINDOW_MONTHS+" mo"
+                 +(c.nearCount?", "+c.nearCount+" near "+loc:"")+(c.termCount!=null?", "+c.termCount+" at ~"+c.tgtBucket+"yr":"")+") — edit if you have a quote")
           : "no recent comparable deals in the book — using a fallback; enter your quoted spread for accuracy";
       }
       const toneCls = r.tone==="good" ? "border-emerald-300 bg-emerald-50 text-emerald-900"
