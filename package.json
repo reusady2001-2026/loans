@@ -1,6 +1,6 @@
 {
   "name": "loan-debt-service-hub",
-  "version": "1.4.4",
+  "version": "1.5.0",
   "description": "Commercial Loan Debt Service Hub — offline desktop app",
   "main": "main.js",
   "author": "BSI",
@@ -15,6 +15,7 @@
   "build": {
     "appId": "il.co.bsi.loandebtservice",
     "productName": "Loan Debt Service Hub",
+    "copyright": "© 2026 BSI",
     "files": [
       "index.html",
       "main.js",
@@ -22,17 +23,26 @@
       "vendor/**/*"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "win": {
       "target": [
-        "portable"
-      ]
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Loan Debt Service Hub",
+      "uninstallDisplayName": "Loan Debt Service Hub",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   },
   "devDependencies": {

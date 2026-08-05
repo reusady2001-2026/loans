@@ -27,8 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build portable Windows .exe
-        run: npm run build:win
+      - name: Build Windows installer (NSIS)
+        run: npm run build:win-installer
 
       - name: Show build output
         shell: bash
@@ -54,7 +54,7 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           TAG="v${VER}"
-          NOTES="Portable Windows desktop app (v${VER}). Download the .exe below, double-click it — it runs offline, no install and no admin rights needed. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          NOTES="Windows desktop app installer (v${VER}). Download and run the installer below — it adds Start-menu and desktop shortcuts and runs fully offline. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/*.exe --clobber
             gh release edit "$TAG" --latest

@@ -4,9 +4,27 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ldsShell', {
+  // Marks this as the desktop build (the renderer checks it to show/hide the
+  // Data menu, which is desktop-only).
+  isDesktop: true,
+
   // Ask the desktop shell to raise THIS window to the front of the screen.
   // Used when a calendar event is clicked: the main window has already been
   // navigated to the loan; this brings it forward over the calendar pop-out
   // (and anything else) so the user sees it immediately.
   focusMain: () => { try { ipcRenderer.send('lds:focus-main'); } catch (e) {} },
+
+  // ---- Backup / Restore ----
+  // Manual backup → native Save dialog. Resolves {ok,path,name} | {canceled} | {ok:false,error}.
+  backupSave: (json, defaultName) => ipcRenderer.invoke('lds:backup-save', { json, defaultName }),
+  // Manual restore → native Open dialog. Resolves {ok,name,content} | {canceled} | {ok:false,error}.
+  backupOpen: () => ipcRenderer.invoke('lds:backup-open'),
+  // Silent snapshot into the managed backups folder. kind: 'auto' | 'before-restore'.
+  autoBackupWrite: (json, kind) => ipcRenderer.invoke('lds:autobackup-write', { json, kind }),
+  // List snapshots (newest first): [{name,kind,mtime,loanCount,exportedAt}].
+  autoBackupList: () => ipcRenderer.invoke('lds:autobackup-list'),
+  // Read one snapshot by name. Resolves {ok,content} | {ok:false,error}.
+  autoBackupRead: (name) => ipcRenderer.invoke('lds:autobackup-read', { name }),
+  // Reveal the backups folder in File Explorer.
+  openBackupsFolder: () => ipcRenderer.invoke('lds:backups-open-folder'),
 });

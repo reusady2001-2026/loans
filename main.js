@@ -1,7 +1,27 @@
 // Electron main process — wraps the offline Loan Debt Service Hub in a desktop
 // window. The whole UI/engine lives in index.html; this just hosts it.
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+
+// ---- Backup / Restore file plumbing ------------------------------------------
+// Snapshots live in a managed folder inside the app's per-user data directory:
+//   %APPDATA%\Loan Debt Service Hub\backups   (Windows)
+function backupsDir(){ return path.join(app.getPath('userData'), 'backups'); }
+function ensureBackupsDir(){ const d = backupsDir(); try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} return d; }
+function stamp(){ return new Date().toISOString().replace(/[:.]/g, '-'); }   // 2026-08-05T14-23-05-123Z
+// Keep only the newest `keep` files that start with `prefix`.
+function rotate(prefix, keep){
+  try {
+    const d = backupsDir();
+    fs.readdirSync(d)
+      .filter(f => f.startsWith(prefix) && f.endsWith('.json'))
+      .map(f => ({ f, t: fs.statSync(path.join(d, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t)
+      .slice(keep)
+      .forEach(x => { try { fs.unlinkSync(path.join(d, x.f)); } catch (e) {} });
+  } catch (e) {}
+}
 
 // Bring a window to the very front of the screen — used when the calendar
 // pop-out asks the main window to surface itself after an event click. A page
@@ -62,6 +82,76 @@ function createWindow() {
 // an event is clicked in the calendar pop-out and the loan is now showing behind it.
 ipcMain.on('lds:focus-main', (e) => {
   bringToFront(BrowserWindow.fromWebContents(e.sender));
+});
+
+// Manual backup — native Save dialog, writes wherever the user chooses.
+ipcMain.handle('lds:backup-save', async (e, { json, defaultName }) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Back up portfolio',
+    defaultPath: path.join(app.getPath('documents'), defaultName || 'Loan-Portfolio-backup.json'),
+    filters: [{ name: 'Loan Debt Service Hub backup', extensions: ['json'] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  try { fs.writeFileSync(res.filePath, json, 'utf8'); return { ok: true, path: res.filePath, name: path.basename(res.filePath) }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Manual restore — native Open dialog, returns the file's contents to the renderer.
+ipcMain.handle('lds:backup-open', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Restore portfolio from backup',
+    properties: ['openFile'],
+    filters: [{ name: 'Loan Debt Service Hub backup', extensions: ['json'] }, { name: 'All files', extensions: ['*'] }],
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true };
+  try { const p = res.filePaths[0]; return { ok: true, name: path.basename(p), content: fs.readFileSync(p, 'utf8') }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Silent snapshot into the managed backups folder. kind: 'auto' (routine, on change)
+// or 'before-restore' (the safety copy taken before a restore replaces the book).
+// The two kinds rotate separately, so a restore is always reversible.
+ipcMain.handle('lds:autobackup-write', async (e, { json, kind }) => {
+  const prefix = kind === 'before-restore' ? 'before-restore' : 'autobackup';
+  try {
+    const d = ensureBackupsDir();
+    const file = path.join(d, prefix + '-' + stamp() + '.json');
+    fs.writeFileSync(file, json, 'utf8');
+    rotate('autobackup', 20);
+    rotate('before-restore', 10);
+    return { ok: true, path: file };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// List snapshots in the backups folder (newest first) with light header info.
+ipcMain.handle('lds:autobackup-list', async () => {
+  try {
+    const d = backupsDir();
+    if (!fs.existsSync(d)) return [];
+    return fs.readdirSync(d).filter(f => f.endsWith('.json')).map(f => {
+      const full = path.join(d, f); let loanCount = null, exportedAt = null;
+      try { const j = JSON.parse(fs.readFileSync(full, 'utf8')); loanCount = (j.loanCount != null) ? j.loanCount : (Array.isArray(j.loans) ? j.loans.length : null); exportedAt = j.exportedAt || null; } catch (e) {}
+      const st = fs.statSync(full);
+      return { name: f, kind: f.startsWith('before-restore') ? 'before-restore' : 'auto', mtime: st.mtimeMs, loanCount, exportedAt };
+    }).sort((a, b) => b.mtime - a.mtime);
+  } catch (e) { return []; }
+});
+
+// Read one snapshot from the backups folder by name (path-traversal guarded).
+ipcMain.handle('lds:autobackup-read', async (e, { name }) => {
+  try {
+    if (!name || name.indexOf('..') >= 0 || path.isAbsolute(name)) return { ok: false, error: 'bad name' };
+    const full = path.join(backupsDir(), path.basename(name));
+    return { ok: true, content: fs.readFileSync(full, 'utf8') };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Reveal the backups folder in the OS file manager.
+ipcMain.handle('lds:backups-open-folder', async () => {
+  try { const d = ensureBackupsDir(); await shell.openPath(d); return { ok: true, path: d }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
 app.whenReady().then(() => {
