@@ -2265,6 +2265,63 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="flex items-stretch gap-2 overflow-x-auto flex-1 min-w-0 thin-scroll py-0.5">'+items.map(card).join('')+'</div>'+
       '</div>';
     }
+    // ---- Forward-looking insight: annual debt-service forecast + rate shock ----
+    function projectAnnualDS(rows, years){
+      const nowY = todayParts().y, buckets = {}, out = [];
+      for(let y=nowY; y<nowY+years; y++) buckets[y] = 0;
+      rows.forEach(({comp}) => {
+        const ef = (comp.derived.escrowTotal||0) + (comp.derived.feeTotal||0);
+        comp.rows.forEach(r => {
+          const p = isoToParts(r.paymentDate); if(!p || buckets[p.y]===undefined) return;
+          const pi = (r.type==="balloon" || r.type==="final") ? r.interest : r.payment;   // exclude the balloon payoff
+          buckets[p.y] += pi + ef;
+        });
+      });
+      for(let y=nowY; y<nowY+years; y++) out.push({ year:y, total:buckets[y] });
+      return out;
+    }
+    function rateShockImpact(rows, bpsList){
+      let totalBal=0, wtdSum=0, floatBal=0;
+      rows.forEach(({loan,comp}) => { const bal = comp.derived.currentBalance||0;
+        totalBal += bal; wtdSum += (comp.derived.currentRate||0)*bal;
+        if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM") floatBal += bal;
+      });
+      return { totalBal, floatBal, base: totalBal>0 ? wtdSum/totalBal : 0,
+        scenarios: bpsList.map(bps => { const d = bps/10000;
+          return { bps, addAnnual: floatBal*d, blended: totalBal>0 ? (wtdSum + floatBal*d)/totalBal : 0 }; }) };
+    }
+    function moneyShort(n){ n=Number(n)||0; const a=Math.abs(n);
+      return a>=1e9 ? "$"+(n/1e9).toFixed(2)+"B" : a>=1e6 ? "$"+(n/1e6).toFixed(1)+"M" : a>=1e3 ? "$"+Math.round(n/1e3)+"K" : "$"+Math.round(n); }
+    function renderForecastCard(series){
+      const max = series.reduce((m,s)=>Math.max(m,s.total), 1), nowY = todayParts().y;
+      const bars = series.map(s => {
+        const px = Math.max(4, Math.round(s.total/max*150)), isNow = s.year===nowY;   // pixel height off a 150px scale
+        const grad = isNow ? "linear-gradient(to top,#4c721b,#7fb62b)" : "linear-gradient(to top,#7fb62b,#b4db62)";
+        return '<div class="group flex-1 flex flex-col items-center gap-1" title="'+s.year+': '+fmtMoney(s.total)+'">'+
+          '<div class="text-[9px] font-bold text-slate-500 opacity-0 group-hover:opacity-100 transition tabular-nums whitespace-nowrap">'+moneyShort(s.total)+'</div>'+
+          '<div class="w-full max-w-[30px] rounded-t-md" style="height:'+px+'px;background:'+grad+'"></div>'+
+          '<div class="text-[10px] '+(isNow?"font-bold text-brand-700":"text-slate-500")+' tabular-nums">’'+String(s.year).slice(2)+'</div>'+
+        '</div>';
+      }).join('');
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-card lift h-full flex flex-col">'+
+        '<h3 class="text-base font-bold text-slate-900">Debt-Service Forecast</h3>'+
+        '<p class="text-xs text-slate-500">projected annual debt service (P&amp;I + escrows) — rises when interest-only ends, falls as loans mature</p>'+
+        '<div class="flex items-end justify-between gap-1.5 mt-auto pt-4">'+bars+'</div></div>';
+    }
+    function renderRateShockCard(rs){
+      const col = (s) => { const now = s.bps===0;
+        return '<div class="rounded-xl border border-slate-200 '+(now?"bg-white/70":"bg-rose-50/40")+' p-3 text-center">'+
+          '<div class="text-[11px] font-bold uppercase tracking-wide '+(now?"text-slate-500":"text-rose-600")+'">'+(now?"Today":"+"+s.bps+"bps")+'</div>'+
+          '<div class="mt-1.5 text-base font-extrabold text-slate-900 tabular-nums">'+fmtPct(s.blended)+'</div>'+
+          '<div class="text-[10px] text-slate-500">blended rate</div>'+
+          '<div class="mt-1.5 text-xs font-semibold '+(now?"text-slate-400":"text-rose-700")+' tabular-nums">'+(now?"—":"+"+moneyShort(s.addAnnual))+'</div>'+
+          '<div class="text-[10px] text-slate-500">added int/yr</div></div>';
+      };
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-card lift h-full">'+
+        '<h3 class="text-base font-bold text-slate-900">Rate Shock</h3>'+
+        '<p class="text-xs text-slate-500">floating + ARM exposure '+fmtMoney(rs.floatBal)+' · '+(rs.totalBal>0?Math.round(rs.floatBal/rs.totalBal*100):0)+'% of book</p>'+
+        '<div class="grid grid-cols-3 gap-2 mt-4">'+rs.scenarios.map(col).join('')+'</div></div>';
+    }
     function renderPortfolio(){
       const rows = loans.map(l => ({ loan:l, comp:compute(l) }));
       // Keep live bases + recent-deal history flowing so the scan sharpens itself.
@@ -2298,16 +2355,29 @@ tr[data-loan]:hover td{background:#eef2f7}
       const thR=(t)=>th(t,'text-right');
       const td=(v,e)=>'<td class="px-3 py-2 text-sm '+(e||'text-slate-700')+'">'+v+'</td>';
       const tdR=(v,e)=>'<td class="px-3 py-2 text-sm text-right tabular-nums '+(e||'text-slate-700')+'">'+v+'</td>';
-      const tableCard=(title,sub,head,body)=>
+      const tableCard=(title,sub,head,body,headerRight)=>
         '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift overflow-hidden animate-fade-up">'+
-          '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+
+          '<div class="border-b border-slate-200 px-5 py-4 flex items-start justify-between gap-3"><div class="min-w-0"><h3 class="text-base font-bold text-slate-900">'+title+'</h3>'+(sub?'<p class="text-xs text-slate-500">'+sub+'</p>':'')+'</div>'+(headerRight||'')+'</div>'+
           '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+body+'</tbody></table></div>'+
         '</div>';
+
+      // ---- Lender concentration + filter (#4) ----
+      const lenderBal = {};
+      rows.forEach(({loan,comp}) => { const k = loan.lenderName||"—"; lenderBal[k] = (lenderBal[k]||0) + (comp.derived.currentBalance||0); });
+      const lenderNames = Object.keys(lenderBal).sort();
+      const topLender = lenderNames.reduce((a,b)=> lenderBal[b]>lenderBal[a]?b:a, lenderNames[0]||"—");
+      const concText = (name) => { const who = name || topLender; const pct = totalBal>0 ? Math.round((lenderBal[who]||0)/totalBal*100) : 0;
+        return (name ? "" : "Top: ") + who + " — " + pct + "% of book"; };
+      const lenderControl = '<div class="flex items-center gap-2 shrink-0">'+
+        '<span id="lenderConc" class="hidden md:inline text-xs text-slate-500 max-w-[240px] truncate">'+escapeHtml(concText(""))+'</span>'+
+        '<select id="lenderFilter" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 max-w-[190px]">'+
+          '<option value="">All lenders</option>'+lenderNames.map(l=>'<option value="'+escapeHtml(l)+'">'+escapeHtml(l)+'</option>').join('')+
+        '</select></div>';
 
       // ---- Overview table (by balance) ----
       const ov = rows.slice().sort((a,b)=> (b.comp.derived.currentBalance||0)-(a.comp.derived.currentBalance||0));
       const ovRows = ov.map(({loan,comp}) => { const d=comp.derived;
-        return '<tr data-goto="'+loan._id+'" class="cursor-pointer hover:bg-slate-50">'+
+        return '<tr data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" class="cursor-pointer hover:bg-slate-50">'+
           td(escapeHtml(loanLabel(loan)),'font-medium text-slate-900')+ td(escapeHtml(loan.lenderName||'—'),'text-slate-500')+
           td(loan.rateType||'—')+ tdR(fmtMoney(d.currentBalance))+ tdR(fmtPct(d.currentRate))+ tdR(fmtMoney(d.monthlyPI))+ tdR(fmtDateUS(d.maturityDate))+
         '</tr>'; }).join('');
@@ -2338,8 +2408,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</div>'+
         '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
+        '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">'+
+          '<div class="lg:col-span-2 min-w-0">'+renderForecastCard(projectAnnualDS(rows, 10))+'</div>'+
+          '<div class="min-w-0">'+renderRateShockCard(rateShockImpact(rows, [0,100,200]))+'</div>'+
+        '</div>'+
         tableCard("All Loans","sorted by current balance — click a row to open it",
-          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows)+
+          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl)+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
           '<tr>'+th("Property")+thR("Current")+thR("Market")+thR("Gap")+th("")+'</tr>', scanRows);
 
@@ -2347,6 +2421,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
+      const lf = el("lenderFilter");
+      if(lf) lf.addEventListener("change", () => { const v = lf.value;
+        dom.portfolioView.querySelectorAll('tr[data-lender]').forEach(tr => { tr.style.display = (!v || tr.getAttribute('data-lender')===v) ? '' : 'none'; });
+        const c = el("lenderConc"); if(c) c.textContent = concText(v);
+      });
     }
 
     /* ================================================================
