@@ -1232,24 +1232,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       dom.profileBody.innerHTML = html;
     }
 
-    function renderSchedule(loan, result){
-      const d = result.derived;
-      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
-      const start = accrualStartParts(loan);
-      const startLabel = MONTH_NAMES[start.mo]+" "+start.y;
-      const end = result.rows.length ? result.rows[result.rows.length-1].label : "—";
-      const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
-      dom.scheduleMeta.textContent = term + " months · accrues " + startLabel + " – " + end +
-        " · paid in arrears on the 1st of the next month" +
-        (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
-
-      const nowIndex = d.paymentsMade;   // last made payment number
-      dom.scheduleBody.innerHTML = result.rows.map(r => {
+    // Render schedule rows to <tr> HTML. nowIndex marks the current payment row
+    // (the loan view passes payments-made; a fresh proposed loan passes null).
+    function scheduleRowsHtml(rows, nowIndex){
+      return rows.map(r => {
         let cls;
         if(r.type==="io") cls="bg-amber-50 hover:bg-amber-100/70";
         else if(r.type==="balloon"||r.type==="final") cls="bg-emerald-50 hover:bg-emerald-100/70 font-semibold";
         else cls="hover:bg-slate-50";
-        const isNow = r.index === nowIndex;
+        const isNow = nowIndex!=null && r.index === nowIndex;
         if(isNow) cls += " ring-1 ring-inset ring-sky-300 bg-sky-50";
         if(r.isReset) cls += " border-t-2 border-brand-300";
         const badge =
@@ -1270,6 +1261,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.endingBalance)+'</td>'+
         '</tr>';
       }).join("");
+    }
+    function renderSchedule(loan, result){
+      const d = result.derived;
+      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
+      const start = accrualStartParts(loan);
+      const startLabel = MONTH_NAMES[start.mo]+" "+start.y;
+      const end = result.rows.length ? result.rows[result.rows.length-1].label : "—";
+      const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
+      dom.scheduleMeta.textContent = term + " months · accrues " + startLabel + " – " + end +
+        " · paid in arrears on the 1st of the next month" +
+        (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
+      dom.scheduleBody.innerHTML = scheduleRowsHtml(result.rows, d.paymentsMade);
     }
 
     function termLabel(months){
@@ -2256,7 +2259,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     // Refinance calculator state: which term preset is active, plus flags for when
     // the operator has hand-overridden the yardstick's base value or spread.
-    let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false;
+    let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false, refiHoldManual = false;
     function tenorShort(id){
       return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", prime:"Prime", effr:"EFFR" })[id]
         || (INDEX_BY_ID[id] ? INDEX_BY_ID[id].label : id);
@@ -2278,16 +2281,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const mkt = refiMarketParts(loan,
         { rateType:type, loanTermMonths:opt.term, armInitialFixedMonths:loan.armInitialFixedMonths },
         { tenorId:opt.tenor, termMonths:opt.term });
+      const newMat = addMonths(fpm, opt.term - 1);   // fresh maturity = first payment + (term − 1), i.e. today + term
       const draft = Object.assign(emptyLoan(), JSON.parse(JSON.stringify(loan)), {
         propertyName: (loan.propertyName || loanLabel(loan)) + " (Refinanced)", loanNumber: "",
         originalAmount: d.currentBalance, isHistorical: false, rateType: type,
         amortizationMonths: 360, loanTermMonths: opt.term, ioMonths: 0,
         index: opt.tenor, spread: mkt.spread, annualRate: mkt.marketRate, rateFloor: null, rateCap: null,
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1),
+        maturityDate: partsToISO(newMat.y, newMat.mo, 1),   // fresh — never inherit the old loan's maturity (it would anchor the new schedule to the past)
       });
       INPUT_FIELDS.forEach(f => setFieldValue("rf_"+f.key, f.type, draft[f.key]));
-      refiBaseManual = false; refiSpreadManual = false;
+      refiBaseManual = false; refiSpreadManual = false; refiHoldManual = false;
       const bt = el("r_baseTenor"); if(bt) bt.value = opt.tenor;
+      const hold = el("r_hold"); if(hold) hold.value = opt.term;   // hold defaults to the new loan's term
       [1,2].forEach(k => { const b = document.querySelector('#refiTermToggle [data-refiopt="'+k+'"]'); if(b) b.className = refiOptBtnClass(k===n); });
       if(el("refiForm")) applyVisibility(el("refiForm"), "rf_");
       recomputeRefi(loan);
@@ -2362,12 +2368,37 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
               '<div id="refiCosts" class="grid grid-cols-1 sm:grid-cols-3 gap-4">'+
                 refiField("r_closingCosts","Closing Costs ($)", 0, "lender + legal + title")+
                 refiField("r_points","Points", 0, "% of new loan", true)+
-                refiField("r_hold","Expected Hold (months)", d.monthsToMaturity||"", "your decision horizon")+
+                refiField("r_hold","Expected Hold (months)", opts[1].term, "defaults to the new loan term")+
               '</div>'+
             '</fieldset>'+
           '</div>'+
         '</div>'+
-        '<div id="refiResults"></div>';
+        '<div id="refiResults"></div>'+
+        '<div id="refiScheduleWrap" class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hidden">'+
+          '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">'+
+            '<div><h3 class="text-base font-bold text-slate-900">Proposed Loan — Amortization Schedule</h3>'+
+              '<p id="refiScheduleMeta" class="text-xs text-slate-500">—</p></div>'+
+            '<div class="hidden md:flex items-center gap-3 text-xs text-slate-500">'+
+              '<span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-300"></span>Interest-only</span>'+
+              '<span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-300"></span>Balloon / final</span></div>'+
+          '</div>'+
+          '<div class="max-h-[30rem] overflow-auto thin-scroll">'+
+            '<table class="w-full text-sm">'+
+              '<thead class="sticky top-0 z-10 bg-slate-50/95 backdrop-blur text-xs uppercase tracking-wide text-slate-500"><tr class="border-b border-slate-200">'+
+                '<th class="px-4 py-3 text-left font-semibold">#</th>'+
+                '<th class="px-4 py-3 text-left font-semibold">Accrual Month / Pays</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Starting Balance</th>'+
+                '<th class="px-4 py-3 text-center font-semibold">Days</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Rate</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Interest</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Payment</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Principal</th>'+
+                '<th class="px-4 py-3 text-right font-semibold">Ending Balance</th>'+
+              '</tr></thead>'+
+              '<tbody id="refiScheduleBody" class="divide-y divide-slate-100 text-slate-700 tabular-nums"></tbody>'+
+            '</table>'+
+          '</div>'+
+        '</div>';
 
       // The proposed loan is populated by the active term option (below), which follows
       // the current loan's rate type and prices it at today's market for that option's
@@ -2379,6 +2410,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if(id==="r_baseValue") refiBaseManual = true;
         if(id==="r_spread")    refiSpreadManual = true;
         if(id==="r_baseTenor")  refiBaseManual = false;   // new tenor → refresh its live base value
+        if(id==="r_hold")       refiHoldManual = true;    // operator set their own horizon
+        if(id==="rf_loanTermMonths" && !refiHoldManual){  // hold tracks the new loan term until overridden
+          const t = parseInt((el("rf_loanTermMonths")||{}).value, 10);
+          if(!isNaN(t) && el("r_hold")) el("r_hold").value = t;
+        }
         applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan);
       };
       el("refiForm").addEventListener("input", onForm);
@@ -2470,6 +2506,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           '</div>'+
         '</div>'+
         '<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">'+ cards.join("") +'</div>';
+
+      // Proposed loan's full amortization schedule (same engine as the loan view).
+      if(el("refiScheduleBody")){
+        el("refiScheduleBody").innerHTML = scheduleRowsHtml(r.newComp.rows, null);
+        const nl = r.newLoan, nterm = nl.loanTermMonths||nl.amortizationMonths||0;
+        const st = accrualStartParts(nl), stLabel = MONTH_NAMES[st.mo]+" "+st.y;
+        const endLabel = r.newComp.rows.length ? r.newComp.rows[r.newComp.rows.length-1].label : "—";
+        if(el("refiScheduleMeta")) el("refiScheduleMeta").textContent =
+          nterm+" months · "+(nl.rateType||"Fixed")+" @ "+fmtPct(r.newComp.derived.currentRate)+" · accrues "+stLabel+" – "+endLabel+
+          (nterm!==nl.amortizationMonths ? " · amortized as if "+nl.amortizationMonths+" mo, balloon at mo "+nterm : "");
+        const wrap = el("refiScheduleWrap"); if(wrap) wrap.classList.remove("hidden");
+      }
     }
 
     function saveRefiAsLoan(loan){
