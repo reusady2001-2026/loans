@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('ldsShell', {
   autoBackupRead: (name) => ipcRenderer.invoke('lds:autobackup-read', { name }),
   // Reveal the backups folder in File Explorer.
   openBackupsFolder: () => ipcRenderer.invoke('lds:backups-open-folder'),
+  // Save binary data (base64) via a native Save dialog — used for the Excel export.
+  saveBinary: (base64, defaultName, ext, label) => ipcRenderer.invoke('lds:file-save-binary', { base64, defaultName, ext, label }),
 
   // ---- Auto-update ----
   // Current app version (e.g. "1.6.0").

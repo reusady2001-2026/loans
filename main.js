@@ -120,13 +120,16 @@ ipcMain.handle('lds:backup-open', async (e) => {
 // or 'before-restore' (the safety copy taken before a restore replaces the book).
 // The two kinds rotate separately, so a restore is always reversible.
 ipcMain.handle('lds:autobackup-write', async (e, { json, kind }) => {
-  const prefix = kind === 'before-restore' ? 'before-restore' : 'autobackup';
+  const prefix = kind === 'before-restore' ? 'before-restore'
+               : kind === 'before-import' ? 'before-import'
+               : 'autobackup';
   try {
     const d = ensureBackupsDir();
     const file = path.join(d, prefix + '-' + stamp() + '.json');
     fs.writeFileSync(file, json, 'utf8');
     rotate('autobackup', 20);
     rotate('before-restore', 10);
+    rotate('before-import', 10);
     return { ok: true, path: file };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
@@ -140,7 +143,8 @@ ipcMain.handle('lds:autobackup-list', async () => {
       const full = path.join(d, f); let loanCount = null, exportedAt = null;
       try { const j = JSON.parse(fs.readFileSync(full, 'utf8')); loanCount = (j.loanCount != null) ? j.loanCount : (Array.isArray(j.loans) ? j.loans.length : null); exportedAt = j.exportedAt || null; } catch (e) {}
       const st = fs.statSync(full);
-      return { name: f, kind: f.startsWith('before-restore') ? 'before-restore' : 'auto', mtime: st.mtimeMs, loanCount, exportedAt };
+      const kind = f.startsWith('before-restore') ? 'before-restore' : f.startsWith('before-import') ? 'before-import' : 'auto';
+      return { name: f, kind, mtime: st.mtimeMs, loanCount, exportedAt };
     }).sort((a, b) => b.mtime - a.mtime);
   } catch (e) { return []; }
 });
@@ -157,6 +161,19 @@ ipcMain.handle('lds:autobackup-read', async (e, { name }) => {
 // Reveal the backups folder in the OS file manager.
 ipcMain.handle('lds:backups-open-folder', async () => {
   try { const d = ensureBackupsDir(); await shell.openPath(d); return { ok: true, path: d }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Save arbitrary binary (base64) via a native Save dialog — used for the Excel export.
+ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, label }) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Export',
+    defaultPath: path.join(app.getPath('documents'), defaultName || 'export.' + (ext || 'xlsx')),
+    filters: [{ name: label || 'File', extensions: [ext || 'xlsx'] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  try { fs.writeFileSync(res.filePath, Buffer.from(base64, 'base64')); return { ok: true, path: res.filePath, name: path.basename(res.filePath) }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 

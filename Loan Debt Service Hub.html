@@ -266,6 +266,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       animation:sheen 7.5s ease-in-out infinite;
     }
     .shadow-glow > *{ position:relative; z-index:3; }
+    /* Import preview: a cell whose required data the sheet didn't supply */
+    .im-flag > .im-cell{ border-color:#f59e0b !important; background:#fffbeb; }
+    .im-flag > .im-cell::placeholder{ color:#d97706; font-style:italic; }
     /* Buttons with the sheen must not be squeezed below their label by flex */
     button.shadow-glow, a.shadow-glow{ flex:0 0 auto; min-width:max-content; }
     @keyframes sheen{ 0%{ left:-65%; } 16%{ left:130%; } 100%{ left:130%; } }
@@ -704,6 +707,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                 <span>Restore from a file…</span>
               </button>
+              <div class="px-2 pt-2 pb-1 mt-1 border-t border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Spreadsheet (Excel)</span></div>
+              <button type="button" data-data="excel-export" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l3 3 3-3"/><path d="M12 12v6"/></svg>
+                <span>Export all loans to Excel…</span>
+              </button>
+              <button type="button" data-data="excel-import" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>
+                <span>Import loans from Excel…</span>
+              </button>
               <div class="px-2 pt-2 pb-1 mt-1 border-t border-slate-100 flex items-center justify-between">
                 <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Recent automatic backups</span>
                 <button type="button" data-data="folder" class="text-[11px] font-semibold text-brand-700 hover:underline">Open folder</button>
@@ -883,6 +895,75 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     </div>
   </div>
 
+  <!-- ============ IMPORT — gate 1: field checklist ============ -->
+  <div id="importChecklist" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
+      <div class="p-6 pb-4 border-b border-slate-100">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Before you import
+        </h3>
+        <p class="mt-1.5 text-sm text-slate-500">Make sure every loan in your spreadsheet includes the details below. Loans can be laid out as <b>rows or columns</b>, and small wording differences in the headers are fine.</p>
+      </div>
+      <div id="importChecklistFields" class="p-6 pt-4 overflow-auto text-sm"></div>
+      <div class="p-5 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
+        <label class="flex items-center gap-2.5 text-sm font-medium text-slate-700 cursor-pointer select-none">
+          <input id="importCheckAgree" type="checkbox" class="accent-brand-600 h-4 w-4">
+          I&rsquo;ve checked my sheet includes these details.
+        </label>
+        <div class="mt-4 flex justify-end gap-2">
+          <button id="importCheckCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button id="importCheckOk" type="button" disabled class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed">Choose file&hellip;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ IMPORT — gate 2: editable preview ============ -->
+  <div id="importPreview" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3">
+    <div class="w-full max-w-[96rem] h-[92vh] rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col">
+      <div class="p-5 border-b border-slate-100 flex flex-wrap items-center gap-3 justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Review import</h3>
+          <p class="text-xs text-slate-500">Edit any cell, remove a loan, or add one. <span class="text-rose-500">*</span> = required &middot; <span class="rounded bg-amber-100 px-1 text-amber-700">amber</span> = required data the sheet didn&rsquo;t have &mdash; fill it in. Nothing changes until you Apply.</p>
+        </div>
+        <div id="importSummary" class="flex flex-wrap items-center gap-2 text-xs"></div>
+      </div>
+      <div id="importUnrecognized" class="px-5 py-1.5 text-[11px] text-slate-500 border-b border-slate-100 empty:hidden"></div>
+      <div id="importPreviewBody" class="flex-1 overflow-auto p-2"></div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button id="importAddBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">+ Add loan</button>
+        <div class="flex gap-2">
+          <button id="importCancelBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button id="importApplyBtn" type="button" class="rounded-lg bg-brand-600 px-5 py-2 text-sm font-bold text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed">Apply import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input id="importFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden">
+
+  <!-- ============ EXPORT — preview & pick loans ============ -->
+  <div id="exportPreview" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-3">
+    <div class="w-full max-w-[96rem] h-[92vh] rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col">
+      <div class="p-5 border-b border-slate-100 flex flex-wrap items-center gap-3 justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Export to Excel</h3>
+          <p class="text-xs text-slate-500">This is exactly what the workbook will contain. Untick any loan to leave it out. Values are read-only here &mdash; edit a loan in the app to change them.</p>
+        </div>
+        <div id="exportSummary" class="text-xs font-semibold text-slate-600"></div>
+      </div>
+      <div id="exportPreviewBody" class="flex-1 overflow-auto p-2"></div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
+        <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none"><input id="exportAll" type="checkbox" checked class="accent-brand-600 h-4 w-4"> Select all</label>
+        <div class="flex gap-2">
+          <button id="exportCancelBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button id="exportOkBtn" type="button" class="rounded-lg bg-brand-600 px-5 py-2 text-sm font-bold text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed">Export</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================================================= -->
   <!-- ======================= APPLICATION JS ====================== -->
   <!-- ============================================================= -->
@@ -1016,6 +1097,36 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       LABEL_TO_FIELD[normLabel(f.label)] = f;
       (f.aliases || []).forEach(a => { LABEL_TO_FIELD[normLabel(a)] = f; });
     });
+    const FIELD_BY_KEY = {};
+    FIELDS.forEach(f => { FIELD_BY_KEY[f.key] = f; });
+    // Fields an Excel sheet can supply (all inputs), and a stable label the import
+    // checklist shows for each. Order follows FIELDS (grouped by section).
+    const IMPORT_FIELDS = INPUT_FIELDS.slice();
+    function hasIdentity(l){ return !!(String(l.propertyName||"").trim() || String(l.loanNumber||"").trim()); }
+    // Which required fields are still missing for THIS loan — mirrors validateLoan's
+    // context-aware rules (imported loans carry their actual rate → historical), so
+    // the preview can flag exactly the cells the sheet didn't supply. Returns field
+    // objects; identity (name/number) is checked separately via hasIdentity().
+    function missingRequiredFields(l){
+      const out = [];
+      const need = (k) => { const f = FIELD_BY_KEY[k]; if(f && out.indexOf(f)<0) out.push(f); };
+      if(l.originalAmount==null || l.originalAmount<=0) need("originalAmount");
+      if(l.rateType==="Floating"){
+        if(!l.index) need("index");
+        if(l.spread==null) need("spread");
+      } else if(l.rateType==="Hybrid ARM"){
+        if(l.annualRate==null || l.annualRate<0) need("annualRate");
+        if(!l.armInitialFixedMonths || l.armInitialFixedMonths<=0) need("armInitialFixedMonths");
+        if(!l.armAdjustFreqMonths || l.armAdjustFreqMonths<=0) need("armAdjustFreqMonths");
+      } else {
+        if(l.annualRate==null || l.annualRate<0) need("annualRate");   // Fixed (imported = historical)
+      }
+      if(!l.originationDate) need("originationDate");
+      if(!l.firstPaymentDate) need("firstPaymentDate");
+      if(!l.amortizationMonths || l.amortizationMonths<=0) need("amortizationMonths");
+      if(!l.loanTermMonths || l.loanTermMonths<=0) need("loanTermMonths");
+      return out;
+    }
 
     /* ================================================================
        3. VALUE PARSING / DISPLAY per type
@@ -2859,16 +2970,17 @@ tr[data-loan]:hover td{background:#eef2f7}
       toast("Schedule exported", "download");
     }
 
-    function buildWorkbookAOA(){
-      const header = ["Section","Field"].concat(loans.map((l,i)=> loanLabel(l) || ("Loan "+(i+1))));
+    function buildWorkbookAOA(list){
+      list = list || loans;
+      const header = ["Section","Field"].concat(list.map((l,i)=> loanLabel(l) || ("Loan "+(i+1))));
       const aoa = [["LOAN DEBT SERVICE"], [], header];
-      const results = loans.map(compute);
+      const results = list.map(compute);
       let lastSec = null;
       FIELDS.forEach(f => {
         const secCell = (f.sec !== lastSec) ? f.sec : "";
         lastSec = f.sec;
         const row = [secCell, f.label];
-        loans.forEach((l, i) => {
+        list.forEach((l, i) => {
           let v;
           if(f.kind==="computed") v = results[i].derived[f.key];
           else v = l[f.key];
@@ -2878,25 +2990,166 @@ tr[data-loan]:hover td{background:#eef2f7}
       });
       return aoa;
     }
-    function exportExcel(){
+    function ymd(){ const d=new Date(), p=n=>String(n).padStart(2,"0"); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+    function showModal(id){ const m=el(id); if(!m) return; m.classList.remove("hidden"); m.classList.add("flex"); }
+    function hideModal(id){ const m=el(id); if(!m) return; m.classList.add("hidden"); m.classList.remove("flex"); }
+
+    // ---- Export: preview (pick loans) → Excel via native Save dialog on desktop ----
+    let exportState = null;   // { include: Set<_id> }
+    function openExportPreview(){
       if(!loans.length){ toast("No loans to export", "info"); return; }
-      if(typeof XLSX === "undefined"){ toast("Excel library unavailable — exporting CSV", "info"); return exportAllCsvFallback(); }
-      const aoa = buildWorkbookAOA();
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws["!cols"] = [{wch:26},{wch:34}].concat(loans.map(()=>({wch:24})));
+      exportState = { include: new Set(loans.map(l => l._id)) };
+      const all = el("exportAll"); if(all) all.checked = true;
+      renderExportPreview();
+      showModal("exportPreview");
+    }
+    function closeExportPreview(){ exportState = null; hideModal("exportPreview"); }
+    function renderExportPreview(){
+      const body = el("exportPreviewBody"); if(!body || !exportState) return;
+      const aoa = buildWorkbookAOA(loans);          // full grid for display; export uses the selection
+      const fieldRows = aoa.slice(3);               // skip title + blank + header rows
+      const colsN = loans.length + 1;
+      let thead = '<thead class="sticky top-0 z-20 bg-slate-100"><tr>'+
+        '<th class="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 sticky left-0 bg-slate-100 z-30 whitespace-nowrap">Field</th>';
+      loans.forEach((l,i)=>{ const on = exportState.include.has(l._id);
+        thead += '<th data-loancol="'+i+'" class="px-2 py-2 text-left text-[11px] font-semibold text-slate-600 whitespace-nowrap'+(on?'':' opacity-40')+'">'+
+          '<label class="flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" data-exloan="'+escapeHtml(l._id)+'"'+(on?' checked':'')+' class="accent-brand-600 shrink-0"><span>'+escapeHtml(loanLabel(l)||("Loan "+(i+1)))+'</span></label></th>';
+      });
+      thead += '</tr></thead>';
+      let tbody = '<tbody>';
+      fieldRows.forEach(r=>{
+        if(r[0]) tbody += '<tr><td colspan="'+colsN+'" class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-700 bg-brand-50/70 sticky left-0">'+escapeHtml(r[0])+'</td></tr>';
+        tbody += '<tr class="border-b border-slate-50"><td class="px-3 py-1 text-slate-600 sticky left-0 bg-white whitespace-nowrap">'+escapeHtml(r[1]||"")+'</td>';
+        loans.forEach((l,i)=>{ const on = exportState.include.has(l._id); const v = r[i+2];
+          tbody += '<td data-loancol="'+i+'" class="px-2 py-1 text-slate-700 tabular-nums whitespace-nowrap'+(on?'':' opacity-40')+'">'+escapeHtml(v==null?"":String(v))+'</td>';
+        });
+        tbody += '</tr>';
+      });
+      tbody += '</tbody>';
+      body.innerHTML = '<table class="min-w-max text-xs border-collapse">'+thead+tbody+'</table>';
+      body.querySelectorAll('[data-exloan]').forEach(cb => cb.addEventListener('change', ()=>{
+        const id = cb.getAttribute('data-exloan');
+        if(cb.checked) exportState.include.add(id); else exportState.include.delete(id);
+        const i = loans.findIndex(l => l._id===id);
+        body.querySelectorAll('[data-loancol="'+i+'"]').forEach(c => c.classList.toggle('opacity-40', !cb.checked));
+        const all = el("exportAll"); if(all) all.checked = exportState.include.size === loans.length;
+        refreshExportSummary();
+      }));
+      refreshExportSummary();
+    }
+    function exportSelectAll(on){
+      if(!exportState) return;
+      exportState.include = on ? new Set(loans.map(l=>l._id)) : new Set();
+      renderExportPreview();
+    }
+    function refreshExportSummary(){
+      if(!exportState) return;
+      const n = exportState.include.size, m = loans.length;
+      const s = el("exportSummary"); if(s) s.textContent = n+" of "+m+" loan"+(m>1?"s":"")+" selected";
+      const btn = el("exportOkBtn"); if(btn){ btn.disabled = n===0; btn.textContent = n ? ("Export "+n+" loan"+(n>1?"s":"")+"…") : "Select loans to export"; }
+    }
+    function doExport(){
+      if(!exportState) return;
+      const sel = loans.filter(l => exportState.include.has(l._id));
+      if(!sel.length){ toast("Select at least one loan", "info"); return; }
+      const name = "LoanDebtService-Portfolio-"+ymd()+".xlsx";
+      const n = sel.length, done = () => { closeExportPreview(); toast(n+" loan"+(n>1?"s":"")+" exported to Excel", "download"); };
+      if(typeof XLSX === "undefined"){ exportAllCsvFallback(sel); closeExportPreview(); return; }
+      const ws = XLSX.utils.aoa_to_sheet(buildWorkbookAOA(sel));
+      ws["!cols"] = [{wch:26},{wch:34}].concat(sel.map(()=>({wch:24})));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Loan Debt Service");
-      XLSX.writeFile(wb, "loan-debt-service.xlsx");
-      toast(loans.length+" loan"+(loans.length>1?"s":"")+" exported to Excel", "download");
+      if(desktop() && window.ldsShell.saveBinary){
+        const b64 = XLSX.write(wb, { type:"base64", bookType:"xlsx" });
+        window.ldsShell.saveBinary(b64, name, "xlsx", "Excel workbook").then(res => {
+          if(res && res.ok) done();
+          else if(res && res.canceled){ /* keep the preview open so they can retry */ }
+          else toast("Export failed"+(res&&res.error?": "+res.error:""), "info");
+        }).catch(()=> toast("Export failed", "info"));
+      } else { XLSX.writeFile(wb, name); done(); }
     }
-    function exportAllCsvFallback(){
-      const aoa = buildWorkbookAOA();
+    function exportAllCsvFallback(list){
+      const aoa = buildWorkbookAOA(list);
       const cell = (v) => { const s=(v==null?"":String(v)); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
       const csv = aoa.map(r => r.map(cell).join(",")).join("\r\n");
       downloadBlob("﻿"+csv, "loan-debt-service.csv", "text/csv;charset=utf-8;");
     }
 
-    function importExcel(file){
+    // ---- Robust sheet parser: auto-detects loans-as-ROWS vs loans-as-COLUMNS ----
+    // Returns { drafts:[loan…], unrecognized:[label…], orientation }. Header labels
+    // match field names (and aliases) tolerantly via normLabel, so sheets built
+    // differently each time still line up.
+    function parseSheet(aoa){
+      const txt = (v) => (v==null?"":String(v));
+      const asField = (v) => LABEL_TO_FIELD[normLabel(v)];
+      const width = aoa.reduce((m,r)=> Math.max(m, r?r.length:0), 0);
+      let bRow = {idx:-1, cols:[]}, bCol = {idx:-1, rows:[]};
+      for(let r=0;r<aoa.length;r++){ const row=aoa[r]||[]; const cols=[]; for(let c=0;c<row.length;c++){ if(asField(row[c])) cols.push(c); } if(cols.length>bRow.cols.length) bRow={idx:r,cols}; }
+      for(let c=0;c<width;c++){ const rows=[]; for(let r=0;r<aoa.length;r++){ if(asField((aoa[r]||[])[c])) rows.push(r); } if(rows.length>bCol.rows.length) bCol={idx:c,rows}; }
+      if(bRow.cols.length<2 && bCol.rows.length<2) return { drafts:[], unrecognized:[], orientation:null };
+      const drafts=[], unrecognized=[];
+      // Each draft tracks _provided: the fields the SHEET actually supplied (plus any
+      // the user edits in the preview). On an update we overwrite only those, so an
+      // existing loan never loses fields the sheet simply didn't mention.
+      // Clear the index default ("sofr") so a floating/ARM loan whose sheet omits the
+      // index flags as missing instead of silently assuming one.
+      const mk = () => { const d = emptyLoan(); d.index = ""; return Object.assign(d, { _id: uid(), _provided: new Set() }); };
+      const rowsOrient = bRow.cols.length >= bCol.rows.length;
+      if(rowsOrient){
+        // loans-as-ROWS: header row = bRow.idx; each mapped column is a field; rows below are loans
+        const hdr = aoa[bRow.idx]||[]; const colField={};
+        for(let c=0;c<hdr.length;c++){ const f=asField(hdr[c]); if(f) colField[c]=f; else if(txt(hdr[c]).trim()) unrecognized.push(txt(hdr[c]).trim()); }
+        for(let r=bRow.idx+1;r<aoa.length;r++){ const row=aoa[r]||[]; if(!row.some(x=>txt(x).trim()!=="")) continue; const d=mk(); let any=false;
+          Object.keys(colField).forEach(c=>{ const raw=row[c]; if(raw===""||raw==null) return; const f=colField[c]; d[f.key]=parseValue(f.type, raw); d._provided.add(f.key); any=true; });
+          if(any) drafts.push(d);
+        }
+      } else {
+        // loans-as-COLUMNS: field labels down column bCol.idx; each column to the right is a loan
+        const rowField={}; for(let r=0;r<aoa.length;r++){ const f=asField((aoa[r]||[])[bCol.idx]); if(f) rowField[r]=f; }
+        for(let c=bCol.idx+1;c<width;c++){ const d=mk(); let any=false;
+          Object.keys(rowField).forEach(r=>{ const raw=(aoa[r]||[])[c]; if(raw===""||raw==null) return; const f=rowField[r]; d[f.key]=parseValue(f.type, raw); d._provided.add(f.key); any=true; });
+          if(any) drafts.push(d);
+        }
+      }
+      // imported loans are already-originated → carry their actual rate (historical); normalize index ids
+      const cleaned = drafts.map(d => { d.isHistorical = true; migrateLoan(d); return d; })
+                            .filter(d => hasIdentity(d) || d.originalAmount!=null || d.originationDate);
+      return { drafts:cleaned, unrecognized:[...new Set(unrecognized)], orientation: rowsOrient?"rows":"columns" };
+    }
+
+    /* ================================================================
+       10c. IMPORT FLOW  (checklist → editable preview → apply)
+       ================================================================ */
+    let importState = null;   // { drafts:[loan…], unrecognized:[label…] }
+
+    function renderImportChecklist(){
+      const box = el("importChecklistFields"); if(!box) return;
+      const L = (k) => (FIELD_BY_KEY[k] ? FIELD_BY_KEY[k].label : k);
+      const chip = (t) => '<span class="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700">'+escapeHtml(t)+'</span>';
+      const always = ["originalAmount","rateType","originationDate","firstPaymentDate","loanTermMonths","amortizationMonths"];
+      const named = new Set(always.concat(["propertyName","loanNumber","annualRate","index","spread","armInitialFixedMonths","armAdjustFreqMonths"]));
+      const optional = IMPORT_FIELDS.filter(f => !named.has(f.key)).map(f => f.label);
+      box.innerHTML =
+        '<div class="mb-4"><div class="text-[11px] font-bold uppercase tracking-wide text-rose-600 mb-2">Always required</div>'+
+          '<div class="flex flex-wrap gap-1.5">'+chip("Property Name or Loan Number")+always.map(L).map(chip).join('')+'</div></div>'+
+        '<div class="mb-4"><div class="text-[11px] font-bold uppercase tracking-wide text-amber-600 mb-2">Required depending on rate type</div>'+
+          '<div class="space-y-1.5 text-xs text-slate-600">'+
+            '<div>&bull; <b>Fixed</b>: '+chip(L("annualRate"))+'</div>'+
+            '<div>&bull; <b>Floating / Hybrid ARM</b>: '+chip(L("index"))+' '+chip(L("spread"))+'</div>'+
+            '<div>&bull; <b>Hybrid ARM</b> also: '+chip(L("armInitialFixedMonths"))+' '+chip(L("armAdjustFreqMonths"))+'</div>'+
+          '</div></div>'+
+        '<div><div class="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Optional &mdash; used if present</div>'+
+          '<div class="flex flex-wrap gap-1.5">'+optional.map(chip).join('')+'</div></div>';
+    }
+    function openImportChecklist(){
+      renderImportChecklist();
+      const ck = el("importCheckAgree"); if(ck) ck.checked = false;
+      const ok = el("importCheckOk"); if(ok) ok.disabled = true;
+      showModal("importChecklist");
+    }
+    function importChooseFile(){ hideModal("importChecklist"); const inp = el("importFileInput"); if(inp){ inp.value=""; inp.click(); } }
+    function importReadFile(file){
+      if(!file) return;
       if(typeof XLSX === "undefined"){ toast("Excel library unavailable", "info"); return; }
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -2904,51 +3157,160 @@ tr[data-loan]:hover td{background:#eef2f7}
           const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
           const ws = wb.Sheets[wb.SheetNames[0]];
           const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:"" });
-          const imported = parseImportedAOA(aoa);
-          if(!imported.length){ toast("No loans found in that file", "info"); return; }
-          const res = mergeImported(imported);
-          state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
-          save();
-          toast("Imported "+imported.length+" loan"+(imported.length>1?"s":"")+" ("+res.added+" new, "+res.updated+" updated)", "check");
-          setMode("view");
-        } catch(err){
-          console.error(err);
-          toast("Could not read that file", "info");
-        }
+          const parsed = parseSheet(aoa);
+          if(!parsed.drafts.length){ toast("No loans found in that sheet — check the field names against the checklist", "info"); return; }
+          importState = { drafts: parsed.drafts, unrecognized: parsed.unrecognized };
+          renderImportPreview();
+          showModal("importPreview");
+        } catch(err){ console.error(err); toast("Couldn't read that file", "info"); }
       };
       reader.readAsArrayBuffer(file);
     }
-    function parseImportedAOA(aoa){
-      let headerRow = -1, fieldCol = -1;
-      for(let r=0; r<aoa.length; r++){
-        for(let c=0; c<aoa[r].length; c++){
-          if(normLabel(aoa[r][c]) === "field"){ headerRow = r; fieldCol = c; break; }
-        }
-        if(headerRow>=0) break;
-      }
-      if(headerRow < 0) return [];
-      const loanCols = [];
-      for(let c=fieldCol+1; c<aoa[headerRow].length; c++){
-        if(String(aoa[headerRow][c]).trim() !== "") loanCols.push(c);
-      }
-      if(!loanCols.length) return [];
 
-      const drafts = loanCols.map(() => Object.assign(emptyLoan(), { _id: uid() }));
-      for(let r=headerRow+1; r<aoa.length; r++){
-        const fname = aoa[r][fieldCol];
-        const field = LABEL_TO_FIELD[normLabel(fname)];
-        if(!field) continue;
-        loanCols.forEach((c, i) => {
-          const raw = aoa[r][c];
-          if(raw === "" || raw == null) return;
-          drafts[i][field.key] = parseValue(field.type, raw);
-        });
-      }
-      // Imported loans are existing, already-originated loans: carry their actual
-      // rate rather than recomputing it from today's index + spread.
-      return drafts.filter(d => d.originalAmount || d.propertyName || d.loanNumber)
-                   .map(d => { d.isHistorical = true; return d; });
+    const normVal = (v) => v==null ? "" : String(v);
+    function providedOf(d){ const o={}; (d._provided||new Set()).forEach(k => { o[k] = d[k]; }); return o; }
+    // The loan we validate against: a NEW loan is the draft itself; an UPDATE is the
+    // existing loan with only the sheet-provided fields applied on top — so required
+    // data the existing loan already has is NOT flagged as missing.
+    function evalImportRow(d){
+      const idMissing = !hasIdentity(d);
+      const key = identityKey(d);
+      const match = key ? loans.find(l => identityKey(l) === key) : null;
+      const eff = match ? Object.assign({}, match, providedOf(d)) : d;
+      const missing = missingRequiredFields(eff);
+      const baseReady = !idMissing && missing.length===0;
+      const err = baseReady ? validateLoan(eff) : null;   // logical cross-checks once required present
+      let changed = true;
+      if(match) changed = [...(d._provided||[])].some(k => normVal(d[k]) !== normVal(match[k]));
+      return { missing, idMissing, match, eff, status: match?"update":"new", ready: baseReady && !err, err, changed };
     }
+    function importCounts(){
+      let nw=0, up=0, un=0, att=0;
+      (importState.drafts||[]).forEach(d => { const e=evalImportRow(d);
+        if(!e.ready) att++; else if(e.status==="new") nw++; else if(e.changed) up++; else un++; });
+      return { nw, up, un, att };
+    }
+    function importStatusBadge(e){
+      if(e.idMissing) return '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">needs name / №</span>';
+      if(e.missing.length) return '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700" title="Missing: '+escapeHtml(e.missing.map(f=>f.label).join(", "))+'">missing data</span>';
+      if(e.err) return '<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700" title="'+escapeHtml(e.err)+'">check</span>';
+      if(e.status==="new") return '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">new</span>';
+      if(e.changed) return '<span class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-700" title="Updates: '+escapeHtml(loanLabel(e.match))+'">update</span>';
+      return '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500" title="Matches '+escapeHtml(loanLabel(e.match))+' — no changes">unchanged</span>';
+    }
+    function importCellHtml(i,f,d,flagged){
+      const v = d[f.key];
+      const attr = 'data-row="'+i+'" data-key="'+f.key+'" data-type="'+f.type+'"';
+      const cls = 'im-cell w-full rounded border border-slate-200 px-1.5 py-1 text-xs bg-white focus:border-brand-400 focus:outline-none';
+      const ph = flagged ? ' placeholder="couldn\'t find this data" title="This field is required for this loan but wasn\'t in the sheet — fill it in"' : '';
+      if(f.type==="select"){
+        const opts = '<option value=""></option>'+(f.options||[]).map(o=>'<option'+(o===v?' selected':'')+'>'+escapeHtml(o)+'</option>').join('');
+        return '<select '+attr+' class="'+cls+' min-w-[8rem]">'+opts+'</select>';
+      }
+      if(f.type==="index"){
+        const opts = '<option value=""></option>'+INDEX_CATALOG.map(ix=>'<option value="'+ix.id+'"'+(ix.id===v?' selected':'')+'>'+escapeHtml(ix.label)+'</option>').join('');
+        return '<select '+attr+' class="'+cls+' min-w-[10rem]">'+opts+'</select>';
+      }
+      if(f.type==="date") return '<input '+attr+ph+' type="date" value="'+escapeHtml(v||"")+'" class="'+cls+' min-w-[8.5rem]">';
+      let disp;
+      if(f.type==="pct") disp = (v==null||v==="")?"":String(+(v*100).toFixed(6));
+      else disp = (v==null)?"":v;
+      const w = (f.type==="money") ? ' min-w-[8rem]' : (f.type==="int"||f.type==="pct") ? ' min-w-[5.5rem]' : ' min-w-[9rem]';
+      return '<input '+attr+ph+' type="text" value="'+escapeHtml(String(disp))+'" class="'+cls+w+'">';
+    }
+    function importRowHtml(d,i){
+      const e = evalImportRow(d);
+      const miss = new Set(e.missing.map(f=>f.key));
+      const cells = IMPORT_FIELDS.map(f=>{
+        const flagged = miss.has(f.key) || (e.idMissing && (f.key==="propertyName"||f.key==="loanNumber"));
+        return '<td class="px-1 py-1 align-top'+(flagged?' im-flag':'')+'" data-cell="'+i+'-'+f.key+'">'+importCellHtml(i,f,d,flagged)+'</td>';
+      }).join('');
+      return '<tr data-imrow="'+i+'" class="border-b border-slate-100 hover:bg-slate-50/40">'+
+        '<td class="px-2 py-1 text-slate-400 tabular-nums sticky left-0 bg-white align-top">'+(i+1)+'</td>'+
+        '<td class="px-2 py-1 whitespace-nowrap align-top" data-status="'+i+'">'+importStatusBadge(e)+'</td>'+
+        cells+
+        '<td class="px-1 py-1 align-top"><button type="button" data-del="'+i+'" class="text-slate-300 hover:text-rose-500 text-sm" title="Remove this loan from the import">✕</button></td>'+
+      '</tr>';
+    }
+    function renderImportPreview(){
+      const body = el("importPreviewBody"); if(!body || !importState) return;
+      const head = '<thead class="sticky top-0 z-10 bg-slate-100"><tr>'+
+        '<th class="px-2 py-2 text-left text-[11px] font-semibold text-slate-500 sticky left-0 bg-slate-100 z-20">#</th>'+
+        '<th class="px-2 py-2 text-left text-[11px] font-semibold text-slate-500">Status</th>'+
+        IMPORT_FIELDS.map(f=>'<th class="px-2 py-2 text-left text-[11px] font-semibold text-slate-600 whitespace-nowrap">'+escapeHtml(f.label)+(f.required?' <span class="text-rose-500">*</span>':'')+'</th>').join('')+
+        '<th class="px-2 py-2"></th></tr></thead>';
+      body.innerHTML = '<table class="min-w-max text-xs border-collapse">'+head+'<tbody>'+importState.drafts.map((d,i)=>importRowHtml(d,i)).join('')+'</tbody></table>';
+      body.querySelectorAll('.im-cell').forEach(inp => inp.addEventListener('change', () => {
+        const i=+inp.getAttribute('data-row'), key=inp.getAttribute('data-key'), type=inp.getAttribute('data-type');
+        const d = importState.drafts[i]; if(!d) return;
+        d[key] = parseValue(type, inp.value);
+        if(!d._provided) d._provided = new Set();
+        d._provided.add(key);   // an edited cell counts as sheet-provided
+        refreshImportRow(i);
+      }));
+      body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { importState.drafts.splice(+b.getAttribute('data-del'),1); renderImportPreview(); }));
+      refreshImportSummary();
+    }
+    function refreshImportRow(i){
+      const d = importState.drafts[i]; if(!d) return;
+      const e = evalImportRow(d), miss = new Set(e.missing.map(f=>f.key));
+      const st = document.querySelector('[data-status="'+i+'"]'); if(st) st.innerHTML = importStatusBadge(e);
+      IMPORT_FIELDS.forEach(f=>{
+        const td = document.querySelector('[data-cell="'+i+'-'+f.key+'"]'); if(!td) return;
+        const flagged = miss.has(f.key) || (e.idMissing && (f.key==="propertyName"||f.key==="loanNumber"));
+        td.classList.toggle('im-flag', flagged);
+        const inp = td.querySelector('.im-cell');
+        if(inp && inp.tagName==="INPUT"){ if(flagged){ inp.placeholder="couldn't find this data"; } else { inp.placeholder=""; } }
+      });
+      refreshImportSummary();
+    }
+    function refreshImportSummary(){
+      if(!importState) return;
+      const c = importCounts();
+      const s = el("importSummary");
+      if(s) s.innerHTML =
+        '<span class="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700 font-semibold">'+c.nw+' new</span>'+
+        '<span class="rounded-full bg-sky-100 px-2.5 py-1 text-sky-700 font-semibold">'+c.up+' updated</span>'+
+        '<span class="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 font-semibold">'+c.un+' unchanged</span>'+
+        (c.att?'<span class="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700 font-semibold">'+c.att+' need attention</span>':'<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-600 font-semibold">ready</span>');
+      const btn = el("importApplyBtn");
+      if(btn){ const total=c.nw+c.up; btn.disabled = c.att>0 || total===0; btn.textContent = c.att>0 ? ("Resolve "+c.att+" to import") : ("Apply import"+(total?" ("+total+")":"")); }
+      const un = el("importUnrecognized"); const list = (importState.unrecognized)||[];
+      if(un) un.innerHTML = list.length ? '<span class="text-amber-600">Ignored '+list.length+' unrecognized column'+(list.length>1?'s':'')+':</span> '+list.slice(0,10).map(escapeHtml).join(', ')+(list.length>10?'…':'') : '';
+    }
+    function importAddLoan(){
+      if(!importState) return;
+      const nd = emptyLoan(); nd.index = "";
+      importState.drafts.push(Object.assign(nd, { _id: uid(), isHistorical:true, _provided: new Set() }));
+      renderImportPreview();
+      const body = el("importPreviewBody"); if(body) body.scrollTop = body.scrollHeight;
+    }
+    function importApply(){
+      if(!importState) return;
+      const c = importCounts();
+      if(c.att>0){ toast(c.att+" loan"+(c.att>1?"s":"")+" still need attention", "info"); return; }
+      const drafts = importState.drafts.slice();
+      if(!drafts.length){ closeImportPreview(); return; }
+      // safety snapshot of the current book before the bulk change (desktop app)
+      if(desktop() && loans.length){ try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-import"); } catch(e){} }
+      // Merge: a matched loan gets ONLY the sheet-provided fields overwritten (so it
+      // never loses data the sheet omitted); an unmatched loan is added in full.
+      let added=0, updated=0, firstId=null;
+      drafts.forEach(d => {
+        const key = identityKey(d);
+        const match = key ? loans.find(l => identityKey(l) === key) : null;
+        if(match){ (d._provided||new Set()).forEach(k => { match[k] = d[k]; }); updated++; if(!firstId) firstId = match._id; }
+        else { d.isHistorical = true; delete d._provided; loans.push(d); added++; if(!firstId) firstId = d._id; }
+      });
+      const res = { added, updated, firstId };
+      state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
+      importState = null;
+      hideModal("importPreview");
+      save();
+      setMode(loans.length ? "portfolio" : "empty");
+      toast("Imported "+drafts.length+" loan"+(drafts.length>1?"s":"")+" — "+res.added+" new, "+res.updated+" updated", "check");
+    }
+    function closeImportPreview(){ importState = null; hideModal("importPreview"); }
     // Stable identity for merge-on-import: loan number first, else name+address.
     function identityKey(l){
       const ln = String(l.loanNumber||"").trim().toLowerCase();
@@ -3653,8 +4015,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     dom.saveBtn.addEventListener("click", saveForm);
     dom.cancelBtn.addEventListener("click", cancelForm);
     dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
-    // Excel import/export intentionally unwired for now — the UX needs a rethink (see TODO.md).
-    // exportExcel() / importExcel() remain defined below for when it's reworked.
+    // Whole-portfolio Excel export/import live in the Data menu (exportAllLoans /
+    // openImportChecklist), wired in the Data-menu block below.
     dom.refiBtn.addEventListener("click", startRefi);
     dom.scopePortfolioBtn.addEventListener("click", () => setMode("portfolio"));
     dom.scopeLoanBtn.addEventListener("click", () => {
@@ -3675,6 +4037,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           const a = act.getAttribute("data-data");
           if(a==="backup"){ dd.open = false; dataBackup(); }
           else if(a==="restore"){ dd.open = false; dataRestoreFromFile(); }
+          else if(a==="excel-export"){ dd.open = false; openExportPreview(); }
+          else if(a==="excel-import"){ dd.open = false; openImportChecklist(); }
           else if(a==="folder"){ e.preventDefault(); dataOpenFolder(); }
           return;
         }
@@ -3686,7 +4050,33 @@ tr[data-loan]:hover td{background:#eef2f7}
     dom.confirmCancel.addEventListener("click", closeConfirm);
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
-    document.addEventListener("keydown", (e) => { if(e.key==="Escape" && !dom.confirmModal.classList.contains("hidden")) closeConfirm(); });
+    document.addEventListener("keydown", (e) => {
+      if(e.key!=="Escape") return;
+      if(!dom.confirmModal.classList.contains("hidden")) closeConfirm();
+      else if(!el("importPreview").classList.contains("hidden")) closeImportPreview();
+      else if(!el("importChecklist").classList.contains("hidden")) hideModal("importChecklist");
+      else if(!el("exportPreview").classList.contains("hidden")) closeExportPreview();
+    });
+
+    // Import flow wiring: checklist → file picker → editable preview → apply.
+    (function(){
+      const agree = el("importCheckAgree");
+      if(agree) agree.addEventListener("change", () => { const ok=el("importCheckOk"); if(ok) ok.disabled = !agree.checked; });
+      const ckCancel = el("importCheckCancel"); if(ckCancel) ckCancel.addEventListener("click", () => hideModal("importChecklist"));
+      const ckOk = el("importCheckOk"); if(ckOk) ckOk.addEventListener("click", () => { if(!ckOk.disabled) importChooseFile(); });
+      const ckModal = el("importChecklist"); if(ckModal) ckModal.addEventListener("click", (e) => { if(e.target===ckModal) hideModal("importChecklist"); });
+      const fileInput = el("importFileInput"); if(fileInput) fileInput.addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if(f) importReadFile(f); });
+      const addBtn = el("importAddBtn"); if(addBtn) addBtn.addEventListener("click", importAddLoan);
+      const cancelBtn = el("importCancelBtn"); if(cancelBtn) cancelBtn.addEventListener("click", closeImportPreview);
+      const applyBtn = el("importApplyBtn"); if(applyBtn) applyBtn.addEventListener("click", importApply);
+    })();
+
+    // Export preview wiring: pick loans → save.
+    (function(){
+      const all = el("exportAll"); if(all) all.addEventListener("change", () => exportSelectAll(all.checked));
+      const cancel = el("exportCancelBtn"); if(cancel) cancel.addEventListener("click", closeExportPreview);
+      const okBtn = el("exportOkBtn"); if(okBtn) okBtn.addEventListener("click", doExport);
+    })();
 
     if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-500"); dom.xlsxDot.classList.add("bg-amber-500"); }
 

@@ -2,16 +2,16 @@
 
 Deferred / planned work.
 
-## Excel import & export (specific-loan view)
-Removed from the Specific-Loan toolbar for now — the current UX needs a
-rethink. Bring it back with a cleaner flow (and decide how it should behave in
-the desktop app vs. the browser build). The engine functions `exportExcel()`
-and `importExcel()` are still in `index.html`, just unwired — so re-enabling is
-mostly a UI job.
+_(Nothing outstanding right now.)_
 
-## Backup / Restore (whole portfolio)
-Export/import the entire portfolio as a single file through the desktop app's
-native Save/Open dialog — for moving between machines, sharing with a
-colleague, and keeping an archive. Lower urgency: the `.exe` already persists
-data on disk (Electron userData), so this is portability/sharing, not a
-data-safety fix.
+## Done
+- **Backup / Restore (whole portfolio)** — shipped in v1.5.0 (Data menu):
+  export the whole portfolio to a single file (native Save), restore from one
+  (native Open), for moving between machines, sharing, and archiving.
+- **Excel import & export** — shipped in v1.7.0 (Data menu):
+  - Export all loans to an Excel workbook (native Save on desktop).
+  - Import loans from Excel with a three-gate flow — a field checklist, then an
+    editable preview (per-loan add/edit/delete, NEW/UPDATE tags, missing-required
+    cells flagged "couldn't find this data", unrecognized columns reported), then
+    apply (with an automatic before-import snapshot). Auto-detects loans-as-rows
+    vs loans-as-columns.
