@@ -1,6 +1,6 @@
 {
   "name": "loan-debt-service-hub",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Commercial Loan Debt Service Hub — offline desktop app",
   "main": "main.js",
   "author": "BSI",
@@ -26,6 +26,13 @@
       "output": "release",
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "reusady2001-2026",
+        "repo": "loans"
+      }
+    ],
     "win": {
       "target": [
         "nsis"
@@ -42,11 +49,15 @@
       "uninstallDisplayName": "Loan Debt Service Hub",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerHeaderIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false
     }
   },
   "devDependencies": {
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

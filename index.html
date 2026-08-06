@@ -543,9 +543,14 @@
             <p class="text-[11px] sm:text-xs text-ink-400">Loan Debt Service Hub &middot; Actual/360 engine</p>
           </div>
         </div>
-        <div class="hidden md:flex items-center gap-2 text-xs text-ink-400">
-          <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-brand-500"></span>
-          <span id="loanCountLabel">0 loans</span>
+        <div class="hidden md:flex items-center gap-3 text-xs text-ink-400">
+          <div class="flex items-center gap-2">
+            <span id="xlsxDot" class="inline-flex h-2 w-2 rounded-full bg-brand-500"></span>
+            <span id="loanCountLabel">0 loans</span>
+          </div>
+          <!-- Auto-update chip (desktop app only): shows the version and, when a newer
+               release is downloaded, becomes a "Restart to update" button. -->
+          <button id="updateChip" type="button" hidden class="inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-ink-500 hover:bg-white press transition"></button>
         </div>
       </div>
     </header>
@@ -553,7 +558,9 @@
     <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
 
       <!-- ============ SCOPE TOGGLE + CALENDAR (left)  ·  ALERTS RAIL (right) ============ -->
-      <div class="flex flex-col xl:flex-row xl:items-center gap-3 animate-fade-in">
+      <!-- relative z-20: keeps this row (and any menu it opens, e.g. Data) above the
+           portfolio cards below, while staying under the sticky header (z-30). -->
+      <div class="relative z-20 flex flex-col xl:flex-row xl:items-center gap-3 animate-fade-in">
         <div class="flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
           <div class="boxline flex items-center gap-1 rounded-2xl border border-ink-200 bg-white p-1 shadow-card w-full sm:w-max">
             <button id="scopePortfolioBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition">
@@ -3025,6 +3032,49 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
 
     /* ================================================================
+       11a-ii. AUTO-UPDATE  (desktop app — header chip)
+       Shows the current version; when a newer release is found it downloads
+       in the background and the chip becomes "Restart to update". Data and
+       backups are untouched by an update (they live under userData).
+       ================================================================ */
+    function initUpdater(){
+      const chip = el("updateChip");
+      if(!chip || !desktop() || typeof window.ldsShell.onUpdateStatus !== "function") return;
+      let state = "idle", ver = "—", pending = "", pct = 0, manual = false;
+      const paint = () => {
+        chip.hidden = false;
+        const ready = state === "ready";
+        chip.classList.toggle("border-brand-300", ready);
+        chip.classList.toggle("bg-brand-50", ready);
+        chip.classList.toggle("text-brand-700", ready);
+        if(ready){ chip.innerHTML = '<span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Update ready — Restart'; chip.title = "Version "+(pending||"")+" downloaded — click to restart & update"; }
+        else if(state === "downloading"){ chip.textContent = "Downloading update… " + pct + "%"; chip.title = "Downloading the new version…"; }
+        else if(state === "checking"){ chip.textContent = "Checking for updates…"; chip.title = ""; }
+        else if(state === "available"){ chip.textContent = "Update available…"; chip.title = "A new version is downloading…"; }
+        else { chip.textContent = "v" + ver; chip.title = "You're on v" + ver + " — click to check for updates"; }
+      };
+      window.ldsShell.getVersion().then(v => { if(v) ver = v; paint(); }).catch(() => paint());
+      window.ldsShell.onUpdateStatus((p) => {
+        if(!p || !p.state) return;
+        switch(p.state){
+          case "checking":    state = "checking"; break;
+          case "available":   state = "available"; pending = p.version || pending; break;
+          case "downloading": state = "downloading"; pct = p.percent || 0; break;
+          case "ready":       state = "ready"; pending = p.version || pending; toast("Update " + (p.version ? ("to v" + p.version + " ") : "") + "downloaded — restart to finish", "success"); break;
+          case "current":     state = "idle"; if(p.version) ver = p.version; if(manual){ toast("You're on the latest version (v" + ver + ")", "success"); manual = false; } break;
+          case "error":       state = "idle"; if(manual){ toast("Couldn't check for updates — check your connection", "info"); manual = false; } break;
+        }
+        paint();
+      });
+      chip.addEventListener("click", () => {
+        if(state === "ready"){ window.ldsShell.installUpdate(); return; }
+        if(state === "checking" || state === "downloading") return;
+        manual = true; state = "checking"; paint();
+        window.ldsShell.checkForUpdates();
+      });
+    }
+
+    /* ================================================================
        11b. REFINANCE CALCULATOR  (verdict: should you refinance?)
        ================================================================ */
     function startRefi(){
@@ -3521,6 +3571,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(rec){ e.preventDefault(); dataRestoreRecent(rec.getAttribute("data-recent")); }
       });
     })();
+    initUpdater();   // desktop app: header version/update chip
     dom.confirmCancel.addEventListener("click", closeConfirm);
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });

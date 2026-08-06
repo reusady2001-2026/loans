@@ -27,4 +27,19 @@ contextBridge.exposeInMainWorld('ldsShell', {
   autoBackupRead: (name) => ipcRenderer.invoke('lds:autobackup-read', { name }),
   // Reveal the backups folder in File Explorer.
   openBackupsFolder: () => ipcRenderer.invoke('lds:backups-open-folder'),
+
+  // ---- Auto-update ----
+  // Current app version (e.g. "1.6.0").
+  getVersion: () => ipcRenderer.invoke('lds:app-version'),
+  // Manually ask GitHub whether a newer release exists (auto-downloads if so).
+  checkForUpdates: () => ipcRenderer.send('lds:update-check'),
+  // Quit and install a downloaded update.
+  installUpdate: () => ipcRenderer.send('lds:update-install'),
+  // Subscribe to update status: {state:'checking'|'available'|'downloading'|'ready'|'current'|'error', version?, percent?, message?}.
+  // Returns an unsubscribe function.
+  onUpdateStatus: (cb) => {
+    const fn = (_e, payload) => { try { cb(payload); } catch (e) {} };
+    ipcRenderer.on('lds:update-status', fn);
+    return () => { try { ipcRenderer.removeListener('lds:update-status', fn); } catch (e) {} };
+  },
 });

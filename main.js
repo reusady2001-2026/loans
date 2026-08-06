@@ -3,6 +3,9 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
+
+let mainWindow = null;   // the primary window, so background events (updates) can reach its renderer
 
 // ---- Backup / Restore file plumbing ------------------------------------------
 // Snapshots live in a managed folder inside the app's per-user data directory:
@@ -56,6 +59,9 @@ function createWindow() {
       spellcheck: false,
     },
   });
+
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
   win.loadFile(path.join(__dirname, 'index.html'));
 
@@ -154,9 +160,39 @@ ipcMain.handle('lds:backups-open-folder', async () => {
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
+// ---- Auto-update (electron-updater + GitHub Releases) ------------------------
+// Checks the repo's Releases for a newer version, downloads it in the background,
+// and installs on restart. IMPORTANT: an update only replaces the program files
+// (in %LOCALAPPDATA%\Programs\...). The user's loans (localStorage) and the
+// backups folder live under userData (%APPDATA%\Loan Debt Service Hub\) and are
+// never touched — data and every snapshot survive across updates and versions.
+function sendUpdate(payload) {
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lds:update-status', payload); } catch (e) {}
+}
+function setupAutoUpdates() {
+  autoUpdater.autoDownload = true;             // quietly fetch the new version once found
+  autoUpdater.autoInstallOnAppQuit = true;     // if the user doesn't restart now, install on next quit
+  autoUpdater.on('checking-for-update', ()  => sendUpdate({ state: 'checking' }));
+  autoUpdater.on('update-available',    (i) => sendUpdate({ state: 'available', version: i && i.version }));
+  autoUpdater.on('update-not-available',(i) => sendUpdate({ state: 'current', version: (i && i.version) || app.getVersion() }));
+  autoUpdater.on('download-progress',   (p) => sendUpdate({ state: 'downloading', percent: Math.round((p && p.percent) || 0) }));
+  autoUpdater.on('update-downloaded',   (i) => sendUpdate({ state: 'ready', version: i && i.version }));
+  autoUpdater.on('error',               (e) => sendUpdate({ state: 'error', message: String((e && e.message) || e).slice(0, 200) }));
+  // First check a few seconds after launch — only in the packaged app (dev has no
+  // update feed). Offline failures surface as an 'error' event and are ignored.
+  if (app.isPackaged) setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 3000);
+}
+ipcMain.handle('lds:app-version', () => app.getVersion());
+ipcMain.on('lds:update-check', () => {
+  if (!app.isPackaged) { sendUpdate({ state: 'current', version: app.getVersion() }); return; }
+  autoUpdater.checkForUpdates().catch((e) => sendUpdate({ state: 'error', message: String((e && e.message) || e).slice(0, 200) }));
+});
+ipcMain.on('lds:update-install', () => { try { autoUpdater.quitAndInstall(); } catch (e) {} });
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null); // no default menu bar
   createWindow();
+  setupAutoUpdates();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

@@ -34,12 +34,15 @@ jobs:
         shell: bash
         run: ls -la release || true
 
-      # Always keep the .exe as a run artifact (works regardless of repo settings).
-      - name: Upload .exe as artifact
+      # Always keep the installer + update metadata as run artifacts.
+      - name: Upload build output as artifact
         uses: actions/upload-artifact@v4
         with:
           name: Loan-Debt-Service-Hub-Windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error
 
       # Publish this build as its OWN versioned release, taken from package.json.
@@ -54,12 +57,15 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           TAG="v${VER}"
-          NOTES="Windows desktop app installer (v${VER}). Download and run the installer below — it adds Start-menu and desktop shortcuts and runs fully offline. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          NOTES="Windows desktop app installer (v${VER}). Download and run the installer below — it adds Start-menu and desktop shortcuts and runs fully offline. Already installed? The app updates itself from here automatically. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          # The release must carry the installer AND the update metadata (latest.yml
+          # + .blockmap) so installed copies can auto-update via electron-updater.
+          ASSETS="release/*.exe release/latest.yml release/*.blockmap"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/*.exe --clobber
+            gh release upload "$TAG" $ASSETS --clobber
             gh release edit "$TAG" --latest
           else
-            gh release create "$TAG" release/*.exe \
+            gh release create "$TAG" $ASSETS \
               --target "$GITHUB_SHA" \
               --title "Loan Debt Service Hub v${VER} — Windows desktop app" \
               --notes "$NOTES" \
