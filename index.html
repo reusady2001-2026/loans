@@ -3064,7 +3064,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           case "downloading": state = "downloading"; pct = p.percent || 0; break;
           case "ready":       state = "ready"; pending = p.version || pending; toast("Update " + (p.version ? ("to v" + p.version + " ") : "") + "downloaded — restart to finish", "success"); break;
           case "current":     state = "idle"; if(p.version) ver = p.version; if(manual){ toast("You're on the latest version (v" + ver + ")", "success"); manual = false; } break;
-          case "error":       state = "idle"; if(manual){ toast("Couldn't check for updates — check your connection", "info"); manual = false; } break;
+          case "error":       state = "idle"; if(manual){ toast("Update check failed" + (p.message ? ": " + String(p.message).slice(0,110) : " — check your connection"), "info"); manual = false; } break;
         }
         paint();
       });
