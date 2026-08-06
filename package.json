@@ -8,8 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win portable",
-    "build:win-installer": "electron-builder --win nsis",
+    "build:win": "electron-builder --win portable --publish never",
+    "build:win-installer": "electron-builder --win nsis --publish never",
     "build:linux": "electron-builder --linux AppImage"
   },
   "build": {
