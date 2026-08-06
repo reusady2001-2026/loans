@@ -1080,9 +1080,12 @@
         case "pct":   return (v*100).toFixed(4).replace(/0+$/,"").replace(/\.$/,"") + "%";
         case "date":  return fmtDateUS(v);
         case "yn":    return v;
+        case "index": return (INDEX_BY_ID[v] && INDEX_BY_ID[v].label) || v;   // full name, e.g. "US Treasury 5-Year (CMT)"
         default:      return v;
       }
     }
+    // Number with thousands separators for display (money in the preview).
+    function commas(n){ if(n==null || n==="") return ""; const x=Number(n); return isFinite(x) ? x.toLocaleString("en-US",{maximumFractionDigits:2}) : String(n); }
 
     /* ================================================================
        4. FINANCIAL ENGINE  (Actual/360 + binary-search solver)
@@ -2873,7 +2876,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         const row = [secCell, f.label];
         list.forEach((l, i) => {
           let v;
-          if(f.kind==="computed") v = results[i].derived[f.key];
+          if(f.cond && !f.cond(l)) v = "";                        // field doesn't apply to this loan (e.g. Index on a fixed loan)
+          else if(f.kind==="computed") v = results[i].derived[f.key];
           else v = l[f.key];
           row.push(exportCellValue(f.type, v));
         });
@@ -2908,11 +2912,13 @@ tr[data-loan]:hover td{background:#eef2f7}
       });
       thead += '</tr></thead>';
       let tbody = '<tbody>';
-      fieldRows.forEach(r=>{
+      fieldRows.forEach((r,k)=>{
+        const f = FIELDS[k];   // fieldRows align 1:1 with FIELDS (money formats with commas)
         if(r[0]) tbody += '<tr><td colspan="'+colsN+'" class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-700 bg-brand-50/70 sticky left-0">'+escapeHtml(r[0])+'</td></tr>';
         tbody += '<tr class="border-b border-slate-50"><td class="px-3 py-1 text-slate-600 sticky left-0 bg-white whitespace-nowrap">'+escapeHtml(r[1]||"")+'</td>';
         loans.forEach((l,i)=>{ const on = exportState.include.has(l._id); const v = r[i+2];
-          tbody += '<td data-loancol="'+i+'" class="px-2 py-1 text-slate-700 tabular-nums whitespace-nowrap'+(on?'':' opacity-40')+'">'+escapeHtml(v==null?"":String(v))+'</td>';
+          const disp = (f && f.type==="money") ? commas(v) : (v==null?"":String(v));
+          tbody += '<td data-loancol="'+i+'" class="px-2 py-1 text-slate-700 tabular-nums whitespace-nowrap'+(on?'':' opacity-40')+'">'+escapeHtml(disp)+'</td>';
         });
         tbody += '</tr>';
       });
@@ -2947,6 +2953,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       const n = sel.length, done = () => { closeExportPreview(); toast(n+" loan"+(n>1?"s":"")+" exported to Excel", "download"); };
       if(typeof XLSX === "undefined"){ exportAllCsvFallback(sel); closeExportPreview(); return; }
       const ws = XLSX.utils.aoa_to_sheet(buildWorkbookAOA(sel));
+      // Money columns: keep the cells numeric but display with thousands separators
+      // in Excel (rows align 1:1 with FIELDS; loan columns start at col index 2).
+      FIELDS.forEach((f,k)=>{ if(f.type!=="money") return;
+        for(let i=0;i<sel.length;i++){ const c = ws[XLSX.utils.encode_cell({ r:3+k, c:2+i })]; if(c && typeof c.v==="number") c.z = "#,##0.##"; }
+      });
       ws["!cols"] = [{wch:26},{wch:34}].concat(sel.map(()=>({wch:24})));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Loan Debt Service");
