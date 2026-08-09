@@ -3860,15 +3860,26 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(dscr >= 1.35 && ltv <= 0.65) return { tier:3, delta:-0.002, label:"Tier 3",                minIndex:true  };
       return                                 { tier:2, delta:0,       label:"Tier 2",                minIndex:false };
     }
+    // Stage 6 — a floating (SOFR) rate isn't truly cheaper unless it beats the
+    // matched Treasury AFTER paying for the required rate cap. Cap cost is an
+    // editable annualized estimate (default ~35 bps); the min-index switch and
+    // the credit-aware rate both weigh SOFR + cap against the Treasury all-in.
+    function loanCapCostPct(loan){ return (loan && loan.sofrCapPct != null && loan.sofrCapPct >= 0) ? loan.sofrCapPct : 0.0035; }
     function creditAwareMarket(loan){
       const t = loanTier(loan); if(!t) return null;
       const mp = refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths || loan.amortizationMonths });
       const spread = Math.max(0.0025, (mp.spread || 0) + t.delta);        // calibrated baseline + tier delta
       const matchedT = matchedTenorId(loan);
       const tVal = liveIndexVal(matchedT), sVal = liveIndexVal("sofr");
-      let baseId = matchedT, baseVal = (tVal != null ? tVal : mp.baseValue), floating = false;
-      if(t.minIndex && sVal != null && tVal != null && sVal < tVal){ baseId = "sofr"; baseVal = sVal; floating = true; }
-      return { t: t, spread: spread, baseSpread: (mp.spread || 0), baseId: baseId, baseVal: baseVal, floating: floating, matchedT: matchedT, tVal: tVal, sVal: sVal, rate: baseVal + spread };
+      const capCost = loanCapCostPct(loan);
+      const tBase = (tVal != null ? tVal : mp.baseValue);
+      const tAllIn = tBase + spread;                                       // Treasury option, all-in
+      const sAllIn = (sVal != null ? sVal + capCost : Infinity) + spread;  // SOFR option, incl. its cap cost
+      let baseId = matchedT, baseVal = tBase, floating = false, capApplied = 0;
+      // Only a Tier 3+ loan currently on a Treasury may move to SOFR, and only if
+      // SOFR wins AFTER its cap cost.
+      if(t.minIndex && sVal != null && tVal != null && matchedT !== "sofr" && sAllIn < tAllIn){ baseId = "sofr"; baseVal = sVal; floating = true; capApplied = capCost; }
+      return { t:t, spread:spread, baseSpread:(mp.spread||0), baseId:baseId, baseVal:baseVal, floating:floating, capCost:capCost, capApplied:capApplied, matchedT:matchedT, tVal:tVal, sVal:sVal, tBase:tBase, tAllIn:tAllIn, sAllIn:sAllIn, rate: baseVal + spread + capApplied };
     }
     function creditAwareSectionHtml(loan){
       const cam = creditAwareMarket(loan); if(!cam) return '';
@@ -3880,17 +3891,39 @@ tr[data-loan]:hover td{background:#eef2f7}
         : (gap < -0.0025 ? "Already below the credit-aware market — hold." : "At the credit-aware market.");
       const verdictCls = cam.t.tier === 0 ? "border-rose-300 bg-rose-50 text-rose-900"
         : cand ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700";
+      const stats = [
+        refiStat("Base index", baseLbl+" "+fmtPct(cam.baseVal)+(cam.floating?" (floating)":"")),
+        refiStat("Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):"")),
+      ];
+      if(cam.floating) stats.push(refiStat("SOFR cap cost", "&#43;"+Math.round(cam.capApplied*10000)+" bps"));
+      stats.push(refiStat("Credit-aware market", fmtPct(cam.rate)));
+      stats.push(refiStat("Your rate", fmtPct(cur)));
+      // Stage 6 — explicit Treasury-vs-SOFR head-to-head, net of the cap cost, with
+      // an editable cap estimate. Shown whenever the loan is eligible to switch
+      // (Tier 3+ currently on a Treasury).
+      let indexChoice = '';
+      if(cam.t.minIndex && cam.matchedT !== "sofr" && cam.tVal != null && cam.sVal != null){
+        const sofrWins = cam.sAllIn < cam.tAllIn, byBps = Math.round(Math.abs(cam.tAllIn - cam.sAllIn)*10000);
+        const capIn = '<input id="refiCapPct" type="number" step="5" min="0" value="'+String(+(cam.capCost*10000).toFixed(1))+'" class="w-16 rounded-md border border-slate-300 px-1.5 py-0.5 text-xs text-right tabular-nums"> bps cap';
+        indexChoice = '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">'+
+          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">'+
+            '<span class="font-bold uppercase tracking-wide text-slate-400">Index choice</span>'+
+            '<span>'+tenorShort(cam.matchedT)+' all-in '+fmtPct(cam.tAllIn)+'</span>'+
+            '<span class="text-slate-400">vs</span>'+
+            '<span>SOFR '+fmtPct(cam.sVal)+' + '+capIn+' = '+fmtPct(cam.sAllIn)+'</span>'+
+            '<span class="font-semibold '+(sofrWins?"text-brand-700":"text-slate-700")+'">&#8594; '+(sofrWins?"SOFR":tenorShort(cam.matchedT))+' cheaper by '+byBps+' bps</span>'+
+          '</div>'+
+        '</div>';
+      }
       return '<div class="mt-4 border-t border-slate-100 pt-4">'+
         '<div class="mb-2 flex flex-wrap items-center gap-2">'+
           '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+tierBadge+'">'+cam.t.label+'</span>'+
           '<span class="text-[11px] text-slate-500">DSCR '+(loanDSCR(loan)||0).toFixed(2)+'× &middot; LTV '+fmtPct(loanLTV(loan))+(cam.floating?' &middot; <span class="font-semibold text-brand-700">SOFR beats Treasury today</span>':'')+'</span>'+
         '</div>'+
         '<dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
-          refiStat("Base index", baseLbl+" "+fmtPct(cam.baseVal)+(cam.floating?" (floating)":""))+
-          refiStat("Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):""))+
-          refiStat("Credit-aware market", fmtPct(cam.rate))+
-          refiStat("Your rate", fmtPct(cur))+
+          stats.join('')+
         '</dl>'+
+        indexChoice+
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdictCls+'">'+verdict+'</div>'+
       '</div>';
     }
@@ -4204,6 +4237,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(defIn) defIn.addEventListener("change", () => { const raw = (defIn.value||"").replace(/[^0-9.]/g,""); const v = parseFloat(raw); loan.defeasanceCost = (raw === "" ? null : (!isNaN(v) && v >= 0 ? v : loan.defeasanceCost)); loan.prepayConfirmed = true; save(); renderRefi(loan); });
         const clsIn = el("refiClosingPct");
         if(clsIn) clsIn.addEventListener("change", () => { const v = parseFloat(clsIn.value); if(!isNaN(v) && v >= 0) loan.refiClosingPct = v/100; save(); renderRefi(loan); });
+        const capIn = el("refiCapPct");
+        if(capIn) capIn.addEventListener("change", () => { const v = parseFloat(capIn.value); if(!isNaN(v) && v >= 0) loan.sofrCapPct = v/10000; save(); renderRefi(loan); });
       }
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
