@@ -1091,6 +1091,7 @@
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
       { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"actual locked rate from your loan docs", cond:(l)=>l.rateType==="Hybrid ARM" || (l.rateType==="Fixed" && l.isHistorical) },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
+      { sec:"Loan Terms", key:"lienPosition",       label:"Lien Position",                type:"select", kind:"input", options:["Senior","Mezzanine"], hint:"Mezzanine (subordinate) debt is priced over SOFR at a wide spread in the refinance tools" },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First P&I Date",               type:"date",   kind:"input", required:true, hint:"first principal+interest payment (after the IO period)", aliases:["First Payment Date"] },
       { sec:"Loan Terms", key:"maturityDate",        label:"Maturity Date",                type:"date",   kind:"input", hint:"from the loan docs — the schedule is anchored to this (first payment = maturity − term)", aliases:["Maturity"] },
@@ -1665,7 +1666,7 @@
     function emptyLoan(){
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
-      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr";
+      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr"; l.lienPosition = "Senior";
       l.isHistorical = false;   // new loans price off index + spread; historical loans carry a typed rate
       return l;
     }
@@ -1723,7 +1724,7 @@
         mk({ propertyName:"Reatta Ranch", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", loanNumber:"20251209", originalAmount:47000000, annualRate:0.0611, rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.0575, originationDate:"2025-12-10", firstPaymentDate:"2028-12-09", maturityDate:"2028-12-09", loanTermMonths:36, ioMonths:36 }),
         mk({ propertyName:"Heritage Key Villas", propertyAddress:"Kissimmee, FL (Osceola County)", propertyType:"Multifamily", lenderName:"Valley National Bank", originalAmount:61000000, annualRate:0.057, rateType:"Hybrid ARM", index:"ust5y", spread:0.02, rateFloor:0.057, originationDate:"2026-01-14", firstPaymentDate:"2027-03-01", maturityDate:"2036-02-28", loanTermMonths:121, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
         mk({ propertyName:"Avalon White Plains", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1613", originalAmount:96000000, annualRate:0.0536, rateType:"Floating", index:"sofr", spread:0.0175, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, replacementReserve:8480 }),
-        mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36 }),
+        mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, lienPosition:"Mezzanine", originationDate:"2026-02-10", firstPaymentDate:"2029-02-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36 }),
         mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2031-04-10", maturityDate:"2033-03-10", loanTermMonths:85, amortizationMonths:360, ioMonths:60 }),
         mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2027-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
       ].map(l => { if(l.rateType==="Fixed") l.isHistorical = true; return l; });   // the portfolio is all already-originated loans
@@ -2067,8 +2068,14 @@
                                .catch(()=>{ delete TREASURY_HIST_INFLIGHT[key]; });
     }
     // The Treasury tenor a loan of this term/type prices over.
+    // Mezzanine (subordinate) debt prices very differently from a senior loan:
+    // it's floating over SOFR at a wide spread, and the Fannie senior tier grid
+    // doesn't apply. A loan is a mezz when its lien position is set to Mezzanine.
+    function isMezz(loan){ return !!loan && loan.lienPosition === "Mezzanine"; }
+    const MEZZ_SPREAD_DEFAULT = 0.05;   // ~500 bps over SOFR, editable per loan
+    function mezzSpread(loan){ return (loan && loan.mezzSpread != null && loan.mezzSpread >= 0) ? loan.mezzSpread : MEZZ_SPREAD_DEFAULT; }
     function matchedTenorId(loan){
-      if(loan && loan.rateType === "Floating") return "sofr";
+      if(loan && (isMezz(loan) || loan.rateType === "Floating")) return "sofr";
       const term = (loan && loan.rateType==="Hybrid ARM") ? (loan.armInitialFixedMonths||60)
                  : ((loan && (loan.loanTermMonths || loan.amortizationMonths)) || 120);
       if(term <= 42) return "ust3y";
@@ -2092,6 +2099,7 @@
     //    is used ONLY on Option 2's 15-yr term; Option 1 tops out at the 10-yr.
     function refiTenorForTerm(loan, termMonths, isOption2){
       const type = loan.rateType || "Fixed";
+      if(isMezz(loan))         return "sofr";   // mezz prices over SOFR at any term
       if(type === "Floating")  return "sofr";
       if(type === "Hybrid ARM") return matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: loan.armInitialFixedMonths });
       if(isOption2 && (termMonths||0) >= 156) return "ust20y";   // 13-yr+ stepped term -> 20-yr Treasury
@@ -2196,6 +2204,16 @@
     // each overridable via ov = { tenorId, baseValue(decimal), spread(decimal) }.
     function refiMarketParts(subject, proposed, ov){
       ov = ov || {};
+      // Mezzanine: price over SOFR at a wide subordinate-debt spread, not the
+      // senior Treasury + recent-deal spread. Editable per loan (loan.mezzSpread).
+      if(isMezz(proposed || subject)){
+        const sVal = INDEX_CACHE["sofr"] ? INDEX_CACHE["sofr"].value/100 : INDEX_BY_ID["sofr"].fallback/100;
+        const baseValue = (ov.baseValue != null) ? ov.baseValue : sVal;
+        const spread = (ov.spread != null) ? ov.spread : mezzSpread(subject);
+        return { tenorId:"sofr", tenorLabel:"SOFR", baseValue:baseValue, liveBase:sVal, baseKind:"sofr",
+                 spread:spread, marketRate: baseValue + spread, calib:null,
+                 baseAuto: ov.baseValue==null, spreadAuto: ov.spread==null, spreadHasComps:false, mezz:true };
+      }
       const tenorId = ov.tenorId || matchedTenorId(proposed || subject);
       const cat = INDEX_BY_ID[tenorId];
       const liveBase = INDEX_CACHE[tenorId] ? INDEX_CACHE[tenorId].value/100 : (cat ? cat.fallback/100 : 0);
@@ -2875,9 +2893,11 @@ tr[data-loan]:hover td{background:#eef2f7}
                    : s.gap<-0.0025 ? '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">below market</span>'
                    : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">at market</span>';
         const gapCls = s.gap>0.0025?'text-emerald-700 font-semibold':s.gap<-0.0025?'text-slate-400':'text-slate-500';
+        const mezzTag = isMezz(s.loan) ? ' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>' : '';
+        const advBtn = '<button type="button" data-refiadv="'+s.loan._id+'" class="ml-2 rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Advanced</button>';
         return '<tr data-refi="'+s.loan._id+'" class="cursor-pointer hover:bg-emerald-50/50">'+
-          td(escapeHtml(loanLabel(s.loan)),'font-medium text-slate-900')+ tdR(fmtPct(s.cur))+ tdR(fmtPct(s.mkt))+
-          tdR((s.gap>=0?'+':'−')+fmtPct(Math.abs(s.gap)), gapCls)+ td(flag)+
+          td(escapeHtml(loanLabel(s.loan))+mezzTag,'font-medium text-slate-900')+ tdR(fmtPct(s.cur))+ tdR(fmtPct(s.mkt))+
+          tdR((s.gap>=0?'+':'−')+fmtPct(Math.abs(s.gap)), gapCls)+ td('<div class="flex items-center justify-end gap-1">'+flag+advBtn+'</div>')+
         '</tr>'; }).join('');
 
       dom.alertsRail.innerHTML = renderAlertsRail(portfolioActionItems(rows, scan));
@@ -2901,6 +2921,7 @@ tr[data-loan]:hover td{background:#eef2f7}
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
+      dom.portfolioView.querySelectorAll('[data-refiadv]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); state.activeId = btn.getAttribute('data-refiadv'); startRefi(true); }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
       const applyLenderFilter = () => {
@@ -3610,9 +3631,11 @@ tr[data-loan]:hover td{background:#eef2f7}
     /* ================================================================
        11b. REFINANCE CALCULATOR  (verdict: should you refinance?)
        ================================================================ */
-    function startRefi(){
+    let refiPendingAdvanced = false;
+    function startRefi(advanced){
       const loan = getLoan(state.activeId);
       if(!loan){ toast("Select a loan to refinance first", "info"); return; }
+      refiPendingAdvanced = !!advanced;   // jump straight into the advanced flow after render
       state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
     }
     function closeRefi(){ setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty"); }
@@ -3866,6 +3889,16 @@ tr[data-loan]:hover td{background:#eef2f7}
     // the credit-aware rate both weigh SOFR + cap against the Treasury all-in.
     function loanCapCostPct(loan){ return (loan && loan.sofrCapPct != null && loan.sofrCapPct >= 0) ? loan.sofrCapPct : 0.0035; }
     function creditAwareMarket(loan){
+      // Mezzanine debt doesn't get the agency senior tier grid or the Treasury↔SOFR
+      // switch — it prices over SOFR at a wide subordinate spread.
+      if(isMezz(loan)){
+        if(loanDSCR(loan) == null || loanLTV(loan) == null) return null;
+        const sVal = liveIndexVal("sofr"), spread = mezzSpread(loan);
+        const baseVal = (sVal != null ? sVal : (INDEX_BY_ID["sofr"].fallback/100));
+        return { mezz:true, t:{ tier:-1, delta:0, label:"Mezzanine", minIndex:false }, spread:spread, baseSpread:spread,
+                 baseId:"sofr", baseVal:baseVal, floating:true, capCost:0, capApplied:0, matchedT:"sofr",
+                 tVal:null, sVal:sVal, tBase:baseVal, tAllIn:baseVal+spread, sAllIn:baseVal+spread, rate: baseVal + spread };
+      }
       const t = loanTier(loan); if(!t) return null;
       const mp = refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths || loan.amortizationMonths });
       const spread = Math.max(0.0025, (mp.spread || 0) + t.delta);        // calibrated baseline + tier delta
@@ -3885,19 +3918,31 @@ tr[data-loan]:hover td{background:#eef2f7}
       const cam = creditAwareMarket(loan); if(!cam) return '';
       const cur = compute(loan).derived.currentRate || 0, gap = cur - cam.rate, cand = gap > 0.0025;
       const baseLbl = (cam.baseId === "sofr") ? "SOFR" : tenorShort(cam.baseId);
-      const tierBadge = cam.t.tier >= 3 ? "bg-emerald-100 text-emerald-700" : cam.t.tier === 2 ? "bg-slate-100 text-slate-600" : "bg-rose-100 text-rose-700";
+      const tierBadge = cam.mezz ? "bg-indigo-100 text-indigo-700" : cam.t.tier >= 3 ? "bg-emerald-100 text-emerald-700" : cam.t.tier === 2 ? "bg-slate-100 text-slate-600" : "bg-rose-100 text-rose-700";
       const verdict = cam.t.tier === 0 ? "Coverage below the 1.25× floor — not financeable as sized."
         : cand ? ("Above market by " + Math.round(gap*10000) + " bps — refi candidate.")
-        : (gap < -0.0025 ? "Already below the credit-aware market — hold." : "At the credit-aware market.");
+        : (gap < -0.0025 ? ("Already below the "+(cam.mezz?"mezzanine":"credit-aware")+" market — hold.") : ("At the "+(cam.mezz?"mezzanine":"credit-aware")+" market."));
       const verdictCls = cam.t.tier === 0 ? "border-rose-300 bg-rose-50 text-rose-900"
         : cand ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700";
       const stats = [
         refiStat("Base index", baseLbl+" "+fmtPct(cam.baseVal)+(cam.floating?" (floating)":"")),
-        refiStat("Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):"")),
+        refiStat(cam.mezz?"Mezz spread":"Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):"")),
       ];
-      if(cam.floating) stats.push(refiStat("SOFR cap cost", "&#43;"+Math.round(cam.capApplied*10000)+" bps"));
-      stats.push(refiStat("Credit-aware market", fmtPct(cam.rate)));
+      if(cam.floating && !cam.mezz) stats.push(refiStat("SOFR cap cost", "&#43;"+Math.round(cam.capApplied*10000)+" bps"));
+      stats.push(refiStat(cam.mezz?"Mezz market":"Credit-aware market", fmtPct(cam.rate)));
       stats.push(refiStat("Your rate", fmtPct(cur)));
+      // Mezzanine: an editable subordinate-debt spread over SOFR in place of the
+      // senior tier grid + Treasury/SOFR index choice.
+      let mezzChoice = '';
+      if(cam.mezz){
+        const mzIn = '<input id="refiMezzSpread" type="number" step="25" min="0" value="'+String(+(cam.spread*10000).toFixed(1))+'" class="w-20 rounded-md border border-indigo-300 px-1.5 py-0.5 text-xs text-right tabular-nums"> bps over SOFR';
+        mezzChoice = '<div class="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700">'+
+          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">'+
+            '<span class="font-bold uppercase tracking-wide text-indigo-400">Mezzanine pricing</span>'+
+            '<span>SOFR '+fmtPct(cam.sVal!=null?cam.sVal:cam.baseVal)+' + '+mzIn+' = '+fmtPct(cam.rate)+'</span>'+
+          '</div>'+
+        '</div>';
+      }
       // Stage 6 — explicit Treasury-vs-SOFR head-to-head, net of the cap cost, with
       // an editable cap estimate. Shown whenever the loan is eligible to switch
       // (Tier 3+ currently on a Treasury).
@@ -3918,12 +3963,13 @@ tr[data-loan]:hover td{background:#eef2f7}
       return '<div class="mt-4 border-t border-slate-100 pt-4">'+
         '<div class="mb-2 flex flex-wrap items-center gap-2">'+
           '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+tierBadge+'">'+cam.t.label+'</span>'+
-          '<span class="text-[11px] text-slate-500">DSCR '+(loanDSCR(loan)||0).toFixed(2)+'× &middot; LTV '+fmtPct(loanLTV(loan))+(cam.floating?' &middot; <span class="font-semibold text-brand-700">SOFR beats Treasury today</span>':'')+'</span>'+
+          '<span class="text-[11px] text-slate-500">DSCR '+(loanDSCR(loan)||0).toFixed(2)+'× &middot; LTV '+fmtPct(loanLTV(loan))+((cam.floating && !cam.mezz)?' &middot; <span class="font-semibold text-brand-700">SOFR beats Treasury today</span>':'')+'</span>'+
         '</div>'+
         '<dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           stats.join('')+
         '</dl>'+
         indexChoice+
+        mezzChoice+
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdictCls+'">'+verdict+'</div>'+
       '</div>';
     }
@@ -4022,7 +4068,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const closingInput = '<label class="flex items-center gap-1.5 text-[11px] text-slate-500">Est. closing'+
         '<input id="refiClosingPct" type="number" step="0.25" min="0" value="'+String(+(loanClosingPct(loan)*100).toFixed(3))+'" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm text-right tabular-nums">% of balance</label>';
       const verdict = be.monthlySavings <= 0
-        ? { cls:"border-slate-300 bg-slate-50 text-slate-700", txt:"Not worth it &mdash; the credit-aware market rate ("+fmtPct(be.cam.rate)+") isn&rsquo;t below your rate." }
+        ? { cls:"border-slate-300 bg-slate-50 text-slate-700", txt:"Not worth it &mdash; the "+(be.cam.mezz?"mezzanine":"credit-aware")+" market rate ("+fmtPct(be.cam.rate)+") isn&rsquo;t below your rate." }
         : be.worth
           ? { cls:"border-emerald-300 bg-emerald-50 text-emerald-900", txt:"Worth it &mdash; ~"+Math.round(be.payback)+" mo payback &middot; "+fmtMoney(be.netBenefit)+" net benefit over the "+be.horizon+" mo remaining." }
           : { cls:"border-amber-300 bg-amber-50 text-amber-900", txt:"Marginal &mdash; ~"+(isFinite(be.payback)?Math.round(be.payback)+" mo payback":"no payback")+" against only "+be.horizon+" mo remaining." };
@@ -4124,7 +4170,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           refiStat("LTV", ltv != null ? fmtPct(ltv) : "&mdash;")+
           refiStat("Annual debt service", fmtMoney(ads))+
           refiStat("DSCR", dscr != null ? dscr.toFixed(2)+"&#215;" : "&mdash;")+
-          refiStat("Coverage", dscr == null ? "&mdash;" : (dscrOk ? "clears 1.25&#215; floor" : "below 1.25&#215; floor"))+
+          refiStat("Coverage", isMezz(loan) ? "subordinate (mezz)" : (dscr == null ? "&mdash;" : (dscrOk ? "clears 1.25&#215; floor" : "below 1.25&#215; floor")))+
         '</dl>'+
         creditAwareSectionHtml(loan)+
         exitCostSectionHtml(loan)+
@@ -4287,6 +4333,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("refiAdvBtn").addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
+      // Opened via the scan's "Advanced" button → jump straight into the NOI flow.
+      if(refiPendingAdvanced){ refiPendingAdvanced = false; openNoiFlow(loan, () => renderRefi(loan)); }
       // Advanced analysis prices off the LOWER of the matched Treasury and SOFR, and
       // yield maintenance discounts at the tenor matched to the REMAINING term — make
       // sure all three are live so the panel reflects today, not fallbacks.
@@ -4306,6 +4354,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(capIn) capIn.addEventListener("change", () => { const v = parseFloat(capIn.value); if(!isNaN(v) && v >= 0) loan.sofrCapPct = v/10000; save(); renderRefi(loan); });
         const stackSel = el("refiStackWith");
         if(stackSel) stackSel.addEventListener("change", () => { loan.stackWith = stackSel.value || null; save(); renderRefi(loan); });
+        const mzIn = el("refiMezzSpread");
+        if(mzIn) mzIn.addEventListener("change", () => { const v = parseFloat(mzIn.value); if(!isNaN(v) && v >= 0) loan.mezzSpread = v/10000; save(); renderRefi(loan); });
       }
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
