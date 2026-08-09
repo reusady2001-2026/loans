@@ -4044,6 +4044,70 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdict.cls+'">'+verdict.txt+'</div>'+
       '</div>';
     }
+    // Stage 7 — capital stack. Link a subordinate (mezz) or senior loan on the
+    // same property to see COMBINED coverage & leverage (the mezz drags DSCR down
+    // and pushes LTV up), and model retiring the mezz into an upsized senior at
+    // today's credit-aware senior rate. Agency seniors don't permit mezz — this is
+    // for bank / insurance / debt-fund seniors.
+    function otherLoans(loan){ return loans.filter(l => l && l._id !== loan._id); }
+    function stackPartner(loan){ const id = loan && loan.stackWith; return id ? loans.find(l => l && l._id === id) : null; }
+    function stackSeniorMezz(loan){
+      const p = stackPartner(loan); if(!p) return null;
+      const a = { loan:loan, bal: compute(loan).derived.currentBalance||0, rate: compute(loan).derived.currentRate||0 };
+      const b = { loan:p,    bal: compute(p).derived.currentBalance||0,    rate: compute(p).derived.currentRate||0 };
+      const senior = a.bal >= b.bal ? a : b, mezz = a.bal >= b.bal ? b : a;   // senior = larger balance
+      return { senior:senior, mezz:mezz };
+    }
+    function stackCombined(loan){
+      const sm = stackSeniorMezz(loan); if(!sm) return null;
+      const noi = (loan.noi>0 ? loan.noi : null), cr = loanCapRate(loan), value = (noi>0 && cr>0) ? noi/cr : null;
+      const combBal = sm.senior.bal + sm.mezz.bal;
+      const combADS = annualDebtService(compute(sm.senior.loan).derived) + annualDebtService(compute(sm.mezz.loan).derived);
+      const seniorADS = annualDebtService(compute(sm.senior.loan).derived);
+      const combDSCR = (noi>0 && combADS>0) ? noi/combADS : null;
+      const seniorDSCR = (noi>0 && seniorADS>0) ? noi/seniorADS : null;
+      const combLTV = (value>0 && combBal>0) ? combBal/value : null;
+      return { sm:sm, noi:noi, cr:cr, value:value, combBal:combBal, combADS:combADS, combDSCR:combDSCR, seniorDSCR:seniorDSCR, combLTV:combLTV };
+    }
+    function stackRetireMezz(loan){
+      const c = stackCombined(loan); if(!c) return null;
+      const sm = c.sm, camSenior = creditAwareMarket(sm.senior.loan);
+      const newRate = (camSenior && camSenior.rate>0) ? camSenior.rate : sm.senior.rate;
+      // Raise senior-priced proceeds (a supplemental advance) to pay off the mezz,
+      // leaving the existing senior in place. Interest saving = mezz balance ×
+      // (mezz rate − senior credit-aware rate). Positive whenever senior debt is
+      // cheaper than the subordinate mezz — the usual case.
+      const saving = sm.mezz.bal * (sm.mezz.rate - newRate);
+      return { newRate:newRate, saving:saving, feasible: (c.combLTV==null || c.combLTV<=0.75) };
+    }
+    function stackSectionHtml(loan){
+      const others = otherLoans(loan);
+      const opts = '<option value="">None</option>' + others.map(l => '<option value="'+l._id+'"'+(loan.stackWith===l._id?' selected':'')+'>'+escapeHtml(loanLabel(l))+'</option>').join('');
+      const picker = '<select id="refiStackWith" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm max-w-[240px] truncate">'+opts+'</select>';
+      const c = stackCombined(loan);
+      let body = '<p class="mt-2 text-[11px] text-slate-400">Link a subordinate (mezz) or senior loan on the same property for combined leverage &amp; coverage. Agency seniors don&rsquo;t permit subordinate debt.</p>';
+      if(c){
+        const sm = c.sm, r = stackRetireMezz(loan);
+        body = '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
+          refiStat("Senior", escapeHtml(loanLabel(sm.senior.loan))+" &middot; "+fmtMoney(sm.senior.bal)+" @ "+fmtPct(sm.senior.rate))+
+          refiStat("Mezz", escapeHtml(loanLabel(sm.mezz.loan))+" &middot; "+fmtMoney(sm.mezz.bal)+" @ "+fmtPct(sm.mezz.rate))+
+          refiStat("Combined debt", fmtMoney(c.combBal))+
+          refiStat("Combined LTV", c.combLTV!=null ? fmtPct(c.combLTV) : "&mdash;")+
+          refiStat("Senior-only DSCR", c.seniorDSCR!=null ? c.seniorDSCR.toFixed(2)+"&#215;" : "&mdash;")+
+          refiStat("Combined DSCR", c.combDSCR!=null ? c.combDSCR.toFixed(2)+"&#215;" : "&mdash;")+
+        '</dl>'+
+        (r ? '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">'+
+          '<span class="font-bold uppercase tracking-wide text-slate-400">Retire mezz into senior</span> &middot; '+
+          'senior proceeds at '+fmtPct(r.newRate)+' &middot; '+(r.saving>=0?'saves ':'costs ')+fmtMoney(Math.abs(r.saving))+'/yr vs the mezz'+
+          (c.combLTV!=null && c.combLTV>0.75 ? ' &middot; <span class="font-semibold text-amber-700">combined LTV '+fmtPct(c.combLTV)+' exceeds ~75%</span>' : '')+
+        '</div>' : '');
+      }
+      return '<div class="mt-4 border-t border-slate-100 pt-4">'+
+        '<div class="mb-2 flex flex-wrap items-center gap-2">'+
+          '<h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Capital stack</h4>'+picker+
+        '</div>'+body+
+      '</div>';
+    }
     function refiAdvancedHtml(loan){
       const d = compute(loan).derived, ads = annualDebtService(d);
       const dscr = loanDSCR(loan), val = loanValue(loan), ltv = loanLTV(loan), cr = loanCapRate(loan);
@@ -4065,6 +4129,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         creditAwareSectionHtml(loan)+
         exitCostSectionHtml(loan)+
         breakEvenSectionHtml(loan)+
+        stackSectionHtml(loan)+
         '<p class="mt-3 text-[11px] text-slate-400">DSCR = NOI &#247; annual level P&amp;I &middot; Value = NOI &#247; cap rate &middot; LTV = balance &#247; value &middot; tier delta from a Fannie&#8209;based DSCR/LTV grid &middot; exit cost, closing and payback are screening estimates &mdash; confirm figures from the loan documents and a rate sheet before acting.</p>'+
       '</div>';
     }
@@ -4239,6 +4304,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(clsIn) clsIn.addEventListener("change", () => { const v = parseFloat(clsIn.value); if(!isNaN(v) && v >= 0) loan.refiClosingPct = v/100; save(); renderRefi(loan); });
         const capIn = el("refiCapPct");
         if(capIn) capIn.addEventListener("change", () => { const v = parseFloat(capIn.value); if(!isNaN(v) && v >= 0) loan.sofrCapPct = v/10000; save(); renderRefi(loan); });
+        const stackSel = el("refiStackWith");
+        if(stackSel) stackSel.addEventListener("change", () => { loan.stackWith = stackSel.value || null; save(); renderRefi(loan); });
       }
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
