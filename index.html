@@ -911,6 +911,33 @@
     </div>
   </div>
 
+  <!-- Advanced analysis — NOI capture pop-up (per loan; saved + confirm/change) -->
+  <div id="noiModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <h3 id="noiTitle" class="text-base font-bold text-slate-900">Advanced refinance — annual NOI</h3>
+      <p id="noiText" class="mt-1 text-sm text-slate-500">—</p>
+      <div id="noiAsk" class="mt-4 hidden">
+        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm">
+          <span class="text-slate-500">Saved annual NOI</span><span id="noiSaved" class="font-bold tabular-nums text-slate-900">—</span>
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <button id="noiChange" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Change it</button>
+          <button id="noiKeep" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Keep &amp; continue</button>
+        </div>
+      </div>
+      <div id="noiInput" class="mt-4 hidden">
+        <label for="noiField" class="mb-1 block text-sm font-semibold text-slate-700">Property annual NOI ($)</label>
+        <input id="noiField" type="text" inputmode="decimal" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" placeholder="e.g. 3,200,000" />
+        <p id="noiErr" class="mt-1 hidden text-[11px] font-medium text-rose-500">Enter a positive dollar amount.</p>
+        <p class="mt-1 text-[11px] text-slate-400">Net operating income — from the property's operating statement / rent roll.</p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button id="noiCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button id="noiSave" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ IMPORT — gate 1: field checklist ============ -->
   <div id="importChecklist" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
     <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
@@ -3796,6 +3823,70 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(el("refiForm")) applyVisibility(el("refiForm"), "rf_");
       recomputeRefi(loan);
     }
+    // ================= ADVANCED REFINANCE — Stage 1: NOI + DSCR =================
+    // The basic scan/calculator stay untouched. Advanced data (NOI, later cap rate
+    // & prepay type) lives on the loan object, persists through save(), and never
+    // appears in the basic loan form. DSCR = annual NOI / annual level P&I — the
+    // amortizing debt-service basis agencies size to (IO periods use the level P&I).
+    function annualDebtService(d){ return (d.amortizingPI || d.monthlyPI || 0) * 12; }
+    function loanDSCR(loan){
+      const d = compute(loan).derived, ads = annualDebtService(d);
+      return (loan && loan.noi != null && loan.noi > 0 && ads > 0) ? (loan.noi / ads) : null;
+    }
+    function refiAdvancedHtml(loan){
+      const d = compute(loan).derived, ads = annualDebtService(d), dscr = loanDSCR(loan);
+      const ok = dscr != null && dscr >= 1.25;
+      return '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
+        '<div class="flex items-center justify-between">'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Advanced analysis</h3>'+
+          '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit NOI</button>'+
+        '</div>'+
+        '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
+          refiStat("Annual NOI", fmtMoney(loan.noi))+
+          refiStat("Annual debt service", fmtMoney(ads))+
+          refiStat("DSCR", dscr != null ? dscr.toFixed(2)+"&#215;" : "&mdash;")+
+          refiStat("Coverage", dscr == null ? "&mdash;" : (ok ? "clears 1.25&#215; floor" : "below 1.25&#215; floor"))+
+        '</dl>'+
+        '<p class="mt-2 text-[11px] text-slate-400">DSCR = annual NOI &#247; annual level P&amp;I. Coming next: value / LTV, tier&#8209;adjusted market rate, exit costs, break&#8209;even.</p>'+
+      '</div>';
+    }
+
+    // NOI pop-up. First time: ask for NOI. Thereafter: show the saved value and ask
+    // "keep or change?" — Change reveals the field (pre-filled) and the new figure
+    // becomes the loan's new default.
+    let noiCtx = null;
+    function openNoiFlow(loan, onDone){
+      noiCtx = { loan: loan, onDone: onDone };
+      const has = (loan.noi != null && !isNaN(loan.noi) && loan.noi > 0);
+      el("noiText").textContent = has
+        ? "This property has an annual NOI saved. Use it, or change it?"
+        : "Enter this property's annual net operating income (NOI) to run the advanced analysis.";
+      el("noiAsk").classList.toggle("hidden", !has);
+      el("noiInput").classList.toggle("hidden", has);
+      if(has) el("noiSaved").textContent = fmtMoney(loan.noi);
+      el("noiField").value = ""; el("noiErr").classList.add("hidden");
+      el("noiKeep").onclick   = () => { const done = noiCtx.onDone, v = noiCtx.loan.noi; closeNoi(); if(done) done(v); };
+      el("noiChange").onclick = noiToInput;
+      el("noiSave").onclick   = noiCommit;
+      el("noiCancel").onclick = closeNoi;
+      el("noiModal").onclick  = (e) => { if(e.target === el("noiModal")) closeNoi(); };
+      el("noiField").onkeydown = (e) => { if(e.key === "Enter"){ e.preventDefault(); noiCommit(); } else if(e.key === "Escape") closeNoi(); };
+      const m = el("noiModal"); m.classList.remove("hidden"); m.classList.add("flex");
+      (has ? el("noiKeep") : el("noiField")).focus();
+    }
+    function noiToInput(){
+      el("noiAsk").classList.add("hidden"); el("noiInput").classList.remove("hidden");
+      el("noiField").value = (noiCtx && noiCtx.loan.noi != null) ? String(noiCtx.loan.noi) : "";
+      el("noiField").focus(); el("noiField").select();
+    }
+    function noiCommit(){
+      const v = parseFloat((el("noiField").value || "").replace(/[^0-9.\-]/g, ""));
+      if(isNaN(v) || v <= 0){ el("noiErr").classList.remove("hidden"); el("noiField").focus(); return; }
+      noiCtx.loan.noi = v; save();
+      const done = noiCtx.onDone; closeNoi(); if(done) done(v);
+    }
+    function closeNoi(){ const m = el("noiModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } noiCtx = null; }
+
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
@@ -3818,6 +3909,9 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<div><h2 class="text-lg font-bold text-slate-900">Refinance Analysis</h2>'+
             '<p class="text-sm text-slate-500">'+escapeHtml(loanLabel(loan))+' — should you refinance?</p></div>'+
           '<div class="flex gap-2">'+
+            '<button id="refiAdvBtn" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100">'+
+              '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>'+
+              (loan.noi!=null ? "Advanced &#10003;" : "Advanced")+'</button>'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
             '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>'+
           '</div>'+
@@ -3832,6 +3926,7 @@ tr[data-loan]:hover td{background:#eef2f7}
             refiStat("Matures", fmtDateUS(d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
+        (loan.noi!=null ? refiAdvancedHtml(loan) : '')+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
           '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
           '<p class="mb-3 text-[11px] text-slate-400">Pre-filled to match your current loan&rsquo;s rate type and priced at today&rsquo;s market. Pick a term option — every field below stays editable for a real quote. The amount defaults to the payoff; raise it to pull cash out.</p>'+
@@ -3903,6 +3998,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       // tenor + term. See applyRefiOption().
       el("refiCloseBtn").addEventListener("click", closeRefi);
       el("refiSaveBtn").addEventListener("click", () => saveRefiAsLoan(loan));
+      el("refiAdvBtn").addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
+      const noiEditBtn = el("refiNoiEdit");
+      if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
         if(id==="r_baseValue") refiBaseManual = true;
