@@ -2921,7 +2921,14 @@ tr[data-loan]:hover td{background:#eef2f7}
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
-      dom.portfolioView.querySelectorAll('[data-refiadv]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); state.activeId = btn.getAttribute('data-refiadv'); startRefi(true); }));
+      // Advanced from the scan: pop the NOI prompt over the overview FIRST; only
+      // navigate into the loan's refinance view once NOI is entered and approved.
+      dom.portfolioView.querySelectorAll('[data-refiadv]').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const loan = getLoan(btn.getAttribute('data-refiadv')); if(!loan) return;
+        state.activeId = loan._id;
+        openNoiFlow(loan, () => startRefi());
+      }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
       const applyLenderFilter = () => {
@@ -3631,11 +3638,9 @@ tr[data-loan]:hover td{background:#eef2f7}
     /* ================================================================
        11b. REFINANCE CALCULATOR  (verdict: should you refinance?)
        ================================================================ */
-    let refiPendingAdvanced = false;
-    function startRefi(advanced){
+    function startRefi(){
       const loan = getLoan(state.activeId);
       if(!loan){ toast("Select a loan to refinance first", "info"); return; }
-      refiPendingAdvanced = !!advanced;   // jump straight into the advanced flow after render
       state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
     }
     function closeRefi(){ setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty"); }
@@ -4333,8 +4338,6 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("refiAdvBtn").addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
-      // Opened via the scan's "Advanced" button → jump straight into the NOI flow.
-      if(refiPendingAdvanced){ refiPendingAdvanced = false; openNoiFlow(loan, () => renderRefi(loan)); }
       // Advanced analysis prices off the LOWER of the matched Treasury and SOFR, and
       // yield maintenance discounts at the tenor matched to the REMAINING term — make
       // sure all three are live so the panel reflects today, not fallbacks.
