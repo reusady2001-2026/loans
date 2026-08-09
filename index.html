@@ -552,6 +552,37 @@
           <!-- Auto-update chip (desktop app only): shows the version and, when a newer
                release is downloaded, becomes a "Restart to update" button. -->
           <button id="updateChip" type="button" hidden class="inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-ink-500 hover:bg-white press transition"></button>
+
+          <!-- Settings: display scale (25%–300%). Native window zoom on desktop. -->
+          <details id="settingsDD" class="relative">
+            <summary class="list-none [&amp;::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-ink-500 hover:bg-white press transition" title="Settings">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Settings</span>
+            </summary>
+            <div class="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl">
+              <div class="px-1 pb-2 mb-2 border-b border-slate-100">
+                <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Display</span>
+              </div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="scaleRange" class="text-sm font-semibold text-slate-700">App scale</label>
+                <span id="scaleReadout" class="text-sm font-bold text-brand-700 tabular-nums">100%</span>
+              </div>
+              <input id="scaleRange" type="range" min="25" max="300" step="5" value="100" style="accent-color:#7fb62b" class="w-full accent-brand-500 cursor-pointer">
+              <div class="mt-1 flex items-center justify-between text-[10px] font-medium text-slate-400 tabular-nums">
+                <span>25%</span><span>100%</span><span>300%</span>
+              </div>
+              <div id="scalePresets" class="mt-3 grid grid-cols-3 gap-1.5">
+                <button type="button" data-scale="50"  class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">50%</button>
+                <button type="button" data-scale="75"  class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">75%</button>
+                <button type="button" data-scale="100" class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">100%</button>
+                <button type="button" data-scale="125" class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">125%</button>
+                <button type="button" data-scale="150" class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">150%</button>
+                <button type="button" data-scale="200" class="scale-preset rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition">200%</button>
+              </div>
+              <button type="button" id="scaleReset" class="mt-3 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition">Reset to 100%</button>
+              <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Your choice is remembered on this PC.</p>
+            </div>
+          </details>
         </div>
       </div>
     </header>
@@ -559,6 +590,53 @@
     <!-- Header brand mark = the app monogram (same artwork as the desktop icon),
          reusing the base64 already embedded for the launch reveal. -->
     <script>(function(){var b=document.getElementById("brandLogo");if(b&&window.__LDSH_MONO)b.src=window.__LDSH_MONO;})();</script>
+
+    <!-- Display scale (Settings). Drives Chromium's native window zoom on the
+         desktop app (crisp + reflows at any size); falls back to CSS zoom in a
+         plain browser. The chosen scale is remembered per machine. -->
+    <script>(function(){
+      var SCALE_KEY="ldsHub.scale.v1", MIN=25, MAX=300;
+      function clampPct(p){ p=Math.round(parseFloat(p)||100); return Math.max(MIN,Math.min(MAX,p)); }
+      function saved(){ try{ return clampPct(localStorage.getItem(SCALE_KEY)); }catch(e){ return 100; } }
+      var range, readout, presets=[];
+      function paint(pct){
+        if(readout) readout.textContent=pct+"%";
+        if(range && String(range.value)!==String(pct)) range.value=pct;
+        presets.forEach(function(b){
+          var on=parseInt(b.getAttribute("data-scale"),10)===pct;
+          b.classList.toggle("border-brand-500",on);
+          b.classList.toggle("bg-brand-50",on);
+          b.classList.toggle("text-brand-700",on);
+        });
+      }
+      function apply(pct,persist){
+        pct=clampPct(pct);
+        var factor=pct/100;
+        if(window.ldsShell && typeof ldsShell.setZoom==="function"){
+          try{ ldsShell.setZoom(factor); }catch(e){}
+          try{ document.documentElement.style.zoom=""; }catch(e){}   // native handles it; drop any CSS fallback
+        } else {
+          try{ document.documentElement.style.zoom=String(factor); }catch(e){}
+        }
+        if(persist!==false){ try{ localStorage.setItem(SCALE_KEY,String(pct)); }catch(e){} }
+        paint(pct);
+      }
+      function init(){
+        range=document.getElementById("scaleRange");
+        readout=document.getElementById("scaleReadout");
+        presets=Array.prototype.slice.call(document.querySelectorAll("#scalePresets .scale-preset"));
+        var reset=document.getElementById("scaleReset"), dd=document.getElementById("settingsDD");
+        if(range) range.addEventListener("input",function(){ apply(range.value,true); });
+        presets.forEach(function(b){ b.addEventListener("click",function(){ apply(b.getAttribute("data-scale"),true); }); });
+        if(reset) reset.addEventListener("click",function(){ apply(100,true); });
+        // <details> doesn't close on outside-click / Escape by itself
+        document.addEventListener("click",function(e){ if(dd && dd.open && !dd.contains(e.target)) dd.open=false; });
+        document.addEventListener("keydown",function(e){ if(e.key==="Escape" && dd && dd.open) dd.open=false; });
+        paint(saved());
+      }
+      apply(saved(),false);   // apply as early as possible — the launch splash hides any reflow
+      if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();
+    })();</script>
 
     <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
 

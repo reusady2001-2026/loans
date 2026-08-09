@@ -177,6 +177,23 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
+// ---- Display scale (window zoom) --------------------------------------------
+// The Settings panel in the renderer drives the app scale. We use Chromium's
+// native zoom factor so the entire UI scales crisply and reflows at any size,
+// rather than a CSS transform. Range is clamped to 25%–300% (0.25–3.0). The
+// choice itself is remembered by the renderer (localStorage) and re-applied on
+// the next launch.
+const ZOOM_MIN = 0.25, ZOOM_MAX = 3.0;
+function clampZoom(z) { z = Number(z); if (!isFinite(z)) z = 1; return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)); }
+ipcMain.handle('lds:set-zoom', (e, factor) => {
+  const z = clampZoom(factor);
+  try { e.sender.setZoomFactor(z); } catch (err) {}
+  return z;
+});
+ipcMain.handle('lds:get-zoom', (e) => {
+  try { return e.sender.getZoomFactor(); } catch (err) { return 1; }
+});
+
 // ---- Auto-update (electron-updater + GitHub Releases) ------------------------
 // Checks the repo's Releases for a newer version, downloads it in the background,
 // and installs on restart. IMPORTANT: an update only replaces the program files

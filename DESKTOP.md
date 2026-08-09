@@ -30,9 +30,12 @@ npm run build:win-installer  # → release/  : a per-user NSIS installer (no adm
 - The NSIS installer is configured `perMachine: false`, so it installs into the
   user profile without admin.
 
-> Note: building a Windows `.exe` is easiest **on Windows**. To build it without
-> any local toolchain, a GitHub Actions workflow can produce the portable `.exe`
-> as a downloadable artifact — ask and it can be added.
+> Note: building a Windows `.exe` is easiest **on Windows**, but you don't need a
+> local toolchain. The GitHub Actions workflow at
+> `.github/workflows/build-windows.yml` builds the NSIS installer on every push
+> to the release branch, attaches it (plus `latest.yml` and the `.blockmap`) to a
+> GitHub Release, and the running app updates itself from there — no data or
+> backups are touched by an update.
 
 ## Files
 

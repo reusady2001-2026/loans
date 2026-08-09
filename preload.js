@@ -30,6 +30,12 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Save binary data (base64) via a native Save dialog — used for the Excel export.
   saveBinary: (base64, defaultName, ext, label) => ipcRenderer.invoke('lds:file-save-binary', { base64, defaultName, ext, label }),
 
+  // ---- Display scale ----
+  // Set the app's zoom factor (clamped 0.25–3.0 in main); resolves the value applied.
+  setZoom: (factor) => ipcRenderer.invoke('lds:set-zoom', factor),
+  // Current zoom factor of this window.
+  getZoom: () => ipcRenderer.invoke('lds:get-zoom'),
+
   // ---- Auto-update ----
   // Current app version (e.g. "1.6.0").
   getVersion: () => ipcRenderer.invoke('lds:app-version'),
