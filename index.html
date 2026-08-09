@@ -3847,6 +3847,53 @@ tr[data-loan]:hover td{background:#eef2f7}
     function loanValue(loan){ const cr = loanCapRate(loan); return (loan && loan.noi > 0 && cr > 0) ? (loan.noi / cr) : null; }
     function loanLTV(loan){ const v = loanValue(loan), bal = compute(loan).derived.currentBalance; return (v > 0 && bal > 0) ? (bal / v) : null; }
     function pctFieldStr(dec){ return String(+((dec||0) * 100).toFixed(3)); }   // 0.055 -> "5.5"
+
+    // Stage 3 — credit-aware market rate. Tier comes from DSCR AND LTV (the tighter
+    // qualifies). Tier 3+ may price off the LOWER of the matched Treasury and SOFR —
+    // the optionality a strong credit profile earns; base-tier stays on the Treasury.
+    function liveIndexVal(id){ const c = INDEX_CACHE[id], cat = INDEX_BY_ID[id]; return c ? c.value/100 : (cat ? cat.fallback/100 : null); }
+    function loanTier(loan){
+      const dscr = loanDSCR(loan), ltv = loanLTV(loan);
+      if(dscr == null || ltv == null) return null;
+      if(dscr < 1.25)                 return { tier:0, delta:0,       label:"Below 1.25× floor", minIndex:false };
+      if(dscr >= 1.55 && ltv <= 0.55) return { tier:4, delta:-0.004, label:"Tier 4",                minIndex:true  };
+      if(dscr >= 1.35 && ltv <= 0.65) return { tier:3, delta:-0.002, label:"Tier 3",                minIndex:true  };
+      return                                 { tier:2, delta:0,       label:"Tier 2",                minIndex:false };
+    }
+    function creditAwareMarket(loan){
+      const t = loanTier(loan); if(!t) return null;
+      const mp = refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths || loan.amortizationMonths });
+      const spread = Math.max(0.0025, (mp.spread || 0) + t.delta);        // calibrated baseline + tier delta
+      const matchedT = matchedTenorId(loan);
+      const tVal = liveIndexVal(matchedT), sVal = liveIndexVal("sofr");
+      let baseId = matchedT, baseVal = (tVal != null ? tVal : mp.baseValue), floating = false;
+      if(t.minIndex && sVal != null && tVal != null && sVal < tVal){ baseId = "sofr"; baseVal = sVal; floating = true; }
+      return { t: t, spread: spread, baseSpread: (mp.spread || 0), baseId: baseId, baseVal: baseVal, floating: floating, matchedT: matchedT, tVal: tVal, sVal: sVal, rate: baseVal + spread };
+    }
+    function creditAwareSectionHtml(loan){
+      const cam = creditAwareMarket(loan); if(!cam) return '';
+      const cur = compute(loan).derived.currentRate || 0, gap = cur - cam.rate, cand = gap > 0.0025;
+      const baseLbl = (cam.baseId === "sofr") ? "SOFR" : tenorShort(cam.baseId);
+      const tierBadge = cam.t.tier >= 3 ? "bg-emerald-100 text-emerald-700" : cam.t.tier === 2 ? "bg-slate-100 text-slate-600" : "bg-rose-100 text-rose-700";
+      const verdict = cam.t.tier === 0 ? "Coverage below the 1.25× floor — not financeable as sized."
+        : cand ? ("Above market by " + Math.round(gap*10000) + " bps — refi candidate.")
+        : (gap < -0.0025 ? "Already below the credit-aware market — hold." : "At the credit-aware market.");
+      const verdictCls = cam.t.tier === 0 ? "border-rose-300 bg-rose-50 text-rose-900"
+        : cand ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700";
+      return '<div class="mt-4 border-t border-slate-100 pt-4">'+
+        '<div class="mb-2 flex flex-wrap items-center gap-2">'+
+          '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+tierBadge+'">'+cam.t.label+'</span>'+
+          '<span class="text-[11px] text-slate-500">DSCR '+(loanDSCR(loan)||0).toFixed(2)+'× &middot; LTV '+fmtPct(loanLTV(loan))+(cam.floating?' &middot; <span class="font-semibold text-brand-700">SOFR beats Treasury today</span>':'')+'</span>'+
+        '</div>'+
+        '<dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
+          refiStat("Base index", baseLbl+" "+fmtPct(cam.baseVal)+(cam.floating?" (floating)":""))+
+          refiStat("Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):""))+
+          refiStat("Credit-aware market", fmtPct(cam.rate))+
+          refiStat("Your rate", fmtPct(cur))+
+        '</dl>'+
+        '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdictCls+'">'+verdict+'</div>'+
+      '</div>';
+    }
     function refiAdvancedHtml(loan){
       const d = compute(loan).derived, ads = annualDebtService(d);
       const dscr = loanDSCR(loan), val = loanValue(loan), ltv = loanLTV(loan), cr = loanCapRate(loan);
@@ -3865,7 +3912,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           refiStat("DSCR", dscr != null ? dscr.toFixed(2)+"&#215;" : "&mdash;")+
           refiStat("Coverage", dscr == null ? "&mdash;" : (dscrOk ? "clears 1.25&#215; floor" : "below 1.25&#215; floor"))+
         '</dl>'+
-        '<p class="mt-2 text-[11px] text-slate-400">DSCR = NOI &#247; annual level P&amp;I &middot; Value = NOI &#247; cap rate &middot; LTV = balance &#247; value. Coming next: tier&#8209;adjusted market rate (DSCR/LTV &#8594; spread + index), exit costs, break&#8209;even.</p>'+
+        creditAwareSectionHtml(loan)+
+        '<p class="mt-3 text-[11px] text-slate-400">DSCR = NOI &#247; annual level P&amp;I &middot; Value = NOI &#247; cap rate &middot; LTV = balance &#247; value &middot; tier delta from a Fannie&#8209;based DSCR/LTV grid (editable estimate). Coming next: exit costs (prepay penalty) and the break&#8209;even verdict.</p>'+
       '</div>';
     }
 
@@ -4022,6 +4070,12 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("refiAdvBtn").addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
+      // Advanced analysis prices off the LOWER of the matched Treasury and SOFR — make
+      // sure both are live so the credit-aware section reflects today, not fallbacks.
+      if(loan.noi != null){
+        ensureIndexLive("sofr", () => renderRefi(loan));
+        ensureIndexLive(matchedTenorId(loan), () => renderRefi(loan));
+      }
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
         if(id==="r_baseValue") refiBaseManual = true;
