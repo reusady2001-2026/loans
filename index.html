@@ -3894,6 +3894,69 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdictCls+'">'+verdict+'</div>'+
       '</div>';
     }
+    // Stage 4 — exit cost (the penalty to pay the current loan off early). Prepay
+    // type defaults to Yield Maintenance and is flagged "assumed" until confirmed
+    // from the loan docs. YM = present value of the note-vs-reinvestment rate
+    // differential over the remaining term, on the current balance, discounted at
+    // the matched Treasury, floored at a 1% minimum premium. Step-down = % of
+    // balance. Defeasance ≈ YM unless the quoted figure is typed in. A screening
+    // estimate — never the lender's payoff quote.
+    const PREPAY_TYPES = ["Yield Maintenance", "Step-down", "Defeasance", "Open / at par"];
+    function loanPrepayType(loan){ return (loan && PREPAY_TYPES.indexOf(loan.prepayType) >= 0) ? loan.prepayType : "Yield Maintenance"; }
+    function prepayAssumed(loan){ return !(loan && loan.prepayConfirmed); }
+    function ymReinvestTenor(loan){ const d = compute(loan).derived; return matchedTenorId({ rateType:"Fixed", loanTermMonths: Math.max(12, Math.round(d.monthsToMaturity||0)) }); }
+    function yieldMaintenance(loan){
+      const d = compute(loan).derived, bal = d.currentBalance||0, N = Math.max(0, Math.round(d.monthsToMaturity||0));
+      const tId = ymReinvestTenor(loan), tVal = liveIndexVal(tId);
+      if(bal <= 0 || N <= 0) return { cost:0, pv:0, floor:0, tenorId:tId, treasury:tVal, months:N, floored:false };
+      const rn = (d.currentRate||0)/12, rt = (tVal||0)/12, diff = Math.max(0, rn - rt);
+      const pvFactor = rt > 0 ? (1 - Math.pow(1+rt, -N))/rt : N;        // monthly annuity PV factor
+      const pv = diff * bal * pvFactor, floor = 0.01 * bal, cost = Math.max(pv, floor);
+      return { cost:cost, pv:pv, floor:floor, tenorId:tId, treasury:tVal, months:N, floored: pv < floor };
+    }
+    function loanStepPct(loan){ return (loan && loan.stepDownPct != null && loan.stepDownPct >= 0) ? loan.stepDownPct : 0.01; }
+    function stepDownCost(loan){ const d = compute(loan).derived; return loanStepPct(loan) * (d.currentBalance||0); }
+    function defeasanceCost(loan){ const typed = (loan && loan.defeasanceCost != null && loan.defeasanceCost >= 0) ? loan.defeasanceCost : null; return { cost: (typed != null ? typed : yieldMaintenance(loan).cost), typed: typed != null }; }
+    function exitCost(loan){
+      const type = loanPrepayType(loan), d = compute(loan).derived, bal = d.currentBalance||0;
+      if(type === "Open / at par") return { type:type, cost:0, pct:0 };
+      if(type === "Step-down")     { const c = stepDownCost(loan);   return { type:type, cost:c,      pct: bal>0 ? c/bal : 0 }; }
+      if(type === "Defeasance")    { const f = defeasanceCost(loan); return { type:type, cost:f.cost, pct: bal>0 ? f.cost/bal : 0, typed:f.typed }; }
+      const y = yieldMaintenance(loan);                              return { type:"Yield Maintenance", cost:y.cost, pct: bal>0 ? y.cost/bal : 0, ym:y };
+    }
+    function exitCostSectionHtml(loan){
+      const d = compute(loan).derived, bal = d.currentBalance||0, ec = exitCost(loan), type = ec.type, assumed = prepayAssumed(loan);
+      const opts = PREPAY_TYPES.map(t => '<option value="'+t+'"'+(t===type?' selected':'')+'>'+t+'</option>').join('');
+      let typeInput = '';
+      if(type === "Step-down"){
+        typeInput = '<label class="flex items-center gap-1.5 text-[11px] text-slate-500">This year&rsquo;s step-down'+
+          '<input id="refiStepPct" type="number" step="0.25" min="0" value="'+String(+(loanStepPct(loan)*100).toFixed(3))+'" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm text-right tabular-nums">%</label>';
+      } else if(type === "Defeasance"){
+        const proxy = yieldMaintenance(loan).cost;
+        typeInput = '<label class="flex items-center gap-1.5 text-[11px] text-slate-500">Quoted figure'+
+          '<input id="refiDefeasance" type="text" inputmode="numeric" placeholder="&#8776; '+fmtMoney(proxy)+'" value="'+(loan.defeasanceCost!=null?Math.round(loan.defeasanceCost):'')+'" class="w-32 rounded-md border border-slate-300 px-2 py-1 text-sm text-right tabular-nums"></label>';
+      }
+      const basis = type === "Yield Maintenance" ? ("PV vs "+tenorShort(ec.ym.tenorId)+" "+fmtPct(ec.ym.treasury)+" &middot; "+ec.ym.months+" mo"+(ec.ym.floored?" &middot; at 1% floor":""))
+        : type === "Step-down"  ? (fmtPct(ec.pct)+" of balance")
+        : type === "Defeasance" ? (ec.typed ? "quoted from loan docs" : "&#8776; yield-maintenance proxy")
+        : "open &mdash; no penalty";
+      const assumedBadge = assumed ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">assumed</span>' : '';
+      return '<div class="mt-4 border-t border-slate-100 pt-4">'+
+        '<div class="mb-2 flex flex-wrap items-center gap-2">'+
+          '<h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Exit cost (prepay penalty)</h4>'+assumedBadge+
+        '</div>'+
+        '<div class="flex flex-wrap items-center gap-3">'+
+          '<select id="refiPrepayType" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">'+opts+'</select>'+
+          typeInput+
+        '</div>'+
+        '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">'+
+          refiStat("Prepay basis", basis)+
+          refiStat("Exit cost", fmtMoney(ec.cost))+
+          refiStat("As % of balance", bal>0 ? fmtPct(ec.cost/bal) : "&mdash;")+
+        '</dl>'+
+        '<p class="mt-2 text-[11px] text-slate-400">Estimate for screening &mdash; confirm the payoff figure from the loan documents.'+(assumed?' Defaults to yield maintenance; pick the actual type to confirm.':'')+'</p>'+
+      '</div>';
+    }
     function refiAdvancedHtml(loan){
       const d = compute(loan).derived, ads = annualDebtService(d);
       const dscr = loanDSCR(loan), val = loanValue(loan), ltv = loanLTV(loan), cr = loanCapRate(loan);
@@ -3913,7 +3976,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           refiStat("Coverage", dscr == null ? "&mdash;" : (dscrOk ? "clears 1.25&#215; floor" : "below 1.25&#215; floor"))+
         '</dl>'+
         creditAwareSectionHtml(loan)+
-        '<p class="mt-3 text-[11px] text-slate-400">DSCR = NOI &#247; annual level P&amp;I &middot; Value = NOI &#247; cap rate &middot; LTV = balance &#247; value &middot; tier delta from a Fannie&#8209;based DSCR/LTV grid (editable estimate). Coming next: exit costs (prepay penalty) and the break&#8209;even verdict.</p>'+
+        exitCostSectionHtml(loan)+
+        '<p class="mt-3 text-[11px] text-slate-400">DSCR = NOI &#247; annual level P&amp;I &middot; Value = NOI &#247; cap rate &middot; LTV = balance &#247; value &middot; tier delta from a Fannie&#8209;based DSCR/LTV grid &middot; exit cost is a screening estimate. Coming next: the break&#8209;even verdict (rate savings vs. exit + closing &#8594; payback).</p>'+
       '</div>';
     }
 
@@ -4070,11 +4134,19 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("refiAdvBtn").addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
-      // Advanced analysis prices off the LOWER of the matched Treasury and SOFR — make
-      // sure both are live so the credit-aware section reflects today, not fallbacks.
+      // Advanced analysis prices off the LOWER of the matched Treasury and SOFR, and
+      // yield maintenance discounts at the tenor matched to the REMAINING term — make
+      // sure all three are live so the panel reflects today, not fallbacks.
       if(loan.noi != null){
         ensureIndexLive("sofr", () => renderRefi(loan));
         ensureIndexLive(matchedTenorId(loan), () => renderRefi(loan));
+        ensureIndexLive(ymReinvestTenor(loan), () => renderRefi(loan));
+        const ptSel = el("refiPrepayType");
+        if(ptSel) ptSel.addEventListener("change", () => { loan.prepayType = ptSel.value; loan.prepayConfirmed = true; save(); renderRefi(loan); });
+        const stepIn = el("refiStepPct");
+        if(stepIn) stepIn.addEventListener("change", () => { const v = parseFloat(stepIn.value); if(!isNaN(v) && v >= 0) loan.stepDownPct = v/100; loan.prepayConfirmed = true; save(); renderRefi(loan); });
+        const defIn = el("refiDefeasance");
+        if(defIn) defIn.addEventListener("change", () => { const raw = (defIn.value||"").replace(/[^0-9.]/g,""); const v = parseFloat(raw); loan.defeasanceCost = (raw === "" ? null : (!isNaN(v) && v >= 0 ? v : loan.defeasanceCost)); loan.prepayConfirmed = true; save(); renderRefi(loan); });
       }
       const onForm = (e) => {
         const id = e && e.target && e.target.id;
