@@ -50,6 +50,7 @@ function createWindow() {
     backgroundColor: '#f1f5f9',
     title: 'Loan Debt Service Hub',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',   // the app draws its own title bar (top strip + window controls)
     webPreferences: {
       // The renderer only needs the DOM + fetch; keep Node out of it for safety.
       // The preload adds a tiny window.ldsShell bridge (raise-to-front only).
@@ -62,6 +63,11 @@ function createWindow() {
 
   mainWindow = win;
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  // Keep the custom title bar's maximize/restore icon in sync when the state
+  // changes without a button click (double-click the bar, aero-snap, etc.).
+  const sendWinState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e) {} };
+  win.on('maximize', sendWinState);
+  win.on('unmaximize', sendWinState);
 
   win.loadFile(path.join(__dirname, 'index.html'));
 
@@ -89,6 +95,12 @@ function createWindow() {
 ipcMain.on('lds:focus-main', (e) => {
   bringToFront(BrowserWindow.fromWebContents(e.sender));
 });
+
+// Custom title-bar window controls (the native caption buttons are hidden).
+ipcMain.on('lds:win-minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.minimize(); });
+ipcMain.on('lds:win-maximize-toggle', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) { w.isMaximized() ? w.unmaximize() : w.maximize(); } });
+ipcMain.on('lds:win-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
+ipcMain.handle('lds:win-is-maximized', (e) => { const w = BrowserWindow.fromWebContents(e.sender); return !!(w && w.isMaximized()); });
 
 // Manual backup — native Save dialog, writes wherever the user chooses.
 ipcMain.handle('lds:backup-save', async (e, { json, defaultName }) => {
@@ -183,7 +195,7 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
 // rather than a CSS transform. Range is clamped to 25%–300% (0.25–3.0). The
 // choice itself is remembered by the renderer (localStorage) and re-applied on
 // the next launch.
-const ZOOM_MIN = 0.25, ZOOM_MAX = 3.0;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 2.0;
 function clampZoom(z) { z = Number(z); if (!isFinite(z)) z = 1; return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)); }
 ipcMain.handle('lds:set-zoom', (e, factor) => {
   const z = clampZoom(factor);

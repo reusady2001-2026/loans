@@ -31,10 +31,21 @@ contextBridge.exposeInMainWorld('ldsShell', {
   saveBinary: (base64, defaultName, ext, label) => ipcRenderer.invoke('lds:file-save-binary', { base64, defaultName, ext, label }),
 
   // ---- Display scale ----
-  // Set the app's zoom factor (clamped 0.25–3.0 in main); resolves the value applied.
+  // Set the app's zoom factor (clamped 0.5–2.0 in main); resolves the value applied.
   setZoom: (factor) => ipcRenderer.invoke('lds:set-zoom', factor),
   // Current zoom factor of this window.
   getZoom: () => ipcRenderer.invoke('lds:get-zoom'),
+
+  // ---- Window controls (custom title bar draws its own min / max / close) ----
+  winMinimize: () => ipcRenderer.send('lds:win-minimize'),
+  winMaximizeToggle: () => ipcRenderer.send('lds:win-maximize-toggle'),
+  winClose: () => ipcRenderer.send('lds:win-close'),
+  winIsMaximized: () => ipcRenderer.invoke('lds:win-is-maximized'),
+  onWinState: (cb) => {
+    const fn = (_e, payload) => { try { cb(payload); } catch (e) {} };
+    ipcRenderer.on('lds:win-state', fn);
+    return () => { try { ipcRenderer.removeListener('lds:win-state', fn); } catch (e) {} };
+  },
 
   // ---- Auto-update ----
   // Current app version (e.g. "1.6.0").
