@@ -3638,11 +3638,9 @@ tr[data-loan]:hover td{background:#eef2f7}
     /* ================================================================
        11b. REFINANCE CALCULATOR  (verdict: should you refinance?)
        ================================================================ */
-    let refiViewMode = "advanced";   // "advanced" | "calc" — which analysis a NOI'd loan shows
     function startRefi(){
       const loan = getLoan(state.activeId);
       if(!loan){ toast("Select a loan to refinance first", "info"); return; }
-      refiViewMode = "advanced";     // open on the advanced analysis (falls back to the calculator if no NOI)
       state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
     }
     function closeRefi(){ setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty"); }
@@ -4056,6 +4054,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       return principal*r/(1 - Math.pow(1+r, -nMonths));
     }
     function loanClosingPct(loan){ return (loan && loan.refiClosingPct != null && loan.refiClosingPct >= 0) ? loan.refiClosingPct : 0.01; }   // ~1% all-in default
+    // Is the current loan interest-only right now? (Its actual payment is interest
+    // only, so a refinance that amortizes can cost MORE even at a lower rate.)
+    function loanIsIONow(loan){ const c = compute(loan), i = c.derived.paymentsMade||0, row = c.rows[i] || c.rows[c.rows.length-1]; return !!(row && row.type === "io"); }
     // The refinance is a NEW loan with its OWN term — the savings run over that term,
     // not the few months left on the old loan. Default the new term to the tenor the
     // rate is priced off (editable per loan); a fresh 30-yr amortization is standard.
@@ -4105,6 +4106,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           refiStat("Net over "+be.termMonths+" mo", '<span class="'+netCls+'">'+(be.netBenefit>=0?"":"&minus;")+fmtMoney(Math.abs(be.netBenefit))+'</span>')+
         '</dl>'+
         '<p class="mt-2 text-[11px] text-slate-400">New loan re-amortized over '+Math.round(be.newAmort/12)+' yr; savings measured over the '+termYrs+'-yr term you&rsquo;d hold it &mdash; not the old loan&rsquo;s '+remMo+' mo remaining. Payback = (exit + closing) &#247; monthly saving.</p>'+
+        (loanIsIONow(loan) ? '<p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">Your loan is <strong>interest-only</strong> right now, so its actual payment is interest only. The refinance <strong>amortizes</strong> (it pays down principal), so the new payment can be higher even at a lower rate &mdash; the extra is principal, not cost. The saving above is like-for-like: both figures are fully amortizing.</p>' : '')+
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdict.cls+'">'+verdict.txt+'</div>'+
       '</div>';
     }
@@ -4240,9 +4242,10 @@ tr[data-loan]:hover td{background:#eef2f7}
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
-      // Advanced view REPLACES the regular calculator (not shown below it). Only a
-      // loan with NOI can show it; the mode toggle lets you flip to the calculator.
-      const showAdvanced = (loan.noi != null && refiViewMode === "advanced");
+      // Advanced analysis and the calculator live together on one page. When NOI is
+      // set, the advanced analysis is the single verdict and the calculator's own
+      // result cards are suppressed (below) so there aren't two competing analyses.
+      const showAdvanced = (loan.noi != null);
       refiTermOption = 1;                       // each loan opens on Option 1 (same term)
       const opts = refiTermOptions(loan);
       const optBtn = (n) => '<button type="button" data-refiopt="'+n+'" class="'+refiOptBtnClass(n===1)+'">'+
@@ -4262,15 +4265,11 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<div><h2 class="text-lg font-bold text-slate-900">Refinance Analysis</h2>'+
             '<p class="text-sm text-slate-500">'+escapeHtml(loanLabel(loan))+' — should you refinance?</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
-            (loan.noi != null
-              ? ('<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
-                   '<button id="refiModeAdv" type="button" class="px-3 py-2 '+(showAdvanced?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">Advanced</button>'+
-                   '<button id="refiModeCalc" type="button" class="px-3 py-2 border-l border-brand-300 '+(!showAdvanced?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">Calculator</button>'+
-                 '</div>')
-              : ('<button id="refiAdvBtn" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100">'+
-                   '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Advanced</button>'))+
+            '<button id="refiAdvBtn" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100">'+
+              '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>'+
+              (loan.noi!=null ? "Advanced &#10003;" : "Advanced")+'</button>'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
-            (showAdvanced ? '' : '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>')+
+            '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as new loan</button>'+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -4283,9 +4282,10 @@ tr[data-loan]:hover td{background:#eef2f7}
             refiStat("Matures", fmtDateUS(d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
-        (showAdvanced ? refiAdvancedHtml(loan) : (
+        (showAdvanced ? refiAdvancedHtml(loan) : '')+
+        (
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
-          '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
+          '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan'+(showAdvanced?' <span class="ml-1 font-medium normal-case text-slate-400">— build a specific quote; the verdict is the Advanced analysis above</span>':'')+'</h3>'+
           '<p class="mb-3 text-[11px] text-slate-400">Pre-filled to match your current loan&rsquo;s rate type and priced at today&rsquo;s market. Pick a term option — every field below stays editable for a real quote. The amount defaults to the payoff; raise it to pull cash out.</p>'+
           '<div class="mb-4"><p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700">New loan term</p>'+
             '<div id="refiTermToggle" class="flex flex-wrap gap-2">'+optBtn(1)+optBtn(2)+'</div>'+
@@ -4323,7 +4323,7 @@ tr[data-loan]:hover td{background:#eef2f7}
             '</fieldset>'+
           '</div>'+
         '</div>'+
-        '<div id="refiResults"></div>'+
+        (showAdvanced ? '' : '<div id="refiResults"></div>')+
         '<div id="refiScheduleWrap" class="boxline mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hidden">'+
           '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">'+
             '<div><h3 class="text-base font-bold text-slate-900">Proposed Loan — Amortization Schedule</h3>'+
@@ -4348,7 +4348,7 @@ tr[data-loan]:hover td{background:#eef2f7}
               '<tbody id="refiScheduleBody" class="divide-y divide-slate-100 text-slate-700 tabular-nums"></tbody>'+
             '</table>'+
           '</div>'+
-        '</div>'));
+        '</div>');
 
       // The proposed loan is populated by the active term option (below), which follows
       // the current loan's rate type and prices it at today's market for that option's
@@ -4358,9 +4358,6 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(saveBtn) saveBtn.addEventListener("click", () => saveRefiAsLoan(loan));
       const advBtn = el("refiAdvBtn");
       if(advBtn) advBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
-      const modeAdv = el("refiModeAdv"), modeCalc = el("refiModeCalc");
-      if(modeAdv)  modeAdv.addEventListener("click",  () => { refiViewMode = "advanced"; renderRefi(loan); });
-      if(modeCalc) modeCalc.addEventListener("click", () => { refiViewMode = "calc";     renderRefi(loan); });
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => renderRefi(loan)));
 
@@ -4387,27 +4384,27 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(stackSel) stackSel.addEventListener("change", () => { loan.stackWith = stackSel.value || null; save(); renderRefi(loan); });
         const mzIn = el("refiMezzSpread");
         if(mzIn) mzIn.addEventListener("change", () => { const v = parseFloat(mzIn.value); if(!isNaN(v) && v >= 0) loan.mezzSpread = v/10000; save(); renderRefi(loan); });
-      } else {
-        // Regular calculator wiring (only present when the calculator is shown).
-        const onForm = (e) => {
-          const id = e && e.target && e.target.id;
-          if(id==="r_baseValue") refiBaseManual = true;
-          if(id==="r_spread")    refiSpreadManual = true;
-          if(id==="r_baseTenor")  refiBaseManual = false;   // new tenor → refresh its live base value
-          if(id==="r_hold")       refiHoldManual = true;    // operator set their own horizon
-          if(id==="rf_loanTermMonths" && !refiHoldManual){  // hold tracks the new loan term until overridden
-            const t = parseInt((el("rf_loanTermMonths")||{}).value, 10);
-            if(!isNaN(t) && el("r_hold")) el("r_hold").value = t;
-          }
-          applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan);
-        };
-        el("refiForm").addEventListener("input", onForm);
-        el("refiForm").addEventListener("change", onForm);
-        const tt = el("refiTermToggle");
-        if(tt) tt.addEventListener("click", (e) => { const b = e.target.closest("[data-refiopt]"); if(b) applyRefiOption(loan, Number(b.getAttribute("data-refiopt"))); });
-        injectIndexFetch(el("refiForm"), "rf_", "rfFetchIndexBtn");
-        applyRefiOption(loan, 1);   // populate + price the default option (same term), then recompute
       }
+      // Calculator wiring — always present (the calculator sits with the advanced
+      // analysis on the same page; under advanced its verdict cards are suppressed).
+      const onForm = (e) => {
+        const id = e && e.target && e.target.id;
+        if(id==="r_baseValue") refiBaseManual = true;
+        if(id==="r_spread")    refiSpreadManual = true;
+        if(id==="r_baseTenor")  refiBaseManual = false;   // new tenor → refresh its live base value
+        if(id==="r_hold")       refiHoldManual = true;    // operator set their own horizon
+        if(id==="rf_loanTermMonths" && !refiHoldManual){  // hold tracks the new loan term until overridden
+          const t = parseInt((el("rf_loanTermMonths")||{}).value, 10);
+          if(!isNaN(t) && el("r_hold")) el("r_hold").value = t;
+        }
+        applyVisibility(el("refiForm"), "rf_"); recomputeRefi(loan);
+      };
+      el("refiForm").addEventListener("input", onForm);
+      el("refiForm").addEventListener("change", onForm);
+      const tt = el("refiTermToggle");
+      if(tt) tt.addEventListener("click", (e) => { const b = e.target.closest("[data-refiopt]"); if(b) applyRefiOption(loan, Number(b.getAttribute("data-refiopt"))); });
+      injectIndexFetch(el("refiForm"), "rf_", "rfFetchIndexBtn");
+      applyRefiOption(loan, 1);   // populate + price the default option (same term), then recompute
     }
 
     function recomputeRefi(loan){
@@ -4482,7 +4479,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       // Footnote — not the verdict. Extra interest is larger only because the loan is larger.
       cards.push(refiCard("Extra interest, "+r.hold+" mo", fmtMoney(r.newHoldInterest - r.curHoldInterest),
         "just because the loan is bigger — not a loss"));
-      el("refiResults").innerHTML =
+      if(el("refiResults")) el("refiResults").innerHTML =
         '<div class="mt-2 rounded-2xl border-2 '+toneCls+' p-5">'+
           '<div class="flex items-center gap-3">'+
             '<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/70 text-xl font-black">'+icon+'</span>'+
