@@ -813,7 +813,7 @@
               Read-only
             </span>
           </div>
-          <div id="profileBody" class="p-5 grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-6"></div>
+          <div id="profileBody" class="p-5 [&>section:last-child]:mb-0"></div>
         </div>
 
         <!-- Schedule -->
@@ -1850,30 +1850,38 @@
 
     function renderProfile(loan, result){
       const computedVals = result.derived;
-      let html = "";
+      const rowHtml = (f, bordered) => {
+        let v = (f.kind === "computed") ? computedVals[f.key] : loan[f.key];
+        // Show the live/effective index level when no manual override is stored.
+        if(f.key==="armAssumedIndex" && (v==null||v==="") && (loan.rateType==="Floating"||loan.rateType==="Hybrid ARM")) v = indexLevel(loan);
+        const disp = displayValue(f.type, v), isComputed = f.kind === "computed";
+        return '<div class="flex items-baseline justify-between gap-3 py-1.5'+(bordered?" border-b border-slate-200/60":"")+'">'+
+          '<dt class="text-sm text-slate-500">'+escapeHtml(f.label)+
+            (isComputed ? ' <span class="ml-1 rounded bg-brand-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-700 align-middle">calc</span>' : '')+
+          '</dt>'+
+          '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-300":"text-slate-900")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
+        '</div>';
+      };
+      // Each section is a self-contained panel. The four input sections tile as
+      // balanced columns (break-inside-avoid keeps a panel whole); the computed
+      // Debt Service is a full-width results band so nothing leaves ragged space.
+      const panel = (sec, inner, computed) =>
+        '<section class="break-inside-avoid mb-5 rounded-xl border '+(computed?"border-brand-200 bg-brand-50/40":"border-slate-200 bg-slate-50/50")+' px-4 py-3.5">'+
+          '<h3 class="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider '+(computed?"text-brand-700":"text-slate-700")+'">'+
+            '<span class="h-3 w-1 rounded-full '+(computed?"bg-brand-500":"bg-slate-300")+'"></span>'+escapeHtml(sec)+'</h3>'+inner+'</section>';
+      let colHtml = "", debtHtml = "";
       SECTIONS.forEach(sec => {
         const fieldsInSec = FIELDS.filter(f => f.sec === sec && (!f.cond || f.cond(loan)));
-        const rows = fieldsInSec.map(f => {
-          let v;
-          if(f.kind === "computed") v = computedVals[f.key];
-          else v = loan[f.key];
-          // Show the live/effective index level when no manual override is stored.
-          if(f.key==="armAssumedIndex" && (v==null||v==="") && (loan.rateType==="Floating"||loan.rateType==="Hybrid ARM")) v = indexLevel(loan);
-          const disp = displayValue(f.type, v);
-          const isComputed = f.kind === "computed";
-          return '<div class="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1.5">'+
-            '<dt class="text-sm text-slate-500">'+escapeHtml(f.label)+
-              (isComputed ? ' <span class="ml-1 rounded bg-brand-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-700 align-middle">calc</span>' : '')+
-            '</dt>'+
-            '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-300":"text-slate-900")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
-          '</div>';
-        }).join("");
-        const accent = sec==="Debt Service (Computed)" ? "text-brand-700" : "text-slate-700";
-        html += '<div class="break-inside-avoid">'+
-          '<h3 class="mb-2 text-xs font-bold uppercase tracking-wider '+accent+'">'+escapeHtml(sec)+'</h3>'+
-          '<dl>'+rows+'</dl></div>';
+        if(!fieldsInSec.length) return;
+        const computed = sec==="Debt Service (Computed)";
+        if(computed){
+          debtHtml = panel(sec, '<dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8">'+fieldsInSec.map(f=>rowHtml(f,true)).join("")+'</dl>', true);
+        } else {
+          colHtml += panel(sec, '<dl class="divide-y divide-slate-200/70">'+fieldsInSec.map(f=>rowHtml(f,false)).join("")+'</dl>', false);
+        }
       });
-      dom.profileBody.innerHTML = html;
+      dom.profileBody.innerHTML =
+        '<div class="columns-1 xl:columns-2 xl:gap-x-6 [&>section:last-child]:mb-0">'+colHtml+'</div>'+ debtHtml;
     }
 
     // Render schedule rows to <tr> HTML. nowIndex marks the current payment row
@@ -4063,24 +4071,43 @@ tr[data-loan]:hover td{background:#eef2f7}
     function tenorTermMonths(id){ return ({ ust3y:36, ust5y:60, ust7y:84, ust10y:120, ust20y:240, sofr:120 })[id] || 120; }
     function defaultRefiTermMonths(loan){ return isMezz(loan) ? 36 : tenorTermMonths(matchedTenorId(loan)); }
     function loanRefiTermMonths(loan){ return (loan && loan.refiTermMonths > 0) ? loan.refiTermMonths : defaultRefiTermMonths(loan); }
+    // The refinanced loan can be interest-only or amortizing. Default to MATCH the
+    // current loan: an interest-only loan compares like-for-like against a new
+    // interest-only loan (so a lower rate simply lowers the interest payment);
+    // switch to Amortizing to model a principal-paying refinance.
+    function newLoanIsIO(loan){ return (loan && loan.refiIO != null) ? !!loan.refiIO : loanIsIONow(loan); }
     function breakEven(loan){
       const cam = creditAwareMarket(loan); if(!cam) return null;
-      const d = compute(loan).derived, bal = d.currentBalance||0;
+      const d = compute(loan).derived, bal = d.currentBalance||0, cr = d.currentRate||0;
       const newAmort = loan.amortizationMonths || 360;             // a refinance re-amortizes fresh (30-yr standard)
-      const oldPI = pmtLevel(d.currentRate||0, newAmort, bal);     // current rate, same balance & amort — isolates the rate
-      const newPI = pmtLevel(cam.rate, newAmort, bal);             // the credit-aware market rate
+      const io = newLoanIsIO(loan);
+      let oldPI, newPI;
+      if(io){
+        // Interest-only both sides — same balance & day-count, so the payment scales
+        // with the rate. Anchor on the actual current payment when it's interest-only.
+        oldPI = loanIsIONow(loan) ? (d.monthlyPI || bal*cr/12) : (bal*cr/12);
+        newPI = (cr > 0) ? oldPI * (cam.rate / cr) : bal*cam.rate/12;
+      } else {
+        oldPI = pmtLevel(cr, newAmort, bal);                       // current rate, same balance & amort — isolates the rate
+        newPI = pmtLevel(cam.rate, newAmort, bal);                 // the credit-aware market rate
+      }
       const monthlySavings = oldPI - newPI;
       const exit = exitCost(loan).cost, closing = loanClosingPct(loan)*bal, execCost = exit + closing;
       const termMonths = loanRefiTermMonths(loan);                 // the NEW loan's term — savings accrue over IT
       const payback = monthlySavings > 0 ? execCost/monthlySavings : Infinity;
       const netBenefit = monthlySavings*termMonths - execCost;
       const worth = monthlySavings > 0 && payback <= termMonths && netBenefit > 0;
-      return { cam:cam, oldPI:oldPI, newPI:newPI, monthlySavings:monthlySavings, exit:exit, closing:closing, execCost:execCost, termMonths:termMonths, newAmort:newAmort, payback:payback, netBenefit:netBenefit, worth:worth, bal:bal };
+      return { cam:cam, oldPI:oldPI, newPI:newPI, monthlySavings:monthlySavings, exit:exit, closing:closing, execCost:execCost, termMonths:termMonths, newAmort:newAmort, payback:payback, netBenefit:netBenefit, worth:worth, bal:bal, io:io };
     }
     function breakEvenSectionHtml(loan){
       const be = breakEven(loan); if(!be || be.cam.t.tier === 0) return '';    // below the floor: no meaningful break-even
-      const termYrs = +(be.termMonths/12).toFixed(2), remMo = compute(loan).derived.monthsToMaturity||0;
-      const inputs =
+      const termYrs = +(be.termMonths/12).toFixed(2), remMo = compute(loan).derived.monthsToMaturity||0, io = be.io, curIONow = loanIsIONow(loan);
+      const ioToggle =
+        '<div class="inline-flex overflow-hidden rounded-lg border border-slate-300 text-[11px] font-semibold">'+
+          '<button id="refiIOon" type="button" class="px-2.5 py-1 '+(io?"bg-brand-600 text-white":"bg-white text-slate-600 hover:bg-slate-50")+'">Interest-only</button>'+
+          '<button id="refiIOoff" type="button" class="px-2.5 py-1 border-l border-slate-300 '+(!io?"bg-brand-600 text-white":"bg-white text-slate-600 hover:bg-slate-50")+'">Amortizing</button>'+
+        '</div>';
+      const inputs = ioToggle+
         '<label class="flex items-center gap-1.5 text-[11px] text-slate-500">New loan term'+
           '<input id="refiTermYrs" type="number" step="1" min="1" value="'+termYrs+'" class="w-16 rounded-md border border-slate-300 px-2 py-1 text-sm text-right tabular-nums">yrs</label>'+
         '<label class="flex items-center gap-1.5 text-[11px] text-slate-500">Est. closing'+
@@ -4099,14 +4126,16 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="flex flex-wrap items-center gap-3">'+inputs+'</div>'+
         '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("Monthly saving", (be.monthlySavings>=0?"":"&minus;")+fmtMoney(Math.abs(be.monthlySavings)))+
-          refiStat("New level P&amp;I", fmtMoney(be.newPI))+
-          refiStat("Current level P&amp;I", fmtMoney(be.oldPI))+
+          refiStat("New "+(io?"interest-only":"level")+" P&amp;I", fmtMoney(be.newPI))+
+          refiStat("Current "+(io?"interest-only":"level")+" P&amp;I", fmtMoney(be.oldPI))+
           refiStat("Exit + closing", fmtMoney(be.execCost))+
           refiStat("Payback", isFinite(be.payback) ? Math.round(be.payback)+" mo" : "&mdash;")+
           refiStat("Net over "+be.termMonths+" mo", '<span class="'+netCls+'">'+(be.netBenefit>=0?"":"&minus;")+fmtMoney(Math.abs(be.netBenefit))+'</span>')+
         '</dl>'+
-        '<p class="mt-2 text-[11px] text-slate-400">New loan re-amortized over '+Math.round(be.newAmort/12)+' yr; savings measured over the '+termYrs+'-yr term you&rsquo;d hold it &mdash; not the old loan&rsquo;s '+remMo+' mo remaining. Payback = (exit + closing) &#247; monthly saving.</p>'+
-        (loanIsIONow(loan) ? '<p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">Your loan is <strong>interest-only</strong> right now, so its actual payment is interest only. The refinance <strong>amortizes</strong> (it pays down principal), so the new payment can be higher even at a lower rate &mdash; the extra is principal, not cost. The saving above is like-for-like: both figures are fully amortizing.</p>' : '')+
+        '<p class="mt-2 text-[11px] text-slate-400">'+(io
+          ? 'Both loans interest-only (no principal either way), so the lower rate directly lowers the payment. Savings measured over the '+termYrs+'-yr term.'
+          : 'New loan re-amortized over '+Math.round(be.newAmort/12)+' yr; savings measured over the '+termYrs+'-yr term you&rsquo;d hold it &mdash; not the old loan&rsquo;s '+remMo+' mo remaining.')+' Payback = (exit + closing) &#247; monthly saving.</p>'+
+        (curIONow && !io ? '<p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">Heads up: your loan is <strong>interest-only</strong> now, but you&rsquo;re modelling an <strong>amortizing</strong> refinance &mdash; so the new payment is higher because it repays principal (that&rsquo;s equity, not cost). Switch to <strong>Interest-only</strong> above to compare like-for-like.</p>' : '')+
         '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdict.cls+'">'+verdict.txt+'</div>'+
       '</div>';
     }
@@ -4378,6 +4407,9 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(clsIn) clsIn.addEventListener("change", () => { const v = parseFloat(clsIn.value); if(!isNaN(v) && v >= 0) loan.refiClosingPct = v/100; save(); renderRefi(loan); });
         const termIn = el("refiTermYrs");
         if(termIn) termIn.addEventListener("change", () => { const v = parseFloat(termIn.value); if(!isNaN(v) && v > 0) loan.refiTermMonths = Math.round(v*12); save(); renderRefi(loan); });
+        const ioOn = el("refiIOon"), ioOff = el("refiIOoff");
+        if(ioOn)  ioOn.addEventListener("click",  () => { loan.refiIO = true;  save(); renderRefi(loan); });
+        if(ioOff) ioOff.addEventListener("click", () => { loan.refiIO = false; save(); renderRefi(loan); });
         const capIn = el("refiCapPct");
         if(capIn) capIn.addEventListener("change", () => { const v = parseFloat(capIn.value); if(!isNaN(v) && v >= 0) loan.sofrCapPct = v/10000; save(); renderRefi(loan); });
         const stackSel = el("refiStackWith");
@@ -4699,7 +4731,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       { sel:'#loanView tbody tr',        step:28,  max:22 },
       { sel:'#portfolioView tbody tr',   step:28,  max:22 },
       { sel:'#refiView tbody tr',        step:28,  max:22 },
-      { sel:'#profileBody > div',        step:35,  max:16 },
+      { sel:'#profileBody section',      step:35,  max:16 },
       { sel:'#portfolioView .flex.flex-wrap > span', step:45, max:10 },
       { sel:'main > section:not(#loanView):not(#portfolioView)', step:0, max:1 },
       { sel:'#portfolioView > div.boxline, #loanView > div.boxline', step:60, max:6 }
