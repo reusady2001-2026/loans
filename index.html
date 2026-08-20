@@ -1097,6 +1097,7 @@
       { sec:"Loan Terms", key:"maturityDate",        label:"Maturity Date",                type:"date",   kind:"input", hint:"from the loan docs — the schedule is anchored to this (first payment = maturity − term)", aliases:["Maturity"] },
       { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
+      { sec:"Loan Terms", key:"amortMethod",        label:"Interest Accrual / Day-Count", type:"select", kind:"input", options:["Actual/360","30/360"], hint:"per the loan docs: Actual/360 = interest varies with the days in each month; 30/360 = flat monthly. The level payment amortizes 30/360 over the amortization term, which starts AFTER any interest-only period.", aliases:["Interest Accrual Method","Day-Count","Accrual Method","Amortization Method"] },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
@@ -1517,31 +1518,27 @@
       return freq > 0 && ((m - initFixed) % freq === 0);
     }
 
-    // Binary-search the level payment that amortizes `balance` to $0 over the
-    // REMAINING amortization months (from month index startM to the end of the
-    // amortization term) at `rate`, on the Actual/360 calendar. Interest-only
-    // months at the very start of the loan are excluded from amortizing.
+    // The level P&I is a standard amortizing payment: `balance` amortized on a
+    // 30/360 basis (annual rate ÷ 12) over the amortization term. Two things the
+    // engine used to get wrong and now gets right:
+    //   1. The amortization term is `amortizationMonths` of AMORTIZING months and
+    //      BEGINS when principal repayment begins — i.e. AFTER any interest-only
+    //      period; it does NOT overlap the IO months. (The old solver amortized the
+    //      balance over amortizationMonths − ioMonths, oversizing the P&I — and thus
+    //      the principal component — on every interest-only loan.)
+    //   2. The payment is a fixed 30/360 annuity; interest still accrues Actual/360
+    //      in buildSchedule, so each month's principal = payment − actual-days
+    //      interest and wiggles slightly with the calendar.
+    // On an ARM reset (startM > 0) the carried balance re-amortizes over the
+    // amortizing months remaining in the window at the new rate.
     function solveSegmentPayment(loan, balance, startM, rate){
       const amort = loan.amortizationMonths || 0;
-      const remaining = amort - startM;
-      if(remaining <= 0 || !balance) return 0;
-      const start = accrualStartParts(loan);
-      const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
-      const dr = rate / 360;
-      let lower = 0, upper = balance * 2 + 1;
-      for(let i=0; i<100 && (upper-lower) >= 0.0001; i++){
-        const mid = (lower+upper)/2;
-        let b = balance;
-        for(let k=0; k<remaining; k++){
-          const am = startM + k;
-          const { y, mo } = monthPosition(start, am);
-          const interest = b * daysInMonth(y, mo) * dr;
-          if(am < io) continue;                 // interest-only: principal untouched
-          b += interest - mid;
-        }
-        if(b > 0) lower = mid; else upper = mid;
-      }
-      return (lower+upper)/2;
+      const io = Math.max(0, loan.ioMonths || 0);
+      const amortEnd = io + amort;                        // amortization spans `amort` months, starting after IO
+      const n = amortEnd - Math.max(startM, io);          // amortizing months remaining from startM
+      if(n <= 0 || !balance) return 0;
+      const c = rate / 12;                                // monthly rate — level payment on a 30/360 basis
+      return c > 0 ? (balance * c) / (1 - Math.pow(1 + c, -n)) : balance / n;
     }
 
     // Build the displayed schedule across all rate phases; cut off at the loan
@@ -1572,7 +1569,10 @@
         const days = daysInMonth(y, mo);
         const rate = rateForMonth(loan, m);
         const startingBalance = balance;
-        const interest = startingBalance * days * (rate/360);
+        // Interest accrual basis is per-loan: Actual/360 (varies with the month's
+        // days, the default) or 30/360 (a flat 30-day month, i.e. rate ÷ 12).
+        const dcDays = (loan.amortMethod === "30/360") ? 30 : days;
+        const interest = startingBalance * dcDays * (rate/360);
         const isIO = m < io;
         const isFinal = m === term-1;
         const payParts = fpParts ? addMonths(fpParts, m) : null;
@@ -1666,7 +1666,7 @@
     function emptyLoan(){
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
-      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr"; l.lienPosition = "Senior";
+      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr"; l.lienPosition = "Senior"; l.amortMethod = "Actual/360";
       l.isHistorical = false;   // new loans price off index + spread; historical loans carry a typed rate
       return l;
     }
@@ -1711,7 +1711,7 @@
         mk({ propertyName:"Weaver Mill", propertyAddress:"308 Finn Ln, Florence, KY 41042", propertyType:"Multifamily", lenderName:"Prudential Multifamily (Fannie)", originalAmount:8339000, annualRate:0.0312, rateType:"Fixed", originationDate:"2020-11-12", firstPaymentDate:"2023-01-01", maturityDate:"2030-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:24, replacementReserve:883.33 }),
         mk({ propertyName:"The Lofts at Lafayette Square", propertyAddress:"1119 Mississippi Ave, St. Louis, MO 63104", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892172", originalAmount:16631000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", maturityDate:"2031-06-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2270.83 }),
         mk({ propertyName:"The Residences at Forest Park", propertyAddress:"4910 W Pine Boulevard, St. Louis, MO 63108", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892174", originalAmount:23788000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", maturityDate:"2031-06-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2395.83 }),
-        mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", maturityDate:"2031-10-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, replacementReserve:15723 }),
+        mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", maturityDate:"2031-10-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, amortMethod:"Actual/360", replacementReserve:15723 }),
         mk({ propertyName:"Village at Bridgewater", propertyAddress:"101 Griggs Dr, Bridgewater, NJ 08807", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:29000000, annualRate:0.0294, rateType:"Fixed", originationDate:"2020-10-29", firstPaymentDate:"2024-12-01", maturityDate:"2032-11-01", loanTermMonths:144, amortizationMonths:360, ioMonths:48, replacementReserve:3417 }),
         mk({ propertyName:"40 N Euclid Ave", propertyAddress:"40 N Euclid Ave, St. Louis, MO", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:25296800, annualRate:0.0308, rateType:"Fixed", originationDate:"2020-12-22", firstPaymentDate:"2025-02-01", maturityDate:"2031-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, replacementReserve:1417.67 }),
         mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2029-06-07", maturityDate:"2031-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:96 }),
