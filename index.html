@@ -230,6 +230,7 @@
     @keyframes modalpop{ from{ opacity:0; transform:translateY(10px) scale(.97); } to{ opacity:1; transform:none; } }
     @keyframes jumpFlash{ 0%,100%{ background-color:rgba(56,189,248,0); } 28%{ background-color:rgba(56,189,248,.4); } }
     tr.jump-flash td{ animation:jumpFlash 1.6s ease-in-out; }
+    tr.prop-open .prop-chevron{ transform:rotate(90deg); }
 
     /* ---------- Green-tinted scrollbar ---------- */
     .thin-scroll::-webkit-scrollbar-thumb{ background:#c7dba0 !important; }
@@ -1692,6 +1693,11 @@
                 : /prime/.test(s) ? "prime"
                 : /fed.?fund|effr/.test(s) ? "effr" : "other";
       }
+      // A loan named "... (Mezz)" but stored as Senior (e.g. imported from a
+      // spreadsheet with no lien column) is a mezzanine — correct it on load.
+      if(l && l.lienPosition !== "Mezzanine" && /\(\s*mezz/i.test(String(l.propertyName||""))){
+        l.lienPosition = "Mezzanine";
+      }
       return l;
     }
     function load(){
@@ -2098,7 +2104,10 @@
     // Mezzanine (subordinate) debt prices very differently from a senior loan:
     // it's floating over SOFR at a wide spread, and the Fannie senior tier grid
     // doesn't apply. A loan is a mezz when its lien position is set to Mezzanine.
-    function isMezz(loan){ return !!loan && loan.lienPosition === "Mezzanine"; }
+    // A loan is mezzanine if its lien says so OR its name carries the "(Mezz)"
+    // convention — the latter covers loans imported from a spreadsheet with no
+    // lien column (which default to Senior).
+    function isMezz(loan){ return !!loan && (loan.lienPosition === "Mezzanine" || /\(\s*mezz/i.test(String(loan.propertyName||""))); }
     const MEZZ_SPREAD_DEFAULT = 0.05;   // ~500 bps over SOFR, editable per loan
     function mezzSpread(loan){ return (loan && loan.mezzSpread != null && loan.mezzSpread >= 0) ? loan.mezzSpread : MEZZ_SPREAD_DEFAULT; }
     function matchedTenorId(loan){
@@ -2902,36 +2911,40 @@ tr[data-loan]:hover td{background:#eef2f7}
           '</div>'+
         '</details></div>';
 
-      // ---- Overview table, grouped by property ----
-      // A property may carry more than one loan (a senior + a mezzanine behind it).
-      // Group them: a combined header row when a property has >1 loan, then its
-      // loans (senior first), each still clickable. Sort by combined balance.
+      // ---- Overview table, grouped by property (collapsible) ----
+      // Each property is one row. A property carrying more than one loan (a senior
+      // + a mezzanine behind it) COLLAPSES to a single header row — click it to drop
+      // down its loans, click again to close. Single-loan properties are one plain
+      // row. Sort by combined balance.
       const propGroups = {};
       rows.forEach(r => { const k = propertyKey(r.loan); (propGroups[k] = propGroups[k] || []).push(r); });
       const groupList = Object.keys(propGroups).map(k => {
         const members = propGroups[k].slice().sort((a,b)=> (isMezz(a.loan)?1:0)-(isMezz(b.loan)?1:0));
         return { members, cp: combinedPosition(members.map(m=>m.loan)) };
       }).sort((a,b)=> (b.cp.balTot||0)-(a.cp.balTot||0));
+      const memberCells = (loan, comp, indented) => { const d=comp.derived;
+        const nameCell = indented
+          ? '<span class="inline-flex items-center gap-1.5 pl-6 text-slate-700"><span class="text-slate-300">&#9492;</span>'+escapeHtml(loanLabel(loan))+(isMezz(loan)?' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>':' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">senior</span>')+'</span>'
+          : escapeHtml(loanLabel(loan));
+        return td(nameCell,'font-medium text-slate-900')+ td(escapeHtml(loan.lenderName||'—'),'text-slate-500')+
+          td(loan.rateType||'—')+ tdR(fmtMoney(d.currentBalance))+ tdR(fmtPct(d.currentRate))+ tdR(fmtMoney(d.monthlyPI))+ tdR(fmtDateUS(d.maturityDate));
+      };
+      let gi = 0;
       const ovRows = groupList.map(g => {
-        const multi = g.members.length > 1;
-        const sr = (g.members.find(m=>!isMezz(m.loan)) || g.members[0]).loan;
-        let out = '';
-        if(multi){
-          out += '<tr data-goto="'+sr._id+'" data-lender="'+escapeHtml(sr.lenderName||'—')+'" class="cursor-pointer bg-brand-50/60 hover:bg-brand-100/50 border-t-2 border-brand-200">'+
-            td('<span class="font-bold text-slate-900">'+escapeHtml(sr.propertyName||loanLabel(sr))+'</span> <span class="ml-1 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">'+g.members.length+' loans</span>')+
-            td(escapeHtml(sr.lenderName||'—'),'text-slate-500')+ td('&mdash;')+
-            tdR(fmtMoney(g.cp.balTot),'font-bold text-slate-900')+ tdR(fmtPct(g.cp.blended))+ tdR(fmtMoney(g.cp.piMoTot))+ tdR('&mdash;')+
-          '</tr>';
+        if(g.members.length <= 1){
+          const { loan, comp } = g.members[0];
+          return '<tr data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" class="cursor-pointer hover:bg-slate-50">'+memberCells(loan,comp,false)+'</tr>';
         }
-        out += g.members.map(({loan,comp}) => { const d=comp.derived;
-          const nameCell = multi
-            ? '<span class="inline-flex items-center gap-1.5 pl-4 text-slate-700"><span class="text-slate-300">&#9492;</span>'+escapeHtml(loanLabel(loan))+(isMezz(loan)?' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>':' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">senior</span>')+'</span>'
-            : escapeHtml(loanLabel(loan));
-          return '<tr data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" class="cursor-pointer hover:bg-slate-50">'+
-            td(nameCell,'font-medium text-slate-900')+ td(escapeHtml(loan.lenderName||'—'),'text-slate-500')+
-            td(loan.rateType||'—')+ tdR(fmtMoney(d.currentBalance))+ tdR(fmtPct(d.currentRate))+ tdR(fmtMoney(d.monthlyPI))+ tdR(fmtDateUS(d.maturityDate))+
-          '</tr>'; }).join('');
-        return out;
+        const idx = gi++, sr = (g.members.find(m=>!isMezz(m.loan)) || g.members[0]).loan;
+        const lenders = [...new Set(g.members.map(m=>m.loan.lenderName||'—'))];
+        const chevron = '<svg class="prop-chevron h-4 w-4 shrink-0 text-brand-500 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+        const header = '<tr data-proptoggle="'+idx+'" data-lender="'+escapeHtml(sr.lenderName||'—')+'" class="cursor-pointer select-none bg-brand-50/50 hover:bg-brand-100/50 border-t-2 border-brand-200">'+
+          td('<span class="inline-flex items-center gap-2">'+chevron+'<span class="font-bold text-slate-900">'+escapeHtml(sr.propertyName||loanLabel(sr))+'</span> <span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">'+g.members.length+' loans</span></span>')+
+          td(lenders.length===1?escapeHtml(lenders[0]):'Multiple','text-slate-500')+ td('&mdash;')+
+          tdR(fmtMoney(g.cp.balTot),'font-bold text-slate-900')+ tdR(fmtPct(g.cp.blended))+ tdR(fmtMoney(g.cp.piMoTot))+ tdR('&mdash;')+
+        '</tr>';
+        const memberRows = g.members.map(({loan,comp}) => '<tr data-propmember="'+idx+'" data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" hidden class="cursor-pointer bg-slate-50/50 hover:bg-slate-100/70">'+memberCells(loan,comp,true)+'</tr>').join('');
+        return header + memberRows;
       }).join('');
 
       // ---- Refinance scan: current rate vs today's market, per loan ----
@@ -2965,7 +2978,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
         '<div id="forecastWrap">'+renderForecastCard(fcAnnual)+'</div>'+
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
-        tableCard("All Loans","grouped by property — a senior and its mezzanine appear together, with combined totals — click a row to open it",
+        tableCard("All Loans","grouped by property — click a property to expand its loans, then pick one to open",
           '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl, "relative z-40")+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
           '<tr>'+th("Property")+thR("Current")+thR("Market")+thR("Gap")+th("")+'</tr>', scanRows);
@@ -4811,6 +4824,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-loanjump]"); if(!b) return;
       selectLoan(b.getAttribute("data-loanjump"));
+    });
+    // Expand / collapse a property group in the overview (collapsed by default).
+    document.addEventListener("click", (e) => {
+      const h = e.target.closest("[data-proptoggle]"); if(!h) return;
+      const open = h.classList.toggle("prop-open");
+      document.querySelectorAll('[data-propmember="'+h.getAttribute("data-proptoggle")+'"]').forEach(r => { r.hidden = !open; });
     });
     dom.cancelBtn.addEventListener("click", cancelForm);
     dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
