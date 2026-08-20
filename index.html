@@ -228,6 +228,8 @@
     #confirmModal.flex > div{ animation:modalpop .32s cubic-bezier(.2,.8,.25,1) both; }
     @keyframes modalfade{ from{ opacity:0; } to{ opacity:1; } }
     @keyframes modalpop{ from{ opacity:0; transform:translateY(10px) scale(.97); } to{ opacity:1; transform:none; } }
+    @keyframes jumpFlash{ 0%,100%{ background-color:rgba(56,189,248,0); } 28%{ background-color:rgba(56,189,248,.4); } }
+    tr.jump-flash td{ animation:jumpFlash 1.6s ease-in-out; }
 
     /* ---------- Green-tinted scrollbar ---------- */
     .thin-scroll::-webkit-scrollbar-thumb{ background:#c7dba0 !important; }
@@ -822,6 +824,7 @@
             <div>
               <h2 class="text-base font-bold text-slate-900">Amortization Schedule</h2>
               <p id="scheduleMeta" class="text-xs text-slate-500">—</p>
+              <div id="scheduleKeyDates" class="mt-2 flex flex-wrap gap-2"></div>
             </div>
             <div class="flex items-center gap-3">
               <div class="hidden md:flex items-center gap-3 text-xs text-slate-500">
@@ -1711,7 +1714,7 @@
         mk({ propertyName:"Weaver Mill", propertyAddress:"308 Finn Ln, Florence, KY 41042", propertyType:"Multifamily", lenderName:"Prudential Multifamily (Fannie)", originalAmount:8339000, annualRate:0.0312, rateType:"Fixed", originationDate:"2020-11-12", firstPaymentDate:"2023-01-01", maturityDate:"2030-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:24, replacementReserve:883.33 }),
         mk({ propertyName:"The Lofts at Lafayette Square", propertyAddress:"1119 Mississippi Ave, St. Louis, MO 63104", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892172", originalAmount:16631000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", maturityDate:"2031-06-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2270.83 }),
         mk({ propertyName:"The Residences at Forest Park", propertyAddress:"4910 W Pine Boulevard, St. Louis, MO 63108", propertyType:"Multifamily", lenderName:"Arbor Commercial Funding I, LLC (Fannie Mae)", loanNumber:"Fannie 892174", originalAmount:23788000, annualRate:0.0431, rateType:"Fixed", originationDate:"2019-05-10", firstPaymentDate:"2026-07-01", maturityDate:"2031-06-01", loanTermMonths:144, amortizationMonths:360, ioMonths:84, replacementReserve:2395.83 }),
-        mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", maturityDate:"2031-10-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, amortMethod:"Actual/360", replacementReserve:15723 }),
+        mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", loanNumber:"9999092121", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", maturityDate:"2031-10-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, amortMethod:"Actual/360", replacementReserve:15723 }),
         mk({ propertyName:"Village at Bridgewater", propertyAddress:"101 Griggs Dr, Bridgewater, NJ 08807", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:29000000, annualRate:0.0294, rateType:"Fixed", originationDate:"2020-10-29", firstPaymentDate:"2024-12-01", maturityDate:"2032-11-01", loanTermMonths:144, amortizationMonths:360, ioMonths:48, replacementReserve:3417 }),
         mk({ propertyName:"40 N Euclid Ave", propertyAddress:"40 N Euclid Ave, St. Louis, MO", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:25296800, annualRate:0.0308, rateType:"Fixed", originationDate:"2020-12-22", firstPaymentDate:"2025-02-01", maturityDate:"2031-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, replacementReserve:1417.67 }),
         mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2029-06-07", maturityDate:"2031-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:96 }),
@@ -1901,7 +1904,7 @@
           r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Final</span>' : '';
         const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700">Now</span>' : '';
         const resetBadge = r.isReset ? ' <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">Reset → '+fmtPct(r.rate)+'</span>' : '';
-        return '<tr class="'+cls+' transition-colors">'+
+        return '<tr data-schedrow="'+r.index+'" class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
           '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+resetBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
@@ -1925,6 +1928,21 @@
         " · paid in arrears on the 1st of the next month" +
         (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
       dom.scheduleBody.innerHTML = scheduleRowsHtml(result.rows, d.paymentsMade);
+
+      // Quick-jump buttons for the two dates borrowers care about most: the first
+      // interest payment and the first principal-and-interest payment. Clicking one
+      // scrolls the schedule to that exact row and flashes it.
+      const rows = result.rows;
+      const firstPay = rows[0] || null;                          // first payment (interest-only if there's an IO period)
+      const firstPI  = rows.find(r => r.type !== "io") || null;  // first principal+interest (amortizing) — or the balloon
+      const jumpBtn = (label, r) => r ? '<button type="button" data-scheduljump="'+r.index+'" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98]">'+
+          '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>'+
+          '<span>'+label+' &middot; <span class="tabular-nums">'+fmtDateUS(r.paymentDate)+'</span></span></button>' : '';
+      const io = Math.max(0, loan.ioMonths||0);
+      const kd = (io > 0 && firstPay && firstPI && firstPI.index !== firstPay.index)
+        ? jumpBtn("First interest payment", firstPay) + jumpBtn("First P&amp;I payment", firstPI)
+        : jumpBtn("First payment", firstPay);
+      const kdEl = el("scheduleKeyDates"); if(kdEl) kdEl.innerHTML = kd;
     }
 
     function termLabel(months){
@@ -4684,6 +4702,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     dom.editBtn.addEventListener("click", startEdit);
     dom.removeBtn.addEventListener("click", removeActive);
     dom.saveBtn.addEventListener("click", saveForm);
+    // Quick-jump: scroll the amortization schedule to a key payment date and flash the row.
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-scheduljump]"); if(!b) return;
+      const row = document.querySelector('#scheduleBody tr[data-schedrow="'+b.getAttribute("data-scheduljump")+'"]');
+      if(row){ row.scrollIntoView({ block:"center", behavior:"smooth" }); row.classList.remove("jump-flash"); void row.offsetWidth; row.classList.add("jump-flash"); }
+    });
     dom.cancelBtn.addEventListener("click", cancelForm);
     dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
     // Whole-portfolio Excel export/import live in the Data menu (exportAllLoans /
