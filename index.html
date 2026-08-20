@@ -1884,6 +1884,7 @@
         }
       });
       dom.profileBody.innerHTML =
+        combinedPositionHtml(loan)+
         '<div class="columns-1 xl:columns-2 xl:gap-x-6 [&>section:last-child]:mb-0">'+colHtml+'</div>'+ debtHtml;
     }
 
@@ -3904,6 +3905,75 @@ tr[data-loan]:hover td{background:#eef2f7}
     // are interest-only) underwrite to this instead of DSCR: the higher the debt
     // yield, the better the terms. Independent of rate, term and amortization.
     function loanDebtYield(loan){ const bal = compute(loan).derived.currentBalance; return (loan && loan.noi != null && loan.noi > 0 && bal > 0) ? (loan.noi / bal) : null; }
+
+    // ---- Property grouping ------------------------------------------------
+    // A property may carry more than one loan — classically a senior plus a
+    // mezzanine behind it (e.g. Avalon White Plains). The two are separate loan
+    // records that share the SAME property, so leverage must be read on the
+    // COMBINED stack, not each piece alone. Group by address (the reliable shared
+    // key across a senior + its mezz), falling back to the property name.
+    function propertyKey(loan){
+      const a = String((loan && loan.propertyAddress) || "").trim().toLowerCase();
+      if(a) return "addr:" + a;
+      return "name:" + String((loan && (loan.propertyName || loan._id)) || "").trim().toLowerCase();
+    }
+    function loansForProperty(loan){
+      const k = propertyKey(loan);
+      return loans.filter(l => propertyKey(l) === k).sort((x, y) => (isMezz(x) ? 1 : 0) - (isMezz(y) ? 1 : 0));   // senior(s) first, mezz last
+    }
+    function propertyNOI(list){ for(const l of list){ if(l.noi != null && l.noi > 0) return l.noi; } return null; }   // NOI is a property figure; take it wherever it's entered (usually the senior)
+    function combinedPosition(list){
+      let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0;
+      list.forEach(l => {
+        const d = compute(l).derived;
+        origTot += l.originalAmount || 0; balTot += d.currentBalance || 0;
+        piMoTot += d.monthlyPI || 0; dsMoTot += d.totalDebtService || 0;
+        rateWt += (d.currentRate || 0) * (d.currentBalance || 0);
+      });
+      const noi = propertyNOI(list);
+      const sr = list.find(l => !isMezz(l)) || list[0];
+      const cr = loanCapRate(sr), value = (noi > 0 && cr > 0) ? noi / cr : null, annualPI = piMoTot * 12;
+      return {
+        count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, value,
+        blended: balTot > 0 ? rateWt / balTot : 0,
+        dscr: (noi > 0 && annualPI > 0) ? noi / annualPI : null,
+        debtYield: (noi > 0 && balTot > 0) ? noi / balTot : null,
+        ltv: (value > 0 && balTot > 0) ? balTot / value : null,
+      };
+    }
+    // A panel shown on the loan record when the property carries more than one
+    // loan: the stack, plus leverage read on the combined debt.
+    function combinedPositionHtml(loan){
+      const list = loansForProperty(loan);
+      if(list.length <= 1) return "";
+      const cp = combinedPosition(list), sr = list.find(l => !isMezz(l)) || list[0], srDscr = loanDSCR(sr);
+      const loanRow = (l) => {
+        const d = compute(l).derived, me = (l._id === loan._id);
+        return '<button type="button" data-loanjump="'+l._id+'" class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition '+(me ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:bg-slate-50")+'">'+
+          '<span class="min-w-0"><span class="block truncate text-sm font-semibold text-slate-800">'+escapeHtml(l.propertyName || loanLabel(l))+(me ? ' <span class="text-[10px] font-bold uppercase text-brand-600">this loan</span>' : '')+'</span>'+
+            '<span class="block text-[11px] text-slate-500">'+(isMezz(l) ? "Mezzanine" : "Senior")+' &middot; '+escapeHtml(l.lenderName || "")+'</span></span>'+
+          '<span class="shrink-0 text-right"><span class="block text-sm font-bold tabular-nums text-slate-900">'+fmtMoney(d.currentBalance)+'</span>'+
+            '<span class="block text-[11px] text-slate-500 tabular-nums">'+fmtPct(d.currentRate)+'</span></span></button>';
+      };
+      const stat = (label, val, strong) => '<div class="flex items-baseline justify-between gap-3 py-1"><dt class="text-xs text-slate-500">'+label+'</dt><dd class="text-sm '+(strong ? "font-bold" : "font-semibold")+' text-slate-900 tabular-nums">'+val+'</dd></div>';
+      return '<section class="mb-5 rounded-xl border-2 border-brand-200 bg-brand-50/40 px-4 py-3.5">'+
+        '<h3 class="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-700"><span class="h-3 w-1 rounded-full bg-brand-500"></span>Combined position &middot; this property</h3>'+
+        '<p class="mb-3 text-[11px] text-slate-500">'+list.length+' loans on '+escapeHtml(sr.propertyName || loanLabel(sr))+' &mdash; analysed together (the mezzanine sits behind the senior).</p>'+
+        '<div class="grid gap-3 lg:grid-cols-2">'+
+          '<div class="space-y-1.5">'+list.map(loanRow).join("")+'</div>'+
+          '<dl class="rounded-lg border border-brand-200 bg-white px-3 py-2">'+
+            stat("Combined balance", fmtMoney(cp.balTot), true)+
+            stat("Blended rate", fmtPct(cp.blended))+
+            stat("Combined monthly P&amp;I", fmtMoney(cp.piMoTot))+
+            stat("Combined LTV", cp.ltv != null ? fmtPct(cp.ltv) : "&mdash;")+
+            stat("DSCR &mdash; senior only", srDscr != null ? srDscr.toFixed(2)+"&#215;" : "&mdash;")+
+            stat("DSCR &mdash; combined", cp.dscr != null ? cp.dscr.toFixed(2)+"&#215;" : "&mdash;", true)+
+            stat("Debt yield &mdash; combined", cp.debtYield != null ? fmtPct(cp.debtYield) : "&mdash;")+
+          '</dl>'+
+        '</div>'+
+        (cp.noi == null ? '<p class="mt-2 text-[11px] text-amber-700">Enter the property NOI (open a refinance analysis on the senior) to see combined DSCR, debt yield and LTV.</p>' : '')+
+      '</section>';
+    }
     function pctFieldStr(dec){ return String(+((dec||0) * 100).toFixed(3)); }   // 0.055 -> "5.5"
 
     // Stage 3 — credit-aware market rate. Tier comes from DSCR AND LTV (the tighter
@@ -4712,6 +4782,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       const b = e.target.closest("[data-scheduljump]"); if(!b) return;
       const row = document.querySelector('#scheduleBody tr[data-schedrow="'+b.getAttribute("data-scheduljump")+'"]');
       if(row){ row.scrollIntoView({ block:"center", behavior:"smooth" }); row.classList.remove("jump-flash"); void row.offsetWidth; row.classList.add("jump-flash"); }
+    });
+    // Jump to a sibling loan of the same property (from the combined-position panel).
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-loanjump]"); if(!b) return;
+      selectLoan(b.getAttribute("data-loanjump"));
     });
     dom.cancelBtn.addEventListener("click", cancelForm);
     dom.exportCsvBtn.addEventListener("click", exportScheduleCsv);
