@@ -1749,7 +1749,13 @@
         armInitialFixedMonths:60, armAdjustFreqMonths:60, armAssumedIndex:0.0416,
       });
     }
-    function getLoan(id){ return loans.find(l => l._id === id) || null; }
+    function getLoan(id){
+      if(typeof id === "string" && id.slice(0,6) === "combo:"){
+        const members = loans.filter(l => propertyKey(l) === id.slice(6));
+        return members.length > 1 ? combinedRefiLoan(members) : (members[0] || null);
+      }
+      return loans.find(l => l._id === id) || null;
+    }
 
     /* ================================================================
        6. DOM
@@ -2949,18 +2955,28 @@ tr[data-loan]:hover td{background:#eef2f7}
 
       // ---- Refinance scan: current rate vs today's market, per loan ----
       const scan = rows.map(({loan,comp}) => { const d=comp.derived; const mp=refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths||loan.amortizationMonths });
-        return { loan, cur:d.currentRate||0, mkt:mp.marketRate, gap:(d.currentRate||0)-mp.marketRate }; })
-        .sort((a,b)=> b.gap-a.gap);
-      const candidates = scan.filter(s => s.gap > 0.0025);
-      const scanRows = scan.map(s => {
+        return { loan, bal:d.currentBalance||0, cur:d.currentRate||0, mkt:mp.marketRate, gap:(d.currentRate||0)-mp.marketRate }; });
+      // Group the scan by property: you refinance the property, so a senior + its
+      // mezzanine are ONE opportunity — combined balance, blended rate vs the blended
+      // market. Single-loan properties are one row each.
+      const scanBy = {};
+      scan.forEach(s => { const k = propertyKey(s.loan); (scanBy[k]=scanBy[k]||[]).push(s); });
+      const scanItems = Object.keys(scanBy).map(k => {
+        const items = scanBy[k];
+        if(items.length === 1){ const s = items[0]; return { id:s.loan._id, label:escapeHtml(loanLabel(s.loan)), cur:s.cur, mkt:s.mkt, gap:s.cur-s.mkt }; }
+        let bT=0, cW=0, mW=0; items.forEach(s => { bT+=s.bal; cW+=s.cur*s.bal; mW+=s.mkt*s.bal; });
+        const cur = bT>0?cW/bT:0, mkt = bT>0?mW/bT:0, sr = items.map(i=>i.loan).find(l=>!isMezz(l)) || items[0].loan;
+        return { id:"combo:"+k, label:escapeHtml(sr.propertyName||loanLabel(sr))+' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-700">'+items.length+' loans</span>', cur, mkt, gap:cur-mkt };
+      }).sort((a,b)=> b.gap-a.gap);
+      const candidates = scanItems.filter(s => s.gap > 0.0025);
+      const scanRows = scanItems.map(s => {
         const flag = s.gap>0.0025 ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">refi candidate</span>'
                    : s.gap<-0.0025 ? '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">below market</span>'
                    : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">at market</span>';
         const gapCls = s.gap>0.0025?'text-emerald-700 font-semibold':s.gap<-0.0025?'text-slate-400':'text-slate-500';
-        const mezzTag = isMezz(s.loan) ? ' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>' : '';
-        const advBtn = '<button type="button" data-refiadv="'+s.loan._id+'" class="ml-2 rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Advanced</button>';
-        return '<tr data-refi="'+s.loan._id+'" class="cursor-pointer hover:bg-emerald-50/50">'+
-          td(escapeHtml(loanLabel(s.loan))+mezzTag,'font-medium text-slate-900')+ tdR(fmtPct(s.cur))+ tdR(fmtPct(s.mkt))+
+        const advBtn = '<button type="button" data-refiadv="'+s.id+'" class="ml-2 rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Advanced</button>';
+        return '<tr data-refi="'+s.id+'" class="cursor-pointer hover:bg-emerald-50/50">'+
+          td(s.label,'font-medium text-slate-900')+ tdR(fmtPct(s.cur))+ tdR(fmtPct(s.mkt))+
           tdR((s.gap>=0?'+':'−')+fmtPct(Math.abs(s.gap)), gapCls)+ td('<div class="flex items-center justify-end gap-1">'+flag+advBtn+'</div>')+
         '</tr>'; }).join('');
 
@@ -3707,7 +3723,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(!loan){ toast("Select a loan to refinance first", "info"); return; }
       state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
     }
-    function closeRefi(){ setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty"); }
+    function closeRefi(){
+      // A combined-property refi has no single loan to view — return to the senior.
+      if(typeof state.activeId === "string" && state.activeId.slice(0,6) === "combo:"){ const c = getLoan(state.activeId); if(c && c._seniorId) state.activeId = c._seniorId; }
+      setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty");
+    }
 
     // Read the new-loan inputs. Rates/points are entered as plain percents.
     function refiInputs(){
@@ -3978,6 +3998,30 @@ tr[data-loan]:hover td{background:#eef2f7}
         ltv: (value > 0 && balTot > 0) ? balTot / value : null,
       };
     }
+    // A synthetic single loan representing a whole property's combined debt, so the
+    // property can be refinanced as ONE package (you refinance the property, not the
+    // individual senior/mezz — they depend on one another). Built on the senior's
+    // structure (dominant terms) but carrying the property's TOTAL current balance
+    // and the balance-blended rate, so compute() reproduces the combined position.
+    function combinedRefiLoan(members){
+      const list = members.slice().sort((a,b)=> (isMezz(a)?1:0)-(isMezz(b)?1:0));
+      const sr = list.find(l => !isMezz(l)) || list[0];
+      const cp = combinedPosition(list);
+      const combo = JSON.parse(JSON.stringify(sr));
+      combo._id = "combo:" + propertyKey(sr);
+      combo._combined = true;
+      combo._seniorId = sr._id;
+      combo._members = list.map(l => { const d = compute(l).derived; return { id:l._id, label:loanLabel(l), mezz:isMezz(l), bal:d.currentBalance, rate:d.currentRate }; });
+      combo.propertyName = sr.propertyName || loanLabel(sr);
+      combo.originalAmount = cp.balTot;                   // the property's total current debt
+      combo.annualRate = cp.blended;                      // balance-blended rate
+      combo.rateType = "Fixed"; combo.isHistorical = true; combo.lienPosition = "Senior";
+      combo.index = null; combo.spread = null; combo.stackWith = null;
+      combo.noi = cp.noi; combo.capRate = loanCapRate(sr);
+      return combo;
+    }
+    // Members of the property that a combined-refi id points at.
+    function comboMembers(id){ return (typeof id === "string" && id.slice(0,6) === "combo:") ? loans.filter(l => propertyKey(l) === id.slice(6)) : []; }
     // A panel shown on the loan record when the property carries more than one
     // loan: the stack, plus leverage read on the combined debt.
     function combinedPositionHtml(loan){
@@ -4392,7 +4436,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(isNaN(v) || v <= 0){ el("noiErr").classList.remove("hidden"); el("noiField").focus(); return; }
       const crPct = parseFloat((el("capField").value || "").replace(/[^0-9.\-]/g, ""));
       const cr = (!isNaN(crPct) && crPct > 0) ? crPct / 100 : defaultCapRate(noiCtx.loan);
-      noiCtx.loan.noi = v; noiCtx.loan.capRate = cr; save();
+      noiCtx.loan.noi = v; noiCtx.loan.capRate = cr;
+      // A combined-property refi is synthetic — persist the property NOI on the senior.
+      if(noiCtx.loan._combined && noiCtx.loan._seniorId){ const sr = loans.find(l => l._id === noiCtx.loan._seniorId); if(sr){ sr.noi = v; sr.capRate = cr; } }
+      save();
       const done = noiCtx.onDone; closeNoi(); if(done) done(v);
     }
     function closeNoi(){ const m = el("noiModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } noiCtx = null; }
@@ -4585,14 +4632,15 @@ tr[data-loan]:hover td{background:#eef2f7}
       dom.refiView.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Refinance Analysis</h2>'+
-            '<p class="text-sm text-slate-500">'+escapeHtml(loanLabel(loan))+' — should you refinance?</p></div>'+
+            '<p class="text-sm text-slate-500">'+escapeHtml(loan._combined?loan.propertyName:loanLabel(loan))+(loan._combined?' — refinance the whole property?':' — should you refinance?')+'</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
             '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save active option</button>'+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
-          '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">Current Loan</h3>'+
+          '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">'+(loan._combined?"Current debt &middot; whole property":"Current Loan")+'</h3>'+
+          (loan._combined ? '<div class="mb-3 rounded-lg border border-brand-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-600">'+loan._members.length+' loans on this property, refinanced as one package (they depend on one another):<br>'+loan._members.map(function(m){return '<strong>'+escapeHtml(m.label)+'</strong> '+fmtMoney(m.bal)+' @ '+fmtPct(m.rate)+' <span class="text-slate-400">'+(m.mezz?'mezz':'senior')+'</span>';}).join(' &nbsp;+&nbsp; ')+'</div>' : '')+
           '<dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">'+
             refiStat("Payoff balance", fmtMoney(d.currentBalance))+
             refiStat("Current rate", fmtPct(d.currentRate))+
@@ -4690,7 +4738,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const nl = JSON.parse(JSON.stringify(draft));
       nl._id = uid();
       nl.propertyName = (loan.propertyName || loanLabel(loan)) + " (Refinanced)";
-      ["_closingPct","_tenor","_years"].forEach(k => delete nl[k]);
+      ["_closingPct","_tenor","_years","_combined","_members","_seniorId"].forEach(k => delete nl[k]);
       const err = validateLoan(nl);
       if(err){ toast(err, "info"); return; }
       loans.push(nl); state.activeId = nl._id; save();
