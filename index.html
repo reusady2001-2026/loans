@@ -540,7 +540,7 @@
     <!-- ===================== WINDOW TITLE BAR (desktop chrome) =====================
          The app owns the very top strip: draggable, with the Settings menu and the
          window's own minimize / maximize / close (the native title bar is hidden). -->
-    <div id="winbar" class="sticky top-0 z-40 flex items-center justify-between h-8 pl-3 select-none border-b border-ink-200/60 backdrop-blur"
+    <div id="winbar" class="sticky top-0 z-[45] flex items-center justify-between h-8 pl-3 select-none border-b border-ink-200/60 backdrop-blur"
          style="-webkit-app-region:drag; background:linear-gradient(180deg,#eff6de,#e7f0d0)">
       <div class="flex items-center gap-2 min-w-0">
         <img id="winbarLogo" alt="" class="h-4 w-4 object-contain shrink-0" />
@@ -2943,11 +2943,15 @@ tr[data-loan]:hover td{background:#eef2f7}
         }
         const idx = gi++, sr = (g.members.find(m=>!isMezz(m.loan)) || g.members[0]).loan;
         const lenders = [...new Set(g.members.map(m=>m.loan.lenderName||'—'))];
+        const types = [...new Set(g.members.map(m=>m.loan.rateType||'—'))];
+        const mats  = [...new Set(g.members.map(m=>fmtDateUS(m.comp.derived.maturityDate)))];
+        const typeCell = types.length===1 ? escapeHtml(types[0]) : 'Mixed';
+        const matCell  = mats.length===1  ? mats[0]             : 'Mixed';
         const chevron = '<svg class="prop-chevron h-4 w-4 shrink-0 text-brand-500 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
         const header = '<tr data-proptoggle="'+idx+'" data-lender="'+escapeHtml(sr.lenderName||'—')+'" class="cursor-pointer select-none bg-brand-50/50 hover:bg-brand-100/50 border-t-2 border-brand-200">'+
           td('<span class="inline-flex items-center gap-2">'+chevron+'<span class="font-bold text-slate-900">'+escapeHtml(sr.propertyName||loanLabel(sr))+'</span> <span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">'+g.members.length+' loans</span></span>')+
-          td(lenders.length===1?escapeHtml(lenders[0]):'Multiple','text-slate-500')+ td('&mdash;')+
-          tdR(fmtMoney(g.cp.balTot),'font-bold text-slate-900')+ tdR(fmtPct(g.cp.blended))+ tdR(fmtMoney(g.cp.piMoTot))+ tdR('&mdash;')+
+          td(lenders.length===1?escapeHtml(lenders[0]):'Multiple','text-slate-500')+ td(typeCell,'text-slate-500')+
+          tdR(fmtMoney(g.cp.balTot),'font-bold text-slate-900')+ tdR(fmtPct(g.cp.blended))+ tdR(fmtMoney(g.cp.piMoTot))+ tdR(matCell,'text-slate-500')+
         '</tr>';
         const memberRows = g.members.map(({loan,comp}) => '<tr data-propmember="'+idx+'" data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" hidden class="cursor-pointer bg-slate-50/50 hover:bg-slate-100/70">'+memberCells(loan,comp,true)+'</tr>').join('');
         return header + memberRows;
@@ -4320,9 +4324,21 @@ tr[data-loan]:hover td{background:#eef2f7}
     function otherLoans(loan){ return loans.filter(l => l && l._id !== loan._id); }
     function stackPartner(loan){ const id = loan && loan.stackWith; return id ? loans.find(l => l && l._id === id) : null; }
     function stackSeniorMezz(loan){
+      const stat = (l) => ({ loan:l, bal: compute(l).derived.currentBalance||0, rate: compute(l).derived.currentRate||0 });
+      // A combined-refi loan already knows the whole property's stack — read the
+      // real senior + mezz off the property, not the (null) stackWith link.
+      if(loan && loan._combined){
+        const members = loansForProperty(loan);
+        const seniors = members.filter(l => !isMezz(l)), mezzes = members.filter(l => isMezz(l));
+        if(!seniors.length || !mezzes.length) return null;
+        const senior = seniors.map(stat).sort((a,b)=>b.bal-a.bal)[0];    // dominant senior
+        const ms = mezzes.map(stat), mBal = ms.reduce((s,m)=>s+m.bal,0); // aggregate all subordinate pieces
+        const mRate = mBal>0 ? ms.reduce((s,m)=>s+m.rate*m.bal,0)/mBal : (ms[0]?ms[0].rate:0);
+        const mezz = ms.length===1 ? ms[0] : { loan:ms[0].loan, bal:mBal, rate:mRate, _label:"Mezzanine ("+ms.length+" pieces)" };
+        return { senior:senior, mezz:mezz };
+      }
       const p = stackPartner(loan); if(!p) return null;
-      const a = { loan:loan, bal: compute(loan).derived.currentBalance||0, rate: compute(loan).derived.currentRate||0 };
-      const b = { loan:p,    bal: compute(p).derived.currentBalance||0,    rate: compute(p).derived.currentRate||0 };
+      const a = stat(loan), b = stat(p);
       const senior = a.bal >= b.bal ? a : b, mezz = a.bal >= b.bal ? b : a;   // senior = larger balance
       return { senior:senior, mezz:mezz };
     }
@@ -4349,16 +4365,25 @@ tr[data-loan]:hover td{background:#eef2f7}
       return { newRate:newRate, saving:saving, feasible: (c.combLTV==null || c.combLTV<=0.75) };
     }
     function stackSectionHtml(loan){
-      const others = otherLoans(loan);
-      const opts = '<option value="">None</option>' + others.map(l => '<option value="'+l._id+'"'+(loan.stackWith===l._id?' selected':'')+'>'+escapeHtml(loanLabel(l))+'</option>').join('');
-      const picker = '<select id="refiStackWith" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm max-w-[240px] truncate">'+opts+'</select>';
+      const combined = !!(loan && loan._combined);
+      let picker;
+      if(combined){
+        // A synthetic whole-property loan can't be re-linked — show what the stack is.
+        picker = '<span class="rounded-md bg-brand-50 px-2 py-1 text-[11px] font-semibold text-brand-700">Whole property &middot; senior + mezz</span>';
+      } else {
+        const others = otherLoans(loan);
+        const opts = '<option value="">None</option>' + others.map(l => '<option value="'+l._id+'"'+(loan.stackWith===l._id?' selected':'')+'>'+escapeHtml(loanLabel(l))+'</option>').join('');
+        picker = '<select id="refiStackWith" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm max-w-[240px] truncate">'+opts+'</select>';
+      }
       const c = stackCombined(loan);
-      let body = '<p class="mt-2 text-[11px] text-slate-400">Link a subordinate (mezz) or senior loan on the same property for combined leverage &amp; coverage. Agency seniors don&rsquo;t permit subordinate debt.</p>';
+      let body = combined
+        ? '<p class="mt-2 text-[11px] text-slate-400">This property carries more than one loan; leverage &amp; coverage are read on the whole stack, and it refinances as one package.</p>'
+        : '<p class="mt-2 text-[11px] text-slate-400">Link a subordinate (mezz) or senior loan on the same property for combined leverage &amp; coverage. Agency seniors don&rsquo;t permit subordinate debt.</p>';
       if(c){
         const sm = c.sm, r = stackRetireMezz(loan);
         body = '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("Senior", escapeHtml(loanLabel(sm.senior.loan))+" &middot; "+fmtMoney(sm.senior.bal)+" @ "+fmtPct(sm.senior.rate))+
-          refiStat("Mezz", escapeHtml(loanLabel(sm.mezz.loan))+" &middot; "+fmtMoney(sm.mezz.bal)+" @ "+fmtPct(sm.mezz.rate))+
+          refiStat("Mezz", escapeHtml(sm.mezz._label || loanLabel(sm.mezz.loan))+" &middot; "+fmtMoney(sm.mezz.bal)+" @ "+fmtPct(sm.mezz.rate))+
           refiStat("Combined debt", fmtMoney(c.combBal))+
           refiStat("Combined LTV", c.combLTV!=null ? fmtPct(c.combLTV) : "&mdash;")+
           refiStat("Senior-only DSCR", c.seniorDSCR!=null ? c.seniorDSCR.toFixed(2)+"&#215;" : "&mdash;")+
