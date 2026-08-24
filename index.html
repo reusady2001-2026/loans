@@ -9,8 +9,10 @@
   <!-- Tailwind + SheetJS are vendored locally (vendor/) so the app runs fully offline -->
   <script src="./vendor/tailwindcss.js"></script>
   <script src="./vendor/xlsx.full.min.js"></script>
-  <!-- Underwriting & debt-sizing engine (pure, data-free) -->
+  <!-- Underwriting & debt-sizing engine, T12 classifier, and Setup builder (pure, data-free) -->
   <script src="./underwriting.js"></script>
+  <script src="./t12-classify.js"></script>
+  <script src="./setup-builder.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -2711,179 +2713,141 @@ tr[data-loan]:hover td{background:#eef2f7}
        formula lives in underwriting.js; NO property data is seeded — the
        operator types the T12 actuals and the benchmarks and it computes live.
        ================================================================ */
-    const UW_KEY = "lds_uw_model_v1";
-    function newUWModel(){
-      const base = (window.Underwriting ? Underwriting.blankWorksheet() : { lines:[] });
-      return { propertyName:"", units:null, lines:base.lines,
-        sizing:{ capRate:null, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:null, amortYears:null } };
-    }
-    let uwModel = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && Array.isArray(s.lines) && s.sizing) return s; }catch(e){} return newUWModel(); })();
-    function saveUW(){ try{ localStorage.setItem(UW_KEY, JSON.stringify(uwModel)); }catch(e){} }
-    function uwResetModel(){ uwModel = newUWModel(); saveUW(); renderUnderwriting(); }
+    const UW_KEY = "lds_setup_v1";
+    function uwDefaults(){ return { name:"", units:null, rrGPR:null, t12Text:"",
+      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
+        sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
+    let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench) return s; }catch(e){} return { input: uwDefaults() }; })();
+    let uwLastBuilt = null;
+    function saveUW(){ try{ localStorage.setItem(UW_KEY, JSON.stringify(uwState)); }catch(e){} }
+    function uwResetModel(){ uwState = { input: uwDefaults() }; uwLastBuilt = null; saveUW(); renderUnderwriting(); }
 
     const uwNum = (v)=>{ if(typeof v === "string") v = parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v === "number" && isFinite(v)) ? v : null; };
     const uwStr = (v)=> (v==null ? "" : String(v));
     const uwPctStr = (v)=> (v==null ? "" : String(Math.round(v*1e5)/1e3));      // decimal → % display (0.05→5)
     const uwInputCls = "w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30";
-    const uwMethodHint = { value:"actual", pctBase:"% of income", pctEGI:"% of EGI", perUnit:"$/unit" };
+    const uwFmt = (v)=> (v==null || isNaN(v)) ? "&mdash;" : fmtMoney(v);
 
-    // One worksheet row. `t12` = in-place actual; the underwritten cell is either a
-    // direct $ (pass-through) or a benchmark (%, $/unit) that the engine turns into $.
-    function uwLineRow(ln){
-      const t12In = '<input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="t12" value="'+uwStr(ln.t12)+'" placeholder="0">';
-      let basisCell, uwCell;
-      if(ln.method === "value"){
-        basisCell = '<span class="text-[11px] text-slate-400">entered</span>';
-        uwCell = '<input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="uw" value="'+uwStr(ln.uw)+'" placeholder="0">';
-      } else {
-        const isPct = (ln.method === "pctBase" || ln.method === "pctEGI");
-        const val = isPct ? uwPctStr(ln.param) : uwStr(ln.param);
-        const suffix = isPct ? "%" : "/unit";
-        basisCell = '<div class="flex items-center gap-1"><input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="param" value="'+val+'" placeholder="0"><span class="text-[11px] text-slate-400 shrink-0">'+suffix+'</span></div>';
-        uwCell = '<span class="tabular-nums text-slate-700" data-uwc="'+ln.key+'">&mdash;</span>';
-      }
-      return '<tr class="border-t border-slate-100">'+
-        '<td class="py-1.5 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+' <span class="ml-1 text-[10px] uppercase tracking-wide text-slate-400">'+uwMethodHint[ln.method]+'</span></td>'+
-        '<td class="py-1 px-2 w-40">'+t12In+'</td>'+
-        '<td class="py-1 px-2 w-36">'+basisCell+'</td>'+
-        '<td class="py-1 px-2 w-40 text-right">'+uwCell+'</td>'+
-      '</tr>';
+    // Parse a pasted T12 into {name, amount, section}. Amount = the trailing number
+    // (parentheses = negative). "Total …" subtotal rows are skipped (their details
+    // are summed instead); lines naming a section switch INCOME↔EXPENSE.
+    function parseT12Text(text){
+      const rows = []; let section = "INCOME";
+      (text || "").split(/\r?\n/).forEach(raw => {
+        if(!raw.trim()) return;
+        const m = raw.match(/\(?\s*-?\$?\s*[\d,]+(?:\.\d{1,2})?\s*\)?\s*$/);
+        const name = (m ? raw.slice(0, m.index) : raw).replace(/[\s,;:|]+$/,"").replace(/^[\s|>*\-]+/,"").trim();
+        if(!m){ const up = raw.toUpperCase(); if(/EXPENSE/.test(up)) section="EXPENSE"; else if(/INCOME/.test(up)) section="INCOME"; return; }
+        if(!name || /^[\d.,()$\-]+$/.test(name)) return;
+        const up = name.toUpperCase();
+        if(/^(TOTAL|SUBTOTAL)\b/.test(up)){ if(/EXPENSE/.test(up)) section="EXPENSE"; return; }   // skip subtotals
+        const tok = m[0].trim(); const neg = /^\(.*\)$/.test(tok) || tok.indexOf("-") >= 0;
+        let amt = parseFloat(tok.replace(/[^0-9.]/g,"")) || 0; if(neg) amt = -amt;
+        rows.push({ name: name, amount: amt, section: section });
+      });
+      return rows;
     }
-    function uwSubRow(label, key, strong){
-      const cls = strong ? "font-bold text-slate-900" : "font-semibold text-slate-700";
-      return '<tr class="border-t-2 border-slate-200 bg-slate-50/70">'+
-        '<td class="py-1.5 pr-3 text-sm '+cls+'">'+label+'</td><td></td>'+
-        '<td class="py-1.5 px-2 text-right text-sm '+cls+' tabular-nums"><span data-uws="'+key+'-t12">&mdash;</span></td>'+
-        '<td class="py-1.5 px-2 text-right text-sm '+cls+' tabular-nums"><span data-uws="'+key+'-uw">&mdash;</span></td>'+
-      '</tr>';
-    }
-    function uwSizeStat(label, id, hint){
-      return '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2">'+
-        '<div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div>'+
-        '<div class="text-sm font-bold text-slate-900 tabular-nums" id="'+id+'">&mdash;</div>'+
-        (hint ? '<div class="text-[10px] text-slate-400">'+hint+'</div>' : '')+
-      '</div>';
-    }
-    function uwSizeInput(label, key, val, suffix){
-      return '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+escapeHtml(label)+
-        '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suffix||"")+'</span></span></label>';
+    function uwBuild(){
+      const i = uwState.input;
+      if(!window.SetupBuilder){ uwLastBuilt = null; return; }
+      const lines = parseT12Text(i.t12Text);
+      uwLastBuilt = lines.length ? SetupBuilder.buildSetup({ t12Lines: lines, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench }) : null;
     }
 
     function renderUnderwriting(){
       const view = el("uwView"); if(!view) return;
-      const m = uwModel;
-      // worksheet body: lines with section-subtotals folded in
-      let rows = "", prev = null;
-      m.lines.forEach((ln, i) => {
-        if(prev === "rental" && ln.section !== "rental") rows += uwSubRow("Effective Rental Income", "eri");
-        if(prev === "other"  && ln.section !== "other")  rows += uwSubRow("Effective Gross Income", "egi", true);
-        if(prev === "expense"&& ln.section !== "expense")rows += uwSubRow("Total Operating Expenses", "opex");
-        rows += uwLineRow(ln);
-        prev = ln.section;
-      });
-      if(prev === "expense") rows += uwSubRow("Total Operating Expenses", "opex");
-      rows += uwSubRow("Net Operating Income", "noi", true);
-
-      const sz = m.sizing;
+      if(!window.SetupBuilder){ view.innerHTML = '<div class="p-6 text-sm text-rose-600">Setup engine failed to load.</div>'; return; }
+      uwBuild();
+      const i = uwState.input, b = uwLastBuilt;
+      const inCls = "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30";
       view.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Underwriting &amp; Sizing</h2>'+
-            '<p class="text-sm text-slate-500">Build the in-place &amp; underwritten NOI, then size the loan. Blank &mdash; enter the T12 actuals and your benchmarks.</p></div>'+
-          '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Reset worksheet</button>'+
+            '<p class="text-sm text-slate-500">Paste a property&rsquo;s T12 &mdash; the app classifies every line, builds the in-place &amp; underwritten Setup, and sizes the loan.</p></div>'+
+          '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>'+
         '</div>'+
-        // property + units + live NOI headline
-        '<div class="grid grid-cols-1 lg:grid-cols-4 gap-3">'+
-          '<div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap items-end gap-4">'+
-            '<label class="flex-1 min-w-[180px] text-sm text-slate-600">Property<input class="'+uwInputCls+' text-left mt-1" data-uwname value="'+escapeHtml(m.propertyName||"")+'" placeholder="(optional)"></label>'+
-            '<label class="text-sm text-slate-600">Units<input class="'+uwInputCls+' w-24 mt-1" inputmode="numeric" data-uwunits value="'+uwStr(m.units)+'" placeholder="0"></label>'+
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">'+
+          '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
+            '<label class="text-sm text-slate-600">Property<input class="'+inCls+' mt-1" data-uwf="name" value="'+escapeHtml(i.name||"")+'" placeholder="(optional)"></label>'+
+            '<label class="text-sm text-slate-600">Units<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="0"></label>'+
+            '<label class="text-sm text-slate-600">Rent-roll GPR / yr<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="rrGPR" value="'+uwStr(i.rrGPR)+'" placeholder="optional"></label>'+
           '</div>'+
-          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwNoiT12">&mdash;</div></div>'+
-          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwNoiUw">&mdash;</div></div>'+
+          '<label class="block text-sm text-slate-600">Paste the T12 &mdash; one line per row: description then amount'+
+            '<textarea data-uwf="t12Text" rows="6" class="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30" placeholder="Market Rent                18,122,358&#10;Less: Vacancy              (1,120,978)&#10;Concession                  (332,956)&#10;Real Estate Taxes           2,701,442&#10;Payroll                     1,006,149&#10;..."></textarea></label>'+
+          '<div class="flex items-center gap-3"><button type="button" id="uwBuildBtn" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm press">Build Setup</button>'+
+            '<span class="text-[11px] text-slate-400">'+(b ? (b.worksheet.lines.length+' lines &middot; '+Object.keys(b.categorySums).length+' categories classified from your T12') : 'paste a T12 and click Build')+'</span></div>'+
         '</div>'+
-        // worksheet table
+        (b ? uwSetupOutputHtml(b) : '');
+      const ta = view.querySelector('[data-uwf="t12Text"]'); if(ta) ta.value = i.t12Text || "";
+    }
+
+    function uwSetupOutputHtml(b){
+      const r = b.result, s = b.sizing, sz = uwState.input.bench.sizing, bench = uwState.input.bench, hasNoi = r.underwritten.noi > 0;
+      const line = (ln)=> '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+'</td>'+
+        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+
+        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+uwFmt(r.underwritten.lines[ln.key])+'</td></tr>';
+      const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
+        return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td><td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td></tr>'; };
+      let rows = "", prev = null;
+      b.worksheet.lines.forEach(ln => {
+        if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri);
+        if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true);
+        if(prev==="expense" && ln.section!=="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
+        rows += line(ln); prev = ln.section;
+      });
+      if(prev==="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
+      rows += sub("Net Operating Income", r.inPlace.noi, r.underwritten.noi, true);
+      const review = b.review.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
+        '<span class="font-bold uppercase tracking-wide">Review &mdash; '+b.review.length+' low-confidence line'+(b.review.length>1?'s':'')+'</span>'+
+        '<div class="mt-1 space-y-0.5">'+b.review.slice(0,10).map(x=>'&bull; '+escapeHtml(x.name)+' <span class="text-amber-600">&rarr; '+x.code+'</span>').join('<br>')+(b.review.length>10?'<br>&hellip; and '+(b.review.length-10)+' more':'')+'</div></div>' : '';
+      const stat = (label,id,val,hint)=> '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div>'+
+        '<div class="text-sm font-bold text-slate-900 tabular-nums" id="'+id+'">'+val+'</div>'+(hint?'<div class="text-[10px] text-slate-400">'+hint+'</div>':'')+'</div>';
+      const szIn = (label,key,val,suf)=> '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+label+
+        '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suf||"")+'</span></span></label>';
+      return review +
+        '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
+          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums">'+uwFmt(r.inPlace.noi)+'</div></div>'+
+          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums">'+uwFmt(r.underwritten.noi)+'</div></div>'+
+          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
+        '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
-          '<table class="w-full min-w-[640px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">'+
-            '<th class="pb-2">Line</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2">Underwriting basis</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead>'+
-            '<tbody>'+rows+'</tbody></table>'+
-          '<p class="mt-2 text-[11px] text-slate-400">Vacancy / concessions / bad debt price off the income above them; the management fee prices off EGI; budget expenses and reserves are $/unit. Everything else is a pass-through actual.</p>'+
+          '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          '<p class="mt-2 text-[11px] text-slate-400">Underwritten applies a '+uwPctStr(bench.vacancyPct)+'% vacancy floor, a '+uwPctStr(bench.mgmtPct)+'% management fee and $'+uwStr(bench.reservePerUnit)+'/unit reserves; everything else passes through the T12 actual.</p>'+
         '</div>'+
-        // sizing panel
         '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
           '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan</h3>'+
-          '<div class="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4">'+
-            '<div class="space-y-2">'+
-              uwSizeInput("Cap rate", "capRate", uwPctStr(sz.capRate), "%")+
-              uwSizeInput("Max LTV", "ltvMax", uwPctStr(sz.ltvMax), "%")+
-              uwSizeInput("Min DSCR", "dscrMin", uwStr(sz.dscrMin), "×")+
-              uwSizeInput("Min debt yield", "dyMin", uwPctStr(sz.dyMin), "%")+
-              uwSizeInput("Interest rate", "intRate", uwPctStr(sz.intRate), "%")+
-              uwSizeInput("Amortization", "amortYears", uwStr(sz.amortYears), "yrs")+
-            '</div>'+
-            '<div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 content-start">'+
-              uwSizeStat("Est. value", "uwSzValue", "NOI ÷ cap")+
-              uwSizeStat("Loan @ LTV", "uwSzLTV")+
-              uwSizeStat("Loan @ DSCR", "uwSzDSCR")+
-              uwSizeStat("Loan @ debt yield", "uwSzDY")+
-              uwSizeStat("Max supportable", "uwSzMax", "the binding minimum")+
-              uwSizeStat("Binds on", "uwSzBind")+
-              uwSizeStat("Implied LTV", "uwSzImpLTV")+
-              uwSizeStat("Implied DSCR", "uwSzImpDSCR")+
-              uwSizeStat("Implied debt yield", "uwSzImpDY")+
-            '</div>'+
-          '</div>'+
+          '<div class="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="space-y-2">'+
+            szIn("Cap rate","capRate",uwPctStr(sz.capRate),"%")+szIn("Max LTV","ltvMax",uwPctStr(sz.ltvMax),"%")+szIn("Min DSCR","dscrMin",uwStr(sz.dscrMin),"×")+
+            szIn("Min debt yield","dyMin",uwPctStr(sz.dyMin),"%")+szIn("Interest rate","intRate",uwPctStr(sz.intRate),"%")+szIn("Amortization","amortYears",uwStr(sz.amortYears),"yrs")+
+          '</div><div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 content-start">'+
+            stat("Est. value","uwSzValue",s.value>0?fmtMoney(s.value):"&mdash;","NOI ÷ cap")+stat("Loan @ LTV","uwSzLTV",s.loanLTV>0?fmtMoney(s.loanLTV):"&mdash;")+stat("Loan @ DSCR","uwSzDSCR",s.loanDSCR>0?fmtMoney(s.loanDSCR):"&mdash;")+
+            stat("Loan @ debt yield","uwSzDY",s.loanDY>0?fmtMoney(s.loanDY):"&mdash;")+stat("Max supportable","uwSzMax",(hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;","binding minimum")+stat("Binds on","uwSzBind",(hasNoi&&s.maxLoan>0)?s.binding:"&mdash;")+
+            stat("Implied LTV","uwSzImpLTV",s.impliedLTV!=null?fmtPct(s.impliedLTV):"&mdash;")+stat("Implied DSCR","uwSzImpDSCR",s.impliedDSCR!=null?s.impliedDSCR.toFixed(2)+"×":"&mdash;")+stat("Implied debt yield","uwSzImpDY",s.impliedDebtYield!=null?fmtPct(s.impliedDebtYield):"&mdash;")+
+          '</div></div>'+
         '</div>';
-      recomputeUW();
     }
-
-    function recomputeUW(){
-      const view = el("uwView"); if(!view || view.hidden || !window.Underwriting) return;
-      const m = uwModel;
-      const r = Underwriting.computeNOI({ units:m.units, lines:m.lines });
-      const s = Underwriting.sizeLoan(r.underwritten.noi, m.sizing);
-      const put = (sel, txt)=>{ const n = view.querySelector(sel); if(n) n.textContent = txt; };
-      const setId = (id, txt)=>{ const n = el(id); if(n) n.textContent = txt; };
-      // computed underwritten $ per rule line
-      m.lines.forEach(ln => { if(ln.method !== "value"){ put('[data-uwc="'+ln.key+'"]', fmtMoney(r.underwritten.lines[ln.key]||0)); } });
-      // subtotals
-      const sub = (key, ip, uw)=>{ put('[data-uws="'+key+'-t12"]', fmtMoney(ip)); put('[data-uws="'+key+'-uw"]', fmtMoney(uw)); };
-      sub("eri", r.inPlace.eri, r.underwritten.eri);
-      sub("egi", r.inPlace.egi, r.underwritten.egi);
-      sub("opex", r.inPlace.opex, r.underwritten.opex);
-      sub("noi", r.inPlace.noi, r.underwritten.noi);
-      setId("uwNoiT12", fmtMoney(r.inPlace.noi));
-      setId("uwNoiUw", fmtMoney(r.underwritten.noi));
-      // sizing
-      const hasNoi = r.underwritten.noi > 0;
-      setId("uwSzValue", s.value>0 ? fmtMoney(s.value) : "—");
-      setId("uwSzLTV", s.loanLTV>0 ? fmtMoney(s.loanLTV) : "—");
-      setId("uwSzDSCR", s.loanDSCR>0 ? fmtMoney(s.loanDSCR) : "—");
-      setId("uwSzDY", s.loanDY>0 ? fmtMoney(s.loanDY) : "—");
-      setId("uwSzMax", (hasNoi && s.maxLoan>0) ? fmtMoney(s.maxLoan) : "—");
-      setId("uwSzBind", (hasNoi && s.maxLoan>0) ? s.binding : "—");
-      setId("uwSzImpLTV", s.impliedLTV!=null ? fmtPct(s.impliedLTV) : "—");
-      setId("uwSzImpDSCR", s.impliedDSCR!=null ? s.impliedDSCR.toFixed(2)+"×" : "—");
-      setId("uwSzImpDY", s.impliedDebtYield!=null ? fmtPct(s.impliedDebtYield) : "—");
+    function recomputeSizing(){
+      if(!uwLastBuilt || !window.Underwriting) return;
+      const s = Underwriting.sizeLoan(uwLastBuilt.result.underwritten.noi, uwState.input.bench.sizing);
+      uwLastBuilt.sizing = s;
+      const hasNoi = uwLastBuilt.result.underwritten.noi > 0, set = (id,v)=>{ const n = el(id); if(n) n.textContent = v; };
+      set("uwSzValue", s.value>0?fmtMoney(s.value):"—"); set("uwSzLTV", s.loanLTV>0?fmtMoney(s.loanLTV):"—"); set("uwSzDSCR", s.loanDSCR>0?fmtMoney(s.loanDSCR):"—");
+      set("uwSzDY", s.loanDY>0?fmtMoney(s.loanDY):"—"); set("uwSzMax",(hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"—"); set("uwSzBind",(hasNoi&&s.maxLoan>0)?s.binding:"—");
+      set("uwSzImpLTV", s.impliedLTV!=null?fmtPct(s.impliedLTV):"—"); set("uwSzImpDSCR", s.impliedDSCR!=null?s.impliedDSCR.toFixed(2)+"×":"—"); set("uwSzImpDY", s.impliedDebtYield!=null?fmtPct(s.impliedDebtYield):"—");
     }
-
-    // Live editing: update the model from any worksheet input, persist, recompute.
+    // Text/number inputs just persist (Build applies them); sizing inputs recompute live.
     function uwOnInput(t){
-      const m = uwModel;
-      if(t.hasAttribute("data-uwunits")){ m.units = uwNum(t.value); }
-      else if(t.hasAttribute("data-uwname")){ m.propertyName = t.value; }
-      else if(t.hasAttribute("data-uwsize")){
-        const k = t.getAttribute("data-uwsize"); const pctFields = {capRate:1,ltvMax:1,dyMin:1,intRate:1};
-        const v = uwNum(t.value); m.sizing[k] = (v==null ? null : (pctFields[k] ? v/100 : v));
-      } else if(t.hasAttribute("data-uwl")){
-        const key = t.getAttribute("data-uwl"), col = t.getAttribute("data-c");
-        const ln = m.lines.find(l => l.key === key); if(!ln) return;
-        const v = uwNum(t.value);
-        if(col === "param" && (ln.method === "pctBase" || ln.method === "pctEGI")) ln.param = (v==null?null:v/100);
-        else ln[col] = v;
-      } else return;
-      saveUW(); recomputeUW();
+      const i = uwState.input;
+      if(t.hasAttribute("data-uwf")){ const k = t.getAttribute("data-uwf"); i[k] = (k==="name"||k==="t12Text") ? t.value : uwNum(t.value); saveUW(); return; }
+      if(t.hasAttribute("data-uwsize")){ const k = t.getAttribute("data-uwsize"); const pct = {capRate:1,ltvMax:1,dyMin:1,intRate:1}; const v = uwNum(t.value);
+        i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
-    document.addEventListener("click", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwResetBtn")){ if(confirm("Clear the worksheet? This empties all entered values.")) uwResetModel(); } });
+    document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
+      if(t.closest("#uwBuildBtn")){ renderUnderwriting(); return; }
+      if(t.closest("#uwResetBtn")){ if(confirm("Clear the Setup? This empties the pasted T12 and inputs.")) uwResetModel(); return; }
+    });
 
     /* ================================================================
        8a-TAB. TAB STRIP  —  Home + tool tabs (Calendar, Underwriting).
