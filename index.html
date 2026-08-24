@@ -2739,14 +2739,25 @@ tr[data-loan]:hover td{background:#eef2f7}
       reader.readAsArrayBuffer(file);
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
+    // Also read the statement's printed NOI at every available period column so a
+    // lease-up (income that ramped over the year) can be spotted and annualized.
     function uwApplyParse(){
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
       i.t12Rows = d.rows;
       const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
-      const periods = [["total","12-mo Total",d.cols.total],["t6","Trailing 6-mo",d.cols.t6],["t3","Trailing 3-mo",d.cols.t3],["t1","Trailing 1-mo",d.cols.t1]]
-        .filter(p=>p[2]>=0).map(p=>({ key:p[0], label:p[1] }));
-      i.t12Meta = { descCol: gl(d.descCol), periods: periods };
+      const labels = { total:"12-mo Total", t6:"Trailing 6-mo (ann.)", t3:"Trailing 3-mo (ann.)", t1:"Trailing 1-mo (ann.)" };
+      const periods = ["total","t6","t3","t1"].filter(k => d.cols[k] >= 0).map(k => {
+        const pd = (k === (i.basis||"total")) ? d : T12Parse.parseGrid(i.t12Grid, { basis:k });
+        return { key:k, label:labels[k], noi: pd.totals.noi };
+      });
+      // Lease-up: the trailing-annualized NOI diverges sharply from the full-year
+      // figure because occupancy was still climbing. Deterministic, not a guess.
+      const nois = periods.map(p=>p.noi).filter(n=>typeof n==="number" && isFinite(n));
+      const lo = Math.min.apply(null, nois), hi = Math.max.apply(null, nois);
+      const leaseUp = periods.length > 1 && lo > 0 && (hi - lo) / hi > 0.25;
+      i.t12Meta = { descCol: gl(d.descCol), periods: periods, leaseUp: leaseUp,
+        totals: d.totals, categories: d.categories.length };
       saveUW(); renderUnderwriting();
     }
     let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench) return s; }catch(e){} return { input: uwDefaults() }; })();
@@ -2782,7 +2793,16 @@ tr[data-loan]:hover td{background:#eef2f7}
     function uwBuild(){
       const i = uwState.input;
       if(!window.SetupBuilder){ uwLastBuilt = null; return; }
-      const lines = (i.t12Rows && i.t12Rows.length) ? i.t12Rows : parseT12Text(i.t12Text||"");
+      // Preferred path: the parsed statement. In-place income/expense/NOI are read
+      // from the statement's own printed footing (t12-parse totals), so the Setup's
+      // in-place NOI matches the T12's NET OPERATING INCOME to the dollar.
+      if(i.t12Grid && window.T12Parse){
+        const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
+        uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
+          units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench });
+        return;
+      }
+      const lines = parseT12Text(i.t12Text||"");
       uwLastBuilt = lines.length ? SetupBuilder.buildSetup({ t12Lines: lines, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench }) : null;
     }
 
@@ -2804,13 +2824,17 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>'+
             '<p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 file here, or <button type="button" id="uwFileBtn" class="text-brand-700 underline">choose a file</button></p>'+
             '<p class="mt-1 text-[11px] text-slate-400">Excel or CSV export &mdash; the T12 sheet is detected and every line classified automatically.</p>'+
-            (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; '+b.worksheet.lines.length+' lines':'')+'</p>' : '')+
+            (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; Setup built':'')+'</p>' : '')+
           '</div>'+
           (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
-            '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read</span>'+
-            (i.t12Meta.periods.length>1 ? '<label class="flex items-center gap-1.5">Income basis <select data-uwf="basis" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">'+
-              i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+'</option>').join('')+'</select></label>' : '')+
+            '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
+              (i.t12Meta.totals && i.t12Meta.totals.noi!=null ? ' &middot; statement NOI <b class="text-slate-700 tabular-nums">'+uwFmt(i.t12Meta.totals.noi)+'</b>' : '')+'</span>'+
+            (i.t12Meta.periods.length>1 ? '<label class="flex items-center gap-1.5">Period basis <select data-uwf="basis" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">'+
+              i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+(p.noi!=null?' &mdash; '+fmtMoney(p.noi):'')+'</option>').join('')+'</select></label>' : '')+
           '</div>' : '')+
+          (i.t12Meta && i.t12Meta.leaseUp ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
+            '<span class="font-bold uppercase tracking-wide">Lease-up detected</span> &mdash; income ramped over the year, so the 12-month figure understates the stabilized NOI. '+
+            'Pick a trailing-period basis above to annualize, or enter the stabilized rent-roll GPR. The in-place NOI below is exact for the selected basis.</div>' : '')+
           '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
             '<label class="text-sm text-slate-600">Property<input class="'+inCls+' mt-1" data-uwf="name" value="'+escapeHtml(i.name||"")+'" placeholder="(optional)"></label>'+
             '<label class="text-sm text-slate-600">Units<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="from rent roll"></label>'+
@@ -2855,9 +2879,10 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suf||"")+'</span></span></label>';
       return review +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
-          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums">'+uwFmt(r.inPlace.noi)+'</div></div>'+
-          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums">'+uwFmt(r.underwritten.noi)+'</div></div>'+
-          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
+          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
+            ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<1) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+
+          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwUwNoi">'+uwFmt(r.underwritten.noi)+'</div></div>'+
+          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
           '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+

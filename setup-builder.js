@@ -33,12 +33,13 @@
   var BUDGET  = { INS:1, PAY:1, GA:1, MKT:1, RM:1, CS:1 };   // priced $/unit in the underwritten column
   var num = function (v){ if(typeof v==="string") v=parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v==="number"&&isFinite(v))?v:0; };
 
-  // Lines the caller pastes/loads: [{name, amount, section?}]. Classify + sum by
-  // category, collecting any low-confidence lines for operator review.
+  // Lines the caller pastes/loads: [{name, amount, section?, sub?}]. Classify +
+  // sum by category. The account sub-section is passed through so the classifier
+  // can use the statement's own hierarchy.
   function classifySum(t12Lines){
     var sums = {}, review = [];
     (t12Lines || []).forEach(function (ln){
-      var r = T12.classifyConfident(ln.name, ln.section);
+      var r = T12.classifyConfident(ln.name, ln.section, ln.sub);
       if(!r.code) return;
       var amt = num(ln.amount);
       sums[r.code] = (sums[r.code] || 0) + amt;
@@ -47,12 +48,54 @@
     return { sums: sums, review: review };
   }
 
+  // Build category sums straight from a parsed statement (t12-parse.parseGrid
+  // output: {rows, categories, totals}). The statement's PRINTED footing is the
+  // authority: in-place income, expense and NOI are read from totals.{income,
+  // expense,noi}. Detail lines are classified for the build-up split, then each
+  // section is reconciled to its printed total to the dollar — so the in-place
+  // NOI always equals the statement's own NET OPERATING INCOME exactly. (A T12's
+  // per-line annual column can be internally inconsistent; its printed subtotals
+  // never are.) Returns { sums, inPlaceNOI, totals }.
+  function fromParse(parsed){
+    parsed = parsed || {};
+    var rows = parsed.rows || [], totals = parsed.totals || {};
+    var incSum = {}, expSum = {}, incRaw = 0, expRaw = 0;
+    rows.forEach(function (r){
+      var isExp = String(r.section || "").toUpperCase().indexOf("EXP") >= 0;
+      var code = T12.classify(r.name, r.section, r.sub);
+      if(code == null) return;
+      var amt = num(r.amount), expCode = (T12.roleOf(code) === "expense");
+      if(isExp){
+        // a line in the printed EXPENSE section is an expense dollar, whatever it
+        // is called (e.g. bad-debt shown as a positive expense) — keep the code
+        // for display but fold income-role codes into G&A so the split stays valid
+        var ce = expCode ? code : "GA";
+        expSum[ce] = (expSum[ce] || 0) + amt; expRaw += amt;
+      } else {
+        var ci = expCode ? "OTH" : code;
+        incSum[ci] = (incSum[ci] || 0) + amt; incRaw += amt;
+      }
+    });
+    // Reconcile each section to the statement's printed total (residual → the
+    // catch-all bucket) so the sums foot exactly to the printed figures.
+    if(totals.income != null){ var di = totals.income - incRaw; if(Math.abs(di) > 0.005) incSum.OTH = (incSum.OTH || 0) + di; }
+    if(totals.expense != null){ var de = totals.expense - expRaw; if(Math.abs(de) > 0.005) expSum.GA = (expSum.GA || 0) + de; }
+    var sums = {}; Object.keys(incSum).forEach(function(k){ sums[k] = incSum[k]; });
+    Object.keys(expSum).forEach(function(k){ sums[k] = (sums[k] || 0) + expSum[k]; });
+    var noi = (totals.noi != null) ? totals.noi
+            : (totals.income != null && totals.expense != null) ? totals.income - totals.expense : null;
+    return { sums: sums, inPlaceNOI: noi, totals: totals };
+  }
+
   // input: { t12Lines | categorySums, units, rrGPR, benchmarks:{ vacancyPct, mgmtPct,
   //          reservePerUnit, budget:{code:$/unit}, sizing:{capRate,ltvMax,dscrMin,dyMin,intRate,amortYears} } }
   function buildSetup(input){
     input = input || {};
     var bm = input.benchmarks || {}, budget = bm.budget || {}, units = num(input.units);
-    var cs = input.categorySums ? { sums: input.categorySums, review: [] } : classifySum(input.t12Lines);
+    var cs, inPlaceAuth = null;
+    if(input.parsed){ var fp = fromParse(input.parsed); cs = { sums: fp.sums, review: [] }; inPlaceAuth = fp.inPlaceNOI; }
+    else if(input.categorySums){ cs = { sums: input.categorySums, review: [] }; }
+    else { cs = classifySum(input.t12Lines); }
     var sums = cs.sums;
     var has = function (c){ return sums[c] != null; };
     var lines = [];
@@ -88,8 +131,12 @@
 
     var ws = { units: units, lines: lines };
     var result = UW.computeNOI(ws);
+    // The statement's printed NET OPERATING INCOME is authoritative for in-place;
+    // carry it through (the built sums foot to it, so this is a guard, not a fudge).
+    if(inPlaceAuth != null) result.inPlace.noiReported = inPlaceAuth;
     var sizing = UW.sizeLoan(result.underwritten.noi, bm.sizing || {});
-    return { categorySums: sums, review: cs.review, worksheet: ws, result: result, sizing: sizing };
+    return { categorySums: sums, review: cs.review, worksheet: ws, result: result, sizing: sizing,
+             inPlaceNOIReported: inPlaceAuth };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).
@@ -106,6 +153,6 @@
     return { rows: rows, total: tot };
   }
 
-  return { buildSetup: buildSetup, classifySum: classifySum, sizingSummary: sizingSummary,
+  return { buildSetup: buildSetup, classifySum: classifySum, fromParse: fromParse, sizingSummary: sizingSummary,
            LABEL: LABEL, RENTAL: RENTAL, OTHER: OTHER, EXPENSE: EXPENSE };
 });

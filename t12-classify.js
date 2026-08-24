@@ -79,23 +79,106 @@
     return null;
   }
 
+  // The T12's own account sub-section (e.g. "CONTRACT REPAIRS", "UTILITIES",
+  // "RENTAL INCOME") is authoritative — it's the signal the underwriter tags by.
+  // A line under "Contract Repairs" is CS; the same line under "Repairs &
+  // Maintenance" is RM. This removes the CS/RM/UTIL/GA ambiguity entirely.
+  function subMatch(s, S){
+    if(!S) return null;
+    // expense sub-groups
+    if(/PAYROLL|SALAR/.test(S)) return "PAY";
+    if(/MANAGEMENT\s+FEE/.test(S)) return "MGMT";
+    if(/UNIT\s+TURNOVER|TURN\s*COST|APARTMENT\s+TURN/.test(S)) return "RM";
+    if(/CONTRACT\s+(REPAIR|SERVICE)/.test(S)){
+      if(/valet|trash|garbage|rubbish/.test(s)) return "TRSH";
+      if(/software/.test(s)) return "GA";
+      if(/pool|security|monitoring|fitness|amenity/.test(s)) return "RM";
+      return "CS";
+    }
+    if(/REPAIR|MAINTEN|\bR&M\b|GROUNDS/.test(S)) return "RM";
+    if(/LEASING|MARKET|ADVERTIS/.test(S)) return "MKT";
+    if(/AUTO\s+EXPENSE/.test(S)) return "GA";
+    if(/SECURITY/.test(S)) return "RM";
+    if(/TAX|INSURAN/.test(S)) return /tax/.test(s) ? "RET" : "INS";
+    if(/UTILIT/.test(S)){
+      if(/trash|garbage|rubbish|sanitation|valet/.test(s)) return "TRSH";
+      if(/cable|telephone/.test(s)) return "CAB";
+      return "UTIL";
+    }
+    if(/GENERAL|ADMINISTRATIV|OFFICE|PROFESSIONAL/.test(S)){
+      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BD";
+      if(/security/.test(s)) return "RM";
+      if(/management\s+fee/.test(s)) return "MGMT";
+      if(/real\s+(estate|property)\s+tax|\btaxes\b/.test(s)) return "RET";
+      if(/\binsurance\b/.test(s) && !/health|renter/.test(s)) return "INS";
+      return "GA";
+    }
+    // income sub-groups
+    if(/RENTAL\s+INCOME|RENT\s+REVENUE|^REVENUE$|GROSS\s+(INCOME|REVENUE)/.test(S)){
+      if(/employee\s+(concession|discount)/.test(s)) return "EMPL";
+      if(/\bmodel\b|admin\s+unit/.test(s)) return "MOD";       // before vacancy: "vacancy loss-model"
+      if(/concession/.test(s)) return "CONC";
+      if(/vacancy|down\s+units/.test(s)) return "VAC";
+      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BD";
+      if(/short\s*[- ]?term|month\s*to\s*month/.test(s)) return "MTM";
+      if(/\bpet\b/.test(s)) return "PET";
+      if(/parking/.test(s)) return "PARK";
+      if(/utility\s+reimburs|reimburs/.test(s)) return "RUBS";
+      if(/rental\s+income\s*[-–]\s*other|\bother\b|storage|arrears/.test(s)) return "OTH";
+      return "GPR";
+    }
+    if(/COST\s+RECOVERY|RECOVERY/.test(S)){
+      if(/trash|garbage/.test(s)) return "TRSH RUB";
+      if(/water|sewer|utilit|electric|\bgas\b/.test(s)) return "RUBS";
+      return "OTH";
+    }
+    if(/COMMERCIAL/.test(S)){
+      if(/\bcam\b/.test(s)) return "CAM";
+      if(/antenna/.test(s)) return "ANT";
+      if(/parking/.test(s)) return "PARK";
+      if(/rent/.test(s)) return "COM";
+      return "OTH";
+    }
+    if(/OTHER\s+INCOME|MISC|INVESTMENT\s+INCOME|FEE\s+INCOME/.test(S)){
+      if(/cable|satellite/.test(s)) return "CAB";
+      if(/\bpet\b/.test(s)) return "PET";
+      if(/late\s+fee|\bnsf\b|bounced/.test(s)) return "LATE";
+      if(/application/.test(s)) return "APP";
+      if(/admin/.test(s)) return "ADM";
+      if(/amenity/.test(s)) return "AMEN";
+      if(/parking/.test(s)) return "PARK";
+      if(/reimburs|recover/.test(s)){ if(/trash|garbage/.test(s)) return "TRSH RUB"; if(/water|sewer|utilit|electric|gas/.test(s)) return "RUBS"; }
+      return "OTH";
+    }
+    if(/OTHER\s+EXPENSE/.test(S)){
+      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BD";
+      if(/parking\s+lot\s+lease/.test(s)) return "PLL";
+      if(/late/.test(s)) return "LATE";
+      return "GA";
+    }
+    return null;
+  }
+
   function prep(name, section){
     var s = String(name || "").toLowerCase().trim();
     var isExp = String(section || "").toUpperCase().indexOf("EXP") >= 0;
     return { s: s, isExp: isExp };
   }
-  // Return just the code (fallback GA/OTH by section when no rule matches).
-  function classify(name, section){
+  // classify(name, section, sub) — account hierarchy first, keyword rules as
+  // fallback for flat / GL-numbered statements with no sub-section headers.
+  function classify(name, section, sub){
     var p = prep(name, section); if(!p.s) return null;
-    return rulesMatch(p.s, p.isExp) || (p.isExp ? "GA" : "OTH");
+    var S = String(sub || "").toUpperCase().replace(/\s+/g, " ").trim();
+    return subMatch(p.s, S) || rulesMatch(p.s, p.isExp) || (p.isExp ? "GA" : "OTH");
   }
-  // Return {code, confident} — confident=false when the line hit the section
-  // fallback (no keyword matched) and should be shown for operator review.
-  function classifyConfident(name, section){
+  // {code, confident} — confident whenever the hierarchy or a keyword rule placed
+  // the line; only the bare section fallback (no signal at all) is unconfident.
+  function classifyConfident(name, section, sub){
     var p = prep(name, section); if(!p.s) return { code:null, confident:false };
-    var m = rulesMatch(p.s, p.isExp);
+    var S = String(sub || "").toUpperCase().replace(/\s+/g, " ").trim();
+    var m = subMatch(p.s, S) || rulesMatch(p.s, p.isExp);
     return { code: m || (p.isExp ? "GA" : "OTH"), confident: m !== null };
   }
 
-  return { classify: classify, classifyConfident: classifyConfident, roleOf: roleOf, INCOME: INCOME, EXPENSE: EXPENSE };
+  return { classify: classify, classifyConfident: classifyConfident, subMatch: subMatch, roleOf: roleOf, INCOME: INCOME, EXPENSE: EXPENSE };
 });
