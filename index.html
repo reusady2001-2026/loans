@@ -2914,15 +2914,36 @@ tr[data-loan]:hover td{background:#eef2f7}
         return '<button type="button" data-tabsel="'+t.id+'" draggable="'+(t.fixed?"false":"true")+'" class="lds-tab -mb-px inline-flex items-center gap-1.5 rounded-t-lg border border-b px-3 py-2 text-sm font-semibold transition select-none '+cls+popped+'">'+
           TAB_SVG[t.kind]+'<span class="whitespace-nowrap">'+escapeHtml(t.title)+'</span>'+ctrl+'</button>';
       }).join("");
-      html += '<div class="relative ml-1 self-center">'+
-        '<button type="button" id="tabNewBtn" title="Open a tool in a new tab" class="grid h-7 w-7 place-items-center rounded-lg text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">+</button>'+
-        '<div id="tabNewMenu" hidden class="absolute left-0 z-50 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">'+
+      // The "+" opens a menu. The menu is appended to <body> (not the strip),
+      // because the strip is an overflow-auto scroll container that would clip
+      // any dropdown to its own ~40px height.
+      html += '<button type="button" id="tabNewBtn" title="Open a tool in a new tab" class="ml-1 self-center grid h-7 w-7 place-items-center rounded-lg text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">+</button>';
+      strip.innerHTML = html;
+    }
+    // The "+" dropdown, kept at <body> level with fixed positioning so it isn't
+    // clipped by the tab strip's horizontal scroll container.
+    function tabNewMenuEl(){
+      let m = el("tabNewMenu");
+      if(!m){
+        m = document.createElement("div");
+        m.id = "tabNewMenu"; m.hidden = true;
+        m.className = "fixed z-[55] w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl";
+        m.innerHTML =
           '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
           '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
-          '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
-        '</div>'+
-      '</div>';
-      strip.innerHTML = html;
+          '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>';
+        document.body.appendChild(m);
+      }
+      return m;
+    }
+    function toggleTabNewMenu(btn){
+      const m = tabNewMenuEl();
+      if(m.hidden){
+        const r = btn.getBoundingClientRect();
+        m.style.left = Math.round(Math.min(r.left, window.innerWidth - 248)) + "px";
+        m.style.top  = Math.round(r.bottom + 4) + "px";
+        m.hidden = false;
+      } else { m.hidden = true; }
     }
 
     function activateTab(id){
@@ -2954,7 +2975,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // Delegated tab-strip interactions (menu, select, close, pop-out).
     document.addEventListener("click", (e) => {
       const t = e.target; if(!t.closest) return;
-      if(t.closest("#tabNewBtn")){ const m = el("tabNewMenu"); if(m) m.hidden = !m.hidden; e.stopPropagation(); return; }
+      if(t.closest("#tabNewBtn")){ toggleTabNewMenu(t.closest("#tabNewBtn")); e.stopPropagation(); return; }
       const open = t.closest("[data-tabopen]");
       if(open){ openTab(open.getAttribute("data-tabopen")); const m = el("tabNewMenu"); if(m) m.hidden = true; return; }
       const close = t.closest("[data-tabclose]");
