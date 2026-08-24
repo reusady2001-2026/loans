@@ -9,6 +9,8 @@
   <!-- Tailwind + SheetJS are vendored locally (vendor/) so the app runs fully offline -->
   <script src="./vendor/tailwindcss.js"></script>
   <script src="./vendor/xlsx.full.min.js"></script>
+  <!-- Underwriting & debt-sizing engine (pure, data-free) -->
+  <script src="./underwriting.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -687,7 +689,13 @@
       if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();
     })();</script>
 
-    <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 space-y-6">
+    <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
+
+      <!-- ===================== TAB STRIP (Home + tool tabs) ===================== -->
+      <div id="tabStrip" class="mb-4 flex items-end gap-1 overflow-x-auto border-b border-ink-200/70"></div>
+
+      <!-- The whole app is the "Home" tab; tool tabs (Calendar, Underwriting) show as sibling panels. -->
+      <div id="homePanel" class="space-y-6">
 
       <!-- ============ SCOPE TOGGLE + CALENDAR (left)  ·  ALERTS RAIL (right) ============ -->
       <!-- relative z-20: keeps this row (and any menu it opens, e.g. Data) above the
@@ -888,6 +896,13 @@
       <p class="text-center text-xs text-slate-400">
         All records are stored locally in your browser. Interest accrues Actual/360 (real calendar days, leap years included). Demonstration tool — not financial advice.
       </p>
+      </div><!-- /#homePanel -->
+
+      <!-- ===================== TOOL PANELS (opened as tabs) ===================== -->
+      <!-- Underwriting & sizing worksheet -->
+      <section id="uwView" class="space-y-6" hidden></section>
+      <!-- Maturity & Reset calendar (iframe host; same self-contained doc as the pop-out) -->
+      <div id="calendarPanel" hidden><iframe id="calendarFrame" class="w-full rounded-2xl border border-slate-200 bg-white" style="height:calc(100vh - 180px);min-height:520px" title="Maturity &amp; Reset Calendar"></iframe></div>
     </main>
 
     <footer class="border-t border-slate-200 py-6">
@@ -2602,7 +2617,7 @@ tr[data-loan]:hover td{background:#eef2f7}
   document.addEventListener('click',function(e){
     if(!e.target.closest)return;
     var ev=e.target.closest('[data-loan][data-iso]');
-    if(ev){var id=ev.getAttribute('data-loan'),iso=ev.getAttribute('data-iso');try{if(window.opener&&!window.opener.closed)window.opener.postMessage({__lds:'goto',loanId:id,iso:iso},'*');}catch(err){}return;}
+    if(ev){var id=ev.getAttribute('data-loan'),iso=ev.getAttribute('data-iso');try{var tgt=(window.parent&&window.parent!==window)?window.parent:window.opener;if(tgt)tgt.postMessage({__lds:'goto',loanId:id,iso:iso},'*');}catch(err){}return;}
     var yh=e.target.closest('.yrhead');
     if(yh){var y=yh.getAttribute('data-year');if(st.openYears==null)st.openYears={};st.openYears[y]=!st.openYears[y];renderContent();return;}
     var t=e.target.closest('[data-view],#clearBtn');if(!t)return;
@@ -2613,8 +2628,9 @@ tr[data-loan]:hover td{background:#eef2f7}
   renderContent();
 })();
 `;
-    // Build the interactive calendar document (self-contained) and open it in a pop-out.
-    function openMaturityCalendar(){
+    // Build the interactive calendar document (self-contained). Serves both the
+    // calendar tab's iframe (srcdoc) and, when torn off, a standalone window.
+    function calendarDocHtml(){
       const now = todayParts();
       const rows0 = loans.map(l => ({ loan:l, cur:compute(l) }));
       const monthsAway = (iso)=>{ const p=isoToParts(iso); return p ? (p.y-now.y)*12+(p.mo-now.mo) : 9999; };
@@ -2640,16 +2656,23 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<script>window.__CAL_DATA__='+json+';<\/script>'+
         '<script>'+CAL_JS+'<\/script>'+
         '</body></html>';
-      const w = window.open('', 'ldsCalendar', 'width=1200,height=880');
-      if(!w){ toast("Allow pop-ups to open the calendar window", "info"); return; }
-      w.document.open(); w.document.write(html); w.document.close(); w.focus();
+      return html;
     }
+    function loadCalendarFrame(){ const f = el("calendarFrame"); if(f) f.srcdoc = calendarDocHtml(); }
+    function popCalendarWindow(){
+      const w = window.open('', 'ldsCalendar', 'width=1200,height=880');
+      if(!w){ toast("Allow pop-ups to open the calendar window", "info"); return null; }
+      w.document.open(); w.document.write(calendarDocHtml()); w.document.close(); w.focus(); return w;
+    }
+    // The prominent button (and elsewhere) now open the calendar as a TAB.
+    function openMaturityCalendar(){ openTab("calendar"); }
 
     // Jump from a calendar event to its loan's amortization row. The pop-out posts
     // {__lds:'goto', loanId, iso}; we open that loan's dashboard and scroll the
     // schedule to the exact payment (matched by its "pays MM/DD/YYYY" date).
     function ldsGotoEvent(loanId, iso){
       const loan = getLoan(loanId); if(!loan) return;
+      if(typeof activateTab === "function") activateTab("home");   // a calendar tab click returns to Home to show the loan
       selectLoan(loanId);                          // leaves portfolio scope → loan view, renders the schedule
       ldsRaiseSelf();                              // pull this window in front of the calendar pop-out
       const target = fmtDateUS(iso);
@@ -2680,6 +2703,350 @@ tr[data-loan]:hover td{background:#eef2f7}
       const m = ev.data;
       if(m && m.__lds === "goto" && m.loanId) ldsGotoEvent(m.loanId, m.iso);
     });
+
+    /* ================================================================
+       8a-UW. UNDERWRITING & DEBT-SIZING WORKSHEET  (empty, engine-backed)
+       A blank in-place → underwritten NOI build-up that feeds a debt-sizing
+       panel (max supportable loan = MIN of LTV / DSCR / debt-yield). Every
+       formula lives in underwriting.js; NO property data is seeded — the
+       operator types the T12 actuals and the benchmarks and it computes live.
+       ================================================================ */
+    const UW_KEY = "lds_uw_model_v1";
+    function newUWModel(){
+      const base = (window.Underwriting ? Underwriting.blankWorksheet() : { lines:[] });
+      return { propertyName:"", units:null, lines:base.lines,
+        sizing:{ capRate:null, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:null, amortYears:null } };
+    }
+    let uwModel = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && Array.isArray(s.lines) && s.sizing) return s; }catch(e){} return newUWModel(); })();
+    function saveUW(){ try{ localStorage.setItem(UW_KEY, JSON.stringify(uwModel)); }catch(e){} }
+    function uwResetModel(){ uwModel = newUWModel(); saveUW(); renderUnderwriting(); }
+
+    const uwNum = (v)=>{ if(typeof v === "string") v = parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v === "number" && isFinite(v)) ? v : null; };
+    const uwStr = (v)=> (v==null ? "" : String(v));
+    const uwPctStr = (v)=> (v==null ? "" : String(Math.round(v*1e5)/1e3));      // decimal → % display (0.05→5)
+    const uwInputCls = "w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30";
+    const uwMethodHint = { value:"actual", pctBase:"% of income", pctEGI:"% of EGI", perUnit:"$/unit" };
+
+    // One worksheet row. `t12` = in-place actual; the underwritten cell is either a
+    // direct $ (pass-through) or a benchmark (%, $/unit) that the engine turns into $.
+    function uwLineRow(ln){
+      const t12In = '<input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="t12" value="'+uwStr(ln.t12)+'" placeholder="0">';
+      let basisCell, uwCell;
+      if(ln.method === "value"){
+        basisCell = '<span class="text-[11px] text-slate-400">entered</span>';
+        uwCell = '<input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="uw" value="'+uwStr(ln.uw)+'" placeholder="0">';
+      } else {
+        const isPct = (ln.method === "pctBase" || ln.method === "pctEGI");
+        const val = isPct ? uwPctStr(ln.param) : uwStr(ln.param);
+        const suffix = isPct ? "%" : "/unit";
+        basisCell = '<div class="flex items-center gap-1"><input class="'+uwInputCls+'" inputmode="decimal" data-uwl="'+ln.key+'" data-c="param" value="'+val+'" placeholder="0"><span class="text-[11px] text-slate-400 shrink-0">'+suffix+'</span></div>';
+        uwCell = '<span class="tabular-nums text-slate-700" data-uwc="'+ln.key+'">&mdash;</span>';
+      }
+      return '<tr class="border-t border-slate-100">'+
+        '<td class="py-1.5 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+' <span class="ml-1 text-[10px] uppercase tracking-wide text-slate-400">'+uwMethodHint[ln.method]+'</span></td>'+
+        '<td class="py-1 px-2 w-40">'+t12In+'</td>'+
+        '<td class="py-1 px-2 w-36">'+basisCell+'</td>'+
+        '<td class="py-1 px-2 w-40 text-right">'+uwCell+'</td>'+
+      '</tr>';
+    }
+    function uwSubRow(label, key, strong){
+      const cls = strong ? "font-bold text-slate-900" : "font-semibold text-slate-700";
+      return '<tr class="border-t-2 border-slate-200 bg-slate-50/70">'+
+        '<td class="py-1.5 pr-3 text-sm '+cls+'">'+label+'</td><td></td>'+
+        '<td class="py-1.5 px-2 text-right text-sm '+cls+' tabular-nums"><span data-uws="'+key+'-t12">&mdash;</span></td>'+
+        '<td class="py-1.5 px-2 text-right text-sm '+cls+' tabular-nums"><span data-uws="'+key+'-uw">&mdash;</span></td>'+
+      '</tr>';
+    }
+    function uwSizeStat(label, id, hint){
+      return '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2">'+
+        '<div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div>'+
+        '<div class="text-sm font-bold text-slate-900 tabular-nums" id="'+id+'">&mdash;</div>'+
+        (hint ? '<div class="text-[10px] text-slate-400">'+hint+'</div>' : '')+
+      '</div>';
+    }
+    function uwSizeInput(label, key, val, suffix){
+      return '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+escapeHtml(label)+
+        '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suffix||"")+'</span></span></label>';
+    }
+
+    function renderUnderwriting(){
+      const view = el("uwView"); if(!view) return;
+      const m = uwModel;
+      // worksheet body: lines with section-subtotals folded in
+      let rows = "", prev = null;
+      m.lines.forEach((ln, i) => {
+        if(prev === "rental" && ln.section !== "rental") rows += uwSubRow("Effective Rental Income", "eri");
+        if(prev === "other"  && ln.section !== "other")  rows += uwSubRow("Effective Gross Income", "egi", true);
+        if(prev === "expense"&& ln.section !== "expense")rows += uwSubRow("Total Operating Expenses", "opex");
+        rows += uwLineRow(ln);
+        prev = ln.section;
+      });
+      if(prev === "expense") rows += uwSubRow("Total Operating Expenses", "opex");
+      rows += uwSubRow("Net Operating Income", "noi", true);
+
+      const sz = m.sizing;
+      view.innerHTML =
+        '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
+          '<div><h2 class="text-lg font-bold text-slate-900">Underwriting &amp; Sizing</h2>'+
+            '<p class="text-sm text-slate-500">Build the in-place &amp; underwritten NOI, then size the loan. Blank &mdash; enter the T12 actuals and your benchmarks.</p></div>'+
+          '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Reset worksheet</button>'+
+        '</div>'+
+        // property + units + live NOI headline
+        '<div class="grid grid-cols-1 lg:grid-cols-4 gap-3">'+
+          '<div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap items-end gap-4">'+
+            '<label class="flex-1 min-w-[180px] text-sm text-slate-600">Property<input class="'+uwInputCls+' text-left mt-1" data-uwname value="'+escapeHtml(m.propertyName||"")+'" placeholder="(optional)"></label>'+
+            '<label class="text-sm text-slate-600">Units<input class="'+uwInputCls+' w-24 mt-1" inputmode="numeric" data-uwunits value="'+uwStr(m.units)+'" placeholder="0"></label>'+
+          '</div>'+
+          '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwNoiT12">&mdash;</div></div>'+
+          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwNoiUw">&mdash;</div></div>'+
+        '</div>'+
+        // worksheet table
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
+          '<table class="w-full min-w-[640px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">'+
+            '<th class="pb-2">Line</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2">Underwriting basis</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead>'+
+            '<tbody>'+rows+'</tbody></table>'+
+          '<p class="mt-2 text-[11px] text-slate-400">Vacancy / concessions / bad debt price off the income above them; the management fee prices off EGI; budget expenses and reserves are $/unit. Everything else is a pass-through actual.</p>'+
+        '</div>'+
+        // sizing panel
+        '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan</h3>'+
+          '<div class="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4">'+
+            '<div class="space-y-2">'+
+              uwSizeInput("Cap rate", "capRate", uwPctStr(sz.capRate), "%")+
+              uwSizeInput("Max LTV", "ltvMax", uwPctStr(sz.ltvMax), "%")+
+              uwSizeInput("Min DSCR", "dscrMin", uwStr(sz.dscrMin), "×")+
+              uwSizeInput("Min debt yield", "dyMin", uwPctStr(sz.dyMin), "%")+
+              uwSizeInput("Interest rate", "intRate", uwPctStr(sz.intRate), "%")+
+              uwSizeInput("Amortization", "amortYears", uwStr(sz.amortYears), "yrs")+
+            '</div>'+
+            '<div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 content-start">'+
+              uwSizeStat("Est. value", "uwSzValue", "NOI ÷ cap")+
+              uwSizeStat("Loan @ LTV", "uwSzLTV")+
+              uwSizeStat("Loan @ DSCR", "uwSzDSCR")+
+              uwSizeStat("Loan @ debt yield", "uwSzDY")+
+              uwSizeStat("Max supportable", "uwSzMax", "the binding minimum")+
+              uwSizeStat("Binds on", "uwSzBind")+
+              uwSizeStat("Implied LTV", "uwSzImpLTV")+
+              uwSizeStat("Implied DSCR", "uwSzImpDSCR")+
+              uwSizeStat("Implied debt yield", "uwSzImpDY")+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      recomputeUW();
+    }
+
+    function recomputeUW(){
+      const view = el("uwView"); if(!view || view.hidden || !window.Underwriting) return;
+      const m = uwModel;
+      const r = Underwriting.computeNOI({ units:m.units, lines:m.lines });
+      const s = Underwriting.sizeLoan(r.underwritten.noi, m.sizing);
+      const put = (sel, txt)=>{ const n = view.querySelector(sel); if(n) n.textContent = txt; };
+      const setId = (id, txt)=>{ const n = el(id); if(n) n.textContent = txt; };
+      // computed underwritten $ per rule line
+      m.lines.forEach(ln => { if(ln.method !== "value"){ put('[data-uwc="'+ln.key+'"]', fmtMoney(r.underwritten.lines[ln.key]||0)); } });
+      // subtotals
+      const sub = (key, ip, uw)=>{ put('[data-uws="'+key+'-t12"]', fmtMoney(ip)); put('[data-uws="'+key+'-uw"]', fmtMoney(uw)); };
+      sub("eri", r.inPlace.eri, r.underwritten.eri);
+      sub("egi", r.inPlace.egi, r.underwritten.egi);
+      sub("opex", r.inPlace.opex, r.underwritten.opex);
+      sub("noi", r.inPlace.noi, r.underwritten.noi);
+      setId("uwNoiT12", fmtMoney(r.inPlace.noi));
+      setId("uwNoiUw", fmtMoney(r.underwritten.noi));
+      // sizing
+      const hasNoi = r.underwritten.noi > 0;
+      setId("uwSzValue", s.value>0 ? fmtMoney(s.value) : "—");
+      setId("uwSzLTV", s.loanLTV>0 ? fmtMoney(s.loanLTV) : "—");
+      setId("uwSzDSCR", s.loanDSCR>0 ? fmtMoney(s.loanDSCR) : "—");
+      setId("uwSzDY", s.loanDY>0 ? fmtMoney(s.loanDY) : "—");
+      setId("uwSzMax", (hasNoi && s.maxLoan>0) ? fmtMoney(s.maxLoan) : "—");
+      setId("uwSzBind", (hasNoi && s.maxLoan>0) ? s.binding : "—");
+      setId("uwSzImpLTV", s.impliedLTV!=null ? fmtPct(s.impliedLTV) : "—");
+      setId("uwSzImpDSCR", s.impliedDSCR!=null ? s.impliedDSCR.toFixed(2)+"×" : "—");
+      setId("uwSzImpDY", s.impliedDebtYield!=null ? fmtPct(s.impliedDebtYield) : "—");
+    }
+
+    // Live editing: update the model from any worksheet input, persist, recompute.
+    function uwOnInput(t){
+      const m = uwModel;
+      if(t.hasAttribute("data-uwunits")){ m.units = uwNum(t.value); }
+      else if(t.hasAttribute("data-uwname")){ m.propertyName = t.value; }
+      else if(t.hasAttribute("data-uwsize")){
+        const k = t.getAttribute("data-uwsize"); const pctFields = {capRate:1,ltvMax:1,dyMin:1,intRate:1};
+        const v = uwNum(t.value); m.sizing[k] = (v==null ? null : (pctFields[k] ? v/100 : v));
+      } else if(t.hasAttribute("data-uwl")){
+        const key = t.getAttribute("data-uwl"), col = t.getAttribute("data-c");
+        const ln = m.lines.find(l => l.key === key); if(!ln) return;
+        const v = uwNum(t.value);
+        if(col === "param" && (ln.method === "pctBase" || ln.method === "pctEGI")) ln.param = (v==null?null:v/100);
+        else ln[col] = v;
+      } else return;
+      saveUW(); recomputeUW();
+    }
+    document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
+    document.addEventListener("click", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwResetBtn")){ if(confirm("Clear the worksheet? This empties all entered values.")) uwResetModel(); } });
+
+    /* ================================================================
+       8a-TAB. TAB STRIP  —  Home + tool tabs (Calendar, Underwriting).
+       Chrome-style: click to switch, close, reorder by drag, and pop a
+       tab out into its own window / dock it back (see the pop-out block).
+       ================================================================ */
+    const TAB_SVG = {
+      home:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>',
+      calendar:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+      underwriting:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+      x:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+      pop:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>'
+    };
+    let ldsTabs = [{ id:"home", title:"Portfolio", kind:"home", fixed:true }];
+    let ldsActiveTab = "home";
+    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : "Portfolio";
+
+    function renderTabStrip(){
+      const strip = el("tabStrip"); if(!strip) return;
+      let html = ldsTabs.map(t => {
+        const active = t.id === ldsActiveTab;
+        const cls = active ? "bg-white text-slate-900 border-ink-200/70 border-b-white"
+                           : "bg-transparent text-slate-500 border-transparent hover:bg-slate-100 hover:text-slate-700";
+        const popped = t.poppedOut ? ' opacity-50' : '';
+        const ctrl = t.fixed ? "" :
+          '<span data-tabpop="'+t.id+'" role="button" title="'+(t.poppedOut?"Open in its window":"Pop out to its own window")+'" class="ml-1 grid place-items-center rounded p-0.5 hover:bg-black/10 hover:text-slate-700">'+TAB_SVG.pop+'</span>'+
+          '<span data-tabclose="'+t.id+'" role="button" title="Close tab" class="grid place-items-center rounded p-0.5 hover:bg-black/10 hover:text-slate-700">'+TAB_SVG.x+'</span>';
+        return '<button type="button" data-tabsel="'+t.id+'" draggable="'+(t.fixed?"false":"true")+'" class="lds-tab -mb-px inline-flex items-center gap-1.5 rounded-t-lg border border-b px-3 py-2 text-sm font-semibold transition select-none '+cls+popped+'">'+
+          TAB_SVG[t.kind]+'<span class="whitespace-nowrap">'+escapeHtml(t.title)+'</span>'+ctrl+'</button>';
+      }).join("");
+      html += '<div class="relative ml-1 self-center">'+
+        '<button type="button" id="tabNewBtn" title="Open a tool in a new tab" class="grid h-7 w-7 place-items-center rounded-lg text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">+</button>'+
+        '<div id="tabNewMenu" hidden class="absolute left-0 z-50 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">'+
+          '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
+          '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
+          '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
+        '</div>'+
+      '</div>';
+      strip.innerHTML = html;
+    }
+
+    function activateTab(id){
+      if(!ldsTabs.some(t => t.id === id)) id = "home";
+      ldsActiveTab = id;
+      const tab = ldsTabs.find(t => t.id === id);
+      el("homePanel").hidden = (tab.kind !== "home");
+      el("uwView").hidden = (tab.kind !== "underwriting");
+      el("calendarPanel").hidden = (tab.kind !== "calendar");
+      if(tab.kind === "underwriting") renderUnderwriting();
+      if(tab.kind === "calendar") loadCalendarFrame();
+      renderTabStrip();
+      try{ window.scrollTo(0,0); }catch(e){}
+    }
+    function openTab(kind){
+      let t = ldsTabs.find(x => x.kind === kind);
+      if(!t){ t = { id: kind+"-"+ (ldsTabs.length) , title: tabTitle(kind), kind: kind, fixed:false, poppedOut:false }; ldsTabs.push(t); }
+      if(t.poppedOut){ dockTabRequest(t.id); }   // if it's out in a window, that window is where it lives
+      activateTab(t.id);
+    }
+    function closeTab(id){
+      const i = ldsTabs.findIndex(t => t.id === id); if(i < 0 || ldsTabs[i].fixed) return;
+      if(ldsTabs[i].poppedOut) popCloseWindow(ldsTabs[i].kind);
+      const wasActive = ldsActiveTab === id;
+      ldsTabs.splice(i, 1);
+      if(wasActive) activateTab("home"); else renderTabStrip();
+    }
+
+    // Delegated tab-strip interactions (menu, select, close, pop-out).
+    document.addEventListener("click", (e) => {
+      const t = e.target; if(!t.closest) return;
+      if(t.closest("#tabNewBtn")){ const m = el("tabNewMenu"); if(m) m.hidden = !m.hidden; e.stopPropagation(); return; }
+      const open = t.closest("[data-tabopen]");
+      if(open){ openTab(open.getAttribute("data-tabopen")); const m = el("tabNewMenu"); if(m) m.hidden = true; return; }
+      const close = t.closest("[data-tabclose]");
+      if(close){ e.stopPropagation(); closeTab(close.getAttribute("data-tabclose")); return; }
+      const pop = t.closest("[data-tabpop]");
+      if(pop){ e.stopPropagation(); popOutTab(pop.getAttribute("data-tabpop")); return; }
+      const sel = t.closest("[data-tabsel]");
+      if(sel){ activateTab(sel.getAttribute("data-tabsel")); return; }
+      const menu = el("tabNewMenu"); if(menu && !menu.hidden && !t.closest("#tabNewMenu")) menu.hidden = true;
+    });
+
+    // Drag to reorder tabs within the strip (and, dragged far below, tear off).
+    let ldsDragTab = null;
+    document.addEventListener("dragstart", (e) => {
+      const b = e.target.closest && e.target.closest("[data-tabsel]");
+      if(!b || b.getAttribute("draggable") === "false"){ return; }
+      ldsDragTab = b.getAttribute("data-tabsel");
+      try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", ldsDragTab); }catch(err){}
+    });
+    document.addEventListener("dragover", (e) => {
+      if(!ldsDragTab) return;
+      const strip = e.target.closest && e.target.closest("#tabStrip");
+      if(strip){ e.preventDefault();
+        const over = e.target.closest("[data-tabsel]");
+        if(over){ const oid = over.getAttribute("data-tabsel");
+          const from = ldsTabs.findIndex(t=>t.id===ldsDragTab), to = ldsTabs.findIndex(t=>t.id===oid);
+          if(from>0 && to>0 && from!==to){ const m = ldsTabs.splice(from,1)[0]; ldsTabs.splice(to,0,m); renderTabStrip(); }
+        }
+      }
+    });
+    document.addEventListener("dragend", (e) => {
+      // Dropped well below the strip → tear the tab off into its own window.
+      const strip = el("tabStrip");
+      if(ldsDragTab && strip){ const r = strip.getBoundingClientRect();
+        if(e.clientY > r.bottom + 90){ const id = ldsDragTab; popOutTab(id); }
+      }
+      ldsDragTab = null;
+    });
+
+    /* ================================================================
+       8a-POP. Tear a tab off into its own window / dock it back. Desktop:
+       a real window loads index.html?panel=<kind> (same code, one panel).
+       Plain browser: the calendar falls back to a pop-up window.
+       ================================================================ */
+    const LDS_SHELL = (typeof window !== "undefined") ? window.ldsShell : null;
+    function popOutTab(id){
+      const t = ldsTabs.find(x => x.id === id); if(!t || t.fixed) return;
+      if(t.poppedOut){ if(LDS_SHELL && LDS_SHELL.focusPanel) LDS_SHELL.focusPanel(t.kind); return; }
+      if(LDS_SHELL && LDS_SHELL.openPanelWindow){
+        t.poppedOut = true; LDS_SHELL.openPanelWindow(t.kind);
+        if(ldsActiveTab === id) activateTab("home"); else renderTabStrip();
+      } else if(t.kind === "calendar"){ popCalendarWindow(); }
+      else { toast("Pop-out windows need the desktop app", "info"); }
+    }
+    function dockTabRequest(id){
+      const t = (typeof id === "string") ? ldsTabs.find(x => x.id === id) : id; if(!t) return;
+      t.poppedOut = false; if(LDS_SHELL && LDS_SHELL.closePanelWindow) LDS_SHELL.closePanelWindow(t.kind);
+      activateTab(t.id);
+    }
+    function popCloseWindow(kind){ if(LDS_SHELL && LDS_SHELL.closePanelWindow) LDS_SHELL.closePanelWindow(kind); }
+    // A panel window docked itself → re-home that tab here and show it.
+    if(LDS_SHELL && LDS_SHELL.onDockPanel){ LDS_SHELL.onDockPanel((kind) => {
+      let t = ldsTabs.find(x => x.kind === kind);
+      if(!t){ t = { id: kind+"-"+ldsTabs.length, title: tabTitle(kind), kind:kind, fixed:false, poppedOut:false }; ldsTabs.push(t); }
+      t.poppedOut = false; activateTab(t.id);
+    }); }
+    // A panel window was closed from its own controls → keep the tab, clear the flag.
+    if(LDS_SHELL && LDS_SHELL.onPanelClosed){ LDS_SHELL.onPanelClosed((kind) => {
+      const t = ldsTabs.find(x => x.kind === kind); if(t){ t.poppedOut = false; renderTabStrip(); }
+    }); }
+
+    // This window may itself be a torn-off panel (index.html?panel=<kind>): show
+    // only that tool + a slim "dock back" bar, and skip the whole tabbed shell.
+    function initPanelMode(){
+      let kind = null; try{ kind = new URLSearchParams(location.search).get("panel"); }catch(e){}
+      if(kind !== "calendar" && kind !== "underwriting") return false;
+      document.body.setAttribute("data-panelwin", kind);
+      const strip = el("tabStrip"); if(strip) strip.hidden = true;
+      const home = el("homePanel"); if(home) home.hidden = true;
+      // a slim toolbar with the title + Dock button, above the tool panel
+      const main = document.querySelector("main");
+      if(main){ const bar = document.createElement("div");
+        bar.className = "mb-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2";
+        bar.innerHTML = '<span class="inline-flex items-center gap-2 text-sm font-bold text-slate-800">'+TAB_SVG[kind]+(kind==="calendar"?"Maturity &amp; Reset Calendar":"Underwriting &amp; Sizing")+'</span>'+
+          '<button type="button" id="panelDockBtn" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">'+TAB_SVG.pop+'Dock into main window</button>';
+        main.insertBefore(bar, main.firstChild);
+        bar.querySelector("#panelDockBtn").addEventListener("click", () => { if(LDS_SHELL && LDS_SHELL.dockPanel) LDS_SHELL.dockPanel(kind); });
+      }
+      if(kind === "underwriting"){ el("uwView").hidden = false; renderUnderwriting(); }
+      else { el("calendarPanel").hidden = false; loadCalendarFrame(); }
+      return true;
+    }
 
     /* ================================================================
        8b. PORTFOLIO OVERVIEW + REFINANCE SCAN
@@ -4978,6 +5345,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     state.activeId = loans.length ? loans[0]._id : null;
     state.mode = loans.length ? "portfolio" : "empty";   // open on the whole-portfolio dashboard
     render();
+    renderTabStrip();        // Home tab + tool tabs (Calendar, Underwriting)
+    initPanelMode();         // if launched as a torn-off panel (?panel=…), show only that tool
 
     // Floating phases re-price on the 1st of each month. If the app is left open
     // across a month boundary (or regains focus in a new month), refresh the live

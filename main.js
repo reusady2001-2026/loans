@@ -102,6 +102,39 @@ ipcMain.on('lds:win-maximize-toggle', (e) => { const w = BrowserWindow.fromWebCo
 ipcMain.on('lds:win-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
 ipcMain.handle('lds:win-is-maximized', (e) => { const w = BrowserWindow.fromWebContents(e.sender); return !!(w && w.isMaximized()); });
 
+// ---- Tear-off tool panels (Calendar / Underwriting) as their own windows ------
+// A tab popped out of the main window becomes a real BrowserWindow that loads the
+// SAME index.html with ?panel=<kind>, so it renders just that one tool (shared
+// localStorage keeps its data consistent with the main window). Docking sends the
+// tab back to the main strip and closes the panel window.
+const panelWindows = {};   // kind -> BrowserWindow
+function panelTitle(kind) { return kind === 'calendar' ? 'Maturity & Reset Calendar' : 'Underwriting & Sizing'; }
+ipcMain.on('lds:open-panel', (e, kind) => {
+  if (kind !== 'calendar' && kind !== 'underwriting') return;
+  const existing = panelWindows[kind];
+  if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return; }
+  const win = new BrowserWindow({
+    width: kind === 'calendar' ? 1200 : 1100, height: 860, minWidth: 720, minHeight: 520,
+    backgroundColor: '#f6f8f2', title: panelTitle(kind), autoHideMenuBar: true, titleBarStyle: 'hidden',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+  });
+  panelWindows[kind] = win;
+  win.loadFile(path.join(__dirname, 'index.html'), { query: { panel: kind } });
+  const sendState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e2) {} };
+  win.on('maximize', sendState);
+  win.on('unmaximize', sendState);
+  win.on('closed', () => {
+    delete panelWindows[kind];
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lds:panel-closed', kind); } catch (e2) {}
+  });
+});
+ipcMain.on('lds:close-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) w.close(); });
+ipcMain.on('lds:focus-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) { w.show(); w.focus(); } });
+ipcMain.on('lds:dock-panel', (e, kind) => {
+  try { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('lds:dock-panel', kind); bringToFront(mainWindow); } } catch (e2) {}
+  const w = panelWindows[kind]; if (w && !w.isDestroyed()) w.close();
+});
+
 // Manual backup — native Save dialog, writes wherever the user chooses.
 ipcMain.handle('lds:backup-save', async (e, { json, defaultName }) => {
   const win = BrowserWindow.fromWebContents(e.sender);

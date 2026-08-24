@@ -61,4 +61,26 @@ contextBridge.exposeInMainWorld('ldsShell', {
     ipcRenderer.on('lds:update-status', fn);
     return () => { try { ipcRenderer.removeListener('lds:update-status', fn); } catch (e) {} };
   },
+
+  // ---- Tear-off tool panels (a tab popped into its own window) ----
+  // Open a tool ('calendar' | 'underwriting') as its own window (index.html?panel=…).
+  openPanelWindow: (kind) => { try { ipcRenderer.send('lds:open-panel', kind); } catch (e) {} },
+  // Close a panel window (used when its tab is closed from the main strip).
+  closePanelWindow: (kind) => { try { ipcRenderer.send('lds:close-panel', kind); } catch (e) {} },
+  // Bring an already-open panel window to the front.
+  focusPanel: (kind) => { try { ipcRenderer.send('lds:focus-panel', kind); } catch (e) {} },
+  // From inside a panel window: dock this tool back into the main window's strip.
+  dockPanel: (kind) => { try { ipcRenderer.send('lds:dock-panel', kind); } catch (e) {} },
+  // Main window: a panel window asked to dock back. cb(kind). Returns unsubscribe.
+  onDockPanel: (cb) => {
+    const fn = (_e, kind) => { try { cb(kind); } catch (e) {} };
+    ipcRenderer.on('lds:dock-panel', fn);
+    return () => { try { ipcRenderer.removeListener('lds:dock-panel', fn); } catch (e) {} };
+  },
+  // Main window: a panel window was closed (docked or by the user). cb(kind).
+  onPanelClosed: (cb) => {
+    const fn = (_e, kind) => { try { cb(kind); } catch (e) {} };
+    ipcRenderer.on('lds:panel-closed', fn);
+    return () => { try { ipcRenderer.removeListener('lds:panel-closed', fn); } catch (e) {} };
+  },
 });
