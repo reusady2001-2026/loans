@@ -13,6 +13,7 @@
   <script src="./underwriting.js"></script>
   <script src="./t12-classify.js"></script>
   <script src="./setup-builder.js"></script>
+  <script src="./t12-parse.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -2715,8 +2716,39 @@ tr[data-loan]:hover td{background:#eef2f7}
        ================================================================ */
     const UW_KEY = "lds_setup_v1";
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, t12Text:"",
+      t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
+    // Read a dropped T12 workbook, find the operating-statement sheet, parse it.
+    function uwHandleFile(file){
+      if(!file || !window.XLSX || !window.T12Parse){ toast("Setup engine not ready","error"); return; }
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        try{
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+          let grid = null;
+          for(const nm of wb.SheetNames){
+            const g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header:1, raw:true, defval:null });
+            if(T12Parse.findHeader(g).headerRow >= 0){ grid = g; break; }
+          }
+          if(!grid){ toast("Couldn’t find a T12 sheet (needs a Total column and month columns).","error"); return; }
+          const i = uwState.input; i.t12Grid = grid; i.fileName = file.name; i.basis = "total";
+          uwApplyParse();
+        }catch(err){ toast("Couldn’t read that file.","error"); }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    // Parse the stored grid at the chosen period basis and rebuild the Setup.
+    function uwApplyParse(){
+      const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
+      const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
+      i.t12Rows = d.rows;
+      const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
+      const periods = [["total","12-mo Total",d.cols.total],["t6","Trailing 6-mo",d.cols.t6],["t3","Trailing 3-mo",d.cols.t3],["t1","Trailing 1-mo",d.cols.t1]]
+        .filter(p=>p[2]>=0).map(p=>({ key:p[0], label:p[1] }));
+      i.t12Meta = { descCol: gl(d.descCol), periods: periods };
+      saveUW(); renderUnderwriting();
+    }
     let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench) return s; }catch(e){} return { input: uwDefaults() }; })();
     let uwLastBuilt = null;
     function saveUW(){ try{ localStorage.setItem(UW_KEY, JSON.stringify(uwState)); }catch(e){} }
@@ -2750,7 +2782,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     function uwBuild(){
       const i = uwState.input;
       if(!window.SetupBuilder){ uwLastBuilt = null; return; }
-      const lines = parseT12Text(i.t12Text);
+      const lines = (i.t12Rows && i.t12Rows.length) ? i.t12Rows : parseT12Text(i.t12Text||"");
       uwLastBuilt = lines.length ? SetupBuilder.buildSetup({ t12Lines: lines, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench }) : null;
     }
 
@@ -2763,22 +2795,38 @@ tr[data-loan]:hover td{background:#eef2f7}
       view.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Underwriting &amp; Sizing</h2>'+
-            '<p class="text-sm text-slate-500">Paste a property&rsquo;s T12 &mdash; the app classifies every line, builds the in-place &amp; underwritten Setup, and sizes the loan.</p></div>'+
+            '<p class="text-sm text-slate-500">Drop a property&rsquo;s T12 file &mdash; the app finds the columns, classifies every line, builds the in-place &amp; underwritten Setup, and sizes the loan.</p></div>'+
           '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">'+
+          '<div id="uwDrop" class="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition">'+
+            '<input id="uwFile" type="file" accept=".xlsx,.xls,.csv" class="hidden">'+
+            '<svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>'+
+            '<p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 file here, or <button type="button" id="uwFileBtn" class="text-brand-700 underline">choose a file</button></p>'+
+            '<p class="mt-1 text-[11px] text-slate-400">Excel or CSV export &mdash; the T12 sheet is detected and every line classified automatically.</p>'+
+            (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; '+b.worksheet.lines.length+' lines':'')+'</p>' : '')+
+          '</div>'+
+          (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
+            '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read</span>'+
+            (i.t12Meta.periods.length>1 ? '<label class="flex items-center gap-1.5">Income basis <select data-uwf="basis" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">'+
+              i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+'</option>').join('')+'</select></label>' : '')+
+          '</div>' : '')+
           '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
             '<label class="text-sm text-slate-600">Property<input class="'+inCls+' mt-1" data-uwf="name" value="'+escapeHtml(i.name||"")+'" placeholder="(optional)"></label>'+
-            '<label class="text-sm text-slate-600">Units<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="0"></label>'+
+            '<label class="text-sm text-slate-600">Units<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="from rent roll"></label>'+
             '<label class="text-sm text-slate-600">Rent-roll GPR / yr<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="rrGPR" value="'+uwStr(i.rrGPR)+'" placeholder="optional"></label>'+
           '</div>'+
-          '<label class="block text-sm text-slate-600">Paste the T12 &mdash; one line per row: description then amount'+
-            '<textarea data-uwf="t12Text" rows="6" class="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30" placeholder="Market Rent                18,122,358&#10;Less: Vacancy              (1,120,978)&#10;Concession                  (332,956)&#10;Real Estate Taxes           2,701,442&#10;Payroll                     1,006,149&#10;..."></textarea></label>'+
-          '<div class="flex items-center gap-3"><button type="button" id="uwBuildBtn" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm press">Build Setup</button>'+
-            '<span class="text-[11px] text-slate-400">'+(b ? (b.worksheet.lines.length+' lines &middot; '+Object.keys(b.categorySums).length+' categories classified from your T12') : 'paste a T12 and click Build')+'</span></div>'+
         '</div>'+
         (b ? uwSetupOutputHtml(b) : '');
-      const ta = view.querySelector('[data-uwf="t12Text"]'); if(ta) ta.value = i.t12Text || "";
+      // attach file-drop handlers (innerHTML was just replaced)
+      const fileInput = view.querySelector("#uwFile");
+      if(fileInput) fileInput.onchange = (ev)=>{ const f = ev.target.files && ev.target.files[0]; if(f) uwHandleFile(f); };
+      const drop = view.querySelector("#uwDrop");
+      if(drop){
+        drop.ondragover = (ev)=>{ ev.preventDefault(); drop.classList.add("border-brand-400","bg-brand-50"); };
+        drop.ondragleave = ()=>{ drop.classList.remove("border-brand-400","bg-brand-50"); };
+        drop.ondrop = (ev)=>{ ev.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if(f) uwHandleFile(f); };
+      }
     }
 
     function uwSetupOutputHtml(b){
@@ -2839,14 +2887,19 @@ tr[data-loan]:hover td{background:#eef2f7}
     // Text/number inputs just persist (Build applies them); sizing inputs recompute live.
     function uwOnInput(t){
       const i = uwState.input;
-      if(t.hasAttribute("data-uwf")){ const k = t.getAttribute("data-uwf"); i[k] = (k==="name"||k==="t12Text") ? t.value : uwNum(t.value); saveUW(); return; }
+      if(t.hasAttribute("data-uwf")){ const k = t.getAttribute("data-uwf");
+        if(k==="basis"){ i.basis = t.value; uwApplyParse(); return; }
+        i[k] = (k==="name") ? t.value : uwNum(t.value); saveUW(); return; }
       if(t.hasAttribute("data-uwsize")){ const k = t.getAttribute("data-uwsize"); const pct = {capRate:1,ltvMax:1,dyMin:1,intRate:1}; const v = uwNum(t.value);
         i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
+    // Units / rent-roll GPR feed the underwritten column & sizing — rebuild the Setup on blur (not per keystroke, to keep focus).
+    document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
+      const k = t.getAttribute && t.getAttribute("data-uwf"); if(k==="units"||k==="rrGPR") renderUnderwriting(); });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
-      if(t.closest("#uwBuildBtn")){ renderUnderwriting(); return; }
-      if(t.closest("#uwResetBtn")){ if(confirm("Clear the Setup? This empties the pasted T12 and inputs.")) uwResetModel(); return; }
+      if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
+      if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
     });
 
     /* ================================================================
