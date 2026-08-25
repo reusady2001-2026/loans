@@ -106,4 +106,34 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 7. Avalon White Plains — New York Life Insurance Company / Living White Plains LLC, Promissory Note #1628007744.8, dated Feb 10, 2026 (Loan No. 374-1613)
+
+*Two documents: the **Loan Agreement** (native-text .md, reading copy) defers every rate/payment term to the **Promissory Note** (§2.2). The Note (native text) supplies them. The reserve came from the Loan Agreement.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **First Payment Date** | 2029-02-10 (= maturity — impossible) | **March 10, 2026** | **Note, Definitions:** *"'First Payment Date' means March 10, 2026."* Payments are interest-only on the 10th of each month (Note §2(b)). *(Does not change the rendered schedule — the engine anchors off maturity − term — but the stored value was wrong.)* | [CORRECTION] |
+| 2 | **Prepayment** | *(blank)* | **Closed-Period lockout (2/10/2026–2/10/2027), then a Minimum-Interest make-whole** | **Note §4 + Definitions:** *"'Closed Period' means the period commencing on the date hereof and ending on February 10, 2027"*; *"Borrower may not prepay the Loan during the Closed Period"* then may repay in full with a **Prepayment Fee** = the amount by which the **"Minimum Interest Amount … equal to $6,217,253"** exceeds interest actually paid (plus a Breakage Fee if off a Payment Date). Modeled as **Yield Maintenance** — the closest app category for a make-whole/minimum-interest prepayment. | [ADDED] |
+
+**Verified correct — no economic change needed.** Every rate/term/date already matched the Note:
+- **Amount $96,000,000** — Note preamble.
+- **Floating; Interest Rate = greater of (Term SOFR + Spread) and the Floor** — Note Definitions: *"'Interest Rate' … the greater of (a) the sum of (i) the Benchmark …, (ii) the Spread … and (iii) the Benchmark Adjustment, and (b) the Floor Interest Rate."*
+- **Spread 1.75%** — Note: *"'Spread' shall mean 1.75%."*
+- **Rate floor 4.80%** — Note: *"'Floor Interest Rate' … equal to 4.80% plus the Benchmark Adjustment"* (Benchmark Adjustment for Term SOFR = 0%).
+- **Index = 1-Month CME Term SOFR** — Note: *"The Benchmark on the date hereof is Term SOFR"* / *"'Term SOFR' … '1 Month CME Term SOFR'."*
+- **Maturity 2/10/2029** — Note: *"'Maturity Date' shall mean the Payment Date in February, 2029"* (Payment Date = the 10th), with two 12-month extension options to 2/10/2031 (Schedule 1). App carries the initial maturity.
+- **36-month term, fully interest-only** — Note §2(b): interest-only every Payment Date through the Maturity Date; §2(c): entire principal due at maturity.
+- **Interest accrual Actual/360** — **Note §1 (explicit):** *"multiplying (a) the actual number of days elapsed … by (b) a daily rate equal to the Interest Rate … divided by three hundred sixty (360) by (c) the outstanding principal balance."* (App default Actual/360 — this time the Note states it outright.)
+- **CapEx reserve $8,480/mo** — **Loan Agreement §3.3(a):** *"an amount equal to $8,480 (the 'CapEx Reserve Amount')."*
+
+**Independent check:** a clean-room schedule from the Note reproduces the app's rendered **36 rows to the cent** — first interest-only payment **$401,706.67** (28 days, 3/10/2026) and the balloon **$96,444,746.67** (full $96,000,000 principal + final interest) at 2/10/2029. Floating rate is forward-unknowable; offline the app prices Term SOFR at its 3.63% catalog fallback → all-in **5.38%** (floor 4.80% doesn't bind), and the reference adopts that same rate.
+
+**Conventions / context noted for Azriel (not app-field changes):**
+- **Rate cap not added to the record.** The Loan Agreement (§9.1) requires Borrower to buy an interest-rate cap striking **Term SOFR at 4.00%** (all-in ≈ 5.75%), but that is a **separate hedge instrument**, not a cap on the Note's Interest Rate (which is uncapped). Left off the loan record deliberately; noted here.
+- **Full recourse** — Loan Agreement §11.1 (*"Borrower shall be personally liable for the entire Indebtedness"*) — unusual for CRE, but not a tracked field.
+- **Companion Mezzanine loan $24,000,000** (Loan No. 374-1614) confirmed — Loan Agreement §1.1 defines the $24,000,000 Mezzanine Note; validates the separate *Avalon WP (Mezz)* record's amount.
+- `annualRate` 5.36% in the record is a stored snapshot; for a floating loan the app computes the live rate from SOFR + spread, so the field is not used by the schedule and was left as-is.
+
+---
+
 *Validation continues loan by loan. This file is updated as each agreement is reviewed.*
