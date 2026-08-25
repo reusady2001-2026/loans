@@ -49,7 +49,7 @@ and the full amortization schedule match the document **to the cent**.
 | # | Field | App had | Document says | Evidence | |
 |---|---|---|---|---|---|
 | 1 | **Interest rate** | 3.12% | **3.115%** | **Schedule 2 (Form 6102.FR), PDF p.107**: *"Fixed Rate 3.115%"* (both OCR passes agree). Confirmed by stated payments, **PDF p.108**: IO $73,591.88 / $76,220.16 / $78,848.44 / $81,476.72 and **P&I $129,953.83** — reproduce only at 3.115%. | **$MATERIAL** |
-| 2 | **Loan number** | "Fannie 891177 series" | **200393285** | Agreement's loan identifiers: **Loan #200393285** (also PMCC Tracking #82281, Property #81528). The prior value **"891177" is Villages of Burlington's** loan number — a mislabel. | [CORRECTION] |
+| 2 | **Loan number** | "Fannie 891177 series" | **200393285** | Agreement's loan identifiers: **Loan #200393285** (also PMCC Tracking #82281, Property #81528). The prior value **"891177"** matches the executed number of **neither** this loan nor Villages of Burlington (whose real number, confirmed separately, is **200392849**) — it was a spurious identifier carried on the seed. | [CORRECTION] |
 | 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 5/31/2030 (114 mo) | **PDF p.108, Section IV**: *"Yield Maintenance Period End Date: The last day of May, 2030"*; *"Yield Maintenance Period Term: One Hundred Fourteen (114) months."* | [ADDED] |
 | 4 | **Replacement reserve** | *(blank)* | $2,783.33/mo | **Schedule 5 (Required Replacement Schedule), PDF p.114**: $200/unit/yr × 167 units = $33,400/yr ÷ 12 = $2,783.33/mo. (Spreadsheet not machine-readable; read off the scan by hand.) | [ADDED] |
 
@@ -146,6 +146,19 @@ and the full amortization schedule match the document **to the cent**.
 | 2 | **Prepayment** | *(blank)* | **Closed-Period lockout (to 2/10/2027), then a Minimum-Interest make-whole** | **Mezz Note §4 + Definitions:** *"'Closed Period' … ending on February 10, 2027"*; **Prepayment Fee** = shortfall of the **"Minimum Interest Amount … equal to $2,010,563"** vs interest paid. Modeled as **Yield Maintenance**. | [ADDED] |
 
 **Verified correct — no economic change needed:** amount **$24,000,000**; floating, **Term SOFR + 3.25% Spread**, **4.80% Floor**; fully interest-only; **Actual/360**; maturity **2/10/2029**; lien position **Mezzanine**. Independent clean-room schedule reproduces the app's **36 rows to the cent** (offline all-in rate SOFR 3.63% + 3.25% = **6.88%**): first interest-only payment **$128,426.67**, balloon **$24,142,186.67** (full $24,000,000 principal + interest) at 2/10/2029.
+
+---
+
+## 9. Villages of Burlington — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Feb 22, 2019 (Loan No. 200392849)
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 4.88% | **4.875%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms:** *"Fixed Rate 4.875%."* Confirmed by the document's stated **Monthly Debt Service Payment $85,334.83**, which reproduces to the cent only at 4.875%. | **$MATERIAL** |
+| 2 | **Loan number** | "Fannie 891177" | **200392849** | Summary of Loan Terms footer: *"PMCC Tracking #75119, Property #75497, Loan #200392849."* The prior "891177" is not on the executed document (and, per loan #3 above, is not Florence's either). | [CORRECTION] |
+| 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 8/31/2033 (174 mo) | **Summary of Loan Terms §IV:** *"Yield Maintenance Period End Date: The last day of August, 2033."* | [ADDED] |
+| 4 | **Replacement reserve** | $1,917/mo | $1,916.67/mo | **Schedule 5:** $200/unit/yr × 115 units = $23,000/yr ÷ 12 = $1,916.67/mo. (Seed rounded to a whole dollar.) | [CORRECTION] |
+
+**Verified correct:** amount **$16,125,000**; Fixed; **Actual/360** (Summary of Loan Terms — Interest Accrual Method box marked Actual/360); **no interest-only** (Interest Only Term = 0 months); **360-mo amortization, 180-mo term**; first payment 4/1/2019; maturity 3/1/2034. Independent schedule reproduces the app's **180 rows to the cent** — level P&I **$85,334.83**, balloon **$11,150,842.27** at 3/1/2034. Borrower Gregel-GAM Burlington LLC; non-recourse; 115 residential units. This is the only portfolio loan with **no interest-only period** at all.
 
 ---
 
