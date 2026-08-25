@@ -136,4 +136,29 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 8. Avalon WP — Mezzanine — New York Life Insurance Company, Mezzanine Promissory Note #1628007744.9-equiv, dated Feb 10, 2026 (Loan No. 374-1614)
+
+*The $24,000,000 mezzanine companion to loan #7. Its note mirrors the senior note; the only economic difference is the spread.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **First Payment Date** | 2029-02-10 (= maturity) | **March 10, 2026** | **Mezz Note, Definitions:** *"'First Payment Date' means March 10, 2026."* | [CORRECTION] |
+| 2 | **Prepayment** | *(blank)* | **Closed-Period lockout (to 2/10/2027), then a Minimum-Interest make-whole** | **Mezz Note §4 + Definitions:** *"'Closed Period' … ending on February 10, 2027"*; **Prepayment Fee** = shortfall of the **"Minimum Interest Amount … equal to $2,010,563"** vs interest paid. Modeled as **Yield Maintenance**. | [ADDED] |
+
+**Verified correct — no economic change needed:** amount **$24,000,000**; floating, **Term SOFR + 3.25% Spread**, **4.80% Floor**; fully interest-only; **Actual/360**; maturity **2/10/2029**; lien position **Mezzanine**. Independent clean-room schedule reproduces the app's **36 rows to the cent** (offline all-in rate SOFR 3.63% + 3.25% = **6.88%**): first interest-only payment **$128,426.67**, balloon **$24,142,186.67** (full $24,000,000 principal + interest) at 2/10/2029.
+
+---
+
+## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
+
+Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
+
+**Fix (code):** the field is relabelled **"First Payment Date"**; its hint, the amortization-anchor fallback (`firstPaymentDate − 1` instead of `− (IO + 1)`), and the AI reading instruction now all treat an interest-only payment as a payment.
+
+**Fix (data):** every interest-only loan's stored First Payment Date was moved from the first-P&I date to the **actual first scheduled payment** (the first interest-only payment) — 19 records. This is a display/definitional correction only: **no amortization schedule changed** (every schedule is anchored on maturity − term, not this field), re-confirmed by re-running the strict cent-level checks for Avalon White Plains, Heritage, and Euclid (all still match to the cent). Examples: Avalon WP Mezz 2029-02-10 → 2026-03-10; 40 N Euclid 2025-02-01 → 2021-02-01; Avalon Norwalk 2029-06-07 → 2021-07-07.
+
+*(Observation for later, not changed here: a few loans whose payments fall on a day other than their maturity's day-of-month — e.g. Heritage Key Villas, maturity on the 28th but the note pays on the 1st — render their schedule dates on the maturity's day. That is a separate payment-day convention question, independent of this fix.)*
+
+---
+
 *Validation continues loan by loan. This file is updated as each agreement is reviewed.*
