@@ -186,6 +186,27 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 11. 36 Washington Ave (Carteret) — Customers Bank / Living Carteret Urban Renewal LLC (et al.), First Mortgage Note, dated Nov 7, 2025 — **NEW LOAN (added to the app)**
+
+*Not previously in the app. Added from the executed closing set; all terms read directly from the native-text Note (#8697173.4) and First Mortgage.*
+
+**Terms (from the Note unless noted):**
+- **Lender: Customers Bank.** Borrower: Living Carteret Urban Renewal LLC, RK Carteret, TL K/L/S, and Villa Carteret Urban Renewal LLC (jointly & severally). Guarantors: Gershon Kassirer + ARBS Real Estate USA Holdings LLC.
+- **Amount $64,000,000** — *"'Principal Amount' shall mean SIXTY-FOUR MILLION AND 00/100 ($64,000,000.00) DOLLARS."*
+- **5.94% fixed, reset 12/1/2030** — *"'Interest Rate' shall mean … 5.94% … per annum"*; *"'Reset Interest Period' … from December 1, 2030 through … the Maturity Date"*; *"'Reset Interest Rate' … the greater of (i) … 5.94% … or (ii) the U.S. Treasury Note Yield plus 250 basis points"*; *"'U.S. Treasury Note Yield' … the five (5) year United States Treasury constant maturity."* → **Hybrid ARM**, index 5-yr UST, spread 2.50%, floor 5.94%, 60-mo initial fixed.
+- **12 months interest-only** — §2(B): interest-only monthly Jan 1, 2026 → Dec 1, 2026.
+- **P&I from 1/1/2027 on a 30-yr amortization; reset re-amortized over 26 yr** — §2(C)–(D).
+- **Maturity December 1, 2035** — *"'Maturity Date' shall mean December 1, 2035."* Balloon at maturity (§2(E)).
+- **Actual/360** — §2(F): *"calculated … based upon the actual number of days elapsed over a 360-day year."*
+- **Prepayment: step-down** — 4% before the 1st Anniversary (12/1/2026); 1% years 1–5; **4% year 5–6** (right after the reset); 1% years 6–maturity; **open** in the last 90 days of each interest period. Modeled as Step-down 1% (the predominant rate).
+- **No replacement/capital reserve** — the closing set holds a Rental Reserve (Escrow Deposit Agreement) and a DSCR reserve (Reserve Account Pledge), both debt-service reserves, not a capital reserve.
+
+**Added as:** Hybrid ARM (5+5), $64,000,000 @ 5.94%, 5-yr UST + 2.50% floored at 5.94%, 12-mo IO, 360-mo amort / 120-mo term, reset at month 60. The app's schedule is internally coherent and ties to the cent (12 IO; first P&I 1/1/2027; reset 1/1/2031; balloon 12/1/2035 → $0).
+
+**⚠️ FLAG — payment to be set as written in the agreement (next version):** the Note states the fixed-period **P&I is $384,807.04/mo** (§2(C)), which Customers Bank sized on a **true Actual/360** basis. The app currently computes a 30/360 annuity = **$381,247.02** (~$3,560/mo lower). Per Yuval, the app will get a **"fixed payment" option** in the next version to lock each loan's P&I to the figure written in its agreement; when that ships, set Carteret's fixed-period payment to **$384,807.04** (the reset-period payment recalculates at the reset rate over a 26-yr amortization). Recorded in `TODO.md`. The same likely applies to **1222 Commerce St** (the other Customers Bank Actual/360 Hybrid ARM).
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
