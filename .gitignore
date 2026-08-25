@@ -4,6 +4,9 @@ dist/
 *.log
 .DS_Store
 
+# Claude Code working directory (session scaffolding, agent worktrees) — never a deliverable
+.claude/
+
 # Standalone single-file build output — a byproduct of build-standalone.js used
 # only to produce the app, not a shipped product. The Electron app packages
 # index.html + vendor/ directly, so this file is never a deliverable.
