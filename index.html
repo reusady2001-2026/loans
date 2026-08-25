@@ -1120,6 +1120,8 @@
       { sec:"Loan Terms", key:"loanTermMonths",     label:"Loan Term (Months)",           type:"int",    kind:"input", required:true, hint:"Balloon term; equals amortization if fully amortizing" },
       { sec:"Loan Terms", key:"amortizationMonths", label:"Amortization Period (Months)", type:"int",    kind:"input", required:true, hint:"e.g. 360 for 30-yr" },
       { sec:"Loan Terms", key:"amortMethod",        label:"Interest Accrual / Day-Count", type:"select", kind:"input", options:["Actual/360","30/360"], hint:"per the loan docs: Actual/360 = interest varies with the days in each month; 30/360 = flat monthly. The level payment amortizes 30/360 over the amortization term, which starts AFTER any interest-only period.", aliases:["Interest Accrual Method","Day-Count","Accrual Method","Amortization Method"] },
+      { sec:"Loan Terms", key:"amortType",          label:"Amortization Type",            type:"select", kind:"input", options:["Level","Fixed Principal","Fixed P&I"], hint:"Level = standard solved annuity (default). Fixed Principal = interest + a flat principal amount stated in the loan docs (declining total payment). Fixed P&I = a flat total payment stated in the docs.", aliases:["Amortization Structure","Amortization Method Type"] },
+      { sec:"Loan Terms", key:"fixedAmortAmount",   label:"Fixed Amortization Payment ($/mo)", type:"money", kind:"input", cond:(l)=>l.amortType==="Fixed Principal"||l.amortType==="Fixed P&I", hint:"the lender-specified monthly amortization amount (principal for Fixed Principal, or total P&I for Fixed P&I) that applies after the IO period", aliases:["Required Amortization Payment","Fixed Principal Payment"] },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
@@ -1575,12 +1577,22 @@
       let balance = loan.originalAmount || 0;
       let totalInterest = 0, totalPaid = 0;
 
-      // Initial segment payment, solved over the full amortization at month 0.
-      let currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0));
+      // Fixed amortization override: some loans (esp. bank / life-co) specify a flat
+      // monthly amortization amount in the docs rather than a solved level annuity —
+      // either a fixed PRINCIPAL paid on top of interest (declining total payment), or
+      // a fixed total P&I. It applies only during the amortizing months (after IO);
+      // the interest-only phase and the maturity balloon are unchanged.
+      const fixedPrincipal = (loan.amortType === "Fixed Principal") ? (Number(loan.fixedAmortAmount)||0) : 0;
+      const fixedPI        = (loan.amortType === "Fixed P&I")        ? (Number(loan.fixedAmortAmount)||0) : 0;
+      const isFixedAmort   = fixedPrincipal > 0 || fixedPI > 0;
+
+      // Initial segment payment, solved over the full amortization at month 0
+      // (skipped for a fixed-amortization loan — its payment comes straight from the docs).
+      let currentPayment = isFixedAmort ? 0 : solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0));
       segments.push({ startMonth:0, rate:rateForMonth(loan,0), payment:currentPayment });
 
       for(let m=0; m<term; m++){
-        const isReset = isResetBoundary(loan, m);
+        const isReset = isResetBoundary(loan, m) && !isFixedAmort;
         if(isReset){
           // Re-amortize the carried balance over the remaining amortization
           // term at the new rate (the recalculation event).
@@ -1608,6 +1620,15 @@
           type = (term < loan.amortizationMonths) ? "balloon" : "final";
         } else if(isIO){
           payment = interest; principalPaid = 0; type = "io";
+        } else if(fixedPrincipal > 0){
+          // interest (on the declining balance) + a flat principal amount per the docs
+          principalPaid = Math.min(fixedPrincipal, startingBalance);
+          payment = interest + principalPaid;
+          balance = startingBalance - principalPaid; type = "amort";
+        } else if(fixedPI > 0){
+          // a flat total P&I per the docs; principal is whatever is left after interest
+          payment = fixedPI; principalPaid = Math.max(0, payment - interest);
+          balance = startingBalance - principalPaid; type = "amort";
         } else {
           payment = currentPayment; principalPaid = payment - interest;
           balance = startingBalance - principalPaid; type = "amort";
@@ -1615,6 +1636,10 @@
         totalInterest += interest; totalPaid += payment;
         rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset });
       }
+      // Surface a representative amortizing payment (the first amortizing month's total)
+      // so the "then $X/mo" display and the DSCR calc use the real figure, not 0, on a
+      // fixed-amortization loan still in its interest-only phase.
+      if(isFixedAmort){ const fa = rows.find(r => r.type === "amort"); if(fa) segments[0].payment = fa.payment; }
       return { rows, totalInterest, totalPaid, segments };
     }
 
@@ -1688,7 +1713,7 @@
     function emptyLoan(){
       const l = {};
       INPUT_FIELDS.forEach(f => { l[f.key] = (f.type==="money"||f.type==="int"||f.type==="pct") ? null : ""; });
-      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr"; l.lienPosition = "Senior"; l.amortMethod = "Actual/360";
+      l.rateType = "Fixed"; l.ioMonths = 0; l.propertyType = "Multifamily"; l.index = "sofr"; l.lienPosition = "Senior"; l.amortMethod = "Actual/360"; l.amortType = "Level";
       l.isHistorical = false;   // new loans price off index + spread; historical loans carry a typed rate
       return l;
     }
@@ -1741,7 +1766,7 @@
         mk({ propertyName:"The Crest at Princeton Meadows", propertyAddress:"3217 Ravens Crest Drive, Plainsboro, NJ 08536", propertyType:"Multifamily", lenderName:"Berkadia Commercial Mortgage (Fannie)", loanNumber:"9999092121", originalAmount:118000000, annualRate:0.0335, rateType:"Fixed", originationDate:"2019-09-10", firstPaymentDate:"2025-11-01", maturityDate:"2031-10-01", loanTermMonths:144, amortizationMonths:360, ioMonths:72, amortMethod:"Actual/360", prepayType:"Yield Maintenance", prepayConfirmed:true, replacementReserve:15723 }),
         mk({ propertyName:"Village at Bridgewater", propertyAddress:"101 Griggs Dr, Bridgewater, NJ 08807", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:29000000, annualRate:0.0294, rateType:"Fixed", originationDate:"2020-10-29", firstPaymentDate:"2024-12-01", maturityDate:"2032-11-01", loanTermMonths:144, amortizationMonths:360, ioMonths:48, replacementReserve:3417 }),
         mk({ propertyName:"40 N Euclid Ave", propertyAddress:"40 N Euclid Ave, St. Louis, MO", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:25296800, annualRate:0.0308, rateType:"Fixed", originationDate:"2020-12-22", firstPaymentDate:"2025-02-01", maturityDate:"2031-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, replacementReserve:1417.67 }),
-        mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2029-06-07", maturityDate:"2031-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:96 }),
+        mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2029-06-07", maturityDate:"2031-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:95, amortMethod:"Actual/360", amortType:"Fixed Principal", fixedAmortAmount:361684.80, prepayType:"Yield Maintenance", prepayConfirmed:true, replacementReserve:6458.33 }),
         mk({ propertyName:"Living Lofts (Middlesex)", propertyAddress:"150 Lincoln Boulevard, Middlesex, NJ", propertyType:"Multifamily", lenderName:"Investors Bank", originalAmount:35296600, annualRate:0.031, rateType:"Hybrid ARM", index:"ust5y", spread:0.0263, rateFloor:0.031, originationDate:"2021-06-01", firstPaymentDate:"2023-08-01", maturityDate:"2031-07-01", loanTermMonths:120, amortizationMonths:360, ioMonths:26, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
         mk({ propertyName:"Queens Gate Apartments", propertyType:"Multifamily", lenderName:"New York Community Bank", loanNumber:"161001828", originalAmount:48000000, annualRate:0.03, rateType:"Hybrid ARM", index:"prime", rateFloor:0.03, originationDate:"2021-10-29", firstPaymentDate:"2025-12-01", maturityDate:"2031-11-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
         mk({ propertyName:"28-58 JFK Blvd (Bayonne)", propertyAddress:"28-58 John F. Kennedy Blvd, Bayonne, NJ 07002", propertyType:"Multifamily", lenderName:"Signature Bank", loanNumber:"0153490-080691", originalAmount:21700000, annualRate:0.034, rateType:"Hybrid ARM", index:"ust5y", spread:0.0275, originationDate:"2022-03-25", firstPaymentDate:"2025-05-10", maturityDate:"2032-04-10", loanTermMonths:120, amortizationMonths:360, ioMonths:36, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
