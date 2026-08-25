@@ -162,6 +162,30 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 10. The Crest at Princeton Meadows — Berkadia Commercial Mortgage LLC (Fannie Mae Form 6001 / 6241 Green Rewards), dated Sep 10, 2019 (Loan No. 9999092121)
+
+*Validated in an earlier round (app v1.8.8–1.8.9) before this evidence log existed; re-verified here in full and to the cent. Source is an OCR reconstruction of a 121-page scan (mean word confidence 93.9%); the Summary of Loan Terms (Form 6102.FR, pages 106–109) came through cleanly and its **stated** payment amounts reproduce the core terms exactly.*
+
+**No record change needed — every field ties to the document:**
+- **Amount $118,000,000 · rate 3.35% Fixed · Actual/360** — proven to the cent by the document's **stated interest-only payments** (Summary of Loan Terms, p.108): *"$307,455.56 … 28-day month; $318,436.11 … 29-day; $329,416.67 … 30-day; $340,397.22 … 31-day."* These reproduce only at $118,000,000 × days × 3.35% ÷ 360.
+- **360-month amortization** — proven by the **stated level P&I $520,041.97** (p.108, *"for the First Principal and Interest Payment Date and each Payment Date thereafter"*), which is the 30/360 annuity of $118,000,000 at 3.35% over 360 months.
+- **72 months interest-only** — p.107: First Payment Date **November 1, 2019**; Last Interest Only Payment Date **October 1, 2025**; First Principal and Interest Payment Date **November 1, 2025**.
+- **144-month term; maturity October 1, 2031; effective September 10, 2019** — pp.106–107.
+- **Interest Accrual Method Actual/360** — p.107 (box marked Actual/360).
+- **Loan number 9999092121** — *"Collateral Reference Number: 9999092121."*
+- **Prepayment: Yield Maintenance** — Schedule 4, *"Standard Yield Maintenance — Fixed Rate"*; Yield Maintenance Period End Date **the last day of March, 2031** (138-month term), p.108.
+- **Replacement reserve $15,723.00/mo** — p.109 (Monthly Replacement Reserve Deposit; initial deposit $0).
+
+**Independent check:** a clean-room schedule reproduces the app's **144 rows to the cent** — first IO $340,397.22 (11/1/2019), first P&I $520,041.97 (11/1/2025), balloon **$103,408,003.54** at 10/1/2031.
+
+**Notes for Azriel (not app-field changes):**
+- **First Payment Date** now correctly reads **2019-11-01** after the cross-cutting model fix below — it previously held the first *P&I* date (2025-11-01). The document's stated *"First Payment Date November 1, 2019"* confirms the fix exactly.
+- The **borrower is two tenants-in-common** — Crest Owners LLC **and** Crest 4204 LLC; the app tracks it as a single record.
+- The Crest is what originally surfaced the interest-only **amortization engine bug** (principal was amortized over 288 months instead of 360, oversizing the P&I to $599,844.85). That was fixed in v1.8.7; the app now produces the documented **$520,041.97**, and this validation confirms it to the cent.
+- **Source caveat:** this is the only validated loan sourced from an **OCR** rather than a clean text layer or clean scan. The Summary-of-Loan-Terms pages reproduce to the cent, but for a closing-binder-grade record the original Schedule 2 scan (pp.106–108) is worth one eyeball.
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
