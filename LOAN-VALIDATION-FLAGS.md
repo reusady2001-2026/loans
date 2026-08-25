@@ -207,6 +207,32 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 12. Reatta Ranch — FS CREIT Originator LLC (Rialto) / Living Reatta Ranch LLC, Loan Agreement (Floating Rate), dated Dec 10, 2025 (Loan ID 20251209)
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Property address** | *(blank)* | 810 Tally Blvd, Justin, TX 76247 (300 units) | Loan Agreement property description / header. | [ADDED] |
+| 2 | **Prepayment** | *(blank)* | Minimum Interest Maintenance Premium + 0.25% Exit Fee | **§2.3 Prepayments + Definitions:** prepayment requires *"the applicable Minimum Interest Maintenance Premium, … the Exit Fee"* ("Exit Fee" = 0.25% of original principal). Modeled as Yield Maintenance (make-whole/minimum-interest). | [ADDED] |
+
+**Verified correct — no economic change needed:** amount **$47,000,000**; floating, **Interest Rate = greater of (1-mo Term SOFR + 2.50% Spread) and the 5.75% Floor** (§ "Applicable Interest Rate": *"6.3125% … for the [initial] period … thereafter … the greater of (A) the … Benchmark … and … the Spread, and (B) the Floor Rate"*); index Term SOFR; **fully interest-only**; **Actual/360** (*"the actual number of days elapsed"*); payments on the **9th**; first payment **1/9/2026**; initial stated maturity **12/9/2028** (two 1-yr extension options to 12/9/2030). Independent schedule reproduces the app's **36 rows to the cent** (offline SOFR 3.63% + 2.50% = 6.13%): first IO $248,094.72 (1/9/2026), balloon **$47,240,091.67** (full $47,000,000 + interest) at 12/9/2028.
+
+**Notes for Azriel (not app-field changes):** the opening **6.3125%** rate applied only closing→12/14/2025 (a stub), then floating. The Benchmark is *rounded up to the nearest 1/16%*, and a rate cap is required (Benchmark Cap Rate 5.00% on SOFR) — a separate hedge, left off the record. `annualRate` 6.11% is a floating snapshot (the app computes the live rate from SOFR + spread). Borrower Living Reatta Ranch LLC (managed by ARBS); property manager TLBP Management.
+
+---
+
+## 13. Villages of Whitewater — Bellwether Enterprise Mortgage Investments, LLC (Fannie Mae Form 6001.NR), dated July 31, 2017
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 1/31/2032 (174 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of January, 2032."* | [ADDED] |
+| 2 | **Replacement reserve** | $1,522/mo | $1,521.67/mo | **Schedule 5:** $220/unit/yr × 83 units = $18,260/yr ÷ 12 = $1,521.67/mo. (Seed rounded to a whole dollar.) | [CORRECTION] |
+
+**Verified correct — rate already matched:** amount **$11,392,000**; **Fixed 4.700%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 9/1/2017; maturity 8/1/2032. The document's stated **Monthly Debt Service $59,083.22** reproduces only at 4.700%; the app's schedule ties to the cent on all **180 rows** (balloon $7,797,931.42 at 8/1/2032). Borrower Gregel-GAM Harrison I, LLC; non-recourse; 83 units.
+
+**Source caveat:** the Summary of Loan Terms (pp.113–115) was OCR-emptied; the deal terms were read off the scan by eye. The arithmetic (rate 4.700% → $59,083.22 to the cent; $220 × 83 ÷ 12 → the reserve) corroborates them, but for a closing-binder-grade record the original scan is worth one eyeball.
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
