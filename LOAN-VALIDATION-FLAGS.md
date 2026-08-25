@@ -79,4 +79,31 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 6. Heritage Key Villas — Valley National Bank / Living Heritage LLC (+ HKMY entities), Promissory Note #95762090.2, made effective Jan 14, 2026
+
+*(Note.pdf is a scan; page 1 carries a real text layer — exact — and pages 2–13 were read from the rendered images. The Commitment Letter is native text.)*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | **Open / at par — prepayable in full or in part any time, no premium** | **Note §6 "Prepayment" (PDF p.2):** *"Borrower may prepay the Loan in part or in full prior to the Maturity Date."* Reinforced by the **Commitment Letter (p.1):** *"it is agreed that there will be no prepayment premium due if Borrower refinances the Loan at any time."* | [ADDED] |
+
+**Verified correct — no economic change needed.** Every rate/term/date field already matched the executed Note:
+- **Amount $61,000,000** — Note preamble (PDF p.1): *"the principal sum of up to SIXTY-ONE MILLION AND 00/100 ($61,000,000.00) DOLLARS."*
+- **Rate 5.70% fixed, then +2.00% margin over the 5-yr UST** — **Note §1 (PDF p.1):** fixed **5.70%** through **2/28/2031**; on **3/1/2031** (the "Interest Rate Change Date") the rate becomes the **5-year U.S. Treasury CMT + 2.00% margin**. Modeled as Hybrid ARM, `index = ust5y`, `spread = 2.00%`, `armInitialFixedMonths = 60`.
+- **12 months interest-only** — **Note §2(a)–(b) (PDF p.1):** interest-only monthly payments **3/1/2026 → 2/1/2027** (12 payments).
+- **P&I on a 30-year amortization from 3/1/2027** — **Note §2 (PDF p.2):** *"…continuing…thereafter, Borrower shall make monthly installments of principal and interest…based upon…a thirty (30) year amortization schedule."*
+- **Maturity 2/28/2036** — **Note §2(c) (PDF p.2):** *"the 'Maturity Date' shall mean February 28, 2036."*
+- **Effective 1/14/2026** — Note preamble (PDF p.1).
+- **Property address refined** to *"2089 Heritage Key Blvd, Kissimmee, FL 34744 (Osceola County)"* per the Commitment Letter (p.1); county confirmed by **Note §7 (PDF p.2)** ("City of Kissimmee and County of Osceola, State of Florida").
+
+**Independent check:** a clean-room schedule built only from the Note terms reproduces the app's rendered schedule **to the cent on all 121 rows** — IO payments $270,433.33 / $289,750.00 / $299,408.33 (28/30/31-day, 5.70% Actual/360), first P&I **$354,044.26** (2/28/2027), the 3/1/2031 reset, and the balloon **$52,777,708.31 → $0.00** at 2/28/2036.
+
+**Conventions noted for Azriel (not documented terms — modeling choices):**
+- **Day-count:** the Note is **silent** on the interest-calculation basis (payments are *"calculated by Lender"*). The app uses **Actual/360** — the standard commercial-bank convention for a lender like Valley National — but this is **not stated in the Note**; if the bank's amortization schedule uses 30/360, every payment would differ slightly.
+- **Rate floor:** the app carries a `rateFloor = 5.70%`, but the **Note states no floor and no cap** on the adjusted rate. It is a modeling guard only and **does not bind** (the projected reset rate is above it).
+- **Reset projection:** offline, the app projects the 3/1/2031 reset at the 5-yr UST catalog fallback (**4.16%**) + 2.00% = **6.16%**; the balloon figure above assumes that projection. The actual reset rate will be the then-current 5-yr UST + 2.00%.
+- **Not app fields:** borrower = Living Heritage LLC + HKMY/2HKMY/3HKMY/4HKMY LLC (joint & several); guarantor = ARBS Real Estate USA Holdings LLC, limited recourse to **25%** of the outstanding balance; DSCR covenant **1.25×** (§10(a)); manager = Living Residential Florida LLC (§10(g)); commitment fee 0.25% ($152,500).
+
+---
+
 *Validation continues loan by loan. This file is updated as each agreement is reviewed.*
