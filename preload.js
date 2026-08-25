@@ -83,4 +83,14 @@ contextBridge.exposeInMainWorld('ldsShell', {
     ipcRenderer.on('lds:panel-closed', fn);
     return () => { try { ipcRenderer.removeListener('lds:panel-closed', fn); } catch (e) {} };
   },
+
+  // ---- AI assistant (Claude Code subscription via the CLI, or an API key) ----
+  // Connection status: {cli:{available,version}, apiKey:{configured}, mode}.
+  aiStatus: () => ipcRenderer.invoke('lds:ai-status'),
+  // Store / clear the Anthropic API key (fallback path). Resolves {configured}.
+  aiSetKey: (key) => ipcRenderer.invoke('lds:ai-set-key', { key }),
+  // Choose the path: 'auto' | 'cli' | 'api'. Resolves {mode}.
+  aiSetMode: (mode) => ipcRenderer.invoke('lds:ai-set-mode', { mode }),
+  // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
+  aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
 });

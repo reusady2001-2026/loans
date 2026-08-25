@@ -4,6 +4,7 @@ const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const ai = require('./ai');   // AI bridge: Claude Code CLI (subscription) or Anthropic API
 
 let mainWindow = null;   // the primary window, so background events (updates) can reach its renderer
 
@@ -268,8 +269,15 @@ ipcMain.on('lds:update-check', () => {
 });
 ipcMain.on('lds:update-install', () => { try { autoUpdater.quitAndInstall(); } catch (e) {} });
 
+// ---- AI assistant (Claude Code CLI / Anthropic API) --------------------------
+ipcMain.handle('lds:ai-status', () => ai.status());
+ipcMain.handle('lds:ai-set-key', (e, { key }) => ai.setKey(key));
+ipcMain.handle('lds:ai-set-mode', (e, { mode }) => ai.setMode(mode));
+ipcMain.handle('lds:ai-extract', (e, opts) => ai.extract(opts || {}));
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null); // no default menu bar
+  ai.init(app);
   createWindow();
   setupAutoUpdates();
   app.on('activate', () => {

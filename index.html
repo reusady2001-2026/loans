@@ -781,6 +781,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
+            <button id="aiReadBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Read a loan agreement with Claude and pre-fill a loan">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
+              Read Agreement
+            </button>
             <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               Edit
@@ -1031,6 +1035,39 @@
           <button id="exportCancelBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
           <button id="exportOkBtn" type="button" class="rounded-lg bg-brand-600 px-5 py-2 text-sm font-bold text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed">Export</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ READ A LOAN AGREEMENT (AI) ============ -->
+  <div id="aiReadModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
+      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
+            Read a loan agreement
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Claude reads the executed agreement and pre-fills a loan for you to review. Nothing is saved until you confirm it.</p>
+        </div>
+        <button id="aiReadClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4 overflow-auto">
+        <div id="aiConnRow" class="text-sm"></div>
+        <div id="aiSettings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
+        <div id="aiDrop" class="rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition">
+          <input id="aiFile" type="file" accept=".md,.markdown,.txt,.text" class="hidden">
+          <svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+          <p class="mt-2 text-sm font-semibold text-slate-700">Drop the agreement here, or <button type="button" id="aiFileBtn" class="text-brand-700 underline">choose a file</button></p>
+          <p class="mt-1 text-[11px] text-slate-400">A text or Markdown copy of the loan agreement (.md / .txt). Convert a PDF to Markdown first, then drop it here.</p>
+        </div>
+        <div id="aiReadStatus" class="hidden rounded-xl px-4 py-3 text-sm"></div>
+      </div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button id="aiSettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
+        <button id="aiReadCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
       </div>
     </div>
   </div>
@@ -3521,6 +3558,9 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     function saveForm(){
       const data = readForm();
+      // Carry over fields the refinance module owns (not shown in the form) from the
+      // draft — e.g. prepayType from an AI-read agreement — so a new loan keeps them.
+      if(state.draft){ ["prepayType","prepayConfirmed","stepDownPct","defeasanceCost","noi","capRate"].forEach((k)=>{ if(state.draft[k]!==undefined && data[k]===undefined) data[k]=state.draft[k]; }); }
       const err = validateLoan(data);
       if(err){ showFormError(err); return; }
       lockFixedRate(data);   // freeze a new fixed loan's rate at index + spread
@@ -5337,11 +5377,167 @@ tr[data-loan]:hover td{background:#eef2f7}
     /* ================================================================
        12. EVENTS
        ================================================================ */
+    /* ================================================================
+       8b. AI — read a loan agreement → pre-fill a loan draft.
+       Uses the desktop shell's bridge to Claude (Claude Code subscription
+       via the CLI, or an Anthropic API key). Extracts the agreement's terms
+       into the app's own field schema, then opens the Add-Loan form pre-filled
+       for the operator to REVIEW. Nothing is saved automatically.
+       ================================================================ */
+    function aiAvailable(){ return !!(window.ldsShell && ldsShell.aiExtract); }
+    // A JSON schema built from the app's own input fields, so extraction always
+    // matches what a loan record needs. Every field is nullable and optional.
+    function aiLoanSchema(){
+      var props = {};
+      INPUT_FIELDS.forEach(function(f){
+        var t = (f.type==="money"||f.type==="pct") ? "number" : (f.type==="int" ? "integer" : "string");
+        props[f.key] = { type: [t, "null"] };
+      });
+      // prepayType lives outside INPUT_FIELDS (the refinance module reads it), so add it explicitly.
+      props.prepayType = { type: ["string", "null"] };
+      return { type:"object", properties: props, required: [] };
+    }
+    var AI_INSTRUCTION = [
+      "You are extracting the economic terms of a commercial real-estate loan from its EXECUTED loan agreement, provided in the <document> block on stdin. Return one JSON object using ONLY what the document states. Do not guess or compute values that are not in the document; leave a field null if it is not stated.",
+      "Conventions:",
+      "- annualRate: the contract/fixed interest rate as a DECIMAL (4.305% -> 0.04305). Read the exact rate; never round it.",
+      "- rateType: \"Fixed\", \"Floating\", or \"Hybrid ARM\". For Floating/ARM also set index, spread (decimal), rateFloor, rateCap when stated.",
+      "- Dates as ISO yyyy-mm-dd. originationDate = effective/closing date. firstPaymentDate = the first PRINCIPAL-AND-INTEREST payment date, i.e. AFTER any interest-only period (NOT the first interest-only payment). maturityDate = the stated maturity.",
+      "- loanTermMonths = number of monthly payments from the first payment through and including maturity. amortizationMonths = the amortization period (e.g. 360). ioMonths = the number of interest-only payments before amortization begins.",
+      "- amortMethod: \"Actual/360\" or \"30/360\", exactly as the interest-accrual provision states.",
+      "- amortType + fixedAmortAmount: \"Level\" for a normal solved amortizing (annuity) payment. \"Fixed Principal\" when the note requires a FIXED principal dollar amount each month on top of interest (e.g. a defined \"Required Amortization Payment\" of a stated dollar amount) — put that dollar amount in fixedAmortAmount. \"Fixed P&I\" when the note states a single fixed TOTAL monthly payment — put it in fixedAmortAmount. Use the stated monthly payment schedule to decide.",
+      "- replacementReserve: the MONTHLY replacement-reserve deposit in dollars (from the Summary of Loan Terms / reserve section); 0 if none. escrowTax / escrowInsurance: a monthly amount ONLY if a fixed monthly figure is stated (null if variable, e.g. 1/12 of taxes).",
+      "- prepayType: one of \"Yield Maintenance\", \"Step-down\", \"Defeasance\", \"Open / at par\". lienPosition: \"Senior\" or \"Mezzanine\".",
+      "- lenderName, loanNumber, propertyName, propertyAddress, propertyType (\"Multifamily\",\"Office\",\"Retail\",\"Industrial\",\"Mixed-Use\",\"Other\").",
+      "Return the JSON through the structured-output tool."
+    ].join("\n");
+
+    function aiReadOpen(){ if(!aiAvailable()) return; el("aiReadModal").classList.remove("hidden"); el("aiReadModal").classList.add("flex"); aiSetStatus(""); el("aiSettings").classList.add("hidden"); aiRefreshConn(); }
+    function aiReadClose(){ const m=el("aiReadModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } }
+    function aiSetStatus(html, kind){
+      const s = el("aiReadStatus"); if(!s) return;
+      if(!html){ s.classList.add("hidden"); s.innerHTML=""; return; }
+      const cls = kind==="error" ? "border border-rose-200 bg-rose-50 text-rose-700"
+                : kind==="ok" ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border border-slate-200 bg-slate-50 text-slate-600";
+      s.className = "rounded-xl px-4 py-3 text-sm "+cls; s.innerHTML = html;
+    }
+    function aiRefreshConn(){
+      const row = el("aiConnRow"); if(!row) return;
+      row.innerHTML = '<span class="text-slate-400">Checking connection…</span>';
+      ldsShell.aiStatus().then((st)=>{
+        aiStatusCache = st;
+        const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
+        let ok=false, msg="";
+        if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
+        else if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
+        else if(st.mode==="cli" && !(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
+        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
+        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        row.innerHTML = '<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
+          (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+              :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
+          '<span class="text-[13px]">'+msg+'</span></div>';
+        el("aiDrop").classList.toggle("opacity-50", !ok);
+        el("aiDrop").classList.toggle("pointer-events-none", !ok);
+        if(!ok) aiToggleSettings(true);
+      }).catch(()=>{ row.innerHTML='<span class="text-rose-600 text-[13px]">Could not reach the AI bridge.</span>'; });
+    }
+    var aiStatusCache = null;
+    function aiToggleSettings(show){
+      const p = el("aiSettings"); if(!p) return;
+      const open = (show===true) || (show!==false && p.classList.contains("hidden"));
+      p.classList.toggle("hidden", !open);
+      if(open) aiRenderSettings();
+    }
+    function aiRenderSettings(){
+      const p = el("aiSettings"); if(!p) return; const st = aiStatusCache || {};
+      const mode = (st.mode)||"auto"; const cliOk = st.cli&&st.cli.available;
+      const opt = (v,label,note)=> '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiMode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>';
+      p.innerHTML =
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="space-y-1.5">'+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
+          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
+        '</div>'+
+        '<div class="pt-1">'+
+          '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
+          '<div class="mt-1 flex gap-2"><input id="aiKeyInput" type="password" placeholder="sk-ant-…" class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          '<button id="aiKeySave" type="button" class="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Save</button>'+
+          (st.apiKey&&st.apiKey.configured?'<button id="aiKeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
+          '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
+        '</div>';
+      p.querySelectorAll('input[name="aiMode"]').forEach(r=> r.addEventListener("change", ()=>{ ldsShell.aiSetMode(r.value).then(()=>aiRefreshConn()); }));
+      const ki=el("aiKeyInput"), ks=el("aiKeySave"), kc=el("aiKeyClear");
+      if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiRefreshConn(); aiRenderSettings(); }); });
+      if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); aiRefreshConn(); aiRenderSettings(); }); });
+    }
+    function aiHandleFile(file){
+      if(!file) return;
+      const name = file.name||"agreement";
+      if(file.size > 8*1024*1024){ aiSetStatus("That file is large ("+Math.round(file.size/1024/1024)+" MB). Use a text/Markdown copy of the agreement, not a scanned PDF.","error"); return; }
+      const reader = new FileReader();
+      reader.onload = (e)=> aiExtractAndFill(String(e.target.result||""), name);
+      reader.onerror = ()=> aiSetStatus("Could not read that file.","error");
+      reader.readAsText(file);
+    }
+    function aiExtractAndFill(text, name){
+      if(!text || text.trim().length < 40){ aiSetStatus("That file looks empty or too short to be a loan agreement.","error"); return; }
+      aiSetStatus('<span class="inline-flex items-center gap-2"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Reading <b>'+escapeHtml(name)+'</b> &mdash; this can take up to a minute or two for a long agreement…</span>', "info");
+      ldsShell.aiExtract({ instruction: AI_INSTRUCTION, schema: aiLoanSchema(), input: text, timeoutMs: 300000 })
+        .then((r)=>{
+          if(!r || !r.ok){ aiSetStatus("Couldn’t read the agreement. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiConnFix" class="underline font-semibold">Connection settings</button>', "error"); const b=el("aiConnFix"); if(b) b.addEventListener("click",()=>aiToggleSettings(true)); return; }
+          const clean = aiSanitize(r.data||{});
+          const nKeys = Object.keys(clean).length;
+          if(!nKeys){ aiSetStatus("Claude didn’t find loan terms in that file. Is it the loan agreement?","error"); return; }
+          state.draft = Object.assign(emptyLoan(), clean, { _id: uid(), isHistorical: true });
+          state.mode = "add";
+          aiReadClose();
+          render();
+          window.scrollTo({ top:0, behavior:"smooth" });
+          toast("Loan pre-filled from the agreement — review every field, then Save", "check");
+        })
+        .catch((err)=> aiSetStatus("The AI request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), "error"));
+    }
+    // Keep only known input fields; coerce numbers; drop nulls; validate select options.
+    function aiSanitize(data){
+      const out = {};
+      INPUT_FIELDS.forEach((f)=>{
+        let v = data[f.key];
+        if(v==null || v==="") return;
+        if(f.type==="money"||f.type==="pct"||f.type==="int"){ v = Number(v); if(!isFinite(v)) return; if(f.type==="int") v = Math.round(v); }
+        else { v = String(v).trim(); if(!v) return; if(f.options && f.options.indexOf(v)<0) return; }
+        out[f.key] = v;
+      });
+      // prepayType (outside INPUT_FIELDS): keep only a recognized value; mark it confirmed.
+      if(data.prepayType && PREPAY_TYPES.indexOf(String(data.prepayType).trim()) >= 0){ out.prepayType = String(data.prepayType).trim(); out.prepayConfirmed = true; }
+      return out;
+    }
+
+    /* ================================================================
+       9. EVENT WIRING
+       ================================================================ */
     dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
     dom.addBtn.addEventListener("click", startAdd);
     dom.editBtn.addEventListener("click", startEdit);
     dom.removeBtn.addEventListener("click", removeActive);
     dom.saveBtn.addEventListener("click", saveForm);
+    // AI: read a loan agreement (desktop shell only)
+    if(aiAvailable() && el("aiReadBtn")){
+      el("aiReadBtn").hidden = false;
+      el("aiReadBtn").addEventListener("click", aiReadOpen);
+      el("aiReadClose").addEventListener("click", aiReadClose);
+      el("aiReadCancel").addEventListener("click", aiReadClose);
+      el("aiSettingsToggle").addEventListener("click", ()=>aiToggleSettings());
+      el("aiFileBtn").addEventListener("click", ()=> el("aiFile").click());
+      el("aiFile").addEventListener("change", (e)=>{ const f=e.target.files&&e.target.files[0]; if(f) aiHandleFile(f); e.target.value=""; });
+      const drop = el("aiDrop");
+      drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.classList.add("border-brand-400","bg-brand-50"); });
+      drop.addEventListener("dragleave", ()=> drop.classList.remove("border-brand-400","bg-brand-50"));
+      drop.addEventListener("drop", (e)=>{ e.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) aiHandleFile(f); });
+      el("aiReadModal").addEventListener("click", (e)=>{ if(e.target===el("aiReadModal")) aiReadClose(); });
+    }
     // Quick-jump: scroll the amortization schedule to a key payment date and flash the row.
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-scheduljump]"); if(!b) return;
