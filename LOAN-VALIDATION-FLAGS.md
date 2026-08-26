@@ -289,6 +289,28 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 18. K2 Sweetwater / FIU Student Residences — construction capital stack (senior + mezzanine), dated Dec 20, 2021 — **NEW LOANS (added to the app)**
+
+*A two-tier construction stack on FIU student housing at 10726 SW 7th Street, Miami FL (developer AdamAmerica; GC Coastal Construction; total budget ~$208M, ~70.7% loan-to-cost; substantial completion 5/31/2024). Neither was previously in the app. **The app's first construction/mezzanine loans** — see the modeling caveats.*
+
+**Senior — Construction Loan** (AIG / National Union Fire Insurance Co.; Borrower K2 Sweetwater LLC):
+- **Up to $127,000,000** (aggregate maximum principal). **Rate = LIBOR + 3.75% spread, floored at 3.75%** (Benchmark Rate = greater of (Benchmark + Spread) and the 3.75% floor); interest-only; **Actual/360** (§2.2.2: *"…dividing the product by three hundred sixty (360), and multiplying that result by the actual number of days elapsed…"*); payments on the 1st (first 2/1/2022). **Initial maturity 1/1/2026; one 1-yr extension to 1/1/2027** (0.25% fee).
+
+**Mezzanine** (MSD Capital — MSD PCOF Partners LXI / MSD RCOF Credit REIT; Borrower K2 Sweetwater Mezz LLC):
+- **Up to $20,000,000**. **Rate = 13.50% fixed** — §Def: *"'Interest Rate' means 13.50%"* (no benchmark, no floor); interest-only, Actual/360; secured by the **equity pledge**, not the real estate. Same maturity structure. Guarantors Dvir Cohen-Hoshen & Omri Sachs.
+
+**Added as:** senior = Floating (SOFR proxy for LIBOR + 3.75%, floor 3.75%), $127,000,000, fully IO, 60-mo, maturity 1/1/2027; mezz = Fixed 13.50%, $20,000,000, fully IO, lien Mezzanine, 60-mo, maturity 1/1/2027. Both render coherent 60-row IO schedules to the cent (senior first IO $807,085 @ 7.38% offline; mezz $232,500 @ 13.50%; balloons $127M / $20M at 1/1/2027).
+
+**⚠️ Modeling caveats — these are construction loans; the app has no native construction type:**
+1. **Commitment vs. funded balance** — modeled at the full $127M / $20M *commitment*. A construction loan funds by draws (balance grew over the build); since completion (5/2024) it's ≈ fully drawn, so commitment is a fair current proxy, but the draw-up isn't modeled.
+2. **Interest reserve** — interest was funded from an Interest Reserve Account during construction, not paid current by the borrower. The accruing interest is right; who funds it isn't modeled.
+3. **Dead index (LIBOR → SOFR)** — the senior was LIBOR + 3.75%; LIBOR ceased and the note's Benchmark-Replacement machinery moved it to Term SOFR + adjustment, floored at 3.75%. The app has no LIBOR index, so it's modeled as **SOFR + 3.75% floored at 3.75%** (the ~0.11% benchmark adjustment isn't modeled).
+4. **Maturity is an assumption** — the initial maturity **1/1/2026 has already passed**; modeled at the **extended 1/1/2027** assuming the one-year extension was exercised. **Confirm the current maturity and funded balance** — not derivable from the closing documents.
+5. **Prepayment not set** — construction-loan prepayment terms not captured here; left blank pending confirmation.
+6. **Mezz extension-fee drafting error** (not an app field) — the mezz clause reads *"one quarter of one percent (0.50%)"*; words (0.25%) and numeral (0.50%) disagree; the senior's parallel clause reads 0.25%. Flag to counsel before any extension fee is invoiced.
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
