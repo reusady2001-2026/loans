@@ -51,7 +51,7 @@ and the full amortization schedule match the document **to the cent**.
 | 1 | **Interest rate** | 3.12% | **3.115%** | **Schedule 2 (Form 6102.FR), PDF p.107**: *"Fixed Rate 3.115%"* (both OCR passes agree). Confirmed by stated payments, **PDF p.108**: IO $73,591.88 / $76,220.16 / $78,848.44 / $81,476.72 and **P&I $129,953.83** — reproduce only at 3.115%. | **$MATERIAL** |
 | 2 | **Loan number** | "Fannie 891177 series" | **200393285** | Agreement's loan identifiers: **Loan #200393285** (also PMCC Tracking #82281, Property #81528). The prior value **"891177"** matches the executed number of **neither** this loan nor Villages of Burlington (whose real number, confirmed separately, is **200392849**) — it was a spurious identifier carried on the seed. | [CORRECTION] |
 | 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 5/31/2030 (114 mo) | **PDF p.108, Section IV**: *"Yield Maintenance Period End Date: The last day of May, 2030"*; *"Yield Maintenance Period Term: One Hundred Fourteen (114) months."* | [ADDED] |
-| 4 | **Replacement reserve** | *(blank)* | $2,783.33/mo | **Schedule 5 (Required Replacement Schedule), PDF p.114**: $200/unit/yr × 167 units = $33,400/yr ÷ 12 = $2,783.33/mo. (Spreadsheet not machine-readable; read off the scan by hand.) | [ADDED] |
+| 4 | **Replacement reserve** | *(blank)* | $2,783/mo | Summary of Loan Terms "Monthly Replacement Reserve Deposit" states a whole dollar (**$2,783**); $200/unit/yr × 167 units = $33,400/yr, entered by the lender as $2,783/mo. | [ADDED] |
 
 ---
 
@@ -156,7 +156,7 @@ and the full amortization schedule match the document **to the cent**.
 | 1 | **Interest rate** | 4.88% | **4.875%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms:** *"Fixed Rate 4.875%."* Confirmed by the document's stated **Monthly Debt Service Payment $85,334.83**, which reproduces to the cent only at 4.875%. | **$MATERIAL** |
 | 2 | **Loan number** | "Fannie 891177" | **200392849** | Summary of Loan Terms footer: *"PMCC Tracking #75119, Property #75497, Loan #200392849."* The prior "891177" is not on the executed document (and, per loan #3 above, is not Florence's either). | [CORRECTION] |
 | 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 8/31/2033 (174 mo) | **Summary of Loan Terms §IV:** *"Yield Maintenance Period End Date: The last day of August, 2033."* | [ADDED] |
-| 4 | **Replacement reserve** | $1,917/mo | $1,916.67/mo | **Schedule 5:** $200/unit/yr × 115 units = $23,000/yr ÷ 12 = $1,916.67/mo. (Seed rounded to a whole dollar.) | [CORRECTION] |
+| 4 | **Replacement reserve** | $1,917/mo | **$1,917/mo — confirmed** | Summary of Loan Terms "Monthly Replacement Reserve Deposit" states a whole dollar (**$1,917**); $200/unit/yr × 115 units = $23,000/yr, which the lender enters as $1,917/mo. Seed's $1,917 was correct — **no change.** | ✓ |
 
 **Verified correct:** amount **$16,125,000**; Fixed; **Actual/360** (Summary of Loan Terms — Interest Accrual Method box marked Actual/360); **no interest-only** (Interest Only Term = 0 months); **360-mo amortization, 180-mo term**; first payment 4/1/2019; maturity 3/1/2034. Independent schedule reproduces the app's **180 rows to the cent** — level P&I **$85,334.83**, balloon **$11,150,842.27** at 3/1/2034. Borrower Gregel-GAM Burlington LLC; non-recourse; 115 residential units. This is the only portfolio loan with **no interest-only period** at all.
 
@@ -225,11 +225,8 @@ and the full amortization schedule match the document **to the cent**.
 | # | Field | App had | Document says | Evidence | |
 |---|---|---|---|---|---|
 | 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 1/31/2032 (174 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of January, 2032."* | [ADDED] |
-| 2 | **Replacement reserve** | $1,522/mo | $1,521.67/mo | **Schedule 5:** $220/unit/yr × 83 units = $18,260/yr ÷ 12 = $1,521.67/mo. (Seed rounded to a whole dollar.) | [CORRECTION] |
 
-**Verified correct — rate already matched:** amount **$11,392,000**; **Fixed 4.700%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 9/1/2017; maturity 8/1/2032. The document's stated **Monthly Debt Service $59,083.22** reproduces only at 4.700%; the app's schedule ties to the cent on all **180 rows** (balloon $7,797,931.42 at 8/1/2032). Borrower Gregel-GAM Harrison I, LLC; non-recourse; 83 units.
-
-**Source caveat:** the Summary of Loan Terms (pp.113–115) was OCR-emptied; the deal terms were read off the scan by eye. The arithmetic (rate 4.700% → $59,083.22 to the cent; $220 × 83 ÷ 12 → the reserve) corroborates them, but for a closing-binder-grade record the original scan is worth one eyeball.
+**Verified correct — rate already matched:** amount **$11,392,000**; **Fixed 4.700%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 9/1/2017; maturity 8/1/2032; **replacement reserve $1,522/mo** — *"Monthly Replacement Reserve Deposit $1,522"* (Summary of Loan Terms, Form 6102.FR, p.6; the document states a whole dollar). The document's stated **Monthly Debt Service $59,083.22** reproduces only at 4.700%; the app's schedule ties to the cent on all **180 rows** (balloon $7,797,931.42 at 8/1/2032). Borrower Gregel-GAM Harrison I, LLC; non-recourse; 83 units. *(Every figure here was verified against Yuval's clean scan of the Summary of Loan Terms pp.111–116 — no OCR caveat remains.)*
 
 ---
 
