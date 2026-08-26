@@ -244,6 +244,21 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 15. Weaver Mill (Villages of Florence at Weaver Mill) — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Nov 12, 2020
+
+*Sister loan to §3 (Villages of Florence) — same lender, same closing date, coterminous maturity (12/1/2030); consecutive PMCC tracking #s (this one **#82280**, Florence #82281). Combined ~$38.7M / 220 units, all maturing 12/1/2030.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 3.12% | **3.115%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms, p.107:** *"Fixed Rate 3.115%."* Confirmed by the document's **stated payments** (p.108): IO $20,203.54 / $20,925.10 / $21,646.65 / $22,368.21 (28/29/30/31-day) and P&I **$35,676.87** — all reproduce only at 3.115%. | **$MATERIAL** |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 5/31/2030 | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of May, 2030."* | [ADDED] |
+
+**Verified correct:** amount **$8,339,000**; **Actual/360**; **24 months interest-only** (first payment 1/1/2021, last IO 12/1/2022, first P&I 1/1/2023); 360-mo amortization, 120-mo term; maturity 12/1/2030; **replacement reserve $883.33/mo** — *"Monthly Replacement Reserve Deposit $883.33"* (p.109; the document states this **with cents**, so the seed's $883.33 is correct — **no change**). Independent schedule reproduces the app's **120 rows to the cent** — first P&I $35,676.87 (1/1/2023), balloon **$6,861,091.82** at 12/1/2030. Borrower Gregel-GAM Florence-Weaver, LLC; non-recourse; 53 units. No Fannie loan number in the agreement (only PMCC Tracking #82280).
+
+**Effect of #1:** at 3.12% the payments/schedule were slightly off; at the executed **3.115%** every row ties to the document. *(One of the two "cents reserves to re-check" is now resolved — Weaver Mill's $883.33 is the document's stated figure. Forest Park's $2,395.83 remains to be checked against its document.)*
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
