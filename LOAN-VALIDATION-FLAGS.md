@@ -427,13 +427,29 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
-## 25. 1395 Washington — 1395 Washington Avenue, Albany, NY — **RECEIVED, BUT BLOCKED (not added): rate & maturity are not in this document**
+## 25. 1395 Washington (Project Loan) — 1395 Washington Avenue, Albany, NY — **NOW VALIDATED & ADDED (the 1395 Project Loan Note arrived — §25 was blocked, no longer)**
 
-*Valley National Bank building-loan financing on a **134-unit / 134-bed student-housing conversion** of a former hotel (borrower 1395 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as 1415 & Legacy). Dated **2/28/2024**. Building Loan $4,434,670 + Project Loan $6,943,894 = **$11,378,564 total debt**; LTC 66.0%; completion targeted 5/21/2025.*
+*Valley National Bank financing on a **134-unit / 134-bed student-housing conversion** of a former hotel (borrower 1395 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as 1415 & Legacy; City of Albany IDA). Dated **2/28/2024**. One financing split under NY Lien Law into a Building Loan $4,434,670 (§26) + this **Project Loan $6,943,894** = $11,378,564 total; LTC 66.0%.*
 
-**Why it is NOT in the app — same problem Legacy had.** The 1395 **Building Loan Agreement does not state the interest rate or the maturity date**; both live in the 1395 Building Loan Note and Project Loan Note, which are **referenced throughout but not included**. The word "maturity" appears once in 239 pages, in a boilerplate acceleration clause, never defined.
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$6,943,894**, fully IO, 26-mo, Actual/360, origination 2/28/2024, first payment 4/21/2024, **Initial Maturity 5/21/2026**. Independent strict verifier reproduces the app's **26 rows to the cent** — first IO $47,118.18 @ 7.88% (offline), balloon **$6,943,894** at 5/21/2026.
 
-**The notes that *were* sent are the sister 1415's, not 1395's.** The zip's Building/Project notes are for **1415** Washington Property LLC (dated 11/21/2022, $57.2M) — a different borrower, 15 months earlier, ~5× larger. Their terms (Term SOFR + 4.25%, floor 5.00%) are the sponsor's house style but are **not evidence of what the 1395 loan costs**, so they are **not** used to model 1395. Held out of the app pending the 1395 notes — see §Q6.
+**Terms — verified against the executed 1395 Project Loan Note (¶2 + §12 definitions):**
+- **Rate** *"4.25% above Term SOFR… in no event… less than 5.00% per annum"*; **Actual/360** *"computed on the basis of a 360-day year for the actual number of days involved"*; one-month Interest Period; alternate rate WSJ Prime + 1.00% (same 5.00% floor).
+- **Interest-only bullet** — ¶1: *"a payment equal to the entire unpaid Principal Amount on the Maturity Date."*
+- **Principal Amount** *"…($6,943,894.00)"*; dated *"As of February 28, 2024."*
+- **Initial Maturity Date May 21, 2026**; **Extended Maturity Date May 21, 2027** (one 12-mo option; completion / ≥95%-leased / DSCR ≥ 1.25 conditions). **Default rate 18%.** First Periodic Interest Date **4/1/2024**; payments on the **1st Business Day** of each month.
+
+**⚠️ Modeling caveats:** (1) **App renders 7.88%, not the note's actual rate** — floating, priced at today's SOFR (max(3.63% + 4.25%, 5.00%)); the note's rate is Term SOFR + 4.25%. (2) **Initial maturity 5/21/2026 has passed** — modeled at that date; extension to 5/21/2027 vs refi is an open question (§Q5, shared with 1415). (3) **Payment-day / stub** — note pays on the 1st Business Day (first periodic 4/1/2024, ~1-mo stub from the 2/28 closing); the app anchors on the maturity's day (21st). IO on a constant balance → interest unchanged, only displayed dates differ.
+
+---
+
+## 26. 1395 Washington (Building Loan) — 1395 Washington Avenue, Albany, NY — **NEW LOAN (added to the app) — terms from the co-terminous Project Note**
+
+> **The *Building Loan* half of the 1395 split** (hard costs; §25 is the Project Loan). A **separate note/mortgage**, same Valley National financing.
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$4,434,670**, fully IO, 26-mo, Actual/360, origination 2/28/2024, first payment 4/21/2024, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **26 rows to the cent** — first IO $30,091.70 @ 7.88% (offline), balloon **$4,434,670** at 5/21/2026.
+
+**⚠️ Evidentiary basis — read this.** Unlike §25, **the 1395 *Building* Loan Note itself was not provided** — only the Project Loan Note and Agreement. Its rate and maturity are taken from the **co-terminous Project Loan Note** (§25), which is a **very strong inference but not the building note read directly**: (a) it is the same Valley National financing, same borrower, same 2/28/2024 date, split only for NY Lien Law (hard vs soft costs); (b) the sister **1415** deal is proof of the pattern — there the Building and Project notes were **identical in every term**. The amount **$4,434,670** is confirmed (it equals the agreement's total hard costs exactly). If the actual 1395 Building Note is ever provided and differs, update this record. Same three modeling caveats as §25.
 
 ---
 
@@ -457,7 +473,9 @@ and the full amortization schedule match the document **to the cent**.
 
 **~~Q5 (RESOLVED) — Legacy at Kissimmee: we need the Promissory Note.~~** ✅ **The Note (BHI 1225 Utica) has been provided** — rate Term SOFR + 4.0% / floor 6.85%, initial maturity 5/26/2027. Legacy is now validated and added (§22). The remaining Legacy items (current drawn balance; budget-contingency question) are folded into Q7 below.
 
-**Q5 — 1415 Washington: is it still outstanding, and at what maturity?** Same shape as the K2 / Pepper question. Both 1415 notes (Building §23 + Project §24) had an **Initial Maturity of 5/21/2026 that has already passed**, with one 12-month extension option to **5/21/2027** (conditioned on completion, ≥95% leased, DSCR ≥ 1.25). Modeled at the initial 5/21/2026. Ask Azriel: was the extension exercised (current maturity 5/21/2027), or was the Valley National financing **refinanced / paid off**? Is it still outstanding, and what is the current balance on each of the two notes ($40,199,260 building / $16,998,373 project)?
+**Q5 — Albany (1415 *and* 1395 Washington): still outstanding, and at what maturity?** Same shape as the K2 / Pepper question, and it applies to **both** Albany student-housing deals — all four notes carry an **Initial Maturity of 5/21/2026 that has already passed**, each with one 12-month extension to **5/21/2027** (conditioned on completion, ≥95% leased, DSCR ≥ 1.25). All modeled at the initial 5/21/2026. Ask Azriel, for each project: was the extension exercised (current maturity 5/21/2027), or was the Valley National financing **refinanced / paid off**? Is it still outstanding, and what is the current balance on each note — 1415 ($40,199,260 building / $16,998,373 project) and 1395 ($4,434,670 building / $6,943,894 project)?
+
+**~~Q6 (RESOLVED) — 1395 Washington: we need its own notes.~~** ✅ **The 1395 Project Loan Note and Agreement have been provided** — Term SOFR + 4.25% / floor 5.00%, Initial Maturity 5/21/2026. 1395 is now validated and added (Project §25, Building §26). *One residual:* the 1395 **Building** Loan Note itself wasn't in the set — its terms are taken from the co-terminous Project Note (a very strong inference, per §26). If the actual Building Note surfaces, confirm it matches; not urgent.
 
 **Q6 — 1395 Washington: we need its own Building & Project notes.** The 1395 Building Loan Agreement (§25) defines the interest rate and maturity only by reference to notes that **were not included** — the notes in the package were the sister **1415's**, which don't govern 1395. Without the 1395 notes the loan can't be added. Ask Azriel for the **1395 Washington Building Loan Note and Project Loan Note** (or just: rate — index + spread + floor — and the initial/extended maturity dates for the $4,434,670 building and $6,943,894 project pieces).
 
