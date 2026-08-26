@@ -259,6 +259,36 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 16. Villages of Independence — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Dec 20, 2018 (Loan No. 200392816)
+
+*The oldest of the Prudential/Gregel-GAM loans (Dec 2018) — highest rate in the portfolio.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Loan number** | *(blank)* | **200392816** | Loan identifiers: *"PMCC Tracking #74578 · Property #74960 · Loan #200392816."* | [ADDED] |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 6/30/2033 (174 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of June, 2033."* | [ADDED] |
+
+**Verified correct — rate already matched:** amount **$14,175,000**; **Fixed 5.230%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 2/1/2019; maturity 1/1/2034; **replacement reserve $1,822/mo** (stated whole dollar; seed correct — no change). The document's stated **Monthly Debt Service $78,099.37** reproduces only at 5.230%; the app's schedule ties to the cent on all **180 rows** (balloon $9,978,263.92 at 1/1/2034). Borrower Gregel-GAM Independence LLC; non-recourse; 106 units.
+
+---
+
+## 17. The Residences at Forest Park — Arbor Commercial Funding I, LLC (Fannie Mae Form 6001.NR), dated May 10, 2019
+
+*Sister loan to §2 (The Lofts at Lafayette Square) — same lender, same closing date, same maturity (6/1/2031), overlapping tenant-in-common borrower entities; combined ~$40.4M / 224 units.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 4.31% | **4.305%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms, p.115:** *"Fixed Rate 4.305%."* Confirmed by the document's **stated payments** (p.116): IO $79,650.15 / $82,494.80 / $85,339.45 / $88,184.10 (28/29/30/31-day) and P&I **$117,789.87** — all reproduce only at 4.305%. | **$MATERIAL** |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 11/30/2030 | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of November, 2030."* | [ADDED] |
+
+**Verified correct:** amount **$23,788,000**; **Actual/360**; **84 months interest-only** (first payment 7/1/2019, first P&I 7/1/2026); 360-mo amortization, 144-mo term; maturity 6/1/2031. Independent schedule reproduces the app's **144 rows to the cent** — first P&I $117,789.87 (7/1/2026), balloon **$21,736,551.64** at 6/1/2031. Borrower is a four-entity **tenant-in-common** group (2709 Heath DE / HGWK Holdings DE / Deutsch 1124 DE / The Residences DE); non-recourse; 115 units.
+
+**Replacement reserve $2,395.83 — kept, with a source caveat:** the annual is confirmed (**$28,750** = 115 units × $250/yr), but the Summary of Loan Terms was OCR-emptied, so the *monthly* figure ($28,750 ÷ 12 = **$2,395.83**) could not be cleanly read from the stated cell. Retained as-is (not re-derived away); worth one eyeball against the original scan. **Loan number "Fannie 892174"** is not stated in the agreement (which carries Arbor Matter No. 16102.446) — plausibly the Fannie-assigned number, consecutive with the sister Lofts' 892172, but unverified from this document (same caveat as §2).
+
+**Effect of #1:** at 4.305% every row ties to the document; the 4.31% was a rounding. *(This resolves the second of the two "cents reserves to re-check" — Forest Park's annual is confirmed, monthly noted as OCR-uncertain.)*
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
