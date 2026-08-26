@@ -372,24 +372,68 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
-## 22. Legacy at Kissimmee — 1225 Utica Drive, Kissimmee, FL — **RECEIVED, BUT BLOCKED (not added): rate & maturity are not in this document**
+## 22. Legacy at Kissimmee — 1225 Utica Drive, Kissimmee, FL — **NOW VALIDATED & ADDED (the Note arrived — §22 was blocked, no longer)**
 
-*Bank Hapoalim construction loan on a to-be-built **256-unit** multifamily development (borrower **Legacy at Kissimmee, LLC**; 100% ARBS / Alon Blue Square / Moti Ben-Moshe chain, ARBS as entity guarantor; individual guarantors Dvir Cohen Hoshen, Omri Sachs, Ron Vaksin — the same two who guarantee K2 Sweetwater; dated **11/26/2024**). This would be the app's first Bank Hapoalim loan.*
+*Bank Hapoalim construction loan on a to-be-built **256-unit** multifamily development (borrower **Legacy at Kissimmee, LLC**; 100% ARBS / Alon Blue Square / Moti Ben-Moshe chain, ARBS as entity guarantor; individual guarantors Dvir Cohen Hoshen, Omri Sachs, Ron Vaksin — the same two who guarantee K2 Sweetwater; dated **11/26/2024**). The missing Promissory Note (BHI 1225 Utica) has now been provided, so this loan is unblocked and added. (Correction to the earlier note: this is **not** the app's first Bank Hapoalim loan — The Mint and The Mews are also Hapoalim.)*
 
-**Why it is NOT in the app yet — the two terms that drive the schedule are missing.** The Construction Loan Agreement defines both by reference to a **separate Promissory Note that was not included in this PDF:**
-- *"'Interest Rate' shall have the meaning ascribed to such term in the Note."* (§1.1)
-- *"'Initial Maturity Date' shall have the meaning ascribed to such term in the Note."*
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.0%**, floor **6.85%**), **$41,000,000**, fully IO, 30-mo, Actual/360, origination 11/26/2024, first payment 12/26/2024, **Initial Maturity 5/26/2027**. Independent strict verifier reproduces the app's **30 rows to the cent** — first IO $260,691.67 @ 7.63% (offline), balloon **$41,000,000** at 5/26/2027.
 
-There is **no rate and no maturity date anywhere in the 113-page agreement** (confirmed by full-text search — every reference points back to the Note). Adding it to the app would require inventing a rate and a maturity, which would render a **fabricated schedule that looks real**. Per the "stricter, not softer" standard, it is **held out of the app** pending the Note rather than modeled on a guess.
+**Terms — verified against the executed Note (BHI 1225 Utica), Rider Exhibit A + ¶¶1–3:**
+| # | Term | Value | Evidence (exact quote) |
+|---|---|---|---|
+| 1 | **Interest rate** | Term SOFR + 4.0%, floor 6.85% | Rider: *"Margin: 4.0% per year"* · *"Benchmark: [X] Term SOFR"* · *"Minimum interest rate: 6.85% per annum."* |
+| 2 | **Accrual** | Actual/360, compounds monthly | ¶1(b): *"Interest shall be calculated based upon a three hundred sixty (360) day year and charged for the actual number of days elapsed and shall compound monthly."* |
+| 3 | **Interest-only** | payment = interest, balloon | ¶2(b): *"Borrower shall pay interest only, in arrears"* through the Maturity Date; ¶3: pay *"the entire Outstanding Principal Balance"* at maturity. |
+| 4 | **Maturity** | 5/26/2027 (init) → 5/26/2028 | ¶3: *"'Maturity Date' shall mean the earliest… of (i) May 26, 2027 (the 'Initial Maturity Date')…; provided… if the Extension Option is exercised… the Initial Maturity Date shall mean May 26, 2028."* One 12-mo extension. |
+| 5 | **Default rate** | 18% | ¶ (post-maturity): *"increased to a rate per annum equal to eighteen percent (18.0%)."* |
 
-**What the agreement *does* fix (recorded for when the Note arrives):**
-- **Loan amount $41,000,000**; LTC **59.1%** (equity $28,325,706 = 40.9%); total project cost $69,325,706; **256 units** (~$270,800/unit).
-- **Total scheduled debt service through the Initial Maturity Date = $3,311,732**, funded from an **Interest Reserve**. This constrains rate × term × average-drawn-balance together but **cannot be decomposed** into a rate without the Note and the draw schedule.
-- **One 12-month extension** (fee **0.35%** of max principal; conditioned on no Default, **Substantial Completion**, and the Interest Reserve funded for the full extension).
-- **§7.17 requires an Interest Rate Management Agreement** (a rate cap) → the loan is almost certainly **floating** (SOFR-based), but the index/spread are in the Note.
-- **Unused Fee 0.25%/yr** on the average daily undrawn amount; development fee $1,548,222.
+**⚠️ Modeling caveats — construction loan, floating:**
+1. **App renders 7.63%, not the note's actual rate.** As a Floating loan the app prices at today's SOFR — offline max(3.63% + 4.0%, 6.85%) = **7.63%**. The note's actual rate is **Term SOFR + 4.0%** (≈8.6% at the Nov-2024 closing; the 6.85% floor was not binding). Same by-design floater behavior as Pepper / K2 senior — the schedule ties to the app's own model to the cent, not to the note's historical Term-SOFR payments.
+2. **Construction loan** — modeled at the full **$41M commitment** (funds by draws; interest was funded from the **Interest Reserve** of $3,311,732 during the build). Draw-up and reserve funding aren't modeled. **Current drawn balance** is an open question.
+3. **Payment-day / date artifacts.** The Note pays on the **1st Business Day** of each month (and carries stub-date language — "through September 30, 2024," first payment "November 1, 2024" — carried over from an **Original Note A/B** that predates the 11/26/2024 restatement). The app anchors on the maturity's day (26th). For a fully-IO loan on a constant balance the monthly interest is unchanged by the payment day; only the displayed dates differ (same convention caveat as several other loans).
+4. **Maturity is in the future** (5/26/2027) — no passed-maturity problem; modeled at the Initial Maturity Date, extension option noted.
 
-**⚠️ Underwriting flag (not an app field):** the Budget's definition (§1.1) requires a hard- and soft-cost contingency of *"at least ten percent (10%)"*; the attached Budget shows a hard contingency of $1,400,000 on $45,984,399 (**~3.0%**) and a soft contingency of $775,515 on $10,632,200 (**~7.3%**) — both appear short of the 10% floor. The figures are OCR from a scanned page and the clause could be read per-line-item; **worth a look by whoever underwrote it** (a contingency shortfall matters if construction costs run). Added to the Azriel questions.
+*The budget-contingency question from when this was blocked (hard ~3.0% / soft ~7.3% vs the agreement's 10% floor) still stands — see the Azriel questions.*
+
+---
+
+## 23. 1415 Washington (Building Loan) — 1415 Washington Avenue, Albany, NY — **NEW LOAN (added to the app)**
+
+> **One of the two 1415 Washington notes — the *Building Loan*.** Under **NY Lien Law** a building loan funds only **hard costs**; soft costs go in a separate **Project Loan** (§24). Same lender (Valley National Bank), same borrower, same rate, same maturity — **one financing split into two notes/mortgages**. Kept as two records to match the two executed notes (easy to combine on request).
+
+*Student-housing conversion, 1415 Washington Ave, Albany NY (borrower 1415 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as Legacy & 1395; City of Albany IDA on the fee/leasehold/subleasehold mortgages). Dated 11/21/2022.*
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$40,199,260**, fully IO, 42-mo, Actual/360, origination 11/21/2022, first payment 12/21/2022, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **42 rows to the cent** — first IO $263,975.14 @ 7.88% (offline), balloon **$40,199,260** at 5/21/2026.
+
+**Terms — verified against the executed Building Loan Note (¶2 + §12 definitions):**
+- **Rate** *"4.25% above Term SOFR… provided… in no event shall the interest rate… be less than 5.00% per annum"* (¶2(a)); **Actual/360** *"computed on the basis of a 360-day year for the actual number of days involved"*; **one-month** Interest Period; alternate rate **WSJ Prime + 1.00%** (same 5.00% floor).
+- **Interest-only bullet** — ¶1: *"pay the Principal Amount by making a payment equal to the entire unpaid Principal Amount on the Maturity Date"* (no amortization).
+- **Initial Maturity Date May 21, 2026**; **Extended Maturity Date May 21, 2027** (one 12-mo option; conditions incl. Improvements complete, ≥95% leased, DSCR ≥ 1.25). **Default rate 18%.** First Periodic Interest Date **12/1/2022**; payments on the **1st Business Day** of each month.
+
+**⚠️ Modeling caveats:**
+1. **App renders 7.88%, not the note's actual rate.** Floating → priced at today's SOFR (offline max(3.63% + 4.25%, 5.00%) = **7.88%**); the note floated at **Term SOFR + 4.25%** (≈8.5–9.5% over its life per the loan write-up; 5.00% floor never binding). Ties to the app's own model to the cent, not the note's historical payments.
+2. **Initial maturity 5/21/2026 has passed** (today is past it). Modeled at the Initial Maturity Date; the one 12-mo extension to **5/21/2027** may or may not have been exercised — **open question for Azriel** (§Q5).
+3. **Payment-day convention** — note pays on the 1st Business Day; app anchors on the maturity's day (21st). IO on a constant balance → interest unchanged, only displayed dates differ.
+
+---
+
+## 24. 1415 Washington (Project Loan) — 1415 Washington Avenue, Albany, NY — **NEW LOAN (added to the app)**
+
+> **The *second* of the two 1415 Washington notes — the *Project Loan* (soft costs).** A **separate note and mortgage** from the Building Loan (§23), but the **same** Valley National Bank financing, borrower, rate, and maturity — split under NY Lien Law. Two records to match the two notes.
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$16,998,373**, fully IO, 42-mo, Actual/360, origination 11/21/2022, first payment 12/21/2022, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **42 rows to the cent** — first IO $111,622.65 @ 7.88% (offline), balloon **$16,998,373** at 5/21/2026.
+
+**Terms:** *identical to the Building Loan Note* (§23) — the note states the terms are the same in both instruments (rate Term SOFR + 4.25% / floor 5.00%, Actual/360, IO bullet, Initial Maturity 5/21/2026 → 5/21/2027, default 18%). Same three modeling caveats as §23 (app floats at 7.88% vs the note's Term-SOFR economics; initial maturity 5/21/2026 has passed → §Q5; payment-day convention). **Combined 1415 debt = $57,197,633** across the two notes.
+
+---
+
+## 25. 1395 Washington — 1395 Washington Avenue, Albany, NY — **RECEIVED, BUT BLOCKED (not added): rate & maturity are not in this document**
+
+*Valley National Bank building-loan financing on a **134-unit / 134-bed student-housing conversion** of a former hotel (borrower 1395 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as 1415 & Legacy). Dated **2/28/2024**. Building Loan $4,434,670 + Project Loan $6,943,894 = **$11,378,564 total debt**; LTC 66.0%; completion targeted 5/21/2025.*
+
+**Why it is NOT in the app — same problem Legacy had.** The 1395 **Building Loan Agreement does not state the interest rate or the maturity date**; both live in the 1395 Building Loan Note and Project Loan Note, which are **referenced throughout but not included**. The word "maturity" appears once in 239 pages, in a boilerplate acceleration clause, never defined.
+
+**The notes that *were* sent are the sister 1415's, not 1395's.** The zip's Building/Project notes are for **1415** Washington Property LLC (dated 11/21/2022, $57.2M) — a different borrower, 15 months earlier, ~5× larger. Their terms (Term SOFR + 4.25%, floor 5.00%) are the sponsor's house style but are **not evidence of what the 1395 loan costs**, so they are **not** used to model 1395. Held out of the app pending the 1395 notes — see §Q6.
 
 ---
 
@@ -411,10 +455,13 @@ There is **no rate and no maturity date anywhere in the 113-page agreement** (co
 - If still outstanding, what is the current maturity and the current rate (a floater — has it repriced off SOFR, and is the 3.30% floor still relevant)?
 - Current outstanding balance (modeled at the full $53,160,000 commitment).
 
-**Q5 — Legacy at Kissimmee: we need the Promissory Note.** The Bank Hapoalim construction loan agreement defines the **interest rate** and the **initial maturity date** by reference to a separate Note that wasn't in the file. Without them the loan can't be added to the app (see §22). Ask Azriel for:
-- The **Promissory Note** (or just the interest rate — index + spread + any cap/floor — and the initial maturity date).
-- Current status: is it still in the construction/draw period, and what is the current drawn balance against the $41,000,000 commitment?
-- (Secondary) The **budget contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; was that intentional (e.g. read per-line-item), or an OCR artifact?
+**~~Q5 (RESOLVED) — Legacy at Kissimmee: we need the Promissory Note.~~** ✅ **The Note (BHI 1225 Utica) has been provided** — rate Term SOFR + 4.0% / floor 6.85%, initial maturity 5/26/2027. Legacy is now validated and added (§22). The remaining Legacy items (current drawn balance; budget-contingency question) are folded into Q7 below.
+
+**Q5 — 1415 Washington: is it still outstanding, and at what maturity?** Same shape as the K2 / Pepper question. Both 1415 notes (Building §23 + Project §24) had an **Initial Maturity of 5/21/2026 that has already passed**, with one 12-month extension option to **5/21/2027** (conditioned on completion, ≥95% leased, DSCR ≥ 1.25). Modeled at the initial 5/21/2026. Ask Azriel: was the extension exercised (current maturity 5/21/2027), or was the Valley National financing **refinanced / paid off**? Is it still outstanding, and what is the current balance on each of the two notes ($40,199,260 building / $16,998,373 project)?
+
+**Q6 — 1395 Washington: we need its own Building & Project notes.** The 1395 Building Loan Agreement (§25) defines the interest rate and maturity only by reference to notes that **were not included** — the notes in the package were the sister **1415's**, which don't govern 1395. Without the 1395 notes the loan can't be added. Ask Azriel for the **1395 Washington Building Loan Note and Project Loan Note** (or just: rate — index + spread + floor — and the initial/extended maturity dates for the $4,434,670 building and $6,943,894 project pieces).
+
+**Q7 — Legacy at Kissimmee: current draw & budget contingency.** Now that Legacy is modeled (§22): what is the **current drawn balance** against the $41,000,000 commitment (modeled at full commitment; it funds by draws)? And the **budget-contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; intentional (read per-line-item) or an OCR artifact?
 
 ---
 
