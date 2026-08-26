@@ -356,6 +356,43 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 21. 1222 Commerce St / "Manor House" — Dallas, TX — validated vs the executed Note (Closing Binder) — **ALREADY IN THE APP**
+
+*Customers Bank Hybrid ARM on the Manor House property (borrower **LIVING MANOR LLC**; guarantors Gershon Kassirer + Extra Holdings Mint/Princeton USA; ARBS / Ben-Moshe sponsor family). The **sister loan to Carteret** — same lender, same Actual/360 Hybrid-ARM structure. This closing binder is the Note we'd been missing; it confirms the record and resolves the open stated-payment question from the TODO.*
+
+**Verified correct against the executed Note (Exhibit 1):** amount **$24,200,000** (*"'Principal Amount' shall mean… ($24,200,000.00)"*); rate **6.10%** (*"'Interest Rate' shall mean six and one-tenth (6.10%) percent per annum"*); **Actual/360** (¶2(F): *"calculated and applied based upon the actual number of days elapsed over a 360-day year"*); **12 months interest-only** (¶2(B), 5/1/2026 → 4/1/2027); dated **3/30/2026**; first payment **5/1/2026**, first P&I **5/1/2027**; reset **5/1/2031** to *"the greater of: (i) six and one-tenth (6.10%)… or (ii) the U.S. Treasury Note Yield plus 250 basis points"* re-amortized over a **26-year** schedule (¶2(D)); maturity **4/1/2036** (¶2(E) balloon). Independent strict verifier reproduces the app's **120 rows to the cent** — first IO $123,016.67, reset to ~6.66% (offline projection), balloon **$21,219,601.17**.
+
+| # | Term | Was | Now | Evidence |
+|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | **Step-down** (declining) | ¶7: 4% before the 1st anniversary (4/1/2027), 3% yr 1–2, 1% yr 2–5, **4% yr 5–6** (reset bump), 3% yr 6–7, 1% yr 7–maturity; **open** the last 90 days of both the Initial and the Reset Interest Periods. Modeled as `Step-down` / 1% (matching Carteret's treatment); the exact double-humped schedule is recorded here. |
+
+**⚠️ Flag — note-stated payment ≠ app-computed payment (the "fixed payment" next-version item, shared with Carteret):** ¶2(C) states a fixed-period constant P&I of **$148,062.35** (30-yr amortization basis, sized on Actual/360). The app computes a **30/360 annuity = $146,650.74** — **~$1,411.61/mo lower**. Same root cause as Carteret: the bank sized the payment on true Actual/360; the app uses a 30/360 annuity. Both are added to `TODO.md`'s stated-payment ("fixed payment") feature. The **reset** mechanic (26-yr re-amortization at the greater-of rate) the app **already reproduces to the cent** — only the fixed-period payment differs.
+
+**Minor / unverified:** the app's `loanNumber "D22-0002"` is **not** found in the binder (the Note carries no loan number; auto-debit account is 4279083) — retained but unconfirmed. The source filename said "Brooklyn, New York," but every operative document places the collateral in **Dallas, Texas** (the app is correct). Property carried as Mixed-Use (unchanged).
+
+---
+
+## 22. Legacy at Kissimmee — 1225 Utica Drive, Kissimmee, FL — **RECEIVED, BUT BLOCKED (not added): rate & maturity are not in this document**
+
+*Bank Hapoalim construction loan on a to-be-built **256-unit** multifamily development (borrower **Legacy at Kissimmee, LLC**; 100% ARBS / Alon Blue Square / Moti Ben-Moshe chain, ARBS as entity guarantor; individual guarantors Dvir Cohen Hoshen, Omri Sachs, Ron Vaksin — the same two who guarantee K2 Sweetwater; dated **11/26/2024**). This would be the app's first Bank Hapoalim loan.*
+
+**Why it is NOT in the app yet — the two terms that drive the schedule are missing.** The Construction Loan Agreement defines both by reference to a **separate Promissory Note that was not included in this PDF:**
+- *"'Interest Rate' shall have the meaning ascribed to such term in the Note."* (§1.1)
+- *"'Initial Maturity Date' shall have the meaning ascribed to such term in the Note."*
+
+There is **no rate and no maturity date anywhere in the 113-page agreement** (confirmed by full-text search — every reference points back to the Note). Adding it to the app would require inventing a rate and a maturity, which would render a **fabricated schedule that looks real**. Per the "stricter, not softer" standard, it is **held out of the app** pending the Note rather than modeled on a guess.
+
+**What the agreement *does* fix (recorded for when the Note arrives):**
+- **Loan amount $41,000,000**; LTC **59.1%** (equity $28,325,706 = 40.9%); total project cost $69,325,706; **256 units** (~$270,800/unit).
+- **Total scheduled debt service through the Initial Maturity Date = $3,311,732**, funded from an **Interest Reserve**. This constrains rate × term × average-drawn-balance together but **cannot be decomposed** into a rate without the Note and the draw schedule.
+- **One 12-month extension** (fee **0.35%** of max principal; conditioned on no Default, **Substantial Completion**, and the Interest Reserve funded for the full extension).
+- **§7.17 requires an Interest Rate Management Agreement** (a rate cap) → the loan is almost certainly **floating** (SOFR-based), but the index/spread are in the Note.
+- **Unused Fee 0.25%/yr** on the average daily undrawn amount; development fee $1,548,222.
+
+**⚠️ Underwriting flag (not an app field):** the Budget's definition (§1.1) requires a hard- and soft-cost contingency of *"at least ten percent (10%)"*; the attached Budget shows a hard contingency of $1,400,000 on $45,984,399 (**~3.0%**) and a soft contingency of $775,515 on $10,632,200 (**~7.3%**) — both appear short of the 10% floor. The figures are OCR from a scanned page and the clause could be read per-line-item; **worth a look by whoever underwrote it** (a contingency shortfall matters if construction costs run). Added to the Azriel questions.
+
+---
+
 ## Open questions for Azriel
 
 *Real open items where the executed closing documents don't tell us the current state. Recorded here so we can ask Azriel — not guesses, not resolved.*
@@ -373,6 +410,11 @@ and the full amortization schedule match the document **to the cent**.
 - Is the FS CREIT / Rialto loan on Pepper still outstanding, or was it **refinanced / paid off** (a stabilized multifamily bridge loan would typically roll into agency debt within this window)?
 - If still outstanding, what is the current maturity and the current rate (a floater — has it repriced off SOFR, and is the 3.30% floor still relevant)?
 - Current outstanding balance (modeled at the full $53,160,000 commitment).
+
+**Q5 — Legacy at Kissimmee: we need the Promissory Note.** The Bank Hapoalim construction loan agreement defines the **interest rate** and the **initial maturity date** by reference to a separate Note that wasn't in the file. Without them the loan can't be added to the app (see §22). Ask Azriel for:
+- The **Promissory Note** (or just the interest rate — index + spread + any cap/floor — and the initial maturity date).
+- Current status: is it still in the construction/draw period, and what is the current drawn balance against the $41,000,000 commitment?
+- (Secondary) The **budget contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; was that intentional (e.g. read per-line-item), or an OCR artifact?
 
 ---
 

@@ -13,8 +13,12 @@ loan agreement** instead of computing it, so those loans tie to their notes to t
   (Note §2(C); the app currently computes $381,247.02, ~$3,560/mo lower). The
   reset-period payment (from 1/1/2031) recalculates at the reset rate over a
   **26-year** amortization — so a "fixed payment" must still re-amortize at the reset.
-- **1222 Commerce St** — the other Customers Bank Actual/360 Hybrid ARM; likely has a
-  stated payment differing from the computed one — verify against its note when available.
+- **1222 Commerce St (Manor House)** — the other Customers Bank Actual/360 Hybrid ARM.
+  **Confirmed against the executed Note** (Closing Binder, ¶2(C)): fixed-period P&I
+  **$148,062.35/mo** (30-yr amort basis, Actual/360); the app computes **$146,650.74**
+  (30/360 annuity), ~**$1,411.61/mo lower**. Same reset mechanic as Carteret — ¶2(D)
+  re-amortizes over a **26-year** schedule at the reset rate (greater of 6.10% or
+  UST5Y+2.50%) from 5/1/2031, which the app already reproduces to the cent.
 - The Fannie loans (Euclid, Florence, Burlington, Crest, Lofts) already tie to the cent
   (they use a 30/360 annuity), so they do not need this.
 
