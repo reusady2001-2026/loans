@@ -466,7 +466,9 @@ and the full amortization schedule match the document **to the cent**.
 
 **Q3 — K2 Sweetwater: prepayment terms.** Neither loan's prepayment terms were captured (left blank). If they're being tracked for refi/prepay analysis, ask Azriel for the prepayment/exit terms on each.
 
-**Q4 — The Pepper Building: is it still outstanding, and at what maturity/balance?** Same shape as the K2 question. This was a 3-year bridge loan (origination 8/9/2021, **Initial Stated Maturity 8/9/2024**) with two 1-year extension options (to 8/9/2025, then 8/9/2026). **All three dates have now passed** (today is past 8/9/2026). Modeled at the initial 8/9/2024 maturity. Ask Azriel:
+**~~Q4 (ANSWERED by the invoices) — The Pepper Building: still outstanding?~~** ✅ **YES.** A Trimont billing statement due **8/9/2026** shows Pepper **live at $44,000,000 @ 6.36448%** (real Term SOFR + 3.15%, Actual/360) — it did **not** pay off in 2024; it ran to its final extended maturity (8/9/2026). The app models it as matured 8/9/2024 and must be **un-matured** (balance $44M, active). See `INVOICE-RECONCILIATION.md` finding #1. *(Statement also carries a past-due late charge of $16,213.81 — raise with Azriel.)* Original question retained below for context:
+
+**Q4 (context) — The Pepper Building maturity/balance.** This was a 3-year bridge loan (origination 8/9/2021, **Initial Stated Maturity 8/9/2024**) with two 1-year extension options (to 8/9/2025, then 8/9/2026). **All three dates have now passed** (today is past 8/9/2026). Modeled at the initial 8/9/2024 maturity. Ask Azriel:
 - Is the FS CREIT / Rialto loan on Pepper still outstanding, or was it **refinanced / paid off** (a stabilized multifamily bridge loan would typically roll into agency debt within this window)?
 - If still outstanding, what is the current maturity and the current rate (a floater — has it repriced off SOFR, and is the 3.30% floor still relevant)?
 - Current outstanding balance (modeled at the full $53,160,000 commitment).
@@ -479,7 +481,7 @@ and the full amortization schedule match the document **to the cent**.
 
 **Q6 — 1395 Washington: we need its own Building & Project notes.** The 1395 Building Loan Agreement (§25) defines the interest rate and maturity only by reference to notes that **were not included** — the notes in the package were the sister **1415's**, which don't govern 1395. Without the 1395 notes the loan can't be added. Ask Azriel for the **1395 Washington Building Loan Note and Project Loan Note** (or just: rate — index + spread + floor — and the initial/extended maturity dates for the $4,434,670 building and $6,943,894 project pieces).
 
-**Q7 — Legacy at Kissimmee: current draw & budget contingency.** Now that Legacy is modeled (§22): what is the **current drawn balance** against the $41,000,000 commitment (modeled at full commitment; it funds by draws)? And the **budget-contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; intentional (read per-line-item) or an OCR artifact?
+**Q7 — Legacy at Kissimmee: current draw & budget contingency.** Now that Legacy is modeled (§22): what is the **current drawn balance** against the $41,000,000 commitment (modeled at full commitment; it funds by draws)? ✅ **Draw answered by the invoices:** a BHI statement shows the current **drawn balance $37,688,268** (real rate ~7.646%) — see `INVOICE-RECONCILIATION.md` finding #4; the balance keeps rising as the project draws. Still open: the **budget-contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; intentional (read per-line-item) or an OCR artifact?
 
 ---
 
