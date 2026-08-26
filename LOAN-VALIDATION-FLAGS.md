@@ -289,25 +289,90 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
-## 18. K2 Sweetwater / FIU Student Residences — construction capital stack (senior + mezzanine), dated Dec 20, 2021 — **NEW LOANS (added to the app)**
+## 18. K2 Sweetwater (FIU Residences) — **Senior Construction Loan**, dated Dec 20, 2021 — **NEW LOAN (added to the app)**
 
-*A two-tier construction stack on FIU student housing at 10726 SW 7th Street, Miami FL (developer AdamAmerica; GC Coastal Construction; total budget ~$208M, ~70.7% loan-to-cost; substantial completion 5/31/2024). Neither was previously in the app. **The app's first construction/mezzanine loans** — see the modeling caveats.*
+> **This is one of two separate loans on the K2 Sweetwater property — the *senior*.** It is NOT the same loan as the mezzanine (§19). Different lender, different borrower, different rate, different collateral. Two loans, not one.
 
-**Senior — Construction Loan** (AIG / National Union Fire Insurance Co.; Borrower K2 Sweetwater LLC):
+*FIU student housing at 10726 SW 7th Street, Miami FL (developer AdamAmerica; GC Coastal Construction; total project budget ~$208M, ~70.7% loan-to-cost; substantial completion 5/31/2024). Not previously in the app — **the app's first construction loan**; see the modeling caveats.*
+
+**Senior — Construction Loan** (AIG / National Union Fire Insurance Co.; Borrower **K2 Sweetwater LLC**; collateral = the real estate / first mortgage):
 - **Up to $127,000,000** (aggregate maximum principal). **Rate = LIBOR + 3.75% spread, floored at 3.75%** (Benchmark Rate = greater of (Benchmark + Spread) and the 3.75% floor); interest-only; **Actual/360** (§2.2.2: *"…dividing the product by three hundred sixty (360), and multiplying that result by the actual number of days elapsed…"*); payments on the 1st (first 2/1/2022). **Initial maturity 1/1/2026; one 1-yr extension to 1/1/2027** (0.25% fee).
 
-**Mezzanine** (MSD Capital — MSD PCOF Partners LXI / MSD RCOF Credit REIT; Borrower K2 Sweetwater Mezz LLC):
-- **Up to $20,000,000**. **Rate = 13.50% fixed** — §Def: *"'Interest Rate' means 13.50%"* (no benchmark, no floor); interest-only, Actual/360; secured by the **equity pledge**, not the real estate. Same maturity structure. Guarantors Dvir Cohen-Hoshen & Omri Sachs.
+**Added as:** Floating (SOFR proxy for LIBOR + 3.75%, floor 3.75%), $127,000,000, fully IO, 60-mo, maturity 1/1/2027. Renders a coherent 60-row IO schedule to the cent (first IO $807,085 @ 7.38% offline; balloon $127M at 1/1/2027).
 
-**Added as:** senior = Floating (SOFR proxy for LIBOR + 3.75%, floor 3.75%), $127,000,000, fully IO, 60-mo, maturity 1/1/2027; mezz = Fixed 13.50%, $20,000,000, fully IO, lien Mezzanine, 60-mo, maturity 1/1/2027. Both render coherent 60-row IO schedules to the cent (senior first IO $807,085 @ 7.38% offline; mezz $232,500 @ 13.50%; balloons $127M / $20M at 1/1/2027).
-
-**⚠️ Modeling caveats — these are construction loans; the app has no native construction type:**
-1. **Commitment vs. funded balance** — modeled at the full $127M / $20M *commitment*. A construction loan funds by draws (balance grew over the build); since completion (5/2024) it's ≈ fully drawn, so commitment is a fair current proxy, but the draw-up isn't modeled.
+**⚠️ Modeling caveats — this is a construction loan; the app has no native construction type:**
+1. **Commitment vs. funded balance** — modeled at the full $127M *commitment*. A construction loan funds by draws (balance grew over the build); since completion (5/2024) it's ≈ fully drawn, so commitment is a fair current proxy, but the draw-up isn't modeled.
 2. **Interest reserve** — interest was funded from an Interest Reserve Account during construction, not paid current by the borrower. The accruing interest is right; who funds it isn't modeled.
-3. **Dead index (LIBOR → SOFR)** — the senior was LIBOR + 3.75%; LIBOR ceased and the note's Benchmark-Replacement machinery moved it to Term SOFR + adjustment, floored at 3.75%. The app has no LIBOR index, so it's modeled as **SOFR + 3.75% floored at 3.75%** (the ~0.11% benchmark adjustment isn't modeled).
-4. **Maturity is an assumption** — the initial maturity **1/1/2026 has already passed**; modeled at the **extended 1/1/2027** assuming the one-year extension was exercised. **Confirm the current maturity and funded balance** — not derivable from the closing documents.
+3. **Dead index (LIBOR → SOFR)** — the note was LIBOR + 3.75%; LIBOR ceased and the note's Benchmark-Replacement machinery moved it to Term SOFR + adjustment, floored at 3.75%. The app has no LIBOR index, so it's modeled as **SOFR + 3.75% floored at 3.75%** (the ~0.11% benchmark adjustment isn't modeled).
+4. **Maturity is an assumption** — the initial maturity **1/1/2026 has already passed**; modeled at the **extended 1/1/2027** assuming the one-year extension was exercised. See the open question below — **not derivable from the closing documents.**
 5. **Prepayment not set** — construction-loan prepayment terms not captured here; left blank pending confirmation.
-6. **Mezz extension-fee drafting error** (not an app field) — the mezz clause reads *"one quarter of one percent (0.50%)"*; words (0.25%) and numeral (0.50%) disagree; the senior's parallel clause reads 0.25%. Flag to counsel before any extension fee is invoiced.
+
+---
+
+## 19. K2 Sweetwater (Mezz) — **Mezzanine Loan**, dated Dec 20, 2021 — **NEW LOAN (added to the app)**
+
+> **This is the *second* of the two K2 Sweetwater loans — the *mezzanine*.** It is a **separate loan** from the senior construction loan (§18): a different lender (MSD, not AIG), a different borrower (K2 Sweetwater **Mezz** LLC, not K2 Sweetwater LLC), a different rate (13.50% fixed, not floating), and different collateral (an **equity pledge**, not the real estate). It sits behind the senior in the capital stack. Two loans, not one.
+
+**Mezzanine** (MSD Capital — MSD PCOF Partners LXI / MSD RCOF Credit REIT; Borrower **K2 Sweetwater Mezz LLC**; collateral = the **equity pledge**, not the real estate):
+- **Up to $20,000,000**. **Rate = 13.50% fixed** — §Def: *"'Interest Rate' means 13.50%"* (no benchmark, no floor); interest-only, Actual/360; payments on the 1st (first 2/1/2022); same 1/1/2026 → 1/1/2027 maturity structure as the senior. Guarantors Dvir Cohen-Hoshen & Omri Sachs.
+
+**Added as:** Fixed 13.50%, $20,000,000, fully IO, lien position **Mezzanine**, 60-mo, maturity 1/1/2027. Renders a coherent 60-row IO schedule to the cent (first IO $232,500 @ 13.50%; balloon $20M at 1/1/2027).
+
+**⚠️ Modeling caveats — construction-period mezzanine; same family of caveats as §18:**
+1. **Commitment vs. funded balance** — modeled at the full $20M *commitment*; the draw-up during construction isn't modeled (≈ fully drawn since completion).
+2. **Interest reserve** — mezz interest was likewise funded from reserve during construction, not paid current; not modeled.
+3. **Maturity is an assumption** — modeled at the extended **1/1/2027** (initial 1/1/2026 has passed); see the open question below.
+4. **Prepayment not set** — left blank pending confirmation.
+5. **Extension-fee drafting error** (not an app field) — the mezz extension clause reads *"one quarter of one percent (0.50%)"*; the words (0.25%) and the numeral (0.50%) disagree; the senior's parallel clause reads 0.25%. Flag to counsel before any extension fee is invoiced.
+
+---
+
+## 20. The Pepper Building — 1830 Lombard Street, Philadelphia, dated Aug 9, 2021 — **NEW LOAN (added to the app)**
+
+*A floating-rate, fully interest-only bridge loan on a 184-unit apartment condominium. Lender **FS CREIT Originator LLC (Rialto)** — the **same lender as Reatta Ranch**, and the same ultimate sponsor family (ARBS / Alon Blue Square / M. Ben Moshe) that also appears behind Reatta and in the Woodmont Forge litigation schedule. Not previously in the app.*
+
+**Added as:** Floating (SOFR proxy for LIBOR + 3.15% spread, floor 3.30%), **$53,160,000**, fully IO, 36-mo, Actual/360, origination 8/9/2021, first payment 9/9/2021, **Initial Stated Maturity 8/9/2024**. Renders a coherent 36-row IO schedule to the cent — first IO 09/09/2021, balloon **$53,160,000** at 08/09/2024, every non-balloon row interest-only ($0 principal). Independent strict verifier reproduces the app's model across all 36 rows to the cent.
+
+**Terms — verified against the executed Loan Agreement (Article I Definitions + §2.2):**
+| # | Term | Value | Evidence (exact quote) |
+|---|---|---|---|
+| 1 | **Loan amount** | $53,160,000 | *"'Loan Amount' shall mean an amount up to $53,160,000.00."* |
+| 2 | **Interest rate** | 3.30% → greater of (LIBOR + Spread) or Floor | *"'Applicable Interest Rate' shall mean (x) 3.30% per annum for the period commencing on the Closing Date through August 14, 2021 and (y) with respect to each Accrual Period thereafter, a rate per annum equal to the greater of (1)… the LIBOR Interest Rate plus the Spread… and (2) the Floor Rate."* |
+| 3 | **Spread** | 3.15% | *"'Spread' means 3.15% per annum."* |
+| 4 | **Floor Rate** | 3.30% | *"'Floor Rate' shall mean 3.30% per annum."* |
+| 5 | **Interest-only** (no amortization) | payment = accrued interest | *"'Monthly Debt Service Payment Amount' shall mean… an amount equal to all interest that is scheduled to accrue on the Outstanding Principal Balance during the Accrual Period…"* — the payment IS the interest, so the balance never amortizes; balloon at maturity (§2.2.4). |
+| 6 | **Accrual** | Actual/360 | §2.2.1: *"Interest… shall be calculated by multiplying (a) the actual number of days elapsed… by (b) a daily rate based on a three hundred sixty (360) day year by (c) the Outstanding Principal Balance."* |
+| 7 | **Payment date** | 9th of each month | *"'Payment Date' shall mean the ninth (9th) day of each calendar month… commencing on (i) the ninth (9th) day of the next succeeding calendar month after the date hereof if the Closing Date is on or prior to the fifteenth (15th)…"* → first payment **9/9/2021**. |
+| 8 | **Maturity** | 8/9/2024 initial → 8/9/2025 → 8/9/2026 | *"'Stated Maturity Date' shall mean (x) August 9, 2024 ('Initial Stated Maturity Date'), (y) if the Loan is extended… August 9, 2025…, or (z)… August 9, 2026."* Two 1-yr extension options, 0.25% fee each. |
+| 9 | **Prepayment** | Minimum-interest maintenance through 2/28/2023 | Minimum Interest Maintenance End Date = *"the last day of the eighteenth (18th) full calendar month after the Closing Date"* (2/28/2023); default premium = greater of the maintenance premium or *"five percent (5%) of the unpaid principal balance."* Left blank in the app (not a clean YM/step-down match). |
+
+**Also in the document (not loan-record fields):** origination fee 0.85% ($451,860); monthly capital-expenditure deposit $4,600; required-repairs reserve $27,187.50; interest-rate cap required and collaterally assigned; borrower 1830 Lombard Fee Owner LLC (Korman Residential + ARBS/Ben Moshe); guarantors the Korman family/trust.
+
+**⚠️ Modeling caveats — floating LIBOR bridge loan:**
+1. **The app renders 6.78%, not the loan's actual rate.** Because this is a Floating loan and LIBOR is dead, the app models it as SOFR + 3.15% floored at 3.30% and prices it at **today's** index — offline that is max(3.63% + 3.15%, 3.30%) = **6.78%**. But at origination (Aug 2021) one-month LIBOR was ~0.09%, so the **3.30% floor bound** and the loan actually bore **3.30%** — real first-month interest ≈ **$151,059**, versus the app's **$310,366** at 6.78%. This is the app's by-design behavior for floaters (same as Reatta Ranch and the K2 senior): a floating loan shows its *current-index* debt service, not its historical payments. The schedule ties to the app's own model to the cent; it does **not** claim to reproduce the 3.30% historical payments.
+2. **Dead index (LIBOR → SOFR).** Modeled as SOFR + 3.15% floored at 3.30%; the note's Benchmark-Replacement machinery (Exhibit A) would have moved it to Term SOFR + adjustment. The app has no LIBOR index; the ~0.11% benchmark adjustment isn't modeled.
+3. **Accrual-period convention.** The note accrues over a **15th-to-14th** period and pays on the 9th; the app models calendar-month Actual/360 anchored on the 9th (its uniform convention for every Actual/360 loan). Same simplification as every other floater in the book.
+4. **Maturity has passed — see the open question below.** Modeled at the **Initial Stated Maturity 8/9/2024** (the agreement's unconditional primary date; extensions apply only *"if the Loan is extended"*). That date, and both extension options (8/9/2025, 8/9/2026), have all now passed. Whether the loan was extended, refinanced, or paid off is an **open question for Azriel** — not derivable from the closing documents.
+
+---
+
+## Open questions for Azriel
+
+*Real open items where the executed closing documents don't tell us the current state. Recorded here so we can ask Azriel — not guesses, not resolved.*
+
+**Q1 — K2 Sweetwater: did the construction finish, and what is the current maturity?** The senior (§18) and mezz (§19) both had an **initial maturity of 1/1/2026 that has already passed**, with a one-year extension option to **1/1/2027** (0.25% fee). The closing documents can't tell us what actually happened. **We modeled both at 1/1/2027 assuming the extension was exercised — this is an assumption, not a fact.** Ask Azriel:
+- Did construction reach substantial completion (targeted 5/31/2024)?
+- Was the one-year extension exercised, so the current maturity is **1/1/2027** — or was the loan **refinanced / paid off** at the original 1/1/2026 maturity (in which case it may no longer be outstanding at all)?
+- Is either loan still outstanding today, and if so at what maturity?
+
+**Q2 — K2 Sweetwater: current funded balance.** Both are modeled at their full **commitments** ($127M senior / $20M mezz). A construction loan funds by draws; since completion it should be ≈ fully drawn, but the actual current outstanding balance on each isn't in the closing documents. Ask Azriel for the current balance on the senior and on the mezz.
+
+**Q3 — K2 Sweetwater: prepayment terms.** Neither loan's prepayment terms were captured (left blank). If they're being tracked for refi/prepay analysis, ask Azriel for the prepayment/exit terms on each.
+
+**Q4 — The Pepper Building: is it still outstanding, and at what maturity/balance?** Same shape as the K2 question. This was a 3-year bridge loan (origination 8/9/2021, **Initial Stated Maturity 8/9/2024**) with two 1-year extension options (to 8/9/2025, then 8/9/2026). **All three dates have now passed** (today is past 8/9/2026). Modeled at the initial 8/9/2024 maturity. Ask Azriel:
+- Is the FS CREIT / Rialto loan on Pepper still outstanding, or was it **refinanced / paid off** (a stabilized multifamily bridge loan would typically roll into agency debt within this window)?
+- If still outstanding, what is the current maturity and the current rate (a floater — has it repriced off SOFR, and is the 3.30% floor still relevant)?
+- Current outstanding balance (modeled at the full $53,160,000 commitment).
 
 ---
 
