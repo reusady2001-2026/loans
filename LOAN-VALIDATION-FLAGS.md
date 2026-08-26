@@ -230,6 +230,20 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 14. Villages of Whitewater II — Bellwether Enterprise Mortgage Investments, LLC (Fannie Mae Form 6001.NR), dated Feb 13, 2020
+
+*The supplemental sibling to §13 — adjacent property in Harrison OH, same lender/principals, coterminous maturity (8/1/2032). Tenant-in-common borrower.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 1/31/2032 (143 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of January, 2032."* | [ADDED] |
+
+**Verified correct — rate already matched:** amount **$10,695,000**; **Fixed 3.830%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, **149-mo term** (coterminous with the senior at 8/1/2032); first payment 4/1/2020; maturity 8/1/2032. The document's stated **Monthly Debt Service $50,016.96** reproduces only at 3.830% (the annuity ties exactly); the app's schedule ties to the cent on all **149 rows** (balloon $7,780,529.53 at 8/1/2032). Borrower **Gregel-GAM Harrison II, LLC (91.836%) + Richmark Harrison Investors, LLC (8.164%), as tenants-in-common**; non-recourse; 76 units. No loan number in the agreement (Fannie assigns post-closing).
+
+**Replacement reserve $1,267/mo — kept, with a source note:** the converter could not cleanly read the Monthly Replacement Reserve Deposit cell (76 units × $200/yr ÷ 12 = $1,266.67 → **$1,267**, with a partially-legible trailing 7). The seed's **$1,267** (whole dollar, consistent with the Fannie whole-dollar convention confirmed on the sister loan §13) is retained — **not** re-derived to cents. Worth one eyeball against the original scan to make fully airtight.
+
+---
+
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
 
 Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
