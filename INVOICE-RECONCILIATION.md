@@ -63,11 +63,21 @@ $241,143.08. So it did **not** pay off in 2024 — it ran to its final extended 
 *The statement also carries a past-due late charge of $16,213.81 and a misc fee — worth raising with Azriel.*
 → **Un-mature Pepper: current balance $44M (down from the $53.16M commitment), rate ~6.36%, active to 8/9/2026.**
 
-**2. The Mint (Rahway) — the app says interest-only, but it's AMORTIZING.**
+**2. The Mint (Rahway) — the app said interest-only, but it's AMORTIZING.** ✅ **RE-MODELED (per Yuval's spec).**
 Invoice (BHI 507135) bills **principal** ($23,428.39 in Aug, $65,439.49 in Sep), balance amortized to
-**$57,847,614** (app carries the full $58M), rate **6.517%** (app 6.52%), constant total **$369,005.22**.
-The app's "IO 36-month" model is wrong — this loan is already amortizing. → **Needs the loan doc to re-model
-(amortization term / IO length). The Mint was never validated against an executed document.**
+**$57,847,614** (app carried the full $58M), rate **6.517%** (app had 6.52%), constant total **$369,005.22**.
+Per Yuval, the mechanic is a **fixed monthly payment**: interest = balance × 6.517% × days/360 (Actual/360),
+principal = **$369,005.22 − interest** (the plug). The app already supports this (`amortType:"Fixed P&I"` +
+`fixedAmortAmount`), so The Mint was set to: rate **6.517%**, **Fixed P&I $369,005.22**, Actual/360, **24-month IO**.
+Verified in Electron: every amortizing month pays $369,005.22; the **Aug-2026 balance now equals the invoice
+to the cent ($57,847,614.48)**.
+- **Derived, flag for the doc:** the **IO length (24 mo, amortization starting May 2026)** was *derived from the
+  invoice balance*, not read from a loan agreement (The Mint still has no executed doc in hand). It's the best
+  integer fit. Confirm against the note when available.
+- **Residual (BHI billing cycles):** the app accrues on **calendar months**; BHI bills on **statement-to-statement
+  cycles** (the Aug statement ran 33 days, Sep 29), so the app's per-month interest/principal *split* won't equal
+  any single statement's, and the balance drifts a few thousand dollars between statements (Sep app $57.80M vs
+  invoice $57.82M). The fixed payment, rate, and day-count convention are exact; only BHI's cycle calendar differs.
 
 **3. The Mews at Princeton — rate is 6.801%, app had 6.80%.** ✅ **FIXED.**
 Invoice (BHI 507743) confirms Actual/360 IO on the full $107,100,000, but at **6.801000%** (app had 6.80%).
