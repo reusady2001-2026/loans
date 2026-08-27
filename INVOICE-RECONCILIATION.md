@@ -69,10 +69,12 @@ Invoice (BHI 507135) bills **principal** ($23,428.39 in Aug, $65,439.49 in Sep),
 The app's "IO 36-month" model is wrong — this loan is already amortizing. → **Needs the loan doc to re-model
 (amortization term / IO length). The Mint was never validated against an executed document.**
 
-**3. The Mews at Princeton — rate is 6.801%, app has 6.80%.**
-Invoice (BHI 507743) confirms Actual/360 IO on the full $107,100,000, but at **6.801000%** (app 6.80%) —
-a $89/month difference on a 30-day cycle. BHI also bills irregular cycles (a 33-day August stub vs the
-app's calendar month), a servicer-cycle nuance, not a convention error (both Actual/360). → **Fix rate to 6.801%.**
+**3. The Mews at Princeton — rate is 6.801%, app had 6.80%.** ✅ **FIXED.**
+Invoice (BHI 507743) confirms Actual/360 IO on the full $107,100,000, but at **6.801000%** (app had 6.80%).
+The app rate was corrected to **6.801%**; it now renders **$606,989.25** for a 30-day cycle, matching the
+invoice to the cent. *(Residual, not an error: BHI bills irregular statement-to-statement cycles — e.g. a
+33-day August stub — whereas the app uses calendar months; both are Actual/360, so this only shifts which
+days land in which statement, not the rate or the annual total.)*
 
 **4. Legacy at Kissimmee — actual drawn balance $37,688,268 (answers open question Q7).**
 Construction loan modeled at the full **$41M commitment**; the invoice bills the **drawn balance
