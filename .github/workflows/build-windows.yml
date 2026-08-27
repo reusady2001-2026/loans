@@ -14,7 +14,12 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Pinned to windows-2022 (not windows-latest). GitHub moved windows-latest to
+    # Windows Server 2025, where node-gyp can't detect the Visual Studio install —
+    # which broke the node-pty native compile. windows-2022 ships VS 2022 in the
+    # location node-gyp finds. (Earlier releases built fine on 2025 only because
+    # they compiled nothing.)
+    runs-on: windows-2022
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
