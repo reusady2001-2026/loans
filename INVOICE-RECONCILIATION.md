@@ -61,7 +61,10 @@ The app models Pepper as matured 8/9/2024 (no 2026 schedule). The invoice (Trimo
 **8/9/2026**) shows it **live at $44,000,000 @ 6.36448%** (real Term SOFR + 3.15%), Actual/360, interest
 $241,143.08. So it did **not** pay off in 2024 — it ran to its final extended maturity (8/9/2026).
 *The statement also carries a past-due late charge of $16,213.81 and a misc fee — worth raising with Azriel.*
-→ **Un-mature Pepper: current balance $44M (down from the $53.16M commitment), rate ~6.36%, active to 8/9/2026.**
+→ **Per Yuval: leave the Pepper record AS-IS (a question mark) — do NOT un-mature or re-model it.** The invoice
+confirms it's outstanding at $44M, but the **current loan specifics are missing** (how it went from the $53.16M
+commitment to $44M, the current maturity, the extension terms) — they're in a loan modification/extension doc we
+don't have. **Ask Azriel for Pepper's current loan documents first.** (Flag-log Q4.)
 
 **2. The Mint (Rahway) — the app said interest-only, but it's AMORTIZING.** ✅ **RE-MODELED (per Yuval's spec).**
 Invoice (BHI 507135) bills **principal** ($23,428.39 in Aug, $65,439.49 in Sep), balance amortized to
