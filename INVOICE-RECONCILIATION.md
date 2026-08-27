@@ -87,14 +87,17 @@ rate does not match reality. → **Needs the loan doc / actual reset terms — t
 
 ---
 
-## D. Billed loans that are NOT in the app
+## D. Billed loans that were NOT in the app
 
-| Loan | Servicer | Amount | Rate | Structure |
-|---|---|---|---|---|
-| **Creekside at Grand Prairie** (South Central Development LLC) | Arbor Multifamily Lending | **$50,000,000** | **6.97867%** | Interest-only, Actual/360 (int $290,777.92 / $300,470.51) |
+| Loan | Servicer | Amount | Rate | Structure | Status |
+|---|---|---|---|---|---|
+| **Creekside at Grand Prairie** (South Central Development LLC) | Arbor Realty SR | **$50,000,000** | **6.97867%** (floor) | Interest-only, Actual/360 (int $290,777.92 / $300,470.51) | ✅ **RESOLVED — loan agreement provided; now added and validated (flag log §27)** |
 
-Genuinely absent from the app (distinct from the two Arbor/Fannie loans we do hold). → **Add it if it belongs
-in the portfolio — we'd need its loan agreement.**
+**✅ Creekside resolved.** The executed Arbor Loan Agreement was provided; Creekside is now in the app and
+**ties to both invoices to the cent** ($290,777.92 for a 30-day cycle, $300,470.51 for 31 days). Because its
+6.97867% floor sits above SOFR + 2.65%, the app renders the exact billed rate — the first loan cross-validated
+against **both** the executed document and the live billing. *(Notable: the guarantor is ARBS Real Estate USA
+Holdings, whose CFO is Azriel Ostrow and CEO is Gershon Kassirer.)*
 
 *(Pepper also appeared as "not in app" to the critics only because its modeled schedule ends in 2024 — it
 IS in the app, just mis-modeled as matured; see finding #1.)*

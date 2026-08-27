@@ -453,6 +453,28 @@ and the full amortization schedule match the document **to the cent**.
 
 ---
 
+## 27. Creekside at Grand Prairie — 4115 S. Great Southwest Pkwy, Grand Prairie, TX — **NEW LOAN (added) — validated against BOTH the executed agreement AND live invoices**
+
+*Arbor Realty SR bridge loan on a **318-unit deep lease-up** (39% occupied at closing). Borrower South Central Development LLC; **Guarantor ARBS Real Estate USA Holdings LLC — of which Gershon Kassirer is CEO and Azriel Ostrow is CFO** (the agreement's org chart states this). Dated 5/15/2025. Surfaced first as a billing statement with no matching app loan (invoice reconciliation §D); the executed Loan Agreement was then provided, so it is now added and validated.*
+
+**Added as:** Floating (SOFR + 2.65%, **floor 6.97867%**), **$50,000,000**, fully IO, 36-mo, Actual/360, origination 5/15/2025, first payment 7/1/2025, maturity **5/14/2028**. Strict verifier reproduces the app's **36 rows to the cent** and — because the **floor binds** (SOFR 3.63% + 2.65% = 6.28% < 6.97867%) — the app renders **6.97867%, the exact rate the servicer bills**.
+
+**✅ Ties to Azriel's invoices to the cent** (Arbor, loan 946197): the app reproduces **$290,777.92** for a 30-day cycle (the 7/1/2026 statement, billing June) and **$300,470.51** for a 31-day cycle (the 8/1/2026 statement, billing July). This is the **first loan cross-validated against the executed document *and* the actual billing** — all three agree.
+
+**Terms — verified against the executed Loan Agreement:**
+- **Rate** *"'Applicable Interest Rate' means… the greater of (1)… (6.97867%) per annum, and (2) Term SOFR plus the Spread"*; **Spread 2.65%**; **Actual/360** (§2.02: *"a year of three hundred sixty (360) days for the actual number of days elapsed"*).
+- **Interest-only** — interest accrues on outstanding principal, paid monthly on the **1st** (§ "'Payment Date' means the first (1st) day of each calendar month and the Maturity Date"); no amortization; balloon at maturity. **First Payment Date 7/1/2025; Maturity Date 5/14/2028.**
+- **Rate cap** strike 4.33%; **exit fee 1.0%** of any principal repaid (incl. at maturity); **$2,600,000 interest reserve** + $725,000 operating reserve funded at closing (this is a lease-up deal — projected Year-1 DSCR ≈ 0.01x per the agreement's own proforma).
+
+**⚠️ Modeling caveats:**
+1. **Payment-day cosmetic** — the note pays on the **1st**, the app anchors on the maturity's day (14th), so schedule dates render on the 14th. The monthly interest is unaffected (Actual/360 on a constant balance) and ties to the invoices to the cent — only the displayed date differs (same convention note as Heritage / the Washington loans).
+2. **Floor binds, so no floating-gap** — unlike the other SOFR floaters, the 6.97867% floor is above SOFR + spread, so the app's rate equals the billed rate exactly (today). If SOFR ever rises enough that SOFR + 2.65% exceeds 6.97867%, the loan floats above the floor and the app would then track the live index.
+3. **Lease-up / interest reserve** — interest is funded from the $2.6M reserve during lease-up; the app models the current-pay interest correctly but does not track the reserve drawdown.
+
+*Sponsor note (not an app field): this agreement ties **seven** portfolio loans (~$371M) to the ARBS / Kassirer / Ben-Moshe platform — Creekside, Legacy, Pepper, Reatta, The Euclid, Avalon Norwalk, Woodmont Forge — and names Kassirer as CEO / Azriel Ostrow as CFO of ARBS Real Estate USA Holdings.*
+
+---
+
 ## Open questions for Azriel
 
 *Real open items where the executed closing documents don't tell us the current state. Recorded here so we can ask Azriel — not guesses, not resolved.*
