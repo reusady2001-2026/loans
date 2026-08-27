@@ -46,10 +46,39 @@ function detectCli(){
 async function status(){
   const cli = await detectCli();
   const cfg = readCfg();
-  return { cli, apiKey: { configured: !!cfg.apiKey }, mode: cfg.mode || 'auto' };
+  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, mode: cfg.mode || 'auto' };
 }
 function setKey(key){ const c = readCfg(); const k = (key == null ? '' : String(key)).trim(); if (k) c.apiKey = k; else delete c.apiKey; writeCfg(c); return { configured: !!c.apiKey }; }
 function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].indexOf(mode) >= 0) ? mode : 'auto'; writeCfg(c); return { mode: c.mode }; }
+
+// Environment for a `claude` spawn: inject the stored subscription OAuth token so
+// the CLI runs on the user's Claude subscription (no API key, no per-use billing).
+function cliEnv(){ const c = readCfg(); const e = Object.assign({}, process.env); if (c.oauthToken) e.CLAUDE_CODE_OAUTH_TOKEN = c.oauthToken; return e; }
+
+// Sign in to the user's Claude subscription in the BROWSER. `claude setup-token`
+// opens the browser to the OAuth flow and prints a (1-year) token to stdout; we
+// store it and use it via cliEnv() on every subsequent call. Blocks until the
+// browser flow finishes (or a 5-minute timeout). Requires the Claude Code CLI.
+function login(){
+  return new Promise((resolve) => {
+    let out = '', err = '', done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
+    const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for the browser sign-in (5 minutes). Please try again.' }); }, 300000);
+    let p;
+    try { p = spawn(CLI_BIN, ['setup-token'], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    catch (e) { return finish({ ok: false, error: 'Could not start Claude Code. Install Claude Code first, then try again.' }); }
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', () => finish({ ok: false, error: 'Claude Code failed to run. Is it installed and on your PATH?' }));
+    p.on('close', (code) => {
+      const m = String(out).match(/sk-ant-[A-Za-z0-9_-]+/);
+      const token = m ? m[0] : String(out).trim();
+      if (code === 0 && token && /^sk-ant-/.test(token)) { const c = readCfg(); c.oauthToken = token; c.mode = 'cli'; writeCfg(c); return finish({ ok: true }); }
+      finish({ ok: false, error: (String(err || out).trim() || 'Sign-in did not complete.').slice(0, 300) });
+    });
+  });
+}
+function logout(){ const c = readCfg(); delete c.oauthToken; writeCfg(c); return { ok: true }; }
 
 // Run a structured extraction. opts: { instruction, schema, input, model?, timeoutMs? }
 // Resolves { ok, data, via, cost?, error? }.
@@ -79,7 +108,7 @@ function runCli({ instruction, schema, input, model, timeoutMs }){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out reading the document (over ' + Math.round((timeoutMs || 240000) / 1000) + 's).' }); }, timeoutMs || 240000);
     let p;
-    try { p = spawn(CLI_BIN, args, { stdio: ['pipe', 'pipe', 'pipe'] }); }
+    try { p = spawn(CLI_BIN, args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -129,7 +158,7 @@ function runCliChat({ system, prompt, model, timeoutMs }){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
     let p;
-    try { p = spawn(CLI_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { p = spawn(CLI_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -206,4 +235,4 @@ function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   });
 }
 
-module.exports = { init, status, setKey, setMode, extract, chat };
+module.exports = { init, status, setKey, setMode, extract, chat, login, logout };

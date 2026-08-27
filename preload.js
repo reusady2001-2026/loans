@@ -95,4 +95,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
   // Free-form chat (no tools): {system, prompt, model?, timeoutMs?} → {ok,text,via,error}.
   aiChat: (opts) => ipcRenderer.invoke('lds:ai-chat', opts),
+  // Browser OAuth sign-in to the Claude subscription (`claude setup-token`) → {ok,error}.
+  aiLogin: () => ipcRenderer.invoke('lds:ai-login'),
+  aiLogout: () => ipcRenderer.invoke('lds:ai-logout'),
 });

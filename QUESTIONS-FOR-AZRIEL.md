@@ -48,6 +48,15 @@ Mezzanine: MSD Capital, up to **$20,000,000**, 13.50% fixed, interest-only. Both
 1415: building **$40,199,260** + project **$16,998,373** (dated 11/21/2022).
 1395: building **$4,434,670** + project **$6,943,894** (dated 2/28/2024). All Term SOFR + 4.25%, floor 5.00%, IO.*
 
+> **⚠ Pulled from the app for now (v2.4.1).** These were added as **two loans per property** (a Building Loan + a
+> Project Loan each, four records total). That split may not be how you want them tracked — two separate loans per
+> property may be incorrect. **We've removed all four from the app pending your answer** and won't re-add them until
+> you confirm the right structure.
+
+0. **How should each property be tracked — one loan or two?** Under NY Lien Law the building and project loans are
+   documented separately, but they're co-terminous and cross-collateralized. Do you want them as **one combined loan
+   per property** (1415, 1395) or **two records each** (building + project)? Once you confirm, we'll re-add them.
+
 1. **Are they still outstanding, and at what maturity?** All four notes carry an **Initial Maturity of 5/21/2026
    that has passed**, each with one 12-month extension to **5/21/2027** (conditioned on completion, ≥95% leased,
    DSCR ≥ 1.25). For **each** project: was the extension exercised (→ 5/21/2027), or was it **refinanced / paid
