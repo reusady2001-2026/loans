@@ -27,6 +27,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Compile node-pty against Electron's ABI (the prebuilt package only ships
+      # Node ABIs; Electron 33 is module ABI 130). This produces build/Release/
+      # pty.node so the invisible subscription sign-in can load node-pty at runtime.
+      - name: Rebuild node-pty for Electron
+        shell: bash
+        run: ./node_modules/.bin/electron-rebuild -f -w @homebridge/node-pty-prebuilt-multiarch --arch x64
+
       - name: Build Windows installer (NSIS)
         run: npm run build:win-installer
 

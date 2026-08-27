@@ -83,22 +83,42 @@ function cliEnv(){
 // opens the browser to the OAuth flow and prints a (1-year) token to stdout; we
 // store it and use it via cliEnv() on every subsequent call. Blocks until the
 // browser flow finishes (or a 5-minute timeout). Requires the Claude Code CLI.
+// Invisible browser sign-in to the Claude subscription. Runs the bundled
+// `claude setup-token` inside a pseudo-terminal (node-pty) so NO console window
+// shows: the CLI thinks it has a terminal, opens the browser to the OAuth flow,
+// and prints a long-lived sk-ant-oat01- token to the PTY once the user signs in.
+// We capture the token, store it, and use it via CLAUDE_CODE_OAUTH_TOKEN. The
+// browser itself still opens (that's the sign-in) — only the terminal is hidden.
 function login(){
   return new Promise((resolve) => {
-    let out = '', err = '', done = false;
-    const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
-    const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for the browser sign-in (5 minutes). Please try again.' }); }, 300000);
-    let p;
-    try { p = spawn(cliBin(),['setup-token'], { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
-    catch (e) { return finish({ ok: false, error: 'Could not start Claude Code. Install Claude Code first, then try again.' }); }
-    p.stdout.on('data', (d) => { out += d; });
-    p.stderr.on('data', (d) => { err += d; });
-    p.on('error', () => finish({ ok: false, error: 'Claude Code failed to run. Is it installed and on your PATH?' }));
-    p.on('close', (code) => {
-      const m = String(out).match(/sk-ant-[A-Za-z0-9_-]+/);
-      const token = m ? m[0] : String(out).trim();
-      if (code === 0 && token && /^sk-ant-/.test(token)) { const c = readCfg(); c.oauthToken = token; c.mode = 'cli'; writeCfg(c); return finish({ ok: true }); }
-      finish({ ok: false, error: (String(err || out).trim() || 'Sign-in did not complete.').slice(0, 300) });
+    let pty;
+    try { pty = require('@homebridge/node-pty-prebuilt-multiarch'); }
+    catch (e) { return resolve({ ok:false, error:'The sign-in helper could not start in this build (' + String((e&&e.message)||e).slice(0,120) + '). You can use an Anthropic API key instead (Advanced), or reinstall the app.' }); }
+    const env = cliEnv(); delete env.CLAUDE_CODE_OAUTH_TOKEN;   // force a fresh sign-in, ignore any inherited token
+    let p, buf = '', done = false, opened = false;
+    const strip = (s) => String(s).replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '').replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '');   // drop OSC + CSI escapes
+    const finish = (v) => { if (!done){ done = true; clearTimeout(to); try { p && p.kill(); } catch (e) {} resolve(v); } };
+    const to = setTimeout(() => finish({ ok:false, error:'Timed out waiting for the browser sign-in (5 minutes). Please try again.' }), 300000);
+    try {
+      p = pty.spawn(cliBin(), ['setup-token'], {
+        name: 'xterm-256color', cols: 100, rows: 34,
+        cwd: (_app && _app.getPath) ? _app.getPath('home') : process.cwd(),
+        env: env,
+      });
+    } catch (e) { return finish({ ok:false, error:'Could not start the sign-in helper. ' + String((e&&e.message)||e).slice(0,160) }); }
+    p.onData((d) => {
+      buf += String(d);
+      const clean = strip(buf);
+      // Belt-and-suspenders: if the CLI printed the auth URL (browser didn't auto-open), open it ourselves.
+      if (!opened){ const u = clean.match(/https?:\/\/[^\s'"]+/); if (u){ opened = true; try { require('electron').shell.openExternal(u[0]); } catch (e) {} } }
+      const m = clean.match(/sk-ant-oat01-[A-Za-z0-9_-]+/) || clean.match(/sk-ant-[A-Za-z0-9_-]{24,}/);
+      if (m){ const c = readCfg(); c.oauthToken = m[0]; c.mode = 'cli'; writeCfg(c); finish({ ok:true }); }
+    });
+    p.onExit((e) => {
+      if (/sk-ant-/.test(strip(buf))) return;   // already resolved on the token
+      const code = (e && typeof e === 'object') ? e.exitCode : e;
+      const tail = strip(buf).split('\n').map((s)=>s.trim()).filter(Boolean).slice(-3).join(' ');
+      finish({ ok:false, error: (tail || ('Sign-in ended without a token (code ' + code + ').')).slice(0,240) });
     });
   });
 }

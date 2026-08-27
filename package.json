@@ -1,6 +1,6 @@
 {
   "name": "loan-debt-service-hub",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "Commercial Loan Debt Service Hub — offline desktop app",
   "main": "main.js",
   "author": "BSI",
@@ -27,10 +27,12 @@
       "main.js",
       "preload.js",
       "vendor/**/*",
-      "node_modules/@anthropic-ai/**/*"
+      "node_modules/@anthropic-ai/**/*",
+      "node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
     ],
     "asarUnpack": [
-      "node_modules/@anthropic-ai/**/*"
+      "node_modules/@anthropic-ai/**/*",
+      "node_modules/@homebridge/node-pty-prebuilt-multiarch/**/*"
     ],
     "directories": {
       "output": "release",
@@ -69,6 +71,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.247",
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
     "electron-updater": "^6.8.9"
   }
 }
