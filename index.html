@@ -1571,6 +1571,28 @@
       if(loan.rateType === "Floating") return allInRate(loan);   // index + spread, live
       return fixedRate(loan);                                    // Fixed: index + spread locked, else typed rate
     }
+    // A calendar month strictly before the current one (already-paid territory).
+    function isPastMonthParts(p){ const t = todayParts(); return !!p && (p.y < t.y || (p.y===t.y && p.mo < t.mo)); }
+    function clampRate(loan, r){ if(loan.rateFloor) r = Math.max(loan.rateFloor, r); if(loan.rateCap) r = Math.min(loan.rateCap, r); return r; }
+    // The interest rate for ONE schedule row, honoring the index that was ACTUALLY in
+    // effect that period. For a floating loan each already-paid month reprices at that
+    // month's recorded index; for a Hybrid ARM the adjustable period is LOCKED at the
+    // index as of its reset date. The current month and the future use the live index
+    // (projected flat), and any month with no recorded history falls back to it too — so
+    // offline / before-fetch behavior is exactly the old single-rate schedule. Fixed
+    // loans and dead-index loans (loan.noRateHistory, e.g. LIBOR) are untouched.
+    function effectiveRate(loan, m, accrualParts, resetParts){
+      if(loan.rateType === "Fixed") return fixedRate(loan);
+      const isARM = loan.rateType === "Hybrid ARM";
+      const initFixed = loan.armInitialFixedMonths || 0;
+      if(isARM && m < initFixed) return (loan.annualRate||0);          // initial fixed period
+      const govParts = isARM ? resetParts : accrualParts;             // ARM locks at reset; floater reprices monthly
+      if(govParts && !loan.noRateHistory && isPastMonthParts(govParts)){
+        const idx = histIndexAt(loan.index, govParts.y, govParts.mo);
+        if(idx != null) return clampRate(loan, idx + (loan.spread||0));
+      }
+      return allInRate(loan);                                          // live now / projected / fallback
+    }
     // A rate reset occurs at the end of the initial fixed period and every
     // adjustment-frequency months thereafter (recurring N/N ARM).
     function isResetBoundary(loan, m){
@@ -1641,7 +1663,14 @@
         }
         const { y, mo } = monthPosition(start, m);
         const days = daysInMonth(y, mo);
-        const rate = rateForMonth(loan, m);
+        // Rate for THIS row: the index actually in effect that period (floating/ARM past
+        // rows price off recorded history; see effectiveRate). ARMs lock at their reset date.
+        let resetParts = null;
+        if(loan.rateType === "Hybrid ARM"){
+          const initFx = loan.armInitialFixedMonths || 0, freq = loan.armAdjustFreqMonths || 0;
+          if(m >= initFx){ const govM = freq>0 ? initFx + Math.floor((m-initFx)/freq)*freq : initFx; resetParts = monthPosition(start, govM); }
+        }
+        const rate = effectiveRate(loan, m, { y, mo }, resetParts);
         const startingBalance = balance;
         // Interest accrual basis is per-loan: Actual/360 (varies with the month's
         // days, the default) or 30/360 (a flat 30-day month, i.e. rate ÷ 12).
@@ -1820,9 +1849,9 @@
         mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2026-04-10", maturityDate:"2033-03-10", loanTermMonths:84, amortizationMonths:360, ioMonths:60, amortMethod:"30/360", prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
         mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2026-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
         mk({ propertyName:"36 Washington Ave (Carteret)", propertyAddress:"36 Washington Avenue, Carteret, NJ", propertyType:"Multifamily", lenderName:"Customers Bank", originalAmount:64000000, annualRate:0.0594, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.0594, originationDate:"2025-11-07", firstPaymentDate:"2026-01-01", maturityDate:"2035-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
-        mk({ propertyName:"K2 Sweetwater (FIU Residences)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"AIG (National Union Fire Ins.)", originalAmount:127000000, annualRate:0.0375, rateType:"Floating", index:"sofr", spread:0.0375, rateFloor:0.0375, originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60 }),
+        mk({ propertyName:"K2 Sweetwater (FIU Residences)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"AIG (National Union Fire Ins.)", originalAmount:127000000, annualRate:0.0375, rateType:"Floating", index:"sofr", spread:0.0375, rateFloor:0.0375, originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
         mk({ propertyName:"K2 Sweetwater (Mezz)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"MSD Capital (MSD Partners)", originalAmount:20000000, annualRate:0.135, rateType:"Fixed", lienPosition:"Mezzanine", originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60 }),
-        mk({ propertyName:"The Pepper Building", propertyAddress:"1830 Lombard Street, Philadelphia, PA", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", originalAmount:53160000, annualRate:0.033, rateType:"Floating", index:"sofr", spread:0.0315, rateFloor:0.033, originationDate:"2021-08-09", firstPaymentDate:"2021-09-09", maturityDate:"2024-08-09", loanTermMonths:36, ioMonths:36 }),
+        mk({ propertyName:"The Pepper Building", propertyAddress:"1830 Lombard Street, Philadelphia, PA", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", originalAmount:53160000, annualRate:0.033, rateType:"Floating", index:"sofr", spread:0.0315, rateFloor:0.033, originationDate:"2021-08-09", firstPaymentDate:"2021-09-09", maturityDate:"2024-08-09", loanTermMonths:36, ioMonths:36, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
         mk({ propertyName:"Legacy at Kissimmee", propertyAddress:"1225 Utica Drive, Kissimmee, FL", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:41000000, annualRate:0.0685, rateType:"Floating", index:"sofr", spread:0.04, rateFloor:0.0685, originationDate:"2024-11-26", firstPaymentDate:"2024-12-26", maturityDate:"2027-05-26", loanTermMonths:30, ioMonths:30 }),
         mk({ propertyName:"1415 Washington (Building Loan)", propertyAddress:"1415 Washington Avenue, Albany, NY", propertyType:"Multifamily", lenderName:"Valley National Bank", originalAmount:40199260, annualRate:0.05, rateType:"Floating", index:"sofr", spread:0.0425, rateFloor:0.05, originationDate:"2022-11-21", firstPaymentDate:"2022-12-21", maturityDate:"2026-05-21", loanTermMonths:42, ioMonths:42 }),
         mk({ propertyName:"1415 Washington (Project Loan)", propertyAddress:"1415 Washington Avenue, Albany, NY", propertyType:"Multifamily", lenderName:"Valley National Bank", originalAmount:16998373, annualRate:0.05, rateType:"Floating", index:"sofr", spread:0.0425, rateFloor:0.05, originationDate:"2022-11-21", firstPaymentDate:"2022-12-21", maturityDate:"2026-05-21", loanTermMonths:42, ioMonths:42 }),
@@ -2263,6 +2292,65 @@
       const k = TENOR_KEY[tenorId];
       return (row && k && row[k]!=null) ? row[k]/100 : null;
     }
+
+    // ---- Historical SOFR / Fed Funds (NY Fed), cached like the Treasury history above.
+    // This is what lets a FLOATING loan price each PAST payment at the index that was
+    // actually in effect that month, rather than today's rate. Current/future months use
+    // the live value; dead indexes (LIBOR) are excluded via loan.noRateHistory.
+    const NYFED_HIST_KEY = "ldsHub.nyfedHist.v1";
+    let NYFED_HIST = {};        // id -> { "YYYY-MM" -> value(%) }
+    try { NYFED_HIST = JSON.parse(localStorage.getItem(NYFED_HIST_KEY)) || {}; } catch(e){ NYFED_HIST = {}; }
+    const NYFED_HIST_INFLIGHT = {};
+    function saveNyfedHist(){ try { localStorage.setItem(NYFED_HIST_KEY, JSON.stringify(NYFED_HIST)); } catch(e){} }
+    function ymKey(y, mo){ return y + "-" + String(mo+1).padStart(2,"0"); }
+    // One range fetch of a NY Fed rate; keep the observation nearest the 15th per month.
+    async function fetchNyFedRange(path, startISO, endISO){
+      try {
+        const res = await fetch("https://markets.newyorkfed.org/api/rates/"+path+"/search.json?startDate="+startISO+"&endDate="+endISO);
+        if(!res.ok) return null;
+        const j = await res.json();
+        return j.refRates || [];
+      } catch(e){ return null; }
+    }
+    // Unified historical index level (decimal) for a PAST month; null if not known yet.
+    // Treasuries reuse TREASURY_HIST (via treasuryAt); SOFR/EFFR/Prime use NYFED_HIST.
+    function histIndexAt(id, y, mo){
+      if(!id) return null;
+      if(/^ust/.test(id)) return treasuryAt(id, y, mo);
+      if(id === "sofr" || id === "effr"){ const r = NYFED_HIST[id]; const v = r ? r[ymKey(y,mo)] : null; return v!=null ? v/100 : null; }
+      if(id === "prime"){ const r = NYFED_HIST["effr"]; const v = r ? r[ymKey(y,mo)] : null; return v!=null ? (v+3.00)/100 : null; }   // Prime ≈ EFFR + 3.00
+      return null;
+    }
+    // Fetch (once, cached forever) the past monthly index history a floating/ARM loan
+    // needs to price its already-paid rows. Treasuries go month-by-month (reuses the
+    // existing cache); NY Fed indexes come in a single date-range call.
+    function ensureRateHistory(loan, cb){
+      if(!loan || loan.noRateHistory) return;
+      if(loan.rateType !== "Floating" && loan.rateType !== "Hybrid ARM") return;
+      const id = loan.index, cat = INDEX_BY_ID[id];
+      if(!cat || !cat.live) return;
+      const start = accrualStartParts(loan); if(!start) return;
+      const t = todayParts();
+      if(/^ust/.test(id)){
+        for(let m=0; m<=600; m++){ const p = monthPosition(start, m); if(p.y>t.y || (p.y===t.y && p.mo>=t.mo)) break; ensureTreasuryMonth(p.y, p.mo, cb); }
+        return;
+      }
+      const nyId  = (id === "prime") ? "effr" : id;
+      const nyCat = INDEX_BY_ID[nyId]; if(!nyCat || nyCat.src !== "nyfed") return;
+      if(NYFED_HIST[nyId] && NYFED_HIST[nyId][ymKey(start.y,start.mo)] != null) return;   // origination month cached => range already fetched
+      const flight = "range@"+nyId;
+      if(NYFED_HIST_INFLIGHT[flight]) return;
+      NYFED_HIST_INFLIGHT[flight] = true;
+      fetchNyFedRange(nyCat.path, ymKey(start.y,start.mo)+"-01", ymKey(t.y,t.mo)+"-01").then(rows => {
+        delete NYFED_HIST_INFLIGHT[flight];
+        if(!rows) return;
+        const byMonth = {};
+        for(const r of rows){ if(r.percentRate==null) continue; const d=String(r.effectiveDate); const mk=d.slice(0,7); const day=parseInt(d.slice(8,10),10)||15; const dist=Math.abs(day-15); if(byMonth[mk]==null || dist<byMonth[mk].dist) byMonth[mk]={v:r.percentRate,dist}; }
+        NYFED_HIST[nyId] = NYFED_HIST[nyId] || {};
+        for(const mk in byMonth) NYFED_HIST[nyId][mk] = byMonth[mk].v;
+        saveNyfedHist(); if(cb) cb();
+      }).catch(()=>{ delete NYFED_HIST_INFLIGHT[flight]; });
+    }
     // Spread a single deal priced at, over its natural base. null if undetermined.
     function dealImpliedSpread(loan){
       const oi = isoToParts(loan.originationDate);
@@ -2533,7 +2621,7 @@
       if(state.mode==="portfolio"){
         renderPortfolio();
       } else if(state.mode==="view" && loan){
-        if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM") ensureIndexLive(loan.index, render);
+        if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM"){ ensureIndexLive(loan.index, render); ensureRateHistory(loan, render); }
         repriceFloatingIndex(loan);   // re-price the live index for the current month (floating + ARM)
         const result = compute(loan);
         renderKPIs(loan, result);
