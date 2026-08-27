@@ -3373,13 +3373,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       row.innerHTML = '<span class="text-slate-400">Checking connection…</span>';
       ldsShell.aiStatus().then((st)=>{
         aiT12StatusCache = st;
-        const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
-        let ok=false, msg="";
-        if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
-        else if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
-        else if(st.mode==="cli" && !(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
-        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
-        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        const cs = claudeConnState(st); const ok = cs.ok, msg = cs.msg;
         row.innerHTML = '<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
           (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
               :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
@@ -3401,9 +3395,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       const opt = (v,label,note)=> '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiT12Mode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>';
       p.innerHTML =
         '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="pb-0.5">'+claudePanelSignInHtml(st,"T12")+'</div>'+
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 pt-1">Or choose a mode</div>'+
         '<div class="space-y-1.5">'+
-          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
-          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude subscription; falls back to an API key.":"Claude not detected here; will use an API key if set.")+
+          opt("cli","Claude subscription", (cliOk?("built in &middot; "+escapeHtml(st.cli.version||"")):"couldn’t start on this machine")+" &mdash; no API key or per-use billing")+
           opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
         '</div>'+
         '<div class="pt-1">'+
@@ -3413,6 +3409,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           (st.apiKey&&st.apiKey.configured?'<button id="aiT12KeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
           '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
         '</div>';
+      wireClaudePanelSignIn("T12", ()=>{ aiT12RefreshConn(); aiT12RenderSettings(); });
       p.querySelectorAll('input[name="aiT12Mode"]').forEach(r=> r.addEventListener("change", ()=>{ ldsShell.aiSetMode(r.value).then(()=>aiT12RefreshConn()); }));
       const ki=el("aiT12KeyInput"), ks=el("aiT12KeySave"), kc=el("aiT12KeyClear");
       if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiT12RefreshConn(); aiT12RenderSettings(); }); });
@@ -5985,13 +5982,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       row.innerHTML = '<span class="text-slate-400">Checking connection…</span>';
       ldsShell.aiStatus().then((st)=>{
         aiStatusCache = st;
-        const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
-        let ok=false, msg="";
-        if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
-        else if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
-        else if(st.mode==="cli" && !(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
-        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
-        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        const cs = claudeConnState(st); const ok = cs.ok, msg = cs.msg;
         row.innerHTML = '<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
           (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
               :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
@@ -6014,9 +6005,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       const opt = (v,label,note)=> '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiMode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>';
       p.innerHTML =
         '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="pb-0.5">'+claudePanelSignInHtml(st,"Ai")+'</div>'+
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 pt-1">Or choose a mode</div>'+
         '<div class="space-y-1.5">'+
-          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
-          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude subscription; falls back to an API key.":"Claude not detected here; will use an API key if set.")+
+          opt("cli","Claude subscription", (cliOk?("built in &middot; "+escapeHtml(st.cli.version||"")):"couldn’t start on this machine")+" &mdash; no API key or per-use billing")+
           opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
         '</div>'+
         '<div class="pt-1">'+
@@ -6026,6 +6019,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           (st.apiKey&&st.apiKey.configured?'<button id="aiKeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
           '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
         '</div>';
+      wireClaudePanelSignIn("Ai", ()=>{ aiRefreshConn(); aiRenderSettings(); });
       p.querySelectorAll('input[name="aiMode"]').forEach(r=> r.addEventListener("change", ()=>{ ldsShell.aiSetMode(r.value).then(()=>aiRefreshConn()); }));
       const ki=el("aiKeyInput"), ks=el("aiKeySave"), kc=el("aiKeyClear");
       if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiRefreshConn(); aiRenderSettings(); }); });
@@ -6036,13 +6030,45 @@ tr[data-loan]:hover td{background:#eef2f7}
     // Self-contained (its own element ids) so it never disturbs the loan-reader's
     // connection panel. Same Claude bridge: subscription (Claude Code CLI) or key.
     function claudeConnState(st){
-      if(st.oauth && st.oauth.configured) return { ok:true, sub:true, msg:'Connected &middot; signed in to your <b>Claude subscription</b>' };
-      const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
-      if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi) return { ok:true, sub:true, msg:'Connected &middot; using your <b>Claude Code subscription</b>' };
-      if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")) return { ok:true, msg:'Connected &middot; using your <b>Anthropic API key</b>' };
-      if(st.mode==="cli" && !(st.cli&&st.cli.available)) return { ok:false, msg:'Claude Code isn’t installed on this machine — install it, then sign in below.' };
-      if(st.mode==="api") return { ok:false, msg:'API mode is selected but no API key is set.' };
+      // "Connected" via the subscription means the bundled client is actually SIGNED IN
+      // (auth status → loggedIn), not merely present. A stored setup-token (oauth) also counts.
+      const subConnected = !!(st.subscription && st.subscription.connected) || !!(st.oauth && st.oauth.configured);
+      const apiSet = !!(st.apiKey && st.apiKey.configured);
+      // Explicit API mode: the key is the connection.
+      if(st.mode==="api") return apiSet ? { ok:true, msg:'Connected &middot; using your <b>Anthropic API key</b>' }
+                                        : { ok:false, msg:'API mode is selected but no API key is set.' };
+      // Otherwise the Claude subscription is the primary path.
+      if(subConnected) return { ok:true, sub:true, msg:'Connected &middot; signed in to your <b>Claude subscription</b>' };
+      // Auto mode with no subscription sign-in but a key present still works via the key.
+      if(apiSet) return { ok:true, msg:'Connected &middot; using your <b>Anthropic API key</b>' };
+      if(!(st.cli && st.cli.available)) return { ok:false, msg:'The built-in Claude client couldn’t start on this machine — reinstalling the app usually fixes it.' };
       return { ok:false, msg:'Not connected. Sign in to your Claude subscription below.' };
+    }
+    // Shared subscription sign-in control for the in-panel AI settings (T12 reader,
+    // Explain/Check, Assistant). Mirrors the unified Settings dialog so a user can
+    // sign in without leaving the panel. idSuffix keeps element ids unique per panel.
+    function claudePanelSignInHtml(st, idSuffix){
+      st = st || {};
+      const subConnected = !!(st.subscription && st.subscription.connected) || !!(st.oauth && st.oauth.configured);
+      const cliOk = st.cli && st.cli.available;
+      if(subConnected)
+        return '<div class="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">'+
+          '<span class="inline-flex items-center gap-2"><svg class="h-3.5 w-3.5 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Signed in with your Claude subscription</span>'+
+          '<button id="claudeSignOut'+idSuffix+'" type="button" class="rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50">Sign out</button></div>';
+      return '<button id="claudeSignIn'+idSuffix+'" type="button" class="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-brand-500 disabled:opacity-50 disabled:pointer-events-none">'+
+          '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/></svg>Connect with your Claude subscription</button>'+
+        '<p class="mt-1 text-[10px] leading-snug text-slate-400">A small sign-in window opens and takes you to your browser — no API key, nothing to install.'+(cliOk?'':' <b class="text-amber-600">The built-in Claude client couldn’t start here.</b>')+'</p>';
+    }
+    function wireClaudePanelSignIn(idSuffix, onDone){
+      const si = el("claudeSignIn"+idSuffix);
+      if(si) si.addEventListener("click", ()=>{
+        if(!(window.ldsShell && ldsShell.aiLogin)){ toast("Sign-in needs the desktop app","info"); return; }
+        si.disabled = true; si.innerHTML = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Finish sign-in in the window that opened…';
+        ldsShell.aiLogin().then(r=>{ toast((r&&r.ok)?"Connected to your Claude subscription":((r&&r.error)||"Sign-in didn’t complete"), (r&&r.ok)?"check":"info"); if(onDone) onDone(); })
+          .catch(err=>{ toast("Sign-in failed: "+String((err&&err.message)||err).slice(0,120),"info"); if(onDone) onDone(); });
+      });
+      const so = el("claudeSignOut"+idSuffix);
+      if(so) so.addEventListener("click", ()=>{ ldsShell.aiLogout().then(()=>{ toast("Signed out of your Claude subscription"); if(onDone) onDone(); }); });
     }
     // Reflect connection state onto the Settings-menu button (badge), when present.
     function claudeConnBadge(){
@@ -6096,14 +6122,14 @@ tr[data-loan]:hover td{background:#eef2f7}
     function claudeConnRender(st){
       const p = el("claudeConnPanel"); if(!p) return; st = st || aiStatusCache || {};
       const cliOk = st.cli && st.cli.available;
-      const subConnected = !!(st.oauth && st.oauth.configured);
+      const subConnected = !!(st.subscription && st.subscription.connected) || !!(st.oauth && st.oauth.configured);
       const spark = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/></svg>';
       p.innerHTML =
         '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Your Claude subscription</div>'+
         (subConnected
           ? '<div class="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800"><span class="inline-flex items-center gap-2"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Signed in with your Claude subscription</span><button id="claudeSignOut" type="button" class="rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Sign out</button></div>'
           : '<button id="claudeSignIn" type="button" class="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-500 disabled:opacity-50 disabled:pointer-events-none">'+spark+'Connect with your Claude subscription</button>'+
-            '<p class="text-[11px] leading-snug text-slate-400">Opens your browser to sign in to your Claude Pro/Max subscription — no API key, no per-use billing, nothing to install (Claude is built into this app).'+(cliOk?'':' <b class="text-amber-600">The built-in Claude client couldn’t start on this machine — reinstalling the app usually fixes it.</b>')+'</p>')+
+            '<p class="text-[11px] leading-snug text-slate-400">A small sign-in window opens and takes you to your browser to sign in to your Claude Pro/Max subscription — no API key, no per-use billing, nothing to install (Claude is built into this app). You can close that window once it says you’re signed in.'+(cliOk?'':' <b class="text-amber-600">The built-in Claude client couldn’t start on this machine — reinstalling the app usually fixes it.</b>')+'</p>')+
         '<details class="pt-1"'+(st.apiKey&&st.apiKey.configured&&!subConnected?' open':'')+'><summary class="cursor-pointer select-none text-[11px] font-semibold text-slate-500 hover:text-slate-700">Advanced &mdash; use an Anthropic API key instead</summary>'+
           '<div class="mt-2">'+
             '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
@@ -6115,7 +6141,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const si = el("claudeSignIn");
       if(si) si.addEventListener("click", ()=>{
         if(!ldsShell.aiLogin){ toast("Sign-in needs the desktop app","info"); return; }
-        si.disabled = true; si.innerHTML = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Waiting for browser sign-in…';
+        si.disabled = true; si.innerHTML = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Finish sign-in in the window that opened…';
         ldsShell.aiLogin().then(r=>{
           if(r && r.ok) toast("Connected to your Claude subscription","check");
           else toast((r&&r.error)||"Sign-in didn’t complete","info");
@@ -6456,13 +6482,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       row.innerHTML='<span class="text-slate-400">Checking connection…</span>';
       ldsShell.aiStatus().then(function(st){
         aiStatusCache=st;
-        var usingApi=st.mode==="api"||(st.mode==="auto"&&!(st.cli&&st.cli.available));
-        var ok=false,msg="";
-        if((st.mode==="cli"||st.mode==="auto")&&st.cli&&st.cli.available&&!usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
-        else if(st.apiKey&&st.apiKey.configured&&(usingApi||st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
-        else if(st.mode==="cli"&&!(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
-        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
-        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        var cs=claudeConnState(st); var ok=cs.ok, msg=cs.msg;
         row.innerHTML='<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
           (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
               :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
@@ -6483,9 +6503,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       var opt=function(v,label,note){ return '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiAsstMode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>'; };
       p.innerHTML=
         '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="pb-0.5">'+claudePanelSignInHtml(st,"Asst")+'</div>'+
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 pt-1">Or choose a mode</div>'+
         '<div class="space-y-1.5">'+
-          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
-          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude subscription; falls back to an API key.":"Claude not detected here; will use an API key if set.")+
+          opt("cli","Claude subscription", (cliOk?("built in &middot; "+escapeHtml(st.cli.version||"")):"couldn’t start on this machine")+" &mdash; no API key or per-use billing")+
           opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
         '</div>'+
         '<div class="pt-1">'+
@@ -6495,6 +6517,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           (st.apiKey&&st.apiKey.configured?'<button id="aiAsstKeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
           '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
         '</div>';
+      wireClaudePanelSignIn("Asst", function(){ aiAsstRefreshConn(); aiAsstRenderSettings(); });
       p.querySelectorAll('input[name="aiAsstMode"]').forEach(function(r){ r.addEventListener("change", function(){ ldsShell.aiSetMode(r.value).then(function(){ aiAsstRefreshConn(); }); }); });
       var ki=el("aiAsstKeyInput"), ks=el("aiAsstKeySave"), kc=el("aiAsstKeyClear");
       if(ks) ks.addEventListener("click", function(){ var v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(function(){ if(ki) ki.value=""; toast("API key saved","check"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });

@@ -16,6 +16,7 @@ const { spawn } = require('child_process');
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 let _app = null;
 function init(app){ _app = app; }
@@ -65,7 +66,10 @@ function detectCli(){
 async function status(){
   const cli = await detectCli();
   const cfg = readCfg();
-  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, mode: cfg.mode || 'auto' };
+  // Only probe subscription sign-in when the CLI is actually runnable — `auth status`
+  // otherwise just adds latency and can't be true anyway.
+  const connected = cli.available ? await subscriptionConnected() : false;
+  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto' };
 }
 function setKey(key){ const c = readCfg(); const k = (key == null ? '' : String(key)).trim(); if (k) c.apiKey = k; else delete c.apiKey; writeCfg(c); return { configured: !!c.apiKey }; }
 function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].indexOf(mode) >= 0) ? mode : 'auto'; writeCfg(c); return { mode: c.mode }; }
@@ -79,50 +83,89 @@ function cliEnv(){
   return e;
 }
 
-// Sign in to the user's Claude subscription in the BROWSER. `claude setup-token`
-// opens the browser to the OAuth flow and prints a (1-year) token to stdout; we
-// store it and use it via cliEnv() on every subsequent call. Blocks until the
-// browser flow finishes (or a 5-minute timeout). Requires the Claude Code CLI.
-// Invisible browser sign-in to the Claude subscription. Runs the bundled
-// `claude setup-token` inside a pseudo-terminal (node-pty) so NO console window
-// shows: the CLI thinks it has a terminal, opens the browser to the OAuth flow,
-// and prints a long-lived sk-ant-oat01- token to the PTY once the user signs in.
-// We capture the token, store it, and use it via CLAUDE_CODE_OAUTH_TOKEN. The
-// browser itself still opens (that's the sign-in) — only the terminal is hidden.
-function login(){
+// Run a `claude` subcommand and parse its JSON stdout (or null on any failure).
+function runClaudeJson(args, env){
   return new Promise((resolve) => {
-    let pty;
-    try { pty = require('@homebridge/node-pty-prebuilt-multiarch'); }
-    catch (e) { return resolve({ ok:false, error:'The sign-in helper could not start in this build (' + String((e&&e.message)||e).slice(0,120) + '). You can use an Anthropic API key instead (Advanced), or reinstall the app.' }); }
-    const env = cliEnv(); delete env.CLAUDE_CODE_OAUTH_TOKEN;   // force a fresh sign-in, ignore any inherited token
-    let p, buf = '', done = false, opened = false;
-    const strip = (s) => String(s).replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '').replace(/\x1B\[[0-9;?]*[A-Za-z]/g, '');   // drop OSC + CSI escapes
-    const finish = (v) => { if (!done){ done = true; clearTimeout(to); try { p && p.kill(); } catch (e) {} resolve(v); } };
-    const to = setTimeout(() => finish({ ok:false, error:'Timed out waiting for the browser sign-in (5 minutes). Please try again.' }), 300000);
-    try {
-      p = pty.spawn(cliBin(), ['setup-token'], {
-        name: 'xterm-256color', cols: 100, rows: 34,
-        cwd: (_app && _app.getPath) ? _app.getPath('home') : process.cwd(),
-        env: env,
-      });
-    } catch (e) { return finish({ ok:false, error:'Could not start the sign-in helper. ' + String((e&&e.message)||e).slice(0,160) }); }
-    p.onData((d) => {
-      buf += String(d);
-      const clean = strip(buf);
-      // Belt-and-suspenders: if the CLI printed the auth URL (browser didn't auto-open), open it ourselves.
-      if (!opened){ const u = clean.match(/https?:\/\/[^\s'"]+/); if (u){ opened = true; try { require('electron').shell.openExternal(u[0]); } catch (e) {} } }
-      const m = clean.match(/sk-ant-oat01-[A-Za-z0-9_-]+/) || clean.match(/sk-ant-[A-Za-z0-9_-]{24,}/);
-      if (m){ const c = readCfg(); c.oauthToken = m[0]; c.mode = 'cli'; writeCfg(c); finish({ ok:true }); }
-    });
-    p.onExit((e) => {
-      if (/sk-ant-/.test(strip(buf))) return;   // already resolved on the token
-      const code = (e && typeof e === 'object') ? e.exitCode : e;
-      const tail = strip(buf).split('\n').map((s)=>s.trim()).filter(Boolean).slice(-3).join(' ');
-      finish({ ok:false, error: (tail || ('Sign-in ended without a token (code ' + code + ').')).slice(0,240) });
-    });
+    let out = '', p;
+    try { p = spawn(cliBin(), args, { stdio: ['ignore', 'pipe', 'ignore'], env: env || cliEnv() }); }
+    catch (e) { return resolve(null); }
+    p.stdout.on('data', (d) => { out += d; });
+    p.on('error', () => resolve(null));
+    p.on('close', () => { try { resolve(JSON.parse(out)); } catch (e) { resolve(/\"loggedIn\"\s*:\s*true/.test(out) ? { loggedIn: true } : null); } });
   });
 }
-function logout(){ const c = readCfg(); delete c.oauthToken; writeCfg(c); return { ok: true }; }
+// Is the subscription signed in? `claude auth status` reads the credentials stored
+// (by the login below) under our isolated CLAUDE_CONFIG_DIR.
+async function subscriptionConnected(){
+  const j = await runClaudeJson(['auth', 'status'], cliEnv());
+  return !!(j && j.loggedIn === true);
+}
+
+// Sign in to the Claude subscription. The CLI's login is INTERACTIVE (it needs a
+// real terminal), so we open it in a visible console window; the browser opens
+// from there, the user signs in, and the CLI stores credentials under our isolated
+// CLAUDE_CONFIG_DIR. We then poll `auth status` until it reports logged-in — no
+// token to capture, and subsequent `claude -p` calls use those stored credentials.
+function login(){
+  return new Promise((resolve) => {
+    const bin = cliBin();
+    const cfgDir = (_app && _app.getPath) ? path.join(_app.getPath('userData'), 'claude') : null;
+    if (cfgDir) { try { fs.mkdirSync(cfgDir, { recursive: true }); } catch (e) {} }
+    const env = Object.assign({}, process.env);
+    if (cfgDir) env.CLAUDE_CONFIG_DIR = cfgDir;
+    delete env.CLAUDE_CODE_OAUTH_TOKEN;
+    try {
+      if (process.platform === 'win32'){
+        // A .cmd launched in a new console window gives the CLI a real TTY. Keeping
+        // the command in a file avoids fragile inline quoting.
+        const tmp = (_app && _app.getPath) ? _app.getPath('temp') : os.tmpdir();
+        const bat = path.join(tmp, 'lds-claude-signin.cmd');
+        const lines = ['@echo off', 'title Connect to your Claude subscription'];
+        if (cfgDir) lines.push('set "CLAUDE_CONFIG_DIR=' + cfgDir + '"');
+        lines.push('echo Signing in to your Claude subscription...');
+        lines.push('echo A browser window will open - complete the sign-in there.');
+        lines.push('echo(');
+        lines.push('"' + bin + '" auth login --claudeai');
+        lines.push('echo(');
+        lines.push('echo You can close this window.');
+        lines.push('timeout /t 8 >nul');
+        fs.writeFileSync(bat, lines.join('\r\n'), 'utf8');
+        spawn('cmd.exe', ['/c', 'start', '""', bat], { windowsHide: false, detached: true, stdio: 'ignore' }).unref();
+      } else if (process.platform === 'darwin'){
+        const inner = (cfgDir ? ('export CLAUDE_CONFIG_DIR=' + JSON.stringify(cfgDir) + '; ') : '') + JSON.stringify(bin) + ' auth login --claudeai';
+        spawn('osascript', ['-e', 'tell application "Terminal" to do script ' + JSON.stringify(inner)], { detached: true, stdio: 'ignore' }).unref();
+      } else {
+        spawn(bin, ['auth', 'login', '--claudeai'], { env: env, detached: true, stdio: 'ignore' }).unref();
+      }
+    } catch (e) { return resolve({ ok:false, error:'Could not open the sign-in window. ' + String((e&&e.message)||e).slice(0,160) }); }
+    // Poll until the login completes (or a 5-minute timeout).
+    let elapsed = 0; const step = 3000, max = 300000; let settled = false;
+    const done = (v) => { if (!settled){ settled = true; resolve(v); } };
+    const tick = async () => {
+      if (settled) return;
+      let ok = false; try { ok = await subscriptionConnected(); } catch (e) {}
+      if (ok){ const c = readCfg(); c.mode = 'cli'; writeCfg(c); return done({ ok:true }); }
+      elapsed += step;
+      if (elapsed >= max) return done({ ok:false, error:'Sign-in wasn’t detected. Finish signing in in the window that opened, then reopen this dialog — or use an API key.' });
+      setTimeout(tick, step);
+    };
+    setTimeout(tick, step);
+  });
+}
+// Sign out: run `claude auth logout` (clears the stored subscription credentials)
+// and WAIT for it, so a status refresh right after reflects the signed-out state
+// instead of racing the process. Then clear our own config.
+function logout(){
+  return new Promise((resolve) => {
+    const finish = () => { const c = readCfg(); delete c.oauthToken; c.mode = 'auto'; writeCfg(c); resolve({ ok: true }); };
+    let p;
+    try { p = spawn(cliBin(), ['auth', 'logout'], { stdio: 'ignore', env: cliEnv() }); }
+    catch (e) { return finish(); }
+    let done = false; const fin = () => { if (!done) { done = true; finish(); } };
+    p.on('error', fin); p.on('close', fin);
+    setTimeout(fin, 8000);   // never hang the UI if logout stalls
+  });
+}
 
 // Run a structured extraction. opts: { instruction, schema, input, model?, timeoutMs? }
 // Resolves { ok, data, via, cost?, error? }.

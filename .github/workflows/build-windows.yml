@@ -14,12 +14,9 @@ permissions:
 
 jobs:
   build:
-    # Pinned to windows-2022 (not windows-latest). GitHub moved windows-latest to
-    # Windows Server 2025, where node-gyp can't detect the Visual Studio install —
-    # which broke the node-pty native compile. windows-2022 ships VS 2022 in the
-    # location node-gyp finds. (Earlier releases built fine on 2025 only because
-    # they compiled nothing.)
-    runs-on: windows-2022
+    # The build compiles nothing native (sign-in uses a visible console window, not
+    # a compiled pty), so the default GitHub Windows runner is fine.
+    runs-on: windows-latest
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
@@ -31,20 +28,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-
-      # Compile node-pty against Electron's ABI (the prebuilt package only ships
-      # Node ABIs; Electron 33 is module ABI 130). Drive node-gyp directly with a
-      # MODERN version — the node-gyp bundled in the tree is too old to detect
-      # Visual Studio 2022 on the runner ("Could not find any Visual Studio
-      # installation"). Produces build/Release/pty.node for the invisible sign-in.
-      - name: Rebuild node-pty for Electron
-        shell: bash
-        run: |
-          EV=$(node -p "require('electron/package.json').version")
-          echo "Compiling node-pty for Electron $EV"
-          cd node_modules/@homebridge/node-pty-prebuilt-multiarch
-          npx --yes node-gyp@10 rebuild --target="$EV" --arch=x64 --dist-url=https://electronjs.org/headers
-          ls -la build/Release/ || true
 
       - name: Build Windows installer (NSIS)
         run: npm run build:win-installer
