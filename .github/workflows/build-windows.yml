@@ -28,11 +28,18 @@ jobs:
         run: npm install
 
       # Compile node-pty against Electron's ABI (the prebuilt package only ships
-      # Node ABIs; Electron 33 is module ABI 130). This produces build/Release/
-      # pty.node so the invisible subscription sign-in can load node-pty at runtime.
+      # Node ABIs; Electron 33 is module ABI 130). Drive node-gyp directly with a
+      # MODERN version — the node-gyp bundled in the tree is too old to detect
+      # Visual Studio 2022 on the runner ("Could not find any Visual Studio
+      # installation"). Produces build/Release/pty.node for the invisible sign-in.
       - name: Rebuild node-pty for Electron
         shell: bash
-        run: ./node_modules/.bin/electron-rebuild -f -w @homebridge/node-pty-prebuilt-multiarch --arch x64
+        run: |
+          EV=$(node -p "require('electron/package.json').version")
+          echo "Compiling node-pty for Electron $EV"
+          cd node_modules/@homebridge/node-pty-prebuilt-multiarch
+          npx --yes node-gyp@latest rebuild --target="$EV" --arch=x64 --dist-url=https://electronjs.org/headers
+          ls -la build/Release/ || true
 
       - name: Build Windows installer (NSIS)
         run: npm run build:win-installer
