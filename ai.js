@@ -96,6 +96,86 @@ function runCli({ instruction, schema, input, model, timeoutMs }){
   });
 }
 
+// Run a free-form chat (no structured output, no tools). opts:
+// { system, prompt, model?, timeoutMs? }. Resolves { ok, text, via, cost?, error? }.
+// Same auto/cli/api selection as extract(): the Claude Code subscription first,
+// the Anthropic API key as a fallback.
+async function chat(opts){
+  opts = opts || {};
+  if (!opts.prompt) return { ok: false, error: 'Missing prompt.' };
+  const cfg = readCfg();
+  const mode = cfg.mode || 'auto';
+  const cli = await detectCli();
+  const useCli = (mode === 'cli') || (mode === 'auto' && cli.available);
+  if (useCli){
+    if (!cli.available) return { ok: false, error: 'CLI mode is selected but the Claude Code CLI was not found on this machine.' };
+    return runCliChat(opts);
+  }
+  if (cfg.apiKey) return runApiChat(opts, cfg.apiKey);
+  return { ok: false, error: cli.available
+    ? 'No API key is configured. Switch to CLI mode to use your Claude subscription, or add an API key.'
+    : 'Claude Code CLI not found and no API key configured. Install Claude Code (and run `claude` once to sign in) or add an Anthropic API key in Settings.' };
+}
+
+// CLI chat: `claude -p <prompt> --output-format json` with the system prompt
+// appended and NO tools enabled (an empty allowed-tools list — a plain Q&A needs
+// none), then read `.result`. The prompt carries the question + portfolio JSON.
+function runCliChat({ system, prompt, model, timeoutMs }){
+  return new Promise((resolve) => {
+    const args = ['-p', String(prompt), '--output-format', 'json', '--allowed-tools', ''];
+    if (system) args.push('--append-system-prompt', String(system));
+    if (model) args.push('--model', model);
+    let out = '', err = '', done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
+    const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
+    let p;
+    try { p = spawn(CLI_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', () => finish({ ok: false, error: 'The Claude Code CLI failed to run.' }));
+    p.on('close', () => {
+      let j; try { j = JSON.parse(out); } catch (e) { return finish({ ok: false, error: 'Could not parse the CLI response. ' + (err || '').slice(0, 300) }); }
+      if (j.is_error || j.subtype !== 'success') return finish({ ok: false, error: (typeof j.result === 'string' ? j.result : 'The CLI reported an error.') });
+      const text = (typeof j.result === 'string') ? j.result : '';
+      if (!text) return finish({ ok: false, error: 'The CLI returned an empty answer.' });
+      finish({ ok: true, text: text, via: 'cli', cost: j.total_cost_usd });
+    });
+  });
+}
+
+// API chat: POST /v1/messages with system + a single user message, no tools;
+// read the first text block from the response.
+function runApiChat({ system, prompt, model, timeoutMs }, apiKey){
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: model || API_MODEL,
+      max_tokens: 4096,
+      system: system ? String(system) : undefined,
+      messages: [{ role: 'user', content: String(prompt) }],
+    });
+    const req = https.request({
+      host: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-length': Buffer.byteLength(body) },
+      timeout: timeoutMs || 120000,
+    }, (res) => {
+      let d = '';
+      res.on('data', (c) => { d += c; });
+      res.on('end', () => {
+        let j; try { j = JSON.parse(d); } catch (e) { return resolve({ ok: false, error: 'Could not parse the API response.' }); }
+        if (j.type === 'error' || j.error) return resolve({ ok: false, error: (j.error && j.error.message) || 'API error.' });
+        const tb = (j.content || []).find((c) => c.type === 'text');
+        const text = tb && tb.text ? tb.text : '';
+        if (!text) return resolve({ ok: false, error: 'The API returned an empty answer.' });
+        resolve({ ok: true, text: text, via: 'api' });
+      });
+    });
+    req.on('error', () => resolve({ ok: false, error: 'Network error contacting the Anthropic API.' }));
+    req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve({ ok: false, error: 'The API request timed out.' }); });
+    req.write(body); req.end();
+  });
+}
+
 function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   return new Promise((resolve) => {
     const body = JSON.stringify({
@@ -126,4 +206,4 @@ function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   });
 }
 
-module.exports = { init, status, setKey, setMode, extract };
+module.exports = { init, status, setKey, setMode, extract, chat };

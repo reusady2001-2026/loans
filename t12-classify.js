@@ -44,7 +44,12 @@
     if (has(/payroll|salar|wages|workers?\s*comp|health\s+insurance|\bbonus\b|\bovertime\b|outside\s+services/)) return "PAY";
 
     // ---- income items ----
-    if (has(/market\s+rent|gain\s+to\s+lease|loss.*lease|rent\s+adjustment|residential\s+rent|section\s*8|prepaid\s+rent/) ||
+    // "Gross Potential Rent" / "Gross Scheduled Rent" are the standard top-line
+    // rental-income captions on a T12 — added so a FLAT statement with no
+    // sub-section header (rulesMatch's documented fallback role, e.g. an
+    // AI-read statement, which has no sub-section signal at all) still tags
+    // the top rent line as GPR instead of falling through to the OTH catch-all.
+    if (has(/market\s+rent|gain\s+to\s+lease|loss.*lease|rent\s+adjustment|residential\s+rent|section\s*8|prepaid\s+rent|gross\s+(potential|scheduled)\s+rent|scheduled\s+gross\s+rent/) ||
         has(/gross\s+rental|rental\s+income.*(market|residential|gross)/)) return "GPR";
     if (has(/vacancy|down\s+units/)) return "VAC";
     if (has(/concession/)) return "CONC";

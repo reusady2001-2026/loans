@@ -795,6 +795,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
               Read Agreement
             </button>
+            <button id="aiExplainBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none" title="Have Claude explain this loan in plain English and sanity-check it for internal consistency">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="4" rx="1"/><path d="M9 4.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><path d="m9 13.5 2 2 4-4.5"/></svg>
+              Explain / Check
+            </button>
             <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               Edit
@@ -1078,6 +1082,115 @@
       <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
         <button id="aiSettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
         <button id="aiReadCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== AI: EXPLAIN / SANITY-CHECK MODAL ===================== -->
+  <div id="aiExplainModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
+      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="4" rx="1"/><path d="M9 4.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><path d="m9 13.5 2 2 4-4.5"/></svg>
+            Explain / Sanity-check this loan
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5 truncate">Claude summarizes <span id="aiExplainLoanName" class="font-semibold text-slate-600"></span> and checks it for internal consistency. Nothing about this loan is changed.</p>
+        </div>
+        <button id="aiExplainClose" type="button" class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div id="aiExplainBody" class="p-5 space-y-4 overflow-auto"></div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button id="aiExplainRetry" type="button" hidden class="text-xs font-semibold text-brand-700 hover:text-brand-900">Check again</button>
+        <div class="flex-1"></div>
+        <button id="aiExplainCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI: read a T12 operating statement -> build a Setup (alternative to the
+       rules-based T12Classify/SetupBuilder file path in the Underwriting tab). -->
+  <div id="aiT12Modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
+      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
+            Read a T12 with Claude
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Claude reads the operating statement and builds a Setup for you to review &mdash; using the statement&rsquo;s own printed TOTAL INCOME / TOTAL EXPENSES / NET OPERATING INCOME footing when it prints one. Nothing is saved until you review it.</p>
+        </div>
+        <button id="aiT12Close" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4 overflow-auto">
+        <div id="aiT12ConnRow" class="text-sm"></div>
+        <div id="aiT12Settings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
+        <div id="aiT12Drop" class="rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition">
+          <input id="aiT12File" type="file" accept=".md,.markdown,.txt,.text" class="hidden">
+          <svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+          <p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 here, or <button type="button" id="aiT12FileBtn" class="text-brand-700 underline">choose a file</button></p>
+          <p class="mt-1 text-[11px] text-slate-400">A text or Markdown copy of the T12 (.md / .txt) &mdash; convert a PDF to text first, then drop it here &mdash; or paste it below.</p>
+        </div>
+        <div>
+          <label for="aiT12Paste" class="block text-[11px] font-semibold text-slate-500 mb-1">&hellip;or paste the T12 text</label>
+          <textarea id="aiT12Paste" rows="6" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30" placeholder="Paste the operating statement text here&hellip;"></textarea>
+          <div class="mt-2 flex justify-end">
+            <button id="aiT12PasteBtn" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Read pasted text</button>
+          </div>
+        </div>
+        <div id="aiT12Status" class="hidden rounded-xl px-4 py-3 text-sm"></div>
+      </div>
+      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
+        <button id="aiT12SettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
+        <button id="aiT12Cancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== AI: ASSISTANT (chat + actions) ===================== -->
+  <!-- A general in-app assistant (desktop shell only): answers questions about the -->
+  <!-- portfolio (from a live JSON snapshot) or anything else, and can perform a set -->
+  <!-- of safe app actions on request (navigate, refinance, export, or pre-fill a -->
+  <!-- new/edited loan form for the operator to review — it never saves on its own). -->
+  <button id="aiAsstFab" type="button" hidden title="Ask the assistant (Claude) — questions about your portfolio, or ask it to do things in the app" class="fixed bottom-5 right-5 z-[60] inline-flex items-center gap-2 rounded-full bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-xl press lift hover:bg-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-400/50">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
+    Assistant
+  </button>
+  <div id="aiAsstModal" class="fixed inset-0 z-[75] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
+      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
+            Assistant
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, or draft a new loan for you to review. I never save changes on my own.</p>
+        </div>
+        <button id="aiAsstClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="px-5 pt-4 space-y-3">
+        <div id="aiAsstConnRow" class="text-sm"></div>
+        <div id="aiAsstSettings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
+      </div>
+      <div id="aiAsstLog" class="flex-1 min-h-[240px] overflow-auto p-5 space-y-4"></div>
+      <div class="p-4 border-t border-slate-100 space-y-2">
+        <div class="flex items-end gap-2">
+          <textarea id="aiAsstInput" rows="2" placeholder="Ask me anything, or tell me what to do… (Enter to send, Shift+Enter for a new line)" class="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"></textarea>
+          <button id="aiAsstSend" type="button" class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-500 disabled:opacity-40 disabled:pointer-events-none">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            Send
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <button id="aiAsstSettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
+          <span class="text-[10px] text-slate-400">Claude sees a JSON snapshot of your loans — never your files or keys.</span>
+        </div>
       </div>
     </div>
   </div>
@@ -2676,6 +2789,7 @@
       dom.editBtn.disabled = !loan || state.mode!=="view";
       dom.removeBtn.disabled = !loan || state.mode!=="view";
       dom.refiBtn.disabled = !loan || state.mode!=="view";
+      if(el("aiExplainBtn")) el("aiExplainBtn").disabled = !loan || state.mode!=="view";
 
       // Scope: "Whole Portfolio" shows only the dashboard; "Specific Loan" reveals
       // the loan selector + single-loan views.
@@ -2955,6 +3069,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     const UW_KEY = "lds_setup_v1";
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
+      aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
       bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
     // Read a dropped T12 workbook, find the operating-statement sheet, parse it.
@@ -2971,6 +3086,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           }
           if(!grid){ toast("Couldn’t find a T12 sheet (needs a Total column and month columns).","error"); return; }
           const i = uwState.input; i.t12Grid = grid; i.fileName = file.name; i.basis = "total";
+          i.aiParsed = null; i.aiT12 = null;   // this file (rules-based) path supersedes any prior AI-read Setup
           uwApplyParse();
         }catch(err){ toast("Couldn’t read that file.","error"); }
       };
@@ -3031,6 +3147,15 @@ tr[data-loan]:hover td{background:#eef2f7}
     function uwBuild(){
       const i = uwState.input;
       if(!window.SetupBuilder){ uwLastBuilt = null; return; }
+      // AI-read path: Claude already returned a {rows, categories, totals} structure
+      // (see "Read T12 with Claude" below) — feed it through the SAME fromParse() /
+      // buildSetup() pipeline the rules-based file path uses just below, so the built
+      // Setup (build-up table, in-place vs underwritten NOI, sizing) is produced by
+      // the identical code and the rest of the Setup UI works unchanged.
+      if(i.aiParsed){
+        uwLastBuilt = SetupBuilder.buildSetup({ parsed: i.aiParsed, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench });
+        return;
+      }
       // Preferred path: the parsed statement. In-place income/expense/NOI are read
       // from the statement's own printed footing (t12-parse totals), so the Setup's
       // in-place NOI matches the T12's NET OPERATING INCOME to the dollar.
@@ -3054,7 +3179,10 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Underwriting &amp; Sizing</h2>'+
             '<p class="text-sm text-slate-500">Drop a property&rsquo;s T12 file &mdash; the app finds the columns, classifies every line, builds the in-place &amp; underwritten Setup, and sizes the loan.</p></div>'+
-          '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>'+
+          '<div class="flex items-center gap-2">'+
+            (aiAvailable() ? '<button type="button" id="aiT12Btn" title="Read a T12 with Claude and build a Setup" class="inline-flex items-center gap-1.5 self-start rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>Read T12 with Claude</button>' : '')+
+            '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>'+
+          '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">'+
           '<div id="uwDrop" class="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition">'+
@@ -3064,12 +3192,13 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<p class="mt-1 text-[11px] text-slate-400">Excel or CSV export &mdash; the T12 sheet is detected and every line classified automatically.</p>'+
             (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; Setup built':'')+'</p>' : '')+
           '</div>'+
-          (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
+          (i.t12Meta && !i.t12Meta.ai ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
             '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
               (i.t12Meta.totals && i.t12Meta.totals.noi!=null ? ' &middot; statement NOI <b class="text-slate-700 tabular-nums">'+uwFmt(i.t12Meta.totals.noi)+'</b>' : '')+'</span>'+
             (i.t12Meta.periods.length>1 ? '<label class="flex items-center gap-1.5">Period basis <select data-uwf="basis" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">'+
               i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+(p.noi!=null?' &mdash; '+fmtMoney(p.noi):'')+'</option>').join('')+'</select></label>' : '')+
           '</div>' : '')+
+          (i.t12Meta && i.t12Meta.ai ? aiT12MetaHtml(i) : '')+
           (i.t12Meta && i.t12Meta.leaseUp ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
             '<span class="font-bold uppercase tracking-wide">Lease-up detected</span> &mdash; income ramped over the year, so the 12-month figure understates the stabilized NOI. '+
             'Pick a trailing-period basis above to annualize, or enter the stabilized rent-roll GPR. The in-place NOI below is exact for the selected basis.</div>' : '')+
@@ -3163,7 +3292,206 @@ tr[data-loan]:hover td{background:#eef2f7}
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
+      if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
     });
+
+    /* ================================================================
+       8a-UW-AI. AI-assisted Setup — "Read T12 with Claude" (ALTERNATIVE to the
+       rules-based T12Classify/SetupBuilder file path above; that path is left
+       fully intact). Sends the T12's raw text to Claude through the SAME AI
+       bridge as "Read Agreement" (ldsShell.aiExtract), then maps its structured
+       answer into the identical {rows, categories, totals} shape SetupBuilder.
+       fromParse() already expects from the rules-based path (see uwBuild()
+       above) — so the built Setup (build-up table, in-place vs underwritten
+       NOI, sizing) comes out of the exact same code either way. When the T12
+       prints its own TOTAL INCOME / TOTAL EXPENSES / NET OPERATING INCOME
+       footing, those figures are authoritative (fromParse folds any gap
+       between the detail lines and the printed totals into the catch-all
+       line so the Setup ties exactly) — we also surface that gap, if any, as
+       a small reconciliation note (aiT12MetaHtml) rather than let it pass
+       silently.
+       ================================================================ */
+    function aiT12Schema(){
+      return { type:"object", properties: {
+        periodLabel: { type:["string","null"] },
+        income:   { type:"array", items: { type:"object", properties: { label:{type:"string"}, annual:{type:"number"} }, required:["label","annual"] } },
+        expenses: { type:"array", items: { type:"object", properties: { label:{type:"string"}, annual:{type:"number"} }, required:["label","annual"] } },
+        totals: { type:"object", properties: {
+          totalIncome:   { type:["number","null"] },
+          totalExpenses: { type:["number","null"] },
+          noi:           { type:["number","null"] }
+        }, required:["totalIncome","totalExpenses","noi"] },
+        unitCount: { type:["integer","null"] }
+      }, required:["income","expenses","totals"] };
+    }
+    var AI_T12_INSTRUCTION = [
+      "You are extracting a property's trailing-12-month (T12) operating statement, provided in the <document> block on stdin, into a structured annual operating model. Return one JSON object using ONLY what the statement states — do not invent or estimate any figure that is not printed.",
+      "income: one entry per income line item as printed (Gross Potential Rent / Market Rent, vacancy loss, concessions, employee or model-unit discounts, bad debt, RUBS or other utility reimbursements, pet fees, parking, late fees, application fees, other income, etc.), each with its ANNUAL (12-month / T12 total column) dollar amount. Keep the sign exactly as printed — vacancy, concessions and bad debt are usually reductions and printed negative or in parentheses; keep them negative.",
+      "expenses: one entry per operating-expense line item as printed (real estate taxes, insurance, utilities, payroll, repairs & maintenance, contract services, management fee, general & administrative, marketing, trash removal, cable, etc.), each with its ANNUAL dollar amount as a POSITIVE number.",
+      "Do not include section headers or subtotal/\"Total ...\" rows as income or expense entries — only the individual line items underneath them.",
+      "totals: when the statement prints its OWN footing — a TOTAL INCOME (or TOTAL REVENUE) row, a TOTAL EXPENSES row, and a NET OPERATING INCOME row — read those PRINTED dollar values exactly into totals.totalIncome / totals.totalExpenses / totals.noi. These printed totals are AUTHORITATIVE: do not re-sum the detail lines yourself, and do not adjust or round them. If the statement does not print one of these footing rows, leave that field null rather than computing it.",
+      "unitCount: the property's total unit count, ONLY if it is stated on the statement itself (e.g. a header reading \"312 Units\"); otherwise null.",
+      "periodLabel: a short label for the statement's reporting period if stated, e.g. \"T12 ending 12/31/2025\"; otherwise null.",
+      "Return the JSON through the structured-output tool."
+    ].join("\n");
+
+    function aiT12Open(){ if(!aiAvailable()) return; el("aiT12Modal").classList.remove("hidden"); el("aiT12Modal").classList.add("flex"); aiT12SetStatus(""); el("aiT12Settings").classList.add("hidden"); aiT12RefreshConn(); }
+    function aiT12Close(){ const m=el("aiT12Modal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } }
+    function aiT12SetStatus(html, kind){
+      const s = el("aiT12Status"); if(!s) return;
+      if(!html){ s.classList.add("hidden"); s.innerHTML=""; return; }
+      const cls = kind==="error" ? "border border-rose-200 bg-rose-50 text-rose-700"
+                : kind==="ok" ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border border-slate-200 bg-slate-50 text-slate-600";
+      s.className = "rounded-xl px-4 py-3 text-sm "+cls; s.innerHTML = html;
+    }
+    var aiT12StatusCache = null;
+    function aiT12RefreshConn(){
+      const row = el("aiT12ConnRow"); if(!row) return;
+      row.innerHTML = '<span class="text-slate-400">Checking connection…</span>';
+      ldsShell.aiStatus().then((st)=>{
+        aiT12StatusCache = st;
+        const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
+        let ok=false, msg="";
+        if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
+        else if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
+        else if(st.mode==="cli" && !(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
+        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
+        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        row.innerHTML = '<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
+          (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+              :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
+          '<span class="text-[13px]">'+msg+'</span></div>';
+        el("aiT12Drop").classList.toggle("opacity-50", !ok);
+        el("aiT12Drop").classList.toggle("pointer-events-none", !ok);
+        if(!ok) aiT12ToggleSettings(true);
+      }).catch(()=>{ row.innerHTML='<span class="text-rose-600 text-[13px]">Could not reach the AI bridge.</span>'; });
+    }
+    function aiT12ToggleSettings(show){
+      const p = el("aiT12Settings"); if(!p) return;
+      const open = (show===true) || (show!==false && p.classList.contains("hidden"));
+      p.classList.toggle("hidden", !open);
+      if(open) aiT12RenderSettings();
+    }
+    function aiT12RenderSettings(){
+      const p = el("aiT12Settings"); if(!p) return; const st = aiT12StatusCache || {};
+      const mode = (st.mode)||"auto"; const cliOk = st.cli&&st.cli.available;
+      const opt = (v,label,note)=> '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiT12Mode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>';
+      p.innerHTML =
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="space-y-1.5">'+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
+          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
+        '</div>'+
+        '<div class="pt-1">'+
+          '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
+          '<div class="mt-1 flex gap-2"><input id="aiT12KeyInput" type="password" placeholder="sk-ant-…" class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          '<button id="aiT12KeySave" type="button" class="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Save</button>'+
+          (st.apiKey&&st.apiKey.configured?'<button id="aiT12KeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
+          '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
+        '</div>';
+      p.querySelectorAll('input[name="aiT12Mode"]').forEach(r=> r.addEventListener("change", ()=>{ ldsShell.aiSetMode(r.value).then(()=>aiT12RefreshConn()); }));
+      const ki=el("aiT12KeyInput"), ks=el("aiT12KeySave"), kc=el("aiT12KeyClear");
+      if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiT12RefreshConn(); aiT12RenderSettings(); }); });
+      if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); aiT12RefreshConn(); aiT12RenderSettings(); }); });
+    }
+    function aiT12HandleFile(file){
+      if(!file) return;
+      const name = file.name||"T12";
+      if(file.size > 8*1024*1024){ aiT12SetStatus("That file is large ("+Math.round(file.size/1024/1024)+" MB). Use a text/Markdown copy of the T12, not a scanned PDF.","error"); return; }
+      const reader = new FileReader();
+      reader.onload = (e)=> aiT12ExtractAndBuild(String(e.target.result||""), name);
+      reader.onerror = ()=> aiT12SetStatus("Could not read that file.","error");
+      reader.readAsText(file);
+    }
+    // Map Claude's { periodLabel, income, expenses, totals, unitCount } answer into
+    // the SAME { rows, categories, totals } shape T12Parse.parseGrid() produces —
+    // i.e. exactly what SetupBuilder.fromParse() (used by the rules-based path in
+    // uwBuild() above) already expects. categories is left empty; rows get the T12
+    // classifier applied to their label text just like any other detail line.
+    function aiT12ToParsed(data){
+      const rows = [], num = (v)=> (typeof v==="number" && isFinite(v)) ? v : null;
+      (Array.isArray(data.income) ? data.income : []).forEach((x)=>{
+        const amt = x && num(Number(x.annual));
+        if(x && x.label!=null && amt!=null) rows.push({ name:String(x.label), amount:amt, section:"INCOME", sub:"" });
+      });
+      (Array.isArray(data.expenses) ? data.expenses : []).forEach((x)=>{
+        const amt = x && num(Number(x.annual));
+        if(x && x.label!=null && amt!=null) rows.push({ name:String(x.label), amount:amt, section:"EXPENSE", sub:"" });
+      });
+      const t = data.totals || {};
+      const totals = { income: num(t.totalIncome), expense: num(t.totalExpenses), noi: num(t.noi) };
+      if(totals.noi==null && totals.income!=null && totals.expense!=null) totals.noi = totals.income - totals.expense;
+      return { rows: rows, categories: [], totals: totals };
+    }
+    // Compare Claude's own detail lines to the printed totals it also reported, so a
+    // gap between the two (e.g. Claude missed a line, or mis-signed one) is surfaced
+    // rather than silently absorbed by fromParse()'s reconcile-to-printed-total step.
+    function aiT12Reconcile(parsed){
+      let incRaw = 0, expRaw = 0;
+      parsed.rows.forEach((r)=>{ if(r.section==="INCOME") incRaw += r.amount; else expRaw += r.amount; });
+      const noiRaw = incRaw - expRaw;
+      return { incRaw:incRaw, expRaw:expRaw, noiRaw:noiRaw, noiPrinted: parsed.totals.noi,
+        diff: (parsed.totals.noi!=null) ? (noiRaw - parsed.totals.noi) : null };
+    }
+    function aiT12ExtractAndBuild(text, name){
+      if(!text || text.trim().length < 40){ aiT12SetStatus("That text looks empty or too short to be a T12.","error"); return; }
+      aiT12SetStatus('<span class="inline-flex items-center gap-2"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Reading <b>'+escapeHtml(name)+'</b> &mdash; this can take up to a minute or two for a long statement…</span>', "info");
+      ldsShell.aiExtract({ instruction: AI_T12_INSTRUCTION, schema: aiT12Schema(), input: text, timeoutMs: 300000 })
+        .then((r)=>{
+          if(!r || !r.ok){ aiT12SetStatus("Couldn’t read the T12. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiT12ConnFix" class="underline font-semibold">Connection settings</button>', "error"); const b=el("aiT12ConnFix"); if(b) b.addEventListener("click",()=>aiT12ToggleSettings(true)); return; }
+          const data = r.data || {};
+          const parsed = aiT12ToParsed(data);
+          if(!parsed.rows.length){ aiT12SetStatus("Claude didn’t find any income or expense line items in that T12. Is it the full operating statement?","error"); return; }
+          const rec = aiT12Reconcile(parsed);
+          const i = uwState.input;
+          i.aiParsed = parsed;
+          i.aiT12 = { periodLabel: (data.periodLabel || null), sourceName: name, reconcile: rec };
+          i.t12Grid = null; i.t12Text = ""; i.basis = "total";   // this AI path supersedes the rules-based file path
+          i.t12Rows = parsed.rows;
+          i.t12Meta = { ai:true, descCol:null, periods:[], totals: parsed.totals, categories: 0 };
+          if(!i.units && data.unitCount!=null){ const uc = Number(data.unitCount); if(isFinite(uc) && uc>0) i.units = Math.round(uc); }
+          saveUW();
+          aiT12Close();
+          renderUnderwriting();
+          toast("Setup built from the T12 by Claude — review the figures, then adjust benchmarks as needed", "check");
+        })
+        .catch((err)=> aiT12SetStatus("The AI request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), "error"));
+    }
+    // Small banner shown in place of the rules-based path's "Description col…" line
+    // when the Setup was built from Claude's answer: period label / line count /
+    // the T12's printed footing, plus a reconciliation note if Claude's own detail
+    // lines don't foot to the printed NOI it also reported.
+    function aiT12MetaHtml(i){
+      const t = (i.t12Meta && i.t12Meta.totals) || {};
+      const rec = (i.aiT12 && i.aiT12.reconcile) || null;
+      const parts = ['<span class="font-bold uppercase tracking-wide text-brand-700">Read by Claude</span>'];
+      if(i.aiT12 && i.aiT12.periodLabel) parts.push(escapeHtml(i.aiT12.periodLabel));
+      parts.push((i.t12Rows?i.t12Rows.length:0)+" lines read");
+      if(t.income!=null)  parts.push("printed total income "+uwFmt(t.income));
+      if(t.expense!=null) parts.push("printed total expenses "+uwFmt(t.expense));
+      if(t.noi!=null)      parts.push("printed NOI "+uwFmt(t.noi));
+      let note = "";
+      if(rec && rec.diff!=null && Math.abs(rec.diff) > 1){
+        note = '<div class="mt-1 text-amber-700">Claude&rsquo;s detail lines summed to a NOI of '+uwFmt(rec.noiRaw)+', '+(rec.diff>0?'above':'below')+' the statement&rsquo;s printed NOI of '+uwFmt(rec.noiPrinted)+' by '+uwFmt(Math.abs(rec.diff))+' &mdash; the built Setup below is reconciled exactly to the printed NOI (the gap was folded into its catch-all line).</div>';
+      }
+      return '<div class="rounded-xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-[11px] text-brand-800">'+
+        '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">'+parts.join(' &middot; ')+'</div>'+note+'</div>';
+    }
+    if(aiAvailable() && el("aiT12Modal")){
+      el("aiT12Close").addEventListener("click", aiT12Close);
+      el("aiT12Cancel").addEventListener("click", aiT12Close);
+      el("aiT12SettingsToggle").addEventListener("click", ()=>aiT12ToggleSettings());
+      el("aiT12FileBtn").addEventListener("click", ()=> el("aiT12File").click());
+      el("aiT12File").addEventListener("change", (e)=>{ const f=e.target.files&&e.target.files[0]; if(f) aiT12HandleFile(f); e.target.value=""; });
+      el("aiT12PasteBtn").addEventListener("click", ()=>{ const ta = el("aiT12Paste"); aiT12ExtractAndBuild(ta ? ta.value : "", "Pasted T12"); });
+      const drop = el("aiT12Drop");
+      drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.classList.add("border-brand-400","bg-brand-50"); });
+      drop.addEventListener("dragleave", ()=> drop.classList.remove("border-brand-400","bg-brand-50"));
+      drop.addEventListener("drop", (e)=>{ e.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) aiT12HandleFile(f); });
+      el("aiT12Modal").addEventListener("click", (e)=>{ if(e.target===el("aiT12Modal")) aiT12Close(); });
+    }
 
     /* ================================================================
        8a-TAB. TAB STRIP  —  Home + tool tabs (Calendar, Underwriting).
@@ -5590,6 +5918,7 @@ tr[data-loan]:hover td{background:#eef2f7}
        for the operator to REVIEW. Nothing is saved automatically.
        ================================================================ */
     function aiAvailable(){ return !!(window.ldsShell && ldsShell.aiExtract); }
+    function aiChatAvailable(){ return !!(window.ldsShell && ldsShell.aiChat); }   // free-form chat bridge (Assistant)
     // A JSON schema built from the app's own input fields, so extraction always
     // matches what a loan record needs. Every field is nullable and optional.
     function aiLoanSchema(){
@@ -5806,6 +6135,336 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
 
     /* ================================================================
+       8c. AI — explain / sanity-check the CURRENTLY SELECTED loan.
+       Sends a compact JSON snapshot of the loan's own stated terms plus a
+       few numbers already produced by the app's own amortization engine
+       (compute()/buildSchedule() — never reimplemented here) and asks
+       Claude for a plain-English summary and an internal-consistency
+       findings list. Read-only: nothing about the loan is changed.
+       ================================================================ */
+    function aiExplainSchema(){
+      return {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                severity: { type: "string", enum: ["info","warn","flag"] },
+                message: { type: "string" },
+              },
+              required: ["severity","message"],
+            },
+          },
+        },
+        required: ["summary","findings"],
+      };
+    }
+    var AI_EXPLAIN_INSTRUCTION = [
+      "You are a commercial real-estate loan analyst. You receive one JSON object on stdin describing a single loan record from a debt-service tracking tool: its stated contractual terms, plus a \"_computed\" block of numbers already produced by the app's own amortization engine (the first amortizing month's payment, the balloon/payoff balance at maturity, total interest over the term, the number of payments, IO months, current outstanding balance, and current total monthly debt service). Treat every _computed number as a given fact — do not recompute or contradict it.",
+      "Task 1 (summary): write 2 to 4 plain-English sentences briefing a colleague on this loan — property/lender, amount, rate & rate type, IO/amortization structure, term and maturity, and roughly what it costs per month.",
+      "Task 2 (findings): sanity-check the loan for INTERNAL CONSISTENCY only — never a market or pricing opinion (never say a rate is \"too high\" relative to the market; only flag it if it is outside a plausible band or contradicts another field). For each issue return one finding with a severity (\"flag\" = looks like a data error or is materially inconsistent; \"warn\" = plausible but worth a human's attention; \"info\" = a normal, worth-noting characteristic) and a one-sentence operator-facing message. Specifically check for:",
+      "- the balloon/payoff balance at maturity (_computed.balloonBalanceAtMaturity) larger than the original loan amount",
+      "- ioMonths greater than or equal to the loan term (the loan would never amortize)",
+      "- amortizationMonths shorter than loanTermMonths (the loan would fully repay before its stated maturity, i.e. no balloon when one might be expected, or a mismatch worth flagging)",
+      "- annualRate (for a fixed-rate loan) or the floor/cap/spread band (for a Floating or Hybrid ARM loan) outside a plausible 2%-15% range",
+      "- maturityDate before originationDate, or firstPaymentDate before originationDate",
+      "- a rate type of Floating or Hybrid ARM with no index and no spread set",
+      "- the computed first amortizing payment (_computed.firstAmortizingPaymentPerMonth) being 0 or not exceeding what plain interest on the balance would be (a payment that doesn't actually amortize)",
+      "- missing or zero reserves/escrows on a loan whose size suggests they'd normally be required (info/warn only — this can be genuinely not required, so never \"flag\" it alone)",
+      "- any other internal inconsistency between the stated fields",
+      "If nothing looks wrong, still return 1 to 3 \"info\" findings describing the loan's normal structure (e.g. its IO/amortization shape or upcoming maturity) — never return an empty findings array.",
+      "Return only the JSON object through the structured-output tool.",
+    ].join("\n");
+    // Build a compact JSON snapshot: every non-empty stated field (from the same
+    // field registry the rest of the app uses) plus the computed summary numbers.
+    function aiExplainBuildInput(loan, result){
+      const out = {};
+      INPUT_FIELDS.forEach((f)=>{ const v = loan[f.key]; if(v==null || v==="") return; out[f.key] = v; });
+      if(loan.prepayType) out.prepayType = loan.prepayType;
+      const d = result.derived;
+      const lastRow = result.rows.length ? result.rows[result.rows.length-1] : null;
+      const round2 = (n) => Math.round((n||0)*100)/100;
+      out._computed = {
+        firstAmortizingPaymentPerMonth: round2(d.amortizingPI),
+        balloonBalanceAtMaturity: round2(lastRow ? lastRow.startingBalance : d.currentBalance),
+        totalInterestOverTerm: round2(result.totalInterest),
+        numberOfPayments: loan.loanTermMonths || loan.amortizationMonths || 0,
+        ioMonths: d.originalIO || 0,
+        currentOutstandingBalance: round2(d.currentBalance),
+        totalMonthlyDebtServiceNow: round2(d.totalDebtService),
+      };
+      return out;
+    }
+    function aiExplainOpen(){
+      if(!aiAvailable()) return;
+      const loan = getLoan(state.activeId);
+      if(!loan){ toast("Select a loan first"); return; }
+      el("aiExplainLoanName").textContent = loanLabel(loan);
+      el("aiExplainRetry").hidden = true;
+      const m = el("aiExplainModal"); m.classList.remove("hidden"); m.classList.add("flex");
+      aiExplainRun(loan);
+    }
+    function aiExplainClose(){ const m=el("aiExplainModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } }
+    function aiExplainRun(loan){
+      const body = el("aiExplainBody"); if(!body) return;
+      el("aiExplainRetry").hidden = true;
+      body.innerHTML = '<div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">'+
+        '<svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>'+
+        'Checking this loan&hellip;</div>';
+      let result;
+      try { result = compute(loan); }
+      catch(e){ aiExplainRenderError("Could not compute this loan's schedule: "+escapeHtml(String((e&&e.message)||e))); return; }
+      const input = aiExplainBuildInput(loan, result);
+      ldsShell.aiExtract({ instruction: AI_EXPLAIN_INSTRUCTION, schema: aiExplainSchema(), input: JSON.stringify(input), timeoutMs: 120000 })
+        .then((r)=>{
+          if(!r || !r.ok){ aiExplainRenderError((r&&r.error)||"Unknown error."); return; }
+          aiExplainRenderResult(r.data||{});
+        })
+        .catch((err)=> aiExplainRenderError(String((err&&err.message)||err)));
+    }
+    function aiExplainRenderError(msg){
+      const body = el("aiExplainBody"); if(!body) return;
+      body.innerHTML = '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Couldn&rsquo;t check this loan. '+escapeHtml(msg).slice(0,300)+'</div>';
+      el("aiExplainRetry").hidden = false;
+    }
+    function aiExplainRenderResult(data){
+      const body = el("aiExplainBody"); if(!body) return;
+      const summary = (data.summary!=null) ? String(data.summary) : "";
+      const findings = Array.isArray(data.findings) ? data.findings : [];
+      const dotCls = (sev) => sev==="flag" ? "bg-rose-500" : sev==="warn" ? "bg-amber-500" : "bg-slate-400";
+      const list = findings.length
+        ? '<ul class="space-y-2">'+findings.map((f)=>
+            '<li class="flex items-start gap-2 text-sm"><span class="mt-1.5 inline-flex h-2 w-2 shrink-0 rounded-full '+dotCls(f&&f.severity)+'"></span>'+
+            '<span class="text-slate-700">'+escapeHtml((f&&f.message)||"")+'</span></li>').join('')+'</ul>'
+        : '<p class="text-sm text-slate-400">No findings returned.</p>';
+      body.innerHTML =
+        (summary ? '<p class="text-sm text-slate-700 leading-relaxed">'+escapeHtml(summary)+'</p>' : '')+
+        '<div><div class="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Findings</div>'+list+'</div>';
+      el("aiExplainRetry").hidden = false;
+    }
+
+    /* ================================================================
+       8d. AI — ASSISTANT (desktop shell only). A general in-app assistant:
+       answers questions about the portfolio (from a live JSON snapshot) or
+       anything else, AND performs a fixed set of SAFE app actions on request.
+       Actions are requested by Claude as a fenced ```action {json} block; the
+       app parses and runs them. Read/navigation actions run directly; loan
+       create/edit only PRE-FILL a form for the operator to review and Save —
+       the assistant never writes to the book itself. Uses the no-tools chat
+       bridge (ldsShell.aiChat).
+       ================================================================ */
+    var aiAsstHistory = [];     // [{role,text}] running thread
+    var aiAsstBusy = false, aiAsstConnected = false;
+    function aiAsstTodayISO(){ var t = todayParts(); return partsToISO(t.y, t.mo, t.d); }
+
+    // One compact record per loan: stored terms + a few live computed fields.
+    function aiAsstSnapshot(){
+      var keep = function(v){ return (v==null || v==="") ? undefined : v; };
+      return loans.map(function(l){
+        var d = {}; try { d = (compute(l).derived) || {}; } catch(e){ d = {}; }
+        var esc = {};
+        ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt","servicingFee","trusteeFee"].forEach(function(k){ if(l[k]) esc[k] = l[k]; });
+        var o = {
+          property: keep(l.propertyName) || loanLabel(l),
+          lender: keep(l.lenderName), propertyType: keep(l.propertyType), lienPosition: keep(l.lienPosition),
+          rateType: keep(l.rateType),
+          noteRate: (l.annualRate!=null && l.annualRate!=="") ? l.annualRate : undefined,
+          index: keep(l.index), spread: keep(l.spread),
+          originalAmount: keep(l.originalAmount), originationDate: keep(l.originationDate),
+          firstPaymentDate: keep(l.firstPaymentDate), maturityDate: keep(l.maturityDate) || keep(d.maturityDate),
+          loanTermMonths: keep(l.loanTermMonths), amortizationMonths: keep(l.amortizationMonths),
+          ioMonths: keep(l.ioMonths), amortMethod: keep(l.amortMethod),
+          currentBalance: keep(d.currentBalance), currentRate: keep(d.currentRate),
+          monthlyPI: keep(d.monthlyPI), totalMonthlyDebtService: keep(d.totalDebtService),
+          monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade)
+        };
+        if(Object.keys(esc).length) o.monthlyEscrowsAndFees = esc;
+        return o;
+      });
+    }
+    // A one-line description of what the operator is currently looking at.
+    function aiAsstContext(){
+      var parts = [];
+      if(state.mode==="view" || state.mode==="edit"){ var l=getLoan(state.activeId); if(l) parts.push('viewing the loan "'+loanLabel(l)+'"'); }
+      else if(state.mode==="portfolio") parts.push("on the whole-portfolio overview");
+      else if(state.mode==="add") parts.push("on the add-loan form");
+      else if(state.mode==="refi"){ var l2=getLoan(state.activeId); parts.push("on the refinance analysis"+(l2?(' for "'+loanLabel(l2)+'"'):"")); }
+      try { var tab=(ldsTabs.find(function(t){return t.id===ldsActiveTab;})||{}).kind;
+        if(tab==="underwriting") parts.push("the Underwriting & Sizing tab is open");
+        else if(tab==="calendar") parts.push("the Maturity & Reset Calendar is open"); } catch(e){}
+      return parts.length ? ("The operator is "+parts.join("; ")+".") : "";
+    }
+    var AI_ASST_SYSTEM = [
+      "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
+      "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
+      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted.",
+      "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",
+      "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
+      "- show_portfolio {}: show the whole-portfolio overview.",
+      "- open_calendar {}: open the Maturity & Reset Calendar.",
+      "- open_underwriting {}: open the Underwriting & Sizing tab.",
+      "- start_refinance {name}: open the refinance analysis for a loan.",
+      "- open_export {}: open the Export-to-Excel dialog.",
+      "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
+      "- propose_loan_change {name, changes}: open an existing loan in EDIT mode with proposed changes for the operator to review and save. changes uses the same keys.",
+      "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you saved, added, edited, or deleted anything: propose_new_loan and propose_loan_change only OPEN a pre-filled form the operator must review and Save themselves, so phrase them that way. If a requested action isn't in the list, say what the operator can do instead.",
+      "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
+    ].join("\n");
+
+    // --- action execution -------------------------------------------------
+    function aiAsstFindLoan(name){
+      if(name==null) return null;
+      var q = normName(name);
+      if(!q) return null;
+      var exact = loans.find(function(l){ return normName(l.propertyName||loanLabel(l))===q; });
+      if(exact) return exact;
+      return loans.find(function(l){ var nm=normName(l.propertyName||loanLabel(l)); return nm.indexOf(q)>=0 || q.indexOf(nm)>=0; }) || null;
+    }
+    var aiAsstActions = {
+      open_loan: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+"."}; },
+      show_portfolio: function(){ setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
+      open_calendar: function(){ if(typeof openTab==="function") openTab("calendar"); return {ok:true,close:true,msg:"Opened the Maturity & Reset Calendar."}; },
+      open_underwriting: function(){ if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
+      start_refinance: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); startRefi(); return {ok:true,close:true,msg:"Opened the refinance analysis for "+loanLabel(l)+"."}; },
+      open_export: function(){ if(typeof openExportPreview==="function") openExportPreview(); return {ok:true,close:true,msg:"Opened the Export-to-Excel dialog."}; },
+      propose_new_loan: function(a){ var clean=aiSanitize((a&&a.fields)||{}); if(!Object.keys(clean).length) return {ok:false,msg:"I didn’t have enough valid fields to draft a loan."}; state.draft=Object.assign(emptyLoan(), clean, {_id:uid(), isHistorical:true}); setMode("add"); return {ok:true,close:true,msg:"Opened a new-loan form pre-filled with "+Object.keys(clean).length+" field(s) — review every field, then Save."}; },
+      propose_loan_change: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; var clean=aiSanitize((a&&a.changes)||{}); if(!Object.keys(clean).length) return {ok:false,msg:"I didn’t have a valid change to propose."}; state.activeId=l._id; state.draft=Object.assign(JSON.parse(JSON.stringify(l)), clean); state.mode="edit"; render(); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+" in edit mode with proposed change to "+Object.keys(clean).join(", ")+" — review and Save."}; }
+    };
+    function aiAsstParseAction(text){
+      if(!text) return {text:text, action:null};
+      var m = text.match(/```(?:[a-zA-Z]+)?\s*(\{[\s\S]*\})\s*```/);
+      if(m){ var obj=null; try{ obj=JSON.parse(m[1]); }catch(e){} if(obj&&obj.action) return {text:text.replace(m[0],"").trim(), action:obj}; }
+      var m2 = text.match(/(\{\s*"action"\s*:[\s\S]*\})\s*$/);
+      if(m2){ try{ var o2=JSON.parse(m2[1]); if(o2&&o2.action) return {text:text.slice(0,m2.index).trim(), action:o2}; }catch(e){} }
+      return {text:text, action:null};
+    }
+    function aiAsstRunAction(obj){
+      var fn = aiAsstActions[obj.action];
+      if(!fn) return {ok:false,msg:"(unknown action: "+String(obj.action)+")"};
+      try { return fn(obj.args||{}) || {ok:true}; }
+      catch(e){ return {ok:false,msg:"That couldn’t be completed: "+String((e&&e.message)||e)}; }
+    }
+
+    function aiAsstOpen(){
+      if(!aiChatAvailable()) return;
+      el("aiAsstModal").classList.remove("hidden"); el("aiAsstModal").classList.add("flex");
+      el("aiAsstSettings").classList.add("hidden");
+      if(!aiAsstHistory.length) aiAsstRenderWelcome();
+      aiAsstRefreshConn();
+      var i=el("aiAsstInput"); if(i) setTimeout(function(){ try{ i.focus(); }catch(e){} }, 50);
+    }
+    function aiAsstClose(){ var m=el("aiAsstModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } }
+    function aiAsstRenderWelcome(){
+      var log=el("aiAsstLog"); if(!log) return; var n=loans.length;
+      var qs=["What is my total monthly debt service?","Which loans mature in the next 24 months?","What's the weighted-average interest rate?","Show me the portfolio overview"];
+      var chips=qs.map(function(q){ return '<button type="button" class="aiAsstChip rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100" data-q="'+escapeHtml(q)+'">'+escapeHtml(q)+'</button>'; }).join("");
+      log.innerHTML =
+        '<div class="text-center text-sm text-slate-500 py-4">'+
+          '<div class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-brand-50 text-brand-600"><svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg></div>'+
+          '<p class="font-semibold text-slate-700">Your assistant across '+n+' loan'+(n===1?"":"s")+'</p>'+
+          '<p class="mt-1 text-xs text-slate-400">Ask about the portfolio or anything else, or tell me to do something. Try one:</p>'+
+          '<div class="mt-3 flex flex-wrap justify-center gap-2">'+chips+'</div>'+
+        '</div>';
+    }
+    function aiAsstBubble(role, html, opts){
+      opts=opts||{}; var log=el("aiAsstLog"); if(!log) return null;
+      if(log.querySelector(".aiAsstChip")) log.innerHTML="";
+      var wrap=document.createElement("div"); wrap.className="flex "+(role==="user"?"justify-end":"justify-start");
+      var b=document.createElement("div");
+      b.className = role==="user"
+        ? "max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap break-words"
+        : "max-w-[90%] rounded-2xl rounded-bl-md border px-4 py-2.5 text-sm whitespace-pre-wrap break-words leading-relaxed "+(opts.error?"border-rose-200 bg-rose-50 text-rose-700":"border-slate-200 bg-slate-50 text-slate-800");
+      b.innerHTML=html; wrap.appendChild(b); log.appendChild(wrap); log.scrollTop=log.scrollHeight; return b;
+    }
+    function aiAsstAsk(question){
+      question=String(question==null?"":question).trim();
+      if(!question || aiAsstBusy || !aiAsstConnected) return;
+      var input=el("aiAsstInput"); if(input) input.value="";
+      aiAsstBubble("user", escapeHtml(question));
+      aiAsstHistory.push({role:"user", text:question});
+      aiAsstSetBusy(true);
+      var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Thinking…</span>');
+      var snap=aiAsstSnapshot();
+      var thread=aiAsstHistory.slice(0,-1).map(function(m){ return (m.role==="user"?"User: ":"Assistant: ")+m.text; }).join("\n\n");
+      var prompt =
+        "Today's date is "+aiAsstTodayISO()+".\n\n"+
+        (aiAsstContext()?("Current view: "+aiAsstContext()+"\n\n"):"")+
+        "Loan portfolio ("+snap.length+" loans) as JSON:\n<portfolio>\n"+JSON.stringify(snap)+"\n</portfolio>\n\n"+
+        (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
+        "User: "+question;
+      ldsShell.aiChat({ system: AI_ASST_SYSTEM, prompt: prompt, timeoutMs: 120000 })
+        .then(function(r){
+          if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking);
+          if(!r||!r.ok){ aiAsstBubble("assistant", "Sorry — I couldn’t respond. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiAsstConnFix" class="underline font-semibold">Connection settings</button>', {error:true}); var b=el("aiAsstConnFix"); if(b) b.addEventListener("click", function(){ aiAsstToggleSettings(true); }); aiAsstSetBusy(false); return; }
+          var full=String(r.text||"").trim();
+          var parsed=aiAsstParseAction(full);
+          if(parsed.text) aiAsstBubble("assistant", escapeHtml(parsed.text));
+          else if(!parsed.action) aiAsstBubble("assistant", "(no answer)");
+          aiAsstHistory.push({role:"assistant", text:full});
+          if(parsed.action){
+            var res=aiAsstRunAction(parsed.action);
+            if(res&&res.msg) aiAsstBubble("assistant", '<span class="'+(res.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(res.ok?"✓ ":"")+escapeHtml(res.msg)+'</span>', {error:!res.ok});
+            if(res&&res.ok&&res.close) setTimeout(function(){ aiAsstClose(); toast(res.msg,"check"); }, 400);
+          }
+          aiAsstSetBusy(false);
+        })
+        .catch(function(err){ if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant", "The request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), {error:true}); aiAsstSetBusy(false); });
+    }
+    function aiAsstSetBusy(b){ aiAsstBusy=b; var s=el("aiAsstSend"); if(s) s.disabled=aiAsstBusy||!aiAsstConnected; }
+    function aiAsstRefreshConn(){
+      var row=el("aiAsstConnRow"); if(!row) return;
+      row.innerHTML='<span class="text-slate-400">Checking connection…</span>';
+      ldsShell.aiStatus().then(function(st){
+        aiStatusCache=st;
+        var usingApi=st.mode==="api"||(st.mode==="auto"&&!(st.cli&&st.cli.available));
+        var ok=false,msg="";
+        if((st.mode==="cli"||st.mode==="auto")&&st.cli&&st.cli.available&&!usingApi){ ok=true; msg='Connected &middot; using your <b>Claude Code subscription</b>'; }
+        else if(st.apiKey&&st.apiKey.configured&&(usingApi||st.mode==="api")){ ok=true; msg='Connected &middot; using your <b>Anthropic API key</b>'; }
+        else if(st.mode==="cli"&&!(st.cli&&st.cli.available)){ msg='CLI mode is selected but Claude Code was not found on this machine.'; }
+        else if(st.mode==="api"){ msg='API mode is selected but no API key is set.'; }
+        else { msg='Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.'; }
+        row.innerHTML='<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
+          (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+              :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
+          '<span class="text-[13px]">'+msg+'</span></div>';
+        aiAsstConnected=ok; aiAsstSetBusy(aiAsstBusy);
+        if(!ok) aiAsstToggleSettings(true);
+      }).catch(function(){ row.innerHTML='<span class="text-rose-600 text-[13px]">Could not reach the AI bridge.</span>'; aiAsstConnected=false; aiAsstSetBusy(false); });
+    }
+    function aiAsstToggleSettings(show){
+      var p=el("aiAsstSettings"); if(!p) return;
+      var open=(show===true)||(show!==false&&p.classList.contains("hidden"));
+      p.classList.toggle("hidden", !open);
+      if(open) aiAsstRenderSettings();
+    }
+    function aiAsstRenderSettings(){
+      var p=el("aiAsstSettings"); if(!p) return; var st=aiStatusCache||{};
+      var mode=(st.mode)||"auto"; var cliOk=st.cli&&st.cli.available;
+      var opt=function(v,label,note){ return '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="aiAsstMode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>'; };
+      p.innerHTML=
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="space-y-1.5">'+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
+          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
+        '</div>'+
+        '<div class="pt-1">'+
+          '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
+          '<div class="mt-1 flex gap-2"><input id="aiAsstKeyInput" type="password" placeholder="sk-ant-…" class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          '<button id="aiAsstKeySave" type="button" class="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Save</button>'+
+          (st.apiKey&&st.apiKey.configured?'<button id="aiAsstKeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
+          '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
+        '</div>';
+      p.querySelectorAll('input[name="aiAsstMode"]').forEach(function(r){ r.addEventListener("change", function(){ ldsShell.aiSetMode(r.value).then(function(){ aiAsstRefreshConn(); }); }); });
+      var ki=el("aiAsstKeyInput"), ks=el("aiAsstKeySave"), kc=el("aiAsstKeyClear");
+      if(ks) ks.addEventListener("click", function(){ var v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(function(){ if(ki) ki.value=""; toast("API key saved","check"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
+      if(kc) kc.addEventListener("click", function(){ ldsShell.aiSetKey("").then(function(){ toast("API key cleared"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
+    }
+
+    /* ================================================================
        9. EVENT WIRING
        ================================================================ */
     dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
@@ -5832,6 +6491,27 @@ tr[data-loan]:hover td{background:#eef2f7}
     // menu entry and shows a live Connected / Not set badge.
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
+    // AI: explain / sanity-check the selected loan (desktop shell only)
+    if(aiAvailable() && el("aiExplainBtn")){
+      el("aiExplainBtn").hidden = false;
+      el("aiExplainBtn").addEventListener("click", aiExplainOpen);
+      el("aiExplainClose").addEventListener("click", aiExplainClose);
+      el("aiExplainCancel").addEventListener("click", aiExplainClose);
+      el("aiExplainRetry").addEventListener("click", ()=>{ const loan=getLoan(state.activeId); if(loan) aiExplainRun(loan); });
+      el("aiExplainModal").addEventListener("click", (e)=>{ if(e.target===el("aiExplainModal")) aiExplainClose(); });
+    }
+    // AI: the in-app assistant (desktop shell only) — floating button opens a chat
+    // that answers questions and performs safe actions on request.
+    if(aiChatAvailable() && el("aiAsstFab")){
+      el("aiAsstFab").hidden = false;
+      el("aiAsstFab").addEventListener("click", aiAsstOpen);
+      el("aiAsstClose").addEventListener("click", aiAsstClose);
+      el("aiAsstSettingsToggle").addEventListener("click", ()=>aiAsstToggleSettings());
+      el("aiAsstSend").addEventListener("click", ()=> aiAsstAsk(el("aiAsstInput").value));
+      el("aiAsstInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); aiAsstAsk(el("aiAsstInput").value); } });
+      el("aiAsstLog").addEventListener("click", (e)=>{ const c=e.target.closest(".aiAsstChip"); if(c) aiAsstAsk(c.getAttribute("data-q")); });
+      el("aiAsstModal").addEventListener("click", (e)=>{ if(e.target===el("aiAsstModal")) aiAsstClose(); });
+    }
     // Quick-jump: scroll the amortization schedule to a key payment date and flash the row.
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-scheduljump]"); if(!b) return;

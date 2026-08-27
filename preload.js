@@ -93,4 +93,6 @@ contextBridge.exposeInMainWorld('ldsShell', {
   aiSetMode: (mode) => ipcRenderer.invoke('lds:ai-set-mode', { mode }),
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
+  // Free-form chat (no tools): {system, prompt, model?, timeoutMs?} → {ok,text,via,error}.
+  aiChat: (opts) => ipcRenderer.invoke('lds:ai-chat', opts),
 });
