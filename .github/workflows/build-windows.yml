@@ -38,7 +38,7 @@ jobs:
           EV=$(node -p "require('electron/package.json').version")
           echo "Compiling node-pty for Electron $EV"
           cd node_modules/@homebridge/node-pty-prebuilt-multiarch
-          npx --yes node-gyp@latest rebuild --target="$EV" --arch=x64 --dist-url=https://electronjs.org/headers
+          npx --yes node-gyp@10 rebuild --target="$EV" --arch=x64 --dist-url=https://electronjs.org/headers
           ls -la build/Release/ || true
 
       - name: Build Windows installer (NSIS)
