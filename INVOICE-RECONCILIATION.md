@@ -49,8 +49,12 @@ in production with live SOFR it tracks the real rate. The invoices give us the a
 | Reatta Ranch | 6.13% | **6.1875%** | Ties at the real rate; app proxy within ~0.06% |
 | Legacy at Kissimmee | 7.63% on $41M | **~7.646%** on **$37,688,268 drawn** | See finding #4 — construction draw balance |
 
-The engine math is correct; only the index level differs (expected). **Action: none required** — but the
-real rates are now on record, and in the live app they'll match closely.
+The engine math is correct; only the index level differs (expected). **Now addressed by the historical-rate
+engine:** the app prices each *already-paid* floating month at the index that was in effect **that** month
+(NY-Fed SOFR / Treasury history, cached), so in the live app these floaters **tie to their invoices** rather
+than showing today's rate on old rows. Verified with seeded history — Reatta's July/August rows reproduce the
+invoices at 6.1875% ($242,343.75 / $250,421.88). Dead-LIBOR loans (K2 senior, Pepper) are excluded (no rate
+history — see the Azriel questions).
 
 ---
 
@@ -106,14 +110,12 @@ re-amortization is skipped, which is exactly right here): set **Fixed P&I $151,6
 Hybrid ARM. Verified in Electron: pre-reset every month pays $151,604.11 (July split within ~$270 of the invoice);
 post-reset the payment stays $151,604.11 and goes **entirely to interest, principal $0**, balance flat — the exact
 mechanic. This also fixes the earlier ~$882 pre-reset gap (the app now uses the true $151,604.11 payment).
-- **Open — needs the loan doc:** the **reset RATE**. The app prices the reset as 5-yr UST + 2.63%; **offline** the
-  UST fallback (4.16%) makes that 6.79%, which overstates the post-reset *interest line* ($194k vs the invoice's
-  $151,604.11). The invoice implies the real reset rate is **~5.3%** (5-yr UST was ~2.67% at the reset; 2.67% +
-  2.63% margin = ~5.3%, which ties) — so the app's **margin looks right** and the overshoot is just the offline
-  index; with the live UST it should track. Still unconfirmed from a document: the exact **index, margin, and any
-  rate cap**, and **whether the loan negative-amortizes** if interest exceeds the fixed payment (the app currently
-  floors principal at $0 and holds the balance flat — correct only if the payment covers the interest). Confirm
-  against the ARM rider when available.
+- **Reset rate — now handled by the historical-rate engine.** The adjustable period now **locks at the 5-yr
+  Treasury as of the July-2026 reset date** (+ the 2.63% margin), instead of today's rate — verified at **5.30%**
+  with the real July-2026 UST (~2.67%), matching the invoice, versus the old 6.79%. So in the live app the reset
+  prices correctly. Still unconfirmed **from a document** (Q — Living Lofts ARM rider): the exact **index, margin,
+  and any rate cap**, and **whether the loan negative-amortizes** if interest ever exceeds the fixed payment (the
+  app floors principal at $0 and holds the balance flat — correct only while the payment covers the interest).
 
 ---
 

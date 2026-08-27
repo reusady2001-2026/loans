@@ -505,6 +505,10 @@ and the full amortization schedule match the document **to the cent**.
 
 **Q7 — Legacy at Kissimmee: current draw & budget contingency.** Now that Legacy is modeled (§22): what is the **current drawn balance** against the $41,000,000 commitment (modeled at full commitment; it funds by draws)? ✅ **Draw answered by the invoices:** a BHI statement shows the current **drawn balance $37,688,268** (real rate ~7.646%) — see `INVOICE-RECONCILIATION.md` finding #4; the balance keeps rising as the project draws. Still open: the **budget-contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; intentional (read per-line-item) or an OCR artifact?
 
+**Q8 — Dead-LIBOR rate history (K2 Sweetwater senior, Pepper Building).** The app now prices every floating loan's *already-paid* months at the index that was in effect that month (historical SOFR / Treasury) — so those floaters tie to their servicer statements. But **K2 senior and Pepper were real LIBOR loans**, and LIBOR is dead with no feed, so they're **excluded** from the rate-history engine (flagged `noRateHistory`) and still show a SOFR-proxy rate. Ask Azriel: do we (a) accept approximating their history with SOFR + the old LIBOR spread, or (b) get their actual historical rates / statements? (Ties into the Pepper Q4 and K2 Q1–Q3 items — the current specifics for those loans are still outstanding.)
+
+**Q9 — Living Lofts: ARM rider.** The reset is now modeled off the historical 5-yr Treasury (§ finding #5 — it lands at ~5.30%, matching the statements). Still worth confirming from the actual document: the exact **reset index, margin, and any periodic/lifetime rate cap**, and **whether the loan negative-amortizes** if the interest ever exceeds the fixed $151,604.11 payment (today the app floors principal at $0 and holds the balance flat).
+
 ---
 
 ## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
