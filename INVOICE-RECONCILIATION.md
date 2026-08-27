@@ -94,11 +94,26 @@ Construction loan modeled at the full **$41M commitment**; the invoice bills the
 $37,688,268** at the real rate (~7.646%). Both Actual/360, both IO — the difference is the draw-down, which
 the app doesn't track. → **Note the current drawn balance; it will keep rising as the project draws.**
 
-**5. Living Lofts (Middlesex) — the app's ARM reset is wrong for the current period.**
-Two issues: (a) pre-reset, the invoice P&I is **$151,604.11** vs the app's **$150,722.27** (~$882/mo);
-(b) more seriously, the app **resets this ARM to 6.79% in Aug 2026** (payment jumps to $223,530), but the
-invoice shows it **still at ~3.1–3.3%** ($151,604.11 in both July and August). The app's reset timing and/or
-rate does not match reality. → **Needs the loan doc / actual reset terms — this is the most material modeling gap.**
+**5. Living Lofts (Middlesex) — it's a FIXED-payment ARM; the app was re-amortizing at reset.** ✅ **RE-MODELED (per Yuval's spec).**
+Per Yuval, the payment is a **fixed $151,604.11**, and the ARM **did** reset between the July and August 2026
+statements — the new rate made the interest **hit the payment ceiling**, so the whole payment went to interest.
+The invoices bear this out: **July** bills $85,654.57 interest + $65,949.54 principal = $151,604.11; **August**
+bills **$151,604.11 interest, $0.00 principal** (statement shows only an Interest line). Maturity **07-01-2031**
+confirms the 5+5 hybrid ARM.
+The app was **re-amortizing** at the reset (jumping the payment to ~$223,530). Fixed via the engine's Fixed-P&I
+mode **with** the ARM reset (the rate resets in `rateForMonth` even under Fixed P&I — only the payment
+re-amortization is skipped, which is exactly right here): set **Fixed P&I $151,604.11**, Actual/360, keeping the
+Hybrid ARM. Verified in Electron: pre-reset every month pays $151,604.11 (July split within ~$270 of the invoice);
+post-reset the payment stays $151,604.11 and goes **entirely to interest, principal $0**, balance flat — the exact
+mechanic. This also fixes the earlier ~$882 pre-reset gap (the app now uses the true $151,604.11 payment).
+- **Open — needs the loan doc:** the **reset RATE**. The app prices the reset as 5-yr UST + 2.63%; **offline** the
+  UST fallback (4.16%) makes that 6.79%, which overstates the post-reset *interest line* ($194k vs the invoice's
+  $151,604.11). The invoice implies the real reset rate is **~5.3%** (5-yr UST was ~2.67% at the reset; 2.67% +
+  2.63% margin = ~5.3%, which ties) — so the app's **margin looks right** and the overshoot is just the offline
+  index; with the live UST it should track. Still unconfirmed from a document: the exact **index, margin, and any
+  rate cap**, and **whether the loan negative-amortizes** if interest exceeds the fixed payment (the app currently
+  floors principal at $0 and holds the balance flat — correct only if the payment covers the interest). Confirm
+  against the ARM rider when available.
 
 ---
 
