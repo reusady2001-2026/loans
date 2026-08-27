@@ -21,7 +21,26 @@ let _app = null;
 function init(app){ _app = app; }
 
 const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api guidance)
-const CLI_BIN = process.env.LDS_CLAUDE_BIN || 'claude';
+// Resolve the Claude Code binary. Prefer the copy BUNDLED inside the app (so the
+// user never installs Claude Code separately — it ships in the platform optional
+// dependency @anthropic-ai/claude-code-<os>-<arch>); fall back to a globally
+// installed `claude` on PATH; honor LDS_CLAUDE_BIN as a test override.
+function bundledClaudePath(){
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const osKey = process.platform === 'win32' ? 'win32' : (process.platform === 'darwin' ? 'darwin' : 'linux');
+  const bin = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  const rel = path.join('node_modules', '@anthropic-ai', 'claude-code-' + osKey + '-' + arch, bin);
+  const roots = [];
+  try { if (_app && _app.isPackaged && process.resourcesPath) roots.push(path.join(process.resourcesPath, 'app.asar.unpacked')); } catch (e) {}
+  roots.push(__dirname);                       // dev / unpacked: alongside this file (app root)
+  try { roots.push(process.cwd()); } catch (e) {}
+  for (const r of roots){ const c = path.join(r, rel); try { if (fs.existsSync(c)) return c; } catch (e) {} }
+  return null;
+}
+function cliBin(){
+  if (process.env.LDS_CLAUDE_BIN) return process.env.LDS_CLAUDE_BIN;   // test override
+  return bundledClaudePath() || 'claude';                              // bundled copy, else a global install
+}
 
 function cfgPath(){ return path.join(_app.getPath('userData'), 'ai-config.json'); }
 function readCfg(){ try { return JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) || {}; } catch (e) { return {}; } }
@@ -34,7 +53,7 @@ function detectCli(){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => finish({ available: false }), 6000);
     let p;
-    try { p = spawn(CLI_BIN, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+    try { p = spawn(cliBin(),['--version'], { stdio: ['ignore', 'pipe', 'ignore'], env: cliEnv() }); }
     catch (e) { return finish({ available: false }); }
     let out = '';
     p.stdout.on('data', (d) => { out += d; });
@@ -53,7 +72,12 @@ function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].inde
 
 // Environment for a `claude` spawn: inject the stored subscription OAuth token so
 // the CLI runs on the user's Claude subscription (no API key, no per-use billing).
-function cliEnv(){ const c = readCfg(); const e = Object.assign({}, process.env); if (c.oauthToken) e.CLAUDE_CODE_OAUTH_TOKEN = c.oauthToken; return e; }
+function cliEnv(){
+  const c = readCfg(); const e = Object.assign({}, process.env);
+  if (c.oauthToken) e.CLAUDE_CODE_OAUTH_TOKEN = c.oauthToken;
+  try { if (_app) e.CLAUDE_CONFIG_DIR = path.join(_app.getPath('userData'), 'claude'); } catch (err) {}   // isolate creds from the user's global ~/.claude
+  return e;
+}
 
 // Sign in to the user's Claude subscription in the BROWSER. `claude setup-token`
 // opens the browser to the OAuth flow and prints a (1-year) token to stdout; we
@@ -65,7 +89,7 @@ function login(){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for the browser sign-in (5 minutes). Please try again.' }); }, 300000);
     let p;
-    try { p = spawn(CLI_BIN, ['setup-token'], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { p = spawn(cliBin(),['setup-token'], { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start Claude Code. Install Claude Code first, then try again.' }); }
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -108,7 +132,7 @@ function runCli({ instruction, schema, input, model, timeoutMs }){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out reading the document (over ' + Math.round((timeoutMs || 240000) / 1000) + 's).' }); }, timeoutMs || 240000);
     let p;
-    try { p = spawn(CLI_BIN, args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
+    try { p = spawn(cliBin(),args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -158,7 +182,7 @@ function runCliChat({ system, prompt, model, timeoutMs }){
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
     let p;
-    try { p = spawn(CLI_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
+    try { p = spawn(cliBin(),args, { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
