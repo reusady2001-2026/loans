@@ -2,30 +2,31 @@
 
 Deferred / planned work.
 
-## "Fixed payment" option — use the payment exactly as written in the agreement
-Some lenders (e.g. Customers Bank) state a monthly P&I in the note that they sized
-on a **true Actual/360** basis, which differs from the 30/360 annuity the app
-computes. Add a per-loan option to **lock the P&I to the exact figure written in the
-loan agreement** instead of computing it, so those loans tie to their notes to the cent.
+_(No open items right now.)_
 
-**Data to apply when this ships (from validated agreements):**
-- **36 Washington Ave (Carteret)** — Customers Bank, fixed-period P&I **$384,807.04/mo**
-  (Note §2(C); the app currently computes $381,247.02, ~$3,560/mo lower). The
-  reset-period payment (from 1/1/2031) recalculates at the reset rate over a
-  **26-year** amortization — so a "fixed payment" must still re-amortize at the reset.
-- **1222 Commerce St (Manor House)** — the other Customers Bank Actual/360 Hybrid ARM.
-  **Confirmed against the executed Note** (Closing Binder, ¶2(C)): fixed-period P&I
-  **$148,062.35/mo** (30-yr amort basis, Actual/360); the app computes **$146,650.74**
-  (30/360 annuity), ~**$1,411.61/mo lower**. Same reset mechanic as Carteret — ¶2(D)
-  re-amortizes over a **26-year** schedule at the reset rate (greater of 6.10% or
-  UST5Y+2.50%) from 5/1/2031, which the app already reproduces to the cent.
-- The Fannie loans (Euclid, Florence, Burlington, Crest, Lofts) already tie to the cent
-  (they use a 30/360 annuity), so they do not need this.
-
-_Caveat:_ the current `amortType:"Fixed P&I"` mode disables ARM resets, so it can't be
-used as-is for a reset loan like Carteret — the feature needs stated-payment + reset together.
+## Possible future refinement — re-amortize the stated payment at an ARM reset
+The `amortType:"Fixed P&I"` loans that also have an ARM reset (Carteret, 1222 Commerce)
+**hold** the stated payment across the reset — interest re-prices at the new rate, but the
+payment stays put. Their notes technically **re-amortize** the balance over the remaining
+term at the then-current reset rate (Carteret 26-yr from 1/1/2031; 1222 Commerce ¶2(D) 26-yr
+from 5/1/2031). Because that reset rate is future-UST-dependent (unknowable today), holding is
+a defensible approximation and is what both loans currently do; a future refinement could
+re-amortize at the projected reset rate instead. The **fixed-period** payment ties to each
+note to the cent either way.
 
 ## Done
+- **"Fixed payment" — use the exact P&I written in the note.** `amortType:"Fixed P&I"` +
+  `fixedAmortAmount` locks the stated monthly P&I instead of computing a 30/360 annuity, and
+  now composes with ARM resets (the reset re-prices interest and holds the stated payment).
+  Applied to the two Customers Bank Actual/360 Hybrid ARMs:
+  - **The Botanic (Carteret)** — $384,807.04/mo (Note §2(C)); ties to the cent (120 rows).
+  - **1222 Commerce St (Manor House)** — $148,062.35/mo (Note ¶2(C)); ties to the cent,
+    replacing the prior $146,650.74 30/360 annuity (~$1,411.61/mo low).
+  The Fannie loans (Euclid, Florence, Burlington, Crest, Lofts) already tie via a 30/360 annuity.
+- **Fixed-loan index cleanup.** The blank-form default (`emptyLoan` seeds `index:"sofr"`) left a
+  cosmetic, unused index on Fixed-rate loans with no spread; `migrateLoan` now clears it on load
+  (rate untouched — Fixed loans price off `annualRate`). Floating/Hybrid ARM `index+spread` are
+  left alone.
 - **Backup / Restore (whole portfolio)** — shipped in v1.5.0 (Data menu):
   export the whole portfolio to a single file (native Save), restore from one
   (native Open), for moving between machines, sharing, and archiving.

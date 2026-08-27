@@ -1928,6 +1928,15 @@
                 : /prime/.test(s) ? "prime"
                 : /fed.?fund|effr/.test(s) ? "effr" : "other";
       }
+      // A Fixed-rate loan with an index but NO spread is carrying the blank-form
+      // default (emptyLoan seeds index:"sofr"); fixedRate() ignores it and prices off
+      // annualRate, so it's a cosmetic leftover that shouldn't read as a real term
+      // (and shouldn't get flagged by the AI sanity-check). Clear it. Loans that
+      // actually price off an index + spread, and all Floating/Hybrid ARM loans, are
+      // untouched (their spread is set / their rateType isn't Fixed).
+      if(l && l.rateType === "Fixed" && l.index && (l.spread==null || l.spread==="")){
+        l.index = ""; l.rateFloor = null; l.rateCap = null;
+      }
       // A loan named "... (Mezz)" but stored as Senior (e.g. imported from a
       // spreadsheet with no lien column) is a mezzanine — correct it on load.
       if(l && l.lienPosition !== "Mezzanine" && /\(\s*mezz/i.test(String(l.propertyName||""))){
@@ -2020,18 +2029,19 @@
         if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){
           const migrated = arr.map(migrateLoan);
           const res = syncPortfolio(migrated);
+          const finalLoans = res.loans.map(migrateLoan);   // normalize synced-in seed loans too (Fixed-index cleanup etc.)
           if(res.changed){
             // snapshot the book BEFORE persisting the sync, so it is fully reversible
             try { if(window.ldsShell && window.ldsShell.isDesktop && window.ldsShell.autoBackupWrite){ window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(migrated)), "before-portfolio-sync"); } } catch(e){}
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(res.loans)); } catch(e){}
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(finalLoans)); } catch(e){}
             window.__LDS_SYNC_SUMMARY = res;               // surfaced as a one-time notice after first render
           }
           try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // don't re-check every load
-          return res.loans;
+          return finalLoans;
         } }
       } catch(e){}
       try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // fresh install already carries the full seed
-      return seed();   // fresh install or new storage version -> load the portfolio
+      return seed().map(migrateLoan);   // fresh install: normalize the seed (clears the cosmetic Fixed-loan index default)
     }
 
     function seed(){
@@ -2061,7 +2071,7 @@
         mk({ propertyName:"Avalon White Plains", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1613", originalAmount:96000000, annualRate:0.0536, rateType:"Floating", index:"sofr", spread:0.0175, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2026-03-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, replacementReserve:8480, prepayType:"Yield Maintenance", prepayConfirmed:true }),
         mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, lienPosition:"Mezzanine", originationDate:"2026-02-10", firstPaymentDate:"2026-03-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, prepayType:"Yield Maintenance", prepayConfirmed:true }),
         mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2026-04-10", maturityDate:"2033-03-10", loanTermMonths:84, amortizationMonths:360, ioMonths:60, amortMethod:"30/360", prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
-        mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2026-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
+        mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2026-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:148062.35, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "Manor House" — Customers Bank Note ¶2(C): fixed-period P&I $148,062.35 (Actual/360, 30-yr amort). Sister to Carteret: Fixed P&I holds the stated $148,062.35; the 2031 reset payment (¶2(D), future-UST-dependent) is approximated (held).
         mk({ propertyName:"The Botanic (Carteret)", propertyAddress:"36 Washington Avenue, Carteret, NJ", propertyType:"Multifamily", lenderName:"Customers Bank", originalAmount:64000000, annualRate:0.0594, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.0594, originationDate:"2025-11-07", firstPaymentDate:"2026-01-01", maturityDate:"2035-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:384807.04, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "The Botanic" per the Rent Roll; borrower Living Carteret Urban Renewal LLC. Note: IO Jan–Dec 2026, then $384,807.04 P&I (30-yr amort), rate resets Jan 2031 (UST5Y+2.50%, floor 5.94%, 26-yr amort). Fixed P&I holds the stated $384,807.04; the 2031 reset payment (future-UST-dependent) is approximated.
         mk({ propertyName:"K2 Sweetwater (FIU Residences)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"AIG (National Union Fire Ins.)", originalAmount:127000000, annualRate:0.0375, rateType:"Floating", index:"sofr", spread:0.0375, rateFloor:0.0375, originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
         mk({ propertyName:"K2 Sweetwater (Mezz)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"MSD Capital (MSD Partners)", originalAmount:20000000, annualRate:0.135, rateType:"Fixed", lienPosition:"Mezzanine", originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60 }),
