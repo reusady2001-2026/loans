@@ -29,13 +29,24 @@ const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api
 function bundledClaudePath(){
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   const osKey = process.platform === 'win32' ? 'win32' : (process.platform === 'darwin' ? 'darwin' : 'linux');
-  const bin = process.platform === 'win32' ? 'claude.exe' : 'claude';
-  const rel = path.join('node_modules', '@anthropic-ai', 'claude-code-' + osKey + '-' + arch, bin);
+  const subBin = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  // Candidate relative paths, MOST-RELIABLE FIRST:
+  //  1. the wrapper package's bin/claude.exe — claude-code's postinstall copies the
+  //     native binary here on EVERY platform (the file is literally named claude.exe
+  //     everywhere), and the wrapper is a direct dependency, so it's always packaged.
+  //  2. the platform sub-package's own binary — a fallback. electron-builder can prune
+  //     cross-platform optional deps, so this may be ABSENT even when (1) is present
+  //     (that pruning is exactly why looking only here used to resolve to nothing → the
+  //     app fell back to a bare `claude` that isn't on PATH).
+  const rels = [
+    path.join('node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
+    path.join('node_modules', '@anthropic-ai', 'claude-code-' + osKey + '-' + arch, subBin),
+  ];
   const roots = [];
   try { if (_app && _app.isPackaged && process.resourcesPath) roots.push(path.join(process.resourcesPath, 'app.asar.unpacked')); } catch (e) {}
   roots.push(__dirname);                       // dev / unpacked: alongside this file (app root)
   try { roots.push(process.cwd()); } catch (e) {}
-  for (const r of roots){ const c = path.join(r, rel); try { if (fs.existsSync(c)) return c; } catch (e) {} }
+  for (const r of roots){ for (const rel of rels){ const c = path.join(r, rel); try { if (fs.existsSync(c)) return c; } catch (e) {} } }
   return null;
 }
 function cliBin(){
@@ -109,6 +120,12 @@ async function subscriptionConnected(){
 function login(){
   return new Promise((resolve) => {
     const bin = cliBin();
+    // If we couldn't resolve the bundled binary we'd fall back to a bare `claude`
+    // that isn't on the user's PATH — launching a console for that just shows a
+    // confusing "'claude' is not recognized". Fail clearly instead.
+    if (bin === 'claude' && !process.env.LDS_CLAUDE_BIN){
+      return resolve({ ok:false, error:'The built-in Claude client wasn’t found in this install. Reinstalling the app usually fixes it — or use an Anthropic API key under Advanced.' });
+    }
     const cfgDir = (_app && _app.getPath) ? path.join(_app.getPath('userData'), 'claude') : null;
     if (cfgDir) { try { fs.mkdirSync(cfgDir, { recursive: true }); } catch (e) {} }
     const env = Object.assign({}, process.env);
@@ -322,4 +339,4 @@ function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   });
 }
 
-module.exports = { init, status, setKey, setMode, extract, chat, login, logout };
+module.exports = { init, status, setKey, setMode, extract, chat, login, logout, bundledClaudePath, cliBin };
