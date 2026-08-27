@@ -580,6 +580,16 @@
             </div>
             <button type="button" id="scaleReset" class="mt-3 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition">Reset to 100%</button>
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
+            <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
+            <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
+              <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Cloud</span>
+              <button type="button" id="settingsClaudeBtn" class="mt-1.5 w-full flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 transition">
+                <svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></svg>
+                <span class="flex-1">Claude connection</span>
+                <span id="settingsClaudeState" class="text-[10px] font-bold text-slate-400"></span>
+              </button>
+              <p class="mt-1.5 text-[10px] leading-snug text-slate-400">Connect your Claude Code subscription or an Anthropic API key for the AI features.</p>
+            </div>
           </div>
         </details>
         <!-- window controls -->
@@ -1812,11 +1822,76 @@
       }
       return l;
     }
+    // ---- One-time, NON-DESTRUCTIVE portfolio sync -------------------------
+    // Existing installs seeded their book back at v1.1.4 (storage key v6->v7) and
+    // have kept that data ever since. Loans validated/added after that live only
+    // in seed(), which load() never revisits once localStorage has data — so they
+    // stay invisible. Rather than bump STORAGE_KEY (which DISCARDS the operator's
+    // data and edits), this brings the validated work into an existing book by
+    // ADDING only the loans it is missing and REFRESHING only the two records
+    // whose terms were corrected. Everything else is left exactly as the operator
+    // has it. Pepper, Living Lofts and Village at Bridgewater are deliberately
+    // excluded — they are pending documents from Azriel and must not change yet.
+    const PORTFOLIO_REV = "2026-08-27";                 // bump when the manifest below changes
+    const PORTFOLIO_REV_KEY = "ldsHub.portfolioRev";
+    const SYNC_ADD = [                                   // add only if the book lacks this loan (by name)
+      "36 Washington Ave (Carteret)",
+      "K2 Sweetwater (FIU Residences)",
+      "K2 Sweetwater (Mezz)",
+      "Legacy at Kissimmee",
+      "1415 Washington (Building Loan)",
+      "1415 Washington (Project Loan)",
+      "1395 Washington (Building Loan)",
+      "1395 Washington (Project Loan)",
+      "Creekside at Grand Prairie",
+    ];
+    const SYNC_REFRESH = ["The Mint (Rahway)", "The Mews at Princeton"];   // replace an existing record with the validated one
+    function normName(s){ return String(s||"").toLowerCase().replace(/\s+/g," ").trim(); }
+    // Returns { loans, changed, added:[], refreshed:[] }. Pure — writes nothing.
+    function syncPortfolio(existing){
+      let doneRev = null;
+      try { doneRev = localStorage.getItem(PORTFOLIO_REV_KEY); } catch(e){}
+      if(doneRev === PORTFOLIO_REV) return { loans: existing, changed:false, added:[], refreshed:[] };
+      const seeded = seed();
+      const seedByName = {}; seeded.forEach(s => { seedByName[normName(s.propertyName)] = s; });
+      const have = {}; existing.forEach(l => { have[normName(l.propertyName)] = true; });
+      const loans = existing.slice();
+      const added = [], refreshed = [];
+      SYNC_ADD.forEach(name => {
+        const key = normName(name);
+        if(have[key]) return;                              // already present -> never duplicate
+        const rec = seedByName[key]; if(!rec) return;
+        loans.push(Object.assign(emptyLoan(), rec, { _id: uid() }));
+        have[key] = true; added.push(name);
+      });
+      SYNC_REFRESH.forEach(name => {
+        const key = normName(name);
+        const rec = seedByName[key]; if(!rec) return;
+        const i = loans.findIndex(l => normName(l.propertyName) === key);
+        if(i < 0) return;                                  // book doesn't have it -> don't add via refresh
+        loans[i] = Object.assign(emptyLoan(), rec, { _id: loans[i]._id });   // keep the existing id
+        refreshed.push(name);
+      });
+      return { loans, changed: added.length>0 || refreshed.length>0, added, refreshed };
+    }
+
     function load(){
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return arr.map(migrateLoan); }
+        if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){
+          const migrated = arr.map(migrateLoan);
+          const res = syncPortfolio(migrated);
+          if(res.changed){
+            // snapshot the book BEFORE persisting the sync, so it is fully reversible
+            try { if(window.ldsShell && window.ldsShell.isDesktop && window.ldsShell.autoBackupWrite){ window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(migrated)), "before-portfolio-sync"); } } catch(e){}
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(res.loans)); } catch(e){}
+            window.__LDS_SYNC_SUMMARY = res;               // surfaced as a one-time notice after first render
+          }
+          try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // don't re-check every load
+          return res.loans;
+        } }
       } catch(e){}
+      try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // fresh install already carries the full seed
       return seed();   // fresh install or new storage version -> load the portfolio
     }
 
@@ -4129,6 +4204,35 @@ tr[data-loan]:hover td{background:#eef2f7}
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { dom.toast.style.opacity = "0"; }, 2600);
     }
+    // One-time notice shown after a non-destructive portfolio sync (see syncPortfolio).
+    // Lists exactly what was added / refreshed so the operator can see the change,
+    // and states that the prior book was backed up first.
+    function notifyPortfolioSync(res){
+      if(!res || !res.changed) return;
+      const li = arr => arr.map(n => '<li class="flex items-start gap-2"><span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500"></span><span>'+escapeHtml(n)+'</span></li>').join("");
+      const back = document.createElement("div");
+      back.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+      back.innerHTML =
+        '<div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">'+
+          '<div class="flex items-center gap-3 border-b border-slate-100 px-5 py-4">'+
+            '<span class="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-700">'+(ICONS.check||"")+'</span>'+
+            '<div><h3 class="text-base font-bold text-slate-800">Portfolio updated</h3>'+
+            '<p class="text-xs text-slate-500">Validated loans brought into your book. Your previous data was backed up first.</p></div>'+
+          '</div>'+
+          '<div class="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-4 text-sm text-slate-700">'+
+            (res.added.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Added ('+res.added.length+')</div><ul class="space-y-1">'+li(res.added)+'</ul></div>' : "")+
+            (res.refreshed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Corrected terms refreshed ('+res.refreshed.length+')</div><ul class="space-y-1">'+li(res.refreshed)+'</ul></div>' : "")+
+            '<p class="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-500">Left unchanged on purpose (awaiting documents): <b>The Pepper Building</b>, <b>Living Lofts</b>, <b>Village at Bridgewater</b>.</p>'+
+          '</div>'+
+          '<div class="flex justify-end border-t border-slate-100 px-5 py-3">'+
+            '<button type="button" id="syncNoticeClose" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition">Got it</button>'+
+          '</div>'+
+        '</div>';
+      const close = () => { if(back.parentNode) back.parentNode.removeChild(back); };
+      back.addEventListener("click", e => { if(e.target===back) close(); });
+      document.body.appendChild(back);
+      const btn = back.querySelector("#syncNoticeClose"); if(btn) btn.addEventListener("click", close);
+    }
     function showFormError(msg){ dom.formError.textContent = msg; dom.formError.classList.remove("hidden"); dom.formError.classList.add("flex"); window.scrollTo({top:0,behavior:"smooth"}); }
     function hideFormError(){ dom.formError.classList.add("hidden"); dom.formError.classList.remove("flex"); }
 
@@ -5574,6 +5678,91 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiRefreshConn(); aiRenderSettings(); }); });
       if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); aiRefreshConn(); aiRenderSettings(); }); });
     }
+
+    // ---- Claude connection, reachable from the main Settings menu -----------
+    // Self-contained (its own element ids) so it never disturbs the loan-reader's
+    // connection panel. Same Claude bridge: subscription (Claude Code CLI) or key.
+    function claudeConnState(st){
+      const usingApi = st.mode==="api" || (st.mode==="auto" && !(st.cli&&st.cli.available));
+      if((st.mode==="cli"||st.mode==="auto") && st.cli && st.cli.available && !usingApi) return { ok:true, msg:'Connected &middot; using your <b>Claude Code subscription</b>' };
+      if(st.apiKey && st.apiKey.configured && (usingApi || st.mode==="api")) return { ok:true, msg:'Connected &middot; using your <b>Anthropic API key</b>' };
+      if(st.mode==="cli" && !(st.cli&&st.cli.available)) return { ok:false, msg:'CLI mode is selected but Claude Code was not found on this machine.' };
+      if(st.mode==="api") return { ok:false, msg:'API mode is selected but no API key is set.' };
+      return { ok:false, msg:'Not connected. Install Claude Code and run <code>claude</code> once to sign in, or add an Anthropic API key.' };
+    }
+    // Reflect connection state onto the Settings-menu button (badge), when present.
+    function claudeConnBadge(){
+      if(!(window.ldsShell && ldsShell.aiStatus)) return;
+      const wrap = el("settingsClaudeWrap"); if(wrap) wrap.hidden = false;
+      ldsShell.aiStatus().then(st=>{ aiStatusCache = st; const s = claudeConnState(st); const b = el("settingsClaudeState");
+        if(b){ b.textContent = s.ok ? "Connected" : "Not set"; b.className = "text-[10px] font-bold "+(s.ok?"text-emerald-600":"text-amber-600"); }
+      }).catch(()=>{});
+    }
+    function openClaudeConn(){
+      const dd = el("settingsDD"); if(dd) dd.open = false;   // close the Settings menu
+      if(!(window.ldsShell && ldsShell.aiStatus)){ toast("Claude connection is available in the desktop app.","info"); return; }
+      let back = el("claudeConnModal");
+      if(!back){
+        back = document.createElement("div");
+        back.id = "claudeConnModal";
+        back.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+        back.innerHTML =
+          '<div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">'+
+            '<div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">'+
+              '<div class="flex items-center gap-3"><span class="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-700"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></svg></span>'+
+              '<div><h3 class="text-base font-bold text-slate-800">Claude connection</h3><p class="text-xs text-slate-500">Use your Claude Code subscription or an Anthropic API key.</p></div></div>'+
+              '<button type="button" id="claudeConnClose" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'+
+            '</div>'+
+            '<div class="px-5 py-4 space-y-3">'+
+              '<div id="claudeConnRow"></div>'+
+              '<div id="claudeConnPanel" class="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>'+
+            '</div>'+
+          '</div>';
+        document.body.appendChild(back);
+        const close = ()=> back.classList.add("hidden");
+        back.addEventListener("click", e=>{ if(e.target===back) close(); });
+        back.querySelector("#claudeConnClose").addEventListener("click", close);
+      }
+      back.classList.remove("hidden");
+      claudeConnRefresh();
+    }
+    function claudeConnRefresh(){
+      const row = el("claudeConnRow"); if(!row) return;
+      row.innerHTML = '<span class="text-slate-400 text-sm">Checking connection…</span>';
+      ldsShell.aiStatus().then(st=>{
+        aiStatusCache = st; const s = claudeConnState(st);
+        row.innerHTML = '<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm '+(s.ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
+          (s.ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+                :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
+          '<span>'+s.msg+'</span></div>';
+        claudeConnRender(st);
+        claudeConnBadge();
+      }).catch(()=>{ row.innerHTML='<span class="text-rose-600 text-sm">Could not reach the AI bridge.</span>'; });
+    }
+    function claudeConnRender(st){
+      const p = el("claudeConnPanel"); if(!p) return; st = st || aiStatusCache || {};
+      const mode = (st.mode)||"auto"; const cliOk = st.cli&&st.cli.available;
+      const opt = (v,label,note)=> '<label class="flex items-start gap-2 cursor-pointer"><input type="radio" name="claudeMode" value="'+v+'" '+(mode===v?"checked":"")+' class="mt-0.5 accent-brand-600"><span><span class="font-semibold text-slate-700">'+label+'</span><span class="block text-[11px] text-slate-400">'+note+'</span></span></label>';
+      p.innerHTML =
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">How to connect</div>'+
+        '<div class="space-y-1.5">'+
+          opt("auto","Automatic (recommended)", cliOk?"Uses your Claude Code subscription; falls back to an API key.":"Claude Code not detected here; will use an API key if set.")+
+          opt("cli","Claude Code subscription", (cliOk?("detected &middot; "+escapeHtml(st.cli.version||"")):"not detected on this machine")+" &mdash; no API key or per-use billing")+
+          opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
+        '</div>'+
+        '<div class="pt-1">'+
+          '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
+          '<div class="mt-1 flex gap-2"><input id="claudeKeyInput" type="password" placeholder="sk-ant-…" class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          '<button id="claudeKeySave" type="button" class="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Save</button>'+
+          (st.apiKey&&st.apiKey.configured?'<button id="claudeKeyClear" type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>':'')+
+          '</div><p class="mt-1 text-[10px] text-slate-400">Stored only on this machine, outside the browser. The key is never shown again.</p>'+
+        '</div>';
+      p.querySelectorAll('input[name="claudeMode"]').forEach(r=> r.addEventListener("change", ()=>{ ldsShell.aiSetMode(r.value).then(()=>claudeConnRefresh()); }));
+      const ki=el("claudeKeyInput"), ks=el("claudeKeySave"), kc=el("claudeKeyClear");
+      if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v) return; ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); claudeConnRefresh(); }); });
+      if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); claudeConnRefresh(); }); });
+    }
+
     function aiHandleFile(file){
       if(!file) return;
       const name = file.name||"agreement";
@@ -5639,6 +5828,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       drop.addEventListener("drop", (e)=>{ e.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) aiHandleFile(f); });
       el("aiReadModal").addEventListener("click", (e)=>{ if(e.target===el("aiReadModal")) aiReadClose(); });
     }
+    // Claude connection from the main Settings menu (desktop app only). Reveals the
+    // menu entry and shows a live Connected / Not set badge.
+    if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
+    claudeConnBadge();
     // Quick-jump: scroll the amortization schedule to a key payment date and flash the row.
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-scheduljump]"); if(!b) return;
@@ -5732,6 +5925,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     render();
     renderTabStrip();        // Home tab + tool tabs (Calendar, Underwriting)
     initPanelMode();         // if launched as a torn-off panel (?panel=…), show only that tool
+    if(window.__LDS_SYNC_SUMMARY){ try { notifyPortfolioSync(window.__LDS_SYNC_SUMMARY); } catch(e){} window.__LDS_SYNC_SUMMARY = null; }
 
     // Floating phases re-price on the 1st of each month. If the app is left open
     // across a month boundary (or regains focus in a new month), refresh the live
