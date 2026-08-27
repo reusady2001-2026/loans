@@ -2061,11 +2061,11 @@
         mk({ propertyName:"40 N Euclid Ave", propertyAddress:"40 N Euclid Ave, St. Louis, MO", propertyType:"Multifamily", lenderName:"Greystone Servicing (Fannie)", originalAmount:25296800, annualRate:0.0308, rateType:"Fixed", originationDate:"2020-12-22", firstPaymentDate:"2021-02-01", maturityDate:"2031-01-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, amortMethod:"Actual/360", prepayType:"Yield Maintenance", prepayConfirmed:true, replacementReserve:1417.67 }),
         mk({ propertyName:"Avalon Norwalk", propertyAddress:"26 Belden Avenue, Norwalk, CT", propertyType:"Multifamily", lenderName:"Forethought Life Insurance Company", loanNumber:"KKR 5300125", originalAmount:79560000, annualRate:0.0355, rateType:"Fixed", originationDate:"2021-05-13", firstPaymentDate:"2021-07-07", maturityDate:"2031-06-07", loanTermMonths:120, amortizationMonths:360, ioMonths:95, amortMethod:"Actual/360", amortType:"Fixed Principal", fixedAmortAmount:361684.80, prepayType:"Yield Maintenance", prepayConfirmed:true, replacementReserve:6479.17 }),
         mk({ propertyName:"Living Lofts (Middlesex)", propertyAddress:"150 Lincoln Boulevard, Middlesex, NJ", propertyType:"Multifamily", lenderName:"Investors Bank", originalAmount:35296600, annualRate:0.031, rateType:"Hybrid ARM", index:"ust5y", spread:0.0263, rateFloor:0.031, originationDate:"2021-06-01", firstPaymentDate:"2021-08-01", maturityDate:"2031-07-01", loanTermMonths:120, amortizationMonths:360, ioMonths:26, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:151604.11 }),
-        mk({ propertyName:"Queens Gate Apartments", propertyType:"Multifamily", lenderName:"New York Community Bank", loanNumber:"161001828", originalAmount:48000000, annualRate:0.03, rateType:"Hybrid ARM", index:"prime", rateFloor:0.03, originationDate:"2021-10-29", firstPaymentDate:"2021-12-01", maturityDate:"2031-11-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
+        mk({ propertyName:"Queens Gate Apartments", propertyType:"Multifamily", lenderName:"New York Community Bank", loanNumber:"161001828", originalAmount:48000000, annualRate:0.03, rateType:"Hybrid ARM", index:"prime", rateFloor:0.03, originationDate:"2021-10-29", firstPaymentDate:"2021-12-01", maturityDate:"2031-11-01", loanTermMonths:120, amortizationMonths:360, ioMonths:48, armInitialFixedMonths:60, armAdjustFreqMonths:60, noi:2810007, egi:5018092, opex:2208085 }),   // NOI from its T12 (trailing-12): $5,018,092 income − $2,208,085 expense. Debt yield 5.85% — below the 8% floor.
         mk({ propertyName:"28-58 JFK Blvd (Bayonne)", propertyAddress:"28-58 John F. Kennedy Blvd, Bayonne, NJ 07002", propertyType:"Multifamily", lenderName:"Signature Bank", loanNumber:"0153490-080691", originalAmount:21700000, annualRate:0.034, rateType:"Hybrid ARM", index:"ust5y", spread:0.0275, originationDate:"2022-03-25", firstPaymentDate:"2022-05-10", maturityDate:"2032-04-10", loanTermMonths:120, amortizationMonths:360, ioMonths:36, armInitialFixedMonths:60, armAdjustFreqMonths:60 }),
         mk({ propertyName:"M Lofts", propertyAddress:"1107 Mississippi Ave, St. Louis, MO 63104", propertyType:"Multifamily", lenderName:"Santander Bank (Fannie)", loanNumber:"7216141", originalAmount:6370000, annualRate:0.0566, rateType:"Floating", index:"sofr", spread:0.0205, rateFloor:0.0255, originationDate:"2022-04-25", firstPaymentDate:"2022-06-01", maturityDate:"2027-05-01", loanTermMonths:60, amortizationMonths:360, ioMonths:12, replacementReserve:1383 }),
-        mk({ propertyName:"The Mint (Rahway)", propertyAddress:"81 & 84 Monroe Street, Rahway, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:58000000, annualRate:0.06517, rateType:"Fixed", originationDate:"2024-04-05", firstPaymentDate:"2024-05-05", maturityDate:"2029-04-05", loanTermMonths:60, amortizationMonths:360, ioMonths:24, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:369005.22 }),
-        mk({ propertyName:"The Mews at Princeton", propertyAddress:"900 Wessex Pl, Princeton, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:107100000, annualRate:0.06801, rateType:"Fixed", originationDate:"2024-04-16", firstPaymentDate:"2024-05-16", maturityDate:"2029-04-16", loanTermMonths:60, amortizationMonths:360, ioMonths:36 }),
+        mk({ propertyName:"The Mint (Rahway)", propertyAddress:"81 & 84 Monroe Street, Rahway, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:58000000, annualRate:0.06517, rateType:"Fixed", originationDate:"2024-04-05", firstPaymentDate:"2024-05-05", maturityDate:"2029-04-05", loanTermMonths:60, amortizationMonths:360, ioMonths:24, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:369005.22, noi:5017563, egi:7425130, opex:2407567 }),   // NOI from its T12 (trailing-12): $7,425,130 income − $2,407,567 expense. Debt yield 8.65%.
+        mk({ propertyName:"The Mews at Princeton", propertyAddress:"900 Wessex Pl, Princeton, NJ", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:107100000, annualRate:0.06801, rateType:"Fixed", originationDate:"2024-04-16", firstPaymentDate:"2024-05-16", maturityDate:"2029-04-16", loanTermMonths:60, amortizationMonths:360, ioMonths:36, noi:10570636, egi:17834576, opex:7263939 }),   // NOI from its T12 (trailing-12): $17,834,576 income − $7,263,939 expense. Debt yield 9.87%.
         mk({ propertyName:"Reatta Ranch", propertyAddress:"810 Tally Blvd, Justin, TX 76247", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", loanNumber:"20251209", originalAmount:47000000, annualRate:0.0611, rateType:"Floating", index:"sofr", spread:0.025, rateFloor:0.0575, originationDate:"2025-12-10", firstPaymentDate:"2026-01-09", maturityDate:"2028-12-09", loanTermMonths:36, ioMonths:36, prepayType:"Yield Maintenance", prepayConfirmed:true }),
         mk({ propertyName:"Heritage Key Villas", propertyAddress:"2089 Heritage Key Blvd, Kissimmee, FL 34744 (Osceola County)", propertyType:"Multifamily", lenderName:"Valley National Bank", originalAmount:61000000, annualRate:0.057, rateType:"Hybrid ARM", index:"ust5y", spread:0.02, rateFloor:0.057, originationDate:"2026-01-14", firstPaymentDate:"2026-02-28", maturityDate:"2036-02-28", loanTermMonths:121, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, prepayType:"Open / at par", prepayConfirmed:true }),
         mk({ propertyName:"Avalon White Plains", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1613", originalAmount:96000000, annualRate:0.0536, rateType:"Floating", index:"sofr", spread:0.0175, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2026-03-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, replacementReserve:8480, prepayType:"Yield Maintenance", prepayConfirmed:true }),
@@ -3879,6 +3879,65 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="grid md:grid-cols-2 gap-x-5 gap-y-3 mt-4"><div class="space-y-3">'+table+takeaway+'</div><div class="space-y-3">'+split+exposed+'</div></div>'+
       '</div>';
     }
+    // Azriel's coverage dashboard: current DSCR + debt yield per property, read on the
+    // COMBINED position (senior + any mezzanine), against the 1.25x DSCR and 8% debt-
+    // yield floors. NOI is the property's own figure (loan.noi, from its T12 or a refi
+    // analysis); a property without one is listed as "needs T12/NOI" — never estimated.
+    const COV_DSCR_FLOOR = 1.25, COV_DY_FLOOR = 0.08;
+    function coverageCard(groupList){
+      const items = groupList.map(g => {
+        const sr = (g.members.find(m => !isMezz(m.loan)) || g.members[0]).loan;
+        return { sr, combo: g.members.length > 1, count: g.members.length, cp: g.cp };
+      });
+      // Roll-up over covered properties (those with an NOI), weighted by combined balance.
+      let covBal = 0, dscrW = 0, dyW = 0, nCov = 0, nBelowD = 0, nBelowY = 0;
+      items.forEach(it => { const cp = it.cp; if(cp.noi > 0){ nCov++; covBal += cp.balTot || 0;
+        if(cp.dscr != null){ dscrW += cp.dscr * (cp.balTot || 0); if(cp.dscr < COV_DSCR_FLOOR) nBelowD++; }
+        if(cp.debtYield != null){ dyW += cp.debtYield * (cp.balTot || 0); if(cp.debtYield < COV_DY_FLOOR) nBelowY++; } } });
+      const wDscr = covBal > 0 ? dscrW / covBal : null, wDy = covBal > 0 ? dyW / covBal : null;
+      const nUncov = items.length - nCov;
+      const dCls = v => v == null ? 'text-slate-400' : v >= COV_DSCR_FLOOR ? 'text-emerald-700' : v >= 1.10 ? 'text-amber-600' : 'text-rose-600';
+      const yCls = v => v == null ? 'text-slate-400' : v >= COV_DY_FLOOR ? 'text-emerald-700' : v >= 0.06 ? 'text-amber-600' : 'text-rose-600';
+      const covKpis =
+        kpiCard("Portfolio DSCR", wDscr != null ? wDscr.toFixed(2) + "×" : "—", { highlight:true, sub: nCov + " of " + items.length + " properties · by balance" }) +
+        kpiCard("Portfolio Debt Yield", wDy != null ? fmtPct(wDy) : "—", { sub:"NOI ÷ balance, weighted" }) +
+        kpiCard("Below 1.25× DSCR", nCov ? String(nBelowD) : "—", { sub: nCov ? (nBelowD ? "need a path to refi" : "all covered clear") : "no NOI yet" }) +
+        kpiCard("Awaiting NOI", String(nUncov), { sub: nUncov ? "add each property's T12" : "every property covered" });
+      // Worst DSCR first (surface what needs attention); uncovered properties sink to the bottom.
+      const sorted = items.slice().sort((a, b) => {
+        const av = a.cp.noi > 0 ? (a.cp.dscr == null ? 9 : a.cp.dscr) : Infinity;
+        const bv = b.cp.noi > 0 ? (b.cp.dscr == null ? 9 : b.cp.dscr) : Infinity;
+        return av - bv;
+      });
+      const thc = (t, e) => '<th class="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 ' + (e || '') + '">' + t + '</th>';
+      const body = sorted.map(it => { const cp = it.cp, has = cp.noi > 0;
+        const nameCell = escapeHtml(it.sr.propertyName || loanLabel(it.sr)) + (it.combo ? ' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">' + it.count + ' loans</span>' : '');
+        const status = !has ? '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
+          : ((cp.dscr != null && cp.dscr >= COV_DSCR_FLOOR && cp.debtYield != null && cp.debtYield >= COV_DY_FLOOR)
+              ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears floors</span>'
+              : '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>');
+        const action = !has
+          ? '<button type="button" data-covnoi="' + it.sr._id + '" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
+          : '<button type="button" data-covpath="' + (it.combo ? ('combo:' + propertyKey(it.sr)) : it.sr._id) + '" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
+        return '<tr class="hover:bg-slate-50' + (has ? '' : ' bg-slate-50/40') + '">' +
+          '<td class="px-3 py-2 text-sm font-medium text-slate-900">' + nameCell + '</td>' +
+          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">' + (has ? fmtMoney(cp.noi) : '&mdash;') + '</td>' +
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-bold ' + dCls(has ? cp.dscr : null) + '">' + (has && cp.dscr != null ? cp.dscr.toFixed(2) + '&#215;' : '&mdash;') + '</td>' +
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold ' + yCls(has ? cp.debtYield : null) + '">' + (has && cp.debtYield != null ? fmtPct(cp.debtYield) : '&mdash;') + '</td>' +
+          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">' + (has && cp.ltv != null ? fmtPct(cp.ltv) : '&mdash;') + '</td>' +
+          '<td class="px-3 py-2"><div class="flex items-center justify-between gap-2">' + status + action + '</div></td>' +
+        '</tr>';
+      }).join('');
+      const head = '<tr>' + thc("Property") + thc("NOI", 'text-right') + thc("DSCR", 'text-right') + thc("Debt Yield", 'text-right') + thc("LTV", 'text-right') + thc("") + '</tr>';
+      const note = nUncov ? '<p class="px-5 pb-3 text-[11px] text-slate-400">' + nUncov + ' propert' + (nUncov === 1 ? 'y needs' : 'ies need') + ' a T12/NOI before DSCR and debt yield can be shown — added from a property’s T12 or a refinance analysis.</p>' : '';
+      return '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">' + covKpis + '</div>' +
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift animate-fade-up">' +
+          '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR &amp; debt yield</h3><p class="text-xs text-slate-500">current NOI ÷ debt service and ÷ balance, per property, against the 1.25&#215; and 8% floors</p></div>' +
+          '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">' + head + '</thead><tbody class="divide-y divide-slate-100">' + body + '</tbody></table></div>' +
+          note +
+        '</div>';
+    }
+
     function renderPortfolio(){
       const rows = loans.map(l => ({ loan:l, comp:compute(l) }));
       // Keep live bases + recent-deal history flowing so the scan sharpens itself.
@@ -4021,6 +4080,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</div>'+
         '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
         '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
+        coverageCard(groupList)+
         '<div id="forecastWrap">'+renderForecastCard(fcAnnual)+'</div>'+
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
         tableCard("All Loans","grouped by property — click a property to expand its loans, then pick one to open",
@@ -4030,6 +4090,9 @@ tr[data-loan]:hover td{background:#eef2f7}
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       dom.portfolioView.querySelectorAll('[data-refi]').forEach(tr => tr.addEventListener('click', () => { state.activeId = tr.getAttribute('data-refi'); startRefi(); }));
+      // Coverage dashboard: "Add NOI" opens the NOI prompt then re-renders; "Refi path" opens the analysis.
+      dom.portfolioView.querySelectorAll('[data-covnoi]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); const loan = getLoan(btn.getAttribute('data-covnoi')); if(loan){ state.activeId = loan._id; openNoiFlow(loan, () => render()); } }));
+      dom.portfolioView.querySelectorAll('[data-covpath]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); state.activeId = btn.getAttribute('data-covpath'); startRefi(); }));
       // Advanced from the scan: pop the NOI prompt over the overview FIRST; only
       // navigate into the loan's refinance view once NOI is entered and approved.
       dom.portfolioView.querySelectorAll('[data-refiadv]').forEach(btn => btn.addEventListener('click', (e) => {
