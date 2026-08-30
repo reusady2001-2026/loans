@@ -1172,9 +1172,19 @@
           </h3>
           <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, edit loan info, or draft a new loan. Attach a PDF, Word, Excel or text file and I’ll read it. I never save changes without your approval.</p>
         </div>
-        <button id="aiAsstClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
+        <div class="flex items-center gap-1 shrink-0">
+          <button id="aiAsstCompact" type="button" title="Compact — summarize this chat so it keeps the key facts but uses far less context" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:opacity-40 disabled:pointer-events-none">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>
+            Compact
+          </button>
+          <button id="aiAsstNew" type="button" title="New chat — clear this conversation and start fresh (your loans are unaffected)" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v6M9 11h6"/></svg>
+            New chat
+          </button>
+          <button id="aiAsstClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
       </div>
       <div class="px-5 pt-4 space-y-3">
         <div id="aiAsstConnRow" class="text-sm"></div>
@@ -6512,6 +6522,13 @@ tr[data-loan]:hover td{background:#eef2f7}
        ================================================================ */
     var aiAsstHistory = [];     // [{role,text}] running thread
     var aiAsstBusy = false, aiAsstConnected = false;
+    // In-flight request bookkeeping so the Stop button can abort cleanly.
+    var aiAsstToken = null;         // cancel token for the request currently running
+    var aiAsstThinkingEl = null;    // the "Thinking…" bubble, so Stop can remove it
+    var aiAsstPendingTurn = null;   // the just-asked user turn, dropped from history if Stopped
+    var aiAsstStopped = false;      // set when the user pressed Stop, so the resolve is ignored
+    var AI_ASST_SEND_HTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>Send';
+    var AI_ASST_STOP_HTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>Stop';
     function aiAsstTodayISO(){ var t = todayParts(); return partsToISO(t.y, t.mo, t.d); }
 
     // One compact record per loan: stored terms + a few live computed fields.
@@ -6779,11 +6796,14 @@ tr[data-loan]:hover td{background:#eef2f7}
       var input=el("aiAsstInput"); if(input) input.value="";
       var chips = ready.length ? ('<div class="mt-1.5 flex flex-wrap gap-1">'+ready.map(function(f){ return '<span class="inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[11px]">📎 '+escapeHtml(f.name)+'</span>'; }).join("")+'</div>') : "";
       aiAsstBubble("user", escapeHtml(question||"(sent the attached file"+(ready.length>1?"s":"")+")")+chips);
-      aiAsstHistory.push({role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"")});
+      var userTurn={role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"")};
+      aiAsstHistory.push(userTurn); aiAsstPendingTurn=userTurn;
       var filesBlock = ready.length ? (ready.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")) : "";
       aiAsstFiles = []; aiAsstRenderAttach();      // attachments are consumed by this message
+      var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
       aiAsstSetBusy(true);
       var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Thinking…</span>');
+      aiAsstThinkingEl=thinking;
       var snap=aiAsstSnapshot();
       var thread=aiAsstHistory.slice(0,-1).map(function(m){ return (m.role==="user"?"User: ":"Assistant: ")+m.text; }).join("\n\n");
       var prompt =
@@ -6793,10 +6813,14 @@ tr[data-loan]:hover td{background:#eef2f7}
         (filesBlock?("The operator attached the following file(s) — their extracted text content:\n"+filesBlock+"\n\n"):"")+
         (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
         "User: "+(question||"(the operator attached the file(s) above with no other message — read them, summarize what you found, and if it implies a change to a loan, propose it for approval)");
-      ldsShell.aiChat({ system: AI_ASST_SYSTEM, prompt: prompt, timeoutMs: 120000 })
+      var tmo = prompt.length > 60000 ? 240000 : 120000;   // a big attachment legitimately needs longer; Stop is always there to bail out
+      ldsShell.aiChat({ system: AI_ASST_SYSTEM, prompt: prompt, timeoutMs: tmo, cancelToken: token })
         .then(function(r){
+          aiAsstThinkingEl=null; aiAsstPendingTurn=null;
+          if(aiAsstStopped){ aiAsstStopped=false; return; }        // the user pressed Stop — aiAsstStop already cleaned up
           if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking);
-          if(!r||!r.ok){ aiAsstBubble("assistant", "Sorry — I couldn’t respond. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiAsstConnFix" class="underline font-semibold">Connection settings</button>', {error:true}); var b=el("aiAsstConnFix"); if(b) b.addEventListener("click", function(){ aiAsstToggleSettings(true); }); aiAsstSetBusy(false); return; }
+          if(r&&r.canceled){ aiAsstSetBusy(false); return; }
+          if(!r||!r.ok){ var hint=(aiAsstHistory.length>3)?' If the chat has grown long, <button id="aiAsstErrNew" class="underline font-semibold">start a new chat</button> or Compact it to free up context.':''; aiAsstBubble("assistant", "Sorry — I couldn’t respond. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiAsstConnFix" class="underline font-semibold">Connection settings</button>.'+hint, {error:true}); var b=el("aiAsstConnFix"); if(b) b.addEventListener("click", function(){ aiAsstToggleSettings(true); }); var nb=el("aiAsstErrNew"); if(nb) nb.addEventListener("click", aiAsstNewSession); aiAsstSetBusy(false); return; }
           var full=String(r.text||"").trim();
           var parsed=aiAsstParseAction(full);
           if(parsed.text) aiAsstBubble("assistant", escapeHtml(parsed.text));
@@ -6809,9 +6833,83 @@ tr[data-loan]:hover td{background:#eef2f7}
           }
           aiAsstSetBusy(false);
         })
-        .catch(function(err){ if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant", "The request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), {error:true}); aiAsstSetBusy(false); });
+        .catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant", "The request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), {error:true}); aiAsstSetBusy(false); });
     }
-    function aiAsstSetBusy(b){ aiAsstBusy=b; var s=el("aiAsstSend"); if(s) s.disabled=aiAsstBusy||!aiAsstConnected; }
+    function aiAsstSetBusy(b){
+      aiAsstBusy=b;
+      var s=el("aiAsstSend");
+      if(s){
+        if(b){                                   // request running → the Send button becomes Stop
+          s.disabled=false;
+          s.innerHTML=AI_ASST_STOP_HTML;
+          s.classList.remove("bg-brand-600","hover:bg-brand-500");
+          s.classList.add("bg-rose-600","hover:bg-rose-500");
+          s.title="Stop — cancel this request";
+        } else {                                 // idle → back to Send
+          s.disabled=!aiAsstConnected;
+          s.innerHTML=AI_ASST_SEND_HTML;
+          s.classList.remove("bg-rose-600","hover:bg-rose-500");
+          s.classList.add("bg-brand-600","hover:bg-brand-500");
+          s.title="";
+        }
+      }
+      var cp=el("aiAsstCompact"); if(cp) cp.disabled = b || !aiAsstConnected;   // can't compact mid-request
+    }
+    // Stop the in-flight request (the user changed their mind, or it's taking too long).
+    // Aborts the CLI/API process, drops the unanswered turn so it won't linger in context,
+    // and returns the composer to a ready state — no answer bubble, no error.
+    function aiAsstStop(){
+      if(!aiAsstBusy) return;
+      aiAsstStopped=true;
+      try{ if(aiAsstToken && ldsShell.aiChatCancel) ldsShell.aiChatCancel(aiAsstToken); }catch(e){}
+      aiAsstToken=null;
+      if(aiAsstThinkingEl && aiAsstThinkingEl.parentNode) aiAsstThinkingEl.parentNode.removeChild(aiAsstThinkingEl);
+      aiAsstThinkingEl=null;
+      if(aiAsstPendingTurn && aiAsstHistory.length && aiAsstHistory[aiAsstHistory.length-1]===aiAsstPendingTurn) aiAsstHistory.pop();
+      aiAsstPendingTurn=null;
+      aiAsstBubble("assistant", '<span class="inline-flex items-center gap-1.5 text-[12px] text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>Stopped — send a new message when you’re ready.</span>');
+      aiAsstSetBusy(false);
+    }
+    // Start a new chat: clear the running thread + any staged attachments and show the
+    // welcome. The loans themselves are untouched — this only frees the assistant's context.
+    function aiAsstNewSession(){
+      if(aiAsstBusy) aiAsstStop();
+      aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach();
+      aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
+      aiAsstRenderWelcome();
+      toast("Started a new chat","check");
+    }
+    // Compact: ask Claude to summarize the conversation so far into a compact brief, then
+    // replace the whole thread with that one summary. Keeps continuity (loans discussed,
+    // figures, approvals, open items) while shrinking what gets re-sent every turn — the
+    // fix for "it can't digest a new file because the context is too big".
+    function aiAsstCompact(){
+      if(aiAsstBusy){ toast("Wait for the current reply, then compact","info"); return; }
+      if(!aiAsstConnected){ toast("Connect to Claude first","info"); return; }
+      if(aiAsstHistory.length < 4){ toast("Not enough conversation to compact yet","info"); return; }
+      var thread=aiAsstHistory.map(function(m){ return (m.role==="user"?"User: ":"Assistant: ")+m.text; }).join("\n\n");
+      var token="k"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
+      aiAsstSetBusy(true);
+      var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Compacting the conversation…</span>');
+      aiAsstThinkingEl=thinking; aiAsstPendingTurn=null;
+      var sys="You compress a conversation between an operator and an assistant for a commercial real-estate loan app into a compact running brief. Preserve every property/loan named, the exact figures discussed (dollars, rates, dates — keep them exact), any changes that were made or proposed and whether they were approved, and any open questions or pending tasks. Output plain prose only, no preamble, no markdown.";
+      var pr="Summarize the conversation so far into a compact brief I can keep using as context:\n\n"+thread;
+      ldsShell.aiChat({ system: sys, prompt: pr, timeoutMs: 120000, cancelToken: token })
+        .then(function(r){
+          aiAsstThinkingEl=null;
+          if(aiAsstStopped){ aiAsstStopped=false; return; }
+          if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking);
+          if(!r||!r.ok){ if(r&&r.canceled){ aiAsstSetBusy(false); return; } aiAsstBubble("assistant","Couldn’t compact just now — "+escapeHtml((r&&r.error)||"unknown error")+". Your conversation is unchanged.", {error:true}); aiAsstSetBusy(false); return; }
+          var summary=String(r.text||"").trim();
+          if(!summary){ aiAsstBubble("assistant","Couldn’t compact — no summary came back. Your conversation is unchanged.", {error:true}); aiAsstSetBusy(false); return; }
+          aiAsstHistory=[{role:"assistant", text:"[Summary of the earlier conversation]\n"+summary, compacted:true}];
+          var log=el("aiAsstLog"); if(log) log.innerHTML="";
+          aiAsstBubble("assistant", '<div class="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Conversation compacted</div><div class="text-[13px] text-slate-600 whitespace-pre-wrap">'+escapeHtml(summary)+'</div>');
+          aiAsstSetBusy(false);
+          toast("Compacted — freed up context","check");
+        })
+        .catch(function(){ aiAsstThinkingEl=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant","Couldn’t compact just now. Your conversation is unchanged.", {error:true}); aiAsstSetBusy(false); });
+    }
     function aiAsstRefreshConn(){
       var row=el("aiAsstConnRow"); if(!row) return;
       row.innerHTML='<span class="text-slate-400">Checking connection…</span>';
@@ -6902,8 +7000,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("aiAsstFab").addEventListener("click", aiAsstOpen);
       el("aiAsstClose").addEventListener("click", aiAsstClose);
       el("aiAsstSettingsToggle").addEventListener("click", ()=>openClaudeConn());   // unified subscription sign-in dialog
-      el("aiAsstSend").addEventListener("click", ()=> aiAsstAsk(el("aiAsstInput").value));
+      // The Send button doubles as Stop while a request is running.
+      el("aiAsstSend").addEventListener("click", ()=> { if(aiAsstBusy) aiAsstStop(); else aiAsstAsk(el("aiAsstInput").value); });
       el("aiAsstInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); aiAsstAsk(el("aiAsstInput").value); } });
+      if(el("aiAsstNew")) el("aiAsstNew").addEventListener("click", aiAsstNewSession);
+      if(el("aiAsstCompact")) el("aiAsstCompact").addEventListener("click", aiAsstCompact);
       // File attachments: button + hidden input + drag-and-drop onto the chat.
       if(el("aiAsstAttachBtn")) el("aiAsstAttachBtn").addEventListener("click", ()=> el("aiAsstFile").click());
       if(el("aiAsstFile")) el("aiAsstFile").addEventListener("change", (e)=>{ aiAsstAddFiles(e.target.files); e.target.value=""; });

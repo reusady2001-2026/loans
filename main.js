@@ -275,6 +275,7 @@ ipcMain.handle('lds:ai-set-key', (e, { key }) => ai.setKey(key));
 ipcMain.handle('lds:ai-set-mode', (e, { mode }) => ai.setMode(mode));
 ipcMain.handle('lds:ai-extract', (e, opts) => ai.extract(opts || {}));
 ipcMain.handle('lds:ai-chat', (e, opts) => ai.chat(opts || {}));
+ipcMain.handle('lds:ai-chat-cancel', (e, { token }) => ai.cancelChat(token));
 ipcMain.handle('lds:ai-login', () => ai.login());
 ipcMain.handle('lds:ai-logout', () => ai.logout());
 

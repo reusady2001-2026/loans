@@ -21,6 +21,11 @@ const os = require('os');
 let _app = null;
 function init(app){ _app = app; }
 
+// In-flight chat requests that can be cancelled from the renderer (the Stop button).
+// Keyed by a token the renderer supplies; the value is a kill function. A request
+// registers itself on spawn and removes itself when it settles.
+const activeChats = new Map();
+
 const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api guidance)
 // Resolve the Claude Code binary. Prefer the copy BUNDLED inside the app (so the
 // user never installs Claude Code separately — it ships in the platform optional
@@ -255,22 +260,25 @@ async function chat(opts){
 // OS (~32KB on Windows, 128KB/arg on Linux), which large attachments blow past. The
 // `-p` directive tells Claude to answer what's on stdin. System prompt appended, NO
 // tools (a plain Q&A needs none). Then read `.result`.
-function runCliChat({ system, prompt, model, timeoutMs }){
+function runCliChat({ system, prompt, model, timeoutMs, cancelToken }){
   return new Promise((resolve) => {
     const args = ['-p', 'Respond to the request provided on standard input.', '--output-format', 'json', '--allowed-tools', ''];
     if (system) args.push('--append-system-prompt', String(system));
     if (model) args.push('--model', model);
-    let out = '', err = '', done = false;
-    const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
+    let out = '', err = '', done = false, canceled = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(to); if (cancelToken) activeChats.delete(cancelToken); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
     let p;
     try { p = spawn(cliBin(),args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
+    // Register a killer so the renderer's Stop button can abort this request mid-flight.
+    if (cancelToken) activeChats.set(cancelToken, () => { canceled = true; try { p.kill(); } catch (e) {} });
     try { p.stdin.write(String(prompt || '')); p.stdin.end(); } catch (e) {}
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
-    p.on('error', () => finish({ ok: false, error: 'The Claude Code CLI failed to run.' }));
+    p.on('error', () => canceled ? finish({ ok: false, canceled: true, error: 'Stopped.' }) : finish({ ok: false, error: 'The Claude Code CLI failed to run.' }));
     p.on('close', () => {
+      if (canceled) return finish({ ok: false, canceled: true, error: 'Stopped.' });   // user pressed Stop
       let j; try { j = JSON.parse(out); } catch (e) { return finish({ ok: false, error: 'Could not parse the CLI response. ' + (err || '').slice(0, 300) }); }
       if (j.is_error || j.subtype !== 'success') return finish({ ok: false, error: (typeof j.result === 'string' ? j.result : 'The CLI reported an error.') });
       const text = (typeof j.result === 'string') ? j.result : '';
@@ -280,10 +288,23 @@ function runCliChat({ system, prompt, model, timeoutMs }){
   });
 }
 
+// Abort an in-flight chat by the token the renderer gave it. Returns {ok} — ok:false
+// simply means nothing was running under that token (already finished or unknown).
+function cancelChat(token){
+  if (!token) return { ok: false };
+  const killer = activeChats.get(token);
+  if (!killer) return { ok: false };
+  try { killer(); } catch (e) {}
+  activeChats.delete(token);
+  return { ok: true, canceled: true };
+}
+
 // API chat: POST /v1/messages with system + a single user message, no tools;
 // read the first text block from the response.
-function runApiChat({ system, prompt, model, timeoutMs }, apiKey){
+function runApiChat({ system, prompt, model, timeoutMs, cancelToken }, apiKey){
   return new Promise((resolve) => {
+    let done = false, canceled = false;
+    const finish = (v) => { if (!done) { done = true; if (cancelToken) activeChats.delete(cancelToken); resolve(v); } };
     const body = JSON.stringify({
       model: model || API_MODEL,
       max_tokens: 4096,
@@ -298,16 +319,19 @@ function runApiChat({ system, prompt, model, timeoutMs }, apiKey){
       let d = '';
       res.on('data', (c) => { d += c; });
       res.on('end', () => {
-        let j; try { j = JSON.parse(d); } catch (e) { return resolve({ ok: false, error: 'Could not parse the API response.' }); }
-        if (j.type === 'error' || j.error) return resolve({ ok: false, error: (j.error && j.error.message) || 'API error.' });
+        if (canceled) return finish({ ok: false, canceled: true, error: 'Stopped.' });
+        let j; try { j = JSON.parse(d); } catch (e) { return finish({ ok: false, error: 'Could not parse the API response.' }); }
+        if (j.type === 'error' || j.error) return finish({ ok: false, error: (j.error && j.error.message) || 'API error.' });
         const tb = (j.content || []).find((c) => c.type === 'text');
         const text = tb && tb.text ? tb.text : '';
-        if (!text) return resolve({ ok: false, error: 'The API returned an empty answer.' });
-        resolve({ ok: true, text: text, via: 'api' });
+        if (!text) return finish({ ok: false, error: 'The API returned an empty answer.' });
+        finish({ ok: true, text: text, via: 'api' });
       });
     });
-    req.on('error', () => resolve({ ok: false, error: 'Network error contacting the Anthropic API.' }));
-    req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve({ ok: false, error: 'The API request timed out.' }); });
+    // Register a killer so Stop can abort an in-flight API request too.
+    if (cancelToken) activeChats.set(cancelToken, () => { canceled = true; try { req.destroy(); } catch (e) {} });
+    req.on('error', () => canceled ? finish({ ok: false, canceled: true, error: 'Stopped.' }) : finish({ ok: false, error: 'Network error contacting the Anthropic API.' }));
+    req.on('timeout', () => { try { req.destroy(); } catch (e) {} finish({ ok: false, error: 'The API request timed out.' }); });
     req.write(body); req.end();
   });
 }
@@ -342,4 +366,4 @@ function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   });
 }
 
-module.exports = { init, status, setKey, setMode, extract, chat, login, logout, bundledClaudePath, cliBin };
+module.exports = { init, status, setKey, setMode, extract, chat, cancelChat, login, logout, bundledClaudePath, cliBin };

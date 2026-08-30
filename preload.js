@@ -93,8 +93,10 @@ contextBridge.exposeInMainWorld('ldsShell', {
   aiSetMode: (mode) => ipcRenderer.invoke('lds:ai-set-mode', { mode }),
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
-  // Free-form chat (no tools): {system, prompt, model?, timeoutMs?} → {ok,text,via,error}.
+  // Free-form chat (no tools): {system, prompt, model?, timeoutMs?, cancelToken?} → {ok,text,via,error}.
   aiChat: (opts) => ipcRenderer.invoke('lds:ai-chat', opts),
+  // Cancel an in-flight aiChat by its cancelToken (the Stop button). Resolves {ok}.
+  aiChatCancel: (token) => ipcRenderer.invoke('lds:ai-chat-cancel', { token }),
   // Browser OAuth sign-in to the Claude subscription (`claude setup-token`) → {ok,error}.
   aiLogin: () => ipcRenderer.invoke('lds:ai-login'),
   aiLogout: () => ipcRenderer.invoke('lds:ai-logout'),

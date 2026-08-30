@@ -15,6 +15,15 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Assistant context controls — Stop, New chat, Compact.** The chat resends its whole
+  running thread each turn, so after many file uploads a new request could exceed the
+  120s CLI timeout ("can't digest the new file"). Added: a **Stop** button (the Send
+  button becomes Stop mid-request; it truly terminates the CLI/API process via a cancel
+  token, and drops the unanswered turn so it doesn't linger in context); **New chat**
+  (clears the thread back to the welcome — loans untouched); and **Compact** (summarizes
+  the thread into a compact brief and carries only that forward). Big-attachment turns
+  also get a longer timeout (240s), with Stop always available to bail. Timeout errors now
+  suggest New chat / Compact when the thread has grown long.
 - **"Fixed payment" — use the exact P&I written in the note.** `amortType:"Fixed P&I"` +
   `fixedAmortAmount` locks the stated monthly P&I instead of computing a 30/360 annuity, and
   now composes with ARM resets (the reset re-prices interest and holds the stated payment).
