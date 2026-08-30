@@ -15,6 +15,18 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Entered NOI was invisible when non-positive (lease-up assets) — fixed.** An approved NOI
+  DID persist, but the app conflated "an NOI was entered" with "NOI > 0": every read-site
+  (`propertyNOI`, the coverage table's `has`, `openNoiFlow`) gated on `noi > 0`, so a property
+  in lease-up with a negative trailing NOI (e.g. Legacy at Kissimmee, −$779,821.44 by the
+  trailing-3×4 method) showed nothing and kept prompting "Add NOI" — looking as if the change
+  never landed. Now a distinct `noiEntered()` (any sign) drives DISPLAY and prompting, while
+  the DSCR/debt-yield/value/LTV math still requires `noi > 0`. Result: the coverage table shows
+  the entered NOI (even negative) with a "NOI ≤ 0" flag and "Refi path" (not "Add NOI"), ratios
+  read "—" (undefined on non-positive NOI), and the refi NOI pop-up offers keep/change instead
+  of forcing re-entry. Also: the assistant snapshot now includes noi/egi/opex/capRate/dscr/
+  debtYield, so the assistant can SEE and confirm what it changed (and verify from the snapshot
+  rather than claiming blindness).
 - **Assistant approve applied to the WRONG loan (or none) — fixed.** The approve handler
   re-resolved the loan by `_id` (`getLoan(l._id)`); in books with missing or duplicated ids
   (older/imported/restored portfolios) `find` returns a different record, so the card said

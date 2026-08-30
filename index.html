@@ -3974,7 +3974,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
       let covBal=0,dscrW=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0;
       items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
-      const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.length-nCov;
+      const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: loans.length+" loans · "+moneyShort(totalOrig)+" originated"})+
@@ -4005,18 +4005,19 @@ tr[data-loan]:hover td{background:#eef2f7}
       const yCls=v=>v==null?'text-slate-400':v>=COV_DY_FLOOR?'text-emerald-700':v>=0.06?'text-amber-600':'text-rose-600';
       const sorted=items.slice().sort((a,b)=>{const av=a.cp.noi>0?(a.cp.dscr==null?9:a.cp.dscr):Infinity,bv=b.cp.noi>0?(b.cp.dscr==null?9:b.cp.dscr):Infinity;return av-bv;});
       const thc=(t,e)=>'<th class="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 '+(e||'')+'">'+t+'</th>';
-      const tbody=sorted.map(it=>{const cp=it.cp,has=cp.noi>0;
+      const tbody=sorted.map(it=>{const cp=it.cp,entered=cp.entered,covered=cp.noi>0;   // entered = an NOI figure exists (any sign); covered = positive, so ratios exist
         const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
-        const status=!has?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
-          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>');
-        const action=!has?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
+        const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
+          :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
+          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>'));
+        const action=!entered?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
           :'<button type="button" data-covpath="'+(it.combo?('combo:'+propertyKey(it.sr)):it.sr._id)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
-        return '<tr class="hover:bg-slate-50'+(has?'':' bg-slate-50/40')+'">'+
+        return '<tr class="hover:bg-slate-50'+(covered?'':' bg-slate-50/40')+'">'+
           '<td class="px-3 py-2 text-sm font-medium text-slate-900">'+nameCell+'</td>'+
-          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(has?fmtMoney(cp.noi):'—')+'</td>'+
-          '<td class="px-3 py-2 text-sm text-right tabular-nums font-bold '+dCls(has?cp.dscr:null)+'">'+(has&&cp.dscr!=null?cp.dscr.toFixed(2)+'×':'—')+'</td>'+
-          '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold '+yCls(has?cp.debtYield:null)+'">'+(has&&cp.debtYield!=null?fmtPct(cp.debtYield):'—')+'</td>'+
-          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(has&&cp.ltv!=null?fmtPct(cp.ltv):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums '+(entered&&!covered?'text-rose-600 font-semibold':'text-slate-600')+'">'+(entered?fmtMoney(cp.noi):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-bold '+dCls(covered?cp.dscr:null)+'">'+(covered&&cp.dscr!=null?cp.dscr.toFixed(2)+'×':'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold '+yCls(covered?cp.debtYield:null)+'">'+(covered&&cp.debtYield!=null?fmtPct(cp.debtYield):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(covered&&cp.ltv!=null?fmtPct(cp.ltv):'—')+'</td>'+
           '<td class="px-3 py-2"><div class="flex items-center justify-between gap-2">'+status+action+'</div></td>'+
         '</tr>'; }).join('');
       const head='<tr>'+thc("Property")+thc("NOI",'text-right')+thc("DSCR",'text-right')+thc("Debt Yield",'text-right')+thc("LTV",'text-right')+thc("")+'</tr>';
@@ -5246,7 +5247,19 @@ tr[data-loan]:hover td{background:#eef2f7}
       const k = propertyKey(loan);
       return loans.filter(l => propertyKey(l) === k).sort((x, y) => (isMezz(x) ? 1 : 0) - (isMezz(y) ? 1 : 0));   // senior(s) first, mezz last
     }
-    function propertyNOI(list){ for(const l of list){ if(l.noi != null && l.noi > 0) return l.noi; } return null; }   // NOI is a property figure; take it wherever it's entered (usually the senior)
+    // Has an NOI figure actually been ENTERED for this loan? Any sign counts — a property
+    // in lease-up can post a negative trailing NOI (expenses > income). This is distinct
+    // from "positive enough to value" (noi > 0), which the DSCR/debt-yield/value/LTV math
+    // still requires. Conflating the two is what hid an entered-but-negative NOI and kept
+    // showing "Add NOI" for a property that already had one.
+    function noiEntered(loan){ return !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
+    // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
+    // the entered value even when zero or negative — so an entered NOI is never hidden.
+    function propertyNOI(list){
+      for(const l of list){ if(noiEntered(l) && Number(l.noi) > 0) return Number(l.noi); }
+      for(const l of list){ if(noiEntered(l)) return Number(l.noi); }
+      return null;
+    }
     function combinedPosition(list){
       let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0;
       list.forEach(l => {
@@ -5256,10 +5269,11 @@ tr[data-loan]:hover td{background:#eef2f7}
         rateWt += (d.currentRate || 0) * (d.currentBalance || 0);
       });
       const noi = propertyNOI(list);
+      const entered = list.some(noiEntered);   // an NOI figure has been entered (any sign), even if not positive-valuable
       const sr = list.find(l => !isMezz(l)) || list[0];
       const cr = loanCapRate(sr), value = (noi > 0 && cr > 0) ? noi / cr : null, annualPI = piMoTot * 12;
       return {
-        count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, value,
+        count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, entered, value,
         blended: balTot > 0 ? rateWt / balTot : 0,
         dscr: (noi > 0 && annualPI > 0) ? noi / annualPI : null,
         debtYield: (noi > 0 && balTot > 0) ? noi / balTot : null,
@@ -5697,7 +5711,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     let noiCtx = null;
     function openNoiFlow(loan, onDone){
       noiCtx = { loan: loan, onDone: onDone };
-      const has = (loan.noi != null && !isNaN(loan.noi) && loan.noi > 0);
+      const has = noiEntered(loan);   // a saved NOI exists (any sign) → offer keep/change, don't force re-entry
       el("noiText").textContent = has
         ? "This property has an annual NOI saved. Use it, or change it?"
         : "Enter this property's annual net operating income (NOI) to run the advanced analysis.";
@@ -6564,7 +6578,12 @@ tr[data-loan]:hover td{background:#eef2f7}
           ioMonths: keep(l.ioMonths), amortMethod: keep(l.amortMethod),
           currentBalance: keep(d.currentBalance), currentRate: keep(d.currentRate),
           monthlyPI: keep(d.monthlyPI), totalMonthlyDebtService: keep(d.totalDebtService),
-          monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade)
+          monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade),
+          // Property financials (so the assistant can SEE and confirm what it edits). noi/egi/
+          // opex are annual dollars; noi may be 0 or negative for a lease-up asset. dscr/debtYield
+          // are computed and appear only when NOI is positive.
+          noi: keep(l.noi), egi: keep(l.egi), opex: keep(l.opex), capRate: keep(l.capRate),
+          dscr: keep(loanDSCR(l)), debtYield: keep(loanDebtYield(l))
         };
         if(Object.keys(esc).length) o.monthlyEscrowsAndFees = esc;
         return o;
@@ -6585,7 +6604,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     var AI_ASST_SYSTEM = [
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
-      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted.",
+      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while an asset is in lease-up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",
       "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
@@ -6597,7 +6616,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
       "- propose_loan_change {name, changes}: propose ADDING, ALTERING, or REMOVING information on an existing loan. The operator sees a before→after preview in the chat and must click Approve before anything changes. changes maps field keys to new values — the propose_new_loan keys above PLUS the property financials noi (annual NOI, number), egi (annual effective gross income), opex (annual operating expenses), and capRate (decimal, e.g. 0.055). To REMOVE/clear a field, set it to null. Include only the fields you were actually asked to change.",
       "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted anything: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change shows a preview the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
-      "IMPORTANT — you cannot apply a change yourself. A loan change is ONLY applied when the operator clicks the green Approve button on the preview card, and you receive NO signal that they did. So NEVER say a change is approved, applied, saved, done, or updated just because the operator says so. If the operator replies that they approve / to go ahead / to just do it / that the Approve button didn't work, do NOT confirm it as done — instead emit the propose_loan_change action again so a fresh preview with a working Approve button appears, and tell them to click Approve on it.",
+      "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks the green Approve button on the preview card. You get no real-time signal of that click — BUT the loan snapshot in every message reflects the CURRENT saved values, so you CAN check. To verify a change, compare the snapshot's field (e.g. noi) to the value that was proposed: if it already matches, the change IS applied — say it's done and where to see it (open that loan, or the Coverage table on the dashboard). If it does NOT match, it was not applied — emit the propose_loan_change action again so a fresh Approve card appears and ask them to click it. Never claim a change is done merely because the operator says they approved — check the snapshot first. And if the operator says nothing changed, first read the snapshot: if the value is already set, reassure them it IS saved and tell them exactly where it shows.",
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
     ].join("\n");
 
