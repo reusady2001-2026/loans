@@ -1,0 +1,75 @@
+name: Build Windows desktop app
+
+# Builds the Electron desktop app into a portable Windows .exe on GitHub's own
+# Windows machines, then publishes it as a downloadable release. Nothing needs
+# to be installed locally — download the .exe from the release and double-click.
+
+on:
+  push:
+    branches: ["claude/awesome-ptolemy-4s9eez"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # The build compiles nothing native (sign-in uses a visible console window, not
+    # a compiled pty), so the default GitHub Windows runner is fine.
+    runs-on: windows-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows installer (NSIS)
+        run: npm run build:win-installer
+
+      - name: Show build output
+        shell: bash
+        run: ls -la release || true
+
+      # Always keep the installer + update metadata as run artifacts.
+      - name: Upload build output as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loan-Debt-Service-Hub-Windows
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error
+
+      # Publish this build as its OWN versioned release, taken from package.json.
+      # Older versions' releases are never deleted — every version stays available,
+      # and GitHub's /releases/latest link auto-points at the newest one. Re-running
+      # the same version only refreshes that version's .exe.
+      - name: Publish versioned release
+        if: github.ref == 'refs/heads/claude/awesome-ptolemy-4s9eez'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          TAG="v${VER}"
+          NOTES="Windows desktop app installer (v${VER}). Download and run the installer below — it adds Start-menu and desktop shortcuts and runs fully offline. Already installed? The app updates itself from here automatically. (Windows may show a SmartScreen notice for unsigned apps: click **More info → Run anyway**.)"
+          # The release must carry the installer AND the update metadata (latest.yml
+          # + .blockmap) so installed copies can auto-update via electron-updater.
+          ASSETS="release/*.exe release/latest.yml release/*.blockmap"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $ASSETS --clobber
+            gh release edit "$TAG" --latest
+          else
+            gh release create "$TAG" $ASSETS \
+              --target "$GITHUB_SHA" \
+              --title "Loan Debt Service Hub v${VER} — Windows desktop app" \
+              --notes "$NOTES" \
+              --latest
+          fi
