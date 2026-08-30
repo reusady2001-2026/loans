@@ -9,6 +9,8 @@
   <!-- Tailwind + SheetJS are vendored locally (vendor/) so the app runs fully offline -->
   <script src="./vendor/tailwindcss.js"></script>
   <script src="./vendor/xlsx.full.min.js"></script>
+  <script src="./vendor/pdf.min.js"></script>
+  <script src="./vendor/mammoth.browser.min.js"></script>
   <!-- Underwriting & debt-sizing engine, T12 classifier, and Setup builder (pure, data-free) -->
   <script src="./underwriting.js"></script>
   <script src="./t12-classify.js"></script>
@@ -1168,7 +1170,7 @@
             <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
             Assistant
           </h3>
-          <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, or draft a new loan for you to review. I never save changes on my own.</p>
+          <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, edit loan info, or draft a new loan. Attach a PDF, Word, Excel or text file and I’ll read it. I never save changes without your approval.</p>
         </div>
         <button id="aiAsstClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -1180,7 +1182,12 @@
       </div>
       <div id="aiAsstLog" class="flex-1 min-h-[240px] overflow-auto p-5 space-y-4"></div>
       <div class="p-4 border-t border-slate-100 space-y-2">
+        <div id="aiAsstAttachRow" class="hidden flex flex-wrap gap-2"></div>
         <div class="flex items-end gap-2">
+          <input id="aiAsstFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown" class="hidden">
+          <button id="aiAsstAttachBtn" type="button" title="Attach files — PDF, Word, Excel, text, Markdown" class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-300 text-slate-500 transition hover:bg-slate-50 hover:text-brand-600">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
           <textarea id="aiAsstInput" rows="2" placeholder="Ask me anything, or tell me what to do… (Enter to send, Shift+Enter for a new line)" class="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"></textarea>
           <button id="aiAsstSend" type="button" class="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-500 disabled:opacity-40 disabled:pointer-events-none">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
@@ -1189,7 +1196,7 @@
         </div>
         <div class="flex items-center justify-between gap-2">
           <button id="aiAsstSettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
-          <span class="text-[10px] text-slate-400">Claude sees a JSON snapshot of your loans — never your files or keys.</span>
+          <span class="text-[10px] text-slate-400">Claude sees a JSON snapshot of your loans, plus any file you attach (read on your machine) — never your keys.</span>
         </div>
       </div>
     </div>
@@ -6548,6 +6555,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
       "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted.",
+      "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",
       "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
       "- show_portfolio {}: show the whole-portfolio overview.",
@@ -6700,12 +6708,79 @@ tr[data-loan]:hover td{background:#eef2f7}
         : "max-w-[90%] rounded-2xl rounded-bl-md border px-4 py-2.5 text-sm whitespace-pre-wrap break-words leading-relaxed "+(opts.error?"border-rose-200 bg-rose-50 text-rose-700":"border-slate-200 bg-slate-50 text-slate-800");
       b.innerHTML=html; wrap.appendChild(b); log.appendChild(wrap); log.scrollTop=log.scrollHeight; return b;
     }
+    // ---- Assistant file attachments: pull TEXT out of PDF / Word / Excel / text / md
+    // in-app (offline), and include it in the prompt. Claude can't read binary Office
+    // files itself, so the app extracts: text/md via FileReader, xlsx via SheetJS,
+    // .docx via mammoth, .pdf via pdf.js. The raw file never leaves the machine.
+    var aiAsstFiles = [];                 // [{name,size,text,note,status:'loading'|'ok'|'err'}]
+    var AI_ATTACH_MAX = 400000;           // cap extracted text per file (chars)
+    function aiExtractFileText(file){
+      return new Promise(function(resolve){
+        var name=file.name||"file", ext=(name.split(".").pop()||"").toLowerCase();
+        function done(text, note){ text=String(text||""); var trunc=false; if(text.length>AI_ATTACH_MAX){ text=text.slice(0,AI_ATTACH_MAX); trunc=true; } resolve({ text:text.trim(), note: note || (trunc?("truncated to first "+Math.round(AI_ATTACH_MAX/1000)+"K chars"):"") }); }
+        try{
+          if(ext==="txt"||ext==="text"||ext==="md"||ext==="markdown"||ext==="csv"){
+            var r=new FileReader(); r.onload=function(e){ done(String(e.target.result||"")); }; r.onerror=function(){ resolve({text:"",note:"couldn’t read the file"}); }; r.readAsText(file); return;
+          }
+          if(ext==="xlsx"||ext==="xls"){
+            if(!window.XLSX){ resolve({text:"",note:"spreadsheet reader not available"}); return; }
+            var r2=new FileReader(); r2.onload=function(e){ try{ var wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"}); var out=[]; wb.SheetNames.forEach(function(nm){ var csv=XLSX.utils.sheet_to_csv(wb.Sheets[nm],{blankrows:false}); if(csv&&csv.trim()) out.push("# Sheet: "+nm+"\n"+csv); }); done(out.join("\n\n"), out.length?"":"no readable cells"); }catch(err){ resolve({text:"",note:"couldn’t parse the spreadsheet"}); } }; r2.onerror=function(){ resolve({text:"",note:"couldn’t read the file"}); }; r2.readAsArrayBuffer(file); return;
+          }
+          if(ext==="docx"){
+            if(!window.mammoth){ resolve({text:"",note:"Word reader not available"}); return; }
+            file.arrayBuffer().then(function(buf){ window.mammoth.extractRawText({arrayBuffer:buf}).then(function(res){ done(res&&res.value, (res&&res.value&&res.value.trim())?"":"no readable text"); }).catch(function(){ resolve({text:"",note:"couldn’t read the Word file"}); }); }).catch(function(){ resolve({text:"",note:"couldn’t read the file"}); }); return;
+          }
+          if(ext==="doc"){ resolve({text:"",note:"legacy .doc isn’t supported — save as .docx or PDF"}); return; }
+          if(ext==="pdf"){
+            if(!window.pdfjsLib){ resolve({text:"",note:"PDF reader not available"}); return; }
+            try{ pdfjsLib.GlobalWorkerOptions.workerSrc="./vendor/pdf.worker.min.js"; }catch(e){}
+            file.arrayBuffer().then(function(buf){
+              pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise.then(function(pdf){
+                var pages=[], n=pdf.numPages, i=0;
+                (function next(){ if(i>=n){ var t=pages.join("\n\n"); done(t, t.trim()?"":"no text found — a scanned/image-only PDF"); return; } pdf.getPage(i+1).then(function(pg){ return pg.getTextContent(); }).then(function(tc){ pages.push(tc.items.map(function(it){return it.str;}).join(" ")); i++; next(); }).catch(function(){ i++; next(); }); })();
+              }).catch(function(){ resolve({text:"",note:"couldn’t read the PDF"}); });
+            }).catch(function(){ resolve({text:"",note:"couldn’t read the file"}); }); return;
+          }
+          resolve({text:"",note:"unsupported file type (."+ext+")"});
+        }catch(e){ resolve({text:"",note:"couldn’t read the file"}); }
+      });
+    }
+    function aiAsstRenderAttach(){
+      var row=el("aiAsstAttachRow"); if(!row) return;
+      if(!aiAsstFiles.length){ row.classList.add("hidden"); row.innerHTML=""; return; }
+      row.classList.remove("hidden");
+      row.innerHTML = aiAsstFiles.map(function(f,idx){
+        var loading=f.status==="loading", ok=f.status==="ok";
+        var tone = loading?"border-slate-200 bg-slate-50 text-slate-500": ok?"border-brand-200 bg-brand-50 text-brand-800":"border-amber-200 bg-amber-50 text-amber-800";
+        var sub = loading?"reading…": ok?(Math.max(1,Math.round((f.text||"").length/1000))+"K chars"):(f.note||"unreadable");
+        return '<span class="inline-flex items-center gap-1.5 rounded-lg border '+tone+' px-2 py-1 text-[11px] max-w-[240px]">'+
+          '<svg class="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'+
+          '<span class="truncate font-semibold">'+escapeHtml(f.name)+'</span><span class="opacity-70 shrink-0">'+escapeHtml(sub)+'</span>'+
+          '<button type="button" data-attachrm="'+idx+'" class="ml-0.5 shrink-0 opacity-60 hover:opacity-100 hover:text-rose-600" title="remove">&times;</button></span>';
+      }).join("");
+      row.querySelectorAll("[data-attachrm]").forEach(function(b){ b.addEventListener("click", function(){ aiAsstFiles.splice(+b.getAttribute("data-attachrm"),1); aiAsstRenderAttach(); }); });
+    }
+    function aiAsstAddFiles(list){
+      var files=Array.prototype.slice.call(list||[]); if(!files.length) return;
+      files.forEach(function(file){
+        if(file.size > 25*1024*1024){ aiAsstFiles.push({name:file.name,size:file.size,text:"",note:"too large (25 MB max)",status:"err"}); aiAsstRenderAttach(); return; }
+        var entry={name:file.name,size:file.size,text:"",note:"reading…",status:"loading"}; aiAsstFiles.push(entry); aiAsstRenderAttach();
+        aiExtractFileText(file).then(function(res){ entry.text=res.text||""; entry.note=res.note||""; entry.status=entry.text?"ok":"err"; aiAsstRenderAttach(); });
+      });
+    }
+
     function aiAsstAsk(question){
       question=String(question==null?"":question).trim();
-      if(!question || aiAsstBusy || !aiAsstConnected) return;
+      var ready = aiAsstFiles.filter(function(f){ return f.status==="ok" && f.text; });
+      var loading = aiAsstFiles.some(function(f){ return f.status==="loading"; });
+      if(loading){ toast("Still reading the attached file — one moment","info"); return; }
+      if((!question && !ready.length) || aiAsstBusy || !aiAsstConnected) return;
       var input=el("aiAsstInput"); if(input) input.value="";
-      aiAsstBubble("user", escapeHtml(question));
-      aiAsstHistory.push({role:"user", text:question});
+      var chips = ready.length ? ('<div class="mt-1.5 flex flex-wrap gap-1">'+ready.map(function(f){ return '<span class="inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[11px]">📎 '+escapeHtml(f.name)+'</span>'; }).join("")+'</div>') : "";
+      aiAsstBubble("user", escapeHtml(question||"(sent the attached file"+(ready.length>1?"s":"")+")")+chips);
+      aiAsstHistory.push({role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"")});
+      var filesBlock = ready.length ? (ready.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")) : "";
+      aiAsstFiles = []; aiAsstRenderAttach();      // attachments are consumed by this message
       aiAsstSetBusy(true);
       var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Thinking…</span>');
       var snap=aiAsstSnapshot();
@@ -6714,8 +6789,9 @@ tr[data-loan]:hover td{background:#eef2f7}
         "Today's date is "+aiAsstTodayISO()+".\n\n"+
         (aiAsstContext()?("Current view: "+aiAsstContext()+"\n\n"):"")+
         "Loan portfolio ("+snap.length+" loans) as JSON:\n<portfolio>\n"+JSON.stringify(snap)+"\n</portfolio>\n\n"+
+        (filesBlock?("The operator attached the following file(s) — their extracted text content:\n"+filesBlock+"\n\n"):"")+
         (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
-        "User: "+question;
+        "User: "+(question||"(the operator attached the file(s) above with no other message — read them, summarize what you found, and if it implies a change to a loan, propose it for approval)");
       ldsShell.aiChat({ system: AI_ASST_SYSTEM, prompt: prompt, timeoutMs: 120000 })
         .then(function(r){
           if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking);
@@ -6827,6 +6903,13 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("aiAsstSettingsToggle").addEventListener("click", ()=>openClaudeConn());   // unified subscription sign-in dialog
       el("aiAsstSend").addEventListener("click", ()=> aiAsstAsk(el("aiAsstInput").value));
       el("aiAsstInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); aiAsstAsk(el("aiAsstInput").value); } });
+      // File attachments: button + hidden input + drag-and-drop onto the chat.
+      if(el("aiAsstAttachBtn")) el("aiAsstAttachBtn").addEventListener("click", ()=> el("aiAsstFile").click());
+      if(el("aiAsstFile")) el("aiAsstFile").addEventListener("change", (e)=>{ aiAsstAddFiles(e.target.files); e.target.value=""; });
+      (function(){ var m=el("aiAsstModal"); if(!m) return;
+        m.addEventListener("dragover", (e)=>{ e.preventDefault(); });
+        m.addEventListener("drop", (e)=>{ e.preventDefault(); if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) aiAsstAddFiles(e.dataTransfer.files); });
+      })();
       el("aiAsstLog").addEventListener("click", (e)=>{ const c=e.target.closest(".aiAsstChip"); if(c) aiAsstAsk(c.getAttribute("data-q")); });
       el("aiAsstModal").addEventListener("click", (e)=>{ if(e.target===el("aiAsstModal")) aiAsstClose(); });
     }

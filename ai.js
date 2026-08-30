@@ -250,20 +250,23 @@ async function chat(opts){
     : 'Claude Code CLI not found and no API key configured. Install Claude Code (and run `claude` once to sign in) or add an Anthropic API key in Settings.' };
 }
 
-// CLI chat: `claude -p <prompt> --output-format json` with the system prompt
-// appended and NO tools enabled (an empty allowed-tools list — a plain Q&A needs
-// none), then read `.result`. The prompt carries the question + portfolio JSON.
+// CLI chat: the full prompt (question + portfolio JSON + any attached-file text) is
+// piped on STDIN, not passed as a `-p` argument — a command-line arg is capped by the
+// OS (~32KB on Windows, 128KB/arg on Linux), which large attachments blow past. The
+// `-p` directive tells Claude to answer what's on stdin. System prompt appended, NO
+// tools (a plain Q&A needs none). Then read `.result`.
 function runCliChat({ system, prompt, model, timeoutMs }){
   return new Promise((resolve) => {
-    const args = ['-p', String(prompt), '--output-format', 'json', '--allowed-tools', ''];
+    const args = ['-p', 'Respond to the request provided on standard input.', '--output-format', 'json', '--allowed-tools', ''];
     if (system) args.push('--append-system-prompt', String(system));
     if (model) args.push('--model', model);
     let out = '', err = '', done = false;
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
     let p;
-    try { p = spawn(cliBin(),args, { stdio: ['ignore', 'pipe', 'pipe'], env: cliEnv() }); }
+    try { p = spawn(cliBin(),args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
+    try { p.stdin.write(String(prompt || '')); p.stdin.end(); } catch (e) {}
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
     p.on('error', () => finish({ ok: false, error: 'The Claude Code CLI failed to run.' }));
