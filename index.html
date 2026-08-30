@@ -3884,6 +3884,118 @@ tr[data-loan]:hover td{background:#eef2f7}
     // yield floors. NOI is the property's own figure (loan.noi, from its T12 or a refi
     // analysis); a property without one is listed as "needs T12/NOI" — never estimated.
     const COV_DSCR_FLOOR = 1.25, COV_DY_FLOOR = 0.08;
+
+    // ---- Inline mini-charts for the dashboard (offline: pure SVG/CSS, no libraries) ----
+    const DASH_C = { green:'#16a34a', amber:'#f59e0b', sky:'#0ea5e9', rose:'#ef4444', slate:'#94a3b8', indigo:'#6366f1' };
+    function chartCard(title, sub, body){
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-card lift animate-fade-up">'+
+        '<h3 class="text-sm font-bold text-slate-900">'+title+'</h3>'+
+        (sub?'<p class="text-[11px] text-slate-500 mb-3">'+sub+'</p>':'<div class="mb-3"></div>')+body+'</div>';
+    }
+    function dashDonut(segs, opts){ opts=opts||{};
+      const total = segs.reduce((s,x)=>s+(x.value||0),0) || 1;
+      const R=54, SW=16, C=2*Math.PI*R, cx=64, cy=64; let off=0;
+      const rings = segs.filter(s=>s.value>0).map(s=>{ const len=(s.value/total)*C;
+        const e='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+s.color+'" stroke-width="'+SW+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';
+        off+=len; return e; }).join('');
+      const center='<text x="'+cx+'" y="'+(cy-1)+'" text-anchor="middle" style="font-size:16px;font-weight:800;fill:#0f172a">'+(opts.centerTop||'')+'</text>'+
+        '<text x="'+cx+'" y="'+(cy+13)+'" text-anchor="middle" style="font-size:8px;font-weight:700;fill:#94a3b8;letter-spacing:.06em">'+((opts.centerBot||'').toUpperCase())+'</text>';
+      const legend = segs.map(s=>'<div class="flex items-center gap-2 text-[11px]"><span class="h-2.5 w-2.5 rounded-sm shrink-0" style="background:'+s.color+'"></span><span class="text-slate-600 truncate">'+s.label+'</span><span class="ml-auto tabular-nums font-semibold text-slate-800 shrink-0">'+(s.display||'')+'</span></div>').join('');
+      return '<div class="flex items-center gap-4"><svg viewBox="0 0 128 128" class="h-32 w-32 shrink-0"><circle cx="64" cy="64" r="54" fill="none" stroke="#f1f5f9" stroke-width="16"/>'+rings+center+'</svg><div class="min-w-0 flex-1 space-y-1.5">'+legend+'</div></div>';
+    }
+    function dashBars(bars){
+      const max = Math.max.apply(null, bars.map(b=>b.value||0).concat([1])); const H=104;
+      const cols = bars.map(b=>{ const h=Math.max(3, Math.round((b.value||0)/max*H));
+        return '<div class="group flex flex-1 flex-col items-center justify-end gap-1.5">'+
+          '<span class="text-[9px] font-semibold tabular-nums text-slate-400 opacity-0 group-hover:opacity-100 transition">'+(b.tip||'')+'</span>'+
+          '<div class="w-full max-w-[30px] rounded-t-md transition group-hover:brightness-110" style="height:'+h+'px;background:'+(b.color||DASH_C.green)+'" title="'+b.label+': '+(b.tip||'')+'"></div>'+
+          '<span class="text-[10px] text-slate-500">'+b.label+'</span></div>'; }).join('');
+      return '<div class="flex items-end gap-2" style="height:'+(H+34)+'px">'+cols+'</div>';
+    }
+    function dashGauge(val, floor, max, opts){ opts=opts||{};
+      const clamp=v=>Math.max(0,Math.min(100,(v/max)*100));
+      const ok=val!=null&&val>=floor, near=val!=null&&val>=floor*0.92;
+      const color=val==null?'#cbd5e1': ok?DASH_C.green: near?DASH_C.amber:DASH_C.rose;
+      return '<div class="space-y-1">'+
+        '<div class="flex items-baseline justify-between"><span class="text-xs font-semibold text-slate-600">'+opts.label+'</span>'+
+          '<span class="text-sm font-extrabold tabular-nums" style="color:'+color+'">'+(val==null?'—':opts.fmt(val))+'</span></div>'+
+        '<div class="relative h-2.5 rounded-full bg-slate-100">'+
+          '<div class="absolute inset-y-0 left-0 rounded-full" style="width:'+(val==null?0:clamp(val))+'%;background:'+color+'"></div>'+
+          '<div class="absolute top-[-3px] bottom-[-3px] w-[2px] bg-slate-600 rounded" style="left:'+clamp(floor)+'%"></div>'+
+        '</div>'+
+        '<div class="text-[10px] text-slate-400">floor '+opts.fmt(floor)+(val!=null?(ok?' · <span class="text-emerald-600 font-semibold">clears</span>':' · <span class="text-rose-600 font-semibold">below</span>'):'')+'</div>'+
+      '</div>';
+    }
+
+    // The dashboard — analytics-forward, on top of the landing page: hero KPIs + charts
+    // (debt mix, maturity ladder, coverage gauges) + the DSCR/debt-yield coverage table.
+    // Everything reads on the COMBINED position (senior + mezz); NOI is the property's
+    // own figure — no NOI, no estimate ("needs T12/NOI").
+    function portfolioDashboard(rows, groupList){
+      let totalBal=0, totalDS=0, totalOrig=0, rateWB=0;
+      const byType={"Fixed":0,"Hybrid ARM":0,"Floating":0}, matByYear={};
+      const nowY=todayParts().y;
+      rows.forEach(({loan,comp})=>{ const d=comp.derived;
+        totalBal+=d.currentBalance||0; totalDS+=d.totalDebtService||0; totalOrig+=loan.originalAmount||0; rateWB+=(d.currentRate||0)*(d.currentBalance||0);
+        byType[loan.rateType]=(byType[loan.rateType]||0)+(d.currentBalance||0);
+        const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
+      const wAvg=totalBal>0?rateWB/totalBal:0;
+      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
+      let covBal=0,dscrW=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0;
+      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
+      const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.length-nCov;
+
+      const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
+        kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: loans.length+" loans · "+moneyShort(totalOrig)+" originated"})+
+        kpiCard("Weighted-Avg Rate", fmtPct(wAvg), {sub: fmtMoney(totalDS)+"/mo debt service"})+
+        kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the 1.25× floor":"below the 1.25× floor"):(nCov+" of "+items.length+" covered")})+
+        kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: wDy!=null?(wDy>=COV_DY_FLOOR?"clears the 8% floor":"below the 8% floor"):"awaiting NOI"})+
+      '</div>';
+
+      const donut=chartCard("Debt by rate type","current balance by structure",
+        dashDonut([
+          {label:"Fixed", value:byType["Fixed"], color:DASH_C.green, display:moneyShort(byType["Fixed"])},
+          {label:"Hybrid ARM", value:byType["Hybrid ARM"], color:DASH_C.amber, display:moneyShort(byType["Hybrid ARM"])},
+          {label:"Floating", value:byType["Floating"], color:DASH_C.sky, display:moneyShort(byType["Floating"])},
+        ], {centerTop:moneyShort(totalBal), centerBot:"total debt"}));
+      const yrs=Object.keys(matByYear).map(Number).sort((a,b)=>a-b);
+      const ladder=chartCard("Debt maturing by year","balloon / payoff by maturity — amber = next 2 years",
+        dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
+      const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)))
+        .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr.propertyName||loanLabel(it.sr))+'</span>').join(' ');
+      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
+        dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
+        '<div class="h-3"></div>'+
+        dashGauge(wDy, COV_DY_FLOOR, Math.max(0.14,(wDy||0.09)*1.5), {label:"Portfolio Debt Yield", fmt:v=>fmtPct(v)})+
+        (covChips?'<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Below a floor</div><div class="flex flex-wrap gap-1.5">'+covChips+'</div></div>':(nCov?'<p class="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-600">All valued properties clear both floors.</p>':'')));
+      const charts='<div class="grid gap-4 lg:grid-cols-3">'+donut+ladder+coverageViz+'</div>';
+
+      const dCls=v=>v==null?'text-slate-400':v>=COV_DSCR_FLOOR?'text-emerald-700':v>=1.10?'text-amber-600':'text-rose-600';
+      const yCls=v=>v==null?'text-slate-400':v>=COV_DY_FLOOR?'text-emerald-700':v>=0.06?'text-amber-600':'text-rose-600';
+      const sorted=items.slice().sort((a,b)=>{const av=a.cp.noi>0?(a.cp.dscr==null?9:a.cp.dscr):Infinity,bv=b.cp.noi>0?(b.cp.dscr==null?9:b.cp.dscr):Infinity;return av-bv;});
+      const thc=(t,e)=>'<th class="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 '+(e||'')+'">'+t+'</th>';
+      const tbody=sorted.map(it=>{const cp=it.cp,has=cp.noi>0;
+        const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
+        const status=!has?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
+          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>');
+        const action=!has?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
+          :'<button type="button" data-covpath="'+(it.combo?('combo:'+propertyKey(it.sr)):it.sr._id)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
+        return '<tr class="hover:bg-slate-50'+(has?'':' bg-slate-50/40')+'">'+
+          '<td class="px-3 py-2 text-sm font-medium text-slate-900">'+nameCell+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(has?fmtMoney(cp.noi):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-bold '+dCls(has?cp.dscr:null)+'">'+(has&&cp.dscr!=null?cp.dscr.toFixed(2)+'×':'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold '+yCls(has?cp.debtYield:null)+'">'+(has&&cp.debtYield!=null?fmtPct(cp.debtYield):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(has&&cp.ltv!=null?fmtPct(cp.ltv):'—')+'</td>'+
+          '<td class="px-3 py-2"><div class="flex items-center justify-between gap-2">'+status+action+'</div></td>'+
+        '</tr>'; }).join('');
+      const head='<tr>'+thc("Property")+thc("NOI",'text-right')+thc("DSCR",'text-right')+thc("Debt Yield",'text-right')+thc("LTV",'text-right')+thc("")+'</tr>';
+      const covTable='<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift">'+
+        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR &amp; debt yield</h3><p class="text-xs text-slate-500">per property, on the combined position, vs the 1.25× and 8% floors — worst first</p></div>'+
+        '<div class="overflow-x-auto"><table class="w-full min-w-[640px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+tbody+'</tbody></table></div>'+
+      '</div>';
+
+      return hero + charts + covTable;
+    }
     function coverageCard(groupList){
       const items = groupList.map(g => {
         const sr = (g.members.find(m => !isMezz(m.loan)) || g.members[0]).loan;
@@ -4078,11 +4190,10 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<span class="hidden sm:inline text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</span>'+
           '</div>'+
         '</div>'+
-        '<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+kpis+'</div>'+
-        '<div class="flex flex-wrap gap-2">'+typeChips+'</div>'+
-        coverageCard(groupList)+
+        portfolioDashboard(rows, groupList)+
         '<div id="forecastWrap">'+renderForecastCard(fcAnnual)+'</div>'+
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
+        '<div class="pt-3 border-t border-slate-200"><h2 class="text-lg font-bold text-slate-900">Portfolio detail</h2><p class="text-sm text-slate-500">every loan, grouped by property — and where each stands against today’s market</p></div>'+
         tableCard("All Loans","grouped by property — click a property to expand its loans, then pick one to open",
           '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl, "relative z-40")+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
