@@ -6556,8 +6556,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       "- start_refinance {name}: open the refinance analysis for a loan.",
       "- open_export {}: open the Export-to-Excel dialog.",
       "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
-      "- propose_loan_change {name, changes}: open an existing loan in EDIT mode with proposed changes for the operator to review and save. changes uses the same keys.",
-      "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you saved, added, edited, or deleted anything: propose_new_loan and propose_loan_change only OPEN a pre-filled form the operator must review and Save themselves, so phrase them that way. If a requested action isn't in the list, say what the operator can do instead.",
+      "- propose_loan_change {name, changes}: propose ADDING, ALTERING, or REMOVING information on an existing loan. The operator sees a before→after preview in the chat and must click Approve before anything changes. changes maps field keys to new values — the propose_new_loan keys above PLUS the property financials noi (annual NOI, number), egi (annual effective gross income), opex (annual operating expenses), and capRate (decimal, e.g. 0.055). To REMOVE/clear a field, set it to null. Include only the fields you were actually asked to change.",
+      "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted anything: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change shows a preview the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
     ].join("\n");
 
@@ -6570,6 +6570,49 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(exact) return exact;
       return loans.find(function(l){ var nm=normName(l.propertyName||loanLabel(l)); return nm.indexOf(q)>=0 || q.indexOf(nm)>=0; }) || null;
     }
+    // ---- Assistant edit-with-approval ------------------------------------
+    // The assistant may propose adding/altering/removing loan data. It NEVER writes:
+    // it shows a before -> after preview in the chat and applies only after the
+    // operator clicks Approve. Editable = the loan-form fields PLUS the property
+    // financials (NOI + its split, cap rate) that drive DSCR/debt yield but live
+    // outside the form.
+    function aiEditFieldMeta(key){
+      for(var i=0;i<INPUT_FIELDS.length;i++){ if(INPUT_FIELDS[i].key===key) return {label:INPUT_FIELDS[i].label, type:INPUT_FIELDS[i].type, options:INPUT_FIELDS[i].options}; }
+      var extra={ noi:{label:"NOI (annual)",type:"money"}, egi:{label:"Effective Gross Income (annual)",type:"money"}, opex:{label:"Operating Expenses (annual)",type:"money"}, capRate:{label:"Cap Rate",type:"pct"}, prepayType:{label:"Prepayment",type:"text"} };
+      return extra[key]||null;
+    }
+    function aiEditFmt(type,v){
+      if(v==null||v==="") return "(none)";
+      if(type==="money") return isFinite(Number(v))?fmtMoney(Number(v)):String(v);
+      if(type==="pct")   return isFinite(Number(v))?fmtPct(Number(v)):String(v);
+      if(type==="int")   return isFinite(Number(v))?String(Math.round(Number(v))):String(v);
+      return String(v);
+    }
+    // Coerce a proposed value to the field's stored type. null/blank/"remove" => clear.
+    // Returns {v:coerced} on success, or null when the value is invalid (skip it).
+    function aiEditCoerce(meta, raw){
+      var numeric = (meta.type==="money"||meta.type==="pct"||meta.type==="int");
+      if(raw==null || raw==="" || (typeof raw==="string" && /^\(?(remove|clear|none|null|blank)\)?$/i.test(raw.trim()))) return {v: numeric?null:""};
+      if(numeric){ var n=Number(raw); if(!isFinite(n)) return null; if(meta.type==="int") n=Math.round(n); return {v:n}; }
+      var s=String(raw).trim(); if(meta.options && meta.options.indexOf(s)<0) return null; return {v:s};
+    }
+    // Turn a proposed {key:value} map into the list of REAL changes actually differing
+    // from the loan today: [{key,label,type,oldVal,newVal}]. Skips unknown/invalid/no-op.
+    function aiAsstBuildEdit(loan, changes){
+      var out=[]; if(!changes || typeof changes!=="object") return out;
+      Object.keys(changes).forEach(function(key){
+        if(key==="_id"||key==="isHistorical"||key==="_combined") return;
+        var meta=aiEditFieldMeta(key); if(!meta) return;
+        var c=aiEditCoerce(meta, changes[key]); if(!c) return;
+        var oldVal=(loan[key]==null?null:loan[key]), newVal=c.v;
+        var oldEmpty=(oldVal==null||oldVal===""), newEmpty=(newVal==null||newVal==="");
+        var same = (oldEmpty&&newEmpty) || (typeof newVal==="number"?Number(oldVal)===newVal:String(oldVal)===String(newVal));
+        if(same) return;
+        out.push({key:key, label:meta.label, type:meta.type, oldVal:oldVal, newVal:newVal});
+      });
+      return out;
+    }
+
     var aiAsstActions = {
       open_loan: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+"."}; },
       show_portfolio: function(){ setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
@@ -6578,7 +6621,38 @@ tr[data-loan]:hover td{background:#eef2f7}
       start_refinance: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); startRefi(); return {ok:true,close:true,msg:"Opened the refinance analysis for "+loanLabel(l)+"."}; },
       open_export: function(){ if(typeof openExportPreview==="function") openExportPreview(); return {ok:true,close:true,msg:"Opened the Export-to-Excel dialog."}; },
       propose_new_loan: function(a){ var clean=aiSanitize((a&&a.fields)||{}); if(!Object.keys(clean).length) return {ok:false,msg:"I didn’t have enough valid fields to draft a loan."}; state.draft=Object.assign(emptyLoan(), clean, {_id:uid(), isHistorical:true}); setMode("add"); return {ok:true,close:true,msg:"Opened a new-loan form pre-filled with "+Object.keys(clean).length+" field(s) — review every field, then Save."}; },
-      propose_loan_change: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; var clean=aiSanitize((a&&a.changes)||{}); if(!Object.keys(clean).length) return {ok:false,msg:"I didn’t have a valid change to propose."}; state.activeId=l._id; state.draft=Object.assign(JSON.parse(JSON.stringify(l)), clean); state.mode="edit"; render(); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+" in edit mode with proposed change to "+Object.keys(clean).join(", ")+" — review and Save."}; }
+      // Propose a change to an existing loan: render a before -> after preview with
+      // Approve / Cancel in the chat, and apply ONLY when the operator approves.
+      propose_loan_change: function(a){
+        var l=aiAsstFindLoan(a&&a.name);
+        if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var edits=aiAsstBuildEdit(l, (a&&a.changes)||{});
+        if(!edits.length) return {ok:false,msg:"I didn’t have a valid change to propose — either the field isn’t editable or the value already matches."};
+        var rows=edits.map(function(e){
+          return '<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0">'+
+            '<span class="text-[12px] font-medium text-slate-600 shrink-0">'+escapeHtml(e.label)+'</span>'+
+            '<span class="text-[12px] tabular-nums text-right"><span class="text-rose-500 line-through">'+aiEditFmt(e.type,e.oldVal)+'</span> <span class="text-slate-400">→</span> <span class="font-bold text-emerald-700">'+aiEditFmt(e.type,e.newVal)+'</span></span></div>';
+        }).join('');
+        var card='<div class="space-y-2"><div class="text-[13px]">Proposed change to <b>'+escapeHtml(loanLabel(l))+'</b> — review before I apply it:</div>'+
+          '<div class="rounded-lg border border-slate-200 bg-white px-3 py-1.5">'+rows+'</div>'+
+          '<div class="flex flex-wrap items-center gap-2 pt-0.5"><button id="aiAsstEditApprove" type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Approve &amp; apply</button>'+
+          '<button id="aiAsstEditCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none">Cancel</button>'+
+          '<span class="text-[11px] text-slate-400">nothing changes until you approve</span></div></div>';
+        var bub=aiAsstBubble("assistant", card);
+        var ap=el("aiAsstEditApprove"), cn=el("aiAsstEditCancel"), applied=false;
+        function done(html, ok){ applied=true; if(ap) ap.disabled=true; if(cn) cn.disabled=true;
+          if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; } }
+        if(ap) ap.addEventListener("click", function(){
+          if(applied) return;
+          var loan=getLoan(l._id); if(!loan){ done("That loan is no longer available.", false); return; }
+          edits.forEach(function(e){ loan[e.key]=e.newVal; });
+          save(); render();
+          done('✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', true);
+          toast("Updated "+loanLabel(loan), "check");
+        });
+        if(cn) cn.addEventListener("click", function(){ if(applied) return; done("Cancelled — nothing was changed.", false); });
+        return {ok:true};   // the approval card IS the response — no extra bubble, don't close the chat
+      }
     };
     function aiAsstParseAction(text){
       if(!text) return {text:text, action:null};
