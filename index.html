@@ -2040,6 +2040,19 @@
       return { loans, changed: added.length>0 || refreshed.length>0 || removed.length>0, added, refreshed, removed };
     }
 
+    // Ensure every loan carries a unique _id. Missing or duplicated ids (from older books,
+    // Excel imports, or hand-edited backups) make getLoan(id) resolve to the WRONG record —
+    // e.g. the assistant would edit a different loan than the one reviewed. Heals in place;
+    // a no-op for healthy books (all ids already present and unique). Returns true if changed.
+    function healLoanIds(arr){
+      const seen = {}; let changed = false;
+      (arr||[]).forEach(function(l){
+        if(!l) return;
+        if(!l._id || seen[l._id]){ l._id = uid(); changed = true; }
+        seen[l._id] = true;
+      });
+      return changed;
+    }
     function load(){
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -2047,6 +2060,7 @@
           const migrated = arr.map(migrateLoan);
           const res = syncPortfolio(migrated);
           const finalLoans = res.loans.map(migrateLoan);   // normalize synced-in seed loans too (Fixed-index cleanup etc.)
+          if(healLoanIds(finalLoans)){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(finalLoans)); } catch(e){} }   // repair id collisions once, up front
           if(res.changed){
             // snapshot the book BEFORE persisting the sync, so it is fully reversible
             try { if(window.ldsShell && window.ldsShell.isDesktop && window.ldsShell.autoBackupWrite){ window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(migrated)), "before-portfolio-sync"); } } catch(e){}
@@ -6622,6 +6636,29 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(numeric){ var n=Number(raw); if(!isFinite(n)) return null; if(meta.type==="int") n=Math.round(n); return {v:n}; }
       var s=String(raw).trim(); if(meta.options && meta.options.indexOf(s)<0) return null; return {v:s};
     }
+    // Do the stored value `a` and the proposed value `b` mean the same thing? (empty ~ empty,
+    // numbers compared numerically, everything else by string.) Used to verify an applied edit.
+    function aiEditSameStored(a, b){
+      var ae=(a==null||a===""), be=(b==null||b==="");
+      if(ae&&be) return true;
+      if(ae!==be) return false;
+      return (typeof b==="number") ? Number(a)===b : String(a)===String(b);
+    }
+    // After applying, CONFIRM every field really changed — in memory AND in the persisted
+    // book (localStorage is the source of truth on reload). We locate the persisted row by
+    // its position in `loans` (save() serializes the array in order), which is exact even
+    // when _id is missing or duplicated. Returns true only if all edits are present.
+    function aiVerifyEditsApplied(loan, edits){
+      var mem = edits.every(function(e){ return aiEditSameStored(loan[e.key], e.newVal); });
+      if(!mem) return false;
+      try {
+        var idx = loans.indexOf(loan);
+        var arr = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        var saved = (idx>=0 && idx<arr.length) ? arr[idx] : null;
+        if(!saved) return mem;   // couldn't locate the persisted row; trust the in-memory apply
+        return edits.every(function(e){ return aiEditSameStored(saved[e.key], e.newVal); });
+      } catch(err){ return mem; }
+    }
     // Turn a proposed {key:value} map into the list of REAL changes actually differing
     // from the loan today: [{key,label,type,oldVal,newVal}]. Skips unknown/invalid/no-op.
     function aiAsstBuildEdit(loan, changes){
@@ -6670,11 +6707,22 @@ tr[data-loan]:hover td{background:#eef2f7}
           if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; } }
         if(ap) ap.addEventListener("click", function(){
           if(applied) return;
-          var loan=getLoan(l._id); if(!loan){ done("That loan is no longer available.", false); return; }
+          // Apply to the EXACT loan the operator reviewed. `l` is a live element of `loans`
+          // (aiAsstFindLoan returns one), so mutate it directly — never re-resolve by _id,
+          // which can mis-hit and silently edit the WRONG loan when ids are missing or
+          // duplicated (imported/restored books). Fall back to an id lookup only if `l`
+          // somehow left the book.
+          var loan = (loans.indexOf(l) >= 0) ? l : getLoan(l._id);
+          if(!loan){ done("That loan is no longer in the book — nothing was changed.", false); return; }
           edits.forEach(function(e){ loan[e.key]=e.newVal; });
           save(); render();
-          done('✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', true);
-          toast("Updated "+loanLabel(loan), "check");
+          // Never claim success unless the change actually landed (in memory AND storage).
+          if(aiVerifyEditsApplied(loan, edits)){
+            done('✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', true);
+            toast("Updated "+loanLabel(loan), "check");
+          } else {
+            done("I couldn’t save that change — nothing was updated. Please try again.", false);
+          }
         });
         if(cn) cn.addEventListener("click", function(){ if(applied) return; done("Cancelled — nothing was changed.", false); });
         return {ok:true};   // the approval card IS the response — no extra bubble, don't close the chat

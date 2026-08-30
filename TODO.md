@@ -15,6 +15,15 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Assistant approve applied to the WRONG loan (or none) — fixed.** The approve handler
+  re-resolved the loan by `_id` (`getLoan(l._id)`); in books with missing or duplicated ids
+  (older/imported/restored portfolios) `find` returns a different record, so the card said
+  "✓ Applied" while the reviewed loan never changed. Now: (1) `load()` heals ids on startup —
+  any missing/duplicate `_id` is made unique once, up front (fixes `getLoan` everywhere, not
+  just the assistant; a no-op for healthy books); (2) the approve handler mutates the EXACT
+  reviewed loan object directly (never re-resolves by id); (3) it **verifies the change landed
+  in memory and storage before** ever showing "Applied" — a failed write now says so instead
+  of falsely confirming.
 - **Assistant context controls — Stop, New chat, Compact.** The chat resends its whole
   running thread each turn, so after many file uploads a new request could exceed the
   120s CLI timeout ("can't digest the new file"). Added: a **Stop** button (the Send
