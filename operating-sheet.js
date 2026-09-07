@@ -236,13 +236,7 @@
     rows.forEach(function (r) { if (r.editable) byCode[r.code] = r; });
     var cb = function (name) { return typeof props[name] === "function" ? props[name] : null; };
     var shown = function (row) { return row.value == null ? "" : formatMoney(row.value); };
-
-    // Keep the caret where it was when the host redraws mid-edit (Tab to the next line).
-    var focusCode = null;
-    try {
-      var a = typeof document !== "undefined" ? document.activeElement : null;
-      if (a && a.hasAttribute && a.hasAttribute("data-op-input") && mountEl.contains(a)) { var tr = a.closest("tr[data-op-code]"); focusCode = tr && tr.getAttribute("data-op-code"); }
-    } catch (e) {}
+    var inputSel = function (code) { return 'tr[data-op-code="' + String(code).replace(/["\\]/g, "\\$&") + '"] [data-op-input]'; };
 
     mountEl.innerHTML = toHtml(rows, { basis: basis, record: props.record });
     var rootEl = mountEl.firstElementChild;
@@ -269,6 +263,16 @@
         var tr = t.closest("tr[data-op-code]"), row = tr && byCode[tr.getAttribute("data-op-code")];
         if (row) t.value = shown(row);
         t.blur();
+      } else if (ev.key === "Tab") {
+        // Commit first (blur → change → the host usually redraws, replacing this tree), then
+        // move by row code so the caret lands on the neighbouring line even after that redraw.
+        var inputs = Array.prototype.slice.call(rootEl.querySelectorAll("[data-op-input]"));
+        var i = inputs.indexOf(t), j = ev.shiftKey ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= inputs.length) return;                // first/last line: leave the sheet normally
+        var code = inputs[j].closest("tr[data-op-code]").getAttribute("data-op-code");
+        ev.preventDefault(); t.blur();
+        var next = mountEl.querySelector(inputSel(code));
+        if (next) { next.focus(); next.select(); }
       }
     });
     rootEl.addEventListener("click", function (ev) {
@@ -281,7 +285,6 @@
       if (mountEl.firstElementChild === rootEl) render(mountEl, Object.assign({}, props, { basis: next }));
     });
 
-    if (focusCode) { var again = rootEl.querySelector('tr[data-op-code="' + focusCode.replace(/"/g, '\\"') + '"] [data-op-input]'); if (again) { try { again.focus(); } catch (e) {} } }
     return rows;
   }
 

@@ -230,7 +230,7 @@ ok(mhtml.includes('value="100,000.00"') && mhtml.includes('value="8,333.33"') &&
 ok(mhtml.includes(">Monthly $<") && html.includes(">Annual $<"), "column header names the basis");
 const ehtml = Sheet.toHtml(e, { basis: "annual", record: null });
 eq(count(ehtml, /data-op-present="0"/g), 5, "the five always-rows are marked not present on an empty sheet");
-eq(count(ehtml, /data-op-ctl disabled/g), 3, "toggles disabled on the three absent expense rows");
+eq(count(ehtml, /data-op-ctl( checked)? disabled/g), 3, "toggles disabled on the three absent expense rows (MGMT still shows its default tick)");
 eq(count(ehtml, />not set</g), 5, "absent rows carry a 'not set' badge");
 ok(ehtml.includes('value=""'), "absent rows render an empty input");
 ok(ehtml.includes("No operating record yet"), "empty-record hint shown without a record");
