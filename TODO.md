@@ -15,6 +15,20 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **T12 "statement NOI" read the wrong footing row — fixed (v2.6.5).** On a statement that
+  prints BOTH a `NET OPERATING INCOME` row and a below-the-line `NET INCOME` row (after debt
+  service / depreciation), the parser's NOI matcher also matched `NET INCOME` and "last wins,"
+  so it stored the Net Income as the statement NOI. On the Crest T12 that showed **$5,210,718.69**
+  (Net Income, after a $3.99M mortgage + depreciation) as the "statement NOI" instead of the real
+  **$9,483,604.28** on row 672 — which mislabeled the caption and *suppressed* the green
+  "✓ ties to statement NOI" under the (correct) In-place NOI card. Fix in `t12-parse.js`:
+  `RE_NOI` no longer matches plain `NET INCOME` (only `NET OPERATING INCOME` / `NOI`), and the
+  parse now **stops at the operating bottom line** so rows below it (mortgage, depreciation, net
+  income) are never read as operating income/expense. That also fixed a related artifact — G&A
+  showing negative from below-the-line pollution (Crest G&A **−$1,036,708.78 → +$1,015,471.92**).
+  The In-place NOI card and loan sizing already used the correct EGI−OpEx figure, so nothing
+  downstream changes. Verified on the real Crest T12 (ties to $9,483,604.28) and a synthetic
+  statement that prints both a NOI and a Net Income row.
 - **Model DROPDOWN discovered from the bundled CLI + relabeled effort (v2.6.4).** The model
   control is now a real **`<select>` dropdown** — no more typing a model name. Its options are
   DISCOVERED at runtime by scanning the exact Claude client the app bundles for the model ids it

@@ -78,7 +78,10 @@
   // subtotals like "TOTAL RENTAL INCOME" or "TOTAL OTHER EXPENSES" never match.
   var RE_INCTOT = /^TOTAL\s+(OPERATING\s+)?(INCOME|REVENUE)$/;
   var RE_EXPTOT = /^TOTAL\s+(OPERATING\s+)?EXPENSES?$/;
-  var RE_NOI    = /^NET\s+OPERATING\s+INCOME$|^NET\s+INCOME$|^NOI$/;
+  // The operating bottom line. NOT plain "NET INCOME" — that is a BELOW-the-line
+  // figure (after debt service / depreciation), a different number, and matching it
+  // used to overwrite the real NOI on statements that print both.
+  var RE_NOI    = /^NET\s+OPERATING\s+INCOME$|^NOI$/;
   function isCaps(s){ return /[A-Z]/.test(s) && s === s.toUpperCase(); }
 
   function parseGrid(grid, opts){
@@ -115,7 +118,7 @@
       if (isTotal){                                            // a subtotal / footing row
         if (RE_INCTOT.test(up)) { if (totals.income == null) totals.income = amt; phase = "expense"; }
         else if (RE_EXPTOT.test(up)) { if (totals.expense == null) totals.expense = amt; }
-        else if (RE_NOI.test(up)) { totals.noi = amt; }        // last operating NOI wins
+        else if (RE_NOI.test(up)) { totals.noi = amt; if (phase === "expense") break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
         else if (isCaps(name)) { categories.push({ name: name.trim(), amount: amt, section: section }); }
         continue;                                              // never counted as a detail line
       }
