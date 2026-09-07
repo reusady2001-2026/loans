@@ -36,15 +36,24 @@
   "use strict";
 
   // Coerce to a number, tolerating the ways money and rates arrive as text from
-  // form inputs / spreadsheet cells: "96", "1,200", "$3.5", an accounting
+  // form inputs / spreadsheet cells: "96", "1,200", "$3.5", "1e5", an accounting
   // negative "(1,200)" or "1,200-" → -1200, and "5%" → 0.05. parse() yields NaN
   // for anything non-numeric so sizeLoan can tell "blank" from "zero"; n()
   // collapses that to 0 for arithmetic.
   var parse = function (v) {
     if (typeof v === "string") {
-      var s = v.trim(), x = parseFloat(s.replace(/[^0-9.\-]/g, ""));
-      if (/\(.*\)|-\s*$/.test(s)) x = -Math.abs(x);
-      if (s.indexOf("%") >= 0) x = x / 100;
+      var s = v.trim(), neg = /\(.*\)|-\s*$/.test(s), pct = s.indexOf("%") >= 0;
+      // A plain decimal / scientific literal (once separators, $ and % are
+      // dropped) goes through Number(), so "1e5" is 100000 — the strip-to-digits
+      // fallback would read it as 15. Gating on the literal shape, rather than
+      // on isFinite(Number(c)), keeps "" (Number → 0, but blank must stay
+      // "missing") and "0x10" (→ 16) out; the fallback still handles "(1,200)",
+      // "3,000-" and stray currency text exactly as before.
+      var c = s.replace(/[,$\s%]/g, ""), x;
+      if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(c)) x = Number(c);
+      else x = parseFloat(s.replace(/[^0-9.\-]/g, ""));
+      if (neg) x = -Math.abs(x);
+      if (pct) x = x / 100;
       return x;
     }
     return typeof v === "number" ? v : NaN;
@@ -160,6 +169,9 @@
     var mc = mortgageConstant(intRate, amortYears);
     noi = n(noi);
     var ok = noi > 0;
+    // Deliberate change from the released engine: an explicit capRate 0 makes
+    // value null and the LTV leg inapplicable (the old engine returned value 0
+    // and hence max loan 0), consistent with dscrMin 0 / dyMin 0 disabling theirs.
     var value    = fin(ok && capRate > 0 ? noi / capRate : null);
     var loanLTV  = fin(value != null && ltvMax >= 0 ? value * ltvMax : null);
     var loanDSCR = fin(ok && dscrMin > 0 && mc > 0 ? noi / (dscrMin * mc) : null);
@@ -196,6 +208,10 @@
   DEFAULTS.mgmtPct = DEFAULTS.mgmtFeePct;
   DEFAULTS.sizing = { capRate: DEFAULTS.capRate, ltvMax: DEFAULTS.ltvMax, dscrMin: DEFAULTS.dscrMin,
                       dyMin: DEFAULTS.dyMin, intRate: DEFAULTS.intRate, amortYears: DEFAULTS.amortYears };
+  // Load-bearing (it is the blank-parameter fallback), so frozen: a stray
+  // `Underwriting.DEFAULTS.ltvMax = 0.5` must not silently re-size every blank
+  // box. Consumers only read it (operating-calc.js clones what it needs).
+  Object.freeze(DEFAULTS.sizing); Object.freeze(DEFAULTS);
 
   // A blank standard worksheet (no values) — the empty machine the app renders.
   function blankWorksheet() {

@@ -211,20 +211,23 @@
     inherited: "rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500",
     override:  "rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
   };
+  var WARN_CLS = "rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700";
   function overrideCount(record){ return FIELDS.filter(function (f){ return isOverridden(record, f.path); }).length; }
   function countText(n){ return n ? n + " override" + (n > 1 ? "s" : "") : "all inherited"; }
-  function globalText(f, globalDefaults){ var g = toDisplay(f.path, getPath(globalDefaults, f.path)); return g === "" ? "—" : g + (f.kind === "pct" ? "%" : ""); }
+  function globalText(f, globalDefaults){ var g = toDisplay(f.path, inheritedValue(f.path, globalDefaults)); return g === "" ? "—" : g + (f.kind === "pct" ? "%" : ""); }
 
-  // Pure: the panel's markup for one record (unit-testable without a DOM).
+  // Pure: the panel's markup for one record (unit-testable without a DOM). ONE column
+  // — label left, control right — so every row fits the third-of-a-card mount the
+  // host gives it (a two-column grid ran the inputs under the next label there).
   function panelHtml(record, globalDefaults){
     var eff = resolve(record, globalDefaults), group = null, rows = "";
     FIELDS.forEach(function (f){
-      if (f.group !== group){ group = f.group; rows += '<div class="sm:col-span-2 mt-1 text-[10px] uppercase tracking-wide text-slate-400">' + esc(group) + '</div>'; }
+      if (f.group !== group){ group = f.group; rows += '<div class="pt-1 text-[10px] uppercase tracking-wide text-slate-400">' + esc(group) + '</div>'; }
       var state = isOverridden(record, f.path) ? "override" : "inherited";
       var title = state === "override" ? ' title="Global default: ' + esc(globalText(f, globalDefaults)) + '"' : "";
       rows += '<label class="flex items-center justify-between gap-2 text-sm text-slate-600" data-op-assump-row="' + f.path + '" data-op-assump-state="' + state + '">' +
-        '<span class="flex items-center gap-1.5">' + esc(f.label) + '<span class="' + BADGE_CLS[state] + '" data-op-badge="' + f.path + '" data-op-assump-state="' + state + '"' + title + '>' + state + '</span></span>' +
-        '<span class="flex items-center gap-1"><input class="' + INPUT_CLS + '" type="text" inputmode="decimal" autocomplete="off" data-op-assump="' + f.path + '" value="' + esc(toDisplay(f.path, getPath(eff, f.path))) + '">' +
+        '<span class="flex min-w-0 flex-wrap items-center gap-1.5">' + esc(f.label) + '<span class="' + BADGE_CLS[state] + '" data-op-badge="' + f.path + '" data-op-assump-state="' + state + '"' + title + '>' + state + '</span></span>' +
+        '<span class="flex shrink-0 items-center gap-1"><input class="' + INPUT_CLS + '" type="text" inputmode="decimal" autocomplete="off" data-op-assump="' + f.path + '" value="' + esc(toDisplay(f.path, getPath(eff, f.path))) + '">' +
         '<span class="w-8 text-[11px] text-slate-400">' + esc(f.suffix) + '</span></span></label>';
     });
     return '<div class="space-y-2" data-op-assump-panel>' +
@@ -233,7 +236,19 @@
         '<div class="flex items-center gap-2"><span class="text-[11px] text-slate-400" data-op-assump-count>' + countText(overrideCount(record)) + '</span>' +
         '<button type="button" id="opAssumpReset" title="Clear every override on this property and inherit the global defaults" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Reset to defaults</button></div>' +
       '</div>' +
-      '<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">' + rows + '</div></div>';
+      '<div class="space-y-1.5">' + rows + '</div></div>';
+  }
+  // A red "out of range" / "not a number" chip beside the field's badge; gone at the
+  // next successful entry on that field or the next render.
+  function setWarn(mountEl, path, warn){
+    var old = mountEl.querySelector('[data-op-warn="' + path + '"]');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (!warn) return;
+    var b = mountEl.querySelector('[data-op-badge="' + path + '"]');
+    if (!b || !b.parentNode) return;
+    var w = document.createElement("span");
+    w.setAttribute("data-op-warn", path); w.className = WARN_CLS; w.textContent = warn.text; w.title = warn.title || "";
+    b.parentNode.insertBefore(w, b.nextSibling);
   }
 
   // Flip one field's badge in place — an optimistic echo so the panel is right even
@@ -253,18 +268,22 @@
   function render(mountEl, opts){
     if (!mountEl) return null;
     opts = opts || {};
-    var record = opts.record, globals = opts.globalDefaults, eff = resolve(record, globals);
+    var record = opts.record, globals = opts.globalDefaults;
+    // The panel's echo of the record's overrides: each emitted patch is applied here
+    // too, so the next entry is judged against it even before the host re-renders.
+    var local = { assumptions: clone(record && record.assumptions) };
     mountEl.innerHTML = panelHtml(record, globals);
     // Commit on 'change' (blur / Enter), not per keystroke: the host re-renders this
     // panel from the store after every patch, which would steal focus mid-entry.
     Array.prototype.forEach.call(mountEl.querySelectorAll("[data-op-assump]"), function (inp){
       inp.addEventListener("change", function (){
-        var path = inp.getAttribute("data-op-assump"), patch = patchFor(path, inp.value);
-        if (!patch){ inp.value = toDisplay(path, getPath(eff, path)); return; }   // not a number: put the effective value back
-        var v = getPath(patch, path);
-        inp.value = toDisplay(path, v == null ? getPath(globals, path) : v);       // normalise "6%" → "6"; blank → the inherited value
-        setBadge(mountEl, path, v == null ? "inherited" : "override", globals);
-        if (typeof opts.onChange === "function") opts.onChange(patch);
+        var path = inp.getAttribute("data-op-assump"), d = commit(local, globals, path, inp.value);
+        inp.value = d.value;                                  // normalise "6%" → "6"; restore after a refused entry
+        setWarn(mountEl, path, d.warn);
+        if (d.state) setBadge(mountEl, path, d.state, globals);
+        if (!d.patch) return;
+        local.assumptions = applyPatch(local.assumptions, d.patch);
+        if (typeof opts.onChange === "function") opts.onChange(d.patch);
       });
     });
     var reset = mountEl.querySelector("#opAssumpReset");
@@ -274,6 +293,7 @@
 
   return {
     resolve: resolve, isOverridden: isOverridden, diff: diff, render: render,
-    FIELDS: FIELDS, toDisplay: toDisplay, fromDisplay: fromDisplay, patchFor: patchFor, panelHtml: panelHtml, round6: round6
+    FIELDS: FIELDS, toDisplay: toDisplay, fromDisplay: fromDisplay, patchFor: patchFor, check: check, commit: commit,
+    inheritedValue: inheritedValue, panelHtml: panelHtml
   };
 });

@@ -122,8 +122,10 @@
     if (has(/\bcable\b|satellite|\btv\b|bulk\s+(internet|wifi)/)) return X("CAB");
     if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
 
-    // ---- other-income catch-alls ----
-    if (has(/interest\s+income|damage|termination|miscellaneous|\bmisc\b|storage|key\s+(charge|fee)|lockout|furnished|arrears|transfer|charging\s+station|court\s+cost|laundry|vending|locker|\bbike\b|deposit|surcharge|convenience\s+fee|resident\s+satisfaction|smoking|corporate\s+(unit|housing)|buyout|relet|sublet|holdover|proceeds|gain\s+on|forgiveness|rebate|cash\s+back|credit|adjustment|unidentified|unallocated|unapplied|\bother\b|income|revenue|fees?\b|charges?\b/)) return I("OTH");
+    // ---- other-income catch-alls. A bare "Other Income" / "… Income" line with no
+    //      other signal is left unconfident on purpose: on a flat statement it may be
+    //      an unrecognized roll-up rather than a detail line, and should be looked at ----
+    if (has(/interest\s+income|damage|termination|miscellaneous|\bmisc\b|storage|key\s+(charge|fee)|lockout|furnished|arrears|transfer|charging\s+station|court\s+cost|laundry|vending|locker|\bbike\b|deposit|surcharge|convenience\s+fee|resident\s+satisfaction|smoking|corporate\s+(unit|housing)|buyout|relet|sublet|holdover|proceeds|gain\s+on|forgiveness|rebate|cash\s+back|credit|adjustment|unidentified|unallocated|unapplied|fees?\b|charges?\b/)) return I("OTH");
     return null;
   }
 

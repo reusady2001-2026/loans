@@ -58,7 +58,8 @@ group("surface", function (){
   eq(S.KEY, "ldsHub.operating.v1", "KEY is exactly \"ldsHub.operating.v1\"");
   ["init","load","all","get","ensure","setLine","setLines","removeLine","setControllable","setAssumptions","setUnits","setPeriod","remove","rename","save"]
     .forEach(function (m){ ok(typeof S[m] === "function", "exports " + m + "()"); });
-  eq(Object.keys(S).length, 16, "no extra surface beyond KEY + the 14 contract methods + rename");
+  eq(Object.keys(S).length, 17, "no extra surface beyond KEY + CODES + the 14 contract methods + rename");
+  ok(Array.isArray(S.CODES) && Object.isFrozen(S.CODES) && S.CODES.length === 32 && S.CODES.indexOf("TRSH RUB") >= 0, "CODES: frozen list of the 32 taxonomy codes");
   ok(globalThis.OperatingStore === S, "UMD also publishes globalThis.OperatingStore (same object)");
   // Browser global: load a second, throwaway instance with a fake window present.
   var path = require.resolve("../operating-store.js"), saved = require.cache[path];
@@ -207,8 +208,13 @@ group("setLine / prevAnnual", function (){
   eq(r.lines.INS.controllable, true, "controllable:true in the patch is applied when the line is CREATED (INS would default false)");
   r = S.setLine(K, "GPR", { annual: 1, source: "manual", controllable: false });
   eq(r.lines.GPR.controllable, false, "controllable:false applied on creation of an income line (default true)");
+  r = S.setLine(K, "TRSH RUB", { annual: 12000, source: "t12" });
+  eq(r.lines["TRSH RUB"].annual, 12000, "a code with a space (\"TRSH RUB\") is accepted verbatim");
   // strictness — and nothing changes on a rejected call
   var before = S.get(K), writes = st.writes.length;
+  throwsType(function (){ S.setLine(K, "FOO", { annual: 1, source: "manual" }); }, "rejects an unknown code (FOO)");
+  throwsType(function (){ S.setLine(K, "gpr", { annual: 1, source: "manual" }); }, "rejects a mis-cased code (gpr)");
+  throwsType(function (){ S.setLine(K, "RET ", { annual: 1, source: "manual" }); }, "rejects a code with stray whitespace");
   throwsType(function (){ S.setLine(K, "RET", { annual: NaN, source: "manual" }); }, "rejects annual NaN");
   throwsType(function (){ S.setLine(K, "RET", { annual: Infinity, source: "manual" }); }, "rejects annual Infinity");
   throwsType(function (){ S.setLine(K, "RET", { annual: "100", source: "manual" }); }, "rejects a string annual");
@@ -234,10 +240,10 @@ group("controllable defaults (contract §3) / setControllable", function (){
   var got = {}; Object.keys(r.lines).forEach(function (c){ got[c] = r.lines[c].controllable; });
   var want = {}; income.forEach(function (c){ want[c] = true; }); expense.forEach(function (c){ want[c] = (c !== "RET" && c !== "INS"); });
   eq(got, want, "defaults: RET/INS false, every other expense true, every income code true (all 32 codes)");
-  eq(S.setLine(K, "ZZZ", { annual: 1, source: "manual" }).lines.ZZZ.controllable, true, "unknown code defaults to controllable");
+  throwsType(function (){ S.setLine(K, "ZZZ", { annual: 1, source: "manual" }); }, "an unknown code is rejected (TypeError) — no line, no default");
   var writes = st.writes.length;
-  r = S.setControllable(K, "RET", true);                                    // T2
-  eq([r.lines.RET.controllable, r.meta.lastUpdated, r.lines.RET.updatedAt], [true, T(2), T(0)], "flip persists, stamps meta.lastUpdated, leaves the line's amount date alone");
+  r = S.setControllable(K, "RET", true);                                    // T1 (the rejected ZZZ consumed no tick)
+  eq([r.lines.RET.controllable, r.meta.lastUpdated, r.lines.RET.updatedAt], [true, T(1), T(0)], "flip persists, stamps meta.lastUpdated, leaves the line's amount date alone");
   eq(st.writes.length, writes + 1, "one save");
   st.poke(S.KEY, function (o){ o.records[K].lines.INS.controllable = true; });   // altered behind the store's back — in memory INS is still false
   S.init({ storage: st, now: clock() });
@@ -259,7 +265,24 @@ group("controllable defaults agree with OperatingTaxonomy (when present)", funct
   TX.ORDER.forEach(function (c){ mine[c] = r.lines[c].controllable; theirs[c] = TX.defaultControllable(c); });
   eq(mine, theirs, "store default == OperatingTaxonomy.defaultControllable(code) for every ORDER code (" + TX.ORDER.length + " codes)");
   eq(TX.ORDER.filter(function (c){ return !theirs[c]; }), ["RET", "INS"], "the taxonomy's non-controllable set is exactly RET, INS");
-  eq(S.setLine(K, "ZZZ", { annual: 1, source: "manual" }).lines.ZZZ.controllable, TX.defaultControllable("ZZZ"), "unknown code: both sides default true");
+  eq(S.CODES.slice(), TX.ORDER.slice(), "store CODES (the fallback list) === OperatingTaxonomy.ORDER, same order");
+  eq(Object.keys(r.lines), TX.ORDER.slice(), "every ORDER code is accepted by setLines (taxonomy path)");
+  throwsType(function (){ S.setLine(K, "ZZZ", { annual: 1, source: "manual" }); }, "a code outside ORDER is rejected (taxonomy path)");
+  // Fallback path: make the taxonomy unresolvable AT CALL TIME (stub its require
+  // cache entry) and prove the LOCAL list behaves identically to ORDER.
+  var Module = require("module"), path = require.resolve("../operating-taxonomy.js"), saved = require.cache[path];
+  var stub = new Module(path, null); stub.filename = path; stub.loaded = true; stub.exports = {};
+  require.cache[path] = stub;
+  try {
+    ok(require("../operating-taxonomy.js") === stub.exports, "(taxonomy require now yields the stub)");
+    fresh(); var r2 = S.setLines("addr:fallback", lines), mine2 = {};
+    eq(Object.keys(r2.lines), TX.ORDER.slice(), "fallback list accepts every ORDER code");
+    TX.ORDER.forEach(function (c){ mine2[c] = r2.lines[c].controllable; });
+    eq(mine2, theirs, "fallback controllable defaults == taxonomy defaults");
+    throwsType(function (){ S.setLine("addr:fallback", "ZZZ", { annual: 1, source: "manual" }); }, "fallback list rejects a code outside ORDER");
+    throwsType(function (){ S.setLine("addr:fallback", "gpr", { annual: 1, source: "manual" }); }, "fallback list rejects a mis-cased code");
+  } finally { require.cache[path] = saved; }
+  ok(require("../operating-taxonomy.js") === TX, "(taxonomy require restored)");
 });
 
 /* ---- 6. setLines (bulk, one save) --------------------------------------- */
@@ -287,6 +310,10 @@ group("setLines", function (){
   var before = S.get(K), w2 = st.writes.length;
   throwsType(function (){ S.setLines(K, { GPR: { annual: 1600000, source: "t12" }, BAD: { annual: "x", source: "t12" } }); }, "one bad entry rejects the whole bulk");
   eq(S.get(K), before, "…and nothing was written (validate-all-first)");
+  eq(st.writes.length, w2, "…no save");
+  throwsType(function (){ S.setLines(K, { gpr: { annual: 1, source: "manual" } }); }, "a mis-cased code (gpr) rejects the bulk");
+  throwsType(function (){ S.setLines(K, { GPR: { annual: 1, source: "manual" }, FOO: { annual: 1, source: "manual" } }); }, "an unknown code (FOO) rejects the whole bulk, valid entries included");
+  eq(S.get(K), before, "…nothing written");
   eq(st.writes.length, w2, "…no save");
   throwsType(function (){ S.setLines(K, [1, 2]); }, "rejects a non-object lines argument");
   throwsType(function (){ S.setLines(K, {}, { sourceFile: 5 }); }, "rejects a non-string sourceFile");

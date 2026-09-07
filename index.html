@@ -3413,6 +3413,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         currentBalance: l => compute(l).derived.currentBalance,
         capRate: l => loanCapRate(l),
         marketRate: l => { try{ const p = refiMarketParts(l); return (p && isFinite(p.marketRate)) ? p.marketRate : null; }catch(e){ return null; } },
+        // The rate in effect TODAY (a floater = live index + spread), the yardstick the app's own refi scan uses — not the origination rate.
+        currentRate: l => { try{ const d = compute(l).derived; return (d && isFinite(d.currentRate)) ? d.currentRate : ((l && isFinite(l.annualRate)) ? l.annualRate : null); }catch(e){ return (l && isFinite(l.annualRate)) ? l.annualRate : null; } },
         // The maturity the app itself uses — derived from first payment + term when the field is blank — as "YYYY-MM-DD".
         maturity: l => { try{ const d = compute(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
         globalDefaults: () => uwState.input.bench };
@@ -3453,7 +3455,14 @@ tr[data-loan]:hover td{background:#eef2f7}
         else toast(who + ": T12 saved — but the classified lines do NOT foot to the statement’s printed NOI (" + fmtMoney(res.builtNOI) + " vs " + fmtMoney(res.printedNOI) + ") — check the Review list", "error");
       }catch(e){ toast("Couldn’t save the T12 to the property.", "error"); }
     }
-    function opAfterChange(){ opRenderFocused(); opRenderPortfolio(); try{ render(); }catch(e){} }   // ratios elsewhere (coverage, refi) read the operating NOI
+    // After a write: redraw the focused sheet, the portfolio panels, and the rest of the app (coverage / refi read
+    // the operating NOI). NEVER synchronously — the sheet calls this from its own change/blur handler, and
+    // replacing that tree mid-event blurs the input, re-enters the commit and throws. Defer one tick + coalesce.
+    let opRedrawQueued = false;
+    function opAfterChange(){
+      if(opRedrawQueued) return; opRedrawQueued = true;
+      setTimeout(() => { opRedrawQueued = false; try{ opRenderFocused(); }catch(e){} try{ opRenderPortfolio(); }catch(e){} try{ render(); }catch(e){} }, 0);
+    }
     function opRenderSections(view){
       if(!opReady()) return;
       opInit();

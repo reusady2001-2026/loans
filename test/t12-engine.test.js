@@ -181,7 +181,17 @@ run("E1 · trailing T6 / T3 / T1 period columns", function(){
 });
 
 run("E1 · underwriting-style flat statement (GPR line, EGI total, reserves below the line)", function(){
-  var G = F.gprStyle(), pg = T12.parseGrid(G.grid), eg = G.expect;
+  // The review path needs a line the CURRENT classifier cannot place (flat statement, no
+  // sub-section → bare section fallback, confident:false). Classifier rules broaden over
+  // time ("Other Income" became confident), so probe candidates and fail loudly if none is
+  // ambiguous any more — the fixture must then get a new candidate, not a silent pass.
+  var CANDIDATES = ["Sundry Receipts", "Ledger Suspense", "Unallocated Item", "Frobozz Line Item", "Plugh"];
+  var probe = CANDIDATES.map(function(l){ return { label: l, r: CL.classifyConfident(l, "INCOME", "") }; });
+  var amb = probe.filter(function(x){ return x.r.code === "OTH" && x.r.confident === false; })[0];
+  ok(!!amb, "a candidate label is still low-confidence to the current classifier: " + probe.map(function(x){ return x.label + " → " + JSON.stringify(x.r); }).join(" | ") + (amb ? "" : "  ← none is; add a label the classifier cannot place to CANDIDATES"));
+  if (!amb) return;
+  var G = F.gprStyle({ ambiguousLabel: amb.label }), pg = T12.parseGrid(G.grid), eg = G.expect;
+  eq(CL.classifyConfident(amb.label, "INCOME", "").confident, false, "fixture line " + JSON.stringify(amb.label) + " is low-confidence under the current rules");
   eq(pg.headerRow, eg.headerRow, "'Jul-25' style month header found");
   eq(pg.totals.income, eg.income, "EFFECTIVE GROSS INCOME read as the income total");
   eq(pg.totals.expense, eg.expense, "TOTAL OPERATING EXPENSES read as the expense total");
@@ -199,7 +209,7 @@ run("E1 · underwriting-style flat statement (GPR line, EGI total, reserves belo
   eq(Object.keys(fg.sums).length, Object.keys(eg.sums).length, "no extra category codes");
   eq(fg.reconcile.incomeResidual, 0, "income residual 0");
   eq(fg.reconcile.expenseResidual, 0, "expense residual 0");
-  eq(JSON.stringify(fg.review.map(function(x){ return [x.name, x.code]; })), JSON.stringify([["Other Income", "OTH"]]), "low-confidence line surfaced in review");
+  eq(JSON.stringify(fg.review.map(function(x){ return [x.name, x.code]; })), JSON.stringify([[amb.label, "OTH"]]), "low-confidence line " + JSON.stringify(amb.label) + " surfaced in review (only that line)");
   var bg = SB.buildSetup({ parsed: pg, units: 120, benchmarks: {} });
   eq(bg.result.inPlace.noi, eg.noi, "buildSetup: in-place NOI === printed NOI");
   eq(bg.review.length, 1, "buildSetup carries the review list for the parsed path");

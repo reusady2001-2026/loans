@@ -223,6 +223,36 @@ try {
   cents(ut.BD, -3000, "\"3,000-\" → −3,000 (trailing minus)");
   cents(ut.INS, 33600, "\"$350.00\" × \"96\" units");
   cents(rt.underwritten.noi, 1098400, "NOI = 1,200,000 − 60,000 − 5,000 − 3,000 − 33,600");
+  // Scientific notation is read as a number (the strip-to-digits path read "1e5"
+  // as 15); every previously accepted form is unchanged (exact ===, not to the cent).
+  var forms  = { A: "1e5", B: "2.5E-2", C: "$1e6", D: "1e5%", E: "(1,200)", F: "3,000-", G: "$350.00", H: "5.5%", I: "-1,200", J: "+7", K: "1 200", M: ".5", N: "1,234,567.89" };
+  var expect = { A: 100000, B: 0.025,   C: 1000000, D: 1000,   E: -1200,     F: -3000,   G: 350,       H: 0.055,  I: -1200,    J: 7,    K: 1200,    M: 0.5,  N: 1234567.89 };
+  var rf = UW.computeNOI({ units: 0, lines: Object.keys(forms).map(function (k) { return L(k, "other", "value", { uw: forms[k] }); }) }).underwritten.lines;
+  Object.keys(forms).forEach(function (k) { same(rf[k], expect[k], JSON.stringify(forms[k]) + " →"); });
+  ok(UW.sizeLoan(NOI_UW, { capRate: "" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "0x10" }).params.capRate === 0.055 &&
+     UW.sizeLoan(NOI_UW, { capRate: "Infinity" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "  " }).params.capRate === 0.055,
+     "\"\", \"  \", \"0x10\", \"Infinity\" are not numbers → DEFAULTS (never 0 / 16 / ∞)");
+
+  // =========================================================================
+  section("E4 — perUnit lines in the rental and other-income sections");
+  var wsPU = { units: 96, lines: [
+    L("GPR",  "rental",  "value",   { uw: 1200000 }),
+    L("EMPL", "rental",  "perUnit", { param: -125 }),      // −125 × 96 = −12,000, part of the running subtotal ABOVE vacancy
+    L("VAC",  "rental",  "pctBase", { param: 0.05 }),      // −5% × (1,200,000 − 12,000) = −59,400
+    L("PARK", "other",   "perUnit", { param: 62.5 }),      // 62.50 × 96 = 6,000
+    L("RET",  "expense", "value",   { uw: 90000 })
+  ] };
+  var rp = UW.computeNOI(wsPU), up = rp.underwritten.lines;
+  cents(up.EMPL, -12000, "rental perUnit: −125 × 96");
+  cents(up.VAC, -59400, "…and it sits in the vacancy base: −5% × (1,200,000 − 12,000)");
+  cents(rp.underwritten.eri, 1128600, "ERI = 1,200,000 − 12,000 − 59,400");
+  cents(up.PARK, 6000, "other-income perUnit: 62.50 × 96");
+  cents(rp.underwritten.egi, 1134600, "EGI = 1,128,600 + 6,000");
+  cents(rp.underwritten.noi, 1044600, "NOI = 1,134,600 − 90,000");
+  var rp0 = UW.computeNOI({ units: null, lines: wsPU.lines }), up0 = rp0.underwritten.lines;
+  ok(up0.EMPL === 0 && up0.PARK === 0, "units null: both perUnit lines are 0");
+  cents(up0.VAC, -60000, "…so VAC = −5% × 1,200,000 (no employee-unit deduction in the base)");
+  cents(rp0.underwritten.noi, 1050000, "…NOI = 1,200,000 − 60,000 − 90,000");
 
   // =========================================================================
   section("E5 — mortgage constant (independent annuity derivation)");
@@ -346,6 +376,11 @@ try {
   ok(d3.params.capRate === 0.06 && d3.params.ltvMax === 0.75 && d3.params.amortYears === 30, "…params show the merge");
   var d5 = UW.sizeLoan(NOI_UW, { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 250, sizing: Object.assign({}, SZ, { ltvMax: 0.55 }) });
   ok(d5.binding === "LTV" && Math.round(d5.maxLoan * 100) === 807562500, "a whole benchmarks object (nested .sizing) is unwrapped: 55% LTV binds at 8,075,625");
+  var d6 = UW.sizeLoan(NOI_UW, { capRate: 0.06, sizing: Object.assign({}, SZ, { capRate: 0.05, ltvMax: 0.55 }) });
+  //   a top-level sizing key is present → the nested block is ignored ENTIRELY:
+  //   value = NOI / 0.06 = 13,459,375.00 ; LTV leg at the DEFAULT 75% = 10,094,531.25 (not the nested 55%)
+  cents(d6.value, 13459375, "top-level capRate 0.06 beats nested .sizing.capRate 0.05");
+  ok(d6.params.ltvMax === 0.75 && Math.round(d6.loanLTV * 100) === 1009453125, "…and the nested ltvMax 0.55 is not picked up either: LTV leg at DEFAULTS 75% = 10,094,531.25");
 
   // =========================================================================
   section("E5 — explicit zero / degenerate parameters disable that leg (never NaN)");
@@ -412,7 +447,18 @@ try {
   cents(summary.total.uwNoi, NOI_UW - 441875, "portfolio underwritten NOI = 807,562.50 − 441,875 = 365,687.50");
 
   // =========================================================================
-  section("E4 on the Crest T12 fixture (real statement; the printed NOI is the contract's 9,483,604.28)");
+  section("E5 — DEFAULTS is frozen (it is the blank-parameter fallback)");
+  var snapD = JSON.stringify(UW.DEFAULTS), threwN = 0, attempts = [
+    function () { UW.DEFAULTS.ltvMax = 0.5; }, function () { UW.DEFAULTS.sizing.capRate = 0.1; }, function () { UW.DEFAULTS.extra = 1; },
+    function () { delete UW.DEFAULTS.dyMin; }, function () { UW.DEFAULTS.sizing = {}; }
+  ];
+  attempts.forEach(function (f) { try { f(); } catch (e) { threwN++; } });
+  same(JSON.stringify(UW.DEFAULTS), snapD, "5 write / delete / replace attempts leave DEFAULTS byte-identical (" + threwN + " threw TypeError under strict mode)");
+  ok(Object.isFrozen(UW.DEFAULTS) && Object.isFrozen(UW.DEFAULTS.sizing), "Object.isFrozen(DEFAULTS) && Object.isFrozen(DEFAULTS.sizing)");
+  ok(Math.round(UW.sizeLoan(NOI_UW, {}).maxLoan * 100) === 987703690 && UW.sizeLoan(NOI_UW, {}).params.ltvMax === 0.75, "blank-box fallback still sizes at the untouched DEFAULTS afterwards");
+
+  // =========================================================================
+  section("E4 on the Crest T12 fixture — app bench (5% vacancy, 2.5% mgmt, $200/unit reserves, no budget), units 0 and 300; printed NOI 9,483,604.28");
   var fx = path.join(__dirname, "fixtures", "crest-t12.xlsx");
   if (!fs.existsSync(fx)) {
     console.log("  skipped: fixture missing (" + fx + ")");
@@ -427,37 +473,57 @@ try {
     if (!grid) ok(false, "Crest: no T12 sheet found in the workbook");
     else {
       var d = T12Parse.parseGrid(grid, { basis: "total" });
-      var cb = SB.buildSetup({ parsed: { rows: d.rows, categories: d.categories, totals: d.totals }, units: 100, benchmarks: BENCH });
-      cents(cb.result.inPlace.noi, 9483604.28, "in-place NOI ties the printed NET OPERATING INCOME (E3 prerequisite)");
-      var cs = cb.categorySums, base = (cs.GPR || 0) + (cs.EMPL || 0) + (cs.MOD || 0);
-      cents(cb.result.underwritten.lines.VAC, -0.05 * base, "VAC = −5% × (GPR + EMPL + MOD) = −5% × " + base.toFixed(2));
-      // Re-derive the whole underwritten column from the worksheet layout with a
-      // straight transcription of the documented formula, then compare.
+      // The app's own bench (index.html uwDefaults().bench): 5% vacancy floor,
+      // 2.5% management fee, $200/unit reserves, NO $/unit budget, no rent-roll
+      // GPR — so the underwritten column re-prices exactly three things (VAC,
+      // MGMT, reserves) and every other line passes through at its actual.
+      var APP = { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {}, sizing: SZ };
+      var parsed = { rows: d.rows, categories: d.categories, totals: d.totals };
+      var c0 = SB.buildSetup({ parsed: parsed, units: 0, benchmarks: APP });
+      var cs = c0.categorySums, L0 = c0.result.underwritten.lines, ip = c0.result.inPlace, uw0 = c0.result.underwritten;
+      cents(ip.noi, 9483604.28, "in-place NOI ties the printed NET OPERATING INCOME (E3 prerequisite)");
+      var base = (cs.GPR || 0) + (cs.EMPL || 0) + (cs.MOD || 0);
+      cents(L0.VAC, -0.05 * base, "VAC = −5% × (GPR + EMPL + MOD) = −5% × " + base.toFixed(2));
+      cents(L0.MGMT, 0.025 * uw0.egi, "MGMT = 2.5% × underwritten EGI " + uw0.egi.toFixed(2));
+      same(L0.reserves, 0, "units 0: reserves = 200 × 0");
+      ok(c0.worksheet.lines.filter(function (l) { return l.method === "value"; })
+           .every(function (l) { return L0[l.key] === l.uw && l.uw === l.t12; }), "every other line passes through: underwritten === actual (no rent-roll GPR, no $/unit budget)");
+      // Hence the whole in-place → underwritten bridge, to the cent:
+      //   underwritten NOI = printed NOI + (VAC floor − actual VAC) − (MGMT at 2.5% − actual MGMT) − reserves
+      var dVac = L0.VAC - (cs.VAC || 0), dMgmt = L0.MGMT - (cs.MGMT || 0);
+      cents(uw0.noi, ip.noi + dVac - dMgmt, "underwritten NOI = printed NOI + ΔVAC − ΔMGMT (reserves 0 at units 0)");
+      // Independent re-derivation of the column from the worksheet layout (units 0).
       var eri = 0, oth = 0, opex = 0, res = 0;
-      cb.worksheet.lines.forEach(function (ln) {
-        if (ln.section !== "rental") return;
-        eri += ln.method === "pctBase" ? -ln.param * eri : ln.uw;
-      });
-      cb.worksheet.lines.forEach(function (ln) { if (ln.section === "other") oth += ln.uw; });
+      c0.worksheet.lines.forEach(function (ln) { if (ln.section === "rental") eri += ln.method === "pctBase" ? -ln.param * eri : ln.uw; });
+      c0.worksheet.lines.forEach(function (ln) { if (ln.section === "other") oth += ln.uw; });
       var egi = eri + oth;
-      cb.worksheet.lines.forEach(function (ln) {
+      c0.worksheet.lines.forEach(function (ln) {
         if (ln.section !== "expense" && ln.section !== "reserve") return;
-        var v = ln.method === "perUnit" ? ln.param * 100 : ln.method === "pctEGI" ? ln.param * egi : ln.uw;
+        var v = ln.method === "perUnit" ? ln.param * 0 : ln.method === "pctEGI" ? ln.param * egi : ln.uw;
         if (ln.section === "expense") opex += v; else res += v;
       });
-      cents(cb.result.underwritten.eri, eri, "underwritten ERI re-derived");
-      cents(cb.result.underwritten.egi, egi, "underwritten EGI re-derived");
-      cents(cb.result.underwritten.lines.MGMT, 0.025 * egi, "MGMT = 2.5% × underwritten EGI");
-      cents(cb.result.underwritten.opex, opex, "underwritten OPEX re-derived");
-      cents(cb.result.underwritten.lines.reserves, 25000, "reserves = 250 × 100 units");
-      cents(cb.result.underwritten.noi, egi - opex - res, "underwritten NOI = EGI − OPEX − reserves re-derived");
-      ok(cb.worksheet.lines.filter(function (l) { return l.method === "value"; })
-           .every(function (l) { return cb.result.underwritten.lines[l.key] === l.uw; }), "every pass-through line's underwritten value is its actual");
-      var szc = UW.sizeLoan(cb.result.underwritten.noi, SZ);
-      ok(cb.sizing.maxLoan === szc.maxLoan && cb.sizing.binding === szc.binding && badNumbers(cb.sizing).length === 0,
+      cents(uw0.eri, eri, "underwritten ERI re-derived");
+      cents(uw0.egi, egi, "underwritten EGI re-derived");
+      cents(uw0.opex, opex, "underwritten OPEX re-derived");
+      cents(uw0.noi, egi - opex - res, "underwritten NOI = EGI − OPEX − reserves re-derived");
+      var szc = UW.sizeLoan(uw0.noi, SZ);
+      ok(c0.sizing.maxLoan === szc.maxLoan && c0.sizing.binding === szc.binding && badNumbers(c0.sizing).length === 0,
          "buildSetup's sizing = sizeLoan(underwritten NOI, bench.sizing), no NaN");
-      console.log("       Crest @ 100 units: underwritten NOI " + cb.result.underwritten.noi.toFixed(2) +
-                  ", max loan " + cb.sizing.maxLoan.toFixed(2) + " (" + cb.sizing.binding + ")");
+      // 300 units: at the app bench the ONLY $/unit line is reserves, so the NOI moves by exactly 200 × 300.
+      var c300 = SB.buildSetup({ parsed: parsed, units: 300, benchmarks: APP });
+      same(c300.result.underwritten.lines.reserves, 60000, "units 300: reserves = 200 × 300");
+      cents(c300.result.underwritten.noi, uw0.noi - 60000, "units 300: underwritten NOI = units-0 NOI − 60,000");
+      cents(c300.result.inPlace.noi, 9483604.28, "units 300: in-place NOI unchanged (reserves sit in the underwritten column only)");
+      console.log("       Crest @ app bench — FIXTURE SETUP, NOT AN ENGINE RESULT: the in-place NOI is the statement's own; the underwritten NOI is the same lines with only VAC / MGMT / reserves re-priced.");
+      console.log("       in-place NOI " + ip.noi.toFixed(2) + "  →  underwritten @0 units " + uw0.noi.toFixed(2) +
+                  "  = in-place " + (dVac < 0 ? "− " : "+ ") + Math.abs(dVac).toFixed(2) + " (VAC floor " + L0.VAC.toFixed(2) + " vs actual " + (cs.VAC || 0).toFixed(2) + ")" +
+                  (dMgmt > 0 ? " − " : " + ") + Math.abs(dMgmt).toFixed(2) + " (MGMT 2.5% " + L0.MGMT.toFixed(2) + " vs actual " + (cs.MGMT || 0).toFixed(2) + ")" +
+                  "  |  @300 units " + c300.result.underwritten.noi.toFixed(2) + " (− 60,000 reserves)  |  max loan @0 " + c0.sizing.maxLoan.toFixed(2) + " (" + c0.sizing.binding + ")");
+      // The critic measured 9,766,184.18 at this bench / units 0; this pipeline
+      // (T12Parse total basis → fromParse → the classifier at HEAD) yields
+      // 9,770,923.03. The 4,738.85 gap sits in the upstream category split (E2),
+      // not in these formulas — which is why the figure is printed, and what is
+      // asserted is the bridge identity and the units-300 relation.
     }
   }
 } catch (e) {

@@ -189,14 +189,19 @@ function periods(){ var b = new Builder({ periods: true }); body(b); var e = wit
 //   EGI  = 1,421,604.87 + 30,250.10 = 1,451,854.97
 //   OPEX = 201,234.56 + 50,123.40 + 80,456.70 + 43,555.65 = 375,370.31
 //   NOI  = 1,451,854.97 − 375,370.31 = 1,076,484.66 ; after 12,000.00 reserves = 1,064,484.66
-function gprStyle(){
+// opts.ambiguousLabel: the caption of the 30,250.10 other-income line. The test picks a
+// label the CURRENT classifier cannot place (bare section fallback → OTH, confident:false)
+// so the review-path assertion stays meaningful as classifier rules broaden.
+function gprStyle(opts){
+  opts = opts || {};
+  var amb = opts.ambiguousLabel || "Other Income";
   var b = new Builder();
   b.at.header = b.push(["Account"].concat(["Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26","Mar-26","Apr-26","May-26","Jun-26"], ["Total"]));
   b.line("Gross Potential Rent",  1512345.60, ["nri","inc"]);
   b.line("Less: Vacancy",          -75617.28, ["nri","inc"]);
   b.line("Less: Concessions",      -15123.45, ["nri","inc"]);
   b.total("NET RENTAL INCOME", "nri");
-  b.line("Other Income",            30250.10, ["inc"]);
+  b.line(amb,                       30250.10, ["inc"]);
   b.total("EFFECTIVE GROSS INCOME", "inc", "income");
   b.blank();
   b.caption("OPERATING EXPENSES");
@@ -214,7 +219,7 @@ function gprStyle(){
             categories: [["NET RENTAL INCOME", 1421604.87, "INCOME"]],
             sums: { GPR: 1512345.60, VAC: -75617.28, CONC: -15123.45, OTH: 30250.10,
                     RET: 201234.56, INS: 50123.40, RM: 80456.70, MGMT: 43555.65 },
-            review: ["Other Income"] };
+            review: [amb] };
   return { grid: b.grid, expect: withFooting(e, b.at) };
 }
 

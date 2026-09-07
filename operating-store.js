@@ -41,6 +41,24 @@
   function reserved(k){ return k === "__proto__" || k === "constructor" || k === "prototype"; }
   function defaultControllable(code){ return has(CONTROLLABLE_DEFAULT, code) ? CONTROLLABLE_DEFAULT[code] : true; }
 
+  // The 32 taxonomy codes (contract §3). Lines are keyed by these and nothing
+  // else: a stray or mis-cased code ("FOO", "gpr") would be silently excluded
+  // from every total downstream, so setLine/setLines reject it and load() drops
+  // it. The live taxonomy module is consulted AT CALL TIME when present (node:
+  // require; browser: root.OperatingTaxonomy — script order is irrelevant);
+  // this local list is the fallback and must stay in sync — the test binds the
+  // two, so it is exported (frozen) for that comparison.
+  var CODES = Object.freeze(["GPR","EMPL","MOD","VAC","CONC","BD",
+    "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
+    "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"]);
+  function taxonomy(){
+    var t = null;
+    if (typeof require === "function") { try { t = require("./operating-taxonomy.js"); } catch (e) { t = null; } }
+    if (!(t && Array.isArray(t.ORDER)) && root) t = root.OperatingTaxonomy;
+    return (t && Array.isArray(t.ORDER)) ? t : null;
+  }
+  function codeList(){ var t = taxonomy(); return t ? t.ORDER : CODES; }
+
   function isObj(v){ return v != null && typeof v === "object" && !Array.isArray(v); }
   function isNum(v){ return typeof v === "number" && isFinite(v); }
   function strOrNull(v){ return (typeof v === "string" && v !== "") ? v : null; }
@@ -103,22 +121,22 @@
   //  • the SPEC-draft flat map { key: record } that had no wrapper at all;
   //  • records / lines with fields missing (filled with the schema defaults).
   // Idempotent: re-normalizing a v1 state changes nothing. Garbage entries
-  // (non-object records, lines without a readable amount, reserved keys) are
-  // dropped.
+  // (non-object records, lines without a readable amount or under an unknown
+  // code, reserved keys) are dropped.
   function migrate(parsed){
     var recsIn = null;
     if (isObj(parsed)) recsIn = isObj(parsed.records) ? parsed.records : (has(parsed, "records") || has(parsed, "version")) ? null : parsed;
-    var out = {}, fallback = null;
+    var out = {}, fallback = null, list = codeList();
     var ts = function (){ return fallback || (fallback = _now()); };   // one timestamp for every date backfilled in this load, taken only if needed
-    if (recsIn) for (var k in recsIn) if (has(recsIn, k) && !reserved(k) && isObj(recsIn[k])) out[k] = normRecord(k, recsIn[k], ts);
+    if (recsIn) for (var k in recsIn) if (has(recsIn, k) && !reserved(k) && isObj(recsIn[k])) out[k] = normRecord(k, recsIn[k], ts, list);
     return { version: VERSION, records: out };
   }
-  function normRecord(key, r, ts){
+  function normRecord(key, r, ts, list){
     var meta = isObj(r.meta) ? r.meta : {};
     var lastUpdated = strOrNull(meta.lastUpdated) || strOrNull(meta.createdAt) || ts();
     var createdAt = strOrNull(meta.createdAt) || lastUpdated;
     var lines = {}, src = isObj(r.lines) ? r.lines : {};
-    for (var c in src) if (has(src, c) && !reserved(c) && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
+    for (var c in src) if (has(src, c) && !reserved(c) && list.indexOf(c) >= 0 && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
     return {                                      // field order = contract §2 order, so the persisted JSON is canonical
       propKey: key,                               // the map key is authoritative over a stored propKey
       propertyName: typeof r.propertyName === "string" ? r.propertyName : (typeof r.name === "string" ? r.name : ""),
@@ -193,8 +211,9 @@
 
   // Live writes are strict: a bad amount or source is a caller bug, and it is
   // rejected BEFORE anything changes so the persisted schema is always exact.
-  function checkLine(c, p, fn){
+  function checkLine(c, p, fn, list){
     code(c, fn);
+    if (list.indexOf(c) < 0) throw new TypeError("OperatingStore." + fn + ": unknown line code " + JSON.stringify(c) + " — lines are keyed by taxonomy codes (GPR … PLL, exact case)");
     if (!isObj(p)) throw new TypeError("OperatingStore." + fn + ": " + c + " needs { annual, source }");
     if (!isNum(p.annual)) throw new TypeError("OperatingStore." + fn + ": " + c + ".annual must be a finite number (annual dollars)");
     if (!has(SOURCES, p.source)) throw new TypeError("OperatingStore." + fn + ": " + c + ".source must be \"t12\", \"manual\" or \"budget\"");
@@ -214,7 +233,7 @@
     if (p.note !== undefined) ln.note = strOrNull(p.note);
   }
   function setLine(k, c, p){
-    key(k, "setLine"); checkLine(c, p, "setLine");
+    key(k, "setLine"); checkLine(c, p, "setLine", codeList());
     var ts = _now(), r = getOrCreate(k, ts);
     putLine(r, c, p, ts); r.meta.lastUpdated = ts; save();
     return clone(r);
@@ -222,8 +241,8 @@
   function setLines(k, lines, opts){
     key(k, "setLines"); opts = opts || {};
     if (!isObj(lines)) throw new TypeError("OperatingStore.setLines: lines must be an object of { code: { annual, source } }");
-    var codes = Object.keys(lines);
-    codes.forEach(function (c){ checkLine(c, lines[c], "setLines"); });   // validate everything first — a bad entry must not leave a half-written record
+    var codes = Object.keys(lines), list = codeList();
+    codes.forEach(function (c){ checkLine(c, lines[c], "setLines", list); });   // validate everything first — a bad entry must not leave a half-written record
     if (opts.sourceFile != null && typeof opts.sourceFile !== "string") throw new TypeError("OperatingStore.setLines: sourceFile must be a string or null");
     if (opts.period != null && typeof opts.period !== "string") throw new TypeError("OperatingStore.setLines: period must be a string or null");
     var ts = _now(), r = getOrCreate(k, ts);
@@ -326,7 +345,7 @@
     try { storage().setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; }
   }
 
-  var api = { KEY: KEY, init: init, load: load, all: all, get: get, ensure: ensure,
+  var api = { KEY: KEY, CODES: CODES, init: init, load: load, all: all, get: get, ensure: ensure,
               setLine: setLine, setLines: setLines, removeLine: removeLine, setControllable: setControllable,
               setAssumptions: setAssumptions, setUnits: setUnits, setPeriod: setPeriod, remove: remove, rename: rename, save: save };
   return api;
