@@ -9,7 +9,7 @@
    over a derive() result (derived.result.inPlace.eri) — are read from `derived`
    (OperatingCalc.derive); without one, ERI falls back to the plain sum of the
    rental block, the same straight sum Underwriting.computeNOI uses in-place.
-   Every §3 code is a row (SPEC §6: one row per line item); once a property has
+   Every §3 code is a row (33 with BDX; SPEC §6: one row per line item); once a property has
    lines, its unused rows fold behind a per-section "show N more lines" toggle.
    Stored values are ANNUAL dollars. The monthly basis is display-only: ÷12 on the
    way out, ×12 on the way in — done in whole cents (integer arithmetic), so an
@@ -34,7 +34,9 @@
   // ---- Taxonomy (contract §3) — the row order every property shares --------
   var RENTAL  = ["GPR", "EMPL", "MOD", "VAC", "CONC", "BD"];
   var OTHER   = ["RUBS", "TRSH RUB", "TRSH COL", "PARK", "PET", "MTM", "LATE", "APP", "ADM", "AMEN", "COM", "CAM", "ANT", "OTH"];
-  var EXPENSE = ["RET", "INS", "UTIL", "RM", "CS", "PAY", "MGMT", "GA", "MKT", "TRSH", "CAB", "PLL"];
+  // BDX = bad debt booked on the EXPENSE side of a statement (Crest): an expense row,
+  // stored positive, controllable by default — never a rental deduction.
+  var EXPENSE = ["RET", "INS", "UTIL", "RM", "CS", "PAY", "MGMT", "GA", "BDX", "MKT", "TRSH", "CAB", "PLL"];
   var ORDER   = RENTAL.concat(OTHER, EXPENSE);
   var SECTION = {};
   RENTAL.forEach(function (c) { SECTION[c] = "rental"; });
@@ -50,7 +52,7 @@
     APP:"Application Fees", ADM:"Administrative Income", AMEN:"Amenity Fees",
     COM:"Commercial Rent", CAM:"CAM Income", ANT:"Antenna Income", OTH:"Other Income",
     RET:"Real Estate Taxes", INS:"Insurance", UTIL:"Utilities", PAY:"Payroll",
-    GA:"General & Admin", MKT:"Marketing", RM:"Repairs & Maintenance", CS:"Contract Services",
+    GA:"General & Admin", BDX:"Bad Debt Expense", MKT:"Marketing", RM:"Repairs & Maintenance", CS:"Contract Services",
     TRSH:"Trash Removal", CAB:"Cable", PLL:"Parking Lot Lease", MGMT:"Management Fee"
   };
   // The skeleton rows: never folded behind "show more", even with no line yet.

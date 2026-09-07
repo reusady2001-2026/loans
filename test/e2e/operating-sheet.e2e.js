@@ -21,7 +21,7 @@ const eq = (a, e, m) => check(a === e, m + (a === e ? "" : "  — got " + JSON.s
 const localToday = () => { const d = new Date(), p = n => (n < 10 ? "0" : "") + n; return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
 const ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
   "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
-  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
+  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
 
 (async () => {
   const { app, page, errors, udata } = await launchApp();
@@ -52,11 +52,11 @@ const ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
 
     // ---- fresh property: every §3 row, order, subtotals, defaults ----------------
     const c0 = await page.$$eval(q("tr[data-op-code]"), trs => trs.map(t => t.getAttribute("data-op-code")));
-    eq(c0.join(","), ORDER.join(","), "a fresh property draws all 32 §3 rows in order");
+    eq(c0.join(","), ORDER.join(","), "a fresh property draws all 33 §3 rows in order (BDX after GA)");
     eq((await page.$$eval(q("tr[data-op-sub]"), trs => trs.map(t => t.getAttribute("data-op-sub")))).join(","), "ERI,EGI,OPEX,NOI", "subtotal rows ERI, EGI, OPEX, NOI in order");
     eq(await page.getAttribute("#opBasisToggle", "data-basis"), "annual", "sheet opens in the annual basis");
     eq(await countOf(q('tr[data-op-code="GPR"] [data-op-ctl]')), 0, "income rows carry no controllable toggle");
-    eq(await countOf(q("tr[data-op-code][hidden]")), 0, "fresh property: nothing folded — all 32 rows visible");
+    eq(await countOf(q("tr[data-op-code][hidden]")), 0, "fresh property: nothing folded — all 33 rows visible");
     eq(await countOf(q('[data-op-more][aria-expanded="true"]')), 3, "three section toggles, all expanded");
     eq(await inputVal("GPR"), "", "GPR starts empty");
     eq(await inputVal("UTIL"), "", "UTIL has a row and starts empty");
@@ -169,7 +169,7 @@ const ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
     eq(await countOf(q("table")), 1, "one table after many redraws");
     eq(await countOf("#opBasisToggle"), 1, "one #opBasisToggle after many redraws");
     eq(await countOf(q('tr[data-op-code="GPR"]')), 1, "one GPR row after many redraws");
-    eq(await countOf(q("tr[data-op-code]")), 32, "still exactly 32 line rows");
+    eq(await countOf(q("tr[data-op-code]")), 33, "still exactly 33 line rows");
 
     // ---- per-property isolation, and the fold on a property that has lines --------------
     const key2 = await pickProperty(page, "Villages of Independence");
@@ -181,14 +181,14 @@ const ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
     await page.waitForFunction(() => { const i = document.querySelector('#opSheetMount tr[data-op-code="GPR"] [data-op-input]'); return !!i && i.value === "1,300,000.00"; }, null, { timeout: 10000 })
       .then(() => check(true, "switching back restores the edited sheet")).catch(() => check(false, "switching back should restore the edited sheet"));
     eq(await countOf(q('tr[data-op-code="PAY"][hidden]')), 1, "PAY (unused) is folded away on a property with lines");
-    eq(await countOf(q("tr[data-op-code][hidden]")), 23, "23 unused rows folded (rental 3 + other 14 + expense 6)");
+    eq(await countOf(q("tr[data-op-code][hidden]")), 24, "24 unused rows folded (rental 3 + other 14 + expense 7)");
     eq(await countOf(q('tr[data-op-code="MGMT"][hidden]')), 0, "MGMT (skeleton row) stays visible while unused");
-    eq((await page.textContent(q('[data-op-more="expense"]'))).trim(), "Show 6 more lines", "expense fold reads Show 6 more lines (CS, PAY, MKT, TRSH, CAB, PLL)");
+    eq((await page.textContent(q('[data-op-more="expense"]'))).trim(), "Show 7 more lines", "expense fold reads Show 7 more lines (CS, PAY, BDX, MKT, TRSH, CAB, PLL)");
     eq((await page.textContent(q('[data-op-more="rental"]'))).trim(), "Show 3 more lines", "rental fold reads Show 3 more lines (EMPL, MOD, BD)");
     await page.click(q('[data-op-more="expense"]'));
     await page.waitForFunction(() => !document.querySelector('#opSheetMount tr[data-op-code="PAY"][hidden]'), null, { timeout: 5000 })
       .then(() => check(true, "Show more reveals the expense rows")).catch(() => check(false, "Show more should reveal PAY"));
-    eq((await page.textContent(q('[data-op-more="expense"]'))).trim(), "Hide 6 unused lines", "the toggle label flips to Hide 6 unused lines");
+    eq((await page.textContent(q('[data-op-more="expense"]'))).trim(), "Hide 7 unused lines", "the toggle label flips to Hide 7 unused lines");
     await setLine("PAY", "9,000");
     await waitSub("OPEX", "154,006.00", "PAY entered after unfolding → OPEX 145,006 + 9,000");
     eq(await countOf(q('tr[data-op-code="CS"][hidden]')), 0, "the expense section stays open across the redraw");

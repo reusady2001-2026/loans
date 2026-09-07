@@ -24,12 +24,12 @@
     APP:"Application Fees", ADM:"Administrative Income", AMEN:"Amenity Fees",
     COM:"Commercial Rent", CAM:"CAM Income", ANT:"Antenna Income", OTH:"Other Income",
     RET:"Real Estate Taxes", INS:"Insurance", UTIL:"Utilities", PAY:"Payroll",
-    GA:"General & Admin", MKT:"Marketing", RM:"Repairs & Maintenance", CS:"Contract Services",
+    GA:"General & Admin", BDX:"Bad Debt Expense", MKT:"Marketing", RM:"Repairs & Maintenance", CS:"Contract Services",
     TRSH:"Trash Removal", CAB:"Cable", PLL:"Parking Lot Lease", MGMT:"Management Fee"
   };
   var RENTAL  = ["GPR","EMPL","MOD","VAC","CONC","BD"];
   var OTHER   = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
-  var EXPENSE = ["RET","INS","UTIL","PAY","GA","MKT","RM","CS","TRSH","CAB","PLL","MGMT"];
+  var EXPENSE = ["RET","INS","UTIL","PAY","GA","BDX","MKT","RM","CS","TRSH","CAB","PLL","MGMT"];
   var BUDGET  = { INS:1, PAY:1, GA:1, MKT:1, RM:1, CS:1 };   // priced $/unit in the underwritten column
   // "(1,234.56)" is an accounting negative — stripping the parens used to flip its sign.
   var num = function (v){
@@ -67,7 +67,7 @@
   function fromParse(parsed){
     parsed = parsed || {};
     var rows = Array.isArray(parsed.rows) ? parsed.rows : [], totals = parsed.totals || {};
-    var incSum = {}, expSum = {}, incRaw = 0, expRaw = 0, review = [], bdx = 0;
+    var incSum = {}, expSum = {}, incRaw = 0, expRaw = 0, review = [];
     var fin = function (v){ return (typeof v==="number" && isFinite(v)) ? v : null; };
     rows.forEach(function (r){
       if(!r) return;
@@ -79,12 +79,10 @@
       if(!cc.confident && amt !== 0) review.push({ name: r.name, amount: amt, code: code });
       if(isExp){
         // a line in the printed EXPENSE section is an expense dollar, whatever it is
-        // called. Income-role codes fold into G&A because the store's taxonomy has no
-        // expense-side code for them — except bad debt, whose amount is also reported
-        // separately (expenseBadDebt) so the worksheet can carry it as its own
-        // pass-through line instead of letting a G&A $/unit budget swallow it.
-        var ce = expCode ? code : "GA";
-        if(!expCode && code === "BD") bdx += amt;
+        // called: income-role codes fold into G&A — except bad debt, which is the
+        // expense-side code BDX (its own pass-through line, never absorbed by a G&A
+        // $/unit budget). The classifier already emits BDX there; BD is routed for safety.
+        var ce = expCode ? code : (code === "BD" ? "BDX" : "GA");
         expSum[ce] = (expSum[ce] || 0) + amt; expRaw += amt;
       } else {
         var ci = expCode ? "OTH" : code;
@@ -110,7 +108,7 @@
     var reconcile = { incomeRaw: incRaw, expenseRaw: expRaw, incomeResidual: di, expenseResidual: de,
                       noiBuilt: built, noiPrinted: noi, noiDiff: (noi != null) ? r2(built - noi) : null,
                       ties: (noi != null && Math.abs(built - noi) < 0.005) };
-    return { sums: sums, inPlaceNOI: noi, totals: totals, review: review, reconcile: reconcile, expenseBadDebt: r2(bdx) };
+    return { sums: sums, inPlaceNOI: noi, totals: totals, review: review, reconcile: reconcile, expenseBadDebt: (expSum.BDX || 0) };
   }
 
   // input: { t12Lines | categorySums, units, rrGPR, benchmarks:{ vacancyPct, mgmtPct,
@@ -118,8 +116,8 @@
   function buildSetup(input){
     input = input || {};
     var bm = input.benchmarks || {}, budget = bm.budget || {}, units = num(input.units);
-    var cs, inPlaceAuth = null, fp = null, bdx = 0;
-    if(input.parsed){ fp = fromParse(input.parsed); cs = { sums: fp.sums, review: fp.review }; inPlaceAuth = fp.inPlaceNOI; bdx = fp.expenseBadDebt || 0; }
+    var cs, inPlaceAuth = null, fp = null;
+    if(input.parsed){ fp = fromParse(input.parsed); cs = { sums: fp.sums, review: fp.review }; inPlaceAuth = fp.inPlaceNOI; }
     else if(input.categorySums){ cs = { sums: input.categorySums, review: [] }; }
     else { cs = classifySum(input.t12Lines); }
     var sums = cs.sums;
@@ -149,12 +147,10 @@
     EXPENSE.forEach(function (c){
       if(c === "MGMT"){ L("MGMT", "expense", "pctEGI", { param: (bm.mgmtPct != null ? bm.mgmtPct : 0.025), t12: sums.MGMT || 0 }); return; }
       if(!has(c)) return;
-      // expense-side bad debt leaves G&A for its own pass-through line, so a G&A $/unit
-      // budget never absorbs it; the in-place total is unchanged (GA' + BDX = GA).
-      var t12 = (c === "GA" && bdx) ? r2(sums.GA - bdx) : sums[c];
-      if(BUDGET[c] && budget[c] != null) L(c, "expense", "perUnit", { param: budget[c], t12: t12 });
-      else L(c, "expense", "value", { t12: t12, uw: t12 });
-      if(c === "GA" && bdx){ L("BDX", "expense", "value", { t12: bdx, uw: bdx }); lines[lines.length-1].label = "Bad Debt Expense"; }
+      // BDX (expense-side bad debt) is not in BUDGET: it always passes through, so a G&A
+      // $/unit budget never absorbs it — on the parsed AND the store (categorySums) path.
+      if(BUDGET[c] && budget[c] != null) L(c, "expense", "perUnit", { param: budget[c] });
+      else L(c, "expense", "value", { uw: sums[c] });
     });
     L("reserves", "reserve", "perUnit", { param: (bm.reservePerUnit != null ? bm.reservePerUnit : 200), t12: 0 });
     lines[lines.length-1].label = "Replacement Reserves";
@@ -174,7 +170,7 @@
     if(inPlaceAuth != null) result.inPlace.noiReported = inPlaceAuth;
     var sizing = UW.sizeLoan(result.underwritten.noi, bm.sizing || {});
     return { categorySums: sums, review: cs.review, worksheet: ws, result: result, sizing: sizing,
-             inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: bdx };
+             inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX) };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).

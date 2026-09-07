@@ -53,19 +53,33 @@ const derived = { egi: 1181999.75, opex: 179000, inPlaceNOI: 1002999.75, underwr
                   egiUW: 1, opexUW: 2, worksheet: {}, sizing: {}, assumptions: {} };
 const ORDER_S3 = ["GPR","EMPL","MOD","VAC","CONC","BD",
   "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
-  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
+  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
 // every §3 code is a row; the four subtotals sit after their blocks
 const ALL_KEYS = ["GPR","EMPL","MOD","VAC","CONC","BD","=ERI",
   "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH","=EGI",
-  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL","=OPEX","=NOI"];
+  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL","=OPEX","=NOI"];
 
 section("taxonomy mirror (contract §3)");
-eq(Sheet.ORDER, ORDER_S3, "ORDER is exactly the §3 list (32 codes)");
+eq(Sheet.ORDER, ORDER_S3, "ORDER is exactly the §3 list (33 codes, BDX after GA)");
+eq(Sheet.ORDER[Sheet.ORDER.indexOf("GA") + 1], "BDX", "BDX sits immediately after GA in the expense block");
+eq(Sheet.LABEL.BDX, "Bad Debt Expense", "BDX label");
+eq(Sheet.isDeduction("BDX"), false, "BDX is NOT a deduction (bad debt on the expense side is stored positive)");
+eq(Sheet.toAnnual("1000", "annual", "BDX"), 1000, "BDX typed 1000 stays +1,000");
 eq(Sheet.ALWAYS.slice().sort(), ["GPR","INS","MGMT","RET","VAC"].sort(), "skeleton rows (never folded) are GPR, VAC, RET, INS, MGMT");
 let SB = null; try { SB = require(path.join(__dirname, "..", "setup-builder.js")); } catch (e) {}
+let OT0 = null; try { OT0 = require(path.join(__dirname, "..", "operating-taxonomy.js")); } catch (e) {}
 if (SB && SB.LABEL) {
-  eq(ORDER_S3.filter(c => Sheet.LABEL[c] !== SB.LABEL[c]), [], "labels match SetupBuilder.LABEL for every §3 code (no drift)");
-  eq(ORDER_S3.filter(c => !SB.RENTAL.concat(SB.OTHER, SB.EXPENSE).includes(c)), [], "every §3 code is a SetupBuilder category");
+  // SetupBuilder.LABEL is read live; a code it does not carry yet (BDX, being added by E3
+  // in parallel) is checked against the taxonomy's label() instead — and said so.
+  const inSB = ORDER_S3.filter(c => c in SB.LABEL), notInSB = ORDER_S3.filter(c => !(c in SB.LABEL));
+  eq(inSB.filter(c => Sheet.LABEL[c] !== SB.LABEL[c]), [], "labels match SetupBuilder.LABEL for every code it carries (no drift; " + inSB.length + " codes)");
+  if (notInSB.length) {
+    console.log("  note: SetupBuilder.LABEL lacks " + notInSB.join(", ") + " — checked against OperatingTaxonomy.label instead");
+    if (OT0) eq(notInSB.filter(c => Sheet.LABEL[c] !== OT0.label(c)), [], "…and " + notInSB.join(", ") + " match OperatingTaxonomy.label");
+    else console.log("  skipped: operating-taxonomy.js not loadable — " + notInSB.join(", ") + " label unchecked");
+  }
+  const sbCats = SB.RENTAL.concat(SB.OTHER, SB.EXPENSE), notCat = ORDER_S3.filter(c => !sbCats.includes(c));
+  eq(notCat.filter(c => c !== "BDX"), [], "every §3 code is a SetupBuilder category" + (notCat.includes("BDX") ? " (BDX not yet in SetupBuilder.EXPENSE — E3 pending)" : ""));
 } else console.log("  skipped: setup-builder.js not loadable — label parity not checked");
 eq(["EMPL","MOD","VAC","CONC","BD"].filter(c => !Sheet.isDeduction(c)), [], "the five rental deductions are deduction codes");
 eq(ORDER_S3.filter(c => Sheet.isDeduction(c)).length, 5, "…and nothing else is");
@@ -73,7 +87,7 @@ eq(ORDER_S3.filter(c => Sheet.isDeduction(c)).length, 5, "…and nothing else is
 section("buildRows — every §3 code drawn, subtotals in place");
 const rows = Sheet.buildRows(record, derived, { basis: "annual" });
 eq(keysOf(rows), ALL_KEYS, "all 32 codes in §3 order; ERI after rental, EGI after other income, OPEX after expenses, NOI last");
-eq(rows.filter(r => r.editable).length, 32, "32 editable rows");
+eq(rows.filter(r => r.editable).length, 33, "33 editable rows");
 eq(rows.filter(r => r.editable && r.present).map(r => r.code), ["GPR","VAC","CONC","RUBS","OTH","RET","INS","UTIL","MGMT"], "the nine stored lines are the present ones");
 const { by, sub } = index(rows);
 eq(rows.filter(r => !r.editable).map(r => r.key), ["ERI","EGI","OPEX","NOI"], "exactly four subtotal rows");
@@ -113,6 +127,7 @@ eq(by.CONC.updatedAt, M, "updatedAt passes through");
 eq(by.CONC.note, "Q3 specials", "note passes through");
 eq([by.GPR.editable, by.GPR.present], [true, true], "line rows are editable and marked present");
 eq([by.PAY.present, by.PAY.value, by.PAY.annual, by.PAY.source, by.PAY.updatedAt], [false, null, null, null, null], "an absent code is a row with no value, source or date");
+eq([by.BDX.section, by.BDX.role, by.BDX.controllable, by.BDX.deduction, by.BDX.present], ["expense","expense",true,false,false], "BDX: expense row, controllable by default, not a deduction (absent in the fixture)");
 
 section("buildRows — deductions: value keeps the stored sign, `shown` is the magnitude");
 eq([by.VAC.deduction, by.CONC.deduction, by.GPR.deduction, by.RET.deduction], [true, true, false, false], "deduction flag on VAC / CONC only");
@@ -140,7 +155,7 @@ eq(Sheet.formatMoney(m.sub.NOI.value), "83,583.31", "NOI monthly displays 1,002,
 section("buildRows — empty / partial records");
 const e = Sheet.buildRows({ propKey: "x", propertyName: "Empty", lines: {} }, null, { basis: "annual" });
 eq(keysOf(e), ALL_KEYS, "empty record: all 32 rows in §3 order with the subtotals");
-eq(e.filter(r => r.editable).length, 32, "empty record: 32 editable rows");
+eq(e.filter(r => r.editable).length, 33, "empty record: 33 editable rows");
 eq(e.filter(r => r.editable && r.present).length, 0, "empty record: none present");
 const ei = index(e);
 eq([ei.by.GPR.value, ei.by.GPR.annual, ei.by.GPR.present], [null, null, false], "absent row: value null, annual null, present false");
@@ -174,7 +189,7 @@ const wr = Sheet.buildRows(weird, null, {});
 eq(wr.slice(-3).map(r => [r.code, r.section, r.label, r.source, r.annual]),
    [["constructor","unknown","constructor","constructor",5],["__proto__","unknown","__proto__","manual",7],["toString","unknown","toString","t12",9]],
    "prototype-named codes are drawn as unknown rows with their own label, source and value (own-property lookups)");
-eq(wr.filter(r => r.editable).length, 35, "…in addition to the 32 taxonomy rows");
+eq(wr.filter(r => r.editable).length, 36, "…in addition to the 33 taxonomy rows");
 const wh = Sheet.toHtml(wr, { basis: "annual", record: weird });
 ok(wh.indexOf("undefined") < 0, "no 'undefined' leaks into the markup for prototype-named codes or sources");
 ok(wh.includes("data-op-source>constructor<"), "a source named 'constructor' renders as its own (escaped) text");
@@ -258,10 +273,10 @@ eq(Sheet.formatDate("not a date"), "—", "invalid date → em dash");
 
 section("toHtml — markup contract (pure string)");
 const html = Sheet.toHtml(rows, { basis: "annual", record });
-eq(count(html, /data-op-code="/g), 32, "one data-op-code row per taxonomy code");
-eq(count(html, /data-op-input/g), 32, "one data-op-input per row");
-eq(count(html, /data-op-ctl/g), 12, "controllable toggle on the 12 expense rows only");
-eq(count(html, /data-op-ctl( checked)? disabled/g), 8, "…disabled on the 8 expense rows with no value yet");
+eq(count(html, /data-op-code="/g), 33, "one data-op-code row per taxonomy code (33)");
+eq(count(html, /data-op-input/g), 33, "one data-op-input per row");
+eq(count(html, /data-op-ctl/g), 13, "controllable toggle on the 13 expense rows only (BDX included)");
+eq(count(html, /data-op-ctl( checked)? disabled/g), 9, "…disabled on the 9 expense rows with no value yet");
 eq(count(html, /data-op-sub="/g), 4, "four subtotal rows");
 eq(count(html, /id="opBasisToggle"/g), 1, "exactly one #opBasisToggle");
 ok(html.includes('id="opBasisToggle" data-basis="annual"'), "toggle reports the annual basis");
@@ -288,9 +303,9 @@ ok(mhtml.includes('data-basis="monthly"') && mhtml.includes('aria-pressed="true"
 ok(mhtml.includes('value="100,000.00"') && mhtml.includes('value="8,333.33"') && mhtml.includes('value="5,000.00"'), "monthly inputs show ÷12 values to the cent (VAC as 5,000.00)");
 ok(mhtml.includes(">Monthly $<") && html.includes(">Annual $<"), "column header names the basis");
 const ehtml = Sheet.toHtml(e, { basis: "annual", record: null });
-eq(count(ehtml, /data-op-present="0"/g), 32, "all 32 rows are marked not present on an empty sheet");
-eq(count(ehtml, /data-op-ctl( checked)? disabled/g), 12, "all 12 expense toggles disabled until a value exists (MGMT etc. still show their default tick)");
-eq(count(ehtml, />not set</g), 32, "absent rows carry a 'not set' badge");
+eq(count(ehtml, /data-op-present="0"/g), 33, "all 33 rows are marked not present on an empty sheet");
+eq(count(ehtml, /data-op-ctl( checked)? disabled/g), 13, "all 13 expense toggles disabled until a value exists (MGMT etc. still show their default tick)");
+eq(count(ehtml, />not set</g), 33, "absent rows carry a 'not set' badge");
 ok(ehtml.includes('value=""'), "absent rows render an empty input");
 ok(ehtml.includes("No operating record yet"), "empty-record hint shown without a record");
 const xr = Sheet.buildRows({ lines: { GPR: { annual: 1, source: "<b>x</b>", updatedAt: T, note: "a<b" } } }, null, {});
@@ -301,11 +316,12 @@ ok(!xh.includes('x" onmouseover') && !xh.includes('data-op-key=""><i>'), "attrib
 throws(() => Sheet.toHtml(rows, { basis: "quarterly" }), /basis/, "toHtml rejects an invalid basis");
 
 section("toHtml — unused rows fold per section");
-eq(count(html, /<tr[^>]* hidden[^>]*>/g), 23, "record with lines: 23 unused rows folded by default (3 rental + 12 other + 8 expense)");
+eq(count(html, /<tr[^>]* hidden[^>]*>/g), 24, "record with lines: 24 unused rows folded by default (3 rental + 12 other + 9 expense)");
 eq(count(html, /data-op-more="/g), 3, "one fold toggle per section");
 ok(html.includes('data-op-more="rental" data-op-count="3" aria-expanded="false"') && html.includes(">Show 3 more lines<"), "rental toggle: Show 3 more lines (EMPL, MOD, BD)");
 ok(html.includes('data-op-more="other" data-op-count="12" aria-expanded="false"') && html.includes(">Show 12 more lines<"), "other-income toggle: Show 12 more lines");
-ok(html.includes('data-op-more="expense" data-op-count="8" aria-expanded="false"') && html.includes(">Show 8 more lines<"), "expense toggle: Show 8 more lines");
+ok(html.includes('data-op-more="expense" data-op-count="9" aria-expanded="false"') && html.includes(">Show 9 more lines<"), "expense toggle: Show 9 more lines (BDX among them)");
+ok(/ hidden/.test(trTag(html, "BDX")), "unused BDX is folded like any other unused expense row");
 ok(/ hidden/.test(trTag(html, "PAY")) && /data-op-optional="expense"/.test(trTag(html, "PAY")), "unused PAY carries hidden + data-op-optional");
 ok(/ hidden/.test(trTag(html, "EMPL")) && / hidden/.test(trTag(html, "PARK")), "unused EMPL / PARK are hidden");
 ok(!/ hidden/.test(trTag(html, "RET")) && !/ hidden/.test(trTag(html, "GPR")) && !/ hidden/.test(trTag(html, "OTH")), "present rows are never hidden");
@@ -314,14 +330,14 @@ ok(iBD < iMoreR && iMoreR < iERI, "the rental fold toggle sits after the last re
 const iPLL = html.indexOf('data-op-code="PLL"'), iMoreX = html.indexOf('data-op-more="expense"'), iOPEX = html.indexOf('data-op-sub="OPEX"');
 ok(iPLL < iMoreX && iMoreX < iOPEX, "the expense fold toggle sits after PLL and before OPEX");
 eq(count(ehtml, /<tr[^>]* hidden[^>]*>/g), 0, "empty record: nothing folded by default (a fresh property shows every row)");
-ok(ehtml.includes('data-op-more="expense" data-op-count="9" aria-expanded="true"') && ehtml.includes(">Hide 9 unused lines<"), "empty record: expense toggle reads Hide 9 unused lines (12 − RET/INS/MGMT)");
+ok(ehtml.includes('data-op-more="expense" data-op-count="10" aria-expanded="true"') && ehtml.includes(">Hide 10 unused lines<"), "empty record: expense toggle reads Hide 10 unused lines (13 − RET/INS/MGMT)");
 ok(ehtml.includes(">Hide 4 unused lines<") && ehtml.includes(">Hide 14 unused lines<"), "empty record: rental 4 (6 − GPR/VAC) / other 14");
 const fh = Sheet.toHtml(e, { basis: "annual", record: null, expanded: false });
-eq(count(fh, /<tr[^>]* hidden[^>]*>/g), 27, "expanded:false on an empty record hides 27 of 32 rows — the five skeleton rows stay");
+eq(count(fh, /<tr[^>]* hidden[^>]*>/g), 28, "expanded:false on an empty record hides 28 of 33 rows — the five skeleton rows stay");
 ok(!/ hidden/.test(trTag(fh, "MGMT")) && !/ hidden/.test(trTag(fh, "VAC")) && !/ hidden/.test(trTag(fh, "INS")) && / hidden/.test(trTag(fh, "UTIL")), "skeleton rows (GPR, VAC, RET, INS, MGMT) never fold");
 eq(count(Sheet.toHtml(rows, { basis: "annual", record, expanded: { expense: true } }), /<tr[^>]* hidden[^>]*>/g), 15, "per-section map: expense open, rental + other folded (3 + 12)");
 eq(count(Sheet.toHtml(rows, { basis: "annual", record, expanded: true }), /<tr[^>]* hidden[^>]*>/g), 0, "expanded:true unfolds everything");
-ok(Sheet.toHtml(rows, { basis: "annual", record, expanded: true }).includes(">Hide 8 unused lines<"), "…and the toggle then reads Hide N unused lines");
+ok(Sheet.toHtml(rows, { basis: "annual", record, expanded: true }).includes(">Hide 9 unused lines<"), "…and the toggle then reads Hide N unused lines");
 eq(count(wh, /data-op-more="/g), 3, "unknown-code rows (after NOI) get no fold toggle of their own");
 
 section("render — guard");
@@ -351,7 +367,7 @@ const fire = (root, name, target, extra) => root.handlers[name].forEach(f => f(O
 {
   const { mnt, roots } = fakeMount(); const edits = [];
   const out = Sheet.render(mnt, { record, derived, basis: "annual", onEdit: (c, a) => edits.push([c, a]) });
-  eq(out.length, 36, "render returns the 36 rows it drew");
+  eq(out.length, 37, "render returns the 37 rows it drew (33 + 4 subtotals)");
   eq(roots.length, 1, "one tree drawn");
   eq(Object.keys(roots[0].handlers).sort(), ["change","click","keydown","pointerdown"], "listeners: change, click, keydown, pointerdown — on the tree, not the mount");
   ok(mnt.innerHTML.includes('data-op-code="GPR"'), "the mount holds the sheet markup");
