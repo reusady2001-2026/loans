@@ -216,6 +216,9 @@ run("E1 · header / footing detection edge cases", function(){
   var decoy = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["Total", 1, 2, 3, 6]];
   eq(T12.findHeader(decoy).headerRow, 0, "a data row named 'Total' is not the header");
   eq(T12.findHeader([["Cash Flow (12 months)"], ["Total", 5]]).headerRow, -1, "metadata / a lone 'Total' cell is not a header");
+  var dh = T12.findHeader([["Description", "Marketing", "Jul 2025", "August 2025", "Sep-25", "Total"]]);
+  eq(JSON.stringify([dh.headerRow, dh.months]), JSON.stringify([0, [2, 3, 4]]), "'Description' / 'Marketing' header cells are not month columns (3-letter or full month names only)");
+  eq(T12.parseGrid(F.twoLabelColumns(C.grid, e.headerRow).map(function(r, i){ return i === e.headerRow ? ["Category", "Description"].concat(r.slice(2)) : r; })).totals.noi, e.noi, "column-A/column-B labels still found with a 'Description' header cell");
   eq(T12.findHeader([["Statement"], ["Account", "Total", "%"], ["Rent", 100, 0.5]], { loose: true }).headerRow, 1, "loose header opt-in");
   var noiFirst = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["TOTAL INCOME", 0, 0, 0, 500], ["TOTAL EXPENSES", 0, 0, 0, 200], ["NET OPERATING INCOME", 0, 0, 0, 300], ["Rent", 0, 0, 0, 999]];
   eq(T12.parseGrid(noiFirst).rows.length, 0, "nothing after the NOI row is read, even detail-looking lines");

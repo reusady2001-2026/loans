@@ -43,7 +43,9 @@
   // that month test keeps metadata like "Statement (12 months)" from matching. A
   // statement that prints only trailing-period columns (T12 | T6 | T3 | T1) is
   // accepted too, with T12 standing in for Total.
-  var MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?([\s.\-\/'’]*\d{2,4})?$|^\d{4}[-\/.]\d{1,2}([-\/.]\d{1,2})?$|^\d{1,2}[-\/.]\d{4}$|^\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}$/i;
+  // Month names must be the 3-letter or full form: "Description" / "Marketing" in a
+  // header row are not months (a bare prefix match counted them as one).
+  var MONTH_RE = /^(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?([\s.\-\/'’]*\d{2,4})?$|^\d{4}[-\/.]\d{1,2}([-\/.]\d{1,2})?$|^\d{1,2}[-\/.]\d{4}$|^\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}$/i;
   var TOTAL_RE = /^(grand\s+)?total(\s*[\(\-–]?\s*(12|twelve)[\s-]*(mo|mos|month|months)\)?)?$|^(12|twelve)[\s-]*(mo|mos|month|months)(\s+total)?$|^(ytd|annual|annual\s+total|ytd\s+total|total\s+ytd|year\s+to\s+date|total\s+year|full\s+year|fy|fiscal\s+year|current\s+year)$/;
   function periodOf(s){                                      // "T12" / "T-6" / "Trailing 3 (ann.)" / "TTM" → 12|6|3|1
     if (/^ttm(\b.*)?$/.test(s)) return 12;

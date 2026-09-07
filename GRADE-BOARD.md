@@ -12,7 +12,7 @@ same builder → fix → re-test → re-critique.
 | E4 | Underwritten NOI | B+ | built | critic running (regression vs released engine) | 174 ok (hand-derived) |
 | E5 | Single-property sizing | A− | built | critic running (regression vs released engine) | 174 ok; fixed negative max-loan leak |
 | P1 | Per-property store | F | built | critic running | 202 ok |
-| P2 | Per-property NOI → ratios | C | built | critic running | 167 ok (hand-calc) |
+| P2 | Per-property NOI → ratios | C | **A** (critic) | A — nits fed back; found a glue DSCR-basis defect (fixed) | 167 ok; 7/7 mutants killed; independent hand-calc to the cent |
 | P3 | Upload → property | D | built | critic running | 396 ok (fake + real store; Crest ties) |
 | P4 | Hand-edit sheet | F | built | critic running (incl. e2e; sign-coercion + hand-entry rulings) | 149 ok |
 | P5 | Controllable flags | F | **A** (critic) | A — 1 minor + 4 nits fed back to builder to patch | 96 ok; 9/9 mutants killed |

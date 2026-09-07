@@ -20,6 +20,17 @@ function diff(a, b){ return a.filter(function (x){ return b.indexOf(x) < 0; }); 
 function listed(arr){ return arr.length ? "  -- " + JSON.stringify(arr) : ""; }
 function heading(t){ console.log("\n" + t); }
 
+// The module source, evaluated in a bare vm context with `require` absent and the
+// deps on the root — the Electron renderer's path (nodeIntegration is off). It also
+// lets a test hand the module a stub dependency without touching the shared one.
+var SRC = fs.readFileSync(path.join(ROOT, "operating-taxonomy.js"), "utf8");
+function loadBrowserLike(deps){
+  var ctx = { console: console }; Object.keys(deps).forEach(function (k){ ctx[k] = deps[k]; });
+  ctx.self = ctx; ctx.window = ctx;
+  vm.runInNewContext(SRC, ctx, { filename: "operating-taxonomy.js" });
+  return ctx;
+}
+
 // §3, typed independently of the module.
 var C_RENTAL  = ["GPR","EMPL","MOD","VAC","CONC","BD"];
 var C_OTHER   = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
@@ -124,14 +135,18 @@ ok(sameList(OT.codes("expense"), C_EXPENSE), "codes() hands out a fresh array (a
 heading("unknown codes -- §3 fallback through T12Classify.roleOf");
 eq(OT.section("ZZZ"), "other", "unknown code the classifier calls income -> other");
 eq(OT.role("ZZZ"), T12.roleOf("ZZZ"), "... and role agrees with roleOf");
-// A code only the classifier knows as an expense must still land on the expense side.
-T12.EXPENSE.ZZX = 1;
-try {
-  eq(OT.section("ZZX"), "expense", "unknown code the classifier calls expense -> expense");
-  eq(OT.role("ZZX"), "expense", "... with role expense, agreeing with roleOf");
-  eq(OT.defaultControllable("ZZX"), true, "... and controllable by default");
-} finally { delete T12.EXPENSE.ZZX; }
-eq(OT.section("ZZX"), "other", "once the classifier forgets it the fallback follows (nothing is cached)");
+// A code only the classifier knows as an expense must still land on the expense
+// side. Probe it on a separately loaded instance bound to a STUB classifier, so
+// the shared T12Classify maps are never mutated (frozen or not).
+var stubT12 = { INCOME: T12.INCOME, EXPENSE: T12.EXPENSE, roleOf: function (c){ return c === "ZZX" ? "expense" : T12.roleOf(c); } };
+var stubbed = null, stubErr = null;
+try { stubbed = loadBrowserLike({ SetupBuilder: SB, T12Classify: stubT12 }).window.OperatingTaxonomy; } catch (e) { stubErr = e; }
+ok(!!stubbed, "an instance bound to a stub classifier loads" + (stubErr ? "  -- threw: " + stubErr.message : ""));
+eq(stubbed && stubbed.section("ZZX"), "expense", "unknown code the classifier calls expense -> expense");
+eq(stubbed && stubbed.role("ZZX"), "expense", "... with role expense, agreeing with that classifier's roleOf");
+eq(stubbed && stubbed.defaultControllable("ZZX"), true, "... and controllable by default");
+eq(stubbed && stubbed.section("ZZZ"), "other", "... while a code that classifier calls income still -> other");
+eq(OT.section("ZZX"), "other", "the real instance, bound to the real classifier, keeps ZZX as other (nothing shared, nothing cached)");
 var weird = [null, undefined, "", 42, {}, [], Symbol("s"), "constructor", "__proto__", "hasOwnProperty", "toString"];
 var threw = [];
 weird.forEach(function (v){
@@ -152,18 +167,11 @@ eq(OT.defaultControllable("ZZZ"), true, "... and cannot grow new entries");
 ok(Object.isFrozen(OT.ORDER) && Object.isFrozen(OT.SECTIONS) && Object.isFrozen(OT.CONTROLLABLE_DEFAULT), "ORDER, SECTIONS and CONTROLLABLE_DEFAULT are frozen");
 
 heading("isolation -- never the loans store, no extra dependencies");
-var src = fs.readFileSync(path.join(ROOT, "operating-taxonomy.js"), "utf8");
-ok(!/localStorage|ldsHub/.test(src), "module source never mentions localStorage or an ldsHub store key");
-ok(/require\("\.\/setup-builder\.js"\)/.test(src) && /require\("\.\/t12-classify\.js"\)/.test(src), "node deps are setup-builder.js and t12-classify.js");
-ok(!/require\("\.\/(underwriting|t12-parse|operating-(store|calc|upload|sheet|assumptions)|portfolio-rollup|action-scan)/.test(src), "no other module is required");
+ok(!/localStorage|ldsHub/.test(SRC), "module source never mentions localStorage or an ldsHub store key");
+ok(/require\("\.\/setup-builder\.js"\)/.test(SRC) && /require\("\.\/t12-classify\.js"\)/.test(SRC), "node deps are setup-builder.js and t12-classify.js");
+ok(!/require\("\.\/(underwriting|t12-parse|operating-(store|calc|upload|sheet|assumptions)|portfolio-rollup|action-scan)/.test(SRC), "no other module is required");
 
 heading("UMD -- browser branch (no require; deps read off the root)");
-function loadBrowserLike(deps){
-  var ctx = { console: console }; Object.keys(deps).forEach(function (k){ ctx[k] = deps[k]; });
-  ctx.self = ctx; ctx.window = ctx;
-  vm.runInNewContext(src, ctx, { filename: "operating-taxonomy.js" });
-  return ctx;
-}
 var ctx = null, loadErr = null;
 try { ctx = loadBrowserLike({ SetupBuilder: SB, T12Classify: T12 }); } catch (e) { loadErr = e; }
 var bt = ctx && ctx.window.OperatingTaxonomy;
@@ -175,6 +183,47 @@ var err = null; try { loadBrowserLike({ T12Classify: T12 }); } catch (e) { err =
 ok(err && /setup-builder\.js/.test(err.message), "loading before setup-builder.js fails loudly, naming the missing script" + (err ? "" : "  -- no error thrown"));
 err = null; try { loadBrowserLike({ SetupBuilder: SB }); } catch (e) { err = e; }
 ok(err && /t12-classify\.js/.test(err.message), "loading before t12-classify.js fails loudly, naming the missing script" + (err ? "" : "  -- no error thrown"));
+
+heading("store round-trip -- defaults and flips persist via OperatingStore (P5: \"flips persist via store\")");
+var STORE_PATH = path.join(ROOT, "operating-store.js");
+if (!fs.existsSync(STORE_PATH)) console.log("  skipped: operating-store.js missing");
+else (function (){
+  var OS = require(STORE_PATH);
+  // Map-backed storage, seeded with a loans blob the store must never touch.
+  var LOANS_KEY = "ldsHub.loans.v7";
+  var LOANS_BLOB = JSON.stringify([{ _id: "L1", propertyName: "Crest", propertyAddress: "1 Crest Way", principal: 1000000 }]);
+  var m = new Map(); m.set(LOANS_KEY, LOANS_BLOB);
+  var storage = { getItem: function (k){ return m.has(k) ? m.get(k) : null; }, setItem: function (k, v){ m.set(k, String(v)); } };
+  var t = 0, now = function (){ return "2026-09-07T12:00:" + String(t++).padStart(2, "0") + ".000Z"; };
+  OS.init({ storage: storage, now: now }); OS.load();
+  var PK = "addr:1 crest way", seed = {};
+  // No `controllable` in the seed: the store must fall back to ITS OWN default for each code.
+  OT.ORDER.forEach(function (c, i){ seed[c] = { annual: (OT.isDeduction(c) ? -1 : 1) * (1000 + i), source: "manual" }; });
+  var rec = OS.setLines(PK, seed, { period: "T12 ending 2025-06-30" }), lines = (rec && rec.lines) || {};
+  var notWritten = OT.ORDER.filter(function (c){ return !lines[c]; });
+  ok(notWritten.length === 0, "setLines wrote all 32 ORDER codes" + listed(notWritten));
+  var drift = OT.ORDER.filter(function (c){ return !lines[c] || lines[c].controllable !== OT.defaultControllable(c); });
+  ok(drift.length === 0, "every stored line.controllable === OperatingTaxonomy.defaultControllable(code) (the store's hand-typed defaults have not drifted)" + listed(drift));
+  eq(lines.RET && lines.RET.controllable, false, "store default for RET is false");
+  eq(lines.INS && lines.INS.controllable, false, "store default for INS is false");
+  eq(lines.UTIL && lines.UTIL.controllable, true, "store default for UTIL is true");
+  var f1 = OS.setControllable(PK, "RET", true), f2 = OS.setControllable(PK, "INS", true);
+  eq(f1 && f1.lines.RET.controllable, true, "setControllable(RET, true) flips the flag");
+  eq(f2 && f2.lines.INS.controllable, true, "setControllable(INS, true) flips the flag");
+  OS.init({ storage: storage, now: now }); var reloaded = OS.load();   // a fresh init re-reads the same storage = a reload
+  var back = OS.get(PK);
+  ok(!!(reloaded && reloaded.records && reloaded.records[PK]), "re-init + load on the same storage finds the record again");
+  eq(back && back.lines.RET.controllable, true, "RET's flip survived the reload");
+  eq(back && back.lines.INS.controllable, true, "INS's flip survived the reload");
+  var rest = OT.ORDER.filter(function (c){ return c !== "RET" && c !== "INS" && !(back && back.lines[c] && back.lines[c].controllable === OT.defaultControllable(c)); });
+  ok(rest.length === 0, "the other 30 lines still carry their taxonomy default after the reload" + listed(rest));
+  var amounts = OT.ORDER.filter(function (c){ return !(back && back.lines[c] && back.lines[c].annual === seed[c].annual); });
+  ok(amounts.length === 0, "every amount (deductions negative) round-tripped exactly" + listed(amounts));
+  eq(OT.defaultControllable("RET"), false, "the taxonomy default for RET is untouched by a stored flip (defaults are not state)");
+  eq(OT.CONTROLLABLE_DEFAULT.INS, false, "CONTROLLABLE_DEFAULT.INS is untouched too");
+  eq(m.get(LOANS_KEY), LOANS_BLOB, "storage[\"ldsHub.loans.v7\"] is byte-identical after seeding, flipping and reloading");
+  eq(m.size, 2, "storage holds exactly the loans blob and " + OS.KEY + " (no stray keys)");
+})();
 
 console.log("\n" + passes + " passed, " + fails + " failed");
 process.exit(fails ? 1 : 0);

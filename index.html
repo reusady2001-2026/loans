@@ -3466,8 +3466,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       const record = opRecordFor(key);
       const derived = OperatingCalc.derive(record, gd);
       const stack = OperatingCalc.stack(record, members, hooks);
+      // No lines yet → nothing to show (an empty record would otherwise "underwrite" to −reserves × units).
+      const hasLines = !!(record.lines && Object.keys(record.lines).length);
       const tile = (l, v) => '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div></div>';
-      sum.innerHTML = tile("In-place NOI", derived.inPlaceNOI != null ? fmtMoney(derived.inPlaceNOI) : "&mdash;") + tile("Underwritten NOI", derived.underwrittenNOI != null ? fmtMoney(derived.underwrittenNOI) : "&mdash;")
+      sum.innerHTML = tile("In-place NOI", (hasLines && derived.inPlaceNOI != null) ? fmtMoney(derived.inPlaceNOI) : "&mdash;") + tile("Underwritten NOI", (hasLines && derived.underwrittenNOI != null) ? fmtMoney(derived.underwrittenNOI) : "&mdash;")
         + tile("DSCR (combined)", stack.dscr != null ? stack.dscr.toFixed(2)+"&times;" : "&mdash;") + tile("Debt yield / LTV", (stack.dy != null ? fmtPct(stack.dy) : "&mdash;")+" / "+(stack.ltv != null ? fmtPct(stack.ltv) : "&mdash;"));
       lo.innerHTML = OperatingCalc.perLoan(record, members, hooks).map(r => { const l = members.find(m => m._id === r.loanId) || {};
         return '<span class="mr-3">'+escapeHtml(String(l.lenderName || l.propertyName || r.loanId))+(isMezz(l) ? ' (mezz)' : '')+': DSCR '+(r.dscr != null ? r.dscr.toFixed(2)+'&times;' : '&mdash;')+' &middot; DY '+(r.dy != null ? fmtPct(r.dy) : '&mdash;')+' &middot; LTV '+(r.ltv != null ? fmtPct(r.ltv) : '&mdash;')+'</span>'; }).join("");
@@ -5430,21 +5432,22 @@ tr[data-loan]:hover td{background:#eef2f7}
       return null;
     }
     function combinedPosition(list){
-      let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0;
+      let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0, dsAnnTot = 0;
       list.forEach(l => {
         const d = compute(l).derived;
         origTot += l.originalAmount || 0; balTot += d.currentBalance || 0;
         piMoTot += d.monthlyPI || 0; dsMoTot += d.totalDebtService || 0;
+        dsAnnTot += annualDebtService(d);   // the level-P&I basis loanDSCR sizes to (an IO period's interest-only payment would overstate coverage)
         rateWt += (d.currentRate || 0) * (d.currentBalance || 0);
       });
       const noi = propertyNOI(list);
       const entered = list.some(noiEntered);   // an NOI figure has been entered (any sign), even if not positive-valuable
       const sr = list.find(l => !isMezz(l)) || list[0];
-      const cr = loanCapRate(sr), value = (noi > 0 && cr > 0) ? noi / cr : null, annualPI = piMoTot * 12;
+      const cr = loanCapRate(sr), value = (noi > 0 && cr > 0) ? noi / cr : null;
       return {
-        count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, entered, value,
+        count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, entered, value, annualDS: dsAnnTot,
         blended: balTot > 0 ? rateWt / balTot : 0,
-        dscr: (noi > 0 && annualPI > 0) ? noi / annualPI : null,
+        dscr: (noi > 0 && dsAnnTot > 0) ? noi / dsAnnTot : null,   // same basis as loanDSCR and the operating model's stack — one number, wherever it's shown
         debtYield: (noi > 0 && balTot > 0) ? noi / balTot : null,
         ltv: (value > 0 && balTot > 0) ? balTot / value : null,
       };

@@ -53,15 +53,21 @@
   // so the sheet sums the rental block straight through to ERI.
   var DEDUCTION = { EMPL:1, MOD:1, VAC:1, CONC:1, BD:1 };
 
-  // Unknown code → the classifier's role decides the side of NOI. roleOf can only
-  // say "expense" for a code in ITS expense map, so a code this taxonomy has not
-  // caught up with still lands on the right side of NOI, and role() keeps
-  // agreeing with T12Classify.roleOf even for codes ORDER does not carry.
+  // Unknown code → the classifier's role decides the side of NOI, so a code this
+  // taxonomy has not caught up with lands wherever T12Classify puts it, and
+  // role() keeps agreeing with T12Classify.roleOf even for codes ORDER does not
+  // carry (the contract's "must agree" beats any second opinion here). Inherited
+  // caveat: roleOf is a plain EXPENSE[code] lookup, so a prototype key such as
+  // "constructor" or "__proto__" reads as "expense" — the root cause is in
+  // t12-classify.js (E2) and is fixed there; this module's own tables are guarded.
   function section(code){
     if (has(SECTION, code)) return SECTION[code];
     return T12.roleOf(code) === "income" ? "other" : "expense";
   }
   function role(code){ return section(code) === "expense" ? "expense" : "income"; }
+  // §3: unknown code → the code itself. With NO code at all (null / undefined)
+  // there is nothing to echo, so the caption is "" — a deliberate display-side
+  // choice (never a "null" cell), not a deviation from the contract.
   function label(code){
     if (has(SB.LABEL, code)) return SB.LABEL[code];
     return code == null ? "" : String(code);
