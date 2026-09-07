@@ -3179,7 +3179,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           if(!grid){ toast("Couldn’t find a T12 sheet (needs a Total column and month columns).","error"); return; }
           const i = uwState.input; i.t12Grid = grid; i.fileName = file.name; i.basis = "total";
           i.aiParsed = null; i.aiT12 = null;   // this file (rules-based) path supersedes any prior AI-read Setup
-          uwApplyParse();
+          uwApplyParse({ fromDrop: true });    // only an actual drop writes into the focused property (a basis toggle must never)
         }catch(err){ toast("Couldn’t read that file.","error"); }
       };
       reader.readAsArrayBuffer(file);
@@ -3187,11 +3187,15 @@ tr[data-loan]:hover td{background:#eef2f7}
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
     // Also read the statement's printed NOI at every available period column so a
     // lease-up (income that ramped over the year) can be spotted and annualized.
-    function uwApplyParse(){
+    function uwApplyParse(opts){
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
       i.t12Rows = d.rows;
-      opApplyUploadToFocused(d, i);   // a focused property ALSO receives this T12 into its own operating record
+      // A dropped file ALSO lands in the focused property's own operating record — but ONLY on the
+      // drop. Re-parsing for the DISPLAY basis toggle (Total / T6 / T3 / T1) must never rewrite the
+      // saved record (it would overwrite the annual figures with trailing-period ones and fake an
+      // expense shock).
+      if(opts && opts.fromDrop) opApplyUploadToFocused(d, i);
       const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
       const labels = { total:"12-mo Total", t6:"Trailing 6-mo (ann.)", t3:"Trailing 3-mo (ann.)", t1:"Trailing 1-mo (ann.)" };
       const periods = ["total","t6","t3","t1"].filter(k => d.cols[k] >= 0).map(k => {
@@ -3426,8 +3430,18 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(!opFocusKey || !opReady()) return;
       try{
         const p = opProp(opFocusKey); opEnsure(opFocusKey);
-        const res = OperatingUpload.apply(OperatingStore, opFocusKey, parsed, { fileName: input.fileName || null, period: null, propertyName: p ? p.name : opFocusKey, units: (input.units != null ? input.units : undefined) });
-        toast((p ? p.name : "Property") + ": T12 saved" + (res.ties ? " — NOI ties to the statement" : " — NOI does NOT tie to the statement’s printed NOI"), res.ties ? "info" : "error");
+        // period = what the numbers represent (basis + file); units are NOT taken from the tab's global
+        // scratchpad field — that belongs to whatever was last underwritten there, not to this property.
+        const basisLabel = { total:"12-mo Total", t6:"Trailing 6-mo", t3:"Trailing 3-mo", t1:"Trailing 1-mo" }[input.basis || "total"] || "12-mo Total";
+        const period = basisLabel + (input.fileName ? " · " + input.fileName : "");
+        const res = OperatingUpload.apply(OperatingStore, opFocusKey, parsed, { fileName: input.fileName || null, period: period, propertyName: p ? p.name : opFocusKey });
+        // The verdict is about the STATEMENT: did the classified lines foot to its printed NOI? A record
+        // that also carries manual lines the statement lacks legitimately differs — say so, don't cry error.
+        const stmtTies = (res.printedNOI != null && res.builtNOI != null) ? Math.abs(res.builtNOI - res.printedNOI) < 0.005 : res.ties;
+        const kept = (res.untouched || []).length;
+        const who = p ? p.name : "Property";
+        if(stmtTies) toast(who + ": T12 saved — NOI ties to the statement" + (kept ? " (" + kept + " manual line" + (kept > 1 ? "s" : "") + " kept)" : ""), "info");
+        else toast(who + ": T12 saved — but the classified lines do NOT foot to the statement’s printed NOI (" + fmtMoney(res.builtNOI) + " vs " + fmtMoney(res.printedNOI) + ") — check the Review list", "error");
       }catch(e){ toast("Couldn’t save the T12 to the property.", "error"); }
     }
     function opAfterChange(){ opRenderFocused(); opRenderPortfolio(); try{ render(); }catch(e){} }   // ratios elsewhere (coverage, refi) read the operating NOI

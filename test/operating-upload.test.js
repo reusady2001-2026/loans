@@ -371,6 +371,19 @@ if (fs.existsSync(tax)) {
   } catch (e) { console.log("  skipped: operating-taxonomy.js failed to load (" + e.message + ")"); }
 } else console.log("  skipped: operating-taxonomy.js not present (ORDER guard)");
 
+// Load-time guard: in a browser-shaped context (window, no require) the module must throw a clear
+// error when its deps are missing (wrong script order), and export window.OperatingUpload when they precede it.
+var vm = require("vm"), SRC = fs.readFileSync(path.join(ROOT, "operating-upload.js"), "utf8");
+function loadBare(withDeps){
+  var ctx = { console: console }; ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
+  if (withDeps) ["underwriting.js", "t12-classify.js", "setup-builder.js"].forEach(function (f){ vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f }); });
+  vm.runInContext(SRC, ctx, { filename: "operating-upload.js" }); return ctx;
+}
+var guardMsg = null; try { loadBare(false); } catch (e) { guardMsg = String(e && e.message); }
+ok(guardMsg !== null && /load setup-builder\.js and t12-classify\.js first/.test(guardMsg), "load-time guard: deps missing → throws at load (" + guardMsg + ")");
+var ctxOK = null; try { ctxOK = loadBare(true); } catch (e) {}
+ok(!!(ctxOK && ctxOK.OperatingUpload && typeof ctxOK.OperatingUpload.apply === "function"), "browser-mode (window, no require): exports window.OperatingUpload when deps precede it");
+
 function run(label, make){ try { suite(label, make); } catch (e) { fails++; console.log("  FAIL " + label + " threw: " + (e && e.stack || e)); } }
 run("in-test fake store (§2 semantics)", function (storage, nowFn){ return new FakeStore(storage, nowFn); });
 var real = loadRealStore();

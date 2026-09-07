@@ -15,8 +15,8 @@
    parse are left exactly as they were, so a hand-entered line the statement
    does not carry survives a re-upload. Lines, sourceFile and period travel in
    ONE bulk setLines call. The store is touched only through its §2 API
-   (ensure / get / setLines / setUnits / setPeriod); the loans store is never
-   read or written and the parsed object is never mutated.
+   (ensure / get / setLines / setUnits); the loans store is never read or
+   written and the parsed object is never mutated.
    ========================================================================== */
 (function (root, factory) {
   var api = factory(
@@ -28,10 +28,15 @@
   if (typeof globalThis !== "undefined") globalThis.OperatingUpload = api;
 })(typeof self !== "undefined" ? self : this, function (SB, T12) {
   "use strict";
+  // Fail loudly at load when the script order is wrong: a quiet load would surface
+  // as a TypeError deep inside the first upload instead of here.
+  if (!SB || typeof SB.fromParse !== "function" || typeof SB.buildSetup !== "function" || !T12 || typeof T12.roleOf !== "function")
+    throw new Error("operating-upload.js: load setup-builder.js and t12-classify.js first");
 
-  // The fixed §3 row order (mirrors OperatingTaxonomy.ORDER — copied rather than
-  // required so this module stays dependency-light and deterministic in node).
-  // Only used to order the preview / written lists; unknown codes sort last.
+  // The fixed §3 row order. Mirrors OperatingTaxonomy.ORDER BY DESIGN — a copy, not a
+  // require, so this module carries no dependency on P5 (drift is guarded by
+  // test/operating-upload.test.js). Only used to order the preview / written lists;
+  // unknown codes sort last.
   var ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
                "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
                "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
@@ -124,10 +129,7 @@
     if (opts.fileName != null) meta.sourceFile = String(opts.fileName);
     if (opts.period != null) meta.period = String(opts.period);
     store.setLines(propKey, write, meta);                     // lines + sourceFile + period: one save
-    var after = store.get(propKey);
-    // §2 says setLines carries period; if a store ignores it, setPeriod is the documented path.
-    if (meta.period != null && after && after.period !== meta.period) { store.setPeriod(propKey, meta.period); after = store.get(propKey); }
-    var noi = recordNOI(after);
+    var after = store.get(propKey), noi = recordNOI(after);
     return { record: after, written: codes, overwroteManual: overwroteManual, untouched: untouched,
              inPlaceNOI: noi, builtNOI: lf.builtNOI, printedNOI: lf.printedNOI, ties: tie(noi, lf.printedNOI) };
   }
