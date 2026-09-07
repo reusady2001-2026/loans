@@ -20,6 +20,14 @@ function sameList(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
 function diff(a, b){ return a.filter(function (x){ return b.indexOf(x) < 0; }); }   // in a, not in b
 function listed(arr){ return arr.length ? "  -- " + JSON.stringify(arr) : ""; }
 function heading(t){ console.log("\n" + t); }
+// BDX is being added to T12Classify.EXPENSE (E2) and SetupBuilder.EXPENSE / LABEL
+// (E3) in parallel. Until they land, BDX is the ONLY code allowed to be unknown to
+// them; anything else in arr fails. Remove TRANSITION once both sides carry BDX.
+var TRANSITION = ["BDX"];
+function tolerated(arr, msg){
+  var bad = arr.filter(function (c){ return TRANSITION.indexOf(c) < 0; });
+  ok(bad.length === 0, msg + (arr.length && !bad.length ? "  (tolerated during the BDX transition: " + JSON.stringify(arr) + ")" : "") + listed(bad));
+}
 
 // The module source, evaluated in a bare vm context with `require` absent and the
 // deps on the root — the Electron renderer's path (nodeIntegration is off). It also
@@ -35,25 +43,28 @@ function loadBrowserLike(deps){
 // §3, typed independently of the module.
 var C_RENTAL  = ["GPR","EMPL","MOD","VAC","CONC","BD"];
 var C_OTHER   = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
-var C_EXPENSE = ["RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
+var C_EXPENSE = ["RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
 var C_ORDER   = C_RENTAL.concat(C_OTHER, C_EXPENSE);
 
 heading("ORDER -- the §3 array, verbatim");
 ok(Array.isArray(OT.ORDER), "ORDER is an array");
-eq(OT.ORDER.length, 32, "ORDER has 32 codes (6 rental + 14 other + 12 expense)");
+eq(OT.ORDER.length, 33, "ORDER has 33 codes (6 rental + 14 other + 13 expense)");
 ok(sameList(OT.ORDER, C_ORDER), "ORDER equals the §3 array exactly, in sequence" + (sameList(OT.ORDER, C_ORDER) ? "" : "  -- got " + JSON.stringify(OT.ORDER)));
 eq(new Set(OT.ORDER).size, OT.ORDER.length, "ORDER has no duplicate code");
 ok(sameList(OT.ORDER.slice(0, 6), SB.RENTAL), "rental block is SetupBuilder.RENTAL in the same sequence (buildSetup prices VAC off the running subtotal in that order)");
 ok(sameList(OT.ORDER.slice(6, 20), SB.OTHER), "other-income block is SetupBuilder.OTHER in the same sequence");
-ok(sameList(OT.ORDER.slice(20).slice().sort(), SB.EXPENSE.slice().sort()), "expense block is set-equal to SetupBuilder.EXPENSE (the sequence is §3's sheet layout, not the builder's)");
+var block = OT.ORDER.slice(20);
+ok(diff(SB.EXPENSE, block).length === 0, "every SetupBuilder.EXPENSE code is in the expense block" + listed(diff(SB.EXPENSE, block)));
+tolerated(diff(block, SB.EXPENSE), "every expense-block code is in SetupBuilder.EXPENSE (the sequence is §3's sheet layout, not the builder's)");
+eq(OT.ORDER.indexOf("BDX"), OT.ORDER.indexOf("GA") + 1, "BDX sits immediately after GA");
 var appAll = SB.RENTAL.concat(SB.OTHER, SB.EXPENSE);
 var missing = diff(appAll, OT.ORDER), extra = diff(OT.ORDER, appAll);
 ok(missing.length === 0, "every code in SetupBuilder.RENTAL/OTHER/EXPENSE is in ORDER" + listed(missing));
-ok(extra.length === 0, "every ORDER code is in SetupBuilder.RENTAL/OTHER/EXPENSE" + listed(extra));
+tolerated(extra, "every ORDER code is in SetupBuilder.RENTAL/OTHER/EXPENSE");
 var t12All = Object.keys(T12.INCOME).concat(Object.keys(T12.EXPENSE));
 var miss2 = diff(t12All, OT.ORDER), extra2 = diff(OT.ORDER, t12All);
 ok(miss2.length === 0, "every code the classifier can emit (T12Classify.INCOME + EXPENSE, " + t12All.length + " codes) has a row in ORDER" + listed(miss2));
-ok(extra2.length === 0, "every ORDER code is one the classifier knows" + listed(extra2));
+tolerated(extra2, "every ORDER code is one the classifier knows");
 
 heading("section(code)");
 var badR = C_RENTAL.filter(function (c){ return OT.section(c) !== "rental"; });
@@ -61,7 +72,10 @@ var badO = C_OTHER.filter(function (c){ return OT.section(c) !== "other"; });
 var badE = C_EXPENSE.filter(function (c){ return OT.section(c) !== "expense"; });
 ok(badR.length === 0, "GPR, EMPL, MOD, VAC, CONC, BD -> rental" + listed(badR));
 ok(badO.length === 0, "RUBS .. OTH (14 codes) -> other" + listed(badO));
-ok(badE.length === 0, "RET .. PLL (12 codes) -> expense" + listed(badE));
+ok(badE.length === 0, "RET .. PLL (13 codes, BDX included) -> expense" + listed(badE));
+var incomeOnly = null, ioErr = null;
+try { incomeOnly = loadBrowserLike({ SetupBuilder: SB, T12Classify: { roleOf: function (){ return "income"; } } }).window.OperatingTaxonomy; } catch (e) { ioErr = e; }
+eq(incomeOnly && incomeOnly.section("BDX"), "expense", "BDX is in the taxonomy's own table: still an expense on an instance whose classifier calls everything income" + (ioErr ? "  -- threw: " + ioErr.message : ""));
 var changes = 0;
 for (var i = 1; i < OT.ORDER.length; i++) if (OT.section(OT.ORDER[i]) !== OT.section(OT.ORDER[i - 1])) changes++;
 eq(changes, 2, "sections are contiguous along ORDER (rental -> other -> expense), so the sheet can drop ERI / EGI subtotals at the two boundaries");
@@ -78,10 +92,15 @@ eq(OT.role("TRSH RUB"), "income", "role(TRSH RUB) = income (reimbursement) ...")
 eq(OT.role("TRSH"), "expense", "... while role(TRSH) = expense (removal)");
 eq(OT.role("RET"), "expense", "role(RET) = expense");
 eq(OT.role("MGMT"), "expense", "role(MGMT) = expense");
+eq(OT.role("BDX"), "expense", "role(BDX) = expense (bad debt carried on the expense side) ...");
+eq(OT.role("BD"), "income", "... while role(BD) = income (the rental deduction \"Less: Bad Debt\" is unchanged)");
+console.log("  note T12Classify " + (Object.prototype.hasOwnProperty.call(T12.EXPENSE, "BDX") ? "carries BDX: the roleOf agreement above includes it" : "does not carry BDX yet: the roleOf agreement above covers every code it knows (transition)"));
 
 heading("label(code) -- reuses SetupBuilder.LABEL");
-var badLbl = OT.ORDER.filter(function (c){ return !Object.prototype.hasOwnProperty.call(SB.LABEL, c) || OT.label(c) !== SB.LABEL[c]; });
-ok(badLbl.length === 0, "every ORDER code has a SetupBuilder.LABEL caption and label() returns it verbatim" + listed(badLbl));
+var hasL = function (c){ return Object.prototype.hasOwnProperty.call(SB.LABEL, c); };
+var badLbl = OT.ORDER.filter(function (c){ return hasL(c) && OT.label(c) !== SB.LABEL[c]; });
+ok(badLbl.length === 0, "label() returns SetupBuilder.LABEL verbatim for every code the builder captions" + listed(badLbl));
+tolerated(OT.ORDER.filter(function (c){ return !hasL(c); }), "every ORDER code has a SetupBuilder.LABEL caption");
 var bare = OT.ORDER.filter(function (c){ return OT.label(c) === c || !OT.label(c); });
 ok(bare.length === 0, "no ORDER row falls back to its bare code or an empty caption" + listed(bare));
 eq(OT.label("GPR"), "Gross Potential Rent", "label(GPR)");
@@ -90,7 +109,12 @@ eq(OT.label("EMPL"), "Less: Employee Discounts", "label(EMPL)");
 eq(OT.label("RET"), "Real Estate Taxes", "label(RET)");
 eq(OT.label("INS"), "Insurance", "label(INS)");
 eq(OT.label("TRSH RUB"), "Trash Reimbursements", "label(TRSH RUB)");
-eq(OT.label("TRSH COL"), "Trash Reimbursements", "label(TRSH COL) shares TRSH RUB's caption (the app's LABEL has both; rows are keyed by code)");
+eq(OT.label("TRSH COL"), "Trash Collection Income", "label(TRSH COL) has its own caption (the old duplicate of TRSH RUB was a defect)");
+eq(OT.label("BDX"), "Bad Debt Expense", "label(BDX)" + (hasL("BDX") ? " (from SetupBuilder.LABEL)" : " (taxonomy caption; SetupBuilder.LABEL has none yet)"));
+eq(OT.label("BD"), "Less: Bad Debt", "label(BD) is the income-side deduction, distinct from BDX");
+var byCap = {}; OT.ORDER.forEach(function (c){ var l = OT.label(c); (byCap[l] = byCap[l] || []).push(c); });
+var dups = Object.keys(byCap).filter(function (l){ return byCap[l].length > 1; }).map(function (l){ return l + " <- " + byCap[l].join(", "); });
+ok(dups.length === 0, "no two ORDER codes share a caption" + listed(dups));
 eq(OT.label("TRSH"), "Trash Removal", "label(TRSH) is the expense caption, distinct from the reimbursement");
 eq(OT.label("PLL"), "Parking Lot Lease", "label(PLL)");
 eq(OT.label("MGMT"), "Management Fee", "label(MGMT)");
@@ -102,7 +126,7 @@ eq(OT.label(undefined), "", "label(undefined) -> \"\" without throwing");
 heading("defaultControllable(code) / CONTROLLABLE_DEFAULT");
 eq(OT.defaultControllable("RET"), false, "RET (taxes) -> false");
 eq(OT.defaultControllable("INS"), false, "INS (insurance) -> false");
-["UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"].forEach(function (c){ eq(OT.defaultControllable(c), true, c + " -> true"); });
+["UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"].forEach(function (c){ eq(OT.defaultControllable(c), true, c + " -> true"); });
 eq(OT.defaultControllable("GPR"), true, "GPR (income) -> true");
 eq(OT.defaultControllable("OTH"), true, "OTH (income) -> true");
 var badInc = C_RENTAL.concat(C_OTHER).filter(function (c){ return OT.defaultControllable(c) !== true; });
@@ -119,6 +143,7 @@ eq(OT.defaultControllable("ZZZ"), true, "unknown code -> true (only RET and INS 
 heading("isDeduction(code) -- rental lines stored negative");
 ["EMPL","MOD","VAC","CONC","BD"].forEach(function (c){ eq(OT.isDeduction(c), true, c + " is a deduction"); });
 eq(OT.isDeduction("GPR"), false, "GPR is not a deduction");
+eq(OT.isDeduction("BDX"), false, "BDX is not a deduction (an expense line, stored positive)");
 var ded = OT.ORDER.filter(function (c){ return OT.isDeduction(c); });
 eq(ded.length, 5, "exactly 5 deductions in ORDER");
 ok(ded.every(function (c){ return OT.section(c) === "rental"; }), "every deduction sits in the rental block");
@@ -210,12 +235,13 @@ else (function (){
   OT.ORDER.forEach(function (c, i){ seed[c] = { annual: (OT.isDeduction(c) ? -1 : 1) * (1000 + i), source: "manual" }; });
   var rec = OS.setLines(PK, seed, { period: "T12 ending 2025-06-30" }), lines = (rec && rec.lines) || {};
   var notWritten = OT.ORDER.filter(function (c){ return !lines[c]; });
-  ok(notWritten.length === 0, "setLines wrote all 32 ORDER codes" + listed(notWritten));
+  ok(notWritten.length === 0, "setLines wrote all 33 ORDER codes" + listed(notWritten));
   var drift = OT.ORDER.filter(function (c){ return !lines[c] || lines[c].controllable !== OT.defaultControllable(c); });
   ok(drift.length === 0, "every stored line.controllable === OperatingTaxonomy.defaultControllable(code) (the store's hand-typed defaults have not drifted)" + listed(drift));
   eq(lines.RET && lines.RET.controllable, false, "store default for RET is false");
   eq(lines.INS && lines.INS.controllable, false, "store default for INS is false");
   eq(lines.UTIL && lines.UTIL.controllable, true, "store default for UTIL is true");
+  eq(lines.BDX && lines.BDX.controllable, true, "store default for BDX is true (flippable), whether or not the store's own map carries it yet");
   var f1 = OS.setControllable(PK, "RET", true), f2 = OS.setControllable(PK, "INS", true);
   eq(f1 && f1.lines.RET.controllable, true, "setControllable(RET, true) flips the flag");
   eq(f2 && f2.lines.INS.controllable, true, "setControllable(INS, true) flips the flag");
@@ -225,7 +251,7 @@ else (function (){
   eq(back && back.lines.RET.controllable, true, "RET's flip survived the reload");
   eq(back && back.lines.INS.controllable, true, "INS's flip survived the reload");
   var rest = OT.ORDER.filter(function (c){ return c !== "RET" && c !== "INS" && !(back && back.lines[c] && back.lines[c].controllable === OT.defaultControllable(c)); });
-  ok(rest.length === 0, "the other 30 lines still carry their taxonomy default after the reload" + listed(rest));
+  ok(rest.length === 0, "the other 31 lines still carry their taxonomy default after the reload" + listed(rest));
   var amounts = OT.ORDER.filter(function (c){ return !(back && back.lines[c] && back.lines[c].annual === seed[c].annual); });
   ok(amounts.length === 0, "every amount (deductions negative) round-tripped exactly" + listed(amounts));
   eq(OT.defaultControllable("RET"), false, "the taxonomy default for RET is untouched by a stored flip (defaults are not state)");

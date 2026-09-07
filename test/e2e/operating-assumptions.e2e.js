@@ -1,12 +1,16 @@
 // Playwright-Electron e2e for the P6 assumptions panel (OPERATING-CONTRACT §7 / §9).
 //   cd /home/user/loans && GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/operating-assumptions.e2e.js
-// Drives the app's own SEED portfolio through the shared helpers: pick "Avalon" (senior +
-// mezz on one property) → cap rate "inherited" → 6.25 → "override" badge and the store
+// Drives the app's own SEED portfolio through the shared helpers: pick "Avalon White
+// Plains" (senior + mezz on one property, pinned via its "(2 loans)" label) → cap rate
+// "inherited" → 6.25 → "override" badge and the store
 // holds the minimal patch → "Villages of Whitewater" still "inherited" → back to Avalon:
 // persisted → Reset → "inherited" (store null) and still so after a round trip. Also the
 // panel's guards (out of range, not a number, no-op re-entry, blank → inherit) and a
 // real-DOM layout measurement at the real mount width (no overlapping rects). The store
 // is read straight from localStorage["ldsHub.operating.v1"]; nothing writes it directly.
+// Focus: the glue rebuilds the panel a tick after every accepted patch; the test pins
+// that focus survives it (Enter → same box, Tab → the next box) and that a refused
+// entry neither rebuilds nor moves focus.
 "use strict";
 const fs = require("fs");
 const { launchApp, openUnderwriting, pickProperty, ok } = require("./_helpers.js");
@@ -15,7 +19,7 @@ const check = (c, m, extra) => okf(c, m + (c || extra === undefined ? "" : "  �
 const info = (m) => console.log("  info " + m);
 const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : (v && typeof v === "object") ? Object.keys(v).sort().reduce((o, k) => (o[k] = sortKeys(v[k]), o), {}) : v;
 const SJ = (v) => JSON.stringify(sortKeys(v));
-const NAME_A = "Avalon", NAME_B = "Villages of Whitewater";
+const NAME_A = "Avalon White Plains", NAME_B = "Villages of Whitewater";
 const PANEL = "#opAssumpMount [data-op-assump-panel]";
 const badgeSel = (p) => '#opAssumpMount [data-op-badge="' + p + '"]';
 const inputSel = (p) => '#opAssumpMount [data-op-assump="' + p + '"]';
@@ -55,6 +59,7 @@ async function until(page, fn, arg, what, timeout){
   // ---- A: starts inherited -------------------------------------------------
   const keyA = await pick(NAME_A);
   info("A = " + keyA);
+  check((options.find((o) => o.value === keyA) || { text: "" }).text.indexOf("(2 loans)") >= 0, "A is the senior + mezz property (its option reads '(2 loans)')", options.find((o) => o.value === keyA));
   check((await badge("sizing.capRate")) === "inherited", "A: cap rate badge starts 'inherited'", await badge("sizing.capRate"));
   check((await value("sizing.capRate")) === "5.5", "A: cap rate shows the global 5.5 (percent number)", await value("sizing.capRate"));
   check((await value("sizing.ltvMax")) === "75" && (await value("sizing.dscrMin")) === "1.2" && (await value("sizing.amortYears")) === "30" && (await value("reservePerUnit")) === "200", "A: LTV 75 / DSCR 1.2 / 30 yrs / $200 shown plain");
@@ -132,6 +137,26 @@ async function until(page, fn, arg, what, timeout){
   await pick(NAME_A);
   check((await badge("sizing.capRate")) === "override", "A again: override persisted", await badge("sizing.capRate"));
   check((await value("sizing.capRate")) === "6.25", "A again: cap rate still 6.25", await value("sizing.capRate"));
+
+  // ---- focus survives the host's deferred rebuild after an accepted commit ---
+  const active = () => page.evaluate(() => { const a = document.activeElement; return a ? { tag: a.tagName, path: a.getAttribute("data-op-assump"), id: a.id, start: a.selectionStart, end: a.selectionEnd, len: (a.value || "").length } : null; });
+  const markStale = () => page.evaluate((sel) => { const p = document.querySelector(sel); if (p) p.setAttribute("data-e2e-stale", "1"); }, PANEL);
+  const rebuilt = () => until(page, (sel) => { const p = document.querySelector(sel); return !!p && !p.hasAttribute("data-e2e-stale"); }, PANEL, "host rebuild").then(() => true, () => false);
+  await markStale(); await page.fill(inputSel("vacancyPct"), "7"); await page.press(inputSel("vacancyPct"), "Enter");
+  check(await rebuilt(), "vacancy 7 + Enter: the host rebuilt the panel (accepted patch)");
+  let a = await active();
+  check(!!a && a.tag === "INPUT" && a.path === "vacancyPct", "focus after Enter: the vacancyPct input itself (Enter keeps focus on the same field)", a);
+  await markStale(); await page.fill(inputSel("mgmtPct"), "3"); await page.press(inputSel("mgmtPct"), "Tab");
+  check(await rebuilt(), "mgmt 3 + Tab: the host rebuilt the panel");
+  a = await active();
+  check(!!a && a.tag === "INPUT" && a.path === "reservePerUnit", "focus after Tab: INPUT[reservePerUnit] — the next field, where the browser had moved it", a);
+  check(!!a && a.len > 0 && a.start === 0 && a.end === a.len, "…with its text selected, as a Tab-focus leaves it (selection restored)", a);
+  check(SJ(await assumptionsOf(keyA)) === SJ({ sizing: { capRate: 0.0625 }, vacancyPct: 0.07, mgmtPct: 0.03 }), "store: both commits landed", await assumptionsOf(keyA));
+  await markStale(); await page.fill(inputSel("sizing.ltvMax"), "120"); await page.press(inputSel("sizing.ltvMax"), "Enter");
+  await page.waitForTimeout(300);
+  check(await page.evaluate((sel) => { const p = document.querySelector(sel); return !!p && p.hasAttribute("data-e2e-stale"); }, PANEL), "refused commit (LTV 120): no patch, so the host did not rebuild");
+  a = await active();
+  check(!!a && a.path === "sizing.ltvMax", "refused commit: focus stays on the Max LTV input", a);
 
   // ---- Reset → inherit -------------------------------------------------------
   await page.click("#opAssumpReset");

@@ -14,8 +14,8 @@
    Also renders the compact panel (one input per field, an inherited/override
    badge, #opAssumpReset), validates entries (plain decimals, per-field ranges)
    and emits MINIMAL nested patches for OperatingStore.setAssumptions — none at
-   all when an entry changes nothing. Browser + node; OperatingCalc is optional
-   and looked up at call time.
+   all when an entry changes nothing. Browser + node; OperatingCalc and
+   Underwriting are optional, looked up at call time.
    ========================================================================== */
 (function (root, factory) {
   var api = factory(root);
@@ -84,13 +84,26 @@
   // OperatingCalc.derive sizes with its DEFAULTS under the global bench (a blanked
   // Setup box stores null); the panel must show the same number, so the same
   // underlay sits under resolve. Looked up at call time — script order and node
-  // require both work — with the identical literals as the fallback.
-  var FALLBACK = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
-                   sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.2, dyMin:0.07, intRate:0.055, amortYears:30 } };
+  // require both work — falling back to Underwriting.DEFAULTS (the engine's own
+  // blank-parameter fallback) and, last of all, the same literals.
+  var LITERAL = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
+                  sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.2, dyMin:0.07, intRate:0.055, amortYears:30 } };
+  // A sibling module wherever it lives: the page global, globalThis, or node require.
+  function reach(name, file){
+    var m = null;
+    try { m = (root && root[name]) || ((typeof globalThis !== "undefined") ? globalThis[name] : null) || ((typeof require === "function") ? require(file) : null); } catch (e) { m = null; }
+    return m || null;
+  }
+  // Underwriting.DEFAULTS in the contract's Assumptions shape (it carries mgmtPct and a
+  // nested sizing block; mgmtFeePct is the older alias) — the literal only if unreachable.
+  function fallbackDefaults(){
+    var uw = reach("Underwriting", "./underwriting.js"), d = uw && uw.DEFAULTS;
+    if (!isObj(d) || !isObj(d.sizing)) return LITERAL;
+    return { vacancyPct:d.vacancyPct, mgmtPct:(d.mgmtPct != null ? d.mgmtPct : d.mgmtFeePct), reservePerUnit:d.reservePerUnit, budget:{}, sizing:clone(d.sizing) };
+  }
   function appDefaults(){
-    var oc = null;
-    try { oc = (root && root.OperatingCalc) || ((typeof require === "function") ? require("./operating-calc.js") : null); } catch (e) { oc = null; }
-    return (oc && isObj(oc.DEFAULTS)) ? oc.DEFAULTS : FALLBACK;
+    var oc = reach("OperatingCalc", "./operating-calc.js");
+    return (oc && isObj(oc.DEFAULTS)) ? oc.DEFAULTS : fallbackDefaults();
   }
   function baseline(globalDefaults){ return merge(appDefaults(), globalDefaults); }
   // The value a field takes when it is NOT overridden (global, else the app default).
@@ -110,6 +123,8 @@
   // Every overridden leaf as { path, global, override }: the panel's fields first, in
   // their canonical order, then anything else the record carries (e.g. budget.INS).
   // `global` is the inherited value actually used (global, else the app default).
+  // Test-only today: nothing in the app calls it (the panel counts overrides with
+  // isOverridden); exported because the P6 brief specifies it.
   function diff(record, globalDefaults){
     var set = leaves(record && record.assumptions), seen = {}, out = [];
     var push = function (p){
@@ -129,11 +144,13 @@
   // with no float drift (5.5/100 alone leaves 0.055000000000000005-style noise).
   function round6(x){ return Math.round(x * 1e6) / 1e6; }
   // "5.5", "6%", "$1,200", " 30 " → number; blank or anything that is not ONE plain
-  // decimal once %, $ and commas are dropped and it is trimmed → null ("1e3",
-  // "1.2.3", "5-", "5 5" are refused rather than silently read as 13 / 1.2 / 5 / 55).
+  // decimal once % and $ are dropped, thousands commas removed and it is trimmed →
+  // null ("1e3", "1.2.3", "5-", "5 5", "1,2" are refused rather than silently read as
+  // 13 / 1.2 / 5 / 55 / 12).
   function num(raw){
     if (typeof raw === "number") return isFinite(raw) ? raw : null;
-    var s = String(raw == null ? "" : raw).replace(/[%$,]/g, "").trim();
+    var s = String(raw == null ? "" : raw).replace(/[%$]/g, "").trim();
+    if (s.indexOf(",") >= 0){ if (!/^[-+]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return null; s = s.replace(/,/g, ""); }
     if (!/^[-+]?\d*\.?\d+$/.test(s)) return null;
     var n = parseFloat(s);
     return isFinite(n) ? n : null;
@@ -262,6 +279,30 @@
     var c = mountEl.querySelector("[data-op-assump-count]"); if (c) c.textContent = countText(n);
   }
 
+  // The host rebuilds this panel a tick after every accepted patch. By then the
+  // browser has already put focus where the keystroke sent it — the same box after
+  // Enter, the NEXT box after Tab — and replacing the markup would drop it on <body>,
+  // breaking tab-through entry. So note which of our controls holds focus (and its
+  // selection) before the rebuild, and hand its replacement the focus afterwards.
+  function focusedControl(mountEl){
+    if (typeof document === "undefined" || typeof mountEl.contains !== "function") return null;
+    var a = document.activeElement;
+    if (!a || !mountEl.contains(a)) return null;
+    var path = a.getAttribute ? a.getAttribute("data-op-assump") : null;
+    var sel = path ? '[data-op-assump="' + path + '"]' : (a.id === "opAssumpReset" ? "#opAssumpReset" : null);
+    if (!sel) return null;
+    var f = { sel:sel, start:null, end:null, dir:null };
+    try { if (typeof a.selectionStart === "number"){ f.start = a.selectionStart; f.end = a.selectionEnd; f.dir = a.selectionDirection; } } catch (e) {}
+    return f;
+  }
+  function refocus(mountEl, f){
+    if (!f) return;
+    var el = mountEl.querySelector(f.sel);
+    if (!el) return;
+    try { el.focus({ preventScroll:true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+    if (f.start != null){ try { el.setSelectionRange(f.start, f.end, f.dir || "none"); } catch (e) {} }
+  }
+
   // render(mountEl, { record, globalDefaults, onChange(patch), onReset() }). Replaces
   // the mount's content on every call (listeners live on the new nodes only, so
   // re-rendering never stacks handlers).
@@ -272,6 +313,7 @@
     // The panel's echo of the record's overrides: each emitted patch is applied here
     // too, so the next entry is judged against it even before the host re-renders.
     var local = { assumptions: clone(record && record.assumptions) };
+    var keep = focusedControl(mountEl);
     mountEl.innerHTML = panelHtml(record, globals);
     // Commit on 'change' (blur / Enter), not per keystroke: the host re-renders this
     // panel from the store after every patch, which would steal focus mid-entry.
@@ -290,12 +332,13 @@
     });
     var reset = mountEl.querySelector("#opAssumpReset");
     if (reset) reset.addEventListener("click", function (){ if (typeof opts.onReset === "function") opts.onReset(); });
+    refocus(mountEl, keep);
     return mountEl;
   }
 
   return {
     resolve: resolve, isOverridden: isOverridden, diff: diff, render: render,
     FIELDS: FIELDS, toDisplay: toDisplay, fromDisplay: fromDisplay, patchFor: patchFor, check: check, commit: commit,
-    inheritedValue: inheritedValue, panelHtml: panelHtml
+    inheritedValue: inheritedValue, panelHtml: panelHtml, fallbackDefaults: fallbackDefaults
   };
 });

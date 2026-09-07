@@ -252,6 +252,15 @@ console.log("strict numeric entry — one plain decimal or nothing");
   eq(OA.fromDisplay("sizing.capRate", ".5"), 0.005, "'.5' → 0.005");
   eq(OA.fromDisplay("sizing.capRate", "+5"), 0.05, "'+5' → 0.05");
   eq(OA.fromDisplay("sizing.capRate", "6 %"), 0.06, "'6 %' → 0.06");
+  eq(OA.fromDisplay("reservePerUnit", "1,200"), 1200, "'1,200' → 1200 (thousands comma)");
+  eq(OA.fromDisplay("reservePerUnit", "1,234,567.5"), 1234567.5, "'1,234,567.5' → 1234567.5");
+  eq(OA.fromDisplay("reservePerUnit", "$ 12,345"), 12345, "'$ 12,345' → 12345");
+  eq(OA.fromDisplay("reservePerUnit", "1,2"), null, "'1,2' → null (a comma is only a thousands separator)");
+  eq(OA.fromDisplay("reservePerUnit", "1,00"), null, "'1,00' → null");
+  eq(OA.fromDisplay("reservePerUnit", "1,2345"), null, "'1,2345' → null");
+  eq(OA.fromDisplay("reservePerUnit", ",500"), null, "',500' → null");
+  eq(OA.patchFor("reservePerUnit", "1,2"), null, "'1,2' → no patch");
+  eq(OA.check("reservePerUnit", "1,00").error, "not a number", "check('1,00') → 'not a number'");
   eq(OA.patchFor("sizing.capRate", "1e3"), null, "'1e3' → no patch");
   eq(OA.patchFor("sizing.capRate", "1.2.3"), null, "'1.2.3' → no patch");
   eq(OA.patchFor("sizing.capRate", "5-"), null, "'5-' → no patch");
@@ -284,6 +293,12 @@ console.log("underlay — the app defaults sit under the globals (OperatingCalc.
   var D = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.2, dyMin:0.07, intRate:0.055, amortYears:30 } };
   ok(!!(OC && OC.DEFAULTS), "operating-calc.js loads in node and exposes DEFAULTS");
   if (OC) eq(OC.DEFAULTS, D, "OperatingCalc.DEFAULTS carries the app's standard numbers (panel and calc share them)");
+  var UW = null; try { UW = require("../underwriting.js"); } catch (e) { UW = null; }
+  ok(!!(UW && UW.DEFAULTS && UW.DEFAULTS.sizing), "underwriting.js loads in node and exposes DEFAULTS.sizing");
+  if (UW) eq(OA.fallbackDefaults(), { vacancyPct:UW.DEFAULTS.vacancyPct, mgmtPct:UW.DEFAULTS.mgmtPct, reservePerUnit:UW.DEFAULTS.reservePerUnit, budget:{}, sizing:UW.DEFAULTS.sizing },
+             "fallbackDefaults() equals Underwriting.DEFAULTS (contract shape) when that module is present");
+  if (UW && OC) eq(OA.fallbackDefaults(), OC.DEFAULTS, "…and so equals OperatingCalc.DEFAULTS as well (one source of numbers)");
+  ok(OA.fallbackDefaults() !== OA.fallbackDefaults() && OA.fallbackDefaults().sizing !== (UW && UW.DEFAULTS.sizing), "fallbackDefaults() returns a fresh unfrozen copy each call, not the frozen engine object");
   eq(OA.resolve(null, null), D, "no record, no globals → the app defaults");
   var G = globals(); G.sizing.capRate = null; G.vacancyPct = null;   // the Setup tab stores null for a blanked box
   var e = OA.resolve(rec(null), G);
@@ -317,6 +332,27 @@ console.log("commit — what one entry means for the panel");
   var Gn = globals(); Gn.sizing.capRate = null;
   eq(OA.commit(inh, Gn, "sizing.capRate", "5.5"), { patch:null, value:"5.5", state:null, warn:null }, "with a null global, typing the default 5.5 is a no-op (the underlay IS the inherited value)");
   eq(OA.commit(null, G, "vacancyPct", "8"), { patch:{ vacancyPct:0.08 }, value:"8", state:"override", warn:null }, "null record → inherits everything, so 8 is an override");
+})();
+
+console.log("render — focus restored across a rebuild (fake DOM)");
+(function (){
+  var calls = [];
+  var oldInput = { getAttribute: function (k){ return k === "data-op-assump" ? "mgmtPct" : null; }, id:"", selectionStart:0, selectionEnd:3, selectionDirection:"forward" };
+  var newInput = { focus: function (o){ calls.push(["focus", !!(o && o.preventScroll)]); }, setSelectionRange: function (s, e, d){ calls.push(["select", s, e, d]); } };
+  var mount = { innerHTML:"", contains: function (a){ return a === oldInput; }, querySelectorAll: function (){ return []; },
+                querySelector: function (sel){ return sel === '[data-op-assump="mgmtPct"]' ? newInput : null; } };
+  var hadDoc = typeof global.document !== "undefined", saved = global.document;
+  global.document = { activeElement: oldInput };
+  try { OA.render(mount, { record: rec(null), globalDefaults: globals() }); } finally { if (hadDoc) global.document = saved; else delete global.document; }
+  eq(calls, [["focus", true], ["select", 0, 3, "forward"]], "the focused control's replacement gets focus (no scroll) with its selection reapplied");
+  calls.length = 0; global.document = { activeElement: { getAttribute: function (){ return null; }, id:"opPropPick" } };
+  try { OA.render(mount, { record: rec(null), globalDefaults: globals() }); } finally { if (hadDoc) global.document = saved; else delete global.document; }
+  eq(calls, [], "focus outside the mount is left alone");
+  var resetBtn = { addEventListener: function (){}, focus: function (){ calls.push(["focus-reset"]); }, setSelectionRange: function (){ calls.push(["select-reset"]); } };
+  mount.querySelector = function (sel){ return sel === "#opAssumpReset" ? resetBtn : null; };
+  global.document = { activeElement: { getAttribute: function (){ return null; }, id:"opAssumpReset" } }; mount.contains = function (){ return true; };
+  try { OA.render(mount, { record: rec(null), globalDefaults: globals() }); } finally { if (hadDoc) global.document = saved; else delete global.document; }
+  eq(calls, [["focus-reset"]], "a focused Reset button is re-focused too (no selection call on a button)");
 })();
 
 console.log("");

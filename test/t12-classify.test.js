@@ -22,11 +22,11 @@ function section(title){ console.log("\n" + title); }
 section("exports / taxonomy sets");
 ["classify", "classifyConfident", "subMatch", "roleOf"].forEach(function (f){ eq(typeof T12[f], "function", "exports " + f + "()"); });
 var INC = ["GPR","VAC","CONC","EMPL","MOD","BD","MTM","RUBS","TRSH RUB","TRSH COL","OTH","AMEN","PET","LATE","ADM","APP","PARK","COM","CAM","ANT"];
-var EXP = ["RET","INS","UTIL","PAY","GA","MKT","RM","CS","MGMT","TRSH","CAB","PLL"];
+var EXP = ["RET","INS","UTIL","PAY","GA","BDX","MKT","RM","CS","MGMT","TRSH","CAB","PLL"];
 eq(Object.keys(T12.INCOME).sort().join(","), INC.slice().sort().join(","), "INCOME is exactly the 20 income codes");
-eq(Object.keys(T12.EXPENSE).sort().join(","), EXP.slice().sort().join(","), "EXPENSE is exactly the 12 expense codes");
+eq(Object.keys(T12.EXPENSE).sort().join(","), EXP.slice().sort().join(","), "EXPENSE is exactly the 13 expense codes (incl. BDX)");
 ok(INC.every(function (c){ return T12.roleOf(c) === "income"; }), "roleOf(income code) === \"income\" for all 20");
-ok(EXP.every(function (c){ return T12.roleOf(c) === "expense"; }), "roleOf(expense code) === \"expense\" for all 12");
+ok(EXP.every(function (c){ return T12.roleOf(c) === "expense"; }), "roleOf(expense code) === \"expense\" for all 13");
 ok(INC.every(function (c){ return !T12.EXPENSE[c]; }), "no code is in both sets");
 
 // ---------------------------------------------------------------- 2. synthetic labels, flat (section only)
@@ -70,7 +70,9 @@ var CASES = [
   ["Management Fees","EXPENSE","MGMT"], ["Management Fee","EXPENSE","MGMT"],
   ["Trash Removal","EXPENSE","TRSH"], ["Valet Trash","EXPENSE","TRSH"], ["Rubbish Removal/Sanitation","EXPENSE","TRSH"], ["Trash Removal Contract","EXPENSE","TRSH"],
   ["Cable TV","EXPENSE","CAB"], ["Cable","EXPENSE","CAB"],
-  ["Parking Lot Lease","EXPENSE","PLL"]
+  ["Parking Lot Lease","EXPENSE","PLL"],
+  // bad debt booked on the EXPENSE side is its own expense row; on the INCOME side it stays BD (tested above)
+  ["Bad Debt","EXPENSE","BDX"], ["Bad debts expense","EXPENSE","BDX"], ["Bad Debt Recoveries","EXPENSE","BDX"], ["Write-Offs","EXPENSE","BDX"], ["Uncollectible Rent","EXPENSE","BDX"], ["Collection Loss","EXPENSE","BDX"]
 ];
 var covered = {};
 CASES.forEach(function (c){
@@ -82,7 +84,7 @@ CASES.forEach(function (c){
   covered[c[2]] = 1;
 });
 var produced = INC.concat(EXP).filter(function (c){ return covered[c]; });
-eq(produced.length, 31, "31 of the 32 taxonomy codes are produced by a representative label (TRSH COL has no rule — see report)");
+eq(produced.length, 32, "32 of the 33 taxonomy codes are produced by a representative label (TRSH COL has no rule — see report)");
 ok(!covered["TRSH COL"], "TRSH COL is the one code no rule produces");
 
 // ---------------------------------------------------------------- 3. hierarchy honored
@@ -99,7 +101,8 @@ var H = [
   ["Cable","INCOME","OTHER INCOME","OTH"], ["Cable","EXPENSE","UTILITIES","CAB"], ["DSL Internet Line/Phones","EXPENSE","UTILITIES","UTIL"],
   ["Late Fee","EXPENSE","OTHER EXPENSES","GA"], ["Late Fees","INCOME","OTHER INCOME","LATE"],
   ["Online Marketing Expense","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","MKT"], ["Resident Events","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"],
-  ["Bad debts expense","EXPENSE","OTHER EXPENSES","BD"],
+  ["Bad debts expense","EXPENSE","OTHER EXPENSES","BDX"], ["Bad Debt Recoveries","EXPENSE","OTHER EXPENSES","BDX"], ["Write-offs","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","BDX"],
+  ["Bad Debt","EXPENSE","REPAIRS & MAINTENANCE","BDX"], ["Bad Debt","INCOME","RENTAL INCOME","BD"], ["Bad Debt Recovery","INCOME","OTHER INCOME","BD"],
   ["Real Estate Taxes","EXPENSE","TAXES AND INSURANCE","RET"], ["Property & Liability","EXPENSE","TAXES AND INSURANCE","INS"],
   ["Worker's Comp","EXPENSE","TAXES AND INSURANCE","PAY"], ["Income taxes","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"],
   ["Property Tax","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","RET"], ["Legal L & T","EXPENSE","PROFESSIONAL FEES","GA"],
@@ -191,7 +194,7 @@ ok(cap.code === "RM" && cap.confident, "5. left open by design: \"Capital Improv
   eq(T12.classify(c[0], "EXPENSE", ""), c[1], "6. flat " + JSON.stringify(c[0]) + " [EXPENSE] → " + c[1]);
 });
 eq(T12.classify("Application Fee", "INCOME", ""), "APP", "6. …and \"Application Fee\" [INCOME] → APP unchanged");
-eq(T12.classify("Bad debts expense", "EXPENSE", "OTHER EXPENSES"), "BD", "6. headed \"Bad debts expense\" → BD unchanged (fromParse folds it to GA)");
+eq(T12.classify("Bad debts expense", "EXPENSE", "OTHER EXPENSES"), "BDX", "6. headed \"Bad debts expense\" → BDX (expense-side bad debt has its own expense row; BD stays income-side)");
 // 7. documented headed-vs-flat choices (header comment)
 [["Late Fee - Taxes","TAXES AND INSURANCE","RET"], ["Late Fee - Taxes","","GA"], ["Life Insurance","TAXES AND INSURANCE","INS"], ["Software Contract","REPAIRS & MAINTENANCE","RM"], ["Software Contract","CONTRACT SERVICES","GA"],
  ["Resident Events","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Resident Events","","MKT"], ["Resident Retention","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Resident Retention","","MKT"]].forEach(function (c){
@@ -246,10 +249,11 @@ var f1 = SB.fromParse(p1);
 var want1 = { GPR:1200000.00, VAC:-60000.00, CONC:-12000.00, EMPL:-6000.00, RUBS:40000.00, "TRSH RUB":9000.00, PET:5000.00, LATE:2500.00,
               OTH:2012.34,     // Cable 1,200 + Laundry 800 + the 12.34 reconcile plug
               RET:150000.00, INS:45000.00, UTIL:72000.00, TRSH:14000.00, RM:12000.00, CS:15000.00, PAY:120000.00,
-              GA:6995.00,      // Office Supplies 3,000 + Bad Debt 4,000 folded to the expense side − the 5.00 reconcile plug
+              GA:2995.00,      // Office Supplies 3,000 − the 5.00 reconcile plug
+              BDX:4000.00,     // Bad Debt booked under OTHER EXPENSES: its own expense row, not folded into GA
               MKT:7000.00, MGMT:35000.00, PLL:2000.00 };
 Object.keys(want1).forEach(function (k){ eqCents(f1.sums[k] || 0, want1[k], "fromParse sums." + k); });
-eq(Object.keys(f1.sums).sort().join(","), Object.keys(want1).sort().join(","), "no other codes present (BD folded into GA on the expense side)");
+eq(Object.keys(f1.sums).sort().join(","), Object.keys(want1).sort().join(","), "no other codes present (expense-side Bad Debt is BDX, income-side BD absent)");
 eqCents(p1.totals.income - raw1.inc, 12.34, "plug into OTH (printed − classified income)");
 eqCents(p1.totals.expense - raw1.exp, -5.00, "plug into GA (printed − classified expense)");
 eqCents(sumRole(f1.sums, "income"), 1180512.34, "income-role codes reconcile to TOTAL INCOME");
@@ -260,7 +264,8 @@ var p2 = T12Parse.parseGrid(grid(1180500.00, 479000.00)), f2 = SB.fromParse(p2),
 eqCents(p2.totals.income - raw2.inc, 0, "consistent statement: plug into OTH");
 eqCents(p2.totals.expense - raw2.exp, 0, "consistent statement: plug into GA");
 eqCents(f2.sums.OTH, 2000.00, "consistent statement: OTH is exactly its lines");
-eqCents(f2.sums.GA, 7000.00, "consistent statement: GA is exactly its lines");
+eqCents(f2.sums.GA, 3000.00, "consistent statement: GA is exactly its lines");
+eqCents(f2.sums.BDX, 4000.00, "consistent statement: BDX is exactly its line");
 eqCents(f2.inPlaceNOI, 701500.00, "consistent statement: NOI");
 
 // ---------------------------------------------------------------- 7. Crest fixture
@@ -324,7 +329,7 @@ if (!fs.existsSync(FIX)) {
   var WANT = { GPR:18182259.31, EMPL:-94566.03, MOD:-84244.00, VAC:-1100066.34, CONC:-149392.64, BD:0,
                RUBS:654856.77, "TRSH RUB":237057.20, PARK:0, PET:37663.98, MTM:68069.11, LATE:73750.00, APP:27185.39, ADM:80535.00,
                AMEN:260057.81, COM:0, CAM:0, ANT:0, OTH:130448.75,
-               RET:3630730.07, INS:570108.94, UTIL:757274.47, RM:1005176.69, PAY:1092532.68, MGMT:550512.58, GA:942784.30,
+               RET:3630730.07, INS:570108.94, UTIL:757274.47, RM:1005176.69, PAY:1092532.68, MGMT:550512.58, GA:554599.61, BDX:388184.69,
                MKT:72687.62, TRSH:218202.68, PLL:0 };   // no CAB: the two $0 phone/DSL rows under UTILITIES stay UTIL (item 4)
   Object.keys(WANT).forEach(function (k){ eqCents(fp.sums[k] || 0, WANT[k], "Crest sums." + k); });
   eq(Object.keys(fp.sums).sort().join(","), Object.keys(WANT).sort().join(","), "exactly these codes present (no CS header on Crest; no CAB line; TRSH COL unproduced)");
@@ -341,6 +346,10 @@ if (!fs.existsSync(FIX)) {
   eq(line("Violation Penalty", "VIOLATION"), "GA", "Crest: \"Violation Penalty\" under VIOLATION → GA");
   eq(line("DSL Internet Line/Phones", "UTILITIES"), "UTIL", "Crest sheet row 645: \"DSL Internet Line/Phones\" under UTILITIES → UTIL ($0.00; item 4)");
   eq(line("Emergency Phone line", "UTILITIES"), "UTIL", "Crest sheet row 653: \"Emergency Phone line\" under UTILITIES → UTIL ($0.00; item 4)");
+  eq(line("Bad debts expense", "OTHER EXPENSES"), "BDX", "Crest sheet row 575: \"Bad debts expense\" under OTHER EXPENSES → BDX (415,390.18)");
+  eq(line("Bad Debt Recoveries", "OTHER EXPENSES"), "BDX", "Crest sheet row 576: \"Bad Debt Recoveries\" under OTHER EXPENSES → BDX (−27,205.49)");
+  var wrong = parsed.rows.filter(function (r){ var c = T12.classify(r.name, r.section, r.sub); return (T12.roleOf(c) === "expense") !== /EXP/.test(r.section); });
+  eq(wrong.length, 0, "Crest: 0 wrong-side rows (every code's role matches the printed section)");
   eq(line("Rubbish Removal/Sanitation", "REPAIRS & MAINTENANCE"), "TRSH", "Crest: \"Rubbish Removal/Sanitation\" under R&M still TRSH (112,919.48; the item-3 exclusion does not fire)");
   [["Error Deposit","OTHER INCOME","OTH"], ["Error Deposit","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Notes- Loan Payable Rep.Funding","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["PO Suspense Expense","REPAIRS & MAINTENANCE","GA"]].forEach(function (c){
     var r = parsed.rows.filter(function (x){ return x.name === c[0] && x.sub === c[1]; })[0], v = r ? T12.classifyConfident(r.name, r.section, r.sub) : { code:"(missing)", confident:true };
