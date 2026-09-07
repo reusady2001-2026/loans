@@ -20,10 +20,10 @@ function sameList(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
 function diff(a, b){ return a.filter(function (x){ return b.indexOf(x) < 0; }); }   // in a, not in b
 function listed(arr){ return arr.length ? "  -- " + JSON.stringify(arr) : ""; }
 function heading(t){ console.log("\n" + t); }
-// BDX is being added to T12Classify.EXPENSE (E2) and SetupBuilder.EXPENSE / LABEL
-// (E3) in parallel. Until they land, BDX is the ONLY code allowed to be unknown to
-// them; anything else in arr fails. Remove TRANSITION once both sides carry BDX.
-var TRANSITION = ["BDX"];
+// A code introduced here ahead of the siblings (T12Classify, SetupBuilder) may be
+// listed in TRANSITION to be tolerated as unknown to them until they catch up.
+// BDX has landed everywhere, so the list is empty and every check below is strict.
+var TRANSITION = [];
 function tolerated(arr, msg){
   var bad = arr.filter(function (c){ return TRANSITION.indexOf(c) < 0; });
   ok(bad.length === 0, msg + (arr.length && !bad.length ? "  (tolerated during the BDX transition: " + JSON.stringify(arr) + ")" : "") + listed(bad));
@@ -57,6 +57,7 @@ var block = OT.ORDER.slice(20);
 ok(diff(SB.EXPENSE, block).length === 0, "every SetupBuilder.EXPENSE code is in the expense block" + listed(diff(SB.EXPENSE, block)));
 tolerated(diff(block, SB.EXPENSE), "every expense-block code is in SetupBuilder.EXPENSE (the sequence is §3's sheet layout, not the builder's)");
 eq(OT.ORDER.indexOf("BDX"), OT.ORDER.indexOf("GA") + 1, "BDX sits immediately after GA");
+ok(SB.EXPENSE.indexOf("BDX") >= 0, "SetupBuilder.EXPENSE carries BDX (the builder splits expense-side bad debt out of GA)");
 var appAll = SB.RENTAL.concat(SB.OTHER, SB.EXPENSE);
 var missing = diff(appAll, OT.ORDER), extra = diff(OT.ORDER, appAll);
 ok(missing.length === 0, "every code in SetupBuilder.RENTAL/OTHER/EXPENSE is in ORDER" + listed(missing));
@@ -94,7 +95,7 @@ eq(OT.role("RET"), "expense", "role(RET) = expense");
 eq(OT.role("MGMT"), "expense", "role(MGMT) = expense");
 eq(OT.role("BDX"), "expense", "role(BDX) = expense (bad debt carried on the expense side) ...");
 eq(OT.role("BD"), "income", "... while role(BD) = income (the rental deduction \"Less: Bad Debt\" is unchanged)");
-console.log("  note T12Classify " + (Object.prototype.hasOwnProperty.call(T12.EXPENSE, "BDX") ? "carries BDX: the roleOf agreement above includes it" : "does not carry BDX yet: the roleOf agreement above covers every code it knows (transition)"));
+ok(Object.prototype.hasOwnProperty.call(T12.EXPENSE, "BDX") && T12.roleOf("BDX") === "expense", "T12Classify.EXPENSE carries BDX as an expense, so the agreement above includes it");
 
 heading("label(code) -- reuses SetupBuilder.LABEL");
 var hasL = function (c){ return Object.prototype.hasOwnProperty.call(SB.LABEL, c); };
@@ -110,7 +111,8 @@ eq(OT.label("RET"), "Real Estate Taxes", "label(RET)");
 eq(OT.label("INS"), "Insurance", "label(INS)");
 eq(OT.label("TRSH RUB"), "Trash Reimbursements", "label(TRSH RUB)");
 eq(OT.label("TRSH COL"), "Trash Collection Income", "label(TRSH COL) has its own caption (the old duplicate of TRSH RUB was a defect)");
-eq(OT.label("BDX"), "Bad Debt Expense", "label(BDX)" + (hasL("BDX") ? " (from SetupBuilder.LABEL)" : " (taxonomy caption; SetupBuilder.LABEL has none yet)"));
+eq(OT.label("BDX"), "Bad Debt Expense", "label(BDX), from SetupBuilder.LABEL");
+eq(SB.LABEL.BDX, "Bad Debt Expense", "SetupBuilder.LABEL captions BDX itself (no taxonomy-side caption is needed or kept)");
 eq(OT.label("BD"), "Less: Bad Debt", "label(BD) is the income-side deduction, distinct from BDX");
 var byCap = {}; OT.ORDER.forEach(function (c){ var l = OT.label(c); (byCap[l] = byCap[l] || []).push(c); });
 var dups = Object.keys(byCap).filter(function (l){ return byCap[l].length > 1; }).map(function (l){ return l + " <- " + byCap[l].join(", "); });
@@ -241,7 +243,7 @@ else (function (){
   eq(lines.RET && lines.RET.controllable, false, "store default for RET is false");
   eq(lines.INS && lines.INS.controllable, false, "store default for INS is false");
   eq(lines.UTIL && lines.UTIL.controllable, true, "store default for UTIL is true");
-  eq(lines.BDX && lines.BDX.controllable, true, "store default for BDX is true (flippable), whether or not the store's own map carries it yet");
+  eq(lines.BDX && lines.BDX.controllable, true, "store default for BDX is true (flippable)");
   var f1 = OS.setControllable(PK, "RET", true), f2 = OS.setControllable(PK, "INS", true);
   eq(f1 && f1.lines.RET.controllable, true, "setControllable(RET, true) flips the flag");
   eq(f2 && f2.lines.INS.controllable, true, "setControllable(INS, true) flips the flag");

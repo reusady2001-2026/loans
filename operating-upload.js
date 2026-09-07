@@ -46,10 +46,10 @@
                 .sort(function (a, b){ return a.r - b.r; }).map(function (x){ return x.c; });
   }
   function isNum(v){ return typeof v === "number" && isFinite(v); }
-  // Stored annuals are dollars-and-cents the user will read and edit. fromParse's
-  // sums are float additions of cent amounts (876060.5700000002 on Crest); rounding
-  // strips that noise and cannot move a cent-valued sum, so the printed-footing tie
-  // is preserved to the cent.
+  // Stored annuals are dollars-and-cents the user will read and edit. fromParse now
+  // rounds its own sums to cents (r2), so this is a no-op safety net: it keeps a stored
+  // value cent-exact should that ever regress, and it cannot move a cent-valued sum,
+  // so the printed-footing tie is preserved to the cent either way.
   function cents(v){ return Math.round(v * 100) / 100; }
   function tie(a, b){ return a != null && b != null && Math.abs(a - b) < 0.005; }   // "to the cent"
   function label(code){ return (SB.LABEL && SB.LABEL[code]) || code; }

@@ -3442,14 +3442,16 @@ tr[data-loan]:hover td{background:#eef2f7}
     // no loan uses (opRenderOrphans, Move / Delete), and a model that landed on the wrong property can be moved
     // on from there (opRenderManage) — so every outcome is visible and reversible by hand.
     function opFollowRename(loan, keyBefore, keyAfter){
-      if(keyAfter === keyBefore || !window.OperatingStore || typeof OperatingStore.rename !== "function") return "";
+      if(!window.OperatingStore || typeof OperatingStore.rename !== "function") return "";
       opInit();
+      // Same key (a name edit on an address-keyed loan): nothing moves, but the record's display name follows the loan.
+      if(keyAfter === keyBefore){ if(OperatingStore.get(keyAfter)) opEnsure(keyAfter); return ""; }
       if(!OperatingStore.get(keyBefore)) return "";
       // A property is named after the loans that were there before this edit, never after the loan being moved.
       const clean = (s) => String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
       const nameOf = (k) => {
         const others = loans.filter(l => l !== loan && propertyKey(l) === k);
-        if(others.length){ const lead = others.find(l => !isMezz(l)) || others[0]; return clean(lead.propertyName) || k; }
+        if(others.length){ const lead = others.slice().sort(loanRank)[0]; return clean(lead.propertyName) || k; }
         const r = OperatingStore.get(k), p = opProp(k); return (r && r.propertyName) || (p && p.name) || k;
       };
       if(loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return "its operating model stays with the loan(s) still at “" + nameOf(keyBefore) + "”";
@@ -3467,14 +3469,29 @@ tr[data-loan]:hover td{background:#eef2f7}
         .sort((a, b) => String(a.propertyName || a.propKey).localeCompare(String(b.propertyName || b.propKey)));
     }
     function opRenderExtras(){ try{ opRenderManage(); }catch(e){} try{ opRenderOrphans(); }catch(e){} }
+    // A deferred redraw must never steal keyboard focus: a Tab out of the assumptions panel lands on the manage row,
+    // and the sheet's own change → opAfterChange rebuilds these boxes a tick later. Remember what is focused inside
+    // the box (by id, or by orphan key + button), rebuild, then focus its replacement — as the panel does for itself.
+    function opRebuild(box, draw){
+      const a = document.activeElement, inside = !!(a && box.contains(a));
+      let find = null;
+      if(inside){
+        if(a.id) find = "#" + a.id;
+        else { const li = a.closest("[data-op-orphan-key]"), attr = a.hasAttribute("data-op-orphan-move") ? "data-op-orphan-move" : (a.hasAttribute("data-op-orphan-del") ? "data-op-orphan-del" : null);
+          if(li && attr && window.CSS && CSS.escape) find = '[data-op-orphan-key="' + CSS.escape(li.getAttribute("data-op-orphan-key")) + '"] [' + attr + ']'; }
+      }
+      draw();
+      if(find){ const n = box.querySelector(find); if(n && !n.disabled){ try{ n.focus({ preventScroll: true }); }catch(e){} } }
+    }
     // Focused property WITH a saved model: move it to a property that has none, or delete it.
     function opRenderManage(){
       const box = el("opManage"); if(!box || !opReady()) return;
       const key = opFocusKey, rec = key ? OperatingStore.get(key) : null, fp = key ? opProp(key) : null;
       if(!rec || !fp){ box.innerHTML = ""; box.hidden = true; return; }
       const targets = opProperties().filter(p => p.key !== key && !OperatingStore.get(p.key));
+      const prevSel = el("opMoveTarget") ? el("opMoveTarget").value : "";   // a picked target survives a redraw
       box.hidden = false;
-      box.innerHTML =
+      opRebuild(box, () => { box.innerHTML =
         '<div class="flex flex-wrap items-center gap-2" data-op-manage="' + escapeHtml(key) + '">' +
           '<span>Saved operating model of “' + escapeHtml(fp.name) + '” (' + opLineCount(rec) + ' lines).</span>' +
           '<label class="inline-flex items-center gap-1">Move it to <select id="opMoveTarget" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]"' + (targets.length ? '' : ' disabled') + '>' +
@@ -3484,6 +3501,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<span class="text-slate-300">·</span>' +
           '<button type="button" id="opDeleteBtn" class="rounded border border-rose-300 bg-white px-2 py-0.5 font-semibold text-rose-700">Delete this operating model</button>' +
         '</div>';
+        if(prevSel && targets.some(p => p.key === prevSel)){ el("opMoveTarget").value = prevSel; el("opMoveBtn").disabled = false; }
+      });
     }
     function opManageEvent(e){
       const key = opFocusKey; if(!key) return;
@@ -3491,7 +3510,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(e.type === "change"){ if(e.target === sel && btn) btn.disabled = !sel.value; return; }
       if(e.target.closest("#opMoveBtn")){
         const to = sel ? sel.value : "", tp = to ? opProp(to) : null;
-        if(!tp || !OperatingStore.get(key) || OperatingStore.get(to)){ opRenderExtras(); return; }
+        if(!tp || !OperatingStore.get(key) || OperatingStore.get(to)){
+          toast(!tp ? "Pick a property to move the model to." : (OperatingStore.get(to) ? "“" + tp.name + "” has an operating model now — pick another property." : "This property no longer has a saved model."), "info");
+          opRenderExtras(); return; }
         if(OperatingStore.rename(key, to)){
           opEnsure(to); opFocusKey = to; opBasis = "annual"; const pick = el("opPropPick"); if(pick) pick.value = to;
           toast("Operating model moved onto “" + tp.name + "”", "check"); opAfterChange();
@@ -3514,7 +3535,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const fp = opFocusKey ? opProp(opFocusKey) : null, focusHasRecord = !!(opFocusKey && OperatingStore.get(opFocusKey)), canMove = !!fp && !focusHasRecord;
       const moveTitle = !fp ? "Pick the property this model belongs to in the list above, then move it" : (focusHasRecord ? "“" + fp.name + "” already has an operating model" : "Move this model onto “" + fp.name + "”");
       box.hidden = false;
-      box.innerHTML =
+      opRebuild(box, () => { box.innerHTML =
         '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900" data-op-orphans="' + orphans.length + '">' +
           '<div class="font-semibold">' + orphans.length + ' operating ' + (orphans.length === 1 ? 'record' : 'records') + ' that no loan in the book uses</div>' +
           '<p class="text-amber-800">Left behind by an address edit that could not carry it, or by a removed loan. Pick the right property above and move it there, or delete it. Nothing here counts anywhere until it is moved.</p>' +
@@ -3525,6 +3546,7 @@ tr[data-loan]:hover td{background:#eef2f7}
               '<button type="button" data-op-orphan-move class="rounded border border-brand-300 bg-white px-2 py-0.5 font-semibold text-brand-700 disabled:opacity-40"' + (canMove ? '' : ' disabled') + ' title="' + escapeHtml(moveTitle) + '">Move to ' + (fp ? '“' + escapeHtml(fp.name) + '”' : 'the picked property') + '</button>' +
               '<button type="button" data-op-orphan-del class="rounded border border-rose-300 bg-white px-2 py-0.5 font-semibold text-rose-700">Delete</button>' +
             '</li>'; }).join('') + '</ul></div>';
+      });
     }
     function opOrphanClick(e){
       const li = e.target.closest("[data-op-orphan-key]"); if(!li) return;
@@ -3533,7 +3555,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       const name = rec.propertyName || key;
       if(e.target.closest("[data-op-orphan-move]")){
         const fp = opFocusKey ? opProp(opFocusKey) : null;
-        if(!fp || OperatingStore.get(opFocusKey)){ opRenderExtras(); return; }
+        if(!fp || OperatingStore.get(opFocusKey)){
+          toast(!fp ? "Pick the property this model belongs to first." : "“" + fp.name + "” already has an operating model — pick another property.", "info");
+          opRenderExtras(); return; }
         if(OperatingStore.rename(key, opFocusKey)){ opEnsure(opFocusKey); toast("Operating model of “" + name + "” moved onto “" + fp.name + "”", "check"); opAfterChange(); }
         else toast("Couldn’t move that operating model.", "error");
         return;
@@ -5589,9 +5613,16 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(a) return "addr:" + a;
       return "name:" + String((loan && (loan.propertyName || loan._id)) || "").trim().toLowerCase();
     }
+    // Senior(s) first, mezz last; among seniors the largest original balance leads (it names the property in the
+    // picker, the roll-up and the operating record — never a smaller loan that merely joined the address later).
+    // Book order breaks ties (sort is stable).
+    function loanRank(x, y){
+      const amt = (l) => { const n = Number(l && l.originalAmount); return Number.isFinite(n) ? n : 0; };
+      return ((isMezz(x) ? 1 : 0) - (isMezz(y) ? 1 : 0)) || (amt(y) - amt(x));
+    }
     function loansForProperty(loan){
       const k = propertyKey(loan);
-      return loans.filter(l => propertyKey(l) === k).sort((x, y) => (isMezz(x) ? 1 : 0) - (isMezz(y) ? 1 : 0));   // senior(s) first, mezz last
+      return loans.filter(l => propertyKey(l) === k).sort(loanRank);
     }
     // Has an NOI figure actually been ENTERED for this loan? Any sign counts — a property
     // in lease-up can post a negative trailing NOI (expenses > income). This is distinct

@@ -4,8 +4,8 @@
    property, so two sheets read line-for-line against each other and the
    roll-up can sum by code. Pure lookup tables over the codes the classifier
    already emits (t12-classify.js) and the captions the underwriting Setup
-   already shows (setup-builder.js). The one code introduced here, BDX, is
-   captioned locally until setup-builder.js carries it. No state, no storage.
+   already shows (setup-builder.js) — nothing here invents a code or a name.
+   No state, no storage.
    ========================================================================== */
 (function (root, factory) {
   var api = factory(
@@ -29,13 +29,12 @@
   // §3 order, verbatim. The rental block keeps buildSetup's sequence (vacancy is
   // priced off the running subtotal in that order); the expense sequence is the
   // spec's sheet layout (fixed costs first), NOT SetupBuilder.EXPENSE's — the
-  // same set, deliberately in a different order — plus BDX right after GA.
+  // same set, deliberately in a different order.
   // BDX = bad debt carried on the EXPENSE side of a statement (Crest rows 575-576:
   // "Bad debts expense" 415,390.18 less recoveries 27,205.49 = 388,184.69 net).
-  // setup-builder's category sums fold that into GA, where a $/unit G&A budget
-  // would silently swallow it and overstate the underwritten NOI — so the
-  // per-property model gives it its own row. The income-side "Less: Bad Debt"
-  // (BD, a rental deduction) is a different line and is unchanged.
+  // Folded into GA, a $/unit G&A budget would silently swallow it and overstate
+  // the underwritten NOI — so it has its own row, here and in setup-builder. The
+  // income-side "Less: Bad Debt" (BD, a rental deduction) is a different line.
   var RENTAL   = ["GPR","EMPL","MOD","VAC","CONC","BD"];
   var OTHER    = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
   var EXPENSE  = ["RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
@@ -72,15 +71,11 @@
     return T12.roleOf(code) === "income" ? "other" : "expense";
   }
   function role(code){ return section(code) === "expense" ? "expense" : "income"; }
-  // Captions for codes this taxonomy introduced ahead of SetupBuilder.LABEL —
-  // the builder's caption wins whenever it has one (contract: reuse LABEL).
-  var CAPTION = { BDX: "Bad Debt Expense" };
   // §3: unknown code → the code itself. With NO code at all (null / undefined)
   // there is nothing to echo, so the caption is "" — a deliberate display-side
   // choice (never a "null" cell), not a deviation from the contract.
   function label(code){
     if (has(SB.LABEL, code)) return SB.LABEL[code];
-    if (has(CAPTION, code)) return CAPTION[code];
     return code == null ? "" : String(code);
   }
   // Only RET and INS are non-controllable and both sit in ORDER, so an unknown

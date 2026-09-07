@@ -209,6 +209,82 @@ deepEq(dRes.dropped, ["reserves"], "a line coded `reserves` is reported as dropp
 cents(dRes.inPlaceNOI, -8000, "NOI = −5,000 − 3,000 = −8,000, ignoring the `reserves` line's 9");
 cents(dRes.result.inPlace.reserves, 0, "in-place reserves stay 0 (the 9 was not summed anywhere)");
 
+// ---------------------------------------------------------------------------
+section("derive — BDX (expense-side bad debt, the 33rd code) is forwarded and passes through");
+// Record (100 units; bench: vacancy 5%, mgmt 2.5%, reserves $200/unit; no budget; assumptions null):
+//   in-place:     ERI = 1,000,000 − 50,000 = 950,000 ; other 20,000 ; EGI = 970,000
+//                 opex = RET 80,000 + GA 20,000 + BDX 30,000 + MGMT 25,000 = 155,000 ; NOI = 815,000
+//   underwritten: VAC_uw = −0.05 × 1,000,000 = −50,000 (BDX is NOT in the vacancy base) ; ERI_uw = 950,000 ; EGI_uw = 970,000
+//                 MGMT_uw = 0.025 × 970,000 = 24,250 ; opex_uw = 80,000 + 20,000 + 30,000 + 24,250 = 154,250
+//                 reserves = 200 × 100 = 20,000 ; NOI_uw = 970,000 − 154,250 − 20,000 = 795,750
+var recX = { units: 100, assumptions: null,
+  lines: { GPR: line(1000000), VAC: line(-50000), RUBS: line(20000), RET: line(80000, { controllable: false }),
+           GA: line(20000), BDX: line(30000), MGMT: line(25000) } };
+var dX = Calc.derive(recX, BENCH);
+var bdxLine = dX.worksheet.lines.filter(function (l){ return l.key === "BDX"; })[0];
+ok(!!bdxLine, "(a) BDX is carried into the worksheet as its own line");
+ok(!!bdxLine && bdxLine.section === "expense" && bdxLine.method === "value", "(a) BDX line is an expense-section pass-through (method value)");
+eq(bdxLine && bdxLine.t12, 30000, "(a) BDX in-place = 30,000");
+eq(dX.result.underwritten.lines.BDX, 30000, "(a) BDX underwritten === in-place (30,000)");
+cents(dX.egi, 970000, "(c) in-place EGI = 970,000");
+cents(dX.opex, 155000, "(c) in-place opex = 155,000 includes BDX");
+cents(dX.inPlaceNOI, 815000, "in-place NOI = 815,000");
+cents(dX.egiUW, 970000, "(d) underwritten EGI = 970,000 — BDX is not a deduction");
+cents(dX.result.underwritten.lines.VAC, -50000, "(d) VAC_uw = −50,000 = 5% of GPR alone — BDX not in the vacancy base");
+cents(dX.result.underwritten.eri, 950000, "(d) underwritten ERI = 950,000 — BDX not in the rental block");
+cents(dX.opexUW, 154250, "(c) underwritten opex = 154,250 includes BDX 30,000 (GA passes through, no budget)");
+cents(dX.underwrittenNOI, 795750, "underwritten NOI (no budget) = 795,750");
+deepEq(dX.dropped, [], "BDX is a laid-out code → not dropped");
+// Same record with G&A budgeted at $150/unit on the RECORD's assumptions (merge carries `budget`):
+//   GA_uw = 150 × 100 = 15,000 replaces the 20,000 actual ; BDX untouched
+//   opex_uw = 80,000 + 15,000 + 30,000 + 24,250 = 149,250 ; NOI_uw = 970,000 − 149,250 − 20,000 = 800,750
+var dXb = Calc.derive(Object.assign({}, recX, { assumptions: { budget: { GA: 150 } } }), BENCH);
+eq(dXb.assumptions.budget.GA, 150, "(b) the G&A budget reaches the effective assumptions");
+cents(dXb.result.underwritten.lines.GA, 15000, "(b) G&A follows the $150/unit budget → 15,000");
+cents(dXb.result.underwritten.lines.BDX, 30000, "(b) BDX unchanged at 30,000 under a G&A budget (never absorbed)");
+cents(dXb.opexUW, 149250, "(b) underwritten opex = 149,250");
+cents(dXb.underwrittenNOI, 800750, "(b) underwritten NOI (G&A budget) = 800,750");
+cents(dXb.opex, 155000, "(b) in-place opex unchanged at 155,000");
+cents(dXb.inPlaceNOI, 815000, "(b) in-place NOI unchanged at 815,000");
+// Remove BDX: everything income-side is identical; only opex moves, by exactly 30,000.
+//   opex_uw = 80,000 + 20,000 + 24,250 = 124,250 ; NOI_uw = 970,000 − 124,250 − 20,000 = 825,750
+var recNoX = JSON.parse(JSON.stringify(recX)); delete recNoX.lines.BDX;
+var dNoX = Calc.derive(recNoX, BENCH);
+cents(dNoX.egiUW, 970000, "(d) without BDX the underwritten EGI is identical (970,000)");
+cents(dNoX.result.underwritten.lines.VAC, -50000, "(d) without BDX the vacancy line is identical (−50,000)");
+cents(dNoX.opexUW, 124250, "(c) without BDX underwritten opex = 124,250 (exactly 30,000 less)");
+cents(dNoX.underwrittenNOI, 825750, "(c) without BDX underwritten NOI = 825,750 (exactly 30,000 more)");
+cents(dX.opex - dNoX.opex, 30000, "(c) in-place opex differs by exactly BDX");
+// (e) the forwarded code set
+eq(Calc.categorySums(recX).BDX, 30000, "(e) categorySums carries BDX = 30,000");
+ok(Object.keys(dX.categorySums).indexOf("BDX") >= 0, "(e) derive().categorySums includes BDX");
+// Every §3 code plus BDX — the taxonomy's 33, in its ORDER (RENTAL, OTHER, EXPENSE with BDX right after GA):
+var CODES33 = ["GPR","EMPL","MOD","VAC","CONC","BD",
+  "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
+  "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
+eq(CODES33.length, 33, "(e) the pinned code list has 33 entries");
+var DEDUCT = { EMPL: 1, MOD: 1, VAC: 1, CONC: 1, BD: 1 };
+var lines33 = {}; CODES33.forEach(function (c){ lines33[c] = line(DEDUCT[c] ? -1 : 1); });
+var d33 = Calc.derive({ units: 1, lines: lines33 }, BENCH);
+eq(Object.keys(d33.categorySums).length, 33, "(e) derive() forwards exactly 33 codes when every code has a line");
+deepEq(d33.dropped, [], "(e) the engine lays out all 33 — none dropped");
+// hand: income = GPR 1 − 5 deductions + 14 other = 10 ; opex = 13 expense codes × 1 (incl. BDX) = 13 ; NOI = −3
+cents(d33.egi, 10, "(e) in-place EGI over the 33 = 1 − 5 + 14 = 10 (20 income codes)");
+cents(d33.opex, 13, "(e) in-place opex over the 33 = 13 (13 expense codes incl. BDX)");
+cents(d33.inPlaceNOI, -3, "(e) in-place NOI = 10 − 13 = −3");
+var OT = null; try { OT = require(path.join(__dirname, "..", "operating-taxonomy.js")); } catch (e){ OT = null; }
+if (OT && OT.ORDER){
+  eq(OT.ORDER.length, 33, "(e) OperatingTaxonomy.ORDER.length === 33");
+  deepEq(OT.ORDER, CODES33, "(e) OperatingTaxonomy.ORDER matches the pinned list exactly (BDX right after GA)");
+  var linesOT = {}; OT.ORDER.forEach(function (c){ linesOT[c] = line(DEDUCT[c] ? -1 : 1); });
+  var dOT = Calc.derive({ units: 1, lines: linesOT }, BENCH);
+  eq(Object.keys(dOT.categorySums).length, OT.ORDER.length, "(e) codes forwarded by derive() === OperatingTaxonomy.ORDER.length");
+  deepEq(dOT.dropped, [], "(e) every ORDER code is laid out by the engine");
+  eq(OT.role("BDX"), "expense", "(e) taxonomy role(BDX) = expense, agreeing with the engine's placement");
+} else {
+  console.log("  skipped: operating-taxonomy.js not loadable — ORDER cross-check skipped (the pinned 33-list checks above still ran)");
+}
+
 section("derive — record with no lines never throws and yields zeros");
 var dEmpty = null, threw = false;
 try { dEmpty = Calc.derive({ propKey: "e", propertyName: "E", units: 100, lines: {}, assumptions: null }, BENCH); } catch (e){ threw = true; }

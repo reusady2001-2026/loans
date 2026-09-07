@@ -34,6 +34,20 @@ const K_AV = 'addr:white plains, ny';                               // Avalon Wh
       document.getElementById('saveBtn').click(); }, address);
     await page.waitForTimeout(250);
   }
+  // Same as editAddress but for any form field (f_<key>) — used for a same-key name edit.
+  async function editField(name, field, value) {
+    const found = await page.evaluate((n) => { const sel = document.getElementById('loanSelect');
+      const o = sel && [...sel.options].find(x => (x.textContent || '').trim().startsWith(n) && !(x.textContent || '').trim().startsWith(n + ' II'));
+      if (!o) return null; sel.value = o.value; sel.dispatchEvent(new Event('change', { bubbles: true })); return o.value; }, name);
+    if (!found) { ok(false, 'loan "' + name + '" not in #loanSelect'); return; }
+    await page.waitForTimeout(150);
+    await page.evaluate(() => document.getElementById('editBtn').click());
+    await page.waitForSelector('#f_' + field, { state: 'attached', timeout: 5000 });
+    await page.evaluate(([f, v]) => { const i = document.getElementById('f_' + f); i.value = v;
+      i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('saveBtn').click(); }, [field, value]);
+    await page.waitForTimeout(250);
+  }
   async function removeLoan(name) {
     const found = await page.evaluate((n) => { const sel = document.getElementById('loanSelect');
       const o = sel && [...sel.options].find(x => (x.textContent || '').trim().startsWith(n) && !(x.textContent || '').trim().startsWith(n + ' II'));
@@ -83,6 +97,10 @@ const K_AV = 'addr:white plains, ny';                               // Avalon Wh
   ok(gpr(r[K_AV]) === 12000 && !r[K_VW2], 'joining Avalon (2 loans, no model): the model follows the loan to ' + K_AV);
   t = await toast();
   ok(/moved with it to “Avalon White Plains”/.test(t), 'toast names Avalon (got "' + t + '")');
+  ok(r[K_AV].propertyName === 'Avalon White Plains', 'the record keeps the incumbent name, not the joining loan\'s (got "' + r[K_AV].propertyName + '")');
+  await H.openUnderwriting(page);
+  const avLabel = await page.evaluate((k) => { const o = [...document.getElementById('opPropPick').options].find(x => x.value === k); return o ? o.textContent : null; }, K_AV);
+  ok(avLabel === 'Avalon White Plains (3 loans)', 'picker names the property after its largest senior (got "' + avLabel + '")');
   await editAddress('Villages of Whitewater II', '196 Maxwell Ln, Harrison, OH 45030');
   r = await records();
   ok(gpr(r[K_AV]) === 12000 && !r[K_VW2], 'leaving Avalon: its two loans keep the model, Villages II has none');
@@ -134,6 +152,33 @@ const K_AV = 'addr:white plains, ny';                               // Avalon Wh
   ok(await page.evaluate(() => document.getElementById('opOrphans').hidden), 'stranded list gone after the move');
   const shown = await page.evaluate(() => document.querySelector('#opSheetMount tr[data-op-code="GPR"] [data-op-input]').value);
   ok(/12,?000/.test(shown), 'sheet now shows the moved GPR (got "' + shown + '")');
+  // ---- 6a. a Tab out of the assumptions panel's last field lands on the manage row and SURVIVES the deferred rebuild
+  const amort = '#opAssumpMount [data-op-assump="sizing.amortYears"]';
+  await page.waitForSelector(amort, { state: 'attached', timeout: 5000 });
+  await page.click(amort); await page.fill(amort, '25'); await page.press(amort, 'Tab');
+  await page.waitForTimeout(400);
+  const focusAfterTab = await page.evaluate(() => { const a = document.activeElement; return a ? (a.tagName + '#' + a.id + ' attached=' + document.contains(a)) : 'none'; });
+  ok(focusAfterTab === 'SELECT#opMoveTarget attached=true', 'accepted change + Tab out of the panel keeps focus on the rebuilt move target (got "' + focusAfterTab + '")');
+  r = await records();
+  ok(r[K_VW1] && r[K_VW1].assumptions && r[K_VW1].assumptions.sizing && r[K_VW1].assumptions.sizing.amortYears === 25, 'the amortization override landed (got ' + JSON.stringify(r[K_VW1] && r[K_VW1].assumptions) + ')');
+  await page.evaluate(() => { const s = document.getElementById('opMoveTarget'); s.value = s.options[1].value; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.click('#opSheetMount tr[data-op-code="RET"] [data-op-input]'); await page.fill('#opSheetMount tr[data-op-code="RET"] [data-op-input]', '1000'); await page.press('#opSheetMount tr[data-op-code="RET"] [data-op-input]', 'Enter');
+  await page.waitForTimeout(400);
+  const kept = await page.evaluate(() => ({ v: document.getElementById('opMoveTarget').value, dis: document.getElementById('opMoveBtn').disabled }));
+  ok(kept.v !== '' && kept.dis === false, 'a picked move target survives a sheet edit\'s redraw (got ' + JSON.stringify(kept) + ')');
+  // ---- 6b. a same-key name edit (address unchanged) refreshes the record's name even while another property is focused
+  await H.pickProperty(page, 'Avalon White Plains');
+  await editField('Villages of Whitewater', 'propertyName', 'Villages of Whitewater North');
+  r = await records();
+  ok(r[K_VW1] && r[K_VW1].propertyName === 'Villages of Whitewater North', 'same-key rename: record name follows the loan (got "' + (r[K_VW1] && r[K_VW1].propertyName) + '")');
+  t = await toast();
+  ok(t === 'Loan updated', 'same-key rename toast is the plain "Loan updated" (got "' + t + '")');
+  await editField('Villages of Whitewater North', 'propertyName', 'Villages of Whitewater');
+  r = await records();
+  ok(r[K_VW1] && r[K_VW1].propertyName === 'Villages of Whitewater', 'renamed back (got "' + (r[K_VW1] && r[K_VW1].propertyName) + '")');
+  await H.openUnderwriting(page);
+  await H.pickProperty(page, 'Villages of Whitewater');
+  ok((await page.evaluate(() => document.getElementById('opPropPick').value)) === K_VW1, 'focus back on Villages of Whitewater');
   await page.evaluate(() => document.getElementById('opDeleteBtn').click());
   await page.waitForSelector('#confirmModal:not(.hidden)', { state: 'attached', timeout: 5000 });
   const dlg = await page.evaluate(() => document.getElementById('confirmTitle').textContent);
