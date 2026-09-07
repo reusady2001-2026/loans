@@ -209,9 +209,11 @@
   }
   // What the totals ratios cover, spelled out next to them.
   function scopeText(t){
-    var props = t.props + (t.props === 1 ? " property" : " properties");
-    if (!t.noiProps) return "NOI on 0 of " + props + " — enter operating lines to get a portfolio DSCR / debt yield";
-    return "DSCR " + ratio(t.dscr) + " · DY " + pct(t.dy) + " · NOI on " + t.noiProps + " of " + props + ", " + short(t.dsCovered) + " DS, " + short(t.balanceCovered) + " balance";
+    t = t || {};
+    var n = (t.props != null ? t.props : t.properties) || 0, k = t.noiProps || 0;
+    var props = n + (n === 1 ? " property" : " properties");
+    if (!k) return "NOI on 0 of " + props + " — enter operating lines to get a portfolio DSCR / debt yield";
+    return "DSCR " + ratio(t.dscr) + " · DY " + pct(t.dy) + " · NOI on " + k + " of " + props + ", " + short(t.dsCovered) + " DS, " + short(t.balanceCovered) + " balance";
   }
   function day(iso){ var m = (typeof iso === "string") && iso.match(ISO_DAY); return m ? (m[2] + "/" + m[3] + "/" + m[1]) : DASH; }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }

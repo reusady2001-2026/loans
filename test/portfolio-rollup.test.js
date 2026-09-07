@@ -62,7 +62,9 @@ function hooksFor(loans, over){
 // which loans the roll-up handed to stack() and which defaults to derive().
 function fakeCalc(noiTable, uwTable){
   const calls = { effectiveNOI: [], derive: [], stack: [] };
-  const noiOf = r => (r && r.lines && Object.keys(r.lines).length) ? noiTable[r.propKey] : null;
+  // Lines as the real calc counts them (its lineCodes): the non-null entries of a non-array object.
+  const codes = r => { const ls = r && r.lines; return (ls && typeof ls === "object" && !Array.isArray(ls)) ? Object.keys(ls).filter(k => ls[k] != null) : []; };
+  const noiOf = r => codes(r).length ? noiTable[r.propKey] : null;
   return { calls,
     effectiveNOI(r){ calls.effectiveNOI.push(r.propKey); return noiOf(r); },
     derive(r, gd){ calls.derive.push({ key: r.propKey, gd }); return { inPlaceNOI: noiOf(r), underwrittenNOI: uwTable[r.propKey], egi: null, opex: null, worksheet: null, sizing: null, assumptions: gd }; },
@@ -79,6 +81,9 @@ const PR = require(path.join(__dirname, "..", "portfolio-rollup.js"));
 let fake = fakeCalc(NOI, UW);
 global.OperatingCalc = fake;   // the module resolves root.OperatingCalc at call time
 const byKey = rows => { const m = {}; rows.forEach(r => { m[r.propKey] = r; }); return m; };
+// A minimal mount for render(): captures innerHTML and the listeners it binds.
+const mount = () => ({ innerHTML: "", _l: {}, addEventListener(t, f){ (this._l[t] = this._l[t] || []).push(f); } });
+const rowHtmlOf = (html, key) => { const i = html.indexOf('data-op-prop="' + key + '"'); return i < 0 ? "" : html.slice(i, html.indexOf("</tr>", i)); };
 
 let out, R;
 section("buildRows — grouping, senior+mezz collapse, names, units, counts", () => {
@@ -151,15 +156,33 @@ section("totals", () => {
   ok(cents(t.uwNoi, 12255750), "uwNoi = 11,500,000 + 795,750 − 40,000 = 12,255,750.00 (got " + t.uwNoi + ")");
   ok(cents(t.balance, 135470000), "balance = 120,000,000 + 1,000,000 + 6,370,000 + 0 + 8,000,000 + 100,000 = 135,470,000.00 (got " + t.balance + ")");
   ok(cents(t.annualDS, 7624000), "annualDS = 6,792,000 + 60,000 + 360,000 + 0 + 400,000 + 12,000 = 7,624,000.00 (got " + t.annualDS + ")");
-  ok(approx(t.dscr, 1.6743179, 1e-7) && t.dscr === 12765000 / 7624000, "dscr = 12,765,000 / 7,624,000 = 1.6743179 (got " + t.dscr + ")");
-  ok(approx(t.dy, 0.0942275, 1e-7) && t.dy === 12765000 / 135470000, "dy = 12,765,000 / 135,470,000 = 0.0942275 (got " + t.dy + ")");
+  // Coverage is read over the 3 properties that HAVE an NOI (Avalon, Weaver, Lease-Up); M Lofts, Zeta and
+  // the Orphan record carry no NOI, so their debt must stay OUT of the ratio's denominator:
+  //   dsCovered = 6,792,000 + 400,000 + 60,000 = 7,252,000 ; balanceCovered = 120,000,000 + 8,000,000 + 1,000,000 = 129,000,000
+  ok(t.noiProps === 3 && t.props === 6, "noiProps 3 of props 6 (got " + t.noiProps + "/" + t.props + ")");
+  ok(cents(t.dsCovered, 7252000) && cents(t.balanceCovered, 129000000), "dsCovered 7,252,000.00 / balanceCovered 129,000,000.00 (got " + t.dsCovered + " / " + t.balanceCovered + ")");
+  ok(approx(t.dscr, 1.7602041, 1e-7) && t.dscr === 12765000 / 7252000, "dscr = 12,765,000 / 7,252,000 = 1.7602041 over the NOI'd properties only (got " + t.dscr + ")");
+  ok(approx(t.dy, 0.0989535, 1e-7) && t.dy === 12765000 / 129000000, "dy = 12,765,000 / 129,000,000 = 0.0989535 over the NOI'd properties only (got " + t.dy + ")");
+  ok(t.dscr !== 12765000 / 7624000 && t.dy !== 12765000 / 135470000, "…not ΣNOI over ALL properties' debt (1.674 / 9.42%), which would understate coverage");
   const none = PR.buildRows({}, [L.mlofts, L.zeta], hooksFor(LOANS), GD).totals;
   ok(none.noi === null && none.uwNoi === null && none.dscr === null && none.dy === null, "no NOI anywhere → noi/uwNoi/dscr/dy null (unknown ≠ zero)");
   ok(none.balance === 6470000 && none.annualDS === 372000 && none.properties === 2 && none.loans === 2, "…while the debt totals are still summed (6,470,000 / 372,000)");
+  ok(none.noiProps === 0 && none.dsCovered === 0 && none.balanceCovered === 0 && none.props === 2, "…and the coverage scope is 0 of 2, nothing behind the ratios");
   const neg = PR.buildRows({ [K.lease]: REC[K.lease] }, [L.lease], hooksFor(LOANS), GD).totals;
   ok(neg.noi === -50000 && neg.dscr === null && neg.dy === null, "Σnoi ≤ 0 → dscr/dy null, noi itself still reported");
+  ok(neg.noiProps === 1 && neg.dsCovered === 60000 && neg.balanceCovered === 1000000, "…a negative NOI still counts as an NOI in the scope");
   const empty = PR.buildRows({}, [], hooksFor([]), GD);
-  ok(empty.rows.length === 0 && empty.totals.properties === 0 && empty.totals.loans === 0 && empty.totals.balance === 0, "empty portfolio → no rows, zero counts, no NaN");
+  ok(empty.rows.length === 0 && empty.totals.properties === 0 && empty.totals.props === 0 && empty.totals.loans === 0 && empty.totals.balance === 0 && empty.totals.noiProps === 0, "empty portfolio → no rows, zero counts, no NaN");
+  // The critic's case: A covers 1.50×, B has no NOI → the portfolio DSCR is A's 1.50× with scope "1 of 2"
+  const abCalc = fakeCalc({ "addr:a st": 150000 }, { "addr:a st": 140000 });
+  global.OperatingCalc = abCalc;
+  const A = { _id: "a", propertyName: "A", propertyAddress: "A St" }, B = { _id: "b", propertyName: "B", propertyAddress: "B St" };
+  const ab = PR.buildRows({ "addr:a st": { propKey: "addr:a st", propertyName: "A", units: 10, period: null, lines: { GPR: line(200000) }, assumptions: null, meta } }, [A, B],
+    hooksFor([A, B], { annualDebtService: l => ({ a: 100000, b: 500000 })[l._id], currentBalance: l => ({ a: 1000000, b: 5000000 })[l._id], capRate: () => 0.06 }), GD).totals;
+  global.OperatingCalc = fake;
+  ok(ab.dscr === 1.5 && ab.dy === 0.15, "A: 150,000 / 100,000 = 1.50×, B: no NOI → totals.dscr 1.50, dy 0.15 (got " + ab.dscr + " / " + ab.dy + ")");
+  ok(ab.noiProps === 1 && ab.props === 2 && ab.properties === 2, "noiProps 1 of 2 (got " + ab.noiProps + " of " + ab.props + ")");
+  ok(ab.dsCovered === 100000 && ab.balanceCovered === 1000000 && ab.annualDS === 600000 && ab.balance === 6000000, "dsCovered 100,000 / balanceCovered 1,000,000 — while the dollar totals still cover ALL properties: DS 600,000, balance 6,000,000");
 });
 
 section("sorting — by name, deterministic on ties, independent of input order", () => {
@@ -201,7 +224,8 @@ section("inputs: records as array, loans/defaults from hooks, NaN guards, errors
   const w = byKey(g.rows)[K.weaver], m = byKey(g.rows)[K.mlofts];
   ok(w.noi === null && w.uwNoi === null && w.dscr === null && w.dy === null && w.ltv === null && w.balance === null && w.annualDS === null, "non-finite / non-number engine outputs → null, never NaN");
   ok(m.balance === 0 && m.annualDS === 0, "loan-only sums treat an unknown hook value as 0, not NaN");
-  ok([g.totals.noi, g.totals.uwNoi, g.totals.dscr, g.totals.dy].every(v => v === null) && g.totals.balance === 0 && g.totals.annualDS === 0, "totals stay null/finite");
+  ok([g.totals.noi, g.totals.uwNoi, g.totals.dscr, g.totals.dy].every(v => v === null) && g.totals.balance === 0 && g.totals.annualDS === 0
+     && g.totals.noiProps === 0 && g.totals.dsCovered === 0 && g.totals.balanceCovered === 0, "totals stay null/finite (scope 0 of 2)");
   ok(!JSON.stringify(g).includes("null,null,null,null,null,null,null,null,null,null,null,null"), "sanity: rows still carry their keys/names");
   global.OperatingCalc = fake;
   let err = null; try { PR.buildRows(REC, LOANS, {}, GD); } catch (e) { err = e; }
@@ -210,13 +234,12 @@ section("inputs: records as array, loans/defaults from hooks, NaN guards, errors
 });
 
 section("render — table, data-op-prop, formatting, totals row, idempotent re-render, onOpen", () => {
-  const mount = () => ({ innerHTML: "", _l: {}, addEventListener(t, f){ (this._l[t] = this._l[t] || []).push(f); } });
   const m = mount(); let opened = [];
   PR.render(m, out, { onOpen: k => opened.push(k) });
   const html = m.innerHTML;
   ok((html.match(/<tr data-op-prop="/g) || []).length === 6, "6 rows marked data-op-prop");
   ok(html.includes('data-op-prop="' + K.avalon + '"') && html.includes('data-op-prop="' + K.zeta + '"'), "data-op-prop carries the propKey verbatim");
-  const rowHtml = key => { const i = html.indexOf('data-op-prop="' + key + '"'); return html.slice(i, html.indexOf("</tr>", i)); };
+  const rowHtml = key => rowHtmlOf(html, key);
   const av = rowHtml(K.avalon);
   ok(av.includes(">Avalon White Plains<") && av.includes(">400<") && av.includes(">2<"), "Avalon: name, 400 units, 2 loans");
   ok(av.includes(">$12,000,000.00<") && av.includes(">$11,500,000.00<"), "Avalon: NOI / UW NOI money to 2 decimals");
@@ -232,15 +255,27 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   const ti = html.indexOf("data-op-total"), tot = html.slice(ti, html.indexOf("</tr>", ti));
   ok(tot.includes("6 properties") && tot.includes(">6<"), "totals row: 6 properties, 6 loans");
   ok(tot.includes(">$12,765,000.00<") && tot.includes(">$12,255,750.00<") && tot.includes(">$135,470,000.00<") && tot.includes(">$7,624,000.00<"), "totals row money");
-  ok(tot.includes(">1.67×<") && tot.includes(">9.42%<"), "totals row DSCR 1.67× / DY 9.42%");
+  ok(tot.includes(">1.76×<") && tot.includes(">9.90%<"), "totals row DSCR 1.76× / DY 9.90% (NOI'd properties only)");
+  const SCOPE = "DSCR 1.76× · DY 9.90% · NOI on 3 of 6 properties, $7.25M DS, $129.00M balance";
+  const si = html.indexOf("data-op-scope"), sc = si < 0 ? "" : html.slice(si, html.indexOf("</tr>", si));
+  ok(si > ti && sc.includes(">" + SCOPE + "<"), "scope line under the totals reads \"" + SCOPE + "\"");
+  ok(tot.includes('title="' + SCOPE + '"'), "totals DSCR / DY cells carry the scope as a title");
+  ok(PR.scopeText(out.totals) === SCOPE && PR.scopeText({ props: 2, noiProps: 0 }) === "NOI on 0 of 2 properties — enter operating lines to get a portfolio DSCR / debt yield", "scopeText: with and without an NOI");
+  ok(PR.fmt.short(7252000) === "$7.25M" && PR.fmt.short(129000000) === "$129.00M" && PR.fmt.short(850000) === "$850K" && PR.fmt.short(1.5e9) === "$1.50B" && PR.fmt.short(12) === "$12" && PR.fmt.short(null) === "—", "fmt.short");
   ok(html.indexOf("data-op-total") > html.lastIndexOf("data-op-prop="), "totals row comes last");
   ok(!/NaN|undefined/.test(html), "no NaN / undefined anywhere in the markup");
   // click → onOpen(propKey), via the delegated handler
-  const ev = key => ({ target: { closest: sel => (sel === "tr[data-op-prop]" ? { getAttribute: () => key } : null) } });
+  const ev = (key, orphan) => ({ target: { closest: sel => (sel === "tr[data-op-prop]" ? { getAttribute: a => a === "data-op-prop" ? key : (a === "data-op-orphan" && orphan ? "1" : null) } : null) } });
   m._l.click[0](ev(K.weaver));
   ok(opened.join() === K.weaver, "click on a row → onOpen(propKey)");
   m._l.click[0]({ target: { closest: () => null } });
   ok(opened.length === 1, "click outside a row → nothing");
+  // a record-only property (0 loans) cannot be opened from the picker: inert, muted, explained
+  const orph = rowHtml(K.orphan);
+  ok(orph.includes('data-op-orphan="1"') && /title="No loan in the book/.test(orph) && !orph.includes("tabindex") && orph.includes("text-slate-400"), "record-only row is inert and muted, title says no loan in the book");
+  ok(rowHtml(K.avalon).includes('tabindex="0"') && rowHtml(K.avalon).includes("cursor-pointer") && !rowHtml(K.avalon).includes("data-op-orphan"), "rows with loans stay clickable");
+  m._l.click[0](ev(K.orphan, true));
+  ok(opened.length === 1, "click on a record-only row → nothing");
   const kd = Object.assign(ev(K.zeta), { key: "Enter", pd: 0, preventDefault(){ this.pd++; } });
   m._l.keydown[0](kd);
   ok(opened[1] === K.zeta && kd.pd === 1, "Enter on a focused row → onOpen, default prevented");
@@ -255,7 +290,7 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok((m.innerHTML.match(/<table/g) || []).length === 1 && (m.innerHTML.match(/<tr data-op-prop="/g) || []).length === 6, "re-render replaces the table (one table, 6 rows)");
   // escaping + empty states
   const e = mount();
-  PR.render(e, { rows: [{ propKey: 'addr:x"y', name: '<b>&"Evil"</b>', units: null, noi: null, uwNoi: null, dscr: null, dy: null, ltv: null, balance: null, annualDS: null, maturity: null, loans: 1 }], totals: { properties: 1, loans: 1, noi: null, uwNoi: null, balance: 0, annualDS: 0, dscr: null, dy: null } }, {});
+  PR.render(e, { rows: [{ propKey: 'addr:x"y', name: '<b>&"Evil"</b>', units: null, noi: null, uwNoi: null, dscr: null, dy: null, ltv: null, balance: null, annualDS: null, maturity: null, loans: 1 }], totals: { properties: 1, props: 1, loans: 1, noi: null, uwNoi: null, balance: 0, annualDS: 0, noiProps: 0, dsCovered: 0, balanceCovered: 0, dscr: null, dy: null } }, {});
   ok(e.innerHTML.includes("&lt;b&gt;&amp;&quot;Evil&quot;&lt;/b&gt;") && !e.innerHTML.includes("<b>"), "property name is HTML-escaped");
   ok(e.innerHTML.includes('data-op-prop="addr:x&quot;y"'), "propKey attribute is escaped");
   ok(e.innerHTML.includes("1 property<"), "singular 'property' in the totals label");
@@ -263,8 +298,9 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok(e.innerHTML.includes("No properties yet") && !e.innerHTML.includes("data-op-prop="), "empty portfolio → empty-state row, no data-op-prop");
   PR.render(e, null, null);
   ok(e.innerHTML.includes("No properties yet"), "render(mount, null) does not throw");
-  PR.render(null, out, {});
-  ok(true, "render(null mount) is a no-op");
+  let nullThrew = null; try { PR.render(null, out, {}); } catch (e2) { nullThrew = e2; }
+  ok(!nullThrew, "render(null mount) is a no-op — does not throw" + (nullThrew ? " (threw " + nullThrew.message + ")" : ""));
+  ok(e.innerHTML.includes("NOI on 0 of 0 properties") && !/NaN|undefined/.test(e.innerHTML), "empty portfolio scope line, no NaN / undefined");
 });
 
 section("formatters", () => {
