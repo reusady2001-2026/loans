@@ -3482,6 +3482,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const key = opFocusKey;
       if(!key){ sheet.innerHTML = '<p class="text-sm text-slate-400">Choose a property above to see and edit its operating model.</p>'; asm.innerHTML = ""; sum.innerHTML = ""; lo.innerHTML = ""; return; }
       const p = opProp(key), members = p ? p.loans : [], gd = uwState.input.bench, hooks = opHooks();
+      if(OperatingStore.get(key)) opEnsure(key);   // an existing record takes the loan's CURRENT name (a rename shows everywhere); never creates one just by looking
       const record = opRecordFor(key);
       const derived = OperatingCalc.derive(record, gd);
       const stack = OperatingCalc.stack(record, members, hooks);
@@ -4499,7 +4500,22 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(err){ showFormError(err); return; }
       lockFixedRate(data);   // freeze a new fixed loan's rate at index + spread
       const existing = getLoan(data._id);
-      if(existing){ Object.assign(existing, data); toast("Loan updated", "check"); }
+      if(existing){
+        // An address (or name) edit changes the property key. If this loan was the property's ONLY
+        // loan under the old key, its operating model must follow it — otherwise the record would be
+        // orphaned and the roll-up would show a ghost. If other loans still share the old key (a mezz
+        // left at the old address), the record stays with them; nothing is ever merged or destroyed.
+        const keyBefore = propertyKey(existing);
+        Object.assign(existing, data); toast("Loan updated", "check");
+        const keyAfter = propertyKey(existing);
+        try{
+          if(keyAfter !== keyBefore && window.OperatingStore && typeof OperatingStore.rename === "function"){
+            opInit();
+            const othersStay = loans.some(l => l !== existing && propertyKey(l) === keyBefore);
+            if(!othersStay && OperatingStore.get(keyBefore) && !OperatingStore.get(keyAfter)) OperatingStore.rename(keyBefore, keyAfter);
+          }
+        }catch(e){}
+      }
       else { loans.push(data); toast("Loan added", "check"); }
       state.activeId = data._id;
       state.draft = null;

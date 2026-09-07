@@ -72,7 +72,7 @@
     //      dropped — G&A is the catch-all (other income on the income side) ----
     if (has(/late\s+(fee|charge)s?/) && has(/tax|vendor|mortgage|insurance|penalt|utilit/)) return X("GA");
     if (has(/violation|penalt|\bfines?\b/)) return X("GA");
-    if (has(/interest\s+(expense|paid|on)|^interest\s*[-–]|interest-|mortgage|debt\s+service|loan\s+(interest|payment|fee)|amortiz|depreciat|financing\s+fee|prior\s+(year|period)|non[\s-]*recurring|lawsuit|settlement|contribution|donation|partnership|income\s+tax|corporat\w*\s+tax|franchise\s+tax|sales\s+tax|excise|cost\s+seg/)) return X("GA");
+    if (!has(/repair|mainten/) && has(/interest\s+(expense|paid|on)|^interest\s*[-–]|interest-|mortgage|debt\s+service|loan\s+(interest|payment|fee)|amortiz|depreciat|financing\s+fee|prior\s+(year|period)|non[\s-]*recurring|lawsuit|settlement|contribution|donation|partnership|income\s+tax|corporat\w*\s+tax|franchise\s+tax|sales\s+tax|excise|cost\s+seg/)) return X("GA");
 
     // ---- income items ----
     var fee = !has(EXP_WORD);
@@ -85,7 +85,7 @@
     // header (e.g. an AI-read statement) still tags the top rent line as GPR
     // instead of falling through to the OTH catch-all. Rent-program credits
     // (Section 8 / HAP / SCRIE / DRIE / abatements) are rent, not fees.
-    if (has(/market\s+rent|gain\s+to\s+lease|loss.*lease|rent\s+adjustment|residential\s+rent|section\s*8|prepaid\s+rent|gross\s+(potential|scheduled)\s+rent|scheduled\s+gross\s+rent|potential\s+rent|scheduled\s+rent|\bgpr\b|gross\s+rent|apartment\s+rent|unit\s+rent|base\s+rent|rent\s+(income|revenue)|rental\s+(income|revenue)|\bhap\b|housing\s+assistance|subsid|voucher|rent\s+roll|tenant\s+rent|\bhud\b|\bpha\b|dhcr|s\.?c\.?r\.?i\.?e\b|d\.?r\.?i\.?e\b|rent\s+abatement|abatement\s*[-–]\s*(charge|credit)|preferential\s+rent|stabilized\s+rent|last\s+month\s+rent/) ||
+    if (has(/market\s+rent|gain\s+to\s+lease|loss.*lease|rent\s+adjustment|residential\s+rent|section\s*8|prepaid\s+rent|gross\s+(potential|scheduled)\s+rent|scheduled\s+gross\s+rent|potential\s+rent|scheduled\s+rent|\bgpr\b|gross\s+rent|apartment\s+rent|unit\s+rent|base\s+rent|rent\s+(income|revenue)|rental\s+(income|revenue)|\bhap\b|housing\s+assistance|subsid|voucher|rent\s+roll|tenant\s+rent|\bhud\b|\bpha\b|dhcr\s+rent|rent\s+reduction|s\.?c\.?r\.?i\.?e\b|d\.?r\.?i\.?e\b|rent\s+abatement|abatement\s*[-–]\s*(charge|credit)|preferential\s+rent|stabilized\s+rent|last\s+month\s+rent/) ||
         has(/gross\s+rental|rental\s+income.*(market|residential|gross)/)) return "GPR";
     if (has(/^rents?$/)) return isExp ? "GA" : "GPR";
     if (has(/vacancy|down\s+units/)) return "VAC";
@@ -101,12 +101,12 @@
 
     // ---- expense items ----
     // professional fees first, so "Real Estate Tax Consultant" is a fee, not the tax
-    if (has(/consult|account(ing|ant)|audit|bookkeep|legal|attorney|professional\s+fee|tax\s+(prep|return|service)|expedit/)) return isExp ? "GA" : "OTH";
+    if (!has(/marketing|advertis/) && has(/consult|account(ing|ant)|audit|bookkeep|legal|attorney|professional\s+fee|tax\s+(prep|return|service)|expedit/)) return isExp ? "GA" : "OTH";
     if (has(/real\s+estate\s+tax|property\s+tax|\btaxes\b|\bre\s+tax|school\s+tax|county\s+tax|city\s+tax|municipal\s+tax|\bpilot\b|tax\s+(bill|payment|escrow)/)) return (isInc || has(/income|refund|rebate/)) ? "OTH" : "RET";
     if (has(/renters?\s+insurance/)) return isExp ? "GA" : "OTH";
     if (has(/insurance|liability|umbrella|casualty|\bd&o\b|fidelity|flood\s+ins|earthquake|hazard\s+ins/)) return X("INS");
     if (has(/management\s+fees?|mgmt\s+fees?|^property\s+management$/)) return X("MGMT");
-    if (!has(/repair|clean|drain|heater|treatment|inspect|pump|snack|coffee|bottle/) &&
+    if (!has(/repair|clean|drain|heater|treatment|inspect|pump|removal|snack|coffee|bottle/) &&
         has(/electric(?!al)|\bwater\b|\bgas\b|sewer|utilit|\bfuel\b|heating\s+oil|fuel\s+oil|\bsteam\b|propane|energy|flow\s+billing|water\s+billing/)) return isInc ? "RUBS" : "UTIL";
     // auto & travel → G&A (before marketing so "Auto Leasing" isn't leasing)
     if (has(/auto\s+(expense|leas|lease|rental|loan|payment)|vehicle|ez\s*pass|\btolls?\b|mileage|\buber\b|\btaxi\b|airfare|lodging|hotel|ground\s+transport|travel/)) return X("GA");
@@ -116,8 +116,8 @@
         has(/rubbish|sanitation|garbage|valet\s+trash|\btrash\b|dumpster|waste\s+(removal|management|disposal|haul)|\brefuse\b|compactor\s+(service|contract|rental|lease)/)) return isInc ? "TRSH RUB" : "TRSH";
     if (has(/contract|exterminat|pest\s+control|landscap|lawn\s+(care|service|maint)|elevator|snow\s+(removal|plow)|sprinkler|generator\s+inspection|vent\s+cleaning|scent\s+services|pool\s+service|janitorial\s+service|cleaning\s+service|backflow|hood\s+cleaning|window\s+(cleaning|washing)|chimney\s+sweep|grease\s+trap|duct\s+cleaning|uniform\s+(service|rental)|linen\s+service|alarm\s+monitoring|fire\s+(protection|alarm)\s+(service|monitoring|inspection)/)) return X("CS");
     // office / IT / admin overhead before the repair words ("Office Supplies" is G&A, not R&M)
-    if (has(/\boffice\b|computer|software|copier|subscription|website|domain|\bit\s+(cost|setup|support|supplies|service|expense|monthly)/)) return X("GA");
-    if (has(/repair|mainten|turn[\s-]*over|make[\s-]*ready|paint|plumb|hvac|a\/c\b|air\s+condition|furnace|boiler|chiller|heater|supplies|\bparts\b|\btools\b|lock|\bkeys?\b|fire\s+(alarm|escape|extinguisher|pump)|smoke\s+(alarm|detector)|extinguisher|appliance|window|shade|blind|screen|hardware|janitorial|electrical|roof|gutter|carpet|floor|tile|door|fenc|gate|light(ing|s|\s*bulb)|fixture|drywall|plaster|welding|glass|pump|generator|compactor|intercom|camera|security|patrol|alarm|monitoring|surveillance|access\s+(control|system)|power\s+wash|pressure\s+wash|paving|striping|asphalt|concrete|cement|masonry|caulk|ptac|filter|mold|lead\s+abate|environmental|pool|gym|fitness|playground|signs?\b|cleaning|clean[\s-]*up|towing|furniture|equipment|materials|lumber|resurfac|reglaz|countertop|cabinet|vinyl|mirror|ceiling|stair|railing|deck|balcony|patio|sidewalk|irrigation|shrub|mulch|weed|drain|leak|storm|vandal|graffiti|treatment|grounds/)) return X("RM");
+    if (has(/\boffice\b|computer|software|copier|subscription|website|domain|\bit\s+(cost|setup|support|supplies|service|expense|monthly)|equipment\s+rental|rent\s*[-–]\s*(office|equipment)/)) return X("GA");
+    if (has(/repair|mainten|turn[\s-]*over|make[\s-]*ready|paint|plumb|hvac|a\/c\b|air\s+condition|furnace|boiler|chiller|heater|supplies|\bparts\b|\btools\b|\block(s|smith)?\b|\bkeys?\b|fire\s+(alarm|escape|extinguisher|pump)|smoke\s+(alarm|detector)|extinguisher|appliance|window|shade|blind|screens?\b|hardware|janitorial|electrical|roof|gutter|carpet|floor|\btiles?\b|\bdoors?\b|fenc|\bgates?\b|\blight(ing|s|\s*bulb)|fixture|drywall|plaster|welding|\bglass\b|\bpump|generator|compactor|intercom|camera|security|patrol|alarm|monitoring|surveillance|access\s+(control|system)|power\s+wash|pressure\s+wash|paving|striping|asphalt|concrete|cement|masonry|caulk|ptac|filter|\bmold\b|lead\s+abate|environmental|\bpool\b|\bgym\b|fitness|playground|\bsigns?\b|cleaning|clean[\s-]*up|towing|furniture|equipment|materials|lumber|resurfac|reglaz|countertop|cabinet|vinyl|mirror|ceiling|stair|railing|\bdeck\b|balcony|patio|sidewalk|irrigation|shrub|mulch|weed|drain|leak|storm|vandal|graffiti|treatment|\bgrounds\b/)) return X("RM");
     if (has(/\bcable\b|satellite|\btv\b|bulk\s+(internet|wifi)/)) return X("CAB");
     if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
 
