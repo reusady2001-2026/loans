@@ -229,9 +229,10 @@ try {
   var expect = { A: 100000, B: 0.025,   C: 1000000, D: 1000,   E: -1200,     F: -3000,   G: 350,       H: 0.055,  I: -1200,    J: 7,    K: 1200,    M: 0.5,  N: 1234567.89 };
   var rf = UW.computeNOI({ units: 0, lines: Object.keys(forms).map(function (k) { return L(k, "other", "value", { uw: forms[k] }); }) }).underwritten.lines;
   Object.keys(forms).forEach(function (k) { same(rf[k], expect[k], JSON.stringify(forms[k]) + " →"); });
-  ok(UW.sizeLoan(NOI_UW, { capRate: "" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "0x10" }).params.capRate === 0.055 &&
-     UW.sizeLoan(NOI_UW, { capRate: "Infinity" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "  " }).params.capRate === 0.055,
-     "\"\", \"  \", \"0x10\", \"Infinity\" are not numbers → DEFAULTS (never 0 / 16 / ∞)");
+  ok(UW.sizeLoan(NOI_UW, { capRate: "" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "  " }).params.capRate === 0.055 &&
+     UW.sizeLoan(NOI_UW, { capRate: "Infinity" }).params.capRate === 0.055,
+     "\"\", \"  \", \"Infinity\" stay missing → DEFAULTS (a bare Number() would read \"\" as 0 and \"Infinity\" as ∞)");
+  same(UW.sizeLoan(NOI_UW, { capRate: "0x10" }).params.capRate, 10, "\"0x10\" is never hex-parsed to 16: it takes the legacy strip path (→ 10) exactly as the released engine did");
 
   // =========================================================================
   section("E4 — perUnit lines in the rental and other-income sections");

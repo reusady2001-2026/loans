@@ -6,9 +6,9 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | built | critic running (Crest regression gate) | 368 ok; 10 pre-existing defects fixed |
+| E1 | T12 parsing | A− | built | critic running (Crest regression gate) | 370 ok; 10 pre-existing defects fixed |
 | E2 | Classifier | A− | building | — | — |
-| E3 | In-place NOI tie | A | built | critic running (Crest regression gate) | 368 ok; residuals now reported |
+| E3 | In-place NOI tie | A | built | critic running (Crest regression gate) | 370 ok; residuals now reported |
 | E4 | Underwritten NOI | B+ | **A** (critic) → patching minors | A — bit-identical to released engine on all valid inputs; hand-calc to the cent | 174 ok; 6/6 mutants killed |
 | E5 | Single-property sizing | A− | **A** (critic) → patching minors | A — fixed negative max-loan leak; DEFAULTS to be frozen; glue blank-box display fixed | 174 ok; 200/200 random + Crest regression identical |
 | P1 | Per-property store | F | **B** (critic) → patching | B — 1 major (name write-once / address edit orphans record → ensure refresh + rename), 3 minor, 4 surviving mutants — fed back | 202 ok; 20/24 mutants killed |

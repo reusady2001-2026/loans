@@ -105,14 +105,16 @@ group("ensure / record schema", function (){
   eq(st.writes, [S.KEY], "create persisted with exactly one write, to KEY only");
   eq(JSON.parse(st.getItem(S.KEY)), { version: 1, records: { "addr:10400 edgewood rd, harrison, oh 45030": r } }, "persisted envelope = { version:1, records:{ [key]: record } }");
   var again = S.ensure(K, { propertyName: "Renamed", units: 999 });
-  eq(again, r, "ensure() on an existing record returns it unchanged (name/units not overwritten)");
-  eq(st.writes.length, 1, "…and does not save");
+  eq(again, Object.assign({}, r, { propertyName: "Renamed" }), "ensure() on an existing record refreshes a changed name (identity comes from the loans) and leaves filled units alone");
+  eq(st.writes.length, 2, "…persisting that with one save");
+  eq(S.ensure(K, { propertyName: "Renamed", units: 999 }), again, "…and is a no-op when nothing differs");
+  eq(st.writes.length, 2, "…with no save");
   eq(S.ensure("name:bare"), { propKey: "name:bare", propertyName: "", units: null, period: null, lines: {}, assumptions: null, meta: { createdAt: T(1), lastUpdated: T(1), sourceFile: null } }, "ensure(key) without opts → empty name, null units");
   var s2 = S.ensure("name:bare", { propertyName: "Now Named", units: 40 });
   eq([s2.propertyName, s2.units], ["Now Named", 40], "ensure() fills a BLANK name / null units on an existing record");
   eq(s2.meta.lastUpdated, T(1), "…without stamping lastUpdated (identity, not operating data)");
-  eq(st.writes.length, 3, "…but persists the fill (one write)");
-  eq(S.ensure("name:bare", { propertyName: "Other", units: 1 }), s2, "…and never overwrites a filled name/units");
+  eq(st.writes.length, 4, "…but persists the fill (one write)");
+  eq(S.ensure("name:bare", { propertyName: "Other", units: 1 }), Object.assign({}, s2, { propertyName: "Other" }), "…a later different name is refreshed; filled units are never overwritten");
   throwsType(function (){ S.ensure("", { propertyName: "x" }); }, "ensure rejects an empty propKey");
   throwsType(function (){ S.ensure(42, { propertyName: "x" }); }, "ensure rejects a non-string propKey");
   throwsType(function (){ S.ensure("name:x", { propertyName: 7 }); }, "ensure rejects a non-string propertyName");
@@ -430,13 +432,15 @@ group("migration", function (){
   eq(JSON.parse(st.getItem(S.KEY)).version, 1, "first write persists version 1");
   // (b) version 0 with sparse records / lines → defaults filled, data kept
   st = fresh({ "ldsHub.operating.v1": JSON.stringify({ version: 0, records: {
-    "addr:8 fir st": { propertyName: "Fir", units: "45", period: "P", lines: { INS: { annual: "12,345.67", source: "t12", updatedAt: "2025-05-05T00:00:00.000Z" }, GA: { annual: 999 }, BAD: { annual: "n/a" }, X: 7 },
+    "addr:8 fir st": { propertyName: "Fir", units: "45", period: "P", lines: { INS: { annual: "12,345.67", source: "t12", updatedAt: "2025-05-05T00:00:00.000Z" }, GA: { annual: 999 }, MKT: { annual: "n/a" }, X: 7,
+                       FOO: { annual: 5, source: "manual" }, gpr: { annual: 6, source: "manual" }, "TRSH RUB": { annual: 7, source: "manual" } },
                        meta: { lastUpdated: "2025-06-06T00:00:00.000Z", sourceFile: "" } } } }) });
   eq(S.load().records["addr:8 fir st"], { propKey: "addr:8 fir st", propertyName: "Fir", units: 45, period: "P",
       lines: { INS: { annual: 12345.67, prevAnnual: null, controllable: false, source: "t12", updatedAt: "2025-05-05T00:00:00.000Z", note: null },
-               GA:  { annual: 999, prevAnnual: null, controllable: true, source: "manual", updatedAt: "2025-06-06T00:00:00.000Z", note: null } },
+               GA:  { annual: 999, prevAnnual: null, controllable: true, source: "manual", updatedAt: "2025-06-06T00:00:00.000Z", note: null },
+               "TRSH RUB": { annual: 7, prevAnnual: null, controllable: true, source: "manual", updatedAt: "2025-06-06T00:00:00.000Z", note: null } },
       assumptions: null, meta: { createdAt: "2025-06-06T00:00:00.000Z", lastUpdated: "2025-06-06T00:00:00.000Z", sourceFile: null } },
-    "version 0: prevAnnual/controllable/source/note/createdAt/assumptions defaulted, numeric strings coerced, unreadable lines dropped, data kept");
+    "version 0: prevAnnual/controllable/source/note/createdAt/assumptions defaulted, numeric strings coerced, unreadable (MKT) / unknown (FOO) / mis-cased (gpr) / non-object lines dropped, the rest kept incl. \"TRSH RUB\"");
   eq(st.writes.length, 0, "…no write, and no clock tick was needed");
   // (c) SPEC-draft flat map keyed by loanId (no wrapper)
   st = fresh({ "ldsHub.operating.v1": JSON.stringify({ L1: { loanId: "L1", units: 80, period: "T12 2025",
