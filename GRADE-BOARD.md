@@ -6,9 +6,9 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | **A pending** → patched (513), critic re-check running | patched: NOI-stop pinned, snap gone (cents), $0 review noise gone, mixed-case Gross, summary-first split (twinBelow), TOTAL EXPENSES ends detail; BDX carried as its own pass-through line | 513 ok; upload 418/0 |
+| E1 | T12 parsing | A− | **B** (critic) → patching | B — all 9 claims verified, twinBelow narrowing accepted; 3 minors: summary-first "first wins" masks a summary/detail disagreement, category-subtotal summary tree defeats the twin rule, mixed-case "Gross Income" read as detail — fed back | 513 ok |
 | E2 | Classifier | A− | **A ✓ done** (nit closures being confirmed) | A — re-checked A: all 7 items + BDX verified, 12/12 mutants killed, Crest diff exactly 8 rows; keyword nits closed (skips/evictions/doubtful, E&O, plug guard) | 836 ok |
-| E3 | In-place NOI tie | A | **A pending** → patched (513), critic re-check running | patched with E1; Crest ties strict 9,483,604.28; GA 554,599.61 + BDX 388,184.69 = 942,784.30; underwritten @0 9,770,923.03 | 513 ok |
+| E3 | In-place NOI tie | A | **A pending** → tie verified; patch with E1 running | tie strict to the cent on Crest with and without a G&A budget (hand-footed); one dead-branch nit (BD→BDX routing) fed back | 513 ok |
 | E4 | Underwritten NOI | B+ | **A ✓ done** | A — re-checked A: bit-identical to released engine (200/200 random sweep, 0 diffs); Crest +4,738.85 reconciled to the cent as an E2 category move; one unreachable nit ("(1e5)" text) routed to builder | 207 ok; 6/6 mutants killed; DEFAULTS frozen (verified) |
 | E5 | Single-property sizing | A− | **A ✓ done** | A — re-checked A; negative max-loan leak closed; glue blank sizing box now refilled from s.params (index.html:3374) | 207 ok; 987-entry regression byte-identical |
 | P1 | Per-property store | F | **A ✓ done** | A — re-checked A; test nits closed (M36/M40/M41 die); BDX mirrored (33 codes) | 296 ok; 25/26 mutants (1 equivalent) |
