@@ -102,9 +102,11 @@ async function until(page, fn, arg, what, timeout){
   check((await warn("sizing.capRate")) === "not a number", "cap rate '1e3' → 'not a number' chip (Tab commits too)", await warn("sizing.capRate"));
   check((await value("sizing.capRate")) === "6.25" && (await badge("sizing.capRate")) === "override", "cap rate box restored to 6.25, badge still 'override'");
   check(SJ(await assumptionsOf(keyA)) === before, "store unchanged by the non-numeric entry", await assumptionsOf(keyA));
-  await page.fill(inputSel("sizing.ltvMax"), "75"); await page.press(inputSel("sizing.ltvMax"), "Enter");
+  // "75.0" differs textually from the box's restored "75", so the change event really fires and commit runs.
+  await page.fill(inputSel("sizing.ltvMax"), "75.0"); await page.press(inputSel("sizing.ltvMax"), "Enter");
   await page.waitForTimeout(250);
-  check((await badge("sizing.ltvMax")) === "inherited", "re-entering the inherited 75 → still 'inherited' (no override created)", await badge("sizing.ltvMax"));
+  check((await badge("sizing.ltvMax")) === "inherited", "re-entering the inherited value (75.0) → still 'inherited' (no override created)", await badge("sizing.ltvMax"));
+  check((await value("sizing.ltvMax")) === "75", "…box normalised to 75 (commit ran)", await value("sizing.ltvMax"));
   check((await warn("sizing.ltvMax")) === null, "…and the earlier 'out of range' chip is gone", await warn("sizing.ltvMax"));
   check(SJ(await assumptionsOf(keyA)) === before, "store unchanged by the no-op re-entry", await assumptionsOf(keyA));
   // vacancy → override via Tab, then blank it → back to inherited and the store drops the leaf

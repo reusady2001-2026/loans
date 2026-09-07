@@ -6,9 +6,9 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | built | critic running (Crest regression gate) | 370 ok; 10 pre-existing defects fixed |
+| E1 | T12 parsing | A− | **B** (critic) → patching | B — acceptance holds, Crest Δ=0 vs released; NOI-stop mutant unpinned, mixed-case "Gross Rent" dropped, summary-first split lost — fed back | 370 ok; 10 pre-existing defects fixed |
 | E2 | Classifier | A− | built | critic running (re-tag audit vs statement hierarchy) | 689 ok; Crest 610/610 classified, 0 residual, low-conf 9→4 (all $0) |
-| E3 | In-place NOI tie | A | built | critic running (Crest regression gate) | 370 ok; residuals now reported |
+| E3 | In-place NOI tie | A | **B** (critic) → patching | B — strict tie holds; snap tolerance unpinned, dust on real gaps, $0 review noise — fed back; glue tie tolerance tightened to ½¢ | 370 ok; residuals now reported |
 | E4 | Underwritten NOI | B+ | **A** → patched, re-check running | A — bit-identical to released engine on all valid inputs; hand-calc to the cent | 207 ok; 6/6 mutants killed; DEFAULTS frozen |
 | E5 | Single-property sizing | A− | **A** → patched, re-check running | A — fixed negative max-loan leak; DEFAULTS to be frozen; glue blank-box display fixed | 207 ok; 987-entry regression byte-identical |
 | P1 | Per-property store | F | **B** → patched, re-check running | all findings patched: name refresh + rename (glue hooks it on loan edits), proto-safety, source migration, taxonomy code validation; 4 surviving mutants now die | 281 ok; 24/24 mutants killed |

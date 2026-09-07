@@ -1,43 +1,34 @@
 /* Portfolio roll-up — Playwright-Electron e2e (contract §9).
    Runs AFTER the orchestrator wires the Underwriting tab (#opPropPick, #opSheetMount,
-   #opRollupMount). A fresh --user-data-dir boots the app on its own seed portfolio
-   (24 loans, incl. "Avalon White Plains" + "Avalon WP (Mezz)" sharing the address
-   "White Plains, NY"), so nothing is seeded outside the UI.
-   Asserts: one roll-up row per property (the oracle is #opPropPick, which the app
-   builds from its loans with the §1 key, independently of this module); the Avalon
-   senior + mezz collapse into ONE row (2 loans, named for the senior); clicking that
-   row focuses the property; an NOI typed into the sheet shows up in the row, with
-   the combined-stack debt yield exact: 1,200,000 / (96,000,000 + 24,000,000 — both
-   loans are interest-only, so their balances are the original amounts) = 1.00%.
+   #opRollupMount). launchApp() boots a FRESH profile, so the app starts on its own seed
+   portfolio (30 loans across 28 properties, incl. "Avalon White Plains" + "Avalon WP
+   (Mezz)" sharing the address "White Plains, NY"); nothing is seeded outside the UI.
+   Asserts: one roll-up row per property (the oracle is #opPropPick, which the app builds
+   from its loans with the §1 key, independently of this module); the Avalon senior + mezz
+   collapse into ONE row (2 loans, named for the senior); clicking that row focuses the
+   property; an NOI typed into the sheet shows up in the row, with the combined-stack debt
+   yield exact: 1,200,000 / (96,000,000 + 24,000,000 — both loans are interest-only, so
+   their balances are the original amounts) = 1.00%; and the totals ratios are scoped to
+   the properties that HAVE an NOI ("NOI on 1 of 28 properties"), so they equal Avalon's own.
    run:  GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/portfolio-rollup.e2e.js
 */
 "use strict";
 const fs = require("fs"), os = require("os"), path = require("path");
-const { _electron: electron } = require((process.env.GN || "/opt/node22/lib/node_modules") + "/playwright");
-const APP = path.resolve(__dirname, "..", "..");
-const UDATA = fs.mkdtempSync(path.join(os.tmpdir(), "lds-e2e-rollup-"));
+const H = require("./_helpers.js");
 const AVALON = "addr:white plains, ny";   // §1 key of both Avalon loans
 // Column order of PortfolioRollup.render
 const COL = { name: 0, units: 1, loans: 2, noi: 3, uwNoi: 4, balance: 5, annualDS: 6, dscr: 7, dy: 8, ltv: 9, maturity: 10 };
-let fails = 0;
-const ok = (c, m) => { console.log((c ? "  ok   " : "  FAIL ") + m); if (!c) fails++; };
+const fails = { n: 0 }, ok = H.ok(fails);
 const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; };
 
 (async () => {
-  const app = await electron.launch({ executablePath: require(path.join(APP, "node_modules", "electron")),
-    args: [APP, "--user-data-dir=" + UDATA, "--no-sandbox"], cwd: APP });
-  const page = await app.firstWindow();
-  const errors = []; page.on("pageerror", e => errors.push(String(e).slice(0, 300)));
-  await page.route(/^https?:\/\//, r => r.abort());
+  const { app, page, errors, udata } = await H.launchApp();
   const rowSel = key => '#opRollupMount tr[data-op-prop="' + key + '"]';
   const rowKeys = () => page.$$eval("#opRollupMount tr[data-op-prop]", trs => trs.map(t => t.getAttribute("data-op-prop")));
   const rowCells = key => page.$$eval(rowSel(key) + " td", tds => tds.map(t => t.textContent.trim()));
+  const totalsCells = () => page.$$eval("#opRollupMount tr[data-op-total] td", tds => tds.map(t => t.textContent.trim()));
   try {
-    await page.waitForSelector("#tabNewBtn", { timeout: 30000 });
-    // Open the Underwriting tab the way a user does: "+" → "Underwriting & Sizing".
-    await page.click("#tabNewBtn");
-    await page.click('#tabNewMenu [data-tabopen="underwriting"]');
-    await page.waitForSelector("#uwView:not([hidden])", { timeout: 10000 });
+    await H.openUnderwriting(page);
     const mounted = await page.waitForSelector("#opRollupMount tr[data-op-prop]", { timeout: 15000 }).catch(() => null);
     if (!mounted) { ok(false, "#opRollupMount has no rows — is the roll-up wired into the Underwriting tab yet?"); throw new Error("not wired"); }
 
@@ -53,6 +44,10 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
     ok((await page.$$("#opRollupMount tr[data-op-total]")).length === 1, "one totals row");
     const cellsAll = await page.$$eval("#opRollupMount td", tds => tds.map(t => t.textContent));
     ok(!cellsAll.some(t => /NaN|undefined|null/.test(t)), "no NaN / undefined / null in any cell");
+    const scope0 = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
+    ok(scope0.indexOf("NOI on 0 of " + expected.length + " properties") >= 0, "before any NOI the scope line says \"NOI on 0 of " + expected.length + " properties\" (got " + JSON.stringify(scope0) + ")");
+    let totals = await totalsCells();
+    ok(totals[COL.noi] === "—" && totals[COL.dscr] === "—" && totals[COL.dy] === "—", "totals NOI / DSCR / DY are — with no NOI entered");
 
     // 2. Avalon White Plains: senior + mezz → exactly ONE row, 2 loans, named for the senior.
     ok(keys.filter(k => k === AVALON).length === 1, "Avalon senior + mezz collapse into exactly one row (" + keys.filter(k => k === AVALON).length + ")");
@@ -71,7 +66,8 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
 
     // 3. NOI entered in the sheet shows in the roll-up row: GPR = 1,200,000 (annual) as the only
     //    line → in-place NOI = 1,200,000.00 (no deductions, no expenses; reserves are 0 in-place).
-    await page.selectOption("#opPropPick", AVALON);
+    const picked = await H.pickProperty(page, "Avalon White Plains");
+    ok(picked === AVALON, "pickProperty(\"Avalon White Plains\") → " + JSON.stringify(picked));
     await page.waitForSelector('#opSheetMount tr[data-op-code="GPR"] [data-op-input]', { timeout: 10000 });
     if (await page.$('#opBasisToggle[data-basis="monthly"]')) {   // values are stored annually; make sure the sheet displays annual
       await page.click("#opBasisToggle");
@@ -88,15 +84,22 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
     ok(after[COL.loans] === "2" && after[COL.balance] === "$120,000,000.00", "row still carries both loans after the edit");
     keys = await rowKeys();
     ok(keys.filter(k => k === AVALON).length === 1 && keys.length === expected.length, "still one row per property after the edit (" + keys.length + ")");
-    const totals = await page.$$eval("#opRollupMount tr[data-op-total] td", tds => tds.map(t => t.textContent.trim()));
+
+    // 4. Totals: dollars over ALL properties, coverage over the properties that HAVE an NOI —
+    //    Avalon is the only one, so the portfolio DSCR / DY are exactly Avalon's own.
+    totals = await totalsCells();
     ok(totals[COL.noi] === "$1,200,000.00", "totals NOI = the one entered NOI (got " + JSON.stringify(totals[COL.noi]) + ")");
+    ok(totals[COL.dscr] === after[COL.dscr] && totals[COL.dy] === "1.00%", "totals DSCR / DY are Avalon's own, not diluted by 27 NOI-less properties (got " + totals[COL.dscr] + " / " + totals[COL.dy] + " vs row " + after[COL.dscr] + " / " + after[COL.dy] + ")");
+    const scope = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
+    ok(scope.indexOf("NOI on 1 of " + expected.length + " properties") >= 0, "scope line reads \"NOI on 1 of " + expected.length + " properties\" (got " + JSON.stringify(scope) + ")");
+    ok(scope.indexOf("DSCR " + after[COL.dscr]) === 0 && scope.indexOf("DY 1.00%") >= 0 && scope.indexOf("$120.00M balance") >= 0, "scope line carries the DSCR, DY 1.00% and the $120.00M balance behind them");
   } catch (e) {
     ok(false, "e2e aborted: " + (e && e.message));
     try { const shot = path.join(os.tmpdir(), "portfolio-rollup-e2e-fail.png"); await page.screenshot({ path: shot }); console.log("  screenshot: " + shot); } catch (_) {}
   }
   ok(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
   await app.close();
-  try { fs.rmSync(UDATA, { recursive: true, force: true }); } catch (_) {}
-  console.log("\n" + (fails ? fails + " e2e check(s) FAILED" : "all e2e checks passed"));
-  process.exit(fails ? 1 : 0);
+  try { fs.rmSync(udata, { recursive: true, force: true }); } catch (_) {}
+  console.log("\n" + (fails.n ? fails.n + " e2e check(s) FAILED" : "all e2e checks passed"));
+  process.exit(fails.n ? 1 : 0);
 })();

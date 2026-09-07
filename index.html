@@ -3345,7 +3345,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       return review +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
-            ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<1) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+
+            ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<0.005) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+   // to the cent, same tolerance the engine reconciles at
           '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwUwNoi">'+uwFmt(r.underwritten.noi)+'</div></div>'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+

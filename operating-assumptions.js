@@ -276,8 +276,10 @@
     // Commit on 'change' (blur / Enter), not per keystroke: the host re-renders this
     // panel from the store after every patch, which would steal focus mid-entry.
     Array.prototype.forEach.call(mountEl.querySelectorAll("[data-op-assump]"), function (inp){
+      var path = inp.getAttribute("data-op-assump");
+      inp.addEventListener("input", function (){ setWarn(mountEl, path, null); });   // a stale chip must not sit beside a value being retyped
       inp.addEventListener("change", function (){
-        var path = inp.getAttribute("data-op-assump"), d = commit(local, globals, path, inp.value);
+        var d = commit(local, globals, path, inp.value);
         inp.value = d.value;                                  // normalise "6%" → "6"; restore after a refused entry
         setWarn(mountEl, path, d.warn);
         if (d.state) setBadge(mountEl, path, d.state, globals);

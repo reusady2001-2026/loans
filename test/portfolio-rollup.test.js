@@ -314,6 +314,61 @@ section("formatters", () => {
   ok(f.day("2029-02-10") === "02/10/2029" && f.day("2031-06-15T00:00:00.000Z") === "06/15/2031" && f.day(null) === "—" && f.day("junk") === "—", "day");
 });
 
+section("hardening — null lines, mezz-only names, hooks.maturity, per-row errors", () => {
+  // lines:{GPR:null} is an EMPTY sheet to the calc (lineCodes skips null entries) → noi and uwNoi null together
+  fake.calls.derive.length = 0;
+  const rec = lines => ({ propKey: K.weaver, propertyName: "Weaver Mill", units: 400, period: null, lines, assumptions: null, meta });
+  const one = lines => PR.buildRows({ [K.weaver]: rec(lines) }, [L.weaver], hooksFor(LOANS), GD).rows[0];
+  const nr = one({ GPR: null });
+  ok(nr.noi === null && nr.uwNoi === null && !("error" in nr), "lines:{GPR:null} → noi null AND uwNoi null (not −80,000 = −$200 × 400 units) (got " + nr.uwNoi + ")");
+  ok(fake.calls.derive.length === 0, "derive() not called for a null-only sheet");
+  ok(one([]).uwNoi === null && one(null).uwNoi === null && one("GPR").uwNoi === null && fake.calls.derive.length === 0, "lines as an array / null / a string → no lines, no derive()");
+  const fr = one({ GPR: 5 });   // a bare number IS a line to the calc (annual 5)
+  ok(fake.calls.derive.length === 1 && cents(fr.noi, 815000) && cents(fr.uwNoi, 795750), "a non-object line still counts: noi and uwNoi both set");
+
+  // a property whose only loan is a mezz is named like the app's picker: "(Mezz…)" stripped
+  const k2m = { _id: "k2m", propertyName: "K2 Sweetwater (Mezz)", propertyAddress: "10726 SW 7th Street, Miami, FL", lienPosition: "Mezzanine", maturityDate: "2027-01-01" };
+  const k2 = PR.buildRows({}, [k2m], hooksFor([k2m], { annualDebtService: () => 2700000, currentBalance: () => 20000000, capRate: () => 0.06 }), GD).rows[0];
+  ok(k2.name === "K2 Sweetwater" && k2.loans === 1 && k2.balance === 20000000, "mezz-only property → \"K2 Sweetwater\" (got " + JSON.stringify(k2.name) + ")");
+  const noHook = PR.buildRows({}, [L.avMz, L.avSr], hooksFor(LOANS, { loansForProperty: undefined }), GD).rows[0];
+  ok(noHook.name === "Avalon White Plains", "mezz listed first and no ordering hook → still the non-mezz loan's name (got " + JSON.stringify(noHook.name) + ")");
+  const solo = PR.buildRows({}, [{ _id: "sm", propertyName: "Solo Mezz", lienPosition: "Mezzanine" }], hooksFor(LOANS), GD).rows[0];
+  ok(solo.name === "Solo Mezz", "a mezz without the suffix keeps its name");
+  const k2rec = { propKey: "addr:10726 sw 7th street, miami, fl", propertyName: "K2 Sweetwater Apartments", units: null, period: null, lines: {}, assumptions: null, meta };
+  ok(PR.buildRows({ [k2rec.propKey]: k2rec }, [k2m], hooksFor([k2m]), GD).rows[0].name === "K2 Sweetwater Apartments", "the record's name still wins");
+  ok(PR.buildRows({}, [{ _id: "lonely" }], hooksFor(LOANS), GD).rows[0].name === "name:lonely", "no names anywhere → the key");
+
+  // hooks.maturity(loan) — the app's derived maturity — wins; loan.maturityDate is the fallback
+  const blank = { _id: "bl", propertyName: "Blank Maturity", propertyAddress: "1 Blank Way", maturityDate: "" };
+  const withHook = fn => hooksFor([blank, L.weaver], { maturity: fn });
+  ok(PR.buildRows({}, [blank], withHook(l => (l._id === "bl" ? "2027-03-01" : null)), GD).rows[0].maturity === "2027-03-01", "blank field + hooks.maturity → the app's derived date 2027-03-01");
+  ok(PR.buildRows({}, [blank], withHook(() => null), GD).rows[0].maturity === null, "hook null + blank field → null");
+  ok(PR.buildRows({}, [L.weaver], withHook(() => null), GD).rows[0].maturity === "2030-12-01", "hook null → falls back to loan.maturityDate 2030-12-01");
+  ok(PR.buildRows({}, [L.weaver], withHook(() => "2029-06-01"), GD).rows[0].maturity === "2029-06-01", "hook wins over the stored field when both exist");
+  ok(PR.buildRows({}, [L.weaver], withHook(() => "06/01/2029"), GD).rows[0].maturity === "2030-12-01", "a non-ISO hook answer is ignored → the field");
+  ok(PR.buildRows({}, [L.weaver], hooksFor(LOANS), GD).rows[0].maturity === "2030-12-01", "no hook → the field (as before)");
+  const twin = { _id: "tw", propertyName: "Weaver Mill (Mezz)", propertyAddress: L.weaver.propertyAddress, lienPosition: "Mezzanine", maturityDate: "" };
+  const mixed = PR.buildRows({}, [L.weaver, twin], hooksFor([L.weaver, twin], { maturity: l => (l._id === "tw" ? "2028-05-01" : null) }), GD).rows[0];
+  ok(mixed.maturity === "2028-05-01" && mixed.loans === 2 && mixed.name === "Weaver Mill", "earliest across a hook-sourced (2028-05-01) and a field-sourced (2030-12-01) date");
+
+  // one hostile record must not take the portfolio down: its row fails, the rest render
+  const boom = { propKey: K.weaver, propertyName: "Boom", units: 5, period: null, lines: { get GPR(){ throw new Error("boom line"); } }, assumptions: null, meta };
+  let res = null, threw = null;
+  try { res = PR.buildRows(Object.assign({}, REC, { [K.weaver]: boom }), LOANS, hooksFor(LOANS), GD); } catch (e) { threw = e; }
+  ok(!threw, "a record whose line getter throws does not abort buildRows" + (threw ? " — threw " + threw.message : ""));
+  const bad = res && byKey(res.rows)[K.weaver];
+  ok(!!bad && /boom line/.test(bad.error), "the failed row carries error (got " + JSON.stringify(bad && bad.error) + ")");
+  ok(!!bad && bad.name === "Boom" && bad.loans === 1 && [bad.noi, bad.uwNoi, bad.dscr, bad.dy, bad.ltv, bad.balance, bad.annualDS].every(v => v === null), "…with its name and loan count, every figure null");
+  ok(!!res && res.rows.length === 6 && byKey(res.rows)[K.avalon].dscr === 12000000 / 6792000 && !("error" in byKey(res.rows)[K.avalon]), "the other 5 rows are untouched");
+  ok(!!res && res.totals.props === 6 && res.totals.noiProps === 2 && cents(res.totals.noi, 11950000), "totals skip the failed row (12,000,000 − 50,000 = 11,950,000.00) but still count the property");
+  const hb = PR.buildRows(REC, LOANS, hooksFor(LOANS, { currentBalance: l => { if (l._id === "l-mlofts") throw new Error("no schedule"); return BAL[l._id]; } }), GD);
+  ok(/no schedule/.test(byKey(hb.rows)[K.mlofts].error) && byKey(hb.rows)[K.mlofts].balance === null && byKey(hb.rows)[K.mlofts].annualDS === null && !("error" in byKey(hb.rows)[K.weaver]), "a throwing hook fails only that property's row");
+  const em = mount(); PR.render(em, res, {});
+  const bh = rowHtmlOf(em.innerHTML, K.weaver);
+  ok(bh.includes("data-op-error") && bh.includes('title="boom line"') && bh.includes(">!<") && (bh.match(/>—</g) || []).length === 7, "render: \"!\" marker with the message as title, 7 dashed cells");
+  ok(!rowHtmlOf(em.innerHTML, K.avalon).includes("data-op-error"), "healthy rows carry no marker");
+});
+
 // ---- integration against the REAL engine (only if it exists at test time) --
 section("integration — real OperatingCalc (operating-calc.js)", () => {
   const realPath = path.join(__dirname, "..", "operating-calc.js");
@@ -357,7 +412,12 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   ok(t.properties === 3 && t.loans === 4, "totals: 3 properties, 4 loans");
   ok(cents(t.noi, 1630000) && cents(t.uwNoi, 1542750), "totals noi 1,630,000.00 / uwNoi 1,542,750.00 (got " + t.noi + " / " + t.uwNoi + ")");
   ok(cents(t.balance, 16500000) && cents(t.annualDS, 940000), "totals balance 16,500,000.00 / annualDS 940,000.00");
-  ok(approx(t.dscr, 1630000 / 940000, 1e-12) && approx(t.dy, 1630000 / 16500000, 1e-12), "totals dscr 1.7340 / dy 9.88%");
+  // Coverage over the two NOI'd properties: Weaver (DS 550,000 / bal 10,000,000) + Override (300,000 / 5,000,000); Loan Only stays out
+  ok(t.noiProps === 2 && t.props === 3 && cents(t.dsCovered, 850000) && cents(t.balanceCovered, 15000000), "scope: NOI on 2 of 3, DS 850,000.00 / balance 15,000,000.00 behind the ratios");
+  ok(approx(t.dscr, 1630000 / 850000, 1e-12) && approx(t.dy, 1630000 / 15000000, 1e-12), "totals dscr = 1,630,000 / 850,000 = 1.9176 / dy = 1,630,000 / 15,000,000 = 10.87% (Loan Only's debt excluded)");
+  const nl = PR.buildRows({ "addr:9 null st": { propKey: "addr:9 null st", propertyName: "Null Lines", units: 400, period: null, lines: { GPR: null }, assumptions: null, meta } },
+    [{ _id: "i-null", propertyName: "Null Lines", propertyAddress: "9 Null St", maturityDate: "2030-01-01" }], hooks, GD).rows[0];
+  ok(nl.noi === null && nl.uwNoi === null, "real engine, lines:{GPR:null} → noi null AND uwNoi null, not −80,000 = −$200 × 400 units (got " + nl.uwNoi + ")");
   global.OperatingCalc = fake;
 });
 
