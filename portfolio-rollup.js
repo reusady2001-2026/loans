@@ -188,9 +188,10 @@
       td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") +
       td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold") + td(pct(t.dy), "text-slate-900 font-bold") +
       td("", "text-slate-900") + td("", "text-slate-900") + '</tr>';
-    mountEl.innerHTML = '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">' +
-      '<table class="w-full min-w-[920px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">' + head + '</tr></thead>' +
-      '<tbody>' + body + empty + total + '</tbody></table></div>';
+    // Just the table: the host mount (#opRollupMount) already sits inside the
+    // app's card with its own heading and horizontal scroll.
+    mountEl.innerHTML = '<table class="w-full min-w-[920px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">' + head + '</tr></thead>' +
+      '<tbody>' + body + empty + total + '</tbody></table>';
 
     mountEl._opRollupOpen = opts.onOpen;
     if (!mountEl._opRollupBound) {

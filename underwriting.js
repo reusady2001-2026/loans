@@ -170,13 +170,15 @@
     [["Debt Yield", loanDY], ["LTV", loanLTV], ["DSCR", loanDSCR]].forEach(function (leg) {
       if (leg[1] != null && (binding === null || leg[1] < maxLoan)) { maxLoan = leg[1]; binding = leg[0]; }
     });
+    // fin() again: a positive but microscopic max loan (absurd ltvMax / rate)
+    // would otherwise push a ratio to Infinity.
     var sized = maxLoan > 0;
     return {
       value: value, mortgageConstant: mc,
       loanLTV: loanLTV, loanDSCR: loanDSCR, loanDY: loanDY, maxLoan: maxLoan, binding: binding,
-      impliedLTV:       sized && value > 0 ? maxLoan / value : null,
-      impliedDSCR:      sized && mc > 0    ? noi / (maxLoan * mc) : null,
-      impliedDebtYield: sized              ? noi / maxLoan : null,
+      impliedLTV:       fin(sized && value > 0 ? maxLoan / value : null),
+      impliedDSCR:      fin(sized && mc > 0    ? noi / (maxLoan * mc) : null),
+      impliedDebtYield: fin(sized              ? noi / maxLoan : null),
       // the parameters actually used, after defaults filled the blanks
       params: { capRate: capRate, ltvMax: ltvMax, dscrMin: dscrMin, dyMin: dyMin, intRate: intRate, amortYears: amortYears }
     };

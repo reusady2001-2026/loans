@@ -31,7 +31,12 @@
   var OTHER   = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
   var EXPENSE = ["RET","INS","UTIL","PAY","GA","MKT","RM","CS","TRSH","CAB","PLL","MGMT"];
   var BUDGET  = { INS:1, PAY:1, GA:1, MKT:1, RM:1, CS:1 };   // priced $/unit in the underwritten column
-  var num = function (v){ if(typeof v==="string") v=parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v==="number"&&isFinite(v))?v:0; };
+  // "(1,234.56)" is an accounting negative — stripping the parens used to flip its sign.
+  var num = function (v){
+    if(typeof v==="string"){ var neg=/^\s*\(.*\)\s*$/.test(v); v=parseFloat(v.replace(/[^0-9.\-]/g,"")); if(neg && v>0) v=-v; }
+    return (typeof v==="number"&&isFinite(v))?v:0;
+  };
+  var r2 = function (x){ return Math.round(x*100)/100; };
 
   // Lines the caller pastes/loads: [{name, amount, section?, sub?}]. Classify +
   // sum by category. The account sub-section is passed through so the classifier
@@ -55,16 +60,22 @@
   // section is reconciled to its printed total to the dollar — so the in-place
   // NOI always equals the statement's own NET OPERATING INCOME exactly. (A T12's
   // per-line annual column can be internally inconsistent; its printed subtotals
-  // never are.) Returns { sums, inPlaceNOI, totals }.
+  // never are.) Returns { sums, inPlaceNOI, totals, review, reconcile } — `review`
+  // lists the low-confidence lines (bare section fallback), `reconcile` reports the
+  // residual each section needed (null = that section had no printed total) so a
+  // gap between the detail lines and the footing is visible, never silently absorbed.
   function fromParse(parsed){
     parsed = parsed || {};
-    var rows = parsed.rows || [], totals = parsed.totals || {};
-    var incSum = {}, expSum = {}, incRaw = 0, expRaw = 0;
+    var rows = Array.isArray(parsed.rows) ? parsed.rows : [], totals = parsed.totals || {};
+    var incSum = {}, expSum = {}, incRaw = 0, expRaw = 0, review = [];
+    var fin = function (v){ return (typeof v==="number" && isFinite(v)) ? v : null; };
     rows.forEach(function (r){
+      if(!r) return;
       var isExp = String(r.section || "").toUpperCase().indexOf("EXP") >= 0;
-      var code = T12.classify(r.name, r.section, r.sub);
+      var cc = T12.classifyConfident(r.name, r.section, r.sub), code = cc.code;
       if(code == null) return;
       var amt = num(r.amount), expCode = (T12.roleOf(code) === "expense");
+      if(!cc.confident) review.push({ name: r.name, amount: amt, code: code });
       if(isExp){
         // a line in the printed EXPENSE section is an expense dollar, whatever it
         // is called (e.g. bad-debt shown as a positive expense) — keep the code
@@ -76,15 +87,26 @@
         incSum[ci] = (incSum[ci] || 0) + amt; incRaw += amt;
       }
     });
+    // Statement amounts are cents; summing hundreds of them leaves float dust that
+    // would break an exact tie, so keep every sum in cents.
+    Object.keys(incSum).forEach(function(k){ incSum[k] = r2(incSum[k]); });
+    Object.keys(expSum).forEach(function(k){ expSum[k] = r2(expSum[k]); });
+    incRaw = r2(incRaw); expRaw = r2(expRaw);
     // Reconcile each section to the statement's printed total (residual → the
     // catch-all bucket) so the sums foot exactly to the printed figures.
-    if(totals.income != null){ var di = totals.income - incRaw; if(Math.abs(di) > 0.005) incSum.OTH = (incSum.OTH || 0) + di; }
-    if(totals.expense != null){ var de = totals.expense - expRaw; if(Math.abs(de) > 0.005) expSum.GA = (expSum.GA || 0) + de; }
-    var sums = {}; Object.keys(incSum).forEach(function(k){ sums[k] = incSum[k]; });
-    Object.keys(expSum).forEach(function(k){ sums[k] = (sums[k] || 0) + expSum[k]; });
-    var noi = (totals.noi != null) ? totals.noi
-            : (totals.income != null && totals.expense != null) ? totals.income - totals.expense : null;
-    return { sums: sums, inPlaceNOI: noi, totals: totals };
+    var pInc = fin(totals.income), pExp = fin(totals.expense), pNoi = fin(totals.noi);
+    var di = (pInc != null) ? r2(pInc - incRaw) : null, de = (pExp != null) ? r2(pExp - expRaw) : null;
+    if(di) incSum.OTH = r2((incSum.OTH || 0) + di);
+    if(de) expSum.GA  = r2((expSum.GA  || 0) + de);
+    var sums = {}, incBuilt = 0, expBuilt = 0;
+    Object.keys(incSum).forEach(function(k){ sums[k] = incSum[k]; incBuilt += incSum[k]; });
+    Object.keys(expSum).forEach(function(k){ sums[k] = r2((sums[k] || 0) + expSum[k]); expBuilt += expSum[k]; });
+    var noi = (pNoi != null) ? pNoi : (pInc != null && pExp != null) ? r2(pInc - pExp) : null;
+    var built = r2(incBuilt - expBuilt);
+    var reconcile = { incomeRaw: incRaw, expenseRaw: expRaw, incomeResidual: di, expenseResidual: de,
+                      noiBuilt: built, noiPrinted: noi, noiDiff: (noi != null) ? r2(built - noi) : null,
+                      ties: (noi != null && Math.abs(built - noi) < 0.005) };
+    return { sums: sums, inPlaceNOI: noi, totals: totals, review: review, reconcile: reconcile };
   }
 
   // input: { t12Lines | categorySums, units, rrGPR, benchmarks:{ vacancyPct, mgmtPct,
@@ -92,8 +114,8 @@
   function buildSetup(input){
     input = input || {};
     var bm = input.benchmarks || {}, budget = bm.budget || {}, units = num(input.units);
-    var cs, inPlaceAuth = null;
-    if(input.parsed){ var fp = fromParse(input.parsed); cs = { sums: fp.sums, review: [] }; inPlaceAuth = fp.inPlaceNOI; }
+    var cs, inPlaceAuth = null, fp = null;
+    if(input.parsed){ fp = fromParse(input.parsed); cs = { sums: fp.sums, review: fp.review }; inPlaceAuth = fp.inPlaceNOI; }
     else if(input.categorySums){ cs = { sums: input.categorySums, review: [] }; }
     else { cs = classifySum(input.t12Lines); }
     var sums = cs.sums;
@@ -133,10 +155,19 @@
     var result = UW.computeNOI(ws);
     // The statement's printed NET OPERATING INCOME is authoritative for in-place;
     // carry it through (the built sums foot to it, so this is a guard, not a fudge).
+    if(fp){
+      // The in-place column foots to the printed footing by construction; only the
+      // float dust of summing many cents can remain, so snap within half a cent.
+      // A real gap (statement prints an NOI its own sections don't foot to) is left
+      // as-is and stays visible in `reconcile`.
+      var snap = function (v, p){ return (typeof p === "number" && isFinite(p) && Math.abs(v - p) < 0.005) ? p : v; };
+      var ip = result.inPlace, pt = fp.totals || {};
+      ip.egi = snap(ip.egi, pt.income); ip.opex = snap(ip.opex, pt.expense); ip.noi = snap(ip.noi, inPlaceAuth);
+    }
     if(inPlaceAuth != null) result.inPlace.noiReported = inPlaceAuth;
     var sizing = UW.sizeLoan(result.underwritten.noi, bm.sizing || {});
     return { categorySums: sums, review: cs.review, worksheet: ws, result: result, sizing: sizing,
-             inPlaceNOIReported: inPlaceAuth };
+             inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).

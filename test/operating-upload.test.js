@@ -86,7 +86,8 @@ function loadRealStore(){
 //   expenses = 150,000 + 42,000.33 + 30,000 + 25,500.10 + 40,000 + 120,000 + 34,185.02 + 5,000 =   446,685.45
 //   NOI      = 692,815.30            (GPR 1,250,000 variant: income 1,189,500.75, NOI 742,815.30)
 //   incExtra/expExtra print totals ABOVE the detail sum (a residual for fromParse to reconcile into OTH / GA).
-// "Market Rent" (not "Gross Potential Rent"): t12-parse treats a "GROSS …" caption as a subtotal row.
+// Captioned "Market Rent" rather than "Gross Potential Rent": the committed parser (HEAD) drops a
+// "GROSS …" caption as a subtotal row (fixed in the working tree); "Market Rent" parses to GPR on both.
 var c2 = function (v){ return Math.round(v * 100) / 100; };
 function grid(o){
   o = o || {}; var gpr = (o.GPR != null) ? o.GPR : 1200000;
@@ -320,7 +321,10 @@ function suite(label, make){
   cents(lX.builtNOI, 9483604.28, "Crest: builtNOI = 9,483,604.28");
   eq(lX.ties, true, "Crest: ties:true");
   ["GPR", "VAC", "CONC", "RET", "INS", "UTIL", "RM", "PAY", "MGMT", "GA"].forEach(function (c){ ok(c in lX.lines, "Crest: line " + c + " present"); });
-  ok(Object.keys(lX.lines).every(function (c){ return Math.round(lX.lines[c] * 100) === lX.lines[c] * 100; }), "Crest: every stored annual is cent-exact");
+  // cent-exact = the nearest double to a 2-decimal amount: re-rounding is a no-op and it prints as one
+  // (v*100 itself is NOT integral in float for e.g. 1223379.37, so that naive test would be wrong).
+  ok(Object.keys(lX.lines).every(function (c){ var v = lX.lines[c]; return v === Math.round(v * 100) / 100 && /^-?\d+(\.\d{1,2})?$/.test(String(v)); }),
+     "Crest: every stored annual is cent-exact (no float noise such as 876060.5700000002)");
   var sto2 = fakeStorage(), st2 = make(sto2, now), S2 = spy(st2), PKX = "addr:crest";
   clock.t = "2026-09-12T08:00:00.000Z";
   var rX = OU.apply(S2, PKX, pX, { fileName: "crest-t12.xlsx", period: "T12 ending 2025-06-30", propertyName: "Crest", units: 412 });

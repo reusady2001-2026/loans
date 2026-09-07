@@ -9,13 +9,13 @@ same builder → fix → re-test → re-critique.
 | E1 | T12 parsing | A− | A− | pending | — |
 | E2 | Classifier | A− | A− | pending | — |
 | E3 | In-place NOI tie | A | A | pending | — |
-| E4 | Underwritten NOI | B+ | B+ | pending | — |
-| E5 | Single-property sizing | A− | A− | pending | — |
-| P1 | Per-property store | F | F | pending | — |
-| P2 | Per-property NOI → ratios | C | C | pending | — |
-| P3 | Upload → property | D | D | pending | — |
+| E4 | Underwritten NOI | B+ | built | critic running (regression vs released engine) | 174 ok (hand-derived) |
+| E5 | Single-property sizing | A− | built | critic running (regression vs released engine) | 174 ok; fixed negative max-loan leak |
+| P1 | Per-property store | F | built | critic running | 202 ok |
+| P2 | Per-property NOI → ratios | C | built | critic running | 167 ok (hand-calc) |
+| P3 | Upload → property | D | built | critic running | 396 ok (fake + real store; Crest ties) |
 | P4 | Hand-edit sheet | F | F | pending | — |
 | P5 | Controllable flags | F | built | critic running | 96 ok (mutation-proven) |
-| P6 | Per-property assumptions | D | D | pending | — |
+| P6 | Per-property assumptions | D | built | critic running (incl. e2e) | 132 ok |
 | P7 | Portfolio roll-up | F | F | pending | — |
 | P8 | "What to push" scan | F | F | pending | — |

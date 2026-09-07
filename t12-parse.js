@@ -9,9 +9,11 @@
    inconsistent, but the accountant's printed subtotals always foot to the
    printed NOI, so in-place NOI is read straight off the statement.
    Auto-detects the description column, the period columns (12-month Total plus
-   trailing T6 / T3 / T1), and the INCOME / EXPENSE break (everything before the
-   printed TOTAL INCOME row is income; everything after is expense). No file
-   typing, no manual paste.
+   trailing T12 / T6 / T3 / T1 when the statement prints them), and the INCOME /
+   EXPENSE break (everything before the printed TOTAL INCOME row is income;
+   everything after is expense; nothing after TOTAL EXPENSES / NET OPERATING
+   INCOME is operating). Never throws: junk, empty, header-less or all-text
+   input yields an empty/partial parse with the same shape.
    ========================================================================== */
 (function (root, factory) {
   var api = factory();
@@ -21,10 +23,14 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  function str(v){ return v == null ? "" : String(v).trim(); }
+  // Dates/objects/booleans are never labels or amounts (String(new Date()) has
+  // digits in it and used to parse as a huge number).
+  function str(v){ return (v == null || typeof v === "object" || typeof v === "boolean") ? "" : String(v).trim(); }
   function toNum(v){
     if (typeof v === "number") return isFinite(v) ? v : null;
-    var s = str(v); if (!s) return null;
+    if (typeof v !== "string") return null;
+    var s = v.trim(); if (!s) return null;
+    if (/^[\s$€£]*[-–—]+[\s$€£]*$/.test(s)) return 0;        // accounting zero: "-", "$ -"
     if (!/\d/.test(s)) return null;
     var neg = /^\(.*\)$/.test(s) || s.indexOf("-") >= 0;
     var n = parseFloat(s.replace(/[^0-9.]/g, ""));
@@ -33,37 +39,72 @@
   function descriptive(s){ return /[A-Za-z]{3,}/.test(s) && !/^[\d\-.\s]+$/.test(s); }
 
   // Locate the header row and the period columns. The header row is the one that
-  // carries an exact "Total" (or YTD/Annual) label AND several month columns —
-  // that month test keeps metadata like "Statement (12 months)" from matching.
-  var MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s.\-]+\d{2,4}$|^\d{4}[-/]\d{1,2}([-/]\d{1,2})?$/i;
-  function findHeader(grid){
-    var cols = { total:-1, t12:-1, t6:-1, t3:-1, t1:-1 }, headerRow = -1;
-    for (var r = 0; r < Math.min(grid.length, 15); r++){
-      var row = grid[r] || [], total = -1, months = 0, t = {};
+  // carries a "Total" (12-month / YTD / annual) label AND several month columns —
+  // that month test keeps metadata like "Statement (12 months)" from matching. A
+  // statement that prints only trailing-period columns (T12 | T6 | T3 | T1) is
+  // accepted too, with T12 standing in for Total.
+  var MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?([\s.\-\/'’]*\d{2,4})?$|^\d{4}[-\/.]\d{1,2}([-\/.]\d{1,2})?$|^\d{1,2}[-\/.]\d{4}$|^\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}$/i;
+  var TOTAL_RE = /^(grand\s+)?total(\s*[\(\-–]?\s*(12|twelve)[\s-]*(mo|mos|month|months)\)?)?$|^(12|twelve)[\s-]*(mo|mos|month|months)(\s+total)?$|^(ytd|annual|annual\s+total|ytd\s+total|total\s+ytd|year\s+to\s+date|total\s+year|full\s+year|fy|fiscal\s+year|current\s+year)$/;
+  function periodOf(s){                                      // "T12" / "T-6" / "Trailing 3 (ann.)" / "TTM" → 12|6|3|1
+    if (/^ttm(\b.*)?$/.test(s)) return 12;
+    var m = /^(?:t|trailing|last)[\s-]*(12|6|3|1)(?:\b.*)?$/.exec(s);
+    return m ? +m[1] : 0;
+  }
+  // opts.loose: also accept a bare "<label> | Total" header (no month columns) when
+  // nothing better exists — used by parseGrid for two-column statements, NOT by
+  // the default (strict) findHeader that picks the operating sheet out of a workbook.
+  function findHeader(grid, opts){
+    opts = opts || {};
+    var cols = { total:-1, t12:-1, t6:-1, t3:-1, t1:-1 }, headerRow = -1, months = [];
+    if (!grid || typeof grid !== "object") return { headerRow: headerRow, cols: cols, months: months };
+    var loose = null;
+    for (var r = 0; r < Math.min(grid.length || 0, 60); r++){
+      var row = grid[r]; if (!row || typeof row !== "object") continue;
+      var total = -1, t = {}, mon = [], nums = 0, cells = 0, serial = [], small = [], pS = null, pM = null;
       for (var c = 0; c < row.length; c++){
-        var s = str(row[c]).toLowerCase();
-        if (!s) continue;
-        if (s === "total" || s === "ytd" || s === "annual" || s === "year to date" || s === "total year") { if (total < 0) total = c; }
-        else if (s === "t12") t.t12 = c;
-        else if (s === "t6")  t.t6 = c;
-        else if (s === "t3")  t.t3 = c;
-        else if (s === "t1")  t.t1 = c;
-        if (MONTH_RE.test(s)) months++;
+        var v = row[c];
+        if (v instanceof Date) { mon.push(c); cells++; continue; }
+        if (typeof v === "number"){
+          cells++; nums++;
+          // Month columns can arrive as Excel serial dates (~30 days apart) or as
+          // bare month numbers (1..12 in sequence); any other number = a data row.
+          if (v === Math.floor(v) && v >= 25569 && v <= 73050 && (pS == null || (v - pS >= 28 && v - pS <= 31))) { serial.push(c); pS = v; }
+          else if (v >= 1 && v <= 12 && v === Math.floor(v) && (pM == null || v === pM + 1 || (pM === 12 && v === 1))) { small.push(c); pM = v; }
+          continue;
+        }
+        var s = str(v).toLowerCase(); if (!s) continue;
+        cells++;
+        if (TOTAL_RE.test(s)) { if (total < 0) total = c; continue; }
+        var p = periodOf(s); if (p) { if (t["t"+p] == null) t["t"+p] = c; continue; }
+        if (MONTH_RE.test(s)) mon.push(c);
       }
-      if (total >= 0 && months >= 3){
+      if (total < 0 && t.t12 != null) total = t.t12;        // T12 stands in for Total
+      if (total < 0) continue;
+      var runs = (serial.length >= 3 ? serial : []).concat(small.length >= 3 ? small : []);
+      var tCount = Object.keys(t).length;
+      if (mon.length >= 3 || tCount >= 2 || (runs.length >= 3 && nums === runs.length)){
         cols.total = total;
         if (t.t12 != null) cols.t12 = t.t12; if (t.t6 != null) cols.t6 = t.t6;
         if (t.t3 != null) cols.t3 = t.t3;    if (t.t1 != null) cols.t1 = t.t1;
-        headerRow = r; break;
+        headerRow = r; months = mon.concat(runs).sort(function(a,b){ return a - b; }); break;
       }
+      if (opts.loose && !loose && total > 0 && nums === 0 && cells <= 6) loose = { row: r, total: total, t: t };
     }
-    return { headerRow: headerRow, cols: cols };
+    if (headerRow < 0 && loose){
+      headerRow = loose.row; cols.total = loose.total;
+      ["t12","t6","t3","t1"].forEach(function(k){ if (loose.t[k] != null) cols[k] = loose.t[k]; });
+    }
+    return { headerRow: headerRow, cols: cols, months: months };
   }
 
   // The description column: the most word-like text column left of the amounts.
-  function findDescCol(grid, dataStart, limit){
-    var best = 0, bestScore = -1, wide = limit > 0 ? limit : (grid[0] ? grid[0].length : 1);
+  function findDescCol(grid, dataStart, limit, skip){
+    var wide = 0;
+    for (var i = 0; i < grid.length; i++) if (grid[i] && grid[i].length > wide) wide = grid[i].length;
+    if (limit > 0 && limit < wide) wide = limit;
+    var best = 0, bestScore = -1;
     for (var c = 0; c < wide; c++){
+      if (c === skip) continue;
       var sc = 0;
       for (var r = dataStart; r < grid.length; r++){
         var v = grid[r] && grid[r][c];
@@ -76,23 +117,45 @@
 
   // The three printed footing rows, matched by exact account name so category
   // subtotals like "TOTAL RENTAL INCOME" or "TOTAL OTHER EXPENSES" never match.
-  var RE_INCTOT = /^TOTAL\s+(OPERATING\s+)?(INCOME|REVENUE)$/;
-  var RE_EXPTOT = /^TOTAL\s+(OPERATING\s+)?EXPENSES?$/;
+  // EFFECTIVE GROSS INCOME is the income total on underwriting-style statements.
+  var RE_INCTOT = /^TOTAL\s+(OPERATING\s+)?(INCOME|REVENUES?)$|^(TOTAL\s+)?EFFECTIVE\s+GROSS\s+(INCOME|REVENUES?)$|^EGI$/;
+  var RE_EXPTOT = /^TOTAL\s+(OPERATING\s+)?(EXPENSES?|EXPENDITURES?)$|^TOTAL\s+OPEX$/;
   // The operating bottom line. NOT plain "NET INCOME" — that is a BELOW-the-line
   // figure (after debt service / depreciation), a different number, and matching it
-  // used to overwrite the real NOI on statements that print both.
-  var RE_NOI    = /^NET\s+OPERATING\s+INCOME$|^NOI$/;
+  // used to overwrite the real NOI on statements that print both. A trailing
+  // "(NOI)" / "/ (LOSS)" / "before debt service" qualifier is still the NOI.
+  var RE_NOI    = /^(TOTAL\s+)?(NET\s+OPERATING\s+INCOME|NOI)(\s*[\(\/\-–:].*|\s+BEFORE\b.*)?$/;
+  var RE_EXPHDR = /^(OPERATING\s+)?(EXPENSES?|EXPENDITURES?)$|^OPEX$/;
   function isCaps(s){ return /[A-Z]/.test(s) && s === s.toUpperCase(); }
 
   function parseGrid(grid, opts){
     opts = opts || {};
-    var h = findHeader(grid), cols = h.cols;
-    var dataStart = (h.headerRow >= 0 ? h.headerRow : 4) + 1;
-    var descCol = (opts.descCol != null) ? opts.descCol : findDescCol(grid, dataStart, cols.total);
-    var basis = (opts.basis || "total").toLowerCase();
+    if (!grid || typeof grid !== "object") grid = [];          // junk input → empty parse, never a throw
+    var h = findHeader(grid, { loose: true }), cols = h.cols;
+    var dataStart = h.headerRow >= 0 ? h.headerRow + 1 : 0;
+    var basis = String(opts.basis || "total").toLowerCase();
     var byBasis = { total: cols.total, t12: (cols.t12 >= 0 ? cols.t12 : cols.total), t6: cols.t6, t3: cols.t3, t1: cols.t1 };
-    var amountCol = (opts.amountCol != null) ? opts.amountCol
+    var amountCol = (opts.amountCol != null) ? +opts.amountCol
                   : (byBasis[basis] != null && byBasis[basis] >= 0) ? byBasis[basis] : cols.total;
+    // A basis whose column the statement lacks falls back to Total — say so, rather
+    // than letting the caller believe it read a trailing-3 figure.
+    var basisUsed = (opts.amountCol != null) ? "column" : (cols[basis] >= 0 ? basis : "total");
+    // Labels live left of the first period column; a month cell is never a name.
+    var firstNum = Infinity;
+    Object.keys(cols).forEach(function(k){ if (cols[k] >= 0 && cols[k] < firstNum) firstNum = cols[k]; });
+    h.months.forEach(function(c){ if (c < firstNum) firstNum = c; });
+    var descCol = (opts.descCol != null) ? +opts.descCol : findDescCol(grid, dataStart, isFinite(firstNum) ? firstNum : 0, amountCol);
+    // Some exports put section/total captions in column A and detail names in
+    // column B: when the description cell is blank, take the row's other label.
+    function labelOf(row){
+      var s = str(row[descCol]); if (s) return s;
+      var lim = isFinite(firstNum) ? firstNum : row.length;
+      for (var c = 0; c < lim && c < row.length; c++){
+        if (c === descCol || c === amountCol) continue;
+        var v = row[c]; if (typeof v === "string" && descriptive(v.trim())) return v.trim();
+      }
+      return "";
+    }
 
     // The statement's own account hierarchy is authoritative: an ALL-CAPS label with
     // no amount is a section/sub-section header; mixed-case rows with an amount are
@@ -100,35 +163,51 @@
     // INCOME/EXPENSE break is driven by the printed TOTAL INCOME row rather than
     // keyword-guessing per header: everything up to and including TOTAL INCOME is
     // income, everything after is expense. That is exactly how the statement foots.
-    var TOP = /^(INCOME|EXPENSES?|OPERATING\s+(INCOME|EXPENSES?)|OPERATING\s+REVENUE|REVENUE|GROSS\s+(INCOME|REVENUE))$/;
-    var rows = [], categories = [], totals = { income: null, expense: null, noi: null };
+    // Phases: income → expense (at TOTAL INCOME, or at an EXPENSES header when the
+    // statement prints no income total) → below (after TOTAL EXPENSES: debt service,
+    // reserves, depreciation… are NOT operating lines) → stop at NET OPERATING INCOME.
+    var TOP = /^(INCOME|EXPENSES?|EXPENDITURES?|OPEX|OPERATING\s+(INCOME|EXPENSES?|EXPENDITURES?)|OPERATING\s+REVENUES?|REVENUES?|GROSS\s+(INCOME|REVENUE))$/;
+    var rows = [], categories = [], belowLine = [], totals = { income: null, expense: null, noi: null };
+    var footing = { incomeRow: -1, expenseRow: -1, noiRow: -1 };
     var phase = "income", sub = "";
     for (var r = dataStart; r < grid.length; r++){
-      var name = str(grid[r] && grid[r][descCol]);
+      var row = grid[r]; if (!row || typeof row !== "object") continue;
+      var name = labelOf(row);
       if (!name) continue;
       var up = name.toUpperCase().replace(/\s+/g, " ").trim();
-      var amt = toNum(grid[r] && grid[r][amountCol]);
-      var isTotal = /^(TOTAL|SUBTOTAL|NET |GROSS )\b/.test(up);
-      var section = (phase === "expense") ? "EXPENSE" : "INCOME";
+      var amt = toNum(row[amountCol]);
+      var foot = RE_INCTOT.test(up) ? "income" : RE_EXPTOT.test(up) ? "expense" : RE_NOI.test(up) ? "noi" : null;
+      // "Gross Potential/Scheduled/Market Rent" is the top-line DETAIL of a rent
+      // build-up, not a subtotal — dropping it zeroed GPR on such statements.
+      var isTotal = foot != null || /^(TOTAL|SUB-?TOTAL|NET)\b/.test(up)
+                 || (/^GROSS\b/.test(up) && !/^GROSS\s+(POTENTIAL|SCHEDULED|MARKET)\b/.test(up));
+      var section = (phase === "income") ? "INCOME" : "EXPENSE";
 
       if (amt == null){                                        // header / label row
-        if (!isTotal && !TOP.test(up)) sub = name.trim();
-        continue;
+        if (isTotal) continue;
+        if (TOP.test(up)){                                     // a top-level section starts a new hierarchy
+          if (phase === "income" && RE_EXPHDR.test(up)) phase = "expense";
+          sub = ""; continue;
+        }
+        sub = name; continue;
       }
       if (isTotal){                                            // a subtotal / footing row
-        if (RE_INCTOT.test(up)) { if (totals.income == null) totals.income = amt; phase = "expense"; }
-        else if (RE_EXPTOT.test(up)) { if (totals.expense == null) totals.expense = amt; }
-        else if (RE_NOI.test(up)) { totals.noi = amt; if (phase === "expense") break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
-        else if (isCaps(name)) { categories.push({ name: name.trim(), amount: amt, section: section }); }
+        if (foot === "income"){ if (totals.income == null){ totals.income = amt; footing.incomeRow = r; } if (phase === "income"){ phase = "expense"; sub = ""; } }
+        else if (foot === "expense"){ if (totals.expense == null){ totals.expense = amt; footing.expenseRow = r; } if (phase === "expense") phase = "below"; }
+        else if (foot === "noi"){ totals.noi = amt; footing.noiRow = r; break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
+        else if (phase === "below") belowLine.push({ name: name, amount: amt, row: r });
+        else if (isCaps(name)) categories.push({ name: name, amount: amt, section: section, row: r });
         continue;                                              // never counted as a detail line
       }
-      rows.push({ name: name, amount: amt, section: section, sub: sub });
+      if (phase === "below"){ belowLine.push({ name: name, amount: amt, row: r }); continue; }
+      rows.push({ name: name, amount: amt, section: section, sub: sub, row: r });
     }
-    // Derived NOI as a cross-check / fallback when a statement omits the NOI row.
-    if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = totals.income - totals.expense;
-    return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols,
-             basis: basis, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
-             rows: rows, categories: categories, totals: totals };
+    // Derived NOI as a cross-check / fallback when a statement omits the NOI row
+    // (printed figures are cents, so keep their difference in cents).
+    if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = Math.round((totals.income - totals.expense) * 100) / 100;
+    return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
+             basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
+             rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine };
   }
 
   return { parseGrid: parseGrid, findHeader: findHeader };

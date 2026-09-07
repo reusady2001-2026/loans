@@ -3471,13 +3471,15 @@ tr[data-loan]:hover td{background:#eef2f7}
         + tile("DSCR (combined)", stack.dscr != null ? stack.dscr.toFixed(2)+"&times;" : "&mdash;") + tile("Debt yield / LTV", (stack.dy != null ? fmtPct(stack.dy) : "&mdash;")+" / "+(stack.ltv != null ? fmtPct(stack.ltv) : "&mdash;"));
       lo.innerHTML = OperatingCalc.perLoan(record, members, hooks).map(r => { const l = members.find(m => m._id === r.loanId) || {};
         return '<span class="mr-3">'+escapeHtml(String(l.lenderName || l.propertyName || r.loanId))+(isMezz(l) ? ' (mezz)' : '')+': DSCR '+(r.dscr != null ? r.dscr.toFixed(2)+'&times;' : '&mdash;')+' &middot; DY '+(r.dy != null ? fmtPct(r.dy) : '&mdash;')+' &middot; LTV '+(r.ltv != null ? fmtPct(r.ltv) : '&mdash;')+'</span>'; }).join("");
+      // The store validates strictly and THROWS on a bad write (NaN, unknown source…); surface it, never leave an uncaught error.
+      const write = (fn) => { try{ opEnsure(key); fn(); }catch(e){ toast("Not saved: " + String((e && e.message) || e).slice(0, 140), "error"); } opAfterChange(); };
       OperatingSheet.render(sheet, { record, derived, basis: opBasis,
-        onEdit: (code, annual) => { opEnsure(key); OperatingStore.setLine(key, code, { annual, source:"manual" }); opAfterChange(); },
-        onToggleControllable: (code, on) => { opEnsure(key); OperatingStore.setControllable(key, code, !!on); opAfterChange(); },
+        onEdit: (code, annual) => write(() => OperatingStore.setLine(key, code, { annual: Number(annual), source:"manual" })),
+        onToggleControllable: (code, on) => write(() => OperatingStore.setControllable(key, code, !!on)),
         onBasisChange: (b) => { opBasis = b; opRenderFocused(); } });
       OperatingAssumptions.render(asm, { record, globalDefaults: gd,
-        onChange: (patch) => { opEnsure(key); OperatingStore.setAssumptions(key, patch); opAfterChange(); },
-        onReset: () => { opEnsure(key); OperatingStore.setAssumptions(key, null); opAfterChange(); } });
+        onChange: (patch) => write(() => OperatingStore.setAssumptions(key, patch)),
+        onReset: () => write(() => OperatingStore.setAssumptions(key, null)) });
     }
     function opRenderPortfolio(){
       const rm = el("opRollupMount"), sm = el("opScanMount"); if(!rm || !sm) return;

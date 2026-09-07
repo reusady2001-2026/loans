@@ -139,7 +139,7 @@ try {
   cents(r.inPlace.opex, 312000, "in-place OPEX = 90,000 + 31,000 + 60,000 + 101,000 + 30,000");
   cents(r.inPlace.reserves, 0, "in-place reserves (t12 side is 0)");
   cents(r.inPlace.noi, 806000, "in-place NOI = 1,118,000 − 312,000");
-  same(JSON.stringify(ws96), snapshot, "computeNOI does not mutate the worksheet");
+  ok(JSON.stringify(ws96) === snapshot, "computeNOI does not mutate the worksheet (JSON identical before/after)");
   same(badNumbers(r).length, 0, "no NaN / Infinity anywhere in the result");
 
   // =========================================================================
@@ -190,7 +190,8 @@ try {
   // no rent-roll GPR → the underwritten GPR is the statement's
   var b4 = SB.buildSetup({ categorySums: sums, units: 96, benchmarks: BENCH });
   cents(b4.result.underwritten.lines.VAC, -57500, "no rrGPR: VAC = −5% × (1,180,000 − 12,000 − 18,000) = −5% × 1,150,000");
-  cents(b4.result.underwritten.noi, NOI_UW - 20000 + 1000 - 500, "…NOI = 807,562.50 − 20,000 (GPR) + 1,000 (VAC) − 500 (MGMT on 19,000 less EGI) = 788,062.50");
+  //   GPR −20,000 and VAC +1,000 → ERI / EGI −19,000 → MGMT −2.5% × 19,000 = −475 → NOI −18,525
+  cents(b4.result.underwritten.noi, 789037.5, "…NOI = 807,562.50 − 19,000 (EGI) + 475 (MGMT) = 789,037.50");
 
   // =========================================================================
   section("E4 — blankWorksheet");
