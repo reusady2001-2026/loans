@@ -15,6 +15,15 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Any model + CLI-discovered effort, always the latest CLI (v2.6.3).** The model control is
+  now a FREEFORM field — type or pick ANY model id/alias the subscription supports (a datalist
+  of ~11 current models suggests, but you're not limited to them); blank = subscription default.
+  Effort levels are DISCOVERED from the bundled CLI's `--help` (never a level it would reject —
+  currently low/medium/high/xhigh/max; new levels appear automatically when the CLI adds them).
+  And every build now bundles the LATEST Claude Code CLI: package.json pins `latest` and CI force-
+  installs `@anthropic-ai/claude-code@latest` before packaging — so new models/effort levels the
+  subscription exposes arrive with each app release. (Note: the public npm CLI is the source; if
+  a newer effort tier like "extra"/"ultracode" ships there, it flows through automatically.)
 - **Model + effort pickers in the chat composer (v2.6.2).** Moved the model selector and effort
   control out of the Connection settings and into the assistant composer, right under the
   property picker — a simple Model dropdown and a compact Effort picker (⚡ Low … 🧠 Max), always

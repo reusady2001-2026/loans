@@ -31,24 +31,47 @@ const canceledTokens = new Set();
 
 const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api guidance)
 
-// Selectable models — the exact `--model` ids the bundled Claude CLI accepts (verified: each
-// resolves to its canonical model with no warning). `cli` goes to `claude -p --model`; `api`
-// is the same id on the Anthropic API fallback. Order mirrors the CLI's own model picker.
-// null cli = "let the subscription pick its default".
-const MODELS = {
-  auto:    { key:'auto',    label:'Automatic', note:'your subscription’s default', cli:null,                        api:API_MODEL },
-  fable:   { key:'fable',   label:'Fable 5.1', note:'',                            cli:'claude-fable-5-1',          api:'claude-fable-5-1' },
-  opus5:   { key:'opus5',   label:'Opus 5',    note:'',                            cli:'claude-opus-5',             api:'claude-opus-5' },
-  sonnet5: { key:'sonnet5', label:'Sonnet 5',  note:'',                            cli:'claude-sonnet-5',           api:'claude-sonnet-5' },
-  haiku:   { key:'haiku',   label:'Haiku 4.5', note:'',                            cli:'claude-haiku-4-5-20251001', api:'claude-haiku-4-5-20251001' },
-  opus48:  { key:'opus48',  label:'Opus 4.8',  note:'',                            cli:'claude-opus-4-8',           api:'claude-opus-4-8' },
-};
-// Reasoning effort — the CLI's `--effort` levels (verified), low → max = "Faster → Smarter".
-const EFFORTS = ['low','medium','high','xhigh','max'];
+// The model picker is FREEFORM — the operator can type ANY model id/alias their subscription
+// supports, and whatever they enter is passed straight to `claude --model`. "" = the
+// subscription default (no --model). These are just suggestions for the dropdown — the notable
+// current ids this CLI accepts; not an exhaustive or limiting list.
+const MODEL_SUGGESTIONS = [
+  { id:'',                  label:'Automatic — subscription default' },
+  { id:'claude-opus-5',     label:'Opus 5' },
+  { id:'claude-opus-4-8',   label:'Opus 4.8' },
+  { id:'claude-opus-4-6',   label:'Opus 4.6' },
+  { id:'claude-opus-4-5',   label:'Opus 4.5' },
+  { id:'claude-opus-4-1',   label:'Opus 4.1' },
+  { id:'claude-sonnet-5',   label:'Sonnet 5' },
+  { id:'claude-sonnet-4-6', label:'Sonnet 4.6' },
+  { id:'claude-sonnet-4-5', label:'Sonnet 4.5' },
+  { id:'claude-haiku-4-5',  label:'Haiku 4.5' },
+  { id:'claude-fable-5-1',  label:'Fable 5.1' },
+];
+const EFFORT_FALLBACK = ['low','medium','high','xhigh','max'];
 const EFFORT_DEFAULT = 'high';
-function modelKey(cfg){ const k = (cfg && cfg.aiModel) || 'auto'; return MODELS[k] ? k : 'auto'; }
-function effortKey(cfg){ const e = (cfg && cfg.aiEffort) || EFFORT_DEFAULT; return EFFORTS.indexOf(e) >= 0 ? e : EFFORT_DEFAULT; }
-function modelList(){ return Object.keys(MODELS).map(k => ({ key:k, label:MODELS[k].label, note:MODELS[k].note })); }
+function modelVal(cfg){ return (cfg && typeof cfg.aiModel === 'string') ? cfg.aiModel.trim() : ''; }
+function effortVal(cfg){ const e = (cfg && cfg.aiEffort) || EFFORT_DEFAULT; return String(e).trim() || EFFORT_DEFAULT; }
+// The effort levels the BUNDLED CLI actually supports — parsed from `claude --help` once and
+// cached — so the picker always matches THIS exact CLI version (new levels appear on upgrade;
+// we never offer a level the CLI would reject).
+let _effortsCache = null;
+function discoverEfforts(){
+  return new Promise((resolve) => {
+    if (_effortsCache) return resolve(_effortsCache);
+    let out = '', settled = false; const done = (v) => { if (!settled) { settled = true; resolve(_effortsCache = v); } };
+    let p; try { p = spawn(cliBin(), ['--help'], { stdio: ['ignore', 'pipe', 'ignore'], env: cliEnv() }); }
+    catch (e) { return done(EFFORT_FALLBACK); }
+    p.stdout.on('data', (d) => { out += d; });
+    p.on('error', () => done(EFFORT_FALLBACK));
+    p.on('close', () => {
+      const m = out.match(/--effort[\s\S]{0,160}?\(([a-z0-9,\s]+)\)/i);   // "…(low, medium, high, xhigh, max)"
+      const lv = m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : null;
+      done(lv && lv.length ? lv : EFFORT_FALLBACK);
+    });
+    setTimeout(() => done(EFFORT_FALLBACK), 5000);
+  });
+}
 
 // Resolve the Claude Code binary. Prefer the copy BUNDLED inside the app (so the
 // user never installs Claude Code separately — it ships in the platform optional
@@ -108,14 +131,15 @@ async function status(){
   // Only probe subscription sign-in when the CLI is actually runnable — `auth status`
   // otherwise just adds latency and can't be true anyway.
   const connected = cli.available ? await subscriptionConnected() : false;
-  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto', model: modelKey(cfg), models: modelList(), effort: effortKey(cfg), efforts: EFFORTS };
+  const efforts = cli.available ? await discoverEfforts() : EFFORT_FALLBACK;
+  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto', model: modelVal(cfg), modelSuggestions: MODEL_SUGGESTIONS, effort: effortVal(cfg), efforts };
 }
 function setKey(key){ const c = readCfg(); const k = (key == null ? '' : String(key)).trim(); if (k) c.apiKey = k; else delete c.apiKey; writeCfg(c); return { configured: !!c.apiKey }; }
 function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].indexOf(mode) >= 0) ? mode : 'auto'; writeCfg(c); return { mode: c.mode }; }
-// Choose the model the assistant/chat uses (one of MODELS' keys). Stored per-machine.
-function setModel(key){ const c = readCfg(); c.aiModel = MODELS[key] ? key : 'auto'; writeCfg(c); return { model: c.aiModel }; }
-// Choose the reasoning effort (one of EFFORTS). Stored per-machine.
-function setEffort(level){ const c = readCfg(); c.aiEffort = (EFFORTS.indexOf(level) >= 0) ? level : EFFORT_DEFAULT; writeCfg(c); return { effort: c.aiEffort }; }
+// Choose the model — ANY model id/alias the subscription accepts ("" = subscription default).
+function setModel(v){ const c = readCfg(); c.aiModel = String(v == null ? '' : v).trim(); writeCfg(c); return { model: c.aiModel }; }
+// Choose the reasoning effort (one of the CLI's discovered levels).
+function setEffort(level){ const c = readCfg(); c.aiEffort = String(level == null ? '' : level).trim() || EFFORT_DEFAULT; writeCfg(c); return { effort: c.aiEffort }; }
 
 // Environment for a `claude` spawn: inject the stored subscription OAuth token so
 // the CLI runs on the user's Claude subscription (no API key, no per-use billing).
@@ -270,15 +294,15 @@ async function chat(opts){
   if (!opts.prompt) return { ok: false, error: 'Missing prompt.' };
   const cfg = readCfg();
   const mode = cfg.mode || 'auto';
-  const m = MODELS[modelKey(cfg)];                          // the operator's chosen model
-  const effort = effortKey(cfg);                            // and reasoning effort
+  const modelSel = opts.model || modelVal(cfg);             // "" = the subscription default
+  const effort = opts.effort || effortVal(cfg);             // reasoning effort
   const cli = await detectCli();
   const useCli = (mode === 'cli') || (mode === 'auto' && cli.available);
   if (useCli){
     if (!cli.available) return { ok: false, error: 'CLI mode is selected but the Claude Code CLI was not found on this machine.' };
-    return runCliChat(Object.assign({}, opts, { model: opts.model || m.cli || undefined, effort: opts.effort || effort }));   // auto → no --model (CLI default)
+    return runCliChat(Object.assign({}, opts, { model: modelSel || undefined, effort: effort }));   // "" → no --model (subscription default)
   }
-  if (cfg.apiKey) return runApiChat(Object.assign({}, opts, { model: opts.model || m.api }), cfg.apiKey);   // effort is a subscription-CLI feature; not applied on the API fallback
+  if (cfg.apiKey) return runApiChat(Object.assign({}, opts, { model: modelSel || API_MODEL }), cfg.apiKey);   // effort is a subscription-CLI feature; not applied on the API fallback
   return { ok: false, error: cli.available
     ? 'No API key is configured. Switch to CLI mode to use your Claude subscription, or add an API key.'
     : 'Claude Code CLI not found and no API key configured. Install Claude Code (and run `claude` once to sign in) or add an Anthropic API key in Settings.' };

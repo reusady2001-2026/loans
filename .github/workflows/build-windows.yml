@@ -29,6 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Always ship the newest Claude Code CLI so the app has the current models and
+      # effort levels the subscription exposes. Forced here (not just via package.json)
+      # so every build picks up the latest even when the lockfile pins an older one.
+      - name: Bundle the latest Claude Code CLI
+        run: npm install @anthropic-ai/claude-code@latest --no-save
+
       - name: Build Windows installer (NSIS)
         run: npm run build:win-installer
 
