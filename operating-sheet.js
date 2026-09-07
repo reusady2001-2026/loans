@@ -5,21 +5,30 @@
                                               with ERI / EGI / OPEX / NOI subtotals
      toHtml(rows, { basis, record })        → the table markup (a pure string)
      render(mountEl, props)                 → draws it and wires the callbacks
-   The sheet does NO financial math: EGI, opex and NOI are read from the caller's
-   `derived` (OperatingCalc.derive); ERI is the plain sum of the rental block, the
-   same straight sum Underwriting.computeNOI uses for its in-place column.
+   The sheet does NO financial math: EGI, opex, NOI — and ERI when the caller hands
+   over a derive() result (derived.result.inPlace.eri) — are read from `derived`
+   (OperatingCalc.derive); without one, ERI falls back to the plain sum of the
+   rental block, the same straight sum Underwriting.computeNOI uses in-place.
+   Every §3 code is a row (SPEC §6: one row per line item); once a property has
+   lines, its unused rows fold behind a per-section "show N more lines" toggle.
    Stored values are ANNUAL dollars. The monthly basis is display-only: ÷12 on the
    way out, ×12 on the way in — done in whole cents (integer arithmetic), so an
    edit reaches onEdit as the exact annual amount the user meant.
-   Dependency-free on purpose (the taxonomy is mirrored from contract §3): the
-   sheet must load and test on its own, in the browser and in node.
+   Rental deductions (VAC, CONC, BD, MOD, EMPL) are typed and shown as amounts
+   under their "Less: …" caption and always STORED negative (§2 statement sign),
+   so a hand entry can never turn vacancy into income.
+   Ruling (critic, kept): the controllable toggle is drawn on expense rows only —
+   income lines carry no flag to flip, so the expense-shock scan never fires on them.
+   Dependency-free on purpose (the taxonomy is mirrored from contract §3; a loaded
+   OperatingTaxonomy is consulted for isDeduction): the sheet must load and test on
+   its own, in the browser and in node.
    ========================================================================== */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.OperatingSheet = api;
   if (typeof globalThis !== "undefined") globalThis.OperatingSheet = api;
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
   // ---- Taxonomy (contract §3) — the row order every property shares --------
@@ -44,12 +53,27 @@
     GA:"General & Admin", MKT:"Marketing", RM:"Repairs & Maintenance", CS:"Contract Services",
     TRSH:"Trash Removal", CAB:"Cable", PLL:"Parking Lot Lease", MGMT:"Management Fee"
   };
-  // Rows drawn even when the record has no such line, so an empty sheet can be
-  // filled in by hand (the rest of the taxonomy appears once a line exists).
+  // The skeleton rows: never folded behind "show more", even with no line yet.
   var ALWAYS = { GPR:1, VAC:1, RET:1, INS:1, MGMT:1 };
   var NON_CONTROLLABLE = { RET:1, INS:1 };              // taxes & insurance default to non-controllable
+  var DEDUCTION = { EMPL:1, MOD:1, VAC:1, CONC:1, BD:1 }; // rental deductions: typed as amounts, stored negative
   var SUBTOTAL = { ERI:"Effective Rental Income", EGI:"Effective Gross Income",
                    OPEX:"Total Operating Expenses", NOI:"Net Operating Income" };
+  var SECTIONS = ["rental", "other", "expense"];
+  // Own-property lookups only — codes and sources are free strings, and a plain
+  // object would answer "constructor" / "toString" from its prototype.
+  var has = function (o, k) { return o != null && Object.prototype.hasOwnProperty.call(o, k); };
+  // The taxonomy module is the authority when it is loaded (window in the app,
+  // globalThis in node); the local table is the dependency-free fallback.
+  function taxonomy() {
+    var g = (typeof globalThis !== "undefined") ? globalThis.OperatingTaxonomy : null;
+    return g || (root && root.OperatingTaxonomy) || null;
+  }
+  function isDeduction(code) {
+    var T = taxonomy();
+    if (T && typeof T.isDeduction === "function") return !!T.isDeduction(code);
+    return has(DEDUCTION, code);
+  }
 
   // ---- Small helpers ---------------------------------------------------------
   // Finite number or null. Numeric strings are tolerated (a hand-repaired store
@@ -88,7 +112,10 @@
   // an integer in units of 10^-k dollars (k = typed decimals), scaled ×12 for a
   // monthly entry, then rounded half-up to whole cents — all integer arithmetic,
   // so 1,000.50/month becomes exactly 12006 and never 12005.999999.
-  function toAnnual(text, basis) {
+  // With a deduction `code` (VAC, CONC, BD, MOD, EMPL) the entry is a magnitude
+  // under its "Less: …" caption and the result is forced negative — "60000" and
+  // "-60000" both mean −60,000 — so a hand entry can never add vacancy to income.
+  function toAnnual(text, basis, code) {
     var mult = normBasis(basis) === "monthly" ? 12 : 1;
     var s = String(text == null ? "" : text).trim(), neg = false;
     if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1).trim(); }   // accounting-style negative
@@ -103,18 +130,23 @@
     if (k <= 2) cents = v * Math.pow(10, 2 - k);
     else { var d = Math.pow(10, k - 2), r = v % d; cents = (v - r) / d + (r * 2 >= d ? 1 : 0); }
     if (cents === 0) return 0;                               // no negative zero
-    return (neg ? -cents : cents) / 100;
+    var v = (neg ? -cents : cents) / 100;
+    return (code != null && isDeduction(code)) ? -Math.abs(v) : v;
   }
 
   // ---- Pure model -------------------------------------------------------------
   function lineRow(code, ln, basis) {
-    var present = !!ln, annual = present ? num(ln.annual) : null, known = SECTION[code] !== undefined;
+    var present = !!ln, annual = present ? num(ln.annual) : null, known = has(SECTION, code), ded = isDeduction(code);
+    var value = toBasis(annual, basis);
     return {
-      code: code, label: LABEL[code] || code,
+      code: code, label: has(LABEL, code) ? LABEL[code] : String(code),
       section: known ? SECTION[code] : "unknown",
       role: known ? (SECTION[code] === "expense" ? "expense" : "income") : null,
-      value: toBasis(annual, basis), annual: annual,
-      controllable: (present && typeof ln.controllable === "boolean") ? ln.controllable : !NON_CONTROLLABLE[code],
+      value: value, annual: annual,
+      // what the input reads: a deduction as the magnitude under its "Less: …" caption
+      shown: value == null ? null : (ded ? Math.abs(value) : value),
+      deduction: ded,
+      controllable: (present && typeof ln.controllable === "boolean") ? ln.controllable : !has(NON_CONTROLLABLE, code),
       source: (present && ln.source) ? String(ln.source) : null,
       updatedAt: (present && ln.updatedAt) ? String(ln.updatedAt) : null,
       note: (present && ln.note) ? String(ln.note) : null,
@@ -122,21 +154,23 @@
     };
   }
 
-  // rows for one record: every present line (plus the ALWAYS rows) in §3 order,
-  // with the four subtotals in place. `derived` = OperatingCalc.derive output
-  // (only egi / opex / inPlaceNOI are read); pass null when there is none.
+  // rows for one record: EVERY §3 code in order (absent ones with no value), with
+  // the four subtotals in place. `derived` = OperatingCalc.derive output (egi /
+  // opex / inPlaceNOI, and result.inPlace.eri when present); pass null for none.
   function buildRows(record, derived, opts) {
     var basis = normBasis(opts && opts.basis);
-    var lines = (record && record.lines) || {};
+    var lines = (record && record.lines && typeof record.lines === "object") ? record.lines : {};
+    var line = function (c) { return (has(lines, c) && lines[c]) ? lines[c] : null; };
     var rows = [];
-    var block = function (codes) { codes.forEach(function (c) { if (lines[c] || ALWAYS[c]) rows.push(lineRow(c, lines[c], basis)); }); };
+    var block = function (codes) { codes.forEach(function (c) { rows.push(lineRow(c, line(c), basis)); }); };
     var sub = function (key, annual) { rows.push({ key: key, label: SUBTOTAL[key], section: "subtotal", value: toBasis(annual, basis), annual: annual, editable: false }); };
 
     block(RENTAL);
-    // Deductions are stored negative, so ERI is a straight sum of whatever rental
-    // lines exist; null (not 0) when there are none — nothing to sum yet.
-    var eri = null;
-    RENTAL.forEach(function (c) { var a = lines[c] ? num(lines[c].annual) : null; if (a != null) eri = (eri == null ? 0 : eri) + a; });
+    // ERI: the engine's own in-place figure when a derive() result is passed;
+    // otherwise the same straight sum of the rental block (deductions are stored
+    // negative) — null, not 0, when there is nothing to sum yet.
+    var eri = (derived && derived.result && derived.result.inPlace) ? num(derived.result.inPlace.eri) : null;
+    if (eri == null) RENTAL.forEach(function (c) { var l = line(c), a = l ? num(l.annual) : null; if (a != null) eri = (eri == null ? 0 : eri) + a; });
     sub("ERI", eri);
     block(OTHER);
     sub("EGI", pick(derived, "egi"));
@@ -146,7 +180,7 @@
     // Codes the taxonomy doesn't know: nothing in the app writes them, but a
     // record is user data. Show them last and marked; derive() ignores them, so
     // they sit outside the NOI above.
-    Object.keys(lines).forEach(function (c) { if (lines[c] && SECTION[c] === undefined) rows.push(lineRow(c, lines[c], basis)); });
+    Object.keys(lines).forEach(function (c) { if (line(c) && !has(SECTION, c)) rows.push(lineRow(c, lines[c], basis)); });
     return rows;
   }
 

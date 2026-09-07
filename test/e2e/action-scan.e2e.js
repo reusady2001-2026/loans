@@ -1,83 +1,75 @@
-// ActionScan e2e (contract §9) — Playwright-Electron against the real app.
-// Runs only AFTER the orchestrator has wired the Underwriting tab mounts
-// (#opPropPick, #opSheetMount, #opScanMount); it was written, not run, by the P8 builder.
-//   GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/action-scan.e2e.js
-// Scenario: fresh profile (the app seeds its sample portfolio) → open Underwriting →
-// pick a live property → type a tiny GPR into its sheet (NOI far below its debt
-// service) → a "dscr" flag naming that property appears in #opScanMount; clicking
-// it opens the property. Before the edit there is no dscr flag (the "not otherwise" half).
+/* ActionScan e2e (contract §9) — Playwright-Electron on the shared helpers (test/e2e/_helpers.js).
+   run:  cd /home/user/loans && GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/action-scan.e2e.js
+   Fresh profile (the app's seed portfolio, an empty operating store) → Underwriting tab →
+   no dscr flag anywhere before an NOI exists → type a tiny GPR on Villages of Whitewater
+   through the sheet (NOI far below its debt service) → a [data-op-flag="dscr"] row naming
+   it at severity 3 appears in #opScanMount → switching to another property and clicking
+   the row re-focuses the flagged property. Ends by asserting zero page errors.
+*/
 "use strict";
-const fs = require("fs"), os = require("os"), path = require("path");
-const { _electron: electron } = require((process.env.GN || "/opt/node22/lib/node_modules") + "/playwright");
-const APP = "/home/user/loans";
-const UDATA = fs.mkdtempSync(path.join(os.tmpdir(), "lds-e2e-action-scan-"));   // fresh profile → seeded portfolio, empty operating store
-let passed = 0, failed = 0;
-const ok = (c, m) => { console.log((c ? "  ok   " : "  FAIL ") + m); if (c) passed++; else failed++; };
-const cssStr = (s) => '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+const fs = require("fs"), path = require("path");
+const { launchApp, openUnderwriting, pickProperty, ok: mkOk } = require("./_helpers.js");
+const fails = { n: 0 }, ok = mkOk(fails), NAME = "Villages of Whitewater";
+const cssStr = s => '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 
 (async () => {
-  const app = await electron.launch({ executablePath: require(APP + "/node_modules/electron"),
-    args: [APP, "--user-data-dir=" + UDATA, "--no-sandbox"], cwd: APP });
+  const { app, page, errors, udata } = await launchApp();
   try {
-    const page = await app.firstWindow();
-    await page.route(/^https?:\/\//, r => r.abort());   // offline: live-rate fetches fall back to their defaults
-    await page.waitForSelector("#loanSelect option", { timeout: 60000 });
+    await openUnderwriting(page);
+    await page.waitForSelector("#opScanMount", { state: "attached", timeout: 15000 });
+    await page.waitForSelector("#opPropPick option", { state: "attached", timeout: 15000 });
+    // The intro splash overlays the app for a few seconds; typing into the sheet needs it gone.
+    await page.waitForSelector("#ldshSplash", { state: "detached", timeout: 30000 }).catch(() => {});
+    const dscrRows = () => page.$$eval('#opScanMount [data-op-flag="dscr"]', els => els.map(e => e.getAttribute("data-op-prop")));
 
-    // Underwriting tab lives behind the tab strip's "+" menu.
-    await page.click("#tabNewBtn");
-    await page.click('[data-tabopen="underwriting"]');
-    await page.waitForSelector("#uwView:not([hidden])", { timeout: 15000 });
-    await page.waitForSelector("#opPropPick option", { timeout: 15000 });
-    await page.waitForSelector("#opScanMount", { timeout: 15000 });
+    // 1. Not otherwise: an empty operating store has no NOI anywhere → no dscr flag at all, and no scan errors.
+    ok((await dscrRows()).length === 0, "no dscr flag on a fresh store (no NOI entered anywhere)");
+    ok((await page.$$('#opScanMount [data-op-flag="error"]')).length === 0, "no scan-error rows on the seed portfolio");
 
-    // A live seeded property — prefer Villages of Whitewater (fixed 4.7%, matures 2032:
-    // non-zero balance and debt service, so the DSCR ratio is defined).
-    const opts = await page.$$eval("#opPropPick option", os => os.map(o => ({ value: o.value, label: (o.textContent || "").trim() })).filter(o => o.value));
-    const pick = opts.find(o => /whitewater/i.test(o.label) && !/\bII\b/.test(o.label)) || opts[0];
-    ok(!!pick, "a property is offered in #opPropPick" + (pick ? ": " + pick.label + " (" + pick.value + ")" : ""));
-    if (!pick) throw new Error("no property to seed");
-    const rowSel = '#opScanMount [data-op-flag="dscr"][data-op-prop=' + cssStr(pick.value) + ']';
-
-    // Not otherwise: with no operating record there is no NOI, so no dscr flag yet.
-    ok((await page.locator(rowSel).count()) === 0, "no dscr flag for the property before any NOI is entered");
-
-    await page.selectOption("#opPropPick", pick.value);
-    // Seed through the sheet UI: GPR = 12,000 and nothing else → NOI $12,000 on the annual
-    // basis (or $144,000 if the sheet is on its monthly basis) — either is far under the
-    // loan's six-figure debt service, so DSCR < dscrMin − 0.10 → severity 3.
-    const gpr = page.locator('#opSheetMount [data-op-code="GPR"] [data-op-input]').first();
+    // 2. Seed a low NOI through the sheet UI on a live seeded property (fixed 4.7%, matures 2032:
+    //    non-zero balance and debt service, so its DSCR is defined).
+    const key = await pickProperty(page, NAME);
+    const label = key ? (await page.$eval("#opPropPick", s => ((s.options[s.selectedIndex] || {}).textContent || "").trim())) : "";
+    ok(!!key && /whitewater/i.test(label) && !/\bII\b/.test(label), "picked " + NAME + " in #opPropPick (" + key + ")");
+    if (!key) throw new Error("property not found in #opPropPick");
+    const rowSel = '#opScanMount [data-op-flag="dscr"][data-op-prop=' + cssStr(key) + ']';
+    ok((await page.$$(rowSel)).length === 0, "no dscr flag for the property before its NOI is entered");
+    const gpr = page.locator('#opSheetMount tr[data-op-code="GPR"] [data-op-input]').first();
     await gpr.waitFor({ timeout: 15000 });
-    await gpr.fill("12000");
-    await gpr.dispatchEvent("change");
-    await page.keyboard.press("Tab");
+    // GPR 12,000 and nothing else → NOI $12,000 a year against six-figure debt service: DSCR ≪ dscrMin − 0.10 → severity 3.
+    await gpr.click(); await gpr.fill("12000"); await gpr.press("Enter");   // Enter commits (blur → change → onEdit)
 
+    // 3. The flag appears, names the property, carries severity 3 and reads DSCR vs its minimum.
     let appeared = true;
-    try { await page.locator(rowSel).first().waitFor({ timeout: 20000 }); } catch (e) { appeared = false; }
+    try { await page.waitForSelector(rowSel, { state: "attached", timeout: 20000 }); } catch (e) { appeared = false; }
     ok(appeared, 'a "dscr" flag for the seeded property appears in #opScanMount');
     if (appeared) {
       const row = page.locator(rowSel).first();
       const name = ((await row.locator("[data-op-name]").first().textContent()) || "").trim();
-      ok(name.length > 0 && (pick.label.includes(name) || name.includes(pick.label)), "the flag names the property: " + JSON.stringify(name));
-      ok((await row.getAttribute("data-op-sev")) === "3", "severity 3 (NOI of $12k against six-figure debt service)");
+      ok(name.length > 0 && (label.includes(name) || name.includes(label)), "the flag names the property: " + JSON.stringify(name));
+      ok((await row.getAttribute("data-op-sev")) === "3", "severity 3 (NOI $12k against six-figure debt service)");
       const text = ((await row.textContent()) || "").replace(/\s+/g, " ").trim();
       ok(/DSCR/.test(text) && /minimum/.test(text), "row reads DSCR vs its minimum: " + text.slice(0, 140));
+      ok((await dscrRows()).filter(k => k === key).length === 1, "exactly one dscr row for the property");
 
-      // click → onOpen(propKey): move to another property first so the navigation is observable.
-      const other = opts.find(o => o.value !== pick.value);
+      // 4. click → onOpen(propKey): move to another property first so the re-focus is observable.
+      const other = await page.$eval("#opPropPick", (s, k) => { const o = [...s.options].find(x => x.value && x.value !== k); return o ? o.value : null; }, key);
       if (other) {
-        await page.selectOption("#opPropPick", other.value);
-        await page.locator(rowSel).first().click();
+        await page.selectOption("#opPropPick", other);
+        await page.waitForFunction(v => document.querySelector("#opPropPick").value === v, other, { timeout: 5000 }).catch(() => {});
+        await page.click(rowSel);
         let opened = true;
-        try { await page.waitForFunction(v => document.querySelector("#opPropPick").value === v, pick.value, { timeout: 5000 }); } catch (e) { opened = false; }
-        ok(opened, "clicking the flag opens the flagged property in #opPropPick");
+        try { await page.waitForFunction(v => document.querySelector("#opPropPick").value === v, key, { timeout: 8000 }); } catch (e) { opened = false; }
+        ok(opened, "clicking the flag re-focuses the flagged property in #opPropPick");
       } else console.log("  skip only one property seeded — click→onOpen not exercised");
     }
-    await page.screenshot({ path: path.join(UDATA, "action-scan.png"), fullPage: true }).catch(() => {});
   } catch (e) {
-    ok(false, "e2e threw: " + ((e && e.stack) || e));
-  } finally {
-    await app.close().catch(() => {});
+    ok(false, "e2e aborted: " + ((e && e.stack) || e));
+    try { const shot = path.join(udata, "action-scan-e2e-fail.png"); await page.screenshot({ path: shot }); console.log("  screenshot: " + shot); } catch (_) {}
   }
-  console.log("\n" + passed + " passed, " + failed + " failed   (profile + screenshot: " + UDATA + ")");
-  process.exit(failed ? 1 : 0);
+  ok(errors.length === 0, "no page errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+  await app.close().catch(() => {});
+  try { if (!fails.n) fs.rmSync(udata, { recursive: true, force: true }); } catch (_) {}
+  console.log("\n" + (fails.n ? fails.n + " e2e check(s) FAILED   (profile kept: " + udata + ")" : "all e2e checks passed"));
+  process.exit(fails.n ? 1 : 0);
 })();

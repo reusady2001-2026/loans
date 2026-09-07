@@ -165,26 +165,44 @@ function matFlag(iso, opts, extra){
   var l = loan(Object.assign({ propertyName: "Mat", propertyAddress: "9 Mat Ave", lenderName: "Life Co", loanNumber: "777", maturityDate: iso, _bal: 5000000 }, extra || {}));
   var f = run({}, [l], opts); return { flags: f, m: find(f, "maturity") };
 }
+function sev(r){ return r && r.m ? r.m.severity : null; }   // null-guarded: a regression prints FAIL, not a TypeError
 (function (){
-  var r = matFlag("2027-01-15");   // (2027−2026)×12 + (Jan−Sep) = 4 months
-  eq(kinds(r.flags), "maturity", "4 months out fires maturity only"); eq(r.m.severity, 3, "≤ 6 months → severity 3");
-  eq(r.m.value, 4, "value = months to maturity (4)"); eq(r.m.threshold, 18, "threshold = the window"); eq(r.m.impact, 5000000, "impact = balance");
-  eq(r.m.date, "2027-01-15", "date carried"); eq(r.m.loanId, r.flags[0].loanId, "loanId carried");
-  has(r.m.detail, "Life Co #777", "detail names the loan"); has(r.m.detail, "in 4 months", "detail says how soon"); has(r.m.detail, "$5,000,000", "detail shows the balance");
-  eq(matFlag("2027-03-01").m.severity, 3, "6 months → severity 3 (inclusive)");
-  eq(matFlag("2027-04-01").m.severity, 2, "7 months → severity 2");
-  eq(matFlag("2027-09-07").m.severity, 2, "12 months → severity 2 (inclusive)");
-  eq(matFlag("2027-10-01").m.severity, 1, "13 months → severity 1");
-  eq(matFlag("2028-03-31").m.severity, 1, "18 months (day ignored, app convention) → within the window, severity 1");
+  var r = matFlag("2027-01-15"), m = r.m || {};   // (2027−2026)×12 + (Jan−Sep) = 4 months
+  eq(kinds(r.flags), "maturity", "4 months out fires maturity only"); eq(m.severity, 3, "≤ 6 months → severity 3");
+  eq(m.value, 4, "value = months to maturity (4)"); eq(m.threshold, 18, "threshold = the window"); eq(m.impact, 5000000, "impact = balance");
+  eq(m.date, "2027-01-15", "date carried"); eq(m.loanId, r.flags[0] && r.flags[0].loanId, "loanId carried");
+  has(m.detail, "Life Co #777", "detail names the loan"); has(m.detail, "in 4 months", "detail says how soon"); has(m.detail, "$5,000,000", "detail shows the balance");
+  eq(sev(matFlag("2027-03-01")), 3, "6 months → severity 3 (inclusive)");
+  eq(sev(matFlag("2027-04-01")), 2, "7 months → severity 2");
+  eq(sev(matFlag("2027-09-07")), 2, "12 months → severity 2 (inclusive)");
+  eq(sev(matFlag("2027-10-01")), 1, "13 months → severity 1");
+  eq(sev(matFlag("2028-03-31")), 1, "18 months (day ignored, app convention) → within the window, severity 1");
   eq(matFlag("2028-04-01").flags.length, 0, "19 months → beyond the window, no flag");
   eq(matFlag("2031-01-01").flags.length, 0, "years out → no flag");
-  var p = matFlag("2024-08-09").m;   // (2024−2026)×12 + (Aug−Sep) = −25
-  eq(p && p.severity, 3, "already past → severity 3"); eq(p && p.value, -25, "value −25 months"); has(p && p.detail, "25 months ago", "detail says it matured");
-  eq(matFlag("2026-09-30").m.value, 0, "this month → 0 months");
+  // already matured with a balance still on the books: a bookkeeping question, not a refi emergency
+  var p = matFlag("2024-08-09").m || {};   // (2024−2026)×12 + (Aug−Sep) = −25
+  eq(p.severity, 2, "already past → severity 2"); eq(p.value, -25, "value −25 months");
+  has(p.detail, "matured 2024-08-09 — 25 months ago — confirm payoff or archive", "past-due wording");
+  has(p.detail, "$5,000,000 still on the books", "past-due shows the balance as outstanding, not 'to refinance'");
+  eq(matFlag("2024-08-09", null, { _bal: 0 }).flags.length, 0, "already matured with a $0 balance (paid off, like The Pepper Building) → no flag at all");
+  eq(matFlag("2027-01-15", null, { _bal: 0 }).flags.length, 0, "a $0 balance inside the window → nothing left to refinance → no flag");
+  var u = matFlag("2027-01-15", null, { _bal: null }).m || {};
+  eq(u.severity, 3, "an UNKNOWN balance (hook null) still fires"); eq(u.impact, 0, "unknown balance → impact 0, never NaN");
+  eq((matFlag("2026-09-30").m || {}).value, 0, "this month → 0 months");
   eq(matFlag(null).flags.length, 0, "no maturityDate → no flag");
   eq(matFlag("soon").flags.length, 0, "unparseable maturityDate → no flag");
   eq(matFlag("2027-04-01", { maturityMonths: 6 }).flags.length, 0, "opts.maturityMonths 6: 7 months → no flag");
   eq(matFlag("2027-03-01", { maturityMonths: 6 }).flags.length, 1, "opts.maturityMonths 6: 6 months → fires");
+})();
+(function (){
+  // hooks.maturity (the app's derived maturity, bridge) fills a blank field; the field is the fallback when the hook has nothing; the hook wins when both exist
+  var h = Object.assign({}, hooks, { maturity: function (l){ return l._derivedMat === undefined ? null : l._derivedMat; } });
+  var blank = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: null, _derivedMat: "2027-01-15", _bal: 1 });
+  eq((ActionScan.scan({}, [blank], h, GD, { calc: FakeCalc })[0] || {}).value, 4, "hooks.maturity supplies the maturity a blank field lacks (4 months)");
+  var field = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "2027-04-01", _bal: 1 });
+  eq((ActionScan.scan({}, [field], h, GD, { calc: FakeCalc })[0] || {}).value, 7, "hook null → the stored field is used (7 months)");
+  var both = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "2031-01-01", _derivedMat: "2027-04-01", _bal: 1 });
+  eq((ActionScan.scan({}, [both], h, GD, { calc: FakeCalc })[0] || {}).value, 7, "the hook's answer wins over the field");
 })();
 (function (){
   // today() is the hook, not the clock: from 2026-01-01, 2027-01-15 is 12 months → severity 2
@@ -197,31 +215,40 @@ function matFlag(iso, opts, extra){
   // senior 2029-02-10 (29 mo, outside) + mezz 2027-02-10 (5 mo): one flag, the mezz's; only in-window balance counts
   var S = loan({ propertyName: "Avalon", propertyAddress: "White Plains, NY", lenderName: "NYL", loanNumber: "1613", maturityDate: "2029-02-10", _bal: 96000000 });
   var Z = loan({ propertyName: "Avalon (Mezz)", propertyAddress: "White Plains, NY", lenderName: "NYL", loanNumber: "1614", lienPosition: "Mezzanine", maturityDate: "2027-02-10", _bal: 24000000 });
-  var f = run({}, [S, Z]);
-  eq(kinds(f), "maturity", "two loans → ONE maturity flag"); eq(f[0].value, 5, "earliest (mezz) at 5 months"); eq(f[0].severity, 3, "severity 3");
-  eq(f[0].impact, 24000000, "impact = balance of the loan(s) inside the window only"); eq(f[0].loanId, Z._id, "names the mezz"); has(f[0].detail, "(mezz)", "detail marks the mezz");
+  var f = run({}, [S, Z]), m = f[0] || {};
+  eq(kinds(f), "maturity", "two loans → ONE maturity flag"); eq(m.value, 5, "earliest (mezz) at 5 months"); eq(m.severity, 3, "severity 3");
+  eq(m.impact, 24000000, "impact = balance of the loan(s) inside the window only"); eq(m.loanId, Z._id, "names the mezz"); has(m.detail, "(mezz)", "detail marks the mezz");
   // both inside the window: senior 2027-05-01 (8 mo), mezz 2027-02-01 (5 mo) → earliest drives severity, both balances need runway
   var S2 = Object.assign({}, S, { maturityDate: "2027-05-01" }), Z2 = Object.assign({}, Z, { maturityDate: "2027-02-01" });
-  var g = run({}, [Z2, S2]);
-  eq(g.length, 1, "still one flag"); eq(g[0].value, 5, "earliest wins"); eq(g[0].impact, 120000000, "impact = 96M + 24M"); has(g[0].detail, "across 2 loans", "detail counts the loans");
+  var g = run({}, [Z2, S2]), gm = g[0] || {};
+  eq(g.length, 1, "still one flag"); eq(gm.value, 5, "earliest wins"); eq(gm.impact, 120000000, "impact = 96M + 24M"); has(gm.detail, "across 2 loans", "detail counts the loans");
+  // a paid-off senior (matured, $0) next to a live mezz: the mezz drives the flag, the matured senior is not the "earliest"
+  var paid = Object.assign({}, S, { maturityDate: "2024-08-09", _bal: 0 });
+  var q = run({}, [paid, Z]), qm = q[0] || {};
+  eq(kinds(q), "maturity", "paid-off senior + live mezz → one flag"); eq(qm.severity, 3, "the live mezz (5 months) drives it, not the matured senior"); eq(qm.loanId, Z._id, "…and names the mezz");
 })();
 
 // ================================================================================
-section("refi — marketRate < annualRate − refiSpread (0.005); severity by gap");
+section("refi — marketRate < rate in effect (hooks.currentRate, else annualRate) − refiSpread (0.005); severity 3 ≥ 1.00 pt, 2 ≥ 0.75 pt, else 1");
 function refi(rate, mkt, opts, extra){
   var l = loan(Object.assign({ propertyName: "Refi", propertyAddress: "5 Refi Ln", lenderName: "Santander", loanNumber: "7216141", annualRate: rate, _mkt: mkt, _bal: 6000000 }, extra || {}));
   var f = run({}, [l], opts); return { flags: f, r: find(f, "refi") };
 }
+function rsev(x){ return x && x.r ? x.r.severity : null; }
 (function (){
-  var x = refi(0.0566, 0.0440);   // gap 1.26 pts ≥ 1.00 → 3 ; impact 6,000,000 × 0.0126 = 75,600
-  eq(kinds(x.flags), "refi", "fires refi only"); eq(x.r.severity, 3, "gap ≥ 1.00 pt → severity 3");
-  near(x.r.value, 0.0566, "value = note rate"); near(x.r.threshold, 0.044, "threshold = market rate"); eq(x.r.impact, 75600, "impact = balance × gap = $75,600");
-  has(x.r.detail, "Santander #7216141", "detail names the loan"); has(x.r.detail, "5.66%", "note rate"); has(x.r.detail, "4.40%", "market rate"); has(x.r.detail, "1.26 pts", "gap");
-  var y = refi(0.0566, 0.0500);   // gap 0.66 pts → 2 ; impact 39,600
-  eq(y.r.severity, 2, "gap 0.66 pts → severity 2"); eq(y.r.impact, 39600, "impact $39,600");
-  eq(refi(0.0566, 0.0466).r.severity, 3, "gap exactly 1.00 pt → severity 3 (inclusive)");
+  var x = refi(0.0566, 0.0440), xr = x.r || {};   // gap 1.26 pts ≥ 1.00 → 3 ; impact 6,000,000 × 0.0126 = 75,600
+  eq(kinds(x.flags), "refi", "fires refi only"); eq(xr.severity, 3, "gap ≥ 1.00 pt → severity 3");
+  near(xr.value, 0.0566, "value = the rate in effect"); near(xr.threshold, 0.044, "threshold = market rate"); eq(xr.impact, 75600, "impact = balance × gap = $75,600");
+  has(xr.detail, "Santander #7216141", "detail names the loan"); has(xr.detail, "5.66% today", "rate in effect"); has(xr.detail, "4.40%", "market rate"); has(xr.detail, "1.26 pts", "gap");
+  ok(typeof xr.detail === "string" && xr.detail.indexOf("(note") < 0, "no '(note …)' aside when the rate in effect IS the note rate");
+  eq(rsev(refi(0.0566, 0.0466)), 3, "gap exactly 1.00 pt → severity 3 (inclusive)");
+  eq(rsev(refi(0.0566, 0.0467)), 2, "gap 0.99 pt → severity 2");
+  eq(rsev(refi(0.0566, 0.0491)), 2, "gap exactly 0.75 pt → severity 2 (inclusive)");
+  eq(rsev(refi(0.0566, 0.0492)), 1, "gap 0.74 pt → severity 1");
+  var y = refi(0.0566, 0.0500), yr = y.r || {};   // gap 0.66 pts → 1 ; impact 39,600
+  eq(yr.severity, 1, "gap 0.66 pts → severity 1"); eq(yr.impact, 39600, "impact $39,600");
   eq(refi(0.0566, 0.0516).flags.length, 0, "gap exactly = refiSpread (0.50 pt) → no flag (strict)");
-  eq(refi(0.0566, 0.0515).r.severity, 2, "gap 0.51 pt → fires, severity 2");
+  eq(rsev(refi(0.0566, 0.0515)), 1, "gap 0.51 pt → fires at severity 1 (reachable at the default spread)");
   eq(refi(0.0566, null).flags.length, 0, "marketRate null → never fires");
   eq(refi(0.0566, 0.0440, null, { annualRate: null }).flags.length, 0, "no annualRate → no flag");
   eq(refi(0.0500, 0.0530).flags.length, 0, "market above the note → no flag");
@@ -232,12 +259,25 @@ function refi(rate, mkt, opts, extra){
   eq(ActionScan.scan({}, [loan({ propertyName: "R", propertyAddress: "5 Refi Ln", annualRate: 0.08, _mkt: 0.04 })], h, GD, { calc: FakeCalc }).length, 0, "hooks without marketRate → never fires");
 })();
 (function (){
-  // senior 5.00% vs 4.40% (gap 0.60, sev 2, 10M → 60,000) + mezz 8.00% vs 6.80% (gap 1.20, sev 3, 2M → 24,000): one flag, the mezz's severity
+  // senior 5.00% vs 4.40% (gap 0.60, sev 1, 10M → 60,000) + mezz 8.00% vs 6.80% (gap 1.20, sev 3, 2M → 24,000): one flag, the mezz's severity
   var S = loan({ propertyName: "Two", propertyAddress: "6 Two Ct", lenderName: "Senior Bank", annualRate: 0.05, _mkt: 0.044, _bal: 10000000 });
   var Z = loan({ propertyName: "Two (Mezz)", propertyAddress: "6 Two Ct", lenderName: "Mezz Fund", lienPosition: "Mezzanine", annualRate: 0.08, _mkt: 0.068, _bal: 2000000 });
-  var f = run({}, [S, Z]);
-  eq(kinds(f), "refi", "two loans → ONE refi flag"); eq(f[0].severity, 3, "carries the worst severity"); eq(f[0].loanId, Z._id, "names the mezz");
-  eq(f[0].impact, 24000, "impact of the named loan"); has(f[0].detail, "Mezz Fund", "detail names the mezz"); has(f[0].detail, "also: Senior Bank", "detail lists the other");
+  var f = run({}, [S, Z]), m = f[0] || {};
+  eq(kinds(f), "refi", "two loans → ONE refi flag"); eq(m.severity, 3, "carries the worst severity"); eq(m.loanId, Z._id, "names the mezz");
+  eq(m.impact, 24000, "impact of the named loan"); has(m.detail, "Mezz Fund", "detail names the mezz"); has(m.detail, "also: Senior Bank", "detail lists the other");
+})();
+(function (){
+  // The rate in effect TODAY (hooks.currentRate) is the yardstick, never the origination rate:
+  // a floater written at 5.00% now paying 6.20% against a 5.00% market is 1.20 pts over → severity 3
+  var F = loan({ propertyName: "Float", propertyAddress: "8 Float Dr", lenderName: "Arbor", annualRate: 0.05, _cur: 0.062, _mkt: 0.05, _bal: 50000000 });
+  var hc = Object.assign({}, hooks, { currentRate: function (l){ return l._cur === undefined ? null : l._cur; } });
+  eq(run({}, [F]).length, 0, "no currentRate hook → the note rate is the fallback: 5.00% vs 5.00% market → no flag");
+  var f = ActionScan.scan({}, [F], hc, GD, { calc: FakeCalc }), r = f[0] || {};
+  eq(kinds(f), "refi", "with hooks.currentRate the live 6.20% fires"); eq(r.severity, 3, "gap 1.20 pts → severity 3");
+  near(r.value, 0.062, "value = the rate in effect"); eq(r.impact, 600000, "impact = 50,000,000 × 0.012 = $600,000");
+  has(r.detail, "6.20% today (note 5.00%)", "detail shows the current rate and the note rate it replaced");
+  eq(ActionScan.scan({}, [Object.assign({}, F, { _cur: null })], hc, GD, { calc: FakeCalc }).length, 0, "hook answers null (rate in effect unknown) → no flag; the note rate is NOT substituted");
+  eq(ActionScan.scan({}, [Object.assign({}, F, { annualRate: 0.08, _cur: 0.052 })], hc, GD, { calc: FakeCalc }).length, 0, "note 8.00% but 5.20% in effect vs 5.00% market → gap 0.20 < spread → no flag (a reset-down floater is no longer a call)");
 })();
 
 // ================================================================================
@@ -267,6 +307,17 @@ function exp(lines, opts){ var f = run({ "addr:7 exp way": rec(kE, "Exp", Object
   eq(s.x && s.x.severity, 2, "opts.shockPct 0.25: +26% → severity 2"); near(s.x && s.x.threshold, 0.25, "threshold = opts.shockPct");
 })();
 (function (){
+  // Role + direction: only a COST moving UP is a shock. VAC is an income-role deduction stored NEGATIVE:
+  // −50,000 → −40,000 is vacancy IMPROVING, −50,000 → −80,000 is the real hit — neither is an expense shock.
+  eq(exp({ VAC: [-40000, -50000, false] }).flags.length, 0, "VAC −50,000 → −40,000 (vacancy improved) → no flag (was a false '+20% shock')");
+  eq(exp({ VAC: [-80000, -50000, false] }).flags.length, 0, "VAC −50,000 → −80,000 (vacancy worse) → still no expense flag: income role");
+  eq(exp({ GPR: [1200000, 1000000, false] }).flags.length, 0, "a non-controllable income line rising (GPR +20%) → no flag");
+  eq(exp({ RUBS: [150000, 100000, false] }).flags.length, 0, "other income (RUBS +50%) flagged non-controllable → no flag");
+  eq((exp({ RET: [116000, 100000] }).x || {}).severity, 2, "RET +16% → flag (severity 2)");
+  eq(exp({ RET: [84000, 100000] }).flags.length, 0, "RET −16% → no flag (a cost moving down is relief)");
+  eq((exp({ INS: [140000, 100000] }).x || {}).impact, 40000, "INS +40% → impact is the dollar rise");
+})();
+(function (){
   // RET +20% (sev 2, $20,000) and INS +50% (sev 3, $50,000) → ONE flag: INS carries it, RET is named
   var r = exp({ RET: [120000, 100000], INS: [150000, 100000] });
   eq(kinds(r.flags), "expense", "two shocked lines → ONE expense flag"); eq(r.x.severity, 3, "worst severity"); eq(r.x.code, "INS", "worst line carries the flag");
@@ -282,7 +333,7 @@ section("ranking — severity desc, then dollar impact desc, then name; mixed se
 var mixed = (function (){
   var LA = loan({ propertyName: "Alpha", propertyAddress: "1 Alpha St", _ds: 100000, _bal: 1000000, maturityDate: "2028-03-01" });   // dscr 1.05 (3, $15,000) ; maturity 18mo (1, $1,000,000)
   var LB = loan({ propertyName: "Bravo", propertyAddress: "2 Bravo St", _ds: 100000, _bal: 1000000 });                                  // expense RET +50% (3, $50,000) ; NOI 350k healthy
-  var LC = loan({ propertyName: "Charlie", propertyAddress: "3 Charlie Av", lenderName: "C Bank", _ds: 150000, _bal: 2000000, annualRate: 0.06, _mkt: 0.053, maturityDate: "2027-04-01" }); // refi gap 0.70 (2, $14,000) ; maturity 7mo (2, $2,000,000)
+  var LC = loan({ propertyName: "Charlie", propertyAddress: "3 Charlie Av", lenderName: "C Bank", _ds: 150000, _bal: 2000000, annualRate: 0.06, _mkt: 0.053, maturityDate: "2027-04-01" }); // refi gap 0.70 (1, $14,000) ; maturity 7mo (2, $2,000,000)
   var LD = loan({ propertyName: "Delta", propertyAddress: "4 Delta Rd", _ds: 40000, _bal: 1000000 });                                   // dy 6.6% (2, $4,000)
   var LE = loan({ propertyName: "Echo", propertyAddress: "5 Echo Pl", _ds: 100000, _bal: 1000000 });                                    // dscr 1.05 (3, $15,000) — ties Alpha, name breaks it
   var records = {
@@ -297,7 +348,7 @@ var mixed = (function (){
 (function (){
   var f = run(mixed.records, mixed.loans);
   var got = f.map(function (x){ return x.name + "/" + x.kind + "/" + x.severity + "/" + x.impact; }).join(" | ");
-  var want = ["Bravo/expense/3/50000", "Alpha/dscr/3/15000", "Echo/dscr/3/15000", "Charlie/maturity/2/2000000", "Charlie/refi/2/14000", "Delta/dy/2/4000", "Alpha/maturity/1/1000000"].join(" | ");
+  var want = ["Bravo/expense/3/50000", "Alpha/dscr/3/15000", "Echo/dscr/3/15000", "Charlie/maturity/2/2000000", "Delta/dy/2/4000", "Alpha/maturity/1/1000000", "Charlie/refi/1/14000"].join(" | ");
   eq(f.length, 7, "seven flags on the mixed set");
   eq(got, want, "exact ranking: severity ↓, impact ↓, name ↑");
   var bad = f.filter(function (x){ return !(isFinite(x.value) && isFinite(x.threshold) && isFinite(x.impact) && [1, 2, 3].indexOf(x.severity) >= 0 &&
@@ -346,21 +397,73 @@ section("render — ranked rows carry data-op-flag / data-op-prop, click → onO
   has(mount.innerHTML, "data-op-empty", "empty state marker"); has(mount.innerHTML, "All clear", "empty state text"); ok(mount.innerHTML.indexOf("data-op-flag") < 0, "no rows when empty");
   var odd = ActionScan.html([{ propKey: 'name:a "b" <c>', name: "A & B <Co>", kind: "dscr", severity: 2, value: 1, threshold: 1.2, impact: 0, detail: "x < y" }]);
   has(odd, "A &amp; B &lt;Co&gt;", "name escaped"); has(odd, 'data-op-prop="name:a &quot;b&quot; &lt;c&gt;"', "propKey escaped in the attribute"); has(odd, "x &lt; y", "detail escaped");
+  // a portfolio-level error row has no property: no data-op-prop, and a click on it never calls onOpen
+  var er = ActionScan.html([{ propKey: null, name: "Portfolio", kind: "error", severity: 1, value: 0, threshold: 0, impact: 0, detail: "Scan failed: x" }]);
+  has(er, 'data-op-flag="error"', "error flag renders as a row"); ok(er.indexOf("data-op-prop") < 0, "…without a data-op-prop"); has(er, "Scan error", "…labelled Scan error");
+  var noOpen = 0; ActionScan.render(mount, [], { onOpen: function (){ noOpen++; } });
+  mount.onclick({ target: { closest: function (){ return { getAttribute: function (){ return null; } }; } } });
+  eq(noOpen, 0, "clicking a row without data-op-prop does not call onOpen");
   ActionScan.render(null, flags, {}); ok(true, "render(null) is a no-op");
 })();
 
 // ================================================================================
-section("guards");
+section("isolation — a throwing hook or a bad record yields ONE error flag for that property; scan() never throws");
 (function (){
-  var threw = null; try { ActionScan.scan({}, [A], { today: hooks.today }, GD, { calc: FakeCalc }); } catch (e) { threw = e; }
-  has(threw && threw.message, "hooks.propertyKey", "missing hooks.propertyKey throws a clear error");
+  var bad = loan({ propertyName: "Boom", propertyAddress: "0 Boom St", _ds: 100000, _bal: 1000000, _explode: true });
+  var good = loan({ propertyName: "Alpha", propertyAddress: "1 Alpha St", _ds: 100000, _bal: 1000000 });
+  var h = Object.assign({}, hooks, { currentBalance: function (l){ if (l._explode) throw new Error("balance blew up"); return l._bal; } });
+  var recs = { "addr:0 boom st": rec("addr:0 boom st", "Boom", { GPR: 145000, RET: [130000, 100000] }), "addr:1 alpha st": rec(kA, "Alpha", { GPR: 145000, RET: 40000 }) };
+  var f = null, threw = null; try { f = ActionScan.scan(recs, [bad, good], h, GD, { calc: FakeCalc }); } catch (e) { threw = e; }
+  eq(threw, null, "scan() does not throw"); f = f || [];
+  var errs = f.filter(function (x){ return x.kind === "error"; }), e0 = errs[0] || {};
+  eq(errs.length, 1, "exactly one error flag for the broken property");
+  eq(e0.propKey, "addr:0 boom st", "error flag carries the property key"); eq(e0.name, "Boom", "…and its name"); eq(e0.severity, 1, "error severity 1");
+  has(e0.detail, "balance blew up", "detail carries the hook's message");
+  eq(!!find(f, "expense", "addr:0 boom st"), true, "the broken property's rules that did not need the hook still fire (its expense shock)");
+  eq(!!find(f, "dscr", "addr:1 alpha st"), true, "the healthy property is still fully evaluated");
+  ok(f.every(function (x){ return isFinite(x.value) && isFinite(x.threshold) && isFinite(x.impact); }), "no NaN in any flag, error rows included");
+  // a record the calc chokes on → one error flag with the calc's message, nothing else lost
+  var g = ActionScan.scan({ "addr:1 alpha st": { propKey: kA, propertyName: "Alpha", lines: "oops" } }, [good], hooks, GD, { calc: { stack: function (){ throw new TypeError("lines.map is not a function"); } } });
+  eq(kinds(g), "error", "a record the calc throws on → one error flag"); has((g[0] || {}).detail, "lines.map", "…with the calc's message");
+  // missing key hook → one portfolio-level error flag, still no throw
+  var k = ActionScan.scan({}, [good], { today: hooks.today }, GD, { calc: FakeCalc });
+  eq(kinds(k), "error", "missing hooks.propertyKey → an error flag, not a throw"); has((k[0] || {}).detail, "hooks.propertyKey", "…naming the missing hook"); eq((k[0] || {}).propKey, null, "…with no property to open");
+})();
+
+// ================================================================================
+section("orphan records — a record whose loans are gone: the expense rule only, named from the record");
+(function (){
+  var orphan = rec("addr:9 gone st", "Gone Property", { GPR: 100000, RET: [150000, 100000] });   // RET +50% → severity 3
+  var f = run({ "addr:9 gone st": orphan }, [A]);   // A sits on another property; nothing is loaned under "addr:9 gone st"
+  eq(kinds(f.filter(function (x){ return x.propKey === "addr:9 gone st"; })), "expense", "orphan record → its expense shock is reported and nothing else");
+  var o = find(f, "expense", "addr:9 gone st") || {};
+  eq(o.name, "Gone Property", "named from record.propertyName"); eq(o.severity, 3, "severity from the jump"); eq(o.impact, 50000, "impact = $ jump");
+  eq(run({ "addr:9 gone st": rec("addr:9 gone st", "Gone Property", { GPR: 60000 }) }, []).length, 0, "orphan with a low NOI but no loan → no dscr/dy/maturity/refi (nothing to judge)");
+  eq((run({ "addr:9 gone st": rec("addr:9 gone st", "", { RET: [150000, 100000] }) }, [])[0] || {}).name, "addr:9 gone st", "no propertyName on the record → the key is the name");
+})();
+
+// ================================================================================
+section("guards + thresholds — engine floors 1.20 / 7% underneath the bench, null = inherit (like OperatingCalc.mergeAssumptions)");
+(function (){
   eq(ActionScan.scan({}, [], hooks, GD, { calc: FakeCalc }).length, 0, "no loans → empty list");
   eq(ActionScan.scan(null, null, hooks, GD, { calc: FakeCalc }).length, 0, "null inputs → empty list");
   eq(ActionScan.scan({}, [null, undefined], hooks, GD, { calc: FakeCalc }).length, 0, "null loans skipped");
   eq(ActionScan.DEFAULTS.maturityMonths + "/" + ActionScan.DEFAULTS.refiSpread + "/" + ActionScan.DEFAULTS.shockPct, "18/0.005/0.15", "defaults per §8");
-  // no thresholds anywhere → the ratio rules cannot judge → no ratio flags (and no NaN)
+  eq(ActionScan.KINDS.join(), "dscr,dy,maturity,refi,expense,error", "KINDS = the five rules + error");
+  // no bench at all → the engine floors apply (the sizing card sizes with the same 1.20 / 7%), never silence
   var h = Object.assign({}, hooks, { globalDefaults: null });
-  eq(ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 60000 }) }, [A], h, {}, { calc: FakeCalc }).length, 0, "no dscrMin/dyMin available → ratio rules stay silent");
+  var f0 = ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 60000 }) }, [A], h, {}, { calc: FakeCalc });
+  eq(kinds(f0), "dscr,dy", "no bench anywhere → 0.60× and 6.0% fire against the floors");
+  near((f0[0] || {}).threshold, 1.2, "dscr floor 1.20"); near((f0[1] || {}).threshold, 0.07, "dy floor 7%");
+  // a blanked bench field (null) inherits the floor instead of silencing the rule; a per-property override still wins
+  var blank = { sizing: { dscrMin: null, dyMin: null, capRate: 0.055 } };
+  var f1 = ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 145000, RET: 40000 }) }, [A], hooks, blank, { calc: FakeCalc });
+  eq(kinds(f1), "dscr", "global dscrMin null → 1.05× still fires at the 1.20 floor"); near((f1[0] || {}).threshold, 1.2, "threshold = the floor");
+  eq(ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 145000, RET: 40000 }, { sizing: { dscrMin: 1.0 } }) }, [A], hooks, blank, { calc: FakeCalc }).length, 0, "per-property dscrMin 1.00 still wins over the floor (1.05× passes)");
+  // when the calc offers mergeAssumptions, the scan uses it — one merge for sizing and scan
+  var merging = Object.assign({}, FakeCalc, { mergeAssumptions: function (g, o){ return { sizing: { dscrMin: 1.5, dyMin: 0.07 } }; } });
+  var f2 = ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 185000, RET: 40000 }) }, [A], hooks, GD, { calc: merging });   // 1.45× passes 1.20, fails the merged 1.50
+  eq(kinds(f2), "dscr", "thresholds come from calc.mergeAssumptions when present"); near((f2[0] || {}).threshold, 1.5, "…its dscrMin");
 })();
 
 // ================================================================================
@@ -369,8 +472,8 @@ section("integration — the real OperatingCalc, when operating-calc.js exists")
   var file = path.join(__dirname, "..", "operating-calc.js");
   if (!fs.existsSync(file)) {
     console.log("  skip operating-calc.js not present — dscr/dy cases above ran against the in-test fake only");
-    var threw = null; try { ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 60000 }) }, [A], hooks, GD, {}); } catch (e) { threw = e; }
-    has(threw && threw.message, "OperatingCalc", "without a calc (file absent, none injected) a record-bearing scan throws a clear error");
+    var nf = ActionScan.scan({ "addr:1 alpha st": rec(kA, "Alpha", { GPR: 60000 }) }, [A], hooks, GD, {});
+    eq(kinds(nf), "error", "without a calc (file absent, none injected) the property gets an error flag; scan() does not throw"); has((nf[0] || {}).detail, "OperatingCalc", "…naming the missing module");
     return;
   }
   var real; try { real = require(file); } catch (e) { ok(false, "real operating-calc.js failed to load: " + e.message); return; }
@@ -385,6 +488,12 @@ section("integration — the real OperatingCalc, when operating-calc.js exists")
   eq(kinds(f), "dscr", "real calc: NOI 900,000 / DS 800,000 → dscr flag only (dy 7.5% fine)");
   near(f[0] && f[0].value, 1.125, "real calc: value 1.125"); eq(f[0] && f[0].severity, 2, "real calc: severity 2"); eq(f[0] && f[0].impact, 60000, "real calc: impact $60,000");
   eq(ActionScan.scan({ "addr:8 real blvd": rec("addr:8 real blvd", "Real", { GPR: 1000000, RET: 40000 }) }, [L], hooks, GD, {}).length, 0, "real calc: NOI 960,000 → 1.20 exactly → no flag");
+  // a blanked bench (null dscrMin) resolves through the real mergeAssumptions to the engine's 1.20 — the rule still fires
+  var nb = ActionScan.scan({ "addr:8 real blvd": r }, [L], hooks, { sizing: { dscrMin: null, dyMin: null } }, {});
+  eq(kinds(nb), "dscr", "real calc: null global dscrMin → 1.125× still fires"); near((nb[0] || {}).threshold, 1.2, "real calc: threshold resolved to the engine's 1.20");
+  // an orphan record judged through the real calc's presence: expense only
+  var ob = ActionScan.scan({ "addr:8 real blvd": r, "addr:0 orphan": rec("addr:0 orphan", "Orphan", { RET: [150000, 100000] }) }, [L], hooks, GD, {});
+  eq(kinds(ob.filter(function (x){ return x.propKey === "addr:0 orphan"; })), "expense", "real calc present: orphan record still reports only its expense shock");
 })();
 
 console.log("\n" + passed + " passed, " + failed + " failed");
