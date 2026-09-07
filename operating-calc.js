@@ -30,7 +30,7 @@
 })(typeof self !== "undefined" ? self : this, function (SB, UW, root) {
   "use strict";
 
-  if (!UW || !UW.DEFAULTS) throw new Error("OperatingCalc: underwriting.js must be loaded first");
+  if (!UW || !UW.DEFAULTS || !UW.DEFAULTS.sizing) throw new Error("OperatingCalc: underwriting.js (with DEFAULTS.sizing) must be loaded first");
   // setup-builder is resolved at call time as well, so a script tag placed
   // ahead of setup-builder.js degrades to a clear error, not a silent undefined.
   function engine(){
@@ -39,6 +39,8 @@
     return s;
   }
 
+  // Deliberately strict: hooks answer with numbers straight from compute(), so a
+  // numeric STRING is a wiring bug — surfaced as "—" (null), never parsed.
   var fin = function (v){ return (typeof v === "number" && isFinite(v)) ? v : null; };
   var pos = function (v){ return typeof v === "number" && isFinite(v) && v > 0; };
   var isObj = function (v){ return v != null && typeof v === "object" && !Array.isArray(v); };
@@ -48,14 +50,11 @@
     var o = {}; Object.keys(v).forEach(function (k){ o[k] = clone(v[k]); }); return o;
   }
 
-  // The app's global bench (index.html uwDefaults().bench) built from the
-  // engine's own DEFAULTS so there is one source for the numbers. Note the
-  // engine calls the fee `mgmtFeePct`; buildSetup reads `mgmtPct`.
+  // The app's global bench (index.html uwDefaults().bench), read from the
+  // engine's DEFAULTS — already in the contract's Assumptions shape — so there
+  // is one source for the numbers.
   var D = UW.DEFAULTS;
-  var DEFAULTS = {
-    vacancyPct: D.vacancyPct, mgmtPct: D.mgmtFeePct, reservePerUnit: D.reservePerUnit, budget: {},
-    sizing: { capRate: D.capRate, ltvMax: D.ltvMax, dscrMin: D.dscrMin, dyMin: D.dyMin, intRate: D.intRate, amortYears: D.amortYears }
-  };
+  var DEFAULTS = { vacancyPct: D.vacancyPct, mgmtPct: D.mgmtPct, reservePerUnit: D.reservePerUnit, budget: {}, sizing: clone(D.sizing) };
 
   // Deep merge: `over` wins wherever it carries a non-null value; null/undefined
   // means "inherit" (the store's convention for a cleared per-property field),
@@ -108,11 +107,16 @@
     var sums = categorySums(record);
     var b = engine().buildSetup({ categorySums: sums, units: record.units, benchmarks: assumptions });
     var ip = b.result.inPlace, uw = b.result.underwritten;
+    // Codes the engine laid out as no worksheet line (unknown or mis-cased —
+    // FOO, gpr): their dollars are in none of the figures below, so name them
+    // for the sheet / roll-up to warn on instead of letting them vanish.
+    var laid = {}; b.worksheet.lines.forEach(function (l){ laid[l.key] = 1; });
+    var dropped = Object.keys(sums).filter(function (c){ return !laid[c]; });
     return {
       egi: ip.egi, opex: ip.opex, inPlaceNOI: ip.noi,
       egiUW: uw.egi, opexUW: uw.opex, reservesUW: uw.reserves, underwrittenNOI: uw.noi,
       worksheet: b.worksheet, result: b.result, sizing: b.sizing, assumptions: assumptions,
-      categorySums: sums, units: b.result.units, hasLines: lineCodes(record).length > 0
+      categorySums: sums, dropped: dropped, units: b.result.units, hasLines: lineCodes(record).length > 0
     };
   }
 
@@ -136,6 +140,7 @@
   var idOf = function (l){ return (l && l._id != null) ? l._id : (l && l.id != null) ? l.id : null; };
   // Value = NOI ÷ the SENIOR's cap rate; loans arrive senior-first (§1), so the
   // first loan is the senior and the mezz never re-values the property.
+  // Keyed by POSITION on purpose: modules get no isMezz, and §1 fixes the order.
   function propertyValue(noi, loans, hooks){
     return loans.length ? ratio(noi, hook(hooks, "capRate", loans[0])) : null;
   }

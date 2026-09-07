@@ -36,7 +36,9 @@ ok(typeof Calc.derive === "function" && typeof Calc.effectiveNOI === "function" 
 ok(windowExport === Calc, "window.OperatingCalc is the same api object as module.exports");
 var src = fs.readFileSync(SRC, "utf8");
 ok(src.indexOf("localStorage") < 0 && src.indexOf("ldsHub") < 0, "source never references localStorage or the ldsHub stores");
-ok(!/require\(["'][^"']*(operating-store|operating-taxonomy|t12-parse|xlsx)/.test(src), "depends only on setup-builder.js / underwriting.js");
+var requireTargets = (src.match(/require\(\s*["'][^"']+["']\s*\)/g) || []).map(function (s){ return s.replace(/^require\(\s*["']|["']\s*\)$/g, ""); })
+  .filter(function (t, i, a){ return a.indexOf(t) === i; }).sort();
+deepEq(requireTargets, ["./setup-builder.js", "./underwriting.js"], "the set of ALL require() targets in the module is exactly {./setup-builder.js, ./underwriting.js}");
 deepEq(Calc.DEFAULTS, BENCH, "DEFAULTS reproduces the app's uwDefaults().bench exactly");
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,7 @@ cents(dA.result.inPlace.reserves, 0, "in-place reserves = 0 (reserves as today: 
 ok(dA.egi !== dA.egiUW && dA.opex !== dA.opexUW, "egi/opex are the IN-PLACE figures, distinct from egiUW/opexUW");
 eq(dA.units, 100, "units carried through");
 eq(dA.hasLines, true, "hasLines true");
+deepEq(dA.dropped, [], "every code on the record is a taxonomy code → dropped []");
 deepEq(dA.categorySums, { GPR: 1200000, VAC: -60000, CONC: -12000, RUBS: 48000, OTH: 6500, RET: 95000, INS: 30000, UTIL: 55000, RM: 42000, PAY: 88000, MGMT: 34000, GA: 12000 }, "categorySums handed to the engine = { code: annual } verbatim");
 var keysA = dA.worksheet.lines.map(function (l){ return l.key; });
 ok(keysA.indexOf("GPR") === 0 && keysA.indexOf("VAC") > 0 && keysA.indexOf("MGMT") > 0 && keysA[keysA.length - 1] === "reserves", "worksheet has GPR first, VAC, MGMT, reserves last");
@@ -192,6 +195,7 @@ if (dEmpty){
   cents(dEmpty.underwrittenNOI, -20000, "underwritten NOI = −20,000 (EGI 0 − reserves)");
   eq(dEmpty.hasLines, false, "hasLines false");
   deepEq(dEmpty.categorySums, {}, "categorySums {}");
+  deepEq(dEmpty.dropped, [], "dropped [] (the engine's always-present GPR/VAC/MGMT/reserves lines are not 'dropped')");
   deepEq(dEmpty.sizing, UW.sizeLoan(dEmpty.underwrittenNOI, dEmpty.assumptions.sizing), "sizing on a non-positive underwritten NOI is whatever the engine says for it — passed through untouched");
   ok(!Object.keys(dEmpty.sizing).some(function (k){ var v = dEmpty.sizing[k]; return typeof v === "number" && !isFinite(v); }), "…and carries no NaN/Infinity");
 }

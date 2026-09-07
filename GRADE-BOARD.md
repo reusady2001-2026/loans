@@ -6,9 +6,9 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | A− | pending | — |
-| E2 | Classifier | A− | A− | pending | — |
-| E3 | In-place NOI tie | A | A | pending | — |
+| E1 | T12 parsing | A− | built | critic running (Crest regression gate) | 368 ok; 10 pre-existing defects fixed |
+| E2 | Classifier | A− | building | — | — |
+| E3 | In-place NOI tie | A | built | critic running (Crest regression gate) | 368 ok; residuals now reported |
 | E4 | Underwritten NOI | B+ | built | critic running (regression vs released engine) | 174 ok (hand-derived) |
 | E5 | Single-property sizing | A− | built | critic running (regression vs released engine) | 174 ok; fixed negative max-loan leak |
 | P1 | Per-property store | F | built | critic running | 202 ok |

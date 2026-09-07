@@ -165,6 +165,11 @@ eq(OT.CONTROLLABLE_DEFAULT.RET, false, "CONTROLLABLE_DEFAULT is frozen: RET stay
 try { OT.CONTROLLABLE_DEFAULT.ZZZ = false; } catch (e) {}
 eq(OT.defaultControllable("ZZZ"), true, "... and cannot grow new entries");
 ok(Object.isFrozen(OT.ORDER) && Object.isFrozen(OT.SECTIONS) && Object.isFrozen(OT.CONTROLLABLE_DEFAULT), "ORDER, SECTIONS and CONTROLLABLE_DEFAULT are frozen");
+try { OT.label = function (){ return "swapped"; }; } catch (e) {}
+eq(OT.label("RET"), "Real Estate Taxes", "the API object is frozen: label() cannot be re-pointed");
+try { OT.extra = 1; } catch (e) {}
+ok(!("extra" in OT), "... and cannot grow new members");
+ok(Object.isFrozen(OT), "the API object itself is frozen");
 
 heading("isolation -- never the loans store, no extra dependencies");
 ok(!/localStorage|ldsHub/.test(SRC), "module source never mentions localStorage or an ldsHub store key");
@@ -179,6 +184,9 @@ ok(bt && sameList(bt.ORDER, C_ORDER), "window.OperatingTaxonomy is built from ro
 eq(bt && bt.label("RET"), "Real Estate Taxes", "browser-loaded label() reads SetupBuilder.LABEL");
 eq(bt && bt.role("RET"), "expense", "browser-loaded role() reads T12Classify");
 ok(bt && ctx.OperatingTaxonomy === bt, "globalThis alias is the same object");
+var again = null, againErr = null;
+try { if (ctx) { vm.runInNewContext(SRC, ctx, { filename: "operating-taxonomy.js" }); again = ctx.window.OperatingTaxonomy; } } catch (e) { againErr = e; }
+ok(!!(again && again !== bt && Object.isFrozen(again) && sameList(again.ORDER, C_ORDER)), "a second load replaces window.OperatingTaxonomy with a fresh, equal, frozen instance (no throw)" + (againErr ? "  -- threw: " + againErr.message : ""));
 var err = null; try { loadBrowserLike({ T12Classify: T12 }); } catch (e) { err = e; }
 ok(err && /setup-builder\.js/.test(err.message), "loading before setup-builder.js fails loudly, naming the missing script" + (err ? "" : "  -- no error thrown"));
 err = null; try { loadBrowserLike({ SetupBuilder: SB }); } catch (e) { err = e; }

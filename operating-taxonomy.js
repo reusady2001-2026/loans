@@ -80,11 +80,13 @@
   // sort or splice their copy without touching the shared order.
   function codes(sec){ return ORDER.filter(function (c){ return SECTION[c] === sec; }); }
 
-  // The shared constants are frozen: the order must stay identical for every
-  // property, so no caller can turn it into state.
+  // The shared constants AND the API object are frozen: the order must stay
+  // identical for every property, so no caller can turn any of it into state.
+  // (The frozen value sits in an ordinary window slot, so a double load simply
+  // replaces it; nothing in the app assigns onto the object itself.)
   Object.freeze(ORDER); Object.freeze(SECTIONS); Object.freeze(CONTROLLABLE_DEFAULT);
 
-  return { ORDER: ORDER, SECTIONS: SECTIONS, CONTROLLABLE_DEFAULT: CONTROLLABLE_DEFAULT,
+  return Object.freeze({ ORDER: ORDER, SECTIONS: SECTIONS, CONTROLLABLE_DEFAULT: CONTROLLABLE_DEFAULT,
            section: section, role: role, label: label, defaultControllable: defaultControllable,
-           isDeduction: isDeduction, codes: codes };
+           isDeduction: isDeduction, codes: codes });
 });
