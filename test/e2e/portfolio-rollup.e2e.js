@@ -7,8 +7,11 @@
    from its loans with the §1 key, independently of this module); the Avalon senior + mezz
    collapse into ONE row (2 loans, named for the senior); clicking that row focuses the
    property; an NOI typed into the sheet shows up in the row, with the combined-stack debt
-   yield exact: 1,200,000 / (96,000,000 + 24,000,000 — both loans are interest-only, so
-   their balances are the original amounts) = 1.00%; the totals ratios are scoped per ratio
+   yield derived from the row's OWN balance cell (1,200,000 / balance, formatted by the
+   module's fmt.pct) — so the check stays valid after the interest-only period ends. The
+   hand-calc form (balance = 96,000,000 + 24,000,000 = $120,000,000.00 → DY 1.00%) holds only
+   while both Avalon loans are interest-only, so it is asserted only until their 2029-02-10
+   maturity (IO_UNTIL). The totals ratios are scoped per ratio
    to the NOI'd properties that carry the denominator (DS > 0 for DSCR, balance > 0 for DY),
    so with Avalon alone they equal Avalon's own, and an NOI on The Pepper Building (matured
    2024: balance $0.00, DS > 0) joins the DSCR aggregate but leaves the DY at Avalon's 1.00%.
@@ -17,6 +20,9 @@
 "use strict";
 const fs = require("fs"), os = require("os"), path = require("path");
 const H = require("./_helpers.js");
+const PR = require(path.join(H.APP, "portfolio-rollup.js"));   // its own formatters, so expected strings are built the way the page builds them
+const IO_UNTIL = Date.parse("2029-02-10");   // both Avalon loans are interest-only until maturity: balance = original amounts until then
+const num = s => parseFloat(String(s).replace(/[^0-9.\-]/g, ""));
 const AVALON = "addr:white plains, ny";   // §1 key of both Avalon loans
 // Column order of PortfolioRollup.render
 const COL = { name: 0, units: 1, loans: 2, noi: 3, uwNoi: 4, balance: 5, annualDS: 6, dscr: 7, dy: 8, ltv: 9, maturity: 10 };
@@ -56,7 +62,10 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
     const av = await rowCells(AVALON);
     ok(/Avalon White Plains/.test(av[COL.name] || "") && !/mezz/i.test(av[COL.name] || ""), "Avalon row is named for the senior (got " + JSON.stringify(av[COL.name]) + ")");
     ok(av[COL.loans] === "2", "Avalon row counts 2 loans (got " + JSON.stringify(av[COL.loans]) + ")");
-    ok(av[COL.balance] === "$120,000,000.00", "Avalon combined balance = 96,000,000 + 24,000,000 IO = $120,000,000.00 (got " + JSON.stringify(av[COL.balance]) + ")");
+    const avBal = num(av[COL.balance]);
+    ok(avBal > 0 && /^\$[\d,]+\.\d\d$/.test(av[COL.balance] || ""), "Avalon combined balance is a positive money figure (got " + JSON.stringify(av[COL.balance]) + ")");
+    if (Date.now() < IO_UNTIL) ok(av[COL.balance] === "$120,000,000.00", "…= 96,000,000 + 24,000,000 while both loans are interest-only (hand-check valid until 2029-02-10)");
+    const expDy = PR.fmt.pct(1200000 / avBal), expBalShort = PR.fmt.short(avBal);   // derived from the row's own balance
     ok(av[COL.noi] === "—" && av[COL.dscr] === "—" && av[COL.dy] === "—", "Avalon NOI / DSCR / DY are — before anything is entered");
     ok(av[COL.maturity] === "02/10/2029", "Avalon earliest maturity 02/10/2029 (got " + JSON.stringify(av[COL.maturity]) + ")");
     ok(!names.some(n => /Avalon WP \(Mezz\)/.test(n)), "no separate \"Avalon WP (Mezz)\" row");
@@ -81,9 +90,10 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
       rowSel(AVALON), { timeout: 10000 }).catch(() => {});
     const after = await rowCells(AVALON);
     ok(after[COL.noi] === "$1,200,000.00", "roll-up NOI for Avalon = $1,200,000.00 after entering GPR in the sheet (got " + JSON.stringify(after[COL.noi]) + ")");
-    ok(after[COL.dy] === "1.00%", "combined debt yield = 1,200,000 / 120,000,000 = 1.00% (got " + JSON.stringify(after[COL.dy]) + ")");
+    ok(after[COL.dy] === expDy, "combined debt yield = 1,200,000 / " + av[COL.balance] + " = " + expDy + " (got " + JSON.stringify(after[COL.dy]) + ")");
+    if (Date.now() < IO_UNTIL) ok(after[COL.dy] === "1.00%", "…= 1.00% on the $120,000,000.00 IO balances (hand-check valid until 2029-02-10)");
     ok(/^\d+\.\d\d×$/.test(after[COL.dscr] || "") && /^\d+\.\d\d%$/.test(after[COL.ltv] || ""), "DSCR / LTV now computed on the combined stack (got " + JSON.stringify(after[COL.dscr]) + " / " + JSON.stringify(after[COL.ltv]) + ")");
-    ok(after[COL.loans] === "2" && after[COL.balance] === "$120,000,000.00", "row still carries both loans after the edit");
+    ok(after[COL.loans] === "2" && after[COL.balance] === av[COL.balance], "row still carries both loans and the same balance after the edit");
     keys = await rowKeys();
     ok(keys.filter(k => k === AVALON).length === 1 && keys.length === expected.length, "still one row per property after the edit (" + keys.length + ")");
 
@@ -91,15 +101,14 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
     //    Avalon is the only one, so the portfolio DSCR / DY are exactly Avalon's own.
     totals = await totalsCells();
     ok(totals[COL.noi] === "$1,200,000.00", "totals NOI = the one entered NOI (got " + JSON.stringify(totals[COL.noi]) + ")");
-    ok(totals[COL.dscr] === after[COL.dscr] && totals[COL.dy] === "1.00%", "totals DSCR / DY are Avalon's own, not diluted by 27 NOI-less properties (got " + totals[COL.dscr] + " / " + totals[COL.dy] + " vs row " + after[COL.dscr] + " / " + after[COL.dy] + ")");
+    ok(totals[COL.dscr] === after[COL.dscr] && totals[COL.dy] === expDy, "totals DSCR / DY are Avalon's own, not diluted by 27 NOI-less properties (got " + totals[COL.dscr] + " / " + totals[COL.dy] + " vs row " + after[COL.dscr] + " / " + after[COL.dy] + ")");
     const scope = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
     ok(scope.indexOf("NOI on 1 of " + expected.length + " properties") >= 0, "scope line reads \"NOI on 1 of " + expected.length + " properties\" (got " + JSON.stringify(scope) + ")");
-    ok(scope.indexOf("DSCR " + after[COL.dscr] + " (1 of " + expected.length + " properties, ") === 0 && scope.indexOf("DY 1.00% (1 of " + expected.length + " properties, $120.00M balance)") >= 0, "scope line names each ratio's scope: DSCR on 1, DY on 1 with the $120.00M balance behind it");
+    ok(scope.indexOf("DSCR " + after[COL.dscr] + " (1 of " + expected.length + " properties, ") === 0 && scope.indexOf("DY " + expDy + " (1 of " + expected.length + " properties, " + expBalShort + " balance)") >= 0, "scope line names each ratio's scope: DSCR on 1, DY on 1 with the " + expBalShort + " balance behind it");
 
     // 5. Per-ratio scope, live: The Pepper Building matured 08/09/2024 → balance $0.00 but DS > 0. With an NOI
     //    it joins the DSCR aggregate, not the DY one — the portfolio DY stays Avalon's 1.00% (not 3.50%).
     const PEPPER = "addr:1830 lombard street, philadelphia, pa";
-    const num = s => parseFloat(String(s).replace(/[^0-9.\-]/g, ""));
     const pp = await rowCells(PEPPER);
     if (pp.length === COL.maturity + 1 && pp[COL.balance] === "$0.00" && num(pp[COL.annualDS]) > 0) {
       const pk = await H.pickProperty(page, "The Pepper Building");
@@ -112,11 +121,11 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
       const expDscr = (3000000 / num(pr[COL.annualDS])).toFixed(2) + "×";
       ok(pr[COL.dscr] === expDscr, "Pepper row DSCR = 3,000,000 / " + pr[COL.annualDS] + " = " + expDscr + " (got " + pr[COL.dscr] + ")");
       ok(t2[COL.noi] === "$4,200,000.00", "totals NOI = $4,200,000.00 (both NOIs)");
-      ok(t2[COL.dy] === "1.00%", "portfolio DY stays Avalon's 1.00% — Pepper's NOI is out of the DY scope (got " + t2[COL.dy] + "; the old definition read 3.50%)");
+      ok(t2[COL.dy] === expDy, "portfolio DY stays Avalon's " + expDy + " — Pepper's NOI is out of the DY scope (got " + t2[COL.dy] + "; the old definition read " + PR.fmt.pct(4200000 / avBal) + ")");
       const expTot = (4200000 / (num(av2[COL.annualDS]) + num(pr[COL.annualDS]))).toFixed(2) + "×";
       ok(t2[COL.dscr] === expTot, "portfolio DSCR = 4,200,000 / (" + av2[COL.annualDS] + " + " + pr[COL.annualDS] + ") = " + expTot + " (got " + t2[COL.dscr] + ")");
       const scope2 = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
-      ok(scope2.indexOf("DSCR " + expTot + " (2 of " + expected.length + " properties, ") === 0 && scope2.indexOf("DY 1.00% (1 of " + expected.length + " properties, $120.00M balance)") >= 0 && scope2.indexOf("NOI on 2 of " + expected.length + " properties") >= 0, "scope line: DSCR on 2, DY on 1, NOI on 2 (got " + JSON.stringify(scope2) + ")");
+      ok(scope2.indexOf("DSCR " + expTot + " (2 of " + expected.length + " properties, ") === 0 && scope2.indexOf("DY " + expDy + " (1 of " + expected.length + " properties, " + expBalShort + " balance)") >= 0 && scope2.indexOf("NOI on 2 of " + expected.length + " properties") >= 0, "scope line: DSCR on 2, DY on 1, NOI on 2 (got " + JSON.stringify(scope2) + ")");
     } else ok(false, "The Pepper Building row (balance $0.00, DS > 0) not found — got " + JSON.stringify(pp));
   } catch (e) {
     ok(false, "e2e aborted: " + (e && e.message));

@@ -204,15 +204,17 @@
   function ratio(v){ v = fin(v); return v == null ? DASH : v.toFixed(2) + "×"; }
   function int(v){ v = fin(v); return v == null ? DASH : String(Math.round(v)); }
   // Compact dollars for the scope line ($1.45M, $120.00M, $850K). Rounding can
-  // carry into the next unit (999,999 → "1000K"), in which case that unit is used.
-  var UNITS = [[1, "", 0], [1e3, "K", 0], [1e6, "M", 2], [1e9, "B", 2]];
+  // carry into the next unit (999,999 → "1000K"), in which case that unit is used;
+  // T is the last unit (≥ 1e15 stays "$1000.00T"), and a value that rounds to zero
+  // is never "-$0" (same rule as money()).
+  var UNITS = [[1, "", 0], [1e3, "K", 0], [1e6, "M", 2], [1e9, "B", 2], [1e12, "T", 2]];
   function short(v){
     v = fin(v); if (v == null) return DASH;
     var a = Math.abs(v), i = 0;
     while (i < UNITS.length - 1 && a >= UNITS[i + 1][0]) i++;
     var s = (a / UNITS[i][0]).toFixed(UNITS[i][2]);
     if (parseFloat(s) >= 1000 && i < UNITS.length - 1) { i++; s = (a / UNITS[i][0]).toFixed(UNITS[i][2]); }
-    return (v < 0 ? "-$" : "$") + s + UNITS[i][1];
+    return ((v < 0 && parseFloat(s) !== 0) ? "-$" : "$") + s + UNITS[i][1];
   }
   // What each totals ratio covers, spelled out next to it — the two scopes can
   // differ (a matured loan sits in DSCR, not in DY), so each one is named.

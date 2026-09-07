@@ -227,7 +227,8 @@ section("inputs: records as array, loans/defaults from hooks, NaN guards, errors
   ok(m.balance === 0 && m.annualDS === 0, "loan-only sums treat an unknown hook value as 0, not NaN");
   ok([g.totals.noi, g.totals.uwNoi, g.totals.dscr, g.totals.dy].every(v => v === null) && g.totals.balance === 0 && g.totals.annualDS === 0
      && g.totals.noiProps === 0 && g.totals.dsCovered === 0 && g.totals.balanceCovered === 0, "totals stay null/finite (scope 0 of 2)");
-  ok(!JSON.stringify(g).includes("null,null,null,null,null,null,null,null,null,null,null,null"), "sanity: rows still carry their keys/names");
+  ok(g.rows.map(r => r.propKey).join("|") === K.mlofts + "|" + K.weaver && g.rows.map(r => r.name).join("|") === "M Lofts|Weaver Mill Apartments", "rows keep their keys and names, sorted (got " + g.rows.map(r => r.name).join(" | ") + ")");
+  ok(w.units === 120 && w.loans === 1 && w.maturity === "2030-12-01" && m.units === null && m.loans === 1 && m.maturity === "2027-05-01" && !("error" in w) && !("error" in m), "…and their units / loan counts / maturities; garbage figures are nulls, not errors");
   global.OperatingCalc = fake;
   let err = null; try { PR.buildRows(REC, LOANS, {}, GD); } catch (e) { err = e; }
   ok(err && /propertyKey/.test(err.message), "missing hooks.propertyKey → clear error");
@@ -265,6 +266,8 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok(PR.scopeText({ properties: 1, noiProps: 1, dscrProps: 0, dyProps: 1, dy: 0.05, balanceCovered: 2000000 }) === "DSCR — (0 of 1 property) · DY 5.00% (1 of 1 property, $2.00M balance) · NOI on 1 of 1 property", "scopeText: an empty DSCR scope next to a populated DY scope");
   ok(PR.fmt.short(7252000) === "$7.25M" && PR.fmt.short(129000000) === "$129.00M" && PR.fmt.short(850000) === "$850K" && PR.fmt.short(1.5e9) === "$1.50B" && PR.fmt.short(12) === "$12" && PR.fmt.short(null) === "—", "fmt.short");
   ok(PR.fmt.short(999999) === "$1.00M" && PR.fmt.short(999.6) === "$1K" && PR.fmt.short(999999999) === "$1.00B" && PR.fmt.short(999499) === "$999K" && PR.fmt.short(999500) === "$1.00M" && PR.fmt.short(-999999) === "-$1.00M" && PR.fmt.short(999.4) === "$999", "fmt.short rolls over at the unit boundary: 999,999 → $1.00M, 999.6 → $1K, 999,999,999 → $1.00B (999,499 stays $999K)");
+  ok(PR.fmt.short(-0.4) === "$0" && PR.fmt.short(-0.004) === "$0" && PR.fmt.short(-400) === "-$400" && PR.fmt.short(-1500) === "-$2K" && PR.fmt.short(0) === "$0", "fmt.short: a value that rounds to zero is never -$0 (like money); real negatives keep the sign");
+  ok(PR.fmt.short(1e12) === "$1.00T" && PR.fmt.short(999999999999) === "$1.00T" && PR.fmt.short(1.5e13) === "$15.00T" && PR.fmt.short(1e15) === "$1000.00T" && PR.fmt.short(-2.5e12) === "-$2.50T", "fmt.short: T unit (999,999,999,999 → $1.00T); ≥ 1e15 stays in T ($1000.00T)");
   ok(html.indexOf("data-op-total") > html.lastIndexOf("data-op-prop="), "totals row comes last");
   ok(!/NaN|undefined/.test(html), "no NaN / undefined anywhere in the markup");
   // click → onOpen(propKey), via the delegated handler

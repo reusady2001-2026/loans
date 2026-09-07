@@ -299,40 +299,41 @@ run("E3 · printed totals the detail lines do not foot to: the residual plugs", 
 });
 
 run("E3 · expense-side bad debt rides its own pass-through line (a G&A budget never absorbs it)", function(){
-  // Rent 1,000 · Taxes 100 · Bad Debt Expense 40 − Recoveries 10 = 30 · TOTAL EXPENSES 130 · NOI 870
+  // Rent 1,000 · Taxes 100 · Office Supplies 20 (G&A) · Bad Debt Expense 40 − Recoveries 10 = 30 · TOTAL EXPENSES 150 · NOI 850
   var g = [[null].concat(F.MONTHS, ["Total"])], L = function (l, t){ g.push([l].concat([0,0,0,0,0,0,0,0,0,0,0,0], [t])); };
-  L("Rent", 1000); L("TOTAL INCOME", 1000); g.push(["EXPENSES"]); L("Taxes", 100); L("Bad Debt Expense", 40); L("Bad Debt Recoveries", -10); L("TOTAL EXPENSES", 130); L("NET OPERATING INCOME", 870);
+  L("Rent", 1000); L("TOTAL INCOME", 1000); g.push(["EXPENSES"]); L("Taxes", 100); L("Office Supplies", 20); L("Bad Debt Expense", 40); L("Bad Debt Recoveries", -10); L("TOTAL EXPENSES", 150); L("NET OPERATING INCOME", 850);
   var q = T12.parseGrid(g), fq = SB.fromParse(q);
   eq(JSON.stringify([CL.classify("Bad Debt Expense", "EXPENSE", ""), CL.classify("Bad Debt Recoveries", "EXPENSE", "")]), '["BDX","BDX"]', "both lines classify BDX (the expense-side bad-debt code)");
   eq(CL.roleOf("BDX"), "expense", "BDX is an expense-role code");
   eq(fq.expenseBadDebt, 30, "fromParse reports expense-side bad debt 30.00 (40.00 − 10.00)");
   eq(fq.sums.BDX, 30, "sums.BDX = 30.00 is the source of truth (the store's own code)");
-  eq(fq.sums.GA, undefined, "…nothing folded into G&A");
+  eq(fq.sums.GA, 20, "…G&A carries only its own 20.00 (nothing folded in)");
   eq(SB.fromParse({ rows: [{ name: "x", amount: 7, section: "EXPENSE" }].map(function(r){ return r; }), totals: {} }).sums.BDX, undefined, "a non-bad-debt expense line does not create BDX");
   var routed = SB.fromParse({ rows: [{ name: "Bad Debt", amount: 12, section: "EXPENSE", sub: "RENTAL INCOME" }], totals: {} });
   ok(routed.sums.BDX === 12 || routed.sums.BDX === undefined && CL.classify("Bad Debt", "EXPENSE", "RENTAL INCOME") === "BDX", "an expense-section line the classifier still calls BD is routed to BDX, never G&A (GA=" + routed.sums.GA + ")");
   eq(fq.sums.BD, undefined, "no income-side BD is invented");
-  eq(fq.reconcile.expenseResidual, 0, "expense section still foots to the printed 130.00");
+  eq(fq.reconcile.expenseResidual, 0, "expense section still foots to the printed 150.00");
   var b0 = SB.buildSetup({ parsed: q, units: 10, benchmarks: { reservePerUnit: 0 } });
   var find = function (b, k){ return b.worksheet.lines.filter(function(x){ return x.key === k; })[0]; };
   eq(find(b0, "BDX") && find(b0, "BDX").t12, 30, "worksheet: a BDX pass-through line with in-place 30.00");
   eq(find(b0, "BDX").label, "Bad Debt Expense", "worksheet: BDX caption");
   eq(find(b0, "BDX").method, "value", "worksheet: BDX is a value (pass-through) line");
-  eq(find(b0, "GA"), undefined, "worksheet: no G&A line at all (nothing was folded into it)");
-  eq(b0.result.inPlace.opex, 130, "in-place opex unchanged at the printed 130.00");
+  eq(find(b0, "GA").t12, 20, "worksheet: the G&A line carries only its own 20.00");
+  eq(b0.result.inPlace.opex, 150, "in-place opex = the printed 150.00");
   eq(b0.result.underwritten.lines.BDX, 30, "no budget: BDX underwritten = its in-place 30.00 (pass-through)");
-  eq(b0.result.inPlace.noi, 870, "in-place NOI === printed 870.00");
+  eq(b0.result.inPlace.noi, 850, "in-place NOI === printed 850.00");
+  eq(b0.result.underwritten.noi, 776.25, "no budget: underwritten NOI 950 − (100 + 20 + 30 + 23.75) = 776.25");
   eq(b0.expenseBadDebt, 30, "buildSetup reports expenseBadDebt");
-  // vacancy 5% → EGI 950 · mgmt 2.5% = 23.75 · taxes 100 · G&A budget 5 × 10 = 50 · bad debt 30 → opex 203.75 · NOI 746.25 (reserves 0)
+  // vacancy 5% → EGI 950 · mgmt 2.5% = 23.75 · taxes 100 · G&A budget 5 × 10 = 50 (replaces the 20) · bad debt 30 → opex 203.75 · NOI 746.25 (reserves 0)
   var b1 = SB.buildSetup({ parsed: q, units: 10, benchmarks: { budget: { GA: 5 }, reservePerUnit: 0 } });
   eq(b1.result.underwritten.lines.GA, 50, "G&A budgeted at 5.00/unit × 10 = 50.00");
   eq(b1.result.underwritten.lines.BDX, 30, "…and the 30.00 bad debt still passes through");
   eq(b1.result.underwritten.opex, 203.75, "underwritten opex 100 + 50 + 30 + 23.75 = 203.75");
   eq(b1.result.underwritten.noi, 746.25, "underwritten NOI 950 − 203.75 = 746.25 (776.25 if the budget had swallowed the bad debt)");
   // the store path: OperatingCalc.derive → buildSetup({ categorySums }) must carry BDX the same way
-  var st = SB.buildSetup({ categorySums: { GPR: 1000, RET: 100, GA: 0, BDX: 30 }, units: 10, benchmarks: { budget: { GA: 5 }, reservePerUnit: 0 } });
+  var st = SB.buildSetup({ categorySums: { GPR: 1000, RET: 100, GA: 20, BDX: 30 }, units: 10, benchmarks: { budget: { GA: 5 }, reservePerUnit: 0 } });
   eq(find(st, "BDX") && find(st, "BDX").t12, 30, "categorySums path: BDX worksheet line 30.00");
-  eq(st.result.inPlace.noi, 870, "categorySums path: in-place NOI 870.00");
+  eq(st.result.inPlace.noi, 850, "categorySums path: in-place NOI 850.00");
   eq(st.result.underwritten.lines.BDX, 30, "categorySums path: BDX passes through the G&A budget");
   eq(st.result.underwritten.noi, 746.25, "categorySums path: underwritten NOI 746.25 (same as the parsed path)");
   eq(st.expenseBadDebt, 30, "categorySums path: expenseBadDebt reported from sums.BDX");

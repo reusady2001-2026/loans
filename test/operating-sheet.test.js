@@ -86,7 +86,7 @@ eq(ORDER_S3.filter(c => Sheet.isDeduction(c)).length, 5, "…and nothing else is
 
 section("buildRows — every §3 code drawn, subtotals in place");
 const rows = Sheet.buildRows(record, derived, { basis: "annual" });
-eq(keysOf(rows), ALL_KEYS, "all 32 codes in §3 order; ERI after rental, EGI after other income, OPEX after expenses, NOI last");
+eq(keysOf(rows), ALL_KEYS, "all 33 codes in §3 order; ERI after rental, EGI after other income, OPEX after expenses, NOI last");
 eq(rows.filter(r => r.editable).length, 33, "33 editable rows");
 eq(rows.filter(r => r.editable && r.present).map(r => r.code), ["GPR","VAC","CONC","RUBS","OTH","RET","INS","UTIL","MGMT"], "the nine stored lines are the present ones");
 const { by, sub } = index(rows);
@@ -154,7 +154,7 @@ eq(Sheet.formatMoney(m.sub.NOI.value), "83,583.31", "NOI monthly displays 1,002,
 
 section("buildRows — empty / partial records");
 const e = Sheet.buildRows({ propKey: "x", propertyName: "Empty", lines: {} }, null, { basis: "annual" });
-eq(keysOf(e), ALL_KEYS, "empty record: all 32 rows in §3 order with the subtotals");
+eq(keysOf(e), ALL_KEYS, "empty record: all 33 rows in §3 order with the subtotals");
 eq(e.filter(r => r.editable).length, 33, "empty record: 33 editable rows");
 eq(e.filter(r => r.editable && r.present).length, 0, "empty record: none present");
 const ei = index(e);
@@ -169,7 +169,7 @@ eq([ei.sub.EGI.value, ei.sub.OPEX.value, ei.sub.NOI.value], [null, null, null], 
 eq(keysOf(Sheet.buildRows(null, null, {})), ALL_KEYS, "null record renders the same empty sheet");
 eq(keysOf(Sheet.buildRows(undefined, undefined)), ALL_KEYS, "undefined record + undefined opts render the empty sheet");
 const p = Sheet.buildRows({ lines: { VAC: { annual: -60000, source: "manual", updatedAt: M, controllable: true } } }, { egi: -60000, opex: 0, inPlaceNOI: -60000 }, {});
-eq(keysOf(p), ALL_KEYS, "only VAC present: the row set is still all 32");
+eq(keysOf(p), ALL_KEYS, "only VAC present: the row set is still all 33");
 eq(index(p).sub.ERI.value, -60000, "ERI sums only the rental lines that exist (VAC alone → -60,000)");
 eq(index(p).sub.NOI.value, -60000, "a negative NOI from derived is shown as-is");
 const q = Sheet.buildRows({ lines: { "TRSH RUB": { annual: 1000, source: "t12", updatedAt: T }, "TRSH COL": { annual: 500, source: "t12", updatedAt: T }, PLL: { annual: 12, source: "t12", updatedAt: T } } }, { egi: 1500, opex: 12, inPlaceNOI: 1488 }, {});
