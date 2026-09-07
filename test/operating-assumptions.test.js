@@ -6,7 +6,11 @@ var OA = require("../operating-assumptions.js");
 
 var fails = 0, passes = 0;
 function ok(cond, msg){ if (cond){ passes++; console.log("  ok   " + msg); } else { fails++; console.log("  FAIL " + msg); } }
-function J(v){ return JSON.stringify(v); }
+// Key-order-insensitive deep equality: the defaults underlay carries OperatingCalc's key
+// order, which is not the point of any assertion here — the numbers are.
+function sortKeys(v){ if (Array.isArray(v)) return v.map(sortKeys); if (v && typeof v === "object"){ var o = {}; Object.keys(v).sort().forEach(function (k){ o[k] = sortKeys(v[k]); }); return o; } return v; }
+function J(v){ return JSON.stringify(sortKeys(v)); }
+function nest(path, v){ var o = {}, c = o, p = path.split("."); for (var i = 0; i < p.length - 1; i++) c = c[p[i]] = {}; c[p[p.length - 1]] = v; return o; }
 function eq(actual, expected, msg){
   var same = (typeof expected === "object" && expected !== null) ? J(actual) === J(expected) : Object.is(actual, expected);
   ok(same, msg + (same ? "" : "  — got " + J(actual) + ", expected " + J(expected)));
@@ -67,12 +71,13 @@ console.log("resolve");
   eq(e4.sizing.capRate, 0.055, "…without disturbing the rest of sizing");
 
   var noSizing = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200 }, ov = { sizing:{ capRate:0.07, dyMin:null } };
-  var e5 = OA.resolve(rec(ov), noSizing);
-  eq(e5.sizing, { capRate:0.07 }, "globals without a sizing block: the override's sizing is brought in (null leaf dropped)");
+  var e5 = OA.resolve(rec(ov), noSizing), s5 = globals().sizing; s5.capRate = 0.07;
+  eq(e5.sizing, s5, "globals without a sizing block: the app defaults fill in under the override (null leaf → the default 0.07)");
   ok(e5.sizing !== ov.sizing, "…as a copy, not a reference into the record");
 
-  eq(OA.resolve(rec({ sizing:{ capRate:0.06 } }), null), { sizing:{ capRate:0.06 } }, "null globals → copy of the record's assumptions");
-  eq(OA.resolve(null, null), {}, "nothing at all → {} (never throws)");
+  var g6 = globals(); g6.sizing.capRate = 0.06;
+  eq(OA.resolve(rec({ sizing:{ capRate:0.06 } }), null), g6, "null globals → the app defaults underneath the record's override");
+  eq(OA.resolve(null, null), globals(), "nothing at all → the app defaults (never throws)");
   eq(OA.resolve(rec("garbage"), G), globals(), "non-object assumptions are ignored (inherit everything)");
 })();
 
@@ -108,7 +113,7 @@ console.log("diff");
   eq(OA.diff(rec({ budget:{ INS:500 }, mgmtPct:0.03 }), G),
      [{ path:"mgmtPct", global:0.025, override:0.03 }, { path:"budget.INS", global:null, override:500 }],
      "extra (non-panel) leaves follow the panel fields, global null when the globals lack the path");
-  eq(OA.diff(rec({ sizing:{ capRate:0.06 } }), null), [{ path:"sizing.capRate", global:null, override:0.06 }], "null globals → global null");
+  eq(OA.diff(rec({ sizing:{ capRate:0.06 } }), null), [{ path:"sizing.capRate", global:0.055, override:0.06 }], "null globals → global is the app default 0.055 actually inherited");
 })();
 
 console.log("percent / plain conversion (fromDisplay)");
@@ -211,6 +216,8 @@ console.log("panelHtml (pure markup)");
   ok(/data-op-assump="sizing\.amortYears" value="30"/.test(html), "inherited amortYears shows 30 (plain)");
   ok(html.indexOf("2 overrides") >= 0, "summary reads '2 overrides'");
   ok(html.indexOf('title="Global default: 5.5%"') >= 0, "override badge carries the global default in its title");
+  ok(html.indexOf("grid-cols-2") < 0, "single-column layout: no two-column grid anywhere");
+  eq(count(/<label class="flex items-center justify-between gap-2/g), 9, "nine rows, each label-left / control-right (the app's own sizing-row idiom)");
 
   var h2 = OA.panelHtml(rec(null), G);
   eq((h2.match(/>inherited</g) || []).length, 9, "all-inherited record: nine 'inherited' badges");

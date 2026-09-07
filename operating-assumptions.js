@@ -129,11 +129,11 @@
   // with no float drift (5.5/100 alone leaves 0.055000000000000005-style noise).
   function round6(x){ return Math.round(x * 1e6) / 1e6; }
   // "5.5", "6%", "$1,200", " 30 " → number; blank or anything that is not ONE plain
-  // decimal once %, $, commas and whitespace are dropped → null ("1e3", "1.2.3",
-  // "5-" are refused rather than silently read as 13 / 1.2 / 5).
+  // decimal once %, $ and commas are dropped and it is trimmed → null ("1e3",
+  // "1.2.3", "5-", "5 5" are refused rather than silently read as 13 / 1.2 / 5 / 55).
   function num(raw){
     if (typeof raw === "number") return isFinite(raw) ? raw : null;
-    var s = String(raw == null ? "" : raw).replace(/[%$,\s]/g, "");
+    var s = String(raw == null ? "" : raw).replace(/[%$,]/g, "").trim();
     if (!/^[-+]?\d*\.?\d+$/.test(s)) return null;
     var n = parseFloat(s);
     return isFinite(n) ? n : null;
