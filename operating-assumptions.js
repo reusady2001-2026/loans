@@ -6,34 +6,40 @@
      record.assumptions = {sizing:{capRate:.06}} → only capRate is overridden
    A null/undefined LEAF inside record.assumptions also inherits — so a single
    override can be cleared with a { path: null } patch whatever the store does
-   with it, and a null can never clobber a global (sizeLoan would read 0). No
-   result ever aliases either input: callers may mutate what they get back
-   without touching the store or the globals.
+   with it, and a null can never clobber a global (sizeLoan would read 0). The
+   app's standard numbers (OperatingCalc.DEFAULTS) sit UNDER the globals, exactly
+   as OperatingCalc.derive sizes, so a blanked global box still shows the number
+   actually used. No result ever aliases either input: callers may mutate what
+   they get back without touching the store or the globals.
    Also renders the compact panel (one input per field, an inherited/override
-   badge, #opAssumpReset) and emits MINIMAL nested patches for
-   OperatingStore.setAssumptions. Dependency-free, browser + node.
+   badge, #opAssumpReset), validates entries (plain decimals, per-field ranges)
+   and emits MINIMAL nested patches for OperatingStore.setAssumptions — none at
+   all when an entry changes nothing. Browser + node; OperatingCalc is optional
+   and looked up at call time.
    ========================================================================== */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.OperatingAssumptions = api;
   if (typeof globalThis !== "undefined") globalThis.OperatingAssumptions = api;
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
   // The panel's fields in display order (= the §2 Assumptions shape). `kind` drives
   // the unit conversion: pct fields are STORED as fractions (0.055) but SHOWN as
-  // percent numbers (5.5), exactly like the app's own sizing inputs.
+  // percent numbers (5.5), exactly like the app's own sizing inputs. min/max are in
+  // STORED units (fractions for pct); minEx = exclusive lower bound; `range` is the
+  // wording of the out-of-range warning.
   var FIELDS = [
-    { path:"vacancyPct",        label:"Vacancy",         kind:"pct",   suffix:"%",      group:"Underwriting" },
-    { path:"mgmtPct",           label:"Management fee",  kind:"pct",   suffix:"%",      group:"Underwriting" },
-    { path:"reservePerUnit",    label:"Reserves / unit", kind:"money", suffix:"$",      group:"Underwriting" },
-    { path:"sizing.capRate",    label:"Cap rate",        kind:"pct",   suffix:"%",      group:"Debt sizing" },
-    { path:"sizing.ltvMax",     label:"Max LTV",         kind:"pct",   suffix:"%",      group:"Debt sizing" },
-    { path:"sizing.dscrMin",    label:"Min DSCR",        kind:"mult",  suffix:"×", group:"Debt sizing" },
-    { path:"sizing.dyMin",      label:"Min debt yield",  kind:"pct",   suffix:"%",      group:"Debt sizing" },
-    { path:"sizing.intRate",    label:"Interest rate",   kind:"pct",   suffix:"%",      group:"Debt sizing" },
-    { path:"sizing.amortYears", label:"Amortization",    kind:"int",   suffix:"yrs",    group:"Debt sizing" }
+    { path:"vacancyPct",        label:"Vacancy",         kind:"pct",   suffix:"%",      group:"Underwriting", min:0, max:1,   range:"0–100%" },
+    { path:"mgmtPct",           label:"Management fee",  kind:"pct",   suffix:"%",      group:"Underwriting", min:0, max:1,   range:"0–100%" },
+    { path:"reservePerUnit",    label:"Reserves / unit", kind:"money", suffix:"$",      group:"Underwriting", min:0,          range:"$0 or more" },
+    { path:"sizing.capRate",    label:"Cap rate",        kind:"pct",   suffix:"%",      group:"Debt sizing",  min:0, minEx:true, max:1, range:"above 0%, up to 100%" },
+    { path:"sizing.ltvMax",     label:"Max LTV",         kind:"pct",   suffix:"%",      group:"Debt sizing",  min:0, max:1,   range:"0–100%" },
+    { path:"sizing.dscrMin",    label:"Min DSCR",        kind:"mult",  suffix:"×", group:"Debt sizing",  min:0, minEx:true,   range:"above 0×" },
+    { path:"sizing.dyMin",      label:"Min debt yield",  kind:"pct",   suffix:"%",      group:"Debt sizing",  min:0, max:1,   range:"0–100%" },
+    { path:"sizing.intRate",    label:"Interest rate",   kind:"pct",   suffix:"%",      group:"Debt sizing",  min:0, max:1,   range:"0–100%" },
+    { path:"sizing.amortYears", label:"Amortization",    kind:"int",   suffix:"yrs",    group:"Debt sizing",  min:0, max:50, integer:true, range:"whole years, 0–50" }
   ];
   var FIELD_BY_PATH = {};
   FIELDS.forEach(function (f){ FIELD_BY_PATH[f.path] = f; });
@@ -74,9 +80,25 @@
     return out;
   }
 
+  // ---- the app's standard numbers, underneath the globals --------------------
+  // OperatingCalc.derive sizes with its DEFAULTS under the global bench (a blanked
+  // Setup box stores null); the panel must show the same number, so the same
+  // underlay sits under resolve. Looked up at call time — script order and node
+  // require both work — with the identical literals as the fallback.
+  var FALLBACK = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
+                   sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.2, dyMin:0.07, intRate:0.055, amortYears:30 } };
+  function appDefaults(){
+    var oc = null;
+    try { oc = (root && root.OperatingCalc) || ((typeof require === "function") ? require("./operating-calc.js") : null); } catch (e) { oc = null; }
+    return (oc && isObj(oc.DEFAULTS)) ? oc.DEFAULTS : FALLBACK;
+  }
+  function baseline(globalDefaults){ return merge(appDefaults(), globalDefaults); }
+  // The value a field takes when it is NOT overridden (global, else the app default).
+  function inheritedValue(path, globalDefaults){ return getPath(baseline(globalDefaults), path); }
+
   // ---- the contract's three pure functions ---------------------------------
   function resolve(record, globalDefaults){
-    return merge(globalDefaults, record && record.assumptions);
+    return merge(baseline(globalDefaults), record && record.assumptions);
   }
   // true iff the record explicitly sets the leaf at `path` (an object path counts
   // when any leaf below it is set) — a null leaf is "inherit", not an override.
@@ -87,12 +109,13 @@
   }
   // Every overridden leaf as { path, global, override }: the panel's fields first, in
   // their canonical order, then anything else the record carries (e.g. budget.INS).
+  // `global` is the inherited value actually used (global, else the app default).
   function diff(record, globalDefaults){
     var set = leaves(record && record.assumptions), seen = {}, out = [];
     var push = function (p){
       if (seen[p] || !Object.prototype.hasOwnProperty.call(set, p)) return;
       seen[p] = true;
-      var g = getPath(globalDefaults, p);
+      var g = inheritedValue(p, globalDefaults);
       out.push({ path: p, global: (g === undefined ? null : clone(g)), override: clone(set[p]) });
     };
     FIELDS.forEach(function (f){ push(f.path); });
@@ -105,12 +128,13 @@
   // k×10⁻⁶ — the very literal a test or the store would write — so 5.5% → 0.055
   // with no float drift (5.5/100 alone leaves 0.055000000000000005-style noise).
   function round6(x){ return Math.round(x * 1e6) / 1e6; }
-  // "5.5", "6%", "$1,200", " 30 " → number; blank or non-numeric → null. Same
-  // tolerant strip-then-parseFloat idiom as the app's own uwNum.
+  // "5.5", "6%", "$1,200", " 30 " → number; blank or anything that is not ONE plain
+  // decimal once %, $, commas and whitespace are dropped → null ("1e3", "1.2.3",
+  // "5-" are refused rather than silently read as 13 / 1.2 / 5).
   function num(raw){
     if (typeof raw === "number") return isFinite(raw) ? raw : null;
-    var s = String(raw == null ? "" : raw).replace(/[^0-9.\-]/g, "");
-    if (!/\d/.test(s)) return null;
+    var s = String(raw == null ? "" : raw).replace(/[%$,\s]/g, "");
+    if (!/^[-+]?\d*\.?\d+$/.test(s)) return null;
     var n = parseFloat(s);
     return isFinite(n) ? n : null;
   }
@@ -125,17 +149,59 @@
     if (v == null) return null;
     return kindOf(path) === "pct" ? round6(v / 100) : v;
   }
-  // The minimal nested patch for one input: {sizing:{capRate:0.06}}. A blank input
-  // patches the leaf to null (= clear this override, inherit again); a non-numeric
-  // entry yields null — nothing to apply.
-  function patchFor(path, raw){
-    var blank = raw == null || String(raw).trim() === "";
-    var v = blank ? null : fromDisplay(path, raw);
-    if (!blank && v == null) return null;
+  function inRange(f, v){
+    if (!f) return true;
+    if (f.integer && v !== Math.round(v)) return false;
+    if (f.min != null && (f.minEx ? v <= f.min : v < f.min)) return false;
+    if (f.max != null && v > f.max) return false;
+    return true;
+  }
+  // One entry, judged: { value, error } — value null for a blank (= clear the
+  // override), error "not a number" | "out of range" (+ `range` wording) otherwise.
+  function check(path, raw){
+    var f = FIELD_BY_PATH[path];
+    if (raw == null || String(raw).trim() === "") return { value:null, error:null };
+    var v = fromDisplay(path, raw);
+    if (v == null) return { value:null, error:"not a number" };
+    if (!inRange(f, v)) return { value:null, error:"out of range", range:f.range };
+    return { value:v, error:null };
+  }
+  function build(path, v){
     var patch = {}, cur = patch, parts = String(path).split(".");
     for (var i = 0; i < parts.length - 1; i++) cur = cur[parts[i]] = {};
     cur[parts[parts.length - 1]] = v;
     return patch;
+  }
+  // The minimal nested patch for one input: {sizing:{capRate:0.06}}. A blank input
+  // patches the leaf to null (= clear this override, inherit again); a non-numeric
+  // or out-of-range entry yields null — nothing to apply.
+  function patchFor(path, raw){
+    var r = check(path, raw);
+    return r.error ? null : build(path, r.value);
+  }
+  // What one committed entry means for the panel: the patch to emit (null = nothing
+  // changes), the text the box should show, the badge state to flip to (null = leave
+  // it) and a warning to show. Re-entering the inherited value is not an override —
+  // it clears one if present and is otherwise a no-op; so is retyping the current
+  // override, or blanking a field that inherits already.
+  function commit(record, globals, path, raw){
+    var r = check(path, raw), show = function (v){ return toDisplay(path, v); };
+    var eff = getPath(resolve(record, globals), path), inh = inheritedValue(path, globals), over = isOverridden(record, path);
+    if (r.error) return { patch:null, value:show(eff), state:null, warn:{ text:r.error, title:(r.range ? "Allowed: " + r.range : "Enter a plain number, e.g. 6.25") } };
+    var v = r.value;
+    if (v != null && show(v) === show(inh)) v = null;
+    if (v == null) return over ? { patch:build(path, null), value:show(inh), state:"inherited", warn:null }
+                               : { patch:null, value:show(inh), state:null, warn:null };
+    if (over && show(v) === show(eff)) return { patch:null, value:show(v), state:null, warn:null };
+    return { patch:build(path, v), value:show(v), state:"override", warn:null };
+  }
+  // Deep-assign a patch onto a copy of `base` (nulls kept) — the panel's own echo of
+  // what the store will hold, so a second entry judges against the first even when
+  // the host has not re-rendered yet.
+  function applyPatch(base, patch){
+    var out = clone(isObj(base) ? base : {});
+    Object.keys(patch).forEach(function (k){ out[k] = isObj(patch[k]) ? applyPatch(out[k], patch[k]) : patch[k]; });
+    return out;
   }
 
   // ---- panel -----------------------------------------------------------------

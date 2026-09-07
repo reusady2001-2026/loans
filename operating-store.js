@@ -11,11 +11,11 @@
    { storage, now } through init() so a run is fully deterministic.
    ========================================================================== */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.OperatingStore = api;
   if (typeof globalThis !== "undefined") globalThis.OperatingStore = api;
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
   var KEY = "ldsHub.operating.v1", VERSION = 1;

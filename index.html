@@ -3444,10 +3444,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         const res = OperatingUpload.apply(OperatingStore, opFocusKey, parsed, { fileName: input.fileName || null, period: period, propertyName: p ? p.name : opFocusKey });
         // The verdict is about the STATEMENT: did the classified lines foot to its printed NOI? A record
         // that also carries manual lines the statement lacks legitimately differs — say so, don't cry error.
-        const stmtTies = (res.printedNOI != null && res.builtNOI != null) ? Math.abs(res.builtNOI - res.printedNOI) < 0.005 : res.ties;
-        const kept = (res.untouched || []).length;
+        const lines = (res.record && res.record.lines) || {};
+        const kept = Object.keys(lines).filter(c => lines[c] && lines[c].source === "manual").length;   // hand-entered lines the statement left alone
+        const keptTxt = kept ? " (" + kept + " manual line" + (kept > 1 ? "s" : "") + " kept)" : "";
         const who = p ? p.name : "Property";
-        if(stmtTies) toast(who + ": T12 saved — NOI ties to the statement" + (kept ? " (" + kept + " manual line" + (kept > 1 ? "s" : "") + " kept)" : ""), "info");
+        if(res.printedNOI == null) toast(who + ": T12 saved — the statement prints no NOI line to check against (built NOI " + fmtMoney(res.builtNOI) + ")" + keptTxt, "info");
+        else if(Math.abs((res.builtNOI || 0) - res.printedNOI) < 0.005) toast(who + ": T12 saved — NOI ties to the statement" + keptTxt, "info");
         else toast(who + ": T12 saved — but the classified lines do NOT foot to the statement’s printed NOI (" + fmtMoney(res.builtNOI) + " vs " + fmtMoney(res.printedNOI) + ") — check the Review list", "error");
       }catch(e){ toast("Couldn’t save the T12 to the property.", "error"); }
     }
