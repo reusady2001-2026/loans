@@ -96,7 +96,7 @@ var H = [
   ["Parking","EXPENSE","AUTO EXPENSE","GA"], ["Parking Income","INCOME","OTHER INCOME","PARK"],
   ["Payroll Services","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Payroll- Leasing","EXPENSE","Admin. salaries","PAY"],
   ["Employee Concession","INCOME","OTHER INCOME","EMPL"], ["Resident Satisfaction Concession","INCOME","OTHER INCOME","CONC"],
-  ["Cable","INCOME","OTHER INCOME","OTH"], ["Cable","EXPENSE","UTILITIES","CAB"], ["DSL Internet Line/Phones","EXPENSE","UTILITIES","CAB"],
+  ["Cable","INCOME","OTHER INCOME","OTH"], ["Cable","EXPENSE","UTILITIES","CAB"], ["DSL Internet Line/Phones","EXPENSE","UTILITIES","UTIL"],
   ["Late Fee","EXPENSE","OTHER EXPENSES","GA"], ["Late Fees","INCOME","OTHER INCOME","LATE"],
   ["Online Marketing Expense","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","MKT"], ["Resident Events","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"],
   ["Bad debts expense","EXPENSE","OTHER EXPENSES","BD"],
@@ -151,6 +151,52 @@ eq(run(all.slice().reverse()), run(all).split("|").reverse().join("|"), "reverse
 eq(T12.classify("  REAL   ESTATE\tTAXES ", "expense"), "RET", "case/whitespace normalized: \"  REAL   ESTATE\\tTAXES \" → RET");
 eq(T12.classify("real estate taxes", "Expenses", "taxes  and   insurance"), "RET", "sub-header whitespace/case normalized");
 eq(T12.classify("Payroll- Leasing", "EXPENSE", "Admin. salaries"), "PAY", "mixed-case sub-header (\"Admin. salaries\") recognized");
+
+// ---------------------------------------------------------------- 5b. critic items (grade B → A): one exact verdict each
+section("critic items — exact verdicts");
+// 1. roleOf is an own-property lookup: prototype names are not codes
+["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"].forEach(function (k){ eq(T12.roleOf(k), "income", "1. roleOf(" + JSON.stringify(k) + ") → \"income\" (not an expense code)"); });
+eq(T12.roleOf("RET"), "expense", "1. roleOf(\"RET\") → \"expense\" unchanged");
+// 2. the specific income rows beat the generic "… rent income" capture on a FLAT statement
+[["Pet Rent Income","PET"], ["Garage Rent Income","PARK"], ["Parking Rental Income","PARK"], ["Clubhouse Rental Income","AMEN"], ["Storage Rent","OTH"], ["Storage Locker Rent","OTH"],
+ ["Month to Month Rent Income","MTM"], ["Gross Potential Rent","GPR"], ["Old Rent","GPR"], ["Loss to Lease","GPR"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "INCOME", ""); ok(r.code === c[1] && r.confident, "2. flat " + JSON.stringify(c[0]) + " [INCOME] → " + c[1] + " (confident)" + (r.code === c[1] ? "" : "   (got " + r.code + ")"));
+});
+[["Pet Rent","RENTAL INCOME","PET"], ["Garage Rent","RENTAL INCOME","PARK"], ["Storage Rent","RENTAL INCOME","OTH"], ["Market Rent","RENTAL INCOME","GPR"], ["Clubhouse Rental","OTHER INCOME","AMEN"], ["Storage Rent","OTHER INCOME","OTH"]].forEach(function (c){
+  eq(T12.classify(c[0], "INCOME", c[1]), c[2], "2. headed " + JSON.stringify(c[0]) + " under [" + c[1] + "] → " + c[2]);
+});
+// 3. the three header carve-outs to TRSH share the keyword rule's repair/supply exclusion
+[["Trash Bags","REPAIRS & MAINTENANCE","RM"], ["Dumpster Repair","REPAIRS & MAINTENANCE","RM"], ["Trash Chute Repair","REPAIRS & MAINTENANCE","RM"], ["Valet Trash","REPAIRS & MAINTENANCE","TRSH"],
+ ["Dumpster Repair","CONTRACT SERVICES","CS"], ["Dumpster Service","CONTRACT SERVICES","TRSH"], ["American Waste Services","CONTRACT SERVICES","TRSH"],
+ ["Trash Compactor Repair","UTILITIES","UTIL"], ["Trash","UTILITIES","TRSH"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", c[1]), c[2], "3. " + JSON.stringify(c[0]) + " under [" + c[1] + "] → " + c[2]);
+});
+[["Trash Bags","RM"], ["Dumpster Repair","RM"], ["Trash Chute Repair","RM"], ["Trash Can Liners","RM"], ["Trash Removal","TRSH"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", ""), c[1], "3. flat " + JSON.stringify(c[0]) + " [EXPENSE] → " + c[1]);
+});
+// 4. under UTILITIES only cable / satellite / TV / bulk internet are CAB; phones, DSL, office internet stay UTIL as filed
+[["DSL Internet Line/Phones","UTIL"], ["Emergency Phone line","UTIL"], ["Office Internet","UTIL"], ["Elevator Phone Line","UTIL"], ["Cable","CAB"], ["Satellite TV","CAB"], ["Bulk Internet","CAB"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", "UTILITIES"), c[1], "4. " + JSON.stringify(c[0]) + " under [UTILITIES] → " + c[1]);
+});
+// 5. a bookkeeping plug is surfaced (low-confidence, section fallback) even under a recognized header
+[["Suspense Account","EXPENSE","REPAIRS & MAINTENANCE","GA"], ["Clearing Account","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Error Deposit","INCOME","OTHER INCOME","OTH"],
+ ["Notes- Loan Payable Rep.Funding","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["PO Suspense Expense","EXPENSE","REPAIRS & MAINTENANCE","GA"], ["Opening Balance Difference","EXPENSE","OPENING EXPENSE","GA"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], c[1], c[2]); ok(r.code === c[3] && !r.confident, "5. " + JSON.stringify(c[0]) + " under [" + c[2] + "] → " + c[3] + " low-confidence (surfaced)" + (r.code === c[3] ? "" : "   (got " + r.code + ")"));
+});
+eq(T12.classify("Snow Clearing Contract", "EXPENSE", ""), "CS", "5. \"Snow Clearing Contract\" is a contract, not a clearing account");
+var cap = T12.classifyConfident("Capital Improvement", "EXPENSE", "REPAIRS & MAINTENANCE");
+ok(cap.code === "RM" && cap.confident, "5. left open by design: \"Capital Improvement\" under [REPAIRS & MAINTENANCE] keeps the header's row RM, confident (surfacing headed capex would add 4 Crest rows); un-headed capex stays low-confidence (§4)");
+// 6. fee-type income codes carry the side guard on a flat EXPENSE line (fromParse folds them to GA; the review display must agree)
+[["Application Fee","GA"], ["Employee Concession","GA"], ["Pet Fee","GA"], ["Amenity Fee","GA"], ["Admin Fee","GA"], ["Parking","GA"], ["Concessions","GA"], ["Month to Month","GA"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", ""), c[1], "6. flat " + JSON.stringify(c[0]) + " [EXPENSE] → " + c[1]);
+});
+eq(T12.classify("Application Fee", "INCOME", ""), "APP", "6. …and \"Application Fee\" [INCOME] → APP unchanged");
+eq(T12.classify("Bad debts expense", "EXPENSE", "OTHER EXPENSES"), "BD", "6. headed \"Bad debts expense\" → BD unchanged (fromParse folds it to GA)");
+// 7. documented headed-vs-flat choices (header comment)
+[["Late Fee - Taxes","TAXES AND INSURANCE","RET"], ["Late Fee - Taxes","","GA"], ["Life Insurance","TAXES AND INSURANCE","INS"], ["Software Contract","REPAIRS & MAINTENANCE","RM"], ["Software Contract","CONTRACT SERVICES","GA"],
+ ["Resident Events","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Resident Events","","MKT"], ["Resident Retention","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Resident Retention","","MKT"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", c[1]), c[2], "7. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → " + c[2]);
+});
 
 // ---------------------------------------------------------------- 6. synthetic statement → parseGrid → fromParse (residual accounting)
 section("synthetic statement through SetupBuilder.fromParse — sums and the reconcile plug to the cent");
@@ -243,8 +289,13 @@ if (!fs.existsSync(FIX)) {
   eq(nulls, 0, "null codes: 0 of 610");
   ok(agree, "classify() and classifyConfident().code agree on every line");
   var WANT_LOW = ["Old Code Do Not Use - Wells Depository (INCOME) 0.00 → OTH", "Linden Loans Receivable (INCOME) 0.00 → OTH",
+                  "Error Deposit (INCOME / OTHER INCOME) 0.00 → OTH",
+                  "Error Deposit (EXPENSE / GENERAL AND ADMINISTRATIVE EXPENSES) 0.00 → GA",
+                  "Notes- Loan Payable Rep.Funding (EXPENSE / GENERAL AND ADMINISTRATIVE EXPENSES) 0.00 → GA",
+                  "PO Suspense Expense (EXPENSE / REPAIRS & MAINTENANCE) 0.00 → GA",
                   "Security Difference (EXPENSE / OPENING EXPENSE) 0.00 → GA", "Opening Balance Difference (EXPENSE / OPENING EXPENSE) 0.00 → GA"];
-  eq(low.join("\n"), WANT_LOW.join("\n"), "low-confidence lines: exactly the 4 balance-sheet/plug accounts, all $0.00");
+  eq(low.join("\n"), WANT_LOW.join("\n"), "low-confidence lines: exactly the 8 balance-sheet/plug accounts (4 un-headed + 4 under recognized headers, surfaced by the PLUG pre-check), all $0.00");
+  ok(low.every(function (l){ return / 0\.00 → /.test(l); }), "every low-confidence line is $0.00");
   low.forEach(function (l){ console.log("         low-confidence: " + l); });
 
   // (a) reconcile: the plug fromParse needs, then the section sums
@@ -274,9 +325,9 @@ if (!fs.existsSync(FIX)) {
                RUBS:654856.77, "TRSH RUB":237057.20, PARK:0, PET:37663.98, MTM:68069.11, LATE:73750.00, APP:27185.39, ADM:80535.00,
                AMEN:260057.81, COM:0, CAM:0, ANT:0, OTH:130448.75,
                RET:3630730.07, INS:570108.94, UTIL:757274.47, RM:1005176.69, PAY:1092532.68, MGMT:550512.58, GA:942784.30,
-               MKT:72687.62, TRSH:218202.68, CAB:0, PLL:0 };
+               MKT:72687.62, TRSH:218202.68, PLL:0 };   // no CAB: the two $0 phone/DSL rows under UTILITIES stay UTIL (item 4)
   Object.keys(WANT).forEach(function (k){ eqCents(fp.sums[k] || 0, WANT[k], "Crest sums." + k); });
-  eq(Object.keys(fp.sums).sort().join(","), Object.keys(WANT).sort().join(","), "exactly these codes present (no CS header on Crest; TRSH COL unproduced)");
+  eq(Object.keys(fp.sums).sort().join(","), Object.keys(WANT).sort().join(","), "exactly these codes present (no CS header on Crest; no CAB line; TRSH COL unproduced)");
   // a few lines that prove the section/sub hints drive the code on the real statement
   var line = function (name, sub){ var r = parsed.rows.filter(function (x){ return x.name === name && (sub == null || x.sub === sub); })[0]; return r ? T12.classify(r.name, r.section, r.sub) : "(missing)"; };
   eq(line("Water/Sewer", "OTHER INCOME"), "RUBS", "Crest: \"Water/Sewer\" under OTHER INCOME → RUBS (606,314.75)");
@@ -288,6 +339,13 @@ if (!fs.existsSync(FIX)) {
   eq(line("Payroll Services", "GENERAL AND ADMINISTRATIVE EXPENSES"), "GA", "Crest: \"Payroll Services\" under G&A → GA, not PAY");
   eq(line("Management Fees", "OTHER INCOME"), "OTH", "Crest: \"Management Fees\" under OTHER INCOME → OTH, not MGMT");
   eq(line("Violation Penalty", "VIOLATION"), "GA", "Crest: \"Violation Penalty\" under VIOLATION → GA");
+  eq(line("DSL Internet Line/Phones", "UTILITIES"), "UTIL", "Crest sheet row 645: \"DSL Internet Line/Phones\" under UTILITIES → UTIL ($0.00; item 4)");
+  eq(line("Emergency Phone line", "UTILITIES"), "UTIL", "Crest sheet row 653: \"Emergency Phone line\" under UTILITIES → UTIL ($0.00; item 4)");
+  eq(line("Rubbish Removal/Sanitation", "REPAIRS & MAINTENANCE"), "TRSH", "Crest: \"Rubbish Removal/Sanitation\" under R&M still TRSH (112,919.48; the item-3 exclusion does not fire)");
+  [["Error Deposit","OTHER INCOME","OTH"], ["Error Deposit","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Notes- Loan Payable Rep.Funding","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["PO Suspense Expense","REPAIRS & MAINTENANCE","GA"]].forEach(function (c){
+    var r = parsed.rows.filter(function (x){ return x.name === c[0] && x.sub === c[1]; })[0], v = r ? T12.classifyConfident(r.name, r.section, r.sub) : { code:"(missing)", confident:true };
+    ok(v.code === c[2] && !v.confident && r.amount === 0, "Crest: \"" + c[0] + "\" under " + c[1] + " → " + c[2] + " low-confidence ($0.00; item 5)");
+  });
 
   // (d) deterministic on the real statement: reversed order and a second pass give identical codes
   var codes = parsed.rows.map(function (r){ return T12.classify(r.name, r.section, r.sub); });

@@ -12,8 +12,11 @@
      expense   a NON-controllable EXPENSE-role line whose cost moved UP by more than
                opts.shockPct since its previous value (a tax / insurance shock) —
                income lines and the stored-negative deductions are never read as shocks
-     error     one per property whose hooks / record blew up: the scan never throws,
-               the operator sees what broke instead of a blank panel
+     error     one per property whose hooks / record blew up (its row carries
+               data-op-prop, so a click opens that property), or ONE portfolio-level
+               row (propKey null, no data-op-prop) when a shared input — the key hook,
+               hooks.today / globalDefaults, the records map — blew up. scan() never
+               throws: the operator sees what broke instead of a blank panel
    Thresholds resolve the way OperatingCalc.mergeAssumptions does (engine floors ⊕
    global bench ⊕ per-property override; null = inherit), so a blanked bench field
    falls back to 1.20 / 7% exactly like the sizing card. A record whose loans are
@@ -208,11 +211,13 @@
   function maturityFlag(ctx){
     var bal = hook(ctx.hooks, "currentBalance"), first = null, need = 0, n = 0;
     // hooks.maturity is the app's own maturity (derived from first payment + term when
-    // the field is blank); the stored field is the fallback when the hook has nothing.
+    // the field is blank); the stored field is the fallback whenever the hook's answer
+    // is missing OR does not parse ("" / "n/a" must never hide a dated loan).
     var mat = (ctx.hooks && typeof ctx.hooks.maturity === "function") ? ctx.hooks.maturity : null;
     ctx.loans.forEach(function (l){
-      var iso = mat ? mat(l) : null; if (iso == null && l) iso = l.maturityDate;
-      var p = parts(iso); if (!p) return;
+      var p = mat ? parts(mat(l)) : null;
+      if (!p && l) p = parts(l.maturityDate);
+      if (!p) return;
       var m = monthsBetween(ctx.today, p);
       if (m > ctx.o.maturityMonths) return;
       var b = num(bal(l));
@@ -283,8 +288,12 @@
 
   function scan(records, loans, hooks, globalDefaults, opts){
     hooks = hooks || {};
-    var o = options(opts), gd = defaultsOf(globalDefaults, hooks), recs = recordMap(records), today = todayOf(hooks), label = labelFn(o), role = roleFn();
-    var flags = [], seen = {};
+    var o, gd, recs, today, label, role, flags = [], seen = {};
+    // The shared inputs are read once, up front. If one of them blows up (a throwing
+    // hooks.today / hooks.globalDefaults, a records getter, bad opts) nothing can be
+    // judged: the whole answer is ONE portfolio-level error flag — scan() never throws.
+    try { o = options(opts); gd = defaultsOf(globalDefaults, hooks); recs = recordMap(records); today = todayOf(hooks); label = labelFn(o); role = roleFn(); }
+    catch (e) { return [errorFlag(null, "Portfolio", e)]; }
     var push = function (f){ if (f) flags.push(f); };
     // Per-property isolation: one throwing hook or a bad record must not abort the
     // whole scan. Each rule runs on its own; the FIRST failure of a property becomes
@@ -299,16 +308,19 @@
     catch (e) { push(errorFlag(null, "Portfolio", e)); }   // no key hook → nothing can be grouped; say so instead of throwing
     groups.forEach(function (g){
       seen[g.key] = true;
-      var rec = recs[g.key] || null;
-      var ctx = { key: g.key, name: nameOf(rec, g.loans, g.key), rec: rec, loans: g.loans, hooks: hooks, gd: gd, o: o, today: today, label: label, role: role };
+      var rec = recs[g.key] || null, ctx;
+      try { ctx = { key: g.key, name: nameOf(rec, g.loans, g.key), rec: rec, loans: g.loans, hooks: hooks, gd: gd, o: o, today: today, label: label, role: role }; }
+      catch (e) { push(errorFlag(g.key, String(g.key), e)); return; }   // a record/loan whose name getter throws still gets its error row
       judge(ctx, [maturityFlag, refiFlag].concat(rec ? [ratioFlags, expenseFlag] : []));   // no operating record → no NOI → nothing to measure
     });
     // A record whose loans are gone (the roll-up still lists it): no debt to judge, but
     // a tax / insurance shock on it is still real — the expense rule alone applies.
     Object.keys(recs).forEach(function (k){
       if (seen[k]) return;
-      var rec = recs[k];
-      judge({ key: k, name: nameOf(rec, [], k), rec: rec, loans: [], hooks: hooks, gd: gd, o: o, today: today, label: label, role: role }, [expenseFlag]);
+      var rec = recs[k], ctx;
+      try { ctx = { key: k, name: nameOf(rec, [], k), rec: rec, loans: [], hooks: hooks, gd: gd, o: o, today: today, label: label, role: role }; }
+      catch (e) { push(errorFlag(k, String(k), e)); return; }
+      judge(ctx, [expenseFlag]);
     });
     return flags.sort(byRank);
   }
@@ -351,7 +363,7 @@
     // One delegated handler, ASSIGNED rather than added, so re-rendering never stacks listeners.
     mountEl.onclick = function (ev){
       var t = ev && ev.target, row = (t && typeof t.closest === "function") ? t.closest("[data-op-flag]") : null;
-      var key = row ? row.getAttribute("data-op-prop") : null;   // a portfolio-level error row has no property to open
+      var key = row ? row.getAttribute("data-op-prop") : null;   // only the portfolio-level error row lacks data-op-prop (nothing to open); property-level error rows open their property
       if (key != null && typeof onOpen === "function") onOpen(key);
     };
   }

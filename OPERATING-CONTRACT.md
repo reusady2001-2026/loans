@@ -89,8 +89,12 @@ Fixed row order, identical for every property (drives the sheet and the roll-up)
 ```
 income  : GPR, EMPL, MOD, VAC, CONC, BD                       // rental block (deductions negative)
 other   : RUBS, "TRSH RUB", "TRSH COL", PARK, PET, MTM, LATE, APP, ADM, AMEN, COM, CAM, ANT, OTH
-expense : RET, INS, UTIL, RM, CS, PAY, MGMT, GA, MKT, TRSH, CAB, PLL
+expense : RET, INS, UTIL, RM, CS, PAY, MGMT, GA, BDX, MKT, TRSH, CAB, PLL
 ```
+33 codes. BDX = "Bad Debt Expense": bad debt a statement carries on its EXPENSE side (Crest rows 575/576, 388,184.69
+net). It is its own pass-through line so a G&A $/unit budget can never absorb it; income-side bad debt stays BD (the
+rental-block deduction). Captions are unique per code ("TRSH COL" = "Trash Collection Income", "TRSH RUB" =
+"Trash Reimbursements").
 ```
 OperatingTaxonomy.ORDER            // the array above, in order
 OperatingTaxonomy.section(code)    // "rental" | "other" | "expense"
