@@ -15,6 +15,11 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Model + effort pickers in the chat composer (v2.6.2).** Moved the model selector and effort
+  control out of the Connection settings and into the assistant composer, right under the
+  property picker — a simple Model dropdown and a compact Effort picker (⚡ Low … 🧠 Max), always
+  visible, no settings dive. Still wired straight to the CLI (--model / --effort); the connection
+  row is back to just the sign-in status.
 - **Real model selector + effort slider (v2.6.1).** Replaced the simplified model radio group
   with a proper **Model dropdown** (Automatic / Fable 5.1 / Opus 5 / Sonnet 5 / Haiku 4.5 /
   Opus 4.8) and a **Faster ↔ Smarter effort slider** (low/medium/high/xhigh/max, default high),

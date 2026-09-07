@@ -1202,6 +1202,11 @@
           </select>
           <span id="aiAsstPropDocs" class="hidden shrink-0 text-[10px] font-semibold text-brand-600"></span>
         </div>
+        <div id="aiAsstModelRow" class="hidden flex items-center gap-2">
+          <span class="grid h-5 w-5 shrink-0 place-items-center text-slate-400"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/></svg></span>
+          <select id="aiAsstModelPick" title="Model — which Claude answers" class="flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500"></select>
+          <select id="aiAsstEffortPick" title="Effort — Faster ⟷ Smarter (deeper reasoning, a little slower)" class="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500"></select>
+        </div>
         <div id="aiAsstAttachRow" class="hidden flex flex-wrap gap-2"></div>
         <div class="flex items-end gap-2">
           <input id="aiAsstFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown" class="hidden">
@@ -6782,6 +6787,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       // If opened from a loan, focus that loan's property by default.
       if((state.mode==="view"||state.mode==="edit"||state.mode==="refi") && state.activeId){ var al=getLoan(state.activeId); if(al) aiAsstFocusPropKey=propertyKey(al); }
       aiAsstFillProps();
+      aiAsstFillModelEffort();   // show model/effort immediately if we already have status; refresh fills it otherwise
       aiAsstRefreshConn();
       var i=el("aiAsstInput"); if(i) setTimeout(function(){ try{ i.focus(); }catch(e){} }, 50);
     }
@@ -6841,6 +6847,18 @@ tr[data-loan]:hover td{background:#eef2f7}
       aiAsstProperties().forEach(function(p){ opts+='<option value="'+escapeHtml(p.key)+'"'+(p.key===aiAsstFocusPropKey?' selected':'')+'>'+escapeHtml(p.name)+'</option>'; });
       sel.innerHTML=opts; sel.value=aiAsstFocusPropKey;
       aiAsstUpdatePropDocs();
+    }
+    // Populate the composer's model + effort pickers from the live status (aiStatusCache).
+    var AI_EFFORT_LABELS={low:"⚡ Low",medium:"Medium",high:"High",xhigh:"X-High",max:"🧠 Max"};
+    function aiAsstFillModelEffort(){
+      var row=el("aiAsstModelRow"); if(!row) return;
+      var st=aiStatusCache||{}; var models=st.models||[], efs=st.efforts||[];
+      if(!models.length){ row.classList.add("hidden"); return; }
+      row.classList.remove("hidden");
+      var ms=el("aiAsstModelPick");
+      if(ms){ ms.innerHTML=models.map(function(m){ return '<option value="'+m.key+'"'+(((st.model)||"auto")===m.key?" selected":"")+'>'+escapeHtml(m.label)+'</option>'; }).join(""); ms.value=(st.model)||"auto"; }
+      var es=el("aiAsstEffortPick");
+      if(es){ if(efs.length){ es.innerHTML=efs.map(function(e){ return '<option value="'+e+'"'+(((st.effort)||"high")===e?" selected":"")+'>'+(AI_EFFORT_LABELS[e]||e)+'</option>'; }).join(""); es.value=(st.effort)||"high"; es.classList.remove("hidden"); } else es.classList.add("hidden"); }
     }
     function aiAsstUpdatePropDocs(){
       var badge=el("aiAsstPropDocs"); if(!badge) return;
@@ -7112,15 +7130,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       ldsShell.aiStatus().then(function(st){
         aiStatusCache=st;
         var cs=claudeConnState(st); var ok=cs.ok, msg=cs.msg;
-        var mk=(st.model)||"auto"; var ml=(((st.models||[]).find(function(x){return x.key===mk;})||{}).label)||mk;
-        var ef=(st.effort)||""; var chipTxt=ml+(ef?(' · '+ef):'');
         row.innerHTML='<div class="flex items-center gap-2 rounded-xl border px-4 py-2.5 '+(ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-800')+'">'+
           (ok?'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
               :'<svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>')+
-          '<span class="text-[13px]">'+msg+'</span>'+
-          (ok?'<button type="button" id="aiAsstModelChip" title="Model &amp; effort in use — click to change" class="ml-auto shrink-0 rounded-md border border-emerald-200 bg-white/70 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-white">'+escapeHtml(chipTxt)+'</button>':'')+
-        '</div>';
-        var mc=el("aiAsstModelChip"); if(mc) mc.addEventListener("click", function(){ aiAsstToggleSettings(true); });
+          '<span class="text-[13px]">'+msg+'</span></div>';
+        aiAsstFillModelEffort();                                  // model + effort pickers live in the composer
         aiAsstConnected=ok; aiAsstSetBusy(aiAsstBusy);
         if(!ok) aiAsstToggleSettings(true);
       }).catch(function(){ row.innerHTML='<span class="text-rose-600 text-[13px]">Could not reach the AI bridge.</span>'; aiAsstConnected=false; aiAsstSetBusy(false); });
@@ -7144,21 +7158,6 @@ tr[data-loan]:hover td{background:#eef2f7}
           opt("cli","Claude subscription", (cliOk?("built in &middot; "+escapeHtml(st.cli.version||"")):"couldn’t start on this machine")+" &mdash; no API key or per-use billing")+
           opt("api","Anthropic API key","pay-as-you-go via console.anthropic.com")+
         '</div>'+
-        ((st.models&&st.models.length) ?
-          ('<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 pt-2">Model</div>'+
-          '<select id="aiAsstModelSel" class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+
-            st.models.map(function(m){ return '<option value="'+m.key+'" '+(((st.model)||"auto")===m.key?"selected":"")+'>'+escapeHtml(m.label)+(m.note?(" — "+escapeHtml(m.note)):"")+'</option>'; }).join("")+
-          '</select>'+
-          '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 pt-2">Effort</div>'+
-          (function(){ var efs=st.efforts||["low","medium","high","xhigh","max"]; var cur=st.effort||"high"; var idx=Math.max(0,efs.indexOf(cur));
-            return '<div class="flex items-center gap-2">'+
-              '<span class="text-[10px] font-semibold text-slate-400 shrink-0">Faster</span>'+
-              '<input id="aiAsstEffort" type="range" min="0" max="'+(efs.length-1)+'" step="1" value="'+idx+'" class="flex-1 accent-brand-600">'+
-              '<span class="text-[10px] font-semibold text-slate-400 shrink-0">Smarter</span>'+
-              '<span id="aiAsstEffortLbl" class="w-14 shrink-0 rounded bg-brand-50 px-1.5 py-0.5 text-center text-[11px] font-bold text-brand-700">'+escapeHtml(cur)+'</span>'+
-            '</div>';
-          })()+
-          '<p class="mt-1 text-[10px] text-slate-400">Passed straight to your subscription’s Claude client (model + effort). Higher effort reasons deeper but is a little slower.</p>') : "")+
         '<div class="pt-1">'+
           '<label class="text-[11px] font-semibold text-slate-500">Anthropic API key '+(st.apiKey&&st.apiKey.configured?'<span class="text-emerald-600">(saved)</span>':'')+'</label>'+
           '<div class="mt-1 flex gap-2"><input id="aiAsstKeyInput" type="password" placeholder="sk-ant-…" class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
@@ -7168,10 +7167,6 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</div>';
       wireClaudePanelSignIn("Asst", function(){ aiAsstRefreshConn(); aiAsstRenderSettings(); });
       p.querySelectorAll('input[name="aiAsstMode"]').forEach(function(r){ r.addEventListener("change", function(){ ldsShell.aiSetMode(r.value).then(function(){ aiAsstRefreshConn(); }); }); });
-      var msel=el("aiAsstModelSel"); if(msel) msel.addEventListener("change", function(){ if(ldsShell.aiSetModel) ldsShell.aiSetModel(msel.value).then(function(){ var m=(aiStatusCache&&aiStatusCache.models||[]).find(function(x){return x.key===msel.value;}); toast("Model: "+((m&&m.label)||msel.value),"check"); aiAsstRefreshConn(); }); });
-      var eff=el("aiAsstEffort"), efl=el("aiAsstEffortLbl");
-      if(eff){ eff.addEventListener("input", function(){ var efs=(aiStatusCache&&aiStatusCache.efforts)||["low","medium","high","xhigh","max"]; if(efl) efl.textContent=efs[+eff.value]||"high"; });
-        eff.addEventListener("change", function(){ var efs=(aiStatusCache&&aiStatusCache.efforts)||["low","medium","high","xhigh","max"]; var lv=efs[+eff.value]||"high"; if(ldsShell.aiSetEffort) ldsShell.aiSetEffort(lv).then(function(){ toast("Effort: "+lv,"check"); aiAsstRefreshConn(); }); }); }
       var ki=el("aiAsstKeyInput"), ks=el("aiAsstKeySave"), kc=el("aiAsstKeyClear");
       if(ks) ks.addEventListener("click", function(){ var v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(function(){ if(ki) ki.value=""; toast("API key saved","check"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
       if(kc) kc.addEventListener("click", function(){ ldsShell.aiSetKey("").then(function(){ toast("API key cleared"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
@@ -7226,6 +7221,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(el("aiAsstNew")) el("aiAsstNew").addEventListener("click", aiAsstNewSession);
       if(el("aiAsstCompact")) el("aiAsstCompact").addEventListener("click", aiAsstCompact);
       if(el("aiAsstProp")) el("aiAsstProp").addEventListener("change", function(){ aiAsstFocusPropKey=this.value||""; aiAsstUpdatePropDocs(); });
+      if(el("aiAsstModelPick")) el("aiAsstModelPick").addEventListener("change", function(){ var v=this.value; if(ldsShell.aiSetModel) ldsShell.aiSetModel(v).then(function(){ if(aiStatusCache) aiStatusCache.model=v; }); });
+      if(el("aiAsstEffortPick")) el("aiAsstEffortPick").addEventListener("change", function(){ var v=this.value; if(ldsShell.aiSetEffort) ldsShell.aiSetEffort(v).then(function(){ if(aiStatusCache) aiStatusCache.effort=v; }); });
       // File attachments: button + hidden input + drag-and-drop onto the chat.
       if(el("aiAsstAttachBtn")) el("aiAsstAttachBtn").addEventListener("click", ()=> el("aiAsstFile").click());
       if(el("aiAsstFile")) el("aiAsstFile").addEventListener("change", (e)=>{ aiAsstAddFiles(e.target.files); e.target.value=""; });
