@@ -20,14 +20,6 @@ function sameList(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
 function diff(a, b){ return a.filter(function (x){ return b.indexOf(x) < 0; }); }   // in a, not in b
 function listed(arr){ return arr.length ? "  -- " + JSON.stringify(arr) : ""; }
 function heading(t){ console.log("\n" + t); }
-// A code introduced here ahead of the siblings (T12Classify, SetupBuilder) may be
-// listed in TRANSITION to be tolerated as unknown to them until they catch up.
-// BDX has landed everywhere, so the list is empty and every check below is strict.
-var TRANSITION = [];
-function tolerated(arr, msg){
-  var bad = arr.filter(function (c){ return TRANSITION.indexOf(c) < 0; });
-  ok(bad.length === 0, msg + (arr.length && !bad.length ? "  (tolerated during the BDX transition: " + JSON.stringify(arr) + ")" : "") + listed(bad));
-}
 
 // The module source, evaluated in a bare vm context with `require` absent and the
 // deps on the root — the Electron renderer's path (nodeIntegration is off). It also
@@ -55,17 +47,18 @@ ok(sameList(OT.ORDER.slice(0, 6), SB.RENTAL), "rental block is SetupBuilder.RENT
 ok(sameList(OT.ORDER.slice(6, 20), SB.OTHER), "other-income block is SetupBuilder.OTHER in the same sequence");
 var block = OT.ORDER.slice(20);
 ok(diff(SB.EXPENSE, block).length === 0, "every SetupBuilder.EXPENSE code is in the expense block" + listed(diff(SB.EXPENSE, block)));
-tolerated(diff(block, SB.EXPENSE), "every expense-block code is in SetupBuilder.EXPENSE (the sequence is §3's sheet layout, not the builder's)");
+var extraE = diff(block, SB.EXPENSE);
+ok(extraE.length === 0, "every expense-block code is in SetupBuilder.EXPENSE (the sequence is §3's sheet layout, not the builder's)" + listed(extraE));
 eq(OT.ORDER.indexOf("BDX"), OT.ORDER.indexOf("GA") + 1, "BDX sits immediately after GA");
 ok(SB.EXPENSE.indexOf("BDX") >= 0, "SetupBuilder.EXPENSE carries BDX (the builder splits expense-side bad debt out of GA)");
 var appAll = SB.RENTAL.concat(SB.OTHER, SB.EXPENSE);
 var missing = diff(appAll, OT.ORDER), extra = diff(OT.ORDER, appAll);
 ok(missing.length === 0, "every code in SetupBuilder.RENTAL/OTHER/EXPENSE is in ORDER" + listed(missing));
-tolerated(extra, "every ORDER code is in SetupBuilder.RENTAL/OTHER/EXPENSE");
+ok(extra.length === 0, "every ORDER code is in SetupBuilder.RENTAL/OTHER/EXPENSE" + listed(extra));
 var t12All = Object.keys(T12.INCOME).concat(Object.keys(T12.EXPENSE));
 var miss2 = diff(t12All, OT.ORDER), extra2 = diff(OT.ORDER, t12All);
 ok(miss2.length === 0, "every code the classifier can emit (T12Classify.INCOME + EXPENSE, " + t12All.length + " codes) has a row in ORDER" + listed(miss2));
-tolerated(extra2, "every ORDER code is one the classifier knows");
+ok(extra2.length === 0, "every ORDER code is one the classifier knows" + listed(extra2));
 
 heading("section(code)");
 var badR = C_RENTAL.filter(function (c){ return OT.section(c) !== "rental"; });
@@ -101,7 +94,8 @@ heading("label(code) -- reuses SetupBuilder.LABEL");
 var hasL = function (c){ return Object.prototype.hasOwnProperty.call(SB.LABEL, c); };
 var badLbl = OT.ORDER.filter(function (c){ return hasL(c) && OT.label(c) !== SB.LABEL[c]; });
 ok(badLbl.length === 0, "label() returns SetupBuilder.LABEL verbatim for every code the builder captions" + listed(badLbl));
-tolerated(OT.ORDER.filter(function (c){ return !hasL(c); }), "every ORDER code has a SetupBuilder.LABEL caption");
+var noLbl = OT.ORDER.filter(function (c){ return !hasL(c); });
+ok(noLbl.length === 0, "every ORDER code has a SetupBuilder.LABEL caption" + listed(noLbl));
 var bare = OT.ORDER.filter(function (c){ return OT.label(c) === c || !OT.label(c); });
 ok(bare.length === 0, "no ORDER row falls back to its bare code or an empty caption" + listed(bare));
 eq(OT.label("GPR"), "Gross Potential Rent", "label(GPR)");
@@ -184,6 +178,7 @@ weird.forEach(function (v){
 ok(threw.length === 0, "no function throws on " + weird.length + " odd inputs (null, undefined, \"\", 42, {}, [], Symbol, prototype keys)" + listed(threw));
 var badProto = ["constructor","__proto__","hasOwnProperty","toString"].filter(function (k){ return OT.role(k) !== T12.roleOf(k) || OT.isDeduction(k) !== false || OT.defaultControllable(k) !== true || OT.label(k) !== k; });
 ok(badProto.length === 0, "prototype-key codes: role still agrees with roleOf, never a deduction, controllable, caption is the code" + listed(badProto));
+eq(OT.section("constructor"), "other", "a prototype key is an ordinary unknown code: roleOf is own-property-guarded (E2), so it lands in other, not expense");
 
 heading("purity -- shared constants cannot become state");
 try { OT.ORDER.push("X"); } catch (e) {}

@@ -201,6 +201,34 @@ eq(T12.classify("Bad debts expense", "EXPENSE", "OTHER EXPENSES"), "BDX", "6. he
   eq(T12.classify(c[0], "EXPENSE", c[1]), c[2], "7. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → " + c[2]);
 });
 
+// ---------------------------------------------------------------- 5c. critic round 2 — exact verdicts
+section("critic round 2 — exact verdicts");
+// (1) skips / evictions / doubtful accounts are bad debt on both sides (BDX on the expense side, BD on the income side)
+[["Skips & Evictions","EXPENSE","OTHER EXPENSES","BDX"], ["Skips and Evictions","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","BDX"], ["Allowance for Doubtful Accounts","EXPENSE","","BDX"], ["Evictions","EXPENSE","REPAIRS & MAINTENANCE","BDX"],
+ ["Loss to Skips","INCOME","RENTAL INCOME","BD"], ["Skips and Evictions","INCOME","RENTAL INCOME","BD"], ["Allowance for Doubtful Accounts","INCOME","RENTAL INCOME","BD"], ["Skips & Evictions","INCOME","","BD"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], c[1], c[2]); ok(r.code === c[3] && r.confident, "r2-1. " + JSON.stringify(c[0]) + (c[2] ? " under [" + c[2] + "]" : " flat") + " [" + c[1] + "] → " + c[3] + " (confident)" + (r.code === c[3] ? "" : "   (got " + r.code + ")"));
+});
+eq(T12.classify("Eviction Fees", "INCOME", ""), "OTH", "r2-1. \"Eviction Fees\" [INCOME] is a fee charged back, not bad debt → OTH");
+// (2) an insurance line or a payables service is not a bookkeeping plug; real plugs still are
+[["Error and Omissions Insurance","EXPENSE","TAXES AND INSURANCE","INS"], ["Errors & Omissions","EXPENSE","","INS"], ["E&O Insurance","EXPENSE","","INS"], ["Accounts Payable Service Fee","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], c[1], c[2]); ok(r.code === c[3] && r.confident, "r2-2. " + JSON.stringify(c[0]) + (c[2] ? " under [" + c[2] + "]" : " flat") + " → " + c[3] + " (confident)" + (r.code === c[3] ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+[["Error Deposit","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Notes- Loan Payable Rep.Funding","EXPENSE","GENERAL AND ADMINISTRATIVE EXPENSES","GA"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], c[1], c[2]); ok(r.code === c[3] && !r.confident, "r2-2. " + JSON.stringify(c[0]) + " under [" + c[2] + "] is still a plug → " + c[3] + " low-confidence");
+});
+// (3) the cost of collecting bad debt, and a non-operating write-off, are G&A — bad debt itself stays BDX
+[["Bad Debt Collection Costs","GA"], ["Collection Agency Fees","GA"], ["Write-off of Fixed Assets","GA"], ["Bad Debt Recoveries","BDX"], ["Bad Debt","BDX"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", ""); ok(r.code === c[1] && r.confident, "r2-3. flat " + JSON.stringify(c[0]) + " [EXPENSE] → " + c[1] + " (confident)" + (r.code === c[1] ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+// (4) second, independent assertions: the BDX pre-header path (headers whose own carve-outs cannot produce BDX) and the fee-income side guard
+[["Uncollectible Rent","GENERAL AND ADMINISTRATIVE EXPENSES"], ["Collection Loss","UTILITIES"], ["Write-offs","Admin. salaries"], ["Skips & Evictions","OTHER EXPENSES"]].forEach(function (c){
+  eq(T12.classify(c[0], "EXPENSE", c[1]), "BDX", "r2-4. " + JSON.stringify(c[0]) + " under [" + c[1] + "] → BDX (only the pre-header check can place it)");
+});
+[["Application Fees","GA"], ["Rental Application Fee","GA"], ["App Fee","GA"], ["Admin Fees","GA"], ["Pet Deposit","GA"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", ""); ok(r.code === c[1] && T12.roleOf(r.code) === "expense", "r2-4. flat " + JSON.stringify(c[0]) + " [EXPENSE] → " + c[1] + " (side guard)" + (r.code === c[1] ? "" : "   (got " + r.code + ")"));
+});
+eq(T12.classify("Application Fees", "INCOME", ""), "APP", "r2-4. …and \"Application Fees\" [INCOME] → APP");
+
 // ---------------------------------------------------------------- 6. synthetic statement → parseGrid → fromParse (residual accounting)
 section("synthetic statement through SetupBuilder.fromParse — sums and the reconcile plug to the cent");
 function grid(incomeTotal, expenseTotal){

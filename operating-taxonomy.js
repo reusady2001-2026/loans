@@ -61,11 +61,9 @@
   // Unknown code → the classifier's role decides the side of NOI, so a code this
   // taxonomy has not caught up with lands wherever T12Classify puts it, and
   // role() keeps agreeing with T12Classify.roleOf even for codes ORDER does not
-  // carry (the contract's "must agree" beats any second opinion here). Inherited
-  // caveat: roleOf is a plain EXPENSE[code] lookup, so a prototype key such as
-  // "constructor" or "__proto__" reads as "expense" — the root cause belongs to
-  // E2 (t12-classify.js roleOf should use an own-property lookup); this module's
-  // own tables are guarded.
+  // carry (the contract's "must agree" beats any second opinion here). roleOf is
+  // own-property-guarded (E2), like this module's tables, so a prototype key such
+  // as "constructor" is just an ordinary unknown code.
   function section(code){
     if (has(SECTION, code)) return SECTION[code];
     return T12.roleOf(code) === "income" ? "other" : "expense";

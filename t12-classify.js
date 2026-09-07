@@ -54,11 +54,18 @@
   // this BEFORE the header, so a recognized header cannot absorb an "Error Deposit"
   // or "Suspense" line silently — it takes the bare section fallback, low-confidence.
   var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+account|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
+  // …but an insurance line ("Error and Omissions Insurance") or a payables / receivables
+  // service ("Accounts Payable Service Fee") is an ordinary expense, not a plug
+  var PLUG_NOT = /insurance|omission|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;
+  function isPlug(s){ return PLUG.test(s) && !PLUG_NOT.test(s); }
   // Bad debt: the rental-block deduction BD when the statement prints it under
   // INCOME; the expense row BDX when it is booked on the EXPENSE side — flat or
   // under any expense header, so it is checked before the header, like PLUG.
-  var BADDEBT = /bad\s+debt|write[\s-]*off|uncollect|collection\s+loss|credit\s+loss/;
-  function isBadDebt(s){ return BADDEBT.test(s) || (/delinquen/.test(s) && !/tax|penalt|interest|fee/.test(s)); }
+  var BADDEBT = /bad\s+debt|write[\s-]*off|uncollect|collection\s+loss|credit\s+loss|skips?\b|evict|doubtful\s+accounts/;
+  // …but not the cost of collecting it ("Bad Debt Collection Costs", "Eviction Legal Fees"
+  // are G&A) and not a non-operating write-off ("Write-off of Fixed Assets" is G&A)
+  var BADDEBT_NOT = /collection\s+(cost|agency|fee)|fixed\s+assets?|evict\w*\s+(cost|fee|expense|legal|attorney|reimb|recover)|legal|attorney/;
+  function isBadDebt(s){ return !BADDEBT_NOT.test(s) && (BADDEBT.test(s) || (/delinquen/.test(s) && !/tax|penalt|interest|fee/.test(s))); }
 
   // Ordered rules — first match wins; returns a code or null (no confident match).
   // isExp / isInc: the statement's printed section, when the caller knows it.
@@ -69,7 +76,7 @@
 
     // ---- bookkeeping plugs / balance-sheet accounts: no taxonomy home — leave
     //      unconfident on purpose so the review list surfaces them ----
-    if (has(PLUG)) return null;
+    if (isPlug(s)) return null;
 
     // ---- specific overrides (apply in any section) ----
     if (has(/employee\s+(concession|discount|rent|unit|apt|apartment)|resident\s+manager|manager'?s?\s+(unit|apt|apartment|credit)|staff\s+(unit|apt|apartment)/)) return I("EMPL");
@@ -97,7 +104,7 @@
     //      dropped — G&A is the catch-all (other income on the income side) ----
     if (has(/late\s+(fee|charge)s?/) && has(/tax|vendor|mortgage|insurance|penalt|utilit/)) return X("GA");
     if (has(/violation|penalt|\bfines?\b/)) return X("GA");
-    if (!has(/repair|mainten/) && has(/interest\s+(expense|paid|on)|^interest\s*[-–]|interest-|mortgage|debt\s+service|loan\s+(interest|payment|fee)|amortiz|depreciat|financing\s+fee|prior\s+(year|period)|non[\s-]*recurring|lawsuit|settlement|contribution|donation|partnership|income\s+tax|corporat\w*\s+tax|franchise\s+tax|sales\s+tax|excise|cost\s+seg/)) return X("GA");
+    if (!has(/repair|mainten/) && has(/interest\s+(expense|paid|on)|^interest\s*[-–]|interest-|mortgage|debt\s+service|loan\s+(interest|payment|fee)|amortiz|depreciat|financing\s+fee|prior\s+(year|period)|non[\s-]*recurring|lawsuit|settlement|contribution|donation|partnership|income\s+tax|corporat\w*\s+tax|franchise\s+tax|sales\s+tax|excise|cost\s+seg|fixed\s+assets?/)) return X("GA");
 
     // ---- income items ----
     var fee = !has(EXP_WORD);
@@ -135,7 +142,7 @@
     if (!has(/marketing|advertis/) && has(/consult|account(ing|ant)|audit|bookkeep|legal|attorney|professional\s+fee|tax\s+(prep|return|service)|expedit/)) return isExp ? "GA" : "OTH";
     if (has(/real\s+estate\s+tax|property\s+tax|\btaxes\b|\bre\s+tax|school\s+tax|county\s+tax|city\s+tax|municipal\s+tax|\bpilot\b|tax\s+(bill|payment|escrow)/)) return (isInc || has(/income|refund|rebate/)) ? "OTH" : "RET";
     if (has(/renters?\s+insurance/)) return isExp ? "GA" : "OTH";
-    if (has(/insurance|liability|umbrella|casualty|\bd&o\b|fidelity|flood\s+ins|earthquake|hazard\s+ins/)) return X("INS");
+    if (has(/insurance|liability|umbrella|casualty|\bd&o\b|fidelity|flood\s+ins|earthquake|hazard\s+ins|errors?\s*(and|&)\s*omissions?|\be&o\b/)) return X("INS");
     if (has(/management\s+fees?|mgmt\s+fees?|^property\s+management$/)) return X("MGMT");
     if (!has(/repair|clean|drain|heater|treatment|inspect|pump|removal|snack|coffee|bottle/) &&
         has(/electric(?!al)|\bwater\b|\bgas\b|sewer|utilit|\bfuel\b|heating\s+oil|fuel\s+oil|\bsteam\b|propane|energy|flow\s+billing|water\s+billing/)) return isInc ? "RUBS" : "UTIL";
@@ -149,7 +156,7 @@
     if (has(/\boffice\b|computer|software|copier|subscription|website|domain|\bit\s+(cost|setup|support|supplies|service|expense|monthly)|equipment\s+rental|rent\s*[-–]\s*(office|equipment)/)) return X("GA");
     if (has(/repair|mainten|turn[\s-]*over|make[\s-]*ready|paint|plumb|hvac|a\/c\b|air\s+condition|furnace|boiler|chiller|heater|supplies|\bparts\b|\btools\b|\block(s|smith)?\b|\bkeys?\b|fire\s+(alarm|escape|extinguisher|pump)|smoke\s+(alarm|detector)|extinguisher|appliance|window|shade|blind|screens?\b|hardware|\bbags?\b|liners?\b|janitorial|electrical|roof|gutter|carpet|floor|\btiles?\b|\bdoors?\b|fenc|\bgates?\b|\blight(ing|s|\s*bulb)|fixture|drywall|plaster|welding|\bglass\b|\bpump|generator|compactor|intercom|camera|security|patrol|alarm|monitoring|surveillance|access\s+(control|system)|power\s+wash|pressure\s+wash|paving|striping|asphalt|concrete|cement|masonry|caulk|ptac|filter|\bmold\b|lead\s+abate|environmental|\bpool\b|\bgym\b|fitness|playground|\bsigns?\b|cleaning|clean[\s-]*up|towing|furniture|equipment|materials|lumber|resurfac|reglaz|countertop|cabinet|vinyl|mirror|ceiling|stair|railing|\bdeck\b|balcony|patio|sidewalk|irrigation|shrub|mulch|weed|drain|leak|storm|vandal|graffiti|treatment|\bgrounds\b/)) return X("RM");
     if (has(/\bcable\b|satellite|\btv\b|bulk\s+(internet|wifi)/)) return X("CAB");
-    if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
+    if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|collection\s+(cost|agency|fee)s?|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
 
     // ---- other-income catch-alls. A bare "Other Income" / "… Income" line with no
     //      other signal is left unconfident on purpose: on a flat statement it may be
@@ -217,7 +224,7 @@
       if(/\bmodel\b|admin\s+unit|non[\s-]*rev/.test(s)) return "MOD";       // before vacancy: "vacancy loss-model"
       if(/concession|free\s+rent/.test(s)) return "CONC";
       if(/vacancy|down\s+units/.test(s)) return "VAC";
-      if(/bad\s+debt|write[\s-]*off|delinquen|uncollect/.test(s)) return "BD";
+      if(/bad\s+debt|write[\s-]*off|delinquen|uncollect|skips?\b|evict|doubtful\s+accounts/.test(s)) return "BD";
       if(/short\s*[- ]?term|month\s*to\s*month|\bmtm\b/.test(s)) return "MTM";
       if(/\bpets?\b/.test(s)) return "PET";
       if(/parking|garage|carport/.test(s)) return "PARK";
@@ -288,7 +295,7 @@
   // surfaced for review rather than absorbed by the header's default row.
   function place(p, sub){
     var S = String(sub || "").toUpperCase().replace(/\s+/g, " ").trim();
-    if (PLUG.test(p.s)) return null;
+    if (isPlug(p.s)) return null;
     if (p.isExp && isBadDebt(p.s)) return "BDX";
     return subMatch(p.s, S) || rulesMatch(p.s, p.isExp, p.isInc);
   }
