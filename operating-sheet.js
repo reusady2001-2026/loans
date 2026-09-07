@@ -236,7 +236,7 @@
     rows.forEach(function (r) { if (r.editable) byCode[r.code] = r; });
     var cb = function (name) { return typeof props[name] === "function" ? props[name] : null; };
     var shown = function (row) { return row.value == null ? "" : formatMoney(row.value); };
-    var inputSel = function (code) { return 'tr[data-op-code="' + String(code).replace(/["\\]/g, "\\$&") + '"] [data-op-input]'; };
+    var rowSel = function (code) { return 'tr[data-op-code="' + String(code).replace(/["\\]/g, "\\$&") + '"]'; };
 
     mountEl.innerHTML = toHtml(rows, { basis: basis, record: props.record });
     var rootEl = mountEl.firstElementChild;
@@ -264,15 +264,22 @@
         if (row) t.value = shown(row);
         t.blur();
       } else if (ev.key === "Tab") {
-        // Commit first (blur → change → the host usually redraws, replacing this tree), then
-        // move by row code so the caret lands on the neighbouring line even after that redraw.
-        var inputs = Array.prototype.slice.call(rootEl.querySelectorAll("[data-op-input]"));
-        var i = inputs.indexOf(t), j = ev.shiftKey ? i - 1 : i + 1;
-        if (i < 0 || j < 0 || j >= inputs.length) return;                // first/last line: leave the sheet normally
-        var code = inputs[j].closest("tr[data-op-code]").getAttribute("data-op-code");
+        // Only when a commit is pending: blur → change → the host usually redraws, replacing this
+        // tree and dropping focus. Work out where native Tab would have gone (the row's toggle, or
+        // the next line), commit, then put the caret on that element in the new tree. An unchanged
+        // value takes the native path untouched, so toggles stay reachable by keyboard.
+        var tr0 = t.closest("tr[data-op-code]"), row0 = tr0 && byCode[tr0.getAttribute("data-op-code")];
+        if (!row0) return;
+        var pending = toAnnual(t.value, basis);
+        if (pending == null || pending === row0.annual) return;
+        var stops = Array.prototype.slice.call(rootEl.querySelectorAll("[data-op-input], [data-op-ctl]:not([disabled])"));
+        var target = stops[stops.indexOf(t) + (ev.shiftKey ? -1 : 1)];
+        if (!target) return;                                              // leaving the sheet: the outside target survives the redraw
+        var code = target.closest("tr[data-op-code]").getAttribute("data-op-code");
+        var kind = target.hasAttribute("data-op-input") ? "[data-op-input]" : "[data-op-ctl]";
         ev.preventDefault(); t.blur();
-        var next = mountEl.querySelector(inputSel(code));
-        if (next) { next.focus(); next.select(); }
+        var next = mountEl.querySelector(rowSel(code) + " " + kind);
+        if (next && !next.disabled) { next.focus(); if (next.select) next.select(); }
       }
     });
     rootEl.addEventListener("click", function (ev) {

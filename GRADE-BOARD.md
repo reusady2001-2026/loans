@@ -15,7 +15,7 @@ same builder → fix → re-test → re-critique.
 | P2 | Per-property NOI → ratios | C | built | critic running | 167 ok (hand-calc) |
 | P3 | Upload → property | D | built | critic running | 396 ok (fake + real store; Crest ties) |
 | P4 | Hand-edit sheet | F | F | pending | — |
-| P5 | Controllable flags | F | built | critic running | 96 ok (mutation-proven) |
+| P5 | Controllable flags | F | **A** (critic) | A — 1 minor + 4 nits fed back to builder to patch | 96 ok; 9/9 mutants killed |
 | P6 | Per-property assumptions | D | built | critic running (incl. e2e) | 132 ok |
-| P7 | Portfolio roll-up | F | F | pending | — |
-| P8 | "What to push" scan | F | F | pending | — |
+| P7 | Portfolio roll-up | F | built | critic running (incl. e2e) | 121 ok (real calc) |
+| P8 | "What to push" scan | F | built | critic running (incl. e2e + rule semantics) | 195 ok (real calc) |
