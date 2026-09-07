@@ -39,7 +39,7 @@
   // unknown codes sort last.
   var ORDER = ["GPR","EMPL","MOD","VAC","CONC","BD",
                "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
-               "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
+               "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
   var RANK = {}; ORDER.forEach(function (c, i){ RANK[c] = i; });
   function sortCodes(codes){
     return codes.map(function (c, i){ return { c: c, r: (RANK[c] != null ? RANK[c] : ORDER.length + i) }; })

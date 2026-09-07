@@ -61,7 +61,7 @@ group("surface", function (){
   ["init","load","all","get","ensure","setLine","setLines","removeLine","setControllable","setAssumptions","setUnits","setPeriod","remove","rename","save"]
     .forEach(function (m){ ok(typeof S[m] === "function", "exports " + m + "()"); });
   eq(Object.keys(S).length, 17, "no extra surface beyond KEY + CODES + the 14 contract methods + rename");
-  ok(Array.isArray(S.CODES) && Object.isFrozen(S.CODES) && S.CODES.length === 32 && S.CODES.indexOf("TRSH RUB") >= 0, "CODES: frozen list of the 32 taxonomy codes");
+  ok(Array.isArray(S.CODES) && Object.isFrozen(S.CODES) && S.CODES.length === 33 && S.CODES.indexOf("TRSH RUB") >= 0 && S.CODES.indexOf("BDX") === S.CODES.indexOf("GA") + 1, "CODES: frozen list of the 33 taxonomy codes, BDX right after GA");
   ok(globalThis.OperatingStore === S, "UMD also publishes globalThis.OperatingStore (same object)");
   // Browser global: load a second, throwaway instance with a fake window present.
   var path = require.resolve("../operating-store.js"), saved = require.cache[path];
@@ -238,12 +238,12 @@ group("setLine / prevAnnual", function (){
 group("controllable defaults (contract §3) / setControllable", function (){
   var st = fresh(), K = "addr:2 oak st";
   var income = ["GPR","EMPL","MOD","VAC","CONC","BD","RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
-  var expense = ["RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"];
+  var expense = ["RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"];
   var lines = {}; income.concat(expense).forEach(function (c){ lines[c] = { annual: 1, source: "manual" }; });
   var r = S.setLines(K, lines);
   var got = {}; Object.keys(r.lines).forEach(function (c){ got[c] = r.lines[c].controllable; });
   var want = {}; income.forEach(function (c){ want[c] = true; }); expense.forEach(function (c){ want[c] = (c !== "RET" && c !== "INS"); });
-  eq(got, want, "defaults: RET/INS false, every other expense true, every income code true (all 32 codes)");
+  eq(got, want, "defaults: RET/INS false, every other expense true, every income code true (all 33 codes, incl. BDX)");
   throwsType(function (){ S.setLine(K, "ZZZ", { annual: 1, source: "manual" }); }, "an unknown code is rejected (TypeError) — no line, no default");
   var writes = st.writes.length;
   r = S.setControllable(K, "RET", true);                                    // T1 (the rejected ZZZ consumed no tick)

@@ -30,7 +30,7 @@
     GPR:true, EMPL:true, MOD:true, VAC:true, CONC:true, BD:true,
     RUBS:true, "TRSH RUB":true, "TRSH COL":true, PARK:true, PET:true, MTM:true, LATE:true,
     APP:true, ADM:true, AMEN:true, COM:true, CAM:true, ANT:true, OTH:true,
-    RET:false, INS:false, UTIL:true, RM:true, CS:true, PAY:true, MGMT:true, GA:true, MKT:true,
+    RET:false, INS:false, UTIL:true, RM:true, CS:true, PAY:true, MGMT:true, GA:true, BDX:true, MKT:true,
     TRSH:true, CAB:true, PLL:true
   };
   function has(o, k){ return Object.prototype.hasOwnProperty.call(o, k); }
@@ -41,7 +41,7 @@
   function reserved(k){ return k === "__proto__" || k === "constructor" || k === "prototype"; }
   function defaultControllable(code){ return has(CONTROLLABLE_DEFAULT, code) ? CONTROLLABLE_DEFAULT[code] : true; }
 
-  // The 32 taxonomy codes (contract §3). Lines are keyed by these and nothing
+  // The 33 taxonomy codes (contract §3 + BDX, bad-debt expense, after GA). Lines are keyed by these and nothing
   // else: a stray or mis-cased code ("FOO", "gpr") would be silently excluded
   // from every total downstream, so setLine/setLines reject it and load() drops
   // it. The live taxonomy module is consulted AT CALL TIME when present (node:
@@ -50,7 +50,7 @@
   // two, so it is exported (frozen) for that comparison.
   var CODES = Object.freeze(["GPR","EMPL","MOD","VAC","CONC","BD",
     "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
-    "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","MKT","TRSH","CAB","PLL"]);
+    "RET","INS","UTIL","RM","CS","PAY","MGMT","GA","BDX","MKT","TRSH","CAB","PLL"]);
   function taxonomy(){
     var t = null;
     if (typeof require === "function") { try { t = require("./operating-taxonomy.js"); } catch (e) { t = null; } }

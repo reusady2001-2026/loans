@@ -320,7 +320,10 @@ function suite(label, make){
   cents(expX, 8840010.03, "Crest: Σ expense lines = printed TOTAL EXPENSES 8,840,010.03");
   cents(lX.builtNOI, 9483604.28, "Crest: builtNOI = 9,483,604.28");
   eq(lX.ties, true, "Crest: ties:true");
-  ["GPR", "VAC", "CONC", "RET", "INS", "UTIL", "RM", "PAY", "MGMT", "GA"].forEach(function (c){ ok(c in lX.lines, "Crest: line " + c + " present"); });
+  ["GPR", "VAC", "CONC", "RET", "INS", "UTIL", "RM", "PAY", "MGMT", "GA", "BDX"].forEach(function (c){ ok(c in lX.lines, "Crest: line " + c + " present"); });
+  // Expense-side bad debt has its own row since the taxonomy grew BDX: rows 575/576 (415,390.18 − 27,205.49) leave G&A.
+  eq(lX.lines.BDX, 388184.69, "Crest: BDX = 388,184.69 (bad debts expense 415,390.18 − recoveries 27,205.49)");
+  eq(lX.lines.GA, 554599.61, "Crest: GA = 554,599.61 (bad debt no longer folded into G&A)");
   // cent-exact = the nearest double to a 2-decimal amount: re-rounding is a no-op and it prints as one
   // (v*100 itself is NOT integral in float for e.g. 1223379.37, so that naive test would be wrong).
   ok(Object.keys(lX.lines).every(function (c){ var v = lX.lines[c]; return v === Math.round(v * 100) / 100 && /^-?\d+(\.\d{1,2})?$/.test(String(v)); }),
@@ -332,6 +335,11 @@ function suite(label, make){
   var recX = st2.get(PKX), nX = Object.keys(lX.lines).length;
   eq(Object.keys(recX.lines).length, nX, "Crest: every parsed code on the record (" + nX + " lines)");
   ok(Object.keys(recX.lines).every(function (c){ return recX.lines[c].source === "t12" && recX.lines[c].updatedAt === clock.t; }), "Crest: all lines t12 + stamped");
+  eq(recX.lines.BDX.annual, 388184.69, "Crest: record BDX.annual = 388,184.69");
+  eq(recX.lines.BDX.source, "t12", "Crest: record BDX.source = t12");
+  eq(recX.lines.BDX.controllable, true, "Crest: BDX controllable default true (store default; module passes no flag)");
+  eq(recX.lines.GA.annual, 554599.61, "Crest: record GA.annual = 554,599.61");
+  eq(recX.lines.GA.source, "t12", "Crest: record GA.source = t12");
   cents(rX.inPlaceNOI, 9483604.28, "Crest: record in-place NOI ties to 9,483,604.28");
   eq(rX.printedNOI, 9483604.28, "Crest: apply reports printedNOI 9,483,604.28");
   eq(rX.ties, true, "Crest: apply reports ties:true");
