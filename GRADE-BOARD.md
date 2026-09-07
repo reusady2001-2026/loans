@@ -11,7 +11,7 @@ same builder → fix → re-test → re-critique.
 | E3 | In-place NOI tie | A | built | critic running (Crest regression gate) | 370 ok; residuals now reported |
 | E4 | Underwritten NOI | B+ | **A** (critic) → patching minors | A — bit-identical to released engine on all valid inputs; hand-calc to the cent | 174 ok; 6/6 mutants killed |
 | E5 | Single-property sizing | A− | **A** (critic) → patching minors | A — fixed negative max-loan leak; DEFAULTS to be frozen; glue blank-box display fixed | 174 ok; 200/200 random + Crest regression identical |
-| P1 | Per-property store | F | **B** (critic) → patching | B — 1 major (name write-once / address edit orphans record → ensure refresh + rename), 3 minor, 4 surviving mutants — fed back | 202 ok; 20/24 mutants killed |
+| P1 | Per-property store | F | **B** → patched, re-check running | all findings patched: name refresh + rename (glue hooks it on loan edits), proto-safety, source migration, taxonomy code validation; 4 surviving mutants now die | 281 ok; 24/24 mutants killed |
 | P2 | Per-property NOI → ratios | C | **A ✓ done** | A — re-checked A; all findings closed; its glue DSCR-basis finding fixed | 182 ok; 9/9 mutants killed; independent hand-calc to the cent |
 | P3 | Upload → property | D | **A ✓ done** | A — critic: "A the moment the test fix lands"; fix landed (code chosen dynamically), suite green, glue fixes verified | 402 ok; 7/7 mutants killed; Crest ties |
 | P4 | Hand-edit sheet | F | **C** (critic) → patching | C — contract met (e2e PASSED live) but 2 product majors: sign slip inflates NOI; 27/32 lines not hand-enterable — fed back with fixes | 149 ok; 5/6 mutants killed |

@@ -240,6 +240,85 @@ console.log("render without a real DOM");
   ok(fake.innerHTML.indexOf('data-op-assump="sizing.capRate" value="5.5"') >= 0 && fake.innerHTML.indexOf(">override<") < 0, "re-render replaces the panel (idempotent)");
 })();
 
+console.log("strict numeric entry — one plain decimal or nothing");
+(function (){
+  eq(OA.fromDisplay("sizing.capRate", "1e3"), null, "'1e3' → null (not silently 13)");
+  eq(OA.fromDisplay("sizing.capRate", "1.2.3"), null, "'1.2.3' → null (not 1.2)");
+  eq(OA.fromDisplay("sizing.capRate", "5-"), null, "'5-' → null (not 5)");
+  eq(OA.fromDisplay("sizing.capRate", "--5"), null, "'--5' → null");
+  eq(OA.fromDisplay("sizing.capRate", "5."), null, "'5.' → null");
+  eq(OA.fromDisplay("sizing.capRate", "5 5"), null, "'5 5' → null (not 55)");
+  eq(OA.fromDisplay("sizing.capRate", "5x"), null, "'5x' → null");
+  eq(OA.fromDisplay("sizing.capRate", ".5"), 0.005, "'.5' → 0.005");
+  eq(OA.fromDisplay("sizing.capRate", "+5"), 0.05, "'+5' → 0.05");
+  eq(OA.fromDisplay("sizing.capRate", "6 %"), 0.06, "'6 %' → 0.06");
+  eq(OA.patchFor("sizing.capRate", "1e3"), null, "'1e3' → no patch");
+  eq(OA.patchFor("sizing.capRate", "1.2.3"), null, "'1.2.3' → no patch");
+  eq(OA.patchFor("sizing.capRate", "5-"), null, "'5-' → no patch");
+  eq(OA.check("sizing.capRate", "1e3"), { value:null, error:"not a number" }, "check('1e3') → 'not a number'");
+  eq(OA.check("sizing.capRate", ""), { value:null, error:null }, "check('') → blank, no error");
+  eq(OA.check("sizing.capRate", "6"), { value:0.06, error:null }, "check('6') → 0.06");
+})();
+
+console.log("ranges — out of range → no patch");
+(function (){
+  var no = function (path, raw, msg){ eq(OA.patchFor(path, raw), null, msg + " → no patch"); eq(OA.check(path, raw).error, "out of range", msg + " → 'out of range'"); };
+  var yes = function (path, raw, v, msg){ eq(OA.patchFor(path, raw), nest(path, v), msg + " → " + J(nest(path, v))); };
+  no("vacancyPct", "-5", "vacancy -5"); yes("vacancyPct", "0", 0, "vacancy 0"); yes("vacancyPct", "100", 1, "vacancy 100"); no("vacancyPct", "100.1", "vacancy 100.1");
+  no("mgmtPct", "-10", "mgmt -10"); yes("mgmtPct", "2.5", 0.025, "mgmt 2.5"); no("mgmtPct", "101", "mgmt 101");
+  no("reservePerUnit", "-1", "reserve -1"); yes("reservePerUnit", "0", 0, "reserve 0"); yes("reservePerUnit", "1500", 1500, "reserve 1500");
+  no("sizing.capRate", "-5", "cap rate -5"); no("sizing.capRate", "0", "cap rate 0 (exclusive bound)"); yes("sizing.capRate", "0.01", 0.0001, "cap rate 0.01"); yes("sizing.capRate", "100", 1, "cap rate 100"); no("sizing.capRate", "100.5", "cap rate 100.5");
+  no("sizing.ltvMax", "120", "LTV 120"); no("sizing.ltvMax", "-1", "LTV -1"); yes("sizing.ltvMax", "0", 0, "LTV 0"); yes("sizing.ltvMax", "100", 1, "LTV 100");
+  no("sizing.dscrMin", "0", "DSCR 0 (exclusive bound)"); no("sizing.dscrMin", "-1", "DSCR -1"); yes("sizing.dscrMin", "0.5", 0.5, "DSCR 0.5"); yes("sizing.dscrMin", "3", 3, "DSCR 3");
+  no("sizing.dyMin", "-1", "debt yield -1"); yes("sizing.dyMin", "100", 1, "debt yield 100"); no("sizing.dyMin", "550", "debt yield 550");
+  no("sizing.intRate", "550", "interest 550"); no("sizing.intRate", "-0.5", "interest -0.5"); yes("sizing.intRate", "0", 0, "interest 0"); yes("sizing.intRate", "100", 1, "interest 100");
+  no("sizing.amortYears", "-5", "amort -5"); yes("sizing.amortYears", "0", 0, "amort 0"); yes("sizing.amortYears", "50", 50, "amort 50"); no("sizing.amortYears", "51", "amort 51"); no("sizing.amortYears", "27.5", "amort 27.5 (not a whole year)");
+  eq(OA.check("sizing.ltvMax", "120"), { value:null, error:"out of range", range:"0–100%" }, "check carries the field's range wording");
+  eq(OA.check("sizing.amortYears", "27.5"), { value:null, error:"out of range", range:"whole years, 0–50" }, "…amortYears wording");
+  eq(OA.patchFor("foo.bar", "-99"), { foo:{ bar:-99 } }, "unknown paths have no range (unchanged behaviour)");
+})();
+
+console.log("underlay — the app defaults sit under the globals (OperatingCalc.DEFAULTS)");
+(function (){
+  var OC = null; try { OC = require("../operating-calc.js"); } catch (e) { OC = null; }
+  var D = { vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.2, dyMin:0.07, intRate:0.055, amortYears:30 } };
+  ok(!!(OC && OC.DEFAULTS), "operating-calc.js loads in node and exposes DEFAULTS");
+  if (OC) eq(OC.DEFAULTS, D, "OperatingCalc.DEFAULTS carries the app's standard numbers (panel and calc share them)");
+  eq(OA.resolve(null, null), D, "no record, no globals → the app defaults");
+  var G = globals(); G.sizing.capRate = null; G.vacancyPct = null;   // the Setup tab stores null for a blanked box
+  var e = OA.resolve(rec(null), G);
+  eq([e.sizing.capRate, e.vacancyPct, e.sizing.ltvMax], [0.055, 0.05, 0.75], "a null GLOBAL leaf falls back to the app default; the others keep the global");
+  eq(OA.isOverridden(rec(null), "sizing.capRate"), false, "…and the field is still 'inherited' for the record");
+  eq(OA.inheritedValue("sizing.capRate", G), 0.055, "inheritedValue(capRate) with a null global → 0.055");
+  eq(OA.inheritedValue("sizing.ltvMax", G), 0.75, "inheritedValue(ltvMax) → the global 0.75");
+  var G2 = globals(); G2.sizing.capRate = 0.0625;
+  eq(OA.inheritedValue("sizing.capRate", G2), 0.0625, "a real global wins over the default");
+  eq(OA.inheritedValue("budget.INS", G2), undefined, "no default and no global → undefined");
+  ok(OA.panelHtml(rec(null), G).indexOf('data-op-assump="sizing.capRate" value="5.5"') >= 0, "panel shows 5.5 — the number actually used — for a null global cap rate, not an empty box");
+  ok(/data-op-badge="sizing\.capRate"[^>]*>inherited</.test(OA.panelHtml(rec(null), G)), "…badged 'inherited'");
+  eq(OA.diff(rec({ sizing:{ capRate:0.07 } }), G)[0], { path:"sizing.capRate", global:0.055, override:0.07 }, "diff.global reports the default actually inherited when the global is null");
+  if (OC) eq(OA.resolve(rec({ sizing:{ capRate:0.07 } }), G), OC.mergeAssumptions(G, { sizing:{ capRate:0.07 } }), "resolve agrees with OperatingCalc.mergeAssumptions field for field");
+})();
+
+console.log("commit — what one entry means for the panel");
+(function (){
+  var G = globals(), inh = rec(null), ovr = rec({ sizing:{ capRate:0.0625 } });
+  eq(OA.commit(inh, G, "sizing.ltvMax", "75"), { patch:null, value:"75", state:null, warn:null }, "re-entering the inherited 75 into an inherited field → no patch, nothing flips");
+  eq(OA.commit(inh, G, "sizing.ltvMax", "75.0"), { patch:null, value:"75", state:null, warn:null }, "'75.0' is the same value → no patch, box normalised to 75");
+  eq(OA.commit(inh, G, "sizing.ltvMax", "80"), { patch:{ sizing:{ ltvMax:0.8 } }, value:"80", state:"override", warn:null }, "a different value → override patch, badge → override");
+  eq(OA.commit(ovr, G, "sizing.capRate", "5.5"), { patch:{ sizing:{ capRate:null } }, value:"5.5", state:"inherited", warn:null }, "typing the inherited 5.5 into an overridden field → clears the override (leaf null)");
+  eq(OA.commit(ovr, G, "sizing.capRate", "6.250"), { patch:null, value:"6.25", state:null, warn:null }, "retyping the current override → no patch");
+  eq(OA.commit(ovr, G, "sizing.capRate", "7"), { patch:{ sizing:{ capRate:0.07 } }, value:"7", state:"override", warn:null }, "a new override value → patch");
+  eq(OA.commit(ovr, G, "sizing.capRate", ""), { patch:{ sizing:{ capRate:null } }, value:"5.5", state:"inherited", warn:null }, "blank on an overridden field → clear it, box shows the inherited 5.5");
+  eq(OA.commit(inh, G, "sizing.capRate", ""), { patch:null, value:"5.5", state:null, warn:null }, "blank on an inherited field → nothing to clear, box restored");
+  eq(OA.commit(ovr, G, "sizing.capRate", "abc"), { patch:null, value:"6.25", state:null, warn:{ text:"not a number", title:"Enter a plain number, e.g. 6.25" } }, "'abc' → no patch, box restored to the effective 6.25, 'not a number'");
+  eq(OA.commit(inh, G, "sizing.ltvMax", "120"), { patch:null, value:"75", state:null, warn:{ text:"out of range", title:"Allowed: 0–100%" } }, "'120' → no patch, box restored to 75, 'out of range' with the allowed range");
+  eq(OA.commit(inh, G, "sizing.amortYears", "-5"), { patch:null, value:"30", state:null, warn:{ text:"out of range", title:"Allowed: whole years, 0–50" } }, "amortYears -5 → refused, box restored to 30");
+  var Gn = globals(); Gn.sizing.capRate = null;
+  eq(OA.commit(inh, Gn, "sizing.capRate", "5.5"), { patch:null, value:"5.5", state:null, warn:null }, "with a null global, typing the default 5.5 is a no-op (the underlay IS the inherited value)");
+  eq(OA.commit(null, G, "vacancyPct", "8"), { patch:{ vacancyPct:0.08 }, value:"8", state:"override", warn:null }, "null record → inherits everything, so 8 is an override");
+})();
+
 console.log("");
 console.log(passes + " passed, " + fails + " failed");
 if (fails) process.exit(1);
