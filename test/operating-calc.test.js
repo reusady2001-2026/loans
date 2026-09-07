@@ -200,6 +200,14 @@ cents(dCase.inPlaceNOI, 900000, "NOI = 1,000,000 − 100,000 = 900,000, excludin
 var dMulti = Calc.derive({ lines: { ZZZ: line(1), GPR: line(2), FOO: line(3) } }, BENCH);
 deepEq(dMulti.dropped, ["ZZZ", "FOO"], "several unknown codes, in record order");
 deepEq(dB.dropped, [], "case B (EMPL/MOD/BD/PARK all taxonomy codes) → dropped []");
+// The engine's synthetic `reserves` line is built with t12: 0 regardless of sums.reserves
+// (setup-builder.js L("reserves", …, { t12: 0 })), so a record line coded `reserves` reaches
+// no figure — it must be reported, while VAC/MGMT (whose synthetic lines DO read sums) must not:
+//   in-place ERI = VAC −5,000 (no GPR) ; opex = MGMT 3,000 ; reserves 0 → NOI = −8,000 (the 9 ignored)
+var dRes = Calc.derive({ units: 10, lines: { VAC: line(-5000), MGMT: line(3000), reserves: line(9) } }, BENCH);
+deepEq(dRes.dropped, ["reserves"], "a line coded `reserves` is reported as dropped (VAC/MGMT are honoured, so not listed)");
+cents(dRes.inPlaceNOI, -8000, "NOI = −5,000 − 3,000 = −8,000, ignoring the `reserves` line's 9");
+cents(dRes.result.inPlace.reserves, 0, "in-place reserves stay 0 (the 9 was not summed anywhere)");
 
 section("derive — record with no lines never throws and yields zeros");
 var dEmpty = null, threw = false;

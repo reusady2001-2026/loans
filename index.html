@@ -3413,6 +3413,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         currentBalance: l => compute(l).derived.currentBalance,
         capRate: l => loanCapRate(l),
         marketRate: l => { try{ const p = refiMarketParts(l); return (p && isFinite(p.marketRate)) ? p.marketRate : null; }catch(e){ return null; } },
+        // The maturity the app itself uses — derived from first payment + term when the field is blank — as "YYYY-MM-DD".
+        maturity: l => { try{ const d = compute(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
         globalDefaults: () => uwState.input.bench };
     }
     // One entry per property (keyed exactly like the rest of the app), named by its senior loan.

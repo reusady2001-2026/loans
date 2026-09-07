@@ -345,19 +345,31 @@ function suite(label, make){
   cents(built.noi, 9483604.28, "Crest: SetupBuilder.buildSetup on the record → in-place NOI 9,483,604.28");
   cents(built.egi, 18323614.31, "Crest: … in-place EGI 18,323,614.31");
   cents(built.opex, 8840010.03, "Crest: … in-place opex 8,840,010.03");
-  st2.setLines(PKX, { CAB: { annual: 24000, source: "manual" } });
-  clock.t = "2026-09-13T08:00:00.000Z"; S2.reset();
-  var rX2 = OU.apply(S2, PKX, pX, { fileName: "crest-t12-again.xlsx", period: "T12 ending 2025-06-30", propertyName: "Crest", units: 412 });
-  var recX2 = st2.get(PKX);
-  ok(Object.keys(lX.lines).every(function (c){ return recX2.lines[c].annual === recX.lines[c].annual; }), "Crest re-upload: every annual identical");
-  ok(Object.keys(lX.lines).every(function (c){ return recX2.lines[c].updatedAt === clock.t; }), "Crest re-upload: every parsed line re-stamped");
-  eq(recX2.lines.GPR.prevAnnual, null, "Crest re-upload: unchanged GPR → prevAnnual null (store)");
-  eq(recX2.lines.CAB.annual, 24000, "Crest re-upload: manual CAB 24,000 survives");
-  deq(rX2.untouched, ["CAB"], "Crest re-upload: untouched = [CAB]");
-  cents(rX2.inPlaceNOI, 9459604.28, "Crest re-upload: record NOI = 9,483,604.28 − 24,000 = 9,459,604.28");
-  eq(rX2.ties, false, "Crest re-upload: ties:false (record carries a line the statement does not)");
-  eq(recX2.meta.sourceFile, "crest-t12-again.xlsx", "Crest re-upload: sourceFile refreshed");
-  eq(S2.calls.setLines, 1, "Crest re-upload: ONE bulk setLines");
+  // The "manual line the statement lacks" is chosen DYNAMICALLY: which codes Crest emits depends on
+  // the classifier (a $0 phone line lands in CAB today), and a $0 code still counts as PRESENT — it is
+  // written and overwrites a manual line — so a hardcoded CAB here was the brittle part, not the module.
+  var manualCode = OU.ORDER.filter(function (c){ return T12.roleOf(c) === "expense" && !(c in lX.lines); })[0];
+  if (!manualCode) console.log("  skipped: Crest emits every §3 expense code — no absent code for the survives-untouched block");
+  else {
+    var manualAmt = 24000, manualRole = T12.roleOf(manualCode), sign = (manualRole === "expense") ? -1 : 1;
+    var expNOI = Math.round((9483604.28 + sign * manualAmt) * 100) / 100;
+    ok(!(manualCode in lX.lines) && !(manualCode in recX.lines), "Crest re-upload: manual code picked dynamically = " + manualCode + " (" + manualRole + ", absent from the parse and the record)");
+    var seed = {}; seed[manualCode] = { annual: manualAmt, source: "manual" };
+    st2.setLines(PKX, seed);
+    clock.t = "2026-09-13T08:00:00.000Z"; S2.reset();
+    var rX2 = OU.apply(S2, PKX, pX, { fileName: "crest-t12-again.xlsx", period: "T12 ending 2025-06-30", propertyName: "Crest", units: 412 });
+    var recX2 = st2.get(PKX);
+    ok(Object.keys(lX.lines).every(function (c){ return recX2.lines[c].annual === recX.lines[c].annual; }), "Crest re-upload: every annual identical");
+    ok(Object.keys(lX.lines).every(function (c){ return recX2.lines[c].updatedAt === clock.t; }), "Crest re-upload: every parsed line re-stamped");
+    eq(recX2.lines.GPR.prevAnnual, null, "Crest re-upload: unchanged GPR → prevAnnual null (store)");
+    eq(recX2.lines[manualCode].annual, manualAmt, "Crest re-upload: manual " + manualCode + " " + manualAmt + " survives untouched");
+    eq(recX2.lines[manualCode].source, "manual", "Crest re-upload: " + manualCode + " keeps source = manual");
+    deq(rX2.untouched, [manualCode], "Crest re-upload: untouched = [" + manualCode + "]");
+    cents(rX2.inPlaceNOI, expNOI, "Crest re-upload: record NOI = printed 9,483,604.28 " + (sign < 0 ? "− " : "+ ") + manualAmt + " (" + manualCode + " is " + manualRole + ") = " + expNOI);
+    eq(rX2.ties, false, "Crest re-upload: ties:false (record carries a line the statement does not)");
+    eq(recX2.meta.sourceFile, "crest-t12-again.xlsx", "Crest re-upload: sourceFile refreshed");
+    eq(S2.calls.setLines, 1, "Crest re-upload: ONE bulk setLines");
+  }
   eq(sto2.raw(LOANS_KEY), LOANS_BLOB, "Crest: loans store byte-identical");
 }
 

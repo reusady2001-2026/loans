@@ -33,13 +33,18 @@ function group(name, fn){
   console.log("\n" + name);
   try { fn(); } catch (e) { ok(false, name + " — unexpected exception", (e && e.stack) || String(e)); }
 }
-// Map-backed storage fake per contract §2; records every key written so a test
-// can prove the store touched nothing but its own key.
+// Map-backed storage fake per contract §2; logs every key READ and WRITTEN so a
+// test can prove the store touched nothing but its own key (§0: the loans store
+// must never even be read). peek() reads and poke() alters the blob behind the
+// store's back without logging — poke is how a test proves a reload really
+// re-reads storage instead of serving stale memory.
 function fakeStorage(seed){
   var m = new Map(); Object.keys(seed || {}).forEach(function (k){ m.set(k, seed[k]); });
-  var s = { writes: [],
-    getItem: function (k){ return m.has(k) ? m.get(k) : null; },
+  var s = { writes: [], reads: [],
+    getItem: function (k){ s.reads.push(k); return m.has(k) ? m.get(k) : null; },
     setItem: function (k, v){ s.writes.push(k); m.set(k, String(v)); },
+    peek: function (k){ return m.has(k) ? m.get(k) : null; },
+    poke: function (k, fn){ var o = JSON.parse(m.get(k)); fn(o); m.set(k, JSON.stringify(o)); },
     keys: function (){ return Array.from(m.keys()); } };
   return s;
 }
@@ -51,9 +56,9 @@ var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /* ---- 1. surface --------------------------------------------------------- */
 group("surface", function (){
   eq(S.KEY, "ldsHub.operating.v1", "KEY is exactly \"ldsHub.operating.v1\"");
-  ["init","load","all","get","ensure","setLine","setLines","removeLine","setControllable","setAssumptions","setUnits","setPeriod","remove","save"]
+  ["init","load","all","get","ensure","setLine","setLines","removeLine","setControllable","setAssumptions","setUnits","setPeriod","remove","rename","save"]
     .forEach(function (m){ ok(typeof S[m] === "function", "exports " + m + "()"); });
-  eq(Object.keys(S).length, 15, "no extra surface beyond KEY + the 14 contract methods");
+  eq(Object.keys(S).length, 16, "no extra surface beyond KEY + the 14 contract methods + rename");
   ok(globalThis.OperatingStore === S, "UMD also publishes globalThis.OperatingStore (same object)");
   // Browser global: load a second, throwaway instance with a fake window present.
   var path = require.resolve("../operating-store.js"), saved = require.cache[path];
@@ -75,6 +80,7 @@ group("fresh state", function (){
   eq(S.get("addr:nowhere"), null, "get() of an unknown key → null");
   eq(S.get(undefined), null, "get(undefined) → null, no throw");
   eq(S.remove("addr:nowhere"), false, "remove() of an unknown key → false");
+  eq(S.rename("addr:nowhere", "addr:elsewhere"), false, "rename() of an unknown key → false");
   eq(st.writes.length, 0, "…and did not save");
   eq(S.removeLine("addr:nowhere", "RET"), null, "removeLine() on an unknown record → null, no save");
   eq(S.setControllable("addr:nowhere", "RET", true), null, "setControllable() on an unknown record → null, no save");
@@ -118,6 +124,52 @@ group("ensure / record schema", function (){
   eq(Object.keys(S.all()).sort(), [K, "name:bare", "records", "version"].sort(), "propKeys named \"records\"/\"version\" round-trip (envelope detection is structural)");
 });
 
+/* ---- 3b. ensure refreshes a changed name / rename ---------------------- */
+group("ensure refreshes a changed name / rename", function (){
+  var LB = '[{"_id":"L-9","propertyName":"Walnut Apartments","propertyAddress":"11 Walnut St"}]';
+  var st = fresh({ "ldsHub.loans.v7": LB }), K = "addr:11 walnut st", K2 = "addr:11 walnut street";
+  S.ensure(K, { propertyName: "Walnut Apts", units: 60 });               // T0
+  S.setLine(K, "RET", { annual: 1000, source: "manual" });               // T1
+  S.setAssumptions(K, { sizing: { capRate: 0.06 } });                    // T2
+  S.setPeriod(K, "T12 2025");                                            // T3
+  var w = st.writes.length;
+  var r = S.ensure(K, { propertyName: "Walnut Apartments", units: 61 });
+  eq([r.propertyName, r.units, r.meta.lastUpdated], ["Walnut Apartments", 60, T(3)], "a DIFFERENT non-blank name is refreshed from the loan; units already set are kept; lastUpdated NOT stamped");
+  eq(st.writes.length, w + 1, "…persisted with one save");
+  eq(S.ensure(K, { propertyName: "Walnut Apartments" }), r, "same name again → no change");
+  eq(st.writes.length, w + 1, "…and no save");
+  eq(S.ensure(K, { propertyName: "" }).propertyName, "Walnut Apartments", "a blank name never clobbers a real one");
+  eq(S.ensure(K).propertyName, "Walnut Apartments", "no opts → name untouched");
+  eq(S.ensure(K, { propertyName: "Walnut Apartments", units: null }).units, 60, "units are never overwritten with null");
+  eq(S.ensure(K, { propertyName: "Walnut Apartments", units: undefined }).units, 60, "…or with undefined");
+  eq(st.writes.length, w + 1, "…none of those saved");
+  S.init({ storage: st, now: clock() });
+  eq(S.get(K).propertyName, "Walnut Apartments", "the refreshed name survives a reload");
+  // rename: the record follows a changed §1 key (an address edit)
+  var snap = S.get(K); w = st.writes.length;
+  eq(S.rename(K, K2), true, "rename(old, new) → true");
+  eq(st.writes.length, w + 1, "…ONE save");
+  eq(S.get(K), null, "old key gone");
+  eq(S.get(K2), Object.assign({}, snap, { propKey: K2 }), "record moved intact — lines, assumptions, meta, units, period preserved; only propKey changed; lastUpdated not stamped");
+  eq(Object.keys(S.get(K2)), Object.keys(snap), "field order unchanged");
+  S.init({ storage: st, now: clock() });
+  eq([S.get(K2) && S.get(K2).propKey, S.get(K)], [K2, null], "the move persisted");
+  // refusals: false, nothing changed, nothing saved
+  S.ensure("addr:taken", { propertyName: "Taken" });
+  var before = S.all(); w = st.writes.length;
+  eq(S.rename("addr:nope", "addr:free"), false, "unknown oldKey → false");
+  eq(S.rename(K2, "addr:taken"), false, "newKey already has a record → false (never merges/destroys)");
+  eq(S.rename(K2, K2), false, "equal keys → false");
+  eq(S.rename(K2, ""), false, "empty newKey → false");
+  eq(S.rename("", K2), false, "empty oldKey → false");
+  eq(S.rename(K2, 42), false, "non-string newKey → false");
+  eq(S.rename(null, K2), false, "null oldKey → false");
+  eq(S.rename(K2, "__proto__"), false, "reserved newKey → false");
+  eq(S.all(), before, "…nothing changed");
+  eq(st.writes.length, w, "…nothing saved");
+  eq(st.peek(LOANS_KEY), LB, "loans store byte-identical through the name refresh and the renames");
+});
+
 /* ---- 4. setLine + prevAnnual semantics --------------------------------- */
 group("setLine / prevAnnual", function (){
   var st = fresh(), K = "addr:1 main st";
@@ -151,6 +203,10 @@ group("setLine / prevAnnual", function (){
   eq(r, { propKey: "name:implicit", propertyName: "", units: null, period: null,
           lines: { GPR: { annual: 500000, prevAnnual: null, controllable: true, source: "manual", updatedAt: T(11), note: null } },
           assumptions: null, meta: { createdAt: T(11), lastUpdated: T(11), sourceFile: null } }, "setLine on an unknown key creates the record: createdAt = lastUpdated = updatedAt");
+  r = S.setLine(K, "INS", { annual: 50000, source: "t12", controllable: true });
+  eq(r.lines.INS.controllable, true, "controllable:true in the patch is applied when the line is CREATED (INS would default false)");
+  r = S.setLine(K, "GPR", { annual: 1, source: "manual", controllable: false });
+  eq(r.lines.GPR.controllable, false, "controllable:false applied on creation of an income line (default true)");
   // strictness — and nothing changes on a rejected call
   var before = S.get(K), writes = st.writes.length;
   throwsType(function (){ S.setLine(K, "RET", { annual: NaN, source: "manual" }); }, "rejects annual NaN");
@@ -183,11 +239,27 @@ group("controllable defaults (contract §3) / setControllable", function (){
   r = S.setControllable(K, "RET", true);                                    // T2
   eq([r.lines.RET.controllable, r.meta.lastUpdated, r.lines.RET.updatedAt], [true, T(2), T(0)], "flip persists, stamps meta.lastUpdated, leaves the line's amount date alone");
   eq(st.writes.length, writes + 1, "one save");
+  st.poke(S.KEY, function (o){ o.records[K].lines.INS.controllable = true; });   // altered behind the store's back — in memory INS is still false
   S.init({ storage: st, now: clock() });
   eq(S.get(K).lines.RET.controllable, true, "the flip survives a reload");
+  eq(S.get(K).lines.INS.controllable, true, "init() drops in-memory state: a blob altered before the reload is what get() returns");
   eq(S.setControllable(K, "NOPE", false), null, "unknown line → null");
   eq(st.writes.length, writes + 1, "…no save");
   throwsType(function (){ S.setControllable(K, "RET", "false"); }, "rejects a non-boolean flag");
+});
+
+/* ---- 5b. the local map must agree with OperatingTaxonomy when present --- */
+group("controllable defaults agree with OperatingTaxonomy (when present)", function (){
+  var TX = null;
+  try { TX = require("../operating-taxonomy.js"); } catch (e) { TX = null; }
+  if (!TX || !Array.isArray(TX.ORDER) || typeof TX.defaultControllable !== "function") { console.log("  skipped: ./operating-taxonomy.js not present"); return; }
+  fresh(); var K = "addr:taxonomy";
+  var lines = {}; TX.ORDER.forEach(function (c){ lines[c] = { annual: 1, source: "manual" }; });
+  var r = S.setLines(K, lines), mine = {}, theirs = {};
+  TX.ORDER.forEach(function (c){ mine[c] = r.lines[c].controllable; theirs[c] = TX.defaultControllable(c); });
+  eq(mine, theirs, "store default == OperatingTaxonomy.defaultControllable(code) for every ORDER code (" + TX.ORDER.length + " codes)");
+  eq(TX.ORDER.filter(function (c){ return !theirs[c]; }), ["RET", "INS"], "the taxonomy's non-controllable set is exactly RET, INS");
+  eq(S.setLine(K, "ZZZ", { annual: 1, source: "manual" }).lines.ZZZ.controllable, TX.defaultControllable("ZZZ"), "unknown code: both sides default true");
 });
 
 /* ---- 6. setLines (bulk, one save) --------------------------------------- */
@@ -197,10 +269,11 @@ group("setLines", function (){
   S.setLine(K, "INS", { annual: 30000, source: "manual" });               // T1
   S.setLine(K, "UTIL", { annual: 80000, source: "manual", note: "keep me" });   // T2
   var writes = st.writes.length;
-  var patch = { RET: { annual: 200000, source: "t12" }, INS: { annual: 33000, source: "t12" }, GPR: { annual: 1500000, source: "t12" } };
+  var patch = { RET: { annual: 200000, source: "t12", controllable: true }, INS: { annual: 33000, source: "t12" }, GPR: { annual: 1500000, source: "t12", controllable: false } };
   var r = S.setLines(K, patch, { sourceFile: "crest-t12.xlsx", period: "T12 ending 2025-06-30" });   // T3
   eq(st.writes.length, writes + 1, "bulk write = exactly ONE save");
-  eq(r.lines.RET, { annual: 200000, prevAnnual: null, controllable: false, source: "t12", updatedAt: T(3), note: null }, "new line written");
+  eq(r.lines.RET, { annual: 200000, prevAnnual: null, controllable: true, source: "t12", updatedAt: T(3), note: null }, "new line written — the patch's controllable:true applied on creation (RET default false)");
+  eq(r.lines.GPR.controllable, false, "…and controllable:false applied on creation of an income line (default true)");
   eq(r.lines.INS, { annual: 33000, prevAnnual: 30000, controllable: false, source: "t12", updatedAt: T(3), note: null }, "existing line: prevAnnual = old annual, source → t12");
   eq(r.lines.GPR.updatedAt, T(3), "every bulk line shares the batch timestamp");
   eq(r.lines.UTIL, { annual: 80000, prevAnnual: null, controllable: true, source: "manual", updatedAt: T(2), note: "keep me" }, "a line absent from the bulk is untouched");
@@ -279,7 +352,7 @@ group("setAssumptions (deep merge / clear)", function (){
   S.setAssumptions(K, patch); patch.sizing.capRate = 0.09;
   eq(S.get(K).assumptions.sizing.capRate, 0.05, "the patch object is not held by reference");
   var w = st.writes.length;
-  r = S.setAssumptions(K, null);                                           // T9
+  r = S.setAssumptions(K, null);                                           // T10 (T0 create + nine patches above)
   eq([r.assumptions, r.meta.lastUpdated, st.writes.length], [null, T(10), w + 1], "setAssumptions(null) clears to inherit, stamps, saves");
   eq(S.setAssumptions("name:new-by-assump", { vacancyPct: 0.1 }).assumptions, { vacancyPct: 0.1 }, "on an unknown key creates the record");
   var before = S.get(K); w = st.writes.length;
@@ -311,8 +384,9 @@ group("persistence", function (){
   eq(S.all(), snapshot, "all() after reload identical");
   eq(st.getItem(S.KEY), raw, "load() did not rewrite storage (byte-identical)");
   eq(S.get(K1).lines.RET, { annual: 275000, prevAnnual: 250000, controllable: false, source: "manual", updatedAt: T(2), note: "reassessed" }, "a line survives the round trip exactly");
+  st.poke(S.KEY, function (o){ o.records[K2].period = "Altered 2027"; });   // altered behind the store's back — memory still says "Budget 2026"
   S.init({ storage: st, now: clock() });
-  eq(S.get(K2).period, "Budget 2026", "lazy load: get() before load() reads storage");
+  eq(S.get(K2).period, "Altered 2027", "lazy load: get() before load() reads storage — the ALTERED blob, not stale memory");
 });
 
 /* ---- 10. migration ------------------------------------------------------ */
@@ -362,6 +436,10 @@ group("migration", function (){
     fresh({ "ldsHub.operating.v1": blob });
     eq(S.load(), { version: 1, records: {} }, "non-record shape " + blob + " → empty state");
   });
+  // (g) the map key is authoritative over a stored propKey that disagrees
+  st = fresh({ "ldsHub.operating.v1": JSON.stringify({ version: 1, records: { "addr:real": Object.assign({}, v1rec, { propKey: "addr:stale" }) } }) });
+  S.load();
+  eq([S.get("addr:real").propKey, S.get("addr:stale")], ["addr:real", null], "map key wins over a stored propKey (record.propKey === its map key; nothing under the stale key)");
 });
 
 /* ---- 11. corrupt storage ------------------------------------------------ */
@@ -381,6 +459,39 @@ group("corrupt / hostile storage", function (){
   var r = S.ensure("name:x", { propertyName: "X" });
   eq(S.save(), false, "setItem that throws: save() returns false, no throw");
   eq(S.get("name:x"), r, "…while the in-memory state keeps the write");
+});
+
+/* ---- 11b. prototype safety --------------------------------------------- */
+group("prototype safety", function (){
+  var st = fresh(), K = "addr:12 spruce st";
+  S.ensure(K, { propertyName: "Spruce" });
+  var w = st.writes.length, before = S.get(K);
+  throwsType(function (){ S.setAssumptions(K, JSON.parse('{"__proto__":{"polluted":1}}')); }, "setAssumptions rejects a __proto__ key");
+  throwsType(function (){ S.setAssumptions(K, { sizing: JSON.parse('{"constructor":{"prototype":{"polluted":1}}}') }); }, "…and nested constructor / prototype keys");
+  throwsType(function (){ S.setAssumptions(K, { prototype: 1 }); }, "…and a prototype leaf");
+  eq(({}).polluted, undefined, "Object.prototype is clean after the probes");
+  eq(S.get(K).assumptions, null, "nothing merged");
+  throwsType(function (){ S.setLine("__proto__", "RET", { annual: 1, source: "manual" }); }, "propKey \"__proto__\" → TypeError");
+  throwsType(function (){ S.ensure("constructor", { propertyName: "x" }); }, "propKey \"constructor\" → TypeError");
+  throwsType(function (){ S.setUnits("prototype", 1); }, "propKey \"prototype\" → TypeError");
+  throwsType(function (){ S.setLine(K, "__proto__", { annual: 1, source: "manual" }); }, "line code \"__proto__\" → TypeError");
+  throwsType(function (){ S.setLines(K, { constructor: { annual: 1, source: "manual" } }); }, "line code \"constructor\" in a bulk → TypeError");
+  throwsType(function (){ S.setControllable(K, "prototype", true); }, "line code \"prototype\" → TypeError");
+  throwsType(function (){ S.removeLine(K, "__proto__"); }, "removeLine code \"__proto__\" → TypeError");
+  eq(S.get(K), before, "record unchanged");
+  eq(st.writes.length, w, "nothing saved");
+  eq(Object.keys(S.all()), [K], "no record was created under a reserved key");
+  // a hostile stored blob: reserved keys are dropped on load, never merged into a prototype
+  var hostile = JSON.parse('{"__proto__":{"lines":{}},"addr:h":{"lines":{"__proto__":{"annual":1},"RET":{"annual":2,"source":"constructor"}},"assumptions":{"__proto__":{"polluted":1},"vacancyPct":0.05}}}');
+  st = fresh({ "ldsHub.operating.v1": JSON.stringify({ version: 1, records: hostile }) });
+  ok(st.peek(S.KEY).indexOf('"__proto__"') > 0, "(the seeded blob really carries __proto__ keys)");
+  var recs = S.load().records;
+  eq(Object.keys(recs), ["addr:h"], "a record keyed __proto__ is dropped on load");
+  eq(Object.keys(recs["addr:h"].lines), ["RET"], "a line coded __proto__ is dropped on load");
+  eq(recs["addr:h"].lines.RET.source, "manual", "a stored source of \"constructor\" loads as \"manual\" (own-key check, not a prototype lookup)");
+  eq(recs["addr:h"].assumptions, { vacancyPct: 0.05 }, "a __proto__ assumption key is dropped on load");
+  eq(({}).polluted, undefined, "Object.prototype still clean");
+  ok(Object.getPrototypeOf(S.get("addr:h").lines) === Object.prototype && Object.getPrototypeOf(S.get("addr:h").assumptions) === Object.prototype, "loaded maps have the plain Object prototype");
 });
 
 /* ---- 12. reads are copies ---------------------------------------------- */
@@ -426,13 +537,15 @@ group("isolation: loans store + loan objects untouched", function (){
   S.setAssumptions(K, { sizing: { intRate: loan.annualRate, amortYears: loan.amortizationMonths / 12 } });
   S.setUnits(K, 232); S.setPeriod(K, "T12"); S.save();
   S.ensure("name:tmp", { propertyName: "tmp" }); S.remove("name:tmp");
+  S.rename(K, "addr:moved"); S.rename("addr:moved", K);
   S.init({ storage: st, now: clock() }); S.load();
-  eq(st.getItem(LOANS_KEY), loansRaw, "loans store string is byte-identical after every write method");
-  eq(st.getItem("ldsHub.uw.v1"), "{\"x\":1}", "an unrelated key is byte-identical too");
+  eq(st.peek(LOANS_KEY), loansRaw, "loans store string is byte-identical after every write method");
+  eq(st.peek("ldsHub.uw.v1"), "{\"x\":1}", "an unrelated key is byte-identical too");
   eq(JSON.stringify(loan), loanSnap, "the loan object passed to ensure() is byte-identical");
   eq(loan, loanCopy, "…and deep-equal to its snapshot");
   eq(JSON.stringify(loans), loansRaw, "the whole loans array is unchanged");
   ok(st.writes.length > 0 && st.writes.every(function (k){ return k === S.KEY; }), "every setItem call targeted KEY only (" + st.writes.length + " writes)");
+  ok(st.reads.length > 0 && st.reads.every(function (k){ return k === S.KEY; }), "every getItem call targeted KEY only — the loans store was never even READ (" + st.reads.length + " reads)");
   eq(st.keys().sort(), ["ldsHub.loans.v7", "ldsHub.operating.v1", "ldsHub.uw.v1"], "no other keys were created");
   var rec = S.get(K);
   eq(Object.keys(rec), ["propKey","propertyName","units","period","lines","assumptions","meta"], "ensure(key, loan) copied only the identity fields — no loan fields leaked into the record");

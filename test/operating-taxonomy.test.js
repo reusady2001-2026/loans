@@ -1,9 +1,10 @@
 /* Taxonomy tests (OPERATING-CONTRACT §3 / P5) — plain node, no framework:
      node test/operating-taxonomy.test.js
-   Prints "  ok   …" / "  FAIL …", exits 1 on any failure. The module is pure,
-   so no fixture and no storage are needed. The §3 arrays are re-typed here
-   independently of the module so a drift in either is caught, and the module
-   is checked against the live SetupBuilder / T12Classify it must agree with. */
+   Prints "  ok   …" / "  FAIL …", exits 1 on any failure. The module is pure, so
+   no fixture and no localStorage are needed (the store round-trip injects an
+   in-memory storage). The §3 arrays are re-typed here independently of the
+   module so a drift in either is caught, and the module is checked against the
+   live SetupBuilder / T12Classify it must agree with. */
 "use strict";
 var path = require("path"), fs = require("fs"), vm = require("vm");
 var ROOT = path.join(__dirname, "..");

@@ -109,8 +109,10 @@
     var ip = b.result.inPlace, uw = b.result.underwritten;
     // Codes the engine laid out as no worksheet line (unknown or mis-cased —
     // FOO, gpr): their dollars are in none of the figures below, so name them
-    // for the sheet / roll-up to warn on instead of letting them vanish.
-    var laid = {}; b.worksheet.lines.forEach(function (l){ laid[l.key] = 1; });
+    // for the sheet / roll-up to warn on instead of letting them vanish. The
+    // synthetic `reserves` line is built with t12: 0 whatever sums.reserves says
+    // (unlike GPR/VAC/MGMT, which read sums.X), so it never counts as "laid".
+    var laid = {}; b.worksheet.lines.forEach(function (l){ if (l.key !== "reserves") laid[l.key] = 1; });
     var dropped = Object.keys(sums).filter(function (c){ return !laid[c]; });
     return {
       egi: ip.egi, opex: ip.opex, inPlaceNOI: ip.noi,

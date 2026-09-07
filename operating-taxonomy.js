@@ -58,8 +58,9 @@
   // role() keeps agreeing with T12Classify.roleOf even for codes ORDER does not
   // carry (the contract's "must agree" beats any second opinion here). Inherited
   // caveat: roleOf is a plain EXPENSE[code] lookup, so a prototype key such as
-  // "constructor" or "__proto__" reads as "expense" — the root cause is in
-  // t12-classify.js (E2) and is fixed there; this module's own tables are guarded.
+  // "constructor" or "__proto__" reads as "expense" — the root cause belongs to
+  // E2 (t12-classify.js roleOf should use an own-property lookup); this module's
+  // own tables are guarded.
   function section(code){
     if (has(SECTION, code)) return SECTION[code];
     return T12.roleOf(code) === "income" ? "other" : "expense";
