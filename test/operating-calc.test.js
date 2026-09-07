@@ -184,6 +184,23 @@ var recNeg = { lines: { GPR: line(400000), RET: line(500000) } };
 cents(Calc.effectiveNOI(recNeg), -100000, "negative in-place NOI is reported as entered (−100,000), not nulled");
 
 // ---------------------------------------------------------------------------
+section("derive — unknown / mis-cased codes are surfaced as `dropped`, never silently summed");
+// buildSetup lays out only RENTAL/OTHER/EXPENSE codes, so FOO's 50,000 reaches no figure:
+//   in-place EGI = NOI = 1,000,000 (GPR alone; MGMT 0, reserves 0 in-place)
+var dFoo = Calc.derive({ units: 10, lines: { GPR: line(1000000), FOO: line(50000) } }, BENCH);
+deepEq(dFoo.dropped, ["FOO"], "GPR + FOO → dropped === [\"FOO\"]");
+cents(dFoo.inPlaceNOI, 1000000, "NOI excludes FOO's 50,000 → 1,000,000");
+cents(dFoo.egi, 1000000, "in-place EGI excludes FOO → 1,000,000");
+cents(dFoo.opex, 0, "in-place opex excludes FOO → 0");
+ok(dFoo.worksheet.lines.every(function (l){ return l.key !== "FOO"; }), "FOO is not a worksheet line");
+eq(dFoo.categorySums.FOO, 50000, "…while categorySums still carries FOO's dollars (so the sheet can show what was ignored)");
+var dCase = Calc.derive({ units: 10, lines: { GPR: line(1000000), gpr: line(25000), RET: line(100000) } }, BENCH);
+deepEq(dCase.dropped, ["gpr"], "mis-cased `gpr` is dropped (codes are case-sensitive): dropped === [\"gpr\"]");
+cents(dCase.inPlaceNOI, 900000, "NOI = 1,000,000 − 100,000 = 900,000, excluding the mis-cased 25,000");
+var dMulti = Calc.derive({ lines: { ZZZ: line(1), GPR: line(2), FOO: line(3) } }, BENCH);
+deepEq(dMulti.dropped, ["ZZZ", "FOO"], "several unknown codes, in record order");
+deepEq(dB.dropped, [], "case B (EMPL/MOD/BD/PARK all taxonomy codes) → dropped []");
+
 section("derive — record with no lines never throws and yields zeros");
 var dEmpty = null, threw = false;
 try { dEmpty = Calc.derive({ propKey: "e", propertyName: "E", units: 100, lines: {}, assumptions: null }, BENCH); } catch (e){ threw = true; }
