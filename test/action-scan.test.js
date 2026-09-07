@@ -203,6 +203,13 @@ function sev(r){ return r && r.m ? r.m.severity : null; }   // null-guarded: a r
   eq((ActionScan.scan({}, [field], h, GD, { calc: FakeCalc })[0] || {}).value, 7, "hook null → the stored field is used (7 months)");
   var both = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "2031-01-01", _derivedMat: "2027-04-01", _bal: 1 });
   eq((ActionScan.scan({}, [both], h, GD, { calc: FakeCalc })[0] || {}).value, 7, "the hook's answer wins over the field");
+  // a hook answer that does not parse ("" / "n/a") must not hide a dated loan: the stored field is used
+  var junk1 = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "2027-04-01", _derivedMat: "", _bal: 1 });
+  eq((ActionScan.scan({}, [junk1], h, GD, { calc: FakeCalc })[0] || {}).value, 7, 'hook answers "" → the stored field is used (7 months)');
+  var junk2 = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "2027-01-15", _derivedMat: "n/a", _bal: 1 });
+  eq((ActionScan.scan({}, [junk2], h, GD, { calc: FakeCalc })[0] || {}).value, 4, 'hook answers "n/a" → the stored field is used (4 months)');
+  var junk3 = loan({ propertyName: "Mat", propertyAddress: "9 Mat Ave", maturityDate: "soon", _derivedMat: "n/a", _bal: 1 });
+  eq(ActionScan.scan({}, [junk3], h, GD, { calc: FakeCalc }).length, 0, "neither the hook nor the field parses → no flag");
 })();
 (function (){
   // today() is the hook, not the clock: from 2026-01-01, 2027-01-15 is 12 months → severity 2
@@ -397,12 +404,18 @@ section("render — ranked rows carry data-op-flag / data-op-prop, click → onO
   has(mount.innerHTML, "data-op-empty", "empty state marker"); has(mount.innerHTML, "All clear", "empty state text"); ok(mount.innerHTML.indexOf("data-op-flag") < 0, "no rows when empty");
   var odd = ActionScan.html([{ propKey: 'name:a "b" <c>', name: "A & B <Co>", kind: "dscr", severity: 2, value: 1, threshold: 1.2, impact: 0, detail: "x < y" }]);
   has(odd, "A &amp; B &lt;Co&gt;", "name escaped"); has(odd, 'data-op-prop="name:a &quot;b&quot; &lt;c&gt;"', "propKey escaped in the attribute"); has(odd, "x &lt; y", "detail escaped");
-  // a portfolio-level error row has no property: no data-op-prop, and a click on it never calls onOpen
+  // ONLY the portfolio-level error row (propKey null) has no property: no data-op-prop, and a click on it never calls onOpen
   var er = ActionScan.html([{ propKey: null, name: "Portfolio", kind: "error", severity: 1, value: 0, threshold: 0, impact: 0, detail: "Scan failed: x" }]);
-  has(er, 'data-op-flag="error"', "error flag renders as a row"); ok(er.indexOf("data-op-prop") < 0, "…without a data-op-prop"); has(er, "Scan error", "…labelled Scan error");
+  has(er, 'data-op-flag="error"', "portfolio-level error flag renders as a row"); ok(er.indexOf("data-op-prop") < 0, "…without a data-op-prop"); has(er, "Scan error", "…labelled Scan error");
   var noOpen = 0; ActionScan.render(mount, [], { onOpen: function (){ noOpen++; } });
   mount.onclick({ target: { closest: function (){ return { getAttribute: function (){ return null; } }; } } });
-  eq(noOpen, 0, "clicking a row without data-op-prop does not call onOpen");
+  eq(noOpen, 0, "clicking the portfolio-level row (no data-op-prop) does not call onOpen");
+  // a PROPERTY-level error row carries data-op-prop like any other flag — clicking it opens that property
+  var pr = ActionScan.html([{ propKey: "addr:0 boom st", name: "Boom", kind: "error", severity: 1, value: 0, threshold: 0, impact: 0, detail: "Scan failed: y" }]);
+  has(pr, 'data-op-flag="error" data-op-prop="addr:0 boom st"', "property-level error row carries data-op-prop");
+  var openedErr = []; ActionScan.render(mount, [], { onOpen: function (k){ openedErr.push(k); } });
+  mount.onclick({ target: { closest: function (){ return { getAttribute: function (a){ return a === "data-op-prop" ? "addr:0 boom st" : null; } }; } } });
+  eq(openedErr.join(), "addr:0 boom st", "clicking a property-level error row opens that property");
   ActionScan.render(null, flags, {}); ok(true, "render(null) is a no-op");
 })();
 
@@ -428,6 +441,26 @@ section("isolation — a throwing hook or a bad record yields ONE error flag for
   // missing key hook → one portfolio-level error flag, still no throw
   var k = ActionScan.scan({}, [good], { today: hooks.today }, GD, { calc: FakeCalc });
   eq(kinds(k), "error", "missing hooks.propertyKey → an error flag, not a throw"); has((k[0] || {}).detail, "hooks.propertyKey", "…naming the missing hook"); eq((k[0] || {}).propKey, null, "…with no property to open");
+  // shared inputs that blow up: hooks.today, hooks.globalDefaults, a records-map getter, bad opts → ONE portfolio-level error flag each, never a throw
+  var attempt = function (fn){ try { return { flags: fn(), threw: null }; } catch (e) { return { flags: null, threw: e }; } };
+  var recsOK = { "addr:1 alpha st": rec(kA, "Alpha", { GPR: 145000, RET: 40000 }) };
+  var t1 = attempt(function (){ return ActionScan.scan(recsOK, [good], Object.assign({}, hooks, { today: function (){ throw new Error("clock broke"); } }), GD, { calc: FakeCalc }); });
+  eq(t1.threw, null, "hooks.today throwing → no throw out of scan()"); eq(kinds(t1.flags || []), "error", "…one error flag"); eq(((t1.flags || [])[0] || {}).propKey, null, "…portfolio-level (no property)"); has(((t1.flags || [])[0] || {}).detail, "clock broke", "…with the hook's message");
+  var t2 = attempt(function (){ return ActionScan.scan(recsOK, [good], Object.assign({}, hooks, { globalDefaults: function (){ throw new Error("bench broke"); } }), null, { calc: FakeCalc }); });
+  eq(t2.threw, null, "hooks.globalDefaults throwing → no throw"); eq(kinds(t2.flags || []), "error", "…one portfolio-level error flag"); has(((t2.flags || [])[0] || {}).detail, "bench broke", "…with its message");
+  var trap = {}; Object.defineProperty(trap, "addr:1 alpha st", { enumerable: true, get: function (){ throw new Error("store getter broke"); } });
+  var t3 = attempt(function (){ return ActionScan.scan(trap, [good], hooks, GD, { calc: FakeCalc }); });
+  eq(t3.threw, null, "a throwing records-map getter → no throw"); eq(kinds(t3.flags || []), "error", "…one portfolio-level error flag"); has(((t3.flags || [])[0] || {}).detail, "store getter broke", "…with its message");
+  var badOpts = {}; Object.defineProperty(badOpts, "maturityMonths", { get: function (){ throw new Error("opts broke"); } });
+  var t4 = attempt(function (){ return ActionScan.scan(recsOK, [good], hooks, GD, badOpts); });
+  eq(t4.threw, null, "opts that throw on read → no throw"); eq(kinds(t4.flags || []), "error", "…one portfolio-level error flag");
+  // a record whose propertyName getter throws → a PROPERTY-level error flag (data-op-prop = its key), the rest of the portfolio unaffected
+  var badRec = { propKey: kA, lines: { GPR: line(145000, null, true) }, assumptions: null }; Object.defineProperty(badRec, "propertyName", { enumerable: true, get: function (){ throw new Error("name broke"); } });
+  var t5 = attempt(function (){ return ActionScan.scan({ "addr:1 alpha st": badRec, "addr:4 delta rd": rec(kD, "Delta", { GPR: 100000, RET: 34000 }) }, [good, D], hooks, GD, { calc: FakeCalc }); });
+  eq(t5.threw, null, "a record whose name getter throws → no throw");
+  var e5 = find(t5.flags || [], "error", kA) || {};
+  eq(e5.propKey, kA, "…a property-level error flag keyed to that property"); has(e5.detail, "name broke", "…with the getter's message");
+  eq(!!find(t5.flags || [], "dy", kD), true, "…and the other property is still judged (its dy flag)");
 })();
 
 // ================================================================================
