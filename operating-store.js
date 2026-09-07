@@ -34,6 +34,11 @@
     TRSH:true, CAB:true, PLL:true
   };
   function has(o, k){ return Object.prototype.hasOwnProperty.call(o, k); }
+  // Keys that would reach Object.prototype when used as a map key or merge
+  // target (JSON.parse('{"__proto__":…}') creates a real own property). They
+  // are never valid propKeys, line codes or assumption fields: rejected on
+  // write, dropped on load.
+  function reserved(k){ return k === "__proto__" || k === "constructor" || k === "prototype"; }
   function defaultControllable(code){ return has(CONTROLLABLE_DEFAULT, code) ? CONTROLLABLE_DEFAULT[code] : true; }
 
   function isObj(v){ return v != null && typeof v === "object" && !Array.isArray(v); }
@@ -98,13 +103,14 @@
   //  • the SPEC-draft flat map { key: record } that had no wrapper at all;
   //  • records / lines with fields missing (filled with the schema defaults).
   // Idempotent: re-normalizing a v1 state changes nothing. Garbage entries
-  // (non-object records, lines without a readable amount) are dropped.
+  // (non-object records, lines without a readable amount, reserved keys) are
+  // dropped.
   function migrate(parsed){
     var recsIn = null;
     if (isObj(parsed)) recsIn = isObj(parsed.records) ? parsed.records : (has(parsed, "records") || has(parsed, "version")) ? null : parsed;
     var out = {}, fallback = null;
     var ts = function (){ return fallback || (fallback = _now()); };   // one timestamp for every date backfilled in this load, taken only if needed
-    if (recsIn) for (var k in recsIn) if (has(recsIn, k) && isObj(recsIn[k])) out[k] = normRecord(k, recsIn[k], ts);
+    if (recsIn) for (var k in recsIn) if (has(recsIn, k) && !reserved(k) && isObj(recsIn[k])) out[k] = normRecord(k, recsIn[k], ts);
     return { version: VERSION, records: out };
   }
   function normRecord(key, r, ts){
@@ -112,7 +118,7 @@
     var lastUpdated = strOrNull(meta.lastUpdated) || strOrNull(meta.createdAt) || ts();
     var createdAt = strOrNull(meta.createdAt) || lastUpdated;
     var lines = {}, src = isObj(r.lines) ? r.lines : {};
-    for (var c in src) if (has(src, c) && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
+    for (var c in src) if (has(src, c) && !reserved(c) && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
     return {                                      // field order = contract §2 order, so the persisted JSON is canonical
       propKey: key,                               // the map key is authoritative over a stored propKey
       propertyName: typeof r.propertyName === "string" ? r.propertyName : (typeof r.name === "string" ? r.name : ""),
@@ -128,7 +134,7 @@
     if (annual == null) return null;              // a line without a readable amount is not a line
     return { annual: annual, prevAnnual: toNum(l.prevAnnual),
              controllable: typeof l.controllable === "boolean" ? l.controllable : defaultControllable(code),
-             source: SOURCES[l.source] ? l.source : "manual",
+             source: has(SOURCES, l.source) ? l.source : "manual",   // own-key check: a stored "constructor" must not pass via the prototype
              updatedAt: strOrNull(l.updatedAt) || fallbackISO, note: strOrNull(l.note) };
   }
   function unitsOrNull(n){ return (n != null && n >= 0) ? n : null; }
@@ -137,7 +143,7 @@
   function normAssump(a){
     if (!isObj(a)) return null;
     var out = {}, any = false;
-    for (var k in a) if (has(a, k)) {
+    for (var k in a) if (has(a, k) && !reserved(k)) {
       var v = a[k];
       if (isNum(v)) { out[k] = v; any = true; }
       else if (isObj(v)) { var sub = normAssump(v); if (sub) { out[k] = sub; any = true; } }
@@ -150,8 +156,9 @@
   function get(k){ var recs = st().records; return (typeof k === "string" && has(recs, k)) ? clone(recs[k]) : null; }
 
   /* ---- writes ----------------------------------------------------------- */
-  function key(k, fn){ if (typeof k !== "string" || !k) throw new TypeError("OperatingStore." + fn + ": propKey must be a non-empty string"); return k; }
-  function code(c, fn){ if (typeof c !== "string" || !c) throw new TypeError("OperatingStore." + fn + ": code must be a non-empty string"); return c; }
+  function validKey(k){ return typeof k === "string" && k !== "" && !reserved(k); }
+  function key(k, fn){ if (!validKey(k)) throw new TypeError("OperatingStore." + fn + ": propKey must be a non-empty, non-reserved string"); return k; }
+  function code(c, fn){ if (!validKey(c)) throw new TypeError("OperatingStore." + fn + ": code must be a non-empty, non-reserved string"); return c; }
   function newRecord(k, name, units, ts){
     return { propKey: k, propertyName: name, units: units, period: null, lines: {}, assumptions: null,
              meta: { createdAt: ts, lastUpdated: ts, sourceFile: null } };
@@ -160,11 +167,15 @@
   // call consumes exactly one clock tick (createdAt === lastUpdated === updatedAt).
   function getOrCreate(k, ts){ var recs = st().records; return has(recs, k) ? recs[k] : (recs[k] = newRecord(k, "", null, ts)); }
 
-  // Create-if-missing. On an EXISTING record only blank identity fields are
-  // filled (a record a setter created implicitly has none); a name or unit
-  // count already on the record is never overwritten here, and nothing here
-  // counts as an operating-data update — ensure runs on every property pick,
-  // and "last updated" must not degrade into "last viewed".
+  // Create-if-missing, and keep the record's IDENTITY current. The display
+  // name comes from the loans (it is never typed on the record), so a non-blank
+  // name that differs from the stored one is refreshed — an operator's
+  // correction to a loan's name must reach the roll-up on the next pick; a
+  // blank name never clobbers a real one. Units are filled only when the
+  // record has none (they may have been set by hand) and never overwritten
+  // with a caller's null/undefined. None of this is an operating-data update:
+  // ensure runs on every property pick, and "last updated" must not degrade
+  // into "last viewed".
   function ensure(k, opts){
     key(k, "ensure"); opts = opts || {};
     var name = opts.propertyName, units = opts.units;
@@ -173,7 +184,7 @@
     var recs = st().records, r = has(recs, k) ? recs[k] : null, dirty = false;
     if (!r) { r = recs[k] = newRecord(k, name, units, _now()); dirty = true; }
     else {
-      if (r.propertyName === "" && name) { r.propertyName = name; dirty = true; }
+      if (name && name !== r.propertyName) { r.propertyName = name; dirty = true; }
       if (r.units === null && units !== null) { r.units = units; dirty = true; }
     }
     if (dirty) save();
@@ -247,6 +258,7 @@
   function checkPatch(p, path){
     for (var k in p) if (has(p, k)) {
       var v = p[k], at = path ? path + "." + k : k;
+      if (reserved(k)) throw new TypeError("OperatingStore.setAssumptions: " + at + " is not a valid assumption key");
       if (v === undefined || v === null || isNum(v)) continue;
       if (isObj(v)) { checkPatch(v, at); continue; }
       throw new TypeError("OperatingStore.setAssumptions: " + at + " must be a finite number, null or an object");
@@ -257,7 +269,7 @@
       var v = p[k];
       if (v === undefined) continue;
       if (v === null) { delete base[k]; continue; }
-      if (isObj(v)) { var sub = isObj(base[k]) ? base[k] : {}; mergeAssump(sub, v); if (Object.keys(sub).length) base[k] = sub; else delete base[k]; continue; }
+      if (isObj(v)) { var sub = (has(base, k) && isObj(base[k])) ? base[k] : {}; mergeAssump(sub, v); if (Object.keys(sub).length) base[k] = sub; else delete base[k]; continue; }
       base[k] = v;
     }
     return base;
@@ -292,6 +304,21 @@
     delete recs[k]; save();
     return true;
   }
+  // Move a record to a new §1 key — an address edit changes the key, and the
+  // operating data must follow it rather than be orphaned. The record object
+  // moves as-is (lines, assumptions, meta, units, period all preserved); only
+  // propKey changes, and being identity it does not stamp lastUpdated. Refuses
+  // with false and NO save when there is nothing to move, when newKey is
+  // already taken (never silently merge or destroy), or when the keys are
+  // equal or invalid.
+  function rename(oldKey, newKey){
+    if (!validKey(oldKey) || !validKey(newKey) || oldKey === newKey) return false;
+    var recs = st().records;
+    if (!has(recs, oldKey) || has(recs, newKey)) return false;
+    var r = recs[oldKey]; delete recs[oldKey];
+    r.propKey = newKey; recs[newKey] = r; save();
+    return true;
+  }
   function save(){
     var s = st();
     // A full / unavailable storage must never break the app: the in-memory
@@ -301,6 +328,6 @@
 
   var api = { KEY: KEY, init: init, load: load, all: all, get: get, ensure: ensure,
               setLine: setLine, setLines: setLines, removeLine: removeLine, setControllable: setControllable,
-              setAssumptions: setAssumptions, setUnits: setUnits, setPeriod: setPeriod, remove: remove, save: save };
+              setAssumptions: setAssumptions, setUnits: setUnits, setPeriod: setPeriod, remove: remove, rename: rename, save: save };
   return api;
 });

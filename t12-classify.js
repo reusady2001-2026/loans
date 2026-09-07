@@ -63,7 +63,7 @@
       return "OTH";
     }
     // payroll cluster (before RET so "payroll taxes" doesn't read as a tax)
-    if (has(/payroll|salar|wages|workers?\s*comp|health\s+insurance|\bbonus\b|\bovertime\b|outside\s+services|benefit|\bfica\b|\bsuta\b|\bfuta\b|401\s*k|severance|holiday\s+(rate|pay)|vacation\s+pay|temp\s+help/)) return "PAY";
+    if (has(/payroll|salar|wages|workers?'?s?\s*comp|health\s+insurance|\bbonus\b|\bovertime\b|outside\s+services|benefit|\bfica\b|\bsuta\b|\bfuta\b|401\s*k|severance|disability|unemployment|holiday\s+(\w+\s+)?rate|holiday\s+pay|vacation\s+pay|temp\s+help|\bhr\b/)) return X("PAY");
     // staff positions — unless the line is a vendor contract ("Concierge Services Contract")
     if (!has(/contract|agreement|program/) && has(/leasing\s+(consultant|agent|staff|manager|director)|property\s+manager|assistant\s+manager|community\s+manager|site\s+manager|maintenance\s+(tech|supervisor|staff|manager)|\bporters?\b|\bconcierge\b|groundskeeper|superintendent|handym[ae]n/)) return "PAY";
 
@@ -76,7 +76,7 @@
 
     // ---- income items ----
     var fee = !has(EXP_WORD);
-    if (has(/rental\s+income\s*[-–:]\s*other|other\s+rental\s+income|cleaning\s+fee|insurance\s+(proceeds|claim|recover|reimb|refund)|forfeit|deposit\s+(forfeit|income|alternative|waiver)|sd\s+waiver/)) return I("OTH");
+    if (has(/rental\s+income\s*[-–:]\s*other|other\s+rental\s+income|cleaning\s+fee|insurance\s+(proceeds|claim|recover|reimb|refund)|forfeit|deposit\s+(forfeit|income|alternative|waiver)|security\s+deposit|sd\s+waiver/)) return I("OTH");
     if (has(/commercial\s+(rent|income|lease|tenant|space)|retail\s+(rent|income|lease|tenant|space)|store\s+rent/)) return "COM";
     if (has(/\bcam\b|common\s+area\s+(maint|charge|reimb|income)/)) return "CAM";
     if (has(/antenna|cell\s+tower|rooftop\s+(lease|license)|tower\s+(lease|rent|income)/)) return "ANT";
@@ -98,6 +98,7 @@
     if (fee && has(/application|app\s+fee/)) return "APP";
     if (fee && has(/administrative\s+fee|admin(istrative|istration)?\s+(fee|income|charge)s?\b|admin\s+fees?\b/)) return "ADM";
     if (fee && has(/parking|garage|carport/)) return "PARK";
+    if (isInc && has(/\brents?\b/)) return "GPR";                    // any other "… Rent" printed under INCOME is rent
 
     // ---- expense items ----
     // professional fees first, so "Real Estate Tax Consultant" is a fee, not the tax
@@ -109,7 +110,7 @@
     if (!has(/repair|clean|drain|heater|treatment|inspect|pump|removal|snack|coffee|bottle/) &&
         has(/electric(?!al)|\bwater\b|\bgas\b|sewer|utilit|\bfuel\b|heating\s+oil|fuel\s+oil|\bsteam\b|propane|energy|flow\s+billing|water\s+billing/)) return isInc ? "RUBS" : "UTIL";
     // auto & travel → G&A (before marketing so "Auto Leasing" isn't leasing)
-    if (has(/auto\s+(expense|leas|lease|rental|loan|payment)|vehicle|ez\s*pass|\btolls?\b|mileage|\buber\b|\btaxi\b|airfare|lodging|hotel|ground\s+transport|travel/)) return X("GA");
+    if (has(/auto\s+(expense|leas|lease|rental|loan|payment)|vehicle|ez\s*pass|\btolls?\b|mileage|\buber\b|\btaxi\b|airfare|\bflights?\b|lodging|hotel|ground\s+transport|travel/)) return X("GA");
     if (has(/marketing|advertis|resident\s+(event|retention|referral|coffee|function)|promotion|broker'?s?\s+fee|leasing|locator|apartments\.com|zillow|\bils\b|internet\s+listing|signage|banner|brochure|flyer|photograph|virtual\s+tour|social\s+media|\bseo\b|referral\s+fee|commission/)) return X("MKT");
     // trash before the contract/repair words: "Trash Removal Contract" is trash, not a contract
     if (!has(/repair|supplies|bags?\b|cans?\b|liner|\bparts?\b/) &&
@@ -159,7 +160,7 @@
       return "GA";                                                    // incl. a late fee PAID — a penalty, not LATE income
     }
     if(/TAX|INSURAN/.test(S)){
-      if(/payroll\s+tax|workers?\s*comp|health\s+ins|disability|unemployment/.test(s)) return "PAY";   // payroll burden, wherever filed
+      if(/payroll\s+tax|workers?'?s?\s*comp|health\s+ins|disability|unemployment/.test(s)) return "PAY";   // payroll burden, wherever filed
       if(/income\s+tax|corporat\w*\s+tax|franchise|sales\s+tax|excise|consult|service|prep|finance\s+charge|pay\s+by\s+phone|convenience/.test(s)) return "GA";
       return /tax/.test(s) ? "RET" : "INS";
     }

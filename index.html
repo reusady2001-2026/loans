@@ -3520,7 +3520,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ failed(rm, "The portfolio roll-up", e); }
       try{ ActionScan.render(sm, ActionScan.scan(records, loans, hooks, gd, {}), { onOpen: open }); }catch(e){ failed(sm, "The action list", e); }
     }
-    window.LDS_OPERATING_HOOKS = opHooks;   // the contract's bridge, exposed for tests and the modules' diagnostics
+    // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
+    try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ opFocusKey = propertyKey(loan); opBasis = "annual"; openTab("underwriting"); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
