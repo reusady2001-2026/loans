@@ -101,7 +101,7 @@
 
     // ---- expense items ----
     // professional fees first, so "Real Estate Tax Consultant" is a fee, not the tax
-    if (has(/consult|account(ing|ant)|audit|bookkeep|legal|attorney|professional\s+fee|tax\s+(prep|return|service)|expedit/)) return I("OTH") === "GA" ? "GA" : X("OTH") === "OTH" && isInc ? "OTH" : (isExp ? "GA" : "OTH");
+    if (has(/consult|account(ing|ant)|audit|bookkeep|legal|attorney|professional\s+fee|tax\s+(prep|return|service)|expedit/)) return isExp ? "GA" : "OTH";
     if (has(/real\s+estate\s+tax|property\s+tax|\btaxes\b|\bre\s+tax|school\s+tax|county\s+tax|city\s+tax|municipal\s+tax|\bpilot\b|tax\s+(bill|payment|escrow)/)) return (isInc || has(/income|refund|rebate/)) ? "OTH" : "RET";
     if (has(/renters?\s+insurance/)) return isExp ? "GA" : "OTH";
     if (has(/insurance|liability|umbrella|casualty|\bd&o\b|fidelity|flood\s+ins|earthquake|hazard\s+ins/)) return X("INS");
