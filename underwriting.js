@@ -18,8 +18,14 @@
      method 'pctEGI'  → uw =  param × EGI                  (management fee, PILOT tax)
      method 'perUnit' → uw =  param × units               (budget expenses, reserves)
 
+   'pctBase' is honoured in the rental section (it reads the running subtotal,
+   so line ORDER is the formula), 'pctEGI' in expense/reserve (it reads the
+   underwritten EGI), 'perUnit' anywhere; anything else is a pass-through.
+   The in-place column always sums the `t12` actuals, whatever the method.
+
    Sections: 'rental' → Effective Rental Income, 'other' → Other Income,
              'expense' → Operating Expenses, 'reserve' → Replacement Reserves.
+   Tests: node test/underwriting.test.js (hand-derived figures, to the cent).
    ========================================================================== */
 (function (root, factory) {
   var api = factory();
@@ -29,47 +35,66 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  // Coerce to a finite number, tolerating numeric strings ("96", "1,200", "$3.5")
-  // — form inputs and some spreadsheet cells arrive as text.
-  var n = function (v) {
-    if (typeof v === "string") v = parseFloat(v.replace(/[^0-9.\-]/g, ""));
-    return typeof v === "number" && isFinite(v) ? v : 0;
+  // Coerce to a number, tolerating the ways money and rates arrive as text from
+  // form inputs / spreadsheet cells: "96", "1,200", "$3.5", an accounting
+  // negative "(1,200)" or "1,200-" → -1200, and "5%" → 0.05. parse() yields NaN
+  // for anything non-numeric so sizeLoan can tell "blank" from "zero"; n()
+  // collapses that to 0 for arithmetic.
+  var parse = function (v) {
+    if (typeof v === "string") {
+      var s = v.trim(), x = parseFloat(s.replace(/[^0-9.\-]/g, ""));
+      if (/\(.*\)|-\s*$/.test(s)) x = -Math.abs(x);
+      if (s.indexOf("%") >= 0) x = x / 100;
+      return x;
+    }
+    return typeof v === "number" ? v : NaN;
   };
+  var n = function (v) { var x = parse(v); return isFinite(x) ? x : 0; };
 
   // ---- NOI build-up: in-place (T12) and underwritten, side by side ---------
   function computeNOI(ws) {
-    var units = n(ws.units), lines = ws.lines || [];
+    ws = ws || {};
+    // units null / blank / negative → 0, so every $/unit line prices to 0 rather
+    // than throwing or going negative; a worksheet with no lines is just zeros.
+    var units = Math.max(0, n(ws.units));
+    var lines = Array.isArray(ws.lines) ? ws.lines.filter(function (l) { return l && typeof l === "object"; }) : [];
     var uw = {};                       // computed underwritten value per line key
+    var perUnit = function (ln) { return n(ln.param) * units; };
 
-    // Rental section — order matters: pctBase lines read the running subtotal.
+    // Rental section — ORDER MATTERS: a pctBase line prices off the running
+    // subtotal of the lines ABOVE it (deductions carried negative, as on the
+    // statement). SetupBuilder lays the block out GPR, EMPL, MOD, VAC(pctBase),
+    // CONC, BD, so   vacancy = -vacancyPct × (GPR + EMPL + MOD)   and the
+    // concessions / bad-debt actuals below it never shrink the vacancy base.
     var eri = 0;
     lines.forEach(function (ln) {
       if (ln.section !== "rental") return;
-      var v = (ln.method === "pctBase") ? -n(ln.param) * eri : n(ln.uw);
+      var v = ln.method === "pctBase" ? -n(ln.param) * eri
+            : ln.method === "perUnit" ? perUnit(ln)
+            :                           n(ln.uw);
       uw[ln.key] = v; eri += v;
     });
 
-    // Other income — pass-through.
+    // Other income — pass-through (or $/unit).
     var otherInc = 0;
     lines.forEach(function (ln) {
       if (ln.section !== "other") return;
-      var v = n(ln.uw); uw[ln.key] = v; otherInc += v;
+      var v = ln.method === "perUnit" ? perUnit(ln) : n(ln.uw);
+      uw[ln.key] = v; otherInc += v;
     });
 
     var egi = eri + otherInc;
 
-    // Expenses (mgmt fee & PILOT tax read EGI) and reserves.
+    // Expenses and reserves: $/unit, % of EGI (management fee, PILOT tax — read
+    // the UNDERWRITTEN EGI just computed), or the pass-through actual.
     var opex = 0, reserves = 0;
     lines.forEach(function (ln) {
-      if (ln.section === "expense") {
-        var v = ln.method === "perUnit" ? n(ln.param) * units
-              : ln.method === "pctEGI"  ? n(ln.param) * egi
-              :                            n(ln.uw);
-        uw[ln.key] = v; opex += v;
-      } else if (ln.section === "reserve") {
-        var r = ln.method === "perUnit" ? n(ln.param) * units : n(ln.uw);
-        uw[ln.key] = r; reserves += r;
-      }
+      if (ln.section !== "expense" && ln.section !== "reserve") return;
+      var v = ln.method === "perUnit" ? perUnit(ln)
+            : ln.method === "pctEGI"  ? n(ln.param) * egi
+            :                           n(ln.uw);
+      uw[ln.key] = v;
+      if (ln.section === "expense") opex += v; else reserves += v;
     });
 
     var noi = egi - opex - reserves;
@@ -92,31 +117,68 @@
   }
 
   // ---- Debt sizing: max supportable loan = MIN(LTV, DSCR, Debt Yield) ------
-  // Annual mortgage constant. With a very long amortization the constant
-  // collapses to the interest rate (interest-only), which is how life-co /
-  // CMBS loans in this model are sized.
+  // Annual mortgage constant = 12 × the monthly payment per $1 of principal,
+  //   r / (1 − (1 + r)^−N)   with r = rate/12 and N = amortization months.
+  // A zero / blank / negative amortization means interest-only (constant =
+  // the rate); a very long amortization collapses to the same thing, which is
+  // how life-co / CMBS loans in this model are sized. A 0% note amortizes
+  // straight-line (12/N). Never returns NaN or ±Infinity.
   function mortgageConstant(rate, amortYears) {
-    var r = n(rate) / 12, months = Math.round(n(amortYears) * 12);
-    if (!months) return n(rate);
-    if (r === 0) return 1 / n(amortYears);
-    return (r / (1 - Math.pow(1 + r, -months))) * 12;
+    rate = n(rate);
+    var months = Math.round(n(amortYears) * 12), r = rate / 12;
+    if (!(months > 0)) return rate;
+    if (r === 0) return 12 / months;
+    var f = r / (1 - Math.pow(1 + r, -months));
+    return isFinite(f) ? f * 12 : rate;
   }
 
+  // sizeLoan(noi, { capRate, ltvMax, dscrMin, dyMin, intRate, amortYears, interestOnly? })
+  //   value    = NOI / capRate
+  //   loanLTV  = value × ltvMax
+  //   loanDSCR = NOI / (dscrMin × mortgageConstant)
+  //   loanDY   = NOI / dyMin
+  //   maxLoan  = the smallest applicable leg; binding = its name.
+  // Contract: `maxLoan` is ALWAYS a finite number (0 when nothing can be sized);
+  // anything that cannot be computed is null — never NaN / ±Infinity — so the
+  // UI's `> 0` / `!= null` guards and SetupBuilder.sizingSummary's sums stay
+  // honest (a negative NOI used to produce a NEGATIVE max loan that summed into
+  // the portfolio total). A leg is inapplicable (null, left out of the MIN) when
+  // NOI <= 0, or its divisor is not positive (cap rate / DSCR floor / DY floor
+  // of 0, or a 0 debt constant = no debt service to cover). A missing, blank or
+  // non-numeric parameter falls back to DEFAULTS (a blanked form field must not
+  // silently zero the loan); an explicit 0 is honoured. amortYears 0 or
+  // interestOnly:true sizes interest-only. A whole benchmarks object (with a
+  // nested `sizing`) is accepted too.
+  var SIZING_KEYS = ["capRate", "ltvMax", "dscrMin", "dyMin", "intRate", "amortYears"];
   function sizeLoan(noi, p) {
+    p = (p && typeof p === "object") ? p : {};
+    if (p.sizing && typeof p.sizing === "object" && !SIZING_KEYS.some(function (k) { return p[k] != null; })) p = p.sizing;
+    var P = function (k) { var x = parse(p[k]); return isFinite(x) ? x : DEFAULTS[k]; };
+    var fin = function (x) { return (typeof x === "number" && isFinite(x)) ? x : null; };
+    var capRate = P("capRate"), ltvMax = P("ltvMax"), dscrMin = P("dscrMin"), dyMin = P("dyMin"), intRate = P("intRate");
+    var amortYears = p.interestOnly === true ? 0 : P("amortYears");
+    var mc = mortgageConstant(intRate, amortYears);
     noi = n(noi);
-    var value  = n(p.capRate) > 0 ? noi / n(p.capRate) : 0;
-    var mc     = mortgageConstant(p.intRate, p.amortYears);
-    var loanLTV  = value * n(p.ltvMax);
-    var loanDSCR = (n(p.dscrMin) > 0 && mc > 0) ? noi / (n(p.dscrMin) * mc) : 0;
-    var loanDY   = n(p.dyMin) > 0 ? noi / n(p.dyMin) : 0;
-    var maxLoan  = Math.min(loanLTV, loanDSCR, loanDY);
-    var binding  = maxLoan === loanDY ? "Debt Yield" : maxLoan === loanLTV ? "LTV" : "DSCR";
+    var ok = noi > 0;
+    var value    = fin(ok && capRate > 0 ? noi / capRate : null);
+    var loanLTV  = fin(value != null && ltvMax >= 0 ? value * ltvMax : null);
+    var loanDSCR = fin(ok && dscrMin > 0 && mc > 0 ? noi / (dscrMin * mc) : null);
+    var loanDY   = fin(ok && dyMin > 0 ? noi / dyMin : null);
+    // Strict `<` keeps the first leg on an exact tie: Debt Yield, then LTV, then
+    // DSCR — the same precedence the original MIN/=== chain had.
+    var maxLoan = 0, binding = null;
+    [["Debt Yield", loanDY], ["LTV", loanLTV], ["DSCR", loanDSCR]].forEach(function (leg) {
+      if (leg[1] != null && (binding === null || leg[1] < maxLoan)) { maxLoan = leg[1]; binding = leg[0]; }
+    });
+    var sized = maxLoan > 0;
     return {
       value: value, mortgageConstant: mc,
       loanLTV: loanLTV, loanDSCR: loanDSCR, loanDY: loanDY, maxLoan: maxLoan, binding: binding,
-      impliedLTV:       value > 0   ? maxLoan / value       : null,
-      impliedDSCR:      maxLoan > 0 && mc > 0 ? noi / (maxLoan * mc) : null,
-      impliedDebtYield: maxLoan > 0 ? noi / maxLoan         : null
+      impliedLTV:       sized && value > 0 ? maxLoan / value : null,
+      impliedDSCR:      sized && mc > 0    ? noi / (maxLoan * mc) : null,
+      impliedDebtYield: sized              ? noi / maxLoan : null,
+      // the parameters actually used, after defaults filled the blanks
+      params: { capRate: capRate, ltvMax: ltvMax, dscrMin: dscrMin, dyMin: dyMin, intRate: intRate, amortYears: amortYears }
     };
   }
 
@@ -126,6 +188,12 @@
     capRate: 0.055, ltvMax: 0.75, dscrMin: 1.20, dyMin: 0.07, intRate: 0.055, amortYears: 30,
     vacancyPct: 0.05, mgmtFeePct: 0.025, reservePerUnit: 200
   };
+  // The same numbers in the operating contract's Assumptions shape (§2: mgmtPct
+  // + a nested sizing block) so DEFAULTS can be handed straight to
+  // SetupBuilder.buildSetup as `benchmarks`; mgmtFeePct stays for existing callers.
+  DEFAULTS.mgmtPct = DEFAULTS.mgmtFeePct;
+  DEFAULTS.sizing = { capRate: DEFAULTS.capRate, ltvMax: DEFAULTS.ltvMax, dscrMin: DEFAULTS.dscrMin,
+                      dyMin: DEFAULTS.dyMin, intRate: DEFAULTS.intRate, amortYears: DEFAULTS.amortYears };
 
   // A blank standard worksheet (no values) — the empty machine the app renders.
   function blankWorksheet() {

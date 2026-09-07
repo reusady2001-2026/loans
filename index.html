@@ -16,6 +16,15 @@
   <script src="./t12-classify.js"></script>
   <script src="./setup-builder.js"></script>
   <script src="./t12-parse.js"></script>
+  <!-- Per-property operating model (SPEC-v2.3.0): store → taxonomy → calc → upload → sheet/assumptions → roll-up/scan -->
+  <script src="./operating-store.js"></script>
+  <script src="./operating-taxonomy.js"></script>
+  <script src="./operating-calc.js"></script>
+  <script src="./operating-upload.js"></script>
+  <script src="./operating-sheet.js"></script>
+  <script src="./operating-assumptions.js"></script>
+  <script src="./portfolio-rollup.js"></script>
+  <script src="./action-scan.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -834,6 +843,9 @@
 
         <!-- Floating-rate monthly re-pricing notice -->
         <div id="floatBanner" hidden></div>
+
+        <!-- Property operating model entry (this property's NOI / DSCR / DY, opens its sheet) -->
+        <div id="loanOpPanel"></div>
 
         <!-- Property documents (saved files for this property; used by the assistant) -->
         <div id="loanDocsPanel"></div>
@@ -2896,6 +2908,7 @@
         renderFloatingBanner(loan, result);
         renderSchedule(loan, result);
         try{ renderDocsPanel(); }catch(e){}
+        try{ renderLoanOpPanel(); }catch(e){}
         activeResult = result;
       } else if(state.mode==="edit" || state.mode==="add"){
         dom.formTitle.textContent = state.mode==="add" ? "Add Loan" : "Edit Loan — " + loanLabel(getLoan(state.activeId)||{});
@@ -3178,6 +3191,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
       i.t12Rows = d.rows;
+      opApplyUploadToFocused(d, i);   // a focused property ALSO receives this T12 into its own operating record
       const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
       const labels = { total:"12-mo Total", t6:"Trailing 6-mo (ann.)", t3:"Trailing 3-mo (ann.)", t1:"Trailing 1-mo (ann.)" };
       const periods = ["total","t6","t3","t1"].filter(k => d.cols[k] >= 0).map(k => {
@@ -3297,6 +3311,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         drop.ondragleave = ()=>{ drop.classList.remove("border-brand-400","bg-brand-50"); };
         drop.ondrop = (ev)=>{ ev.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if(f) uwHandleFile(f); };
       }
+      opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
     }
 
     function uwSetupOutputHtml(b){
@@ -3373,6 +3388,137 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
     });
+
+    // ===== Per-property operating model — glue to operating-*.js (SPEC-v2.3.0) =====
+    // Each property (a senior and its mezz share ONE record) carries its own income/expense
+    // lines, filled by a T12 upload or typed by hand, with its own assumptions. Its NOI drives
+    // the DSCR / debt-yield / LTV shown everywhere (see loanNOI). The modules load from <head>;
+    // if one is missing (an older build) these sections simply don't render.
+    let opFocusKey = "", opBasis = "annual", opInited = false;
+    function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.OperatingSheet && window.OperatingAssumptions && window.PortfolioRollup && window.ActionScan); }
+    function opInit(){ if(opInited || !window.OperatingStore) return; opInited = true; try{ OperatingStore.init({ storage: window.localStorage }); OperatingStore.load(); }catch(e){} }
+    // The bridge the modules compute through — the app's own engine, never re-implemented.
+    function opHooks(){
+      return { propertyKey, loansForProperty, loans: () => loans, today: () => new Date(),
+        annualDebtService: l => annualDebtService(compute(l).derived),
+        currentBalance: l => compute(l).derived.currentBalance,
+        capRate: l => loanCapRate(l),
+        marketRate: l => { try{ const p = refiMarketParts(l); return (p && isFinite(p.marketRate)) ? p.marketRate : null; }catch(e){ return null; } },
+        globalDefaults: () => uwState.input.bench };
+    }
+    // One entry per property (keyed exactly like the rest of the app), named by its senior loan.
+    function opProperties(){
+      const seen = new Map(), clean = (s) => String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
+      loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[] }); seen.get(k).loans.push(l); });
+      const arr = Array.from(seen.values());
+      arr.forEach(p => { p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); });
+      return arr.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    function opProp(key){ return opProperties().find(p => p.key === key) || null; }
+    // A transient record for DISPLAY when nothing is saved yet — focusing a property never litters the store.
+    function opRecordFor(key){ opInit(); const r = OperatingStore.get(key); if(r) return r; const p = opProp(key), sr = p && p.loans[0]; return { propKey:key, propertyName: p ? p.name : key, units: (sr && sr.units) || null, period:null, lines:{}, assumptions:null, meta:{} }; }
+    function opEnsure(key){ opInit(); const p = opProp(key), sr = p && p.loans[0]; return OperatingStore.ensure(key, { propertyName: p ? p.name : key, units: (sr && sr.units) || null }); }
+    // The NOI a loan's ratios use: its property's operating NOI when that property has lines, else the hand-entered loan.noi.
+    function opNOI(loan){ try{ if(!window.OperatingCalc || !window.OperatingStore || !loan) return null; opInit(); const r = OperatingStore.get(propertyKey(loan)); return r ? OperatingCalc.effectiveNOI(r) : null; }catch(e){ return null; } }
+    function loanNOI(loan){ const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
+    // A T12 dropped while a property is focused is ALSO written into that property's record.
+    function opApplyUploadToFocused(parsed, input){
+      if(!opFocusKey || !opReady()) return;
+      try{
+        const p = opProp(opFocusKey); opEnsure(opFocusKey);
+        const res = OperatingUpload.apply(OperatingStore, opFocusKey, parsed, { fileName: input.fileName || null, period: null, propertyName: p ? p.name : opFocusKey, units: (input.units != null ? input.units : undefined) });
+        toast((p ? p.name : "Property") + ": T12 saved" + (res.ties ? " — NOI ties to the statement" : " — NOI does NOT tie to the statement’s printed NOI"), res.ties ? "info" : "error");
+      }catch(e){ toast("Couldn’t save the T12 to the property.", "error"); }
+    }
+    function opAfterChange(){ opRenderFocused(); opRenderPortfolio(); try{ render(); }catch(e){} }   // ratios elsewhere (coverage, refi) read the operating NOI
+    function opRenderSections(view){
+      if(!opReady()) return;
+      opInit();
+      const props = opProperties();
+      if(opFocusKey && !props.some(p => p.key === opFocusKey)) opFocusKey = "";
+      const opts = props.map(p => '<option value="'+escapeHtml(p.key)+'"'+(p.key === opFocusKey ? ' selected' : '')+'>'+escapeHtml(p.name)+(p.loans.length > 1 ? ' ('+p.loans.length+' loans)' : '')+'</option>').join('');
+      const card = document.createElement("div"); card.id = "opSections"; card.className = "boxline rounded-2xl border border-brand-200 bg-white p-4 shadow-sm space-y-3";
+      card.innerHTML =
+        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
+          '<div><h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Property operating model</h3>'+
+            '<p class="text-[11px] text-slate-500">Pick a property. Its T12 upload and every line you type are saved to that property (a senior and its mezz share one record) and drive its DSCR, debt yield and LTV across the app.</p></div>'+
+          '<select id="opPropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property &mdash;</option>'+opts+'</select>'+
+        '</div>'+
+        '<div id="opSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>'+
+        '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="lg:col-span-2 overflow-x-auto" id="opSheetMount"></div><div id="opAssumpMount"></div></div>'+
+        '<div id="opLoans" class="text-[11px] text-slate-500"></div>';
+      const dropCard = view.querySelector("#uwDrop") && view.querySelector("#uwDrop").closest(".boxline");
+      if(dropCard) view.insertBefore(card, dropCard); else view.appendChild(card);
+      const tail = document.createElement("div"); tail.className = "space-y-6";
+      tail.innerHTML =
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Portfolio roll-up</h3><div id="opRollupMount" class="mt-2 overflow-x-auto"></div></div>'+
+        '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What needs to be pushed right now</h3><div id="opScanMount" class="mt-2"></div></div>';
+      view.appendChild(tail);
+      card.querySelector("#opPropPick").addEventListener("change", (e) => { opFocusKey = e.target.value; opBasis = "annual"; opRenderFocused(); });
+      opRenderFocused(); opRenderPortfolio();
+    }
+    function opRenderFocused(){
+      const sheet = el("opSheetMount"), asm = el("opAssumpMount"), sum = el("opSummary"), lo = el("opLoans");
+      if(!sheet || !asm || !sum || !lo) return;
+      const key = opFocusKey;
+      if(!key){ sheet.innerHTML = '<p class="text-sm text-slate-400">Choose a property above to see and edit its operating model.</p>'; asm.innerHTML = ""; sum.innerHTML = ""; lo.innerHTML = ""; return; }
+      const p = opProp(key), members = p ? p.loans : [], gd = uwState.input.bench, hooks = opHooks();
+      const record = opRecordFor(key);
+      const derived = OperatingCalc.derive(record, gd);
+      const stack = OperatingCalc.stack(record, members, hooks);
+      const tile = (l, v) => '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div></div>';
+      sum.innerHTML = tile("In-place NOI", derived.inPlaceNOI != null ? fmtMoney(derived.inPlaceNOI) : "&mdash;") + tile("Underwritten NOI", derived.underwrittenNOI != null ? fmtMoney(derived.underwrittenNOI) : "&mdash;")
+        + tile("DSCR (combined)", stack.dscr != null ? stack.dscr.toFixed(2)+"&times;" : "&mdash;") + tile("Debt yield / LTV", (stack.dy != null ? fmtPct(stack.dy) : "&mdash;")+" / "+(stack.ltv != null ? fmtPct(stack.ltv) : "&mdash;"));
+      lo.innerHTML = OperatingCalc.perLoan(record, members, hooks).map(r => { const l = members.find(m => m._id === r.loanId) || {};
+        return '<span class="mr-3">'+escapeHtml(String(l.lenderName || l.propertyName || r.loanId))+(isMezz(l) ? ' (mezz)' : '')+': DSCR '+(r.dscr != null ? r.dscr.toFixed(2)+'&times;' : '&mdash;')+' &middot; DY '+(r.dy != null ? fmtPct(r.dy) : '&mdash;')+' &middot; LTV '+(r.ltv != null ? fmtPct(r.ltv) : '&mdash;')+'</span>'; }).join("");
+      OperatingSheet.render(sheet, { record, derived, basis: opBasis,
+        onEdit: (code, annual) => { opEnsure(key); OperatingStore.setLine(key, code, { annual, source:"manual" }); opAfterChange(); },
+        onToggleControllable: (code, on) => { opEnsure(key); OperatingStore.setControllable(key, code, !!on); opAfterChange(); },
+        onBasisChange: (b) => { opBasis = b; opRenderFocused(); } });
+      OperatingAssumptions.render(asm, { record, globalDefaults: gd,
+        onChange: (patch) => { opEnsure(key); OperatingStore.setAssumptions(key, patch); opAfterChange(); },
+        onReset: () => { opEnsure(key); OperatingStore.setAssumptions(key, null); opAfterChange(); } });
+    }
+    function opRenderPortfolio(){
+      const rm = el("opRollupMount"), sm = el("opScanMount"); if(!rm || !sm) return;
+      opInit();
+      const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
+      const open = (k) => { opFocusKey = k; opBasis = "annual"; renderUnderwriting(); };
+      PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open });
+      ActionScan.render(sm, ActionScan.scan(records, loans, hooks, gd, {}), { onOpen: open });
+    }
+    // Open a property's operating model from anywhere (e.g. the loan view).
+    function opOpenProperty(loan){ opFocusKey = propertyKey(loan); opBasis = "annual"; openTab("underwriting"); }
+    // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
+    // saying where the NOI comes from, with a button that opens the property's sheet.
+    function renderLoanOpPanel(){
+      const host = el("loanOpPanel"); if(!host) return;
+      const loan = getLoan(state.activeId);
+      if(!loan || !opReady()){ host.innerHTML = ""; return; }
+      opInit();
+      const key = propertyKey(loan), members = loansForProperty(loan), rec = OperatingStore.get(key);
+      const hasModel = !!(rec && rec.lines && Object.keys(rec.lines).length);
+      const noi = hasModel ? OperatingCalc.effectiveNOI(rec) : (noiEntered(loan) ? Number(loan.noi) : null);
+      const stack = hasModel ? OperatingCalc.stack(rec, members, opHooks()) : null;
+      const cp = combinedPosition(members);
+      const dscr = stack ? stack.dscr : cp.dscr, dy = stack ? stack.dy : cp.debtYield, ltv = stack ? stack.ltv : cp.ltv;
+      const when = hasModel && rec.meta && rec.meta.lastUpdated ? new Date(rec.meta.lastUpdated).toLocaleDateString() : null;
+      const tile = (l, v) => '<div><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div></div>';
+      host.innerHTML =
+        '<div class="boxline rounded-2xl border border-brand-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
+          '<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">'+
+            tile("Property NOI", noi != null ? fmtMoney(noi) : "&mdash;")+
+            tile("DSCR (combined)", dscr != null ? dscr.toFixed(2)+"&times;" : "&mdash;")+
+            tile("Debt yield", dy != null ? fmtPct(dy) : "&mdash;")+
+            tile("LTV", ltv != null ? fmtPct(ltv) : "&mdash;")+
+          '</div>'+
+          '<div class="flex flex-col items-start sm:items-end gap-1">'+
+            '<button type="button" id="loanOpOpen" class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">'+(hasModel ? "Open operating model" : "Build operating model")+'</button>'+
+            '<span class="text-[10px] text-slate-400">'+(hasModel ? "From the property&rsquo;s operating model"+(when ? " &middot; updated "+when : "") : (noi != null ? "Hand-entered NOI &mdash; no operating model yet" : "No NOI yet"))+(members.length > 1 ? " &middot; shared by "+members.length+" loans" : "")+'</span>'+
+          '</div>'+
+        '</div>';
+    }
+    document.addEventListener("click", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#loanOpOpen")) return; const loan = getLoan(state.activeId); if(loan) opOpenProperty(loan); });
 
     /* ================================================================
        8a-UW-AI. AI-assisted Setup — "Read T12 with Claude" (ALTERNATIVE to the
@@ -5233,20 +5379,20 @@ tr[data-loan]:hover td{background:#eef2f7}
     // amortizing debt-service basis agencies size to (IO periods use the level P&I).
     function annualDebtService(d){ return (d.amortizingPI || d.monthlyPI || 0) * 12; }
     function loanDSCR(loan){
-      const d = compute(loan).derived, ads = annualDebtService(d);
-      return (loan && loan.noi != null && loan.noi > 0 && ads > 0) ? (loan.noi / ads) : null;
+      const d = compute(loan).derived, ads = annualDebtService(d), n = loanNOI(loan);   // the property's operating NOI when it has one
+      return (loan && n != null && n > 0 && ads > 0) ? (n / ads) : null;
     }
     // Stage 2 — value & leverage. Value is estimated as NOI / cap rate (cap rate
     // defaults by property type, editable per loan); LTV = current balance / value.
     const CAP_RATE_DEFAULTS = { "Multifamily":0.055, "Office":0.075, "Retail":0.068, "Industrial":0.062, "Mixed-Use":0.065, "Other":0.065 };
     function defaultCapRate(loan){ return CAP_RATE_DEFAULTS[loan && loan.propertyType] || 0.06; }
     function loanCapRate(loan){ return (loan && loan.capRate != null && loan.capRate > 0) ? loan.capRate : defaultCapRate(loan); }
-    function loanValue(loan){ const cr = loanCapRate(loan); return (loan && loan.noi > 0 && cr > 0) ? (loan.noi / cr) : null; }
+    function loanValue(loan){ const cr = loanCapRate(loan), n = loanNOI(loan); return (loan && n > 0 && cr > 0) ? (n / cr) : null; }
     function loanLTV(loan){ const v = loanValue(loan), bal = compute(loan).derived.currentBalance; return (v > 0 && bal > 0) ? (bal / v) : null; }
     // Debt yield = NOI ÷ current loan balance. Life-company and CMBS lenders (which
     // are interest-only) underwrite to this instead of DSCR: the higher the debt
     // yield, the better the terms. Independent of rate, term and amortization.
-    function loanDebtYield(loan){ const bal = compute(loan).derived.currentBalance; return (loan && loan.noi != null && loan.noi > 0 && bal > 0) ? (loan.noi / bal) : null; }
+    function loanDebtYield(loan){ const bal = compute(loan).derived.currentBalance, n = loanNOI(loan); return (loan && n != null && n > 0 && bal > 0) ? (n / bal) : null; }
 
     // ---- Property grouping ------------------------------------------------
     // A property may carry more than one loan — classically a senior plus a
@@ -5268,10 +5414,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     // from "positive enough to value" (noi > 0), which the DSCR/debt-yield/value/LTV math
     // still requires. Conflating the two is what hid an entered-but-negative NOI and kept
     // showing "Add NOI" for a property that already had one.
-    function noiEntered(loan){ return !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
+    function noiEntered(loan){ return opNOI(loan) != null || !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
+      const o = (list && list.length) ? opNOI(list[0]) : null;   // the property's operating model, when it has one
+      if(o != null) return o;
       for(const l of list){ if(noiEntered(l) && Number(l.noi) > 0) return Number(l.noi); }
       for(const l of list){ if(noiEntered(l)) return Number(l.noi); }
       return null;
