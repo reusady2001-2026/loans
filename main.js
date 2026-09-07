@@ -369,6 +369,7 @@ ipcMain.handle('lds:ai-status', () => ai.status());
 ipcMain.handle('lds:ai-set-key', (e, { key }) => ai.setKey(key));
 ipcMain.handle('lds:ai-set-mode', (e, { mode }) => ai.setMode(mode));
 ipcMain.handle('lds:ai-set-model', (e, { model }) => ai.setModel(model));
+ipcMain.handle('lds:ai-set-effort', (e, { level }) => ai.setEffort(level));
 ipcMain.handle('lds:ai-extract', (e, opts) => ai.extract(opts || {}));
 ipcMain.handle('lds:ai-chat', (e, opts) => ai.chat(opts || {}));
 ipcMain.handle('lds:ai-chat-cancel', (e, { token }) => ai.cancelChat(token));

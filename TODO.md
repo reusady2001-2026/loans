@@ -15,6 +15,13 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Real model selector + effort slider (v2.6.1).** Replaced the simplified model radio group
+  with a proper **Model dropdown** (Automatic / Fable 5.1 / Opus 5 / Sonnet 5 / Haiku 4.5 /
+  Opus 4.8) and a **Faster ↔ Smarter effort slider** (low/medium/high/xhigh/max, default high),
+  both passed straight to the bundled Claude client as `--model` and `--effort` — verified
+  against the real CLI (each model id resolves; `--effort` accepts low..max). The connection row
+  chip shows the active pair (e.g. "Opus 4.8 · max"). ai.js MODELS + EFFORTS + setEffort; the
+  API fallback still takes the model (effort is a subscription-CLI feature).
 - **Property documents + model picker (v2.6.0).**
   - **Property documents.** Files attached to the assistant used to be read into one message's
     context and thrown away. Now, when a property is focused, the ORIGINAL file is saved under

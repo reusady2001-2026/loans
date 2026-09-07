@@ -91,8 +91,10 @@ contextBridge.exposeInMainWorld('ldsShell', {
   aiSetKey: (key) => ipcRenderer.invoke('lds:ai-set-key', { key }),
   // Choose the path: 'auto' | 'cli' | 'api'. Resolves {mode}.
   aiSetMode: (mode) => ipcRenderer.invoke('lds:ai-set-mode', { mode }),
-  // Choose the model the assistant uses (a MODELS key: 'auto'|'haiku'|'sonnet'|'opus'). Resolves {model}.
+  // Choose the model the assistant uses (a MODELS key). Resolves {model}.
   aiSetModel: (model) => ipcRenderer.invoke('lds:ai-set-model', { model }),
+  // Choose the reasoning effort ('low'|'medium'|'high'|'xhigh'|'max'). Resolves {effort}.
+  aiSetEffort: (level) => ipcRenderer.invoke('lds:ai-set-effort', { level }),
 
   // ---- Property documents (per-property file store) ----
   // Save an original file + its extracted text under a property. Resolves {ok,file}.
