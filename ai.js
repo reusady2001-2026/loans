@@ -31,23 +31,95 @@ const canceledTokens = new Set();
 
 const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api guidance)
 
-// The model picker is FREEFORM — the operator can type ANY model id/alias their subscription
-// supports, and whatever they enter is passed straight to `claude --model`. "" = the
-// subscription default (no --model). These are just suggestions for the dropdown — the notable
-// current ids this CLI accepts; not an exhaustive or limiting list.
-const MODEL_SUGGESTIONS = [
-  { id:'',                  label:'Automatic — subscription default' },
+// ---- Model catalog -----------------------------------------------------------
+// The model picker is a real dropdown. Its options are DISCOVERED from the exact
+// Claude client THIS app bundles: we scan the bundled CLI for the model ids it
+// knows and present them with friendly labels. So the list is always the current,
+// complete set the subscription's own client supports — it grows automatically
+// whenever a build bundles a newer CLI — never a stale hand-typed guess. "" = the
+// subscription default (no --model). MODEL_FALLBACK covers the rare case the scan
+// can't read the file; discovery supersedes it on a real install.
+const MODEL_FAMILIES = { opus:'Opus', sonnet:'Sonnet', haiku:'Haiku', fable:'Fable' };
+const MODEL_FAMILY_ORDER = ['opus','sonnet','haiku','fable'];       // strongest first
+const MODEL_FAMILY_FLOOR = { opus:4, sonnet:4, haiku:4, fable:5 };  // hide legacy 3.x families
+const AUTOMATIC_MODEL = { id:'', label:'Automatic — subscription default' };
+const MODEL_FALLBACK = [
+  AUTOMATIC_MODEL,
   { id:'claude-opus-5',     label:'Opus 5' },
   { id:'claude-opus-4-8',   label:'Opus 4.8' },
   { id:'claude-opus-4-6',   label:'Opus 4.6' },
-  { id:'claude-opus-4-5',   label:'Opus 4.5' },
-  { id:'claude-opus-4-1',   label:'Opus 4.1' },
   { id:'claude-sonnet-5',   label:'Sonnet 5' },
   { id:'claude-sonnet-4-6', label:'Sonnet 4.6' },
-  { id:'claude-sonnet-4-5', label:'Sonnet 4.5' },
   { id:'claude-haiku-4-5',  label:'Haiku 4.5' },
   { id:'claude-fable-5-1',  label:'Fable 5.1' },
 ];
+// "4-8" → [4,8]; used to compare and to format versions.
+function verTuple(v){ return String(v).split('-').map((n) => parseInt(n, 10) || 0); }
+function verCmpDesc(a, b){ const A = verTuple(a), B = verTuple(b); for (let i = 0; i < Math.max(A.length, B.length); i++){ const d = (B[i] || 0) - (A[i] || 0); if (d) return d; } return 0; }
+// claude-opus-4-8 → "Opus 4.8"; claude-opus-5 → "Opus 5".
+function modelLabel(id){ const m = /^claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*)$/.exec(id); return m ? (MODEL_FAMILIES[m[1]] + ' ' + m[2].replace(/-/g, '.')) : id; }
+// Pull current, user-facing model ids out of a bundled-CLI file's bytes into `sink`
+// (a Set of "family|version" keys). A model appears in the CLI in many forms —
+// claude-opus-4-8, …-4-8-20251101 (dated snapshot), …-4-6-v1, …-4-20250514 (dated,
+// no minor) — so we take the marketing version only: the major plus a 1–2 digit
+// minor, folding away any date / -vN tail. Legacy 3.x families and x.0 aliases drop.
+function collectModelIds(text, sink){
+  const re = /claude-(opus|sonnet|haiku|fable)-([0-9]+(?:-[0-9a-z]+)*)/g; let m;
+  while ((m = re.exec(text))){
+    const fam = m[1], parts = m[2].split('-');
+    const major = parseInt(parts[0], 10);
+    if (!(major >= (MODEL_FAMILY_FLOOR[fam] || 0))) continue;         // legacy family (e.g. sonnet 3.x)
+    let ver = String(parts[0]);
+    if (parts[1] && /^\d{1,2}$/.test(parts[1])) ver += '-' + parts[1];  // a real minor; a date / -vN is ignored
+    const t = verTuple(ver);
+    if (t.length > 1 && t[1] === 0) continue;                        // x.0 internal alias (opus-4-0)
+    sink.add(fam + '|' + ver);
+  }
+}
+// Turn the collected "family|version" keys into an ordered [{id,label}] list.
+function orderModels(sink){
+  const byFamily = {};
+  for (const key of sink){ const i = key.indexOf('|'); const fam = key.slice(0, i), ver = key.slice(i + 1); (byFamily[fam] = byFamily[fam] || []).push(ver); }
+  const out = [];
+  for (const fam of MODEL_FAMILY_ORDER){
+    let vers = byFamily[fam]; if (!vers) continue;
+    // drop a bare major (e.g. "4") when a "4-x" for that major exists (it's a redundant alias)
+    vers = vers.filter((v) => { const t = verTuple(v); if (t.length > 1) return true; return !vers.some((o) => { const u = verTuple(o); return u.length > 1 && u[0] === t[0]; }); });
+    vers.sort(verCmpDesc);
+    for (const v of vers){ const id = 'claude-' + fam + '-' + v; out.push({ id, label: modelLabel(id) }); }
+  }
+  return out;
+}
+// Stream a (possibly very large, possibly binary) file and collect model ids from it,
+// bounded memory: a 64-byte overlap carries ids that straddle chunk boundaries.
+function scanFileForModels(file){
+  return new Promise((resolve) => {
+    const sink = new Set(); let tail = '', bytes = 0; const CAP = 512 * 1024 * 1024;
+    let s; try { s = fs.createReadStream(file, { encoding: 'latin1' }); } catch (e) { return resolve(sink); }
+    s.on('data', (chunk) => { const text = tail + chunk; collectModelIds(text, sink); tail = text.slice(-64); bytes += chunk.length; if (bytes > CAP) { try { s.destroy(); } catch (e) {} } });
+    s.on('error', () => resolve(sink));
+    s.on('close', () => resolve(sink));
+    s.on('end', () => resolve(sink));
+  });
+}
+// Files worth scanning for the model catalog, small/likely-text first. A native-binary
+// layout has only the big executable; a JS layout has a small cli.js beside it.
+function modelCandidateFiles(){
+  const bin = process.env.LDS_CLAUDE_BIN || bundledClaudePath();
+  const files = []; const add = (f) => { if (f && files.indexOf(f) < 0) files.push(f); };
+  if (bin){ try { const dir = path.dirname(bin); add(path.join(dir, 'cli.js')); add(path.join(dir, '..', 'cli.js')); } catch (e) {} add(bin); }
+  return files.filter((f) => { try { return fs.existsSync(f); } catch (e) { return false; } });
+}
+let _modelsCache = null;
+async function discoverModels(){
+  if (_modelsCache) return _modelsCache;
+  const sink = new Set();
+  for (const f of modelCandidateFiles()){
+    try { const s = await scanFileForModels(f); for (const k of s) sink.add(k); if (sink.size >= 4) break; } catch (e) {}
+  }
+  const list = orderModels(sink);
+  return (_modelsCache = list.length ? [AUTOMATIC_MODEL].concat(list) : MODEL_FALLBACK.slice());
+}
 const EFFORT_FALLBACK = ['low','medium','high','xhigh','max'];
 const EFFORT_DEFAULT = 'high';
 function modelVal(cfg){ return (cfg && typeof cfg.aiModel === 'string') ? cfg.aiModel.trim() : ''; }
@@ -132,7 +204,8 @@ async function status(){
   // otherwise just adds latency and can't be true anyway.
   const connected = cli.available ? await subscriptionConnected() : false;
   const efforts = cli.available ? await discoverEfforts() : EFFORT_FALLBACK;
-  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto', model: modelVal(cfg), modelSuggestions: MODEL_SUGGESTIONS, effort: effortVal(cfg), efforts };
+  const models = cli.available ? await discoverModels() : MODEL_FALLBACK.slice();
+  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto', model: modelVal(cfg), models, effort: effortVal(cfg), efforts };
 }
 function setKey(key){ const c = readCfg(); const k = (key == null ? '' : String(key)).trim(); if (k) c.apiKey = k; else delete c.apiKey; writeCfg(c); return { configured: !!c.apiKey }; }
 function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].indexOf(mode) >= 0) ? mode : 'auto'; writeCfg(c); return { mode: c.mode }; }

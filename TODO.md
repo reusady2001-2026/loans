@@ -15,15 +15,28 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
-- **Any model + CLI-discovered effort, always the latest CLI (v2.6.3).** The model control is
-  now a FREEFORM field — type or pick ANY model id/alias the subscription supports (a datalist
-  of ~11 current models suggests, but you're not limited to them); blank = subscription default.
-  Effort levels are DISCOVERED from the bundled CLI's `--help` (never a level it would reject —
-  currently low/medium/high/xhigh/max; new levels appear automatically when the CLI adds them).
-  And every build now bundles the LATEST Claude Code CLI: package.json pins `latest` and CI force-
-  installs `@anthropic-ai/claude-code@latest` before packaging — so new models/effort levels the
-  subscription exposes arrive with each app release. (Note: the public npm CLI is the source; if
-  a newer effort tier like "extra"/"ultracode" ships there, it flows through automatically.)
+- **Model DROPDOWN discovered from the bundled CLI + relabeled effort (v2.6.4).** The model
+  control is now a real **`<select>` dropdown** — no more typing a model name. Its options are
+  DISCOVERED at runtime by scanning the exact Claude client the app bundles for the model ids it
+  knows, so the list is the current, complete set the subscription's own client supports (it
+  grows automatically when a build bundles a newer CLI), presented with friendly labels
+  (Opus 5, Opus 4.8, …, Sonnet 5, Sonnet 4.6, Haiku 4.5, Fable 5.1), strongest-first, with
+  "Automatic — subscription default" at the top. The extractor folds dated snapshots
+  (…-20251101) and `-vN` tails into the marketing version and drops legacy 3.x families, x.0
+  aliases, and redundant bare-majors — verified against the real 2.1.263 binary. A static
+  fallback covers the rare case the file can't be read. **Effort** keeps the CLI's real,
+  discovered levels but relabels them to match Claude Code's own UI: `xhigh` → **"Extra"**,
+  `max` → **"Max"** (so the picker reads Low · Medium · High · Extra · Max). Both still go
+  straight to the CLI as `--model` / `--effort`; blank model = subscription default (no --model).
+  - *Note on "ultracode":* it is a **cloud-hosted multi-agent mode** (the CLI's `ultrareview` /
+    ultracode subcommands), NOT an `--effort` value — the headless `claude -p` the assistant
+    uses accepts only low/medium/high/xhigh/max (confirmed: `--effort extra` is rejected). So it
+    is deliberately not offered as an effort level here; doing so would silently do nothing.
+- **Any model + CLI-discovered effort, always the latest CLI (v2.6.3).** (Superseded by v2.6.4's
+  dropdown.) The model control was a FREEFORM field with a datalist of suggestions; effort was
+  discovered from the bundled CLI's `--help`. Every build bundles the LATEST Claude Code CLI:
+  package.json pins `latest` and CI force-installs `@anthropic-ai/claude-code@latest` before
+  packaging — so new models/effort levels the subscription exposes arrive with each app release.
 - **Model + effort pickers in the chat composer (v2.6.2).** Moved the model selector and effort
   control out of the Connection settings and into the assistant composer, right under the
   property picker — a simple Model dropdown and a compact Effort picker (⚡ Low … 🧠 Max), always

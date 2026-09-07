@@ -1204,8 +1204,7 @@
         </div>
         <div id="aiAsstModelRow" class="hidden flex items-center gap-2">
           <span class="grid h-5 w-5 shrink-0 place-items-center text-slate-400"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/></svg></span>
-          <input id="aiAsstModelPick" list="aiAsstModelList" placeholder="Automatic — type or pick any model" title="Model — pick a suggestion or type any model your subscription supports (blank = automatic)" autocomplete="off" spellcheck="false" class="flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500">
-          <datalist id="aiAsstModelList"></datalist>
+          <select id="aiAsstModelPick" title="Model — the models your Claude subscription offers (Automatic = let the subscription choose)" class="flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500"></select>
           <select id="aiAsstEffortPick" title="Effort — Faster ⟷ Smarter (deeper reasoning, a little slower)" class="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500"></select>
         </div>
         <div id="aiAsstAttachRow" class="hidden flex flex-wrap gap-2"></div>
@@ -6850,16 +6849,20 @@ tr[data-loan]:hover td{background:#eef2f7}
       aiAsstUpdatePropDocs();
     }
     // Populate the composer's model + effort pickers from the live status (aiStatusCache).
-    var AI_EFFORT_LABELS={low:"⚡ Low",medium:"Medium",high:"High",xhigh:"X-High",max:"🧠 Max"};
+    var AI_EFFORT_LABELS={low:"⚡ Low",medium:"Medium",high:"High",xhigh:"Extra",max:"🧠 Max"};
     function aiAsstFillModelEffort(){
       var row=el("aiAsstModelRow"); if(!row) return;
-      var st=aiStatusCache||{}; var sugg=st.modelSuggestions||[], efs=st.efforts||[];
-      if(!sugg.length && !efs.length){ row.classList.add("hidden"); return; }
+      var st=aiStatusCache||{}; var models=st.models||[], efs=st.efforts||[];
+      if(!models.length && !efs.length){ row.classList.add("hidden"); return; }
       row.classList.remove("hidden");
-      var dl=el("aiAsstModelList");
-      if(dl){ dl.innerHTML=sugg.filter(function(s){return s.id;}).map(function(s){ return '<option value="'+escapeHtml(s.id)+'">'+escapeHtml(s.label)+'</option>'; }).join(""); }
-      var mi=el("aiAsstModelPick");
-      if(mi && document.activeElement!==mi){ mi.value=(st.model)||""; }   // don't clobber while the operator is typing
+      var ms=el("aiAsstModelPick");
+      if(ms){
+        var cur=(st.model)||"";
+        var opts=models.slice();
+        if(cur && !opts.some(function(m){return m.id===cur;})) opts.push({id:cur,label:cur});   // keep a previously-chosen model visible even if not in the catalog
+        ms.innerHTML=opts.map(function(m){ return '<option value="'+escapeHtml(m.id)+'"'+(m.id===cur?" selected":"")+'>'+escapeHtml(m.label)+'</option>'; }).join("");
+        ms.value=cur;
+      }
       var es=el("aiAsstEffortPick");
       if(es){ if(efs.length){ es.innerHTML=efs.map(function(e){ return '<option value="'+escapeHtml(e)+'"'+(((st.effort)||"high")===e?" selected":"")+'>'+(AI_EFFORT_LABELS[e]||(e.charAt(0).toUpperCase()+e.slice(1)))+'</option>'; }).join(""); es.value=(st.effort)||"high"; es.classList.remove("hidden"); } else es.classList.add("hidden"); }
     }
