@@ -7,7 +7,9 @@
 
    Category codes (income):   GPR VAC CONC EMPL MOD MTM BD  (rental & reductions)
                               RUBS "TRSH RUB" OTH AMEN PET LATE ADM APP PARK COM CAM ANT
-   Category codes (expense):  RET INS UTIL PAY GA MKT RM CS MGMT TRSH CAB PLL
+   Category codes (expense):  RET INS UTIL PAY GA BDX MKT RM CS MGMT TRSH CAB PLL
+                              (BDX = bad debt booked on the EXPENSE side of the statement;
+                               BD is the income-side rental deduction)
 
    Signals, in order of authority: (1) the statement's own sub-section header
    (subMatch), (2) keyword rules (rulesMatch), (3) the printed INCOME/EXPENSE
@@ -36,7 +38,7 @@
 
   var INCOME = { GPR:1, VAC:1, CONC:1, EMPL:1, MOD:1, BD:1, MTM:1, RUBS:1, "TRSH RUB":1, "TRSH COL":1,
                  OTH:1, AMEN:1, PET:1, LATE:1, ADM:1, APP:1, PARK:1, COM:1, CAM:1, ANT:1 };
-  var EXPENSE = { RET:1, INS:1, UTIL:1, PAY:1, GA:1, MKT:1, RM:1, CS:1, MGMT:1, TRSH:1, CAB:1, PLL:1 };
+  var EXPENSE = { RET:1, INS:1, UTIL:1, PAY:1, GA:1, BDX:1, MKT:1, RM:1, CS:1, MGMT:1, TRSH:1, CAB:1, PLL:1 };
   // own-property lookup: "constructor" / "__proto__" / "toString" are not expense codes
   function roleOf(code){ return Object.prototype.hasOwnProperty.call(EXPENSE, code) ? "expense" : "income"; }
 
@@ -52,6 +54,11 @@
   // this BEFORE the header, so a recognized header cannot absorb an "Error Deposit"
   // or "Suspense" line silently — it takes the bare section fallback, low-confidence.
   var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+account|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
+  // Bad debt: the rental-block deduction BD when the statement prints it under
+  // INCOME; the expense row BDX when it is booked on the EXPENSE side — flat or
+  // under any expense header, so it is checked before the header, like PLUG.
+  var BADDEBT = /bad\s+debt|write[\s-]*off|uncollect|collection\s+loss|credit\s+loss/;
+  function isBadDebt(s){ return BADDEBT.test(s) || (/delinquen/.test(s) && !/tax|penalt|interest|fee/.test(s)); }
 
   // Ordered rules — first match wins; returns a code or null (no confident match).
   // isExp / isInc: the statement's printed section, when the caller knows it.
@@ -68,8 +75,7 @@
     if (has(/employee\s+(concession|discount|rent|unit|apt|apartment)|resident\s+manager|manager'?s?\s+(unit|apt|apartment|credit)|staff\s+(unit|apt|apartment)/)) return I("EMPL");
     if (has(/parking\s+lot\s+lease/)) return "PLL";
     if (has(/\bmodel\s+(unit|apt|apartment)s?\b|\bmodels?\s*$|\bmodel\s+(loss|vacancy)|(loss|vacancy)\s*[-–:]?\s*models?\b|\badmin(istrative)?\s+units?\b|non[\s-]*rev(enue)?\s+units?/)) return "MOD";
-    if (has(/bad\s+debt|write[\s-]*off|uncollect|collection\s+loss|credit\s+loss/)) return "BD";
-    if (has(/delinquen/) && !has(/tax|penalt|interest|fee/)) return "BD";
+    if (isBadDebt(s)) return isExp ? "BDX" : "BD";
     if (has(/\brubs\b|ratio\s+utility/)) return "RUBS";
     // tenant reimbursements / cost recoveries = income (check before expenses);
     // "recoverable" is an adjective on an expense line and deliberately excluded
@@ -181,7 +187,7 @@
     if(/SECURITY(?!\s+DEPOSIT)/.test(S)) return "RM";
     if(/VIOLATION|PENALT|\bFINES?\b/.test(S)) return "GA";           // fines & penalties are a G&A cost
     if(/OTHER\s+EXPENSE|MISC\w*\s+EXPENSE|SUNDRY/.test(S)){          // before the MISC income group
-      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BD";
+      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BDX";
       if(/parking\s+lot\s+lease/.test(s)) return "PLL";
       return "GA";                                                    // incl. a late fee PAID — a penalty, not LATE income
     }
@@ -196,7 +202,7 @@
       return "UTIL";
     }
     if(/GENERAL|ADMINISTRATIV|OFFICE|PROFESSIONAL/.test(S)){
-      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BD";
+      if(/bad\s+debt|write[\s-]*off/.test(s)) return "BDX";
       if(/security/.test(s)) return "RM";
       if(/management\s+fee/.test(s)) return "MGMT";
       if(/income\s+tax|corporat\w*\s+tax|franchise|sales\s+tax|excise|payroll\s+tax/.test(s)) return "GA";   // not a property tax
@@ -282,7 +288,9 @@
   // surfaced for review rather than absorbed by the header's default row.
   function place(p, sub){
     var S = String(sub || "").toUpperCase().replace(/\s+/g, " ").trim();
-    return PLUG.test(p.s) ? null : (subMatch(p.s, S) || rulesMatch(p.s, p.isExp, p.isInc));
+    if (PLUG.test(p.s)) return null;
+    if (p.isExp && isBadDebt(p.s)) return "BDX";
+    return subMatch(p.s, S) || rulesMatch(p.s, p.isExp, p.isInc);
   }
   // classify(name, section, sub) — a code, or null for an empty name.
   function classify(name, section, sub){
