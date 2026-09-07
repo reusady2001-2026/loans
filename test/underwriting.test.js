@@ -225,10 +225,15 @@ try {
   cents(rt.underwritten.noi, 1098400, "NOI = 1,200,000 − 60,000 − 5,000 − 3,000 − 33,600");
   // Scientific notation is read as a number (the strip-to-digits path read "1e5"
   // as 15); every previously accepted form is unchanged (exact ===, not to the cent).
-  var forms  = { A: "1e5", B: "2.5E-2", C: "$1e6", D: "1e5%", E: "(1,200)", F: "3,000-", G: "$350.00", H: "5.5%", I: "-1,200", J: "+7", K: "1 200", M: ".5", N: "1,234,567.89" };
-  var expect = { A: 100000, B: 0.025,   C: 1000000, D: 1000,   E: -1200,     F: -3000,   G: 350,       H: 0.055,  I: -1200,    J: 7,    K: 1200,    M: 0.5,  N: 1234567.89 };
+  var forms  = { A: "1e5", B: "2.5E-2", C: "$1e6", D: "1e5%", E: "(1,200)", F: "3,000-", G: "$350.00", H: "5.5%", I: "-1,200", J: "+7", K: "1 200", M: ".5", N: "1,234,567.89",
+                 // a scientific literal inside an accounting negative must not fall to the digit-strip ("(1e5)" once read as −15)
+                 O: "(1e5)", P: "1e5-", Q: "(5%)", R: "( 1e5 )", S: "(2.5E-2)", T: "$(1,200.50)", U: "1e-5" };
+  var expect = { A: 100000, B: 0.025,   C: 1000000, D: 1000,   E: -1200,     F: -3000,   G: 350,       H: 0.055,  I: -1200,    J: 7,    K: 1200,    M: 0.5,  N: 1234567.89,
+                 O: -100000, P: -100000, Q: -0.05, R: -100000, S: -0.025, T: -1200.5, U: 0.00001 };
   var rf = UW.computeNOI({ units: 0, lines: Object.keys(forms).map(function (k) { return L(k, "other", "value", { uw: forms[k] }); }) }).underwritten.lines;
   Object.keys(forms).forEach(function (k) { same(rf[k], expect[k], JSON.stringify(forms[k]) + " →"); });
+  same(UW.computeNOI({ units: 1, lines: [{ key: "x", section: "other", method: "value", uw: "(1e5)" }] }).underwritten.otherIncome, -100000,
+       "critic's repro: other income from a single \"(1e5)\" line");
   ok(UW.sizeLoan(NOI_UW, { capRate: "" }).params.capRate === 0.055 && UW.sizeLoan(NOI_UW, { capRate: "  " }).params.capRate === 0.055 &&
      UW.sizeLoan(NOI_UW, { capRate: "Infinity" }).params.capRate === 0.055,
      "\"\", \"  \", \"Infinity\" stay missing → DEFAULTS (a bare Number() would read \"\" as 0 and \"Infinity\" as ∞)");

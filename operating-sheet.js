@@ -45,7 +45,7 @@
   var LABEL = {
     GPR:"Gross Potential Rent", EMPL:"Less: Employee Discounts", MOD:"Less: Model Units",
     VAC:"Less: Vacancy Loss", CONC:"Less: Concessions", BD:"Less: Bad Debt",
-    RUBS:"Utility Reimbursements (RUBS)", "TRSH RUB":"Trash Reimbursements", "TRSH COL":"Trash Reimbursements",
+    RUBS:"Utility Reimbursements (RUBS)", "TRSH RUB":"Trash Reimbursements", "TRSH COL":"Trash Collection Income",
     PARK:"Parking Income", PET:"Pet Fees", MTM:"Month-to-Month Fees", LATE:"Late Fees",
     APP:"Application Fees", ADM:"Administrative Income", AMEN:"Amenity Fees",
     COM:"Commercial Rent", CAM:"CAM Income", ANT:"Antenna Income", OTH:"Other Income",
@@ -190,25 +190,46 @@
               manual: ["Manual", "border-amber-200 bg-amber-50 text-amber-700"],
               budget: ["Budget", "border-sky-200 bg-sky-50 text-sky-700"] };
   var SECTION_TITLE = { rental:"Rental income", other:"Other income", expense:"Operating expenses", unknown:"Unclassified — not in the NOI above" };
-  var DEDUCTION = { EMPL:1, MOD:1, VAC:1, CONC:1, BD:1 };
+
+  // Fold rule for a section's unused rows: a property with no lines yet shows every
+  // row (there is nothing else to look at); one with lines folds them behind
+  // "show N more lines". `expanded` may be a boolean or a per-section map.
+  function defaultExpanded(record) {
+    var ls = record && record.lines, any = false;
+    if (ls && typeof ls === "object") Object.keys(ls).forEach(function (c) { if (ls[c]) any = true; });
+    return !any;
+  }
+  function expandedMap(expanded, record) {
+    var d = defaultExpanded(record), out = {};
+    SECTIONS.forEach(function (s) { out[s] = (typeof expanded === "boolean") ? expanded : (expanded && typeof expanded[s] === "boolean") ? expanded[s] : d; });
+    return out;
+  }
+  function moreLabel(n, open) { return (open ? "Hide " + n + " unused line" : "Show " + n + " more line") + (n === 1 ? "" : "s"); }
+  function moreHtml(section, n, open) {
+    return '<tr data-op-more-row="' + section + '"><td colspan="5" class="py-1 pl-3 pb-2">' +
+      '<button type="button" data-op-more="' + section + '" data-op-count="' + n + '" aria-expanded="' + open + '" class="text-[11px] font-semibold text-brand-700 hover:underline">' + moreLabel(n, open) + '</button></td></tr>';
+  }
 
   function pill(text, cls) { return '<span class="inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ' + cls + '" data-op-source>' + text + '</span>'; }
 
-  function lineHtml(r, basis) {
-    var src = r.source && SRC[r.source];
+  function lineHtml(r, basis, optional, hidden) {
+    var src = has(SRC, r.source) ? SRC[r.source] : null;
     var badge = src ? pill(src[0], src[1])
               : r.present ? pill(esc(r.source || "?"), "border-slate-200 bg-slate-50 text-slate-500")
               : pill("not set", "border-dashed border-slate-300 bg-white text-slate-400");
     var ctl = r.role === "expense"
       ? '<input type="checkbox" data-op-ctl' + (r.controllable ? ' checked' : '') + (r.present ? '' : ' disabled title="Enter a value first"') + ' aria-label="Controllable: ' + esc(r.label) + '">'
       : '<span class="text-[10px] text-slate-300">&mdash;</span>';
-    return '<tr class="border-t border-slate-100' + (r.present ? '' : ' text-slate-400') + '" data-op-code="' + esc(r.code) + '" data-op-section="' + r.section + '" data-op-present="' + (r.present ? 1 : 0) + '">' +
+    var warn = !!(r.deduction && r.annual != null && r.annual > 0);   // stored POSITIVE: it adds to income — say so, never hide it
+    return '<tr class="border-t border-slate-100' + (r.present ? '' : ' text-slate-400') + '" data-op-code="' + esc(r.code) + '" data-op-section="' + esc(r.section) + '" data-op-present="' + (r.present ? 1 : 0) + '"' +
+      (r.deduction ? ' data-op-deduction="1"' : '') + (optional ? ' data-op-optional="' + esc(r.section) + '"' : '') + (hidden ? ' hidden' : '') + (warn ? ' data-op-sign-warn="1"' : '') + '>' +
       '<td class="py-1 pl-3 pr-3 text-sm ' + (r.present ? 'text-slate-700' : 'text-slate-400') + '">' + esc(r.label) +
         ' <span class="ml-1 rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-400">' + esc(r.code) + '</span>' +
-        (r.note ? ' <span class="text-[10px] text-slate-400" title="' + esc(r.note) + '">&#9998;</span>' : '') + '</td>' +
+        (r.note ? ' <span class="text-[10px] text-slate-400" title="' + esc(r.note) + '">&#9998;</span>' : '') +
+        (warn ? ' <span class="ml-1 text-[10px] font-semibold text-rose-600" title="Stored as a positive amount, so it ADDS to income — re-enter it to store the deduction">&#9888; stored positive</span>' : '') + '</td>' +
       '<td class="py-1 px-2 text-right"><input class="' + INPUT_CLS + '" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-op-input' +
-        ' value="' + (r.value == null ? '' : esc(formatMoney(r.value))) + '" placeholder="' + (basis === "monthly" ? "monthly" : "annual") + '"' +
-        (DEDUCTION[r.code] ? ' title="A deduction: enter it as a negative amount"' : '') +
+        ' value="' + (r.shown == null ? '' : esc(formatMoney(r.shown))) + '" placeholder="' + (basis === "monthly" ? "monthly" : "annual") + '"' +
+        (r.deduction ? ' title="A deduction: enter the amount — it is stored as a negative"' : '') +
         ' aria-label="' + esc(r.label) + ' (' + basis + ')"></td>' +
       '<td class="py-1 px-2 text-center">' + ctl + '</td>' +
       '<td class="py-1 px-2">' + badge + '</td>' +
@@ -223,23 +244,31 @@
       '<td colspan="3"></td></tr>';
   }
   function sectionHtml(section) {
-    return '<tr class="bg-slate-50" data-op-section-head="' + section + '"><td colspan="5" class="py-1 pl-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">' + SECTION_TITLE[section] + '</td></tr>';
+    var title = has(SECTION_TITLE, section) ? SECTION_TITLE[section] : esc(section);
+    return '<tr class="bg-slate-50" data-op-section-head="' + esc(section) + '"><td colspan="5" class="py-1 pl-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">' + title + '</td></tr>';
   }
   function seg(key, text, basis) {
     var on = key === basis;
     return '<span data-op-basis-opt="' + key + '" class="px-2.5 py-1 ' + (on ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50') + '">' + text + '</span>';
   }
 
+  function keyOf(record) { return (record && record.propKey != null) ? String(record.propKey) : ""; }
+
   function toHtml(rows, opts) {
     var basis = normBasis(opts && opts.basis), rec = (opts && opts.record) || null, unit = basis === "monthly" ? "Monthly" : "Annual";
-    var body = "", prev = null;
+    var exp = expandedMap(opts && opts.expanded, rec);
+    var body = "", prev = null, foldN = 0;
+    var closeSection = function () { if (prev && foldN) body += moreHtml(prev, foldN, exp[prev]); foldN = 0; };
     (rows || []).forEach(function (r) {
-      if (!r.editable) { body += subHtml(r); return; }
-      if (r.section !== prev) { body += sectionHtml(r.section); prev = r.section; }
-      body += lineHtml(r, basis);
+      if (!r.editable) { closeSection(); prev = null; body += subHtml(r); return; }
+      if (r.section !== prev) { closeSection(); body += sectionHtml(r.section); prev = r.section; }
+      var optional = !r.present && !has(ALWAYS, r.code) && has(exp, r.section);   // an unused, non-skeleton row of a foldable section
+      if (optional) foldN++;
+      body += lineHtml(r, basis, optional, optional && !exp[r.section]);
     });
+    closeSection();
     var meta = rec ? [rec.propertyName, rec.period, (rec.units != null ? rec.units + " units" : null)].filter(Boolean).map(esc).join(" &middot; ") : "";
-    return '<div class="op-sheet space-y-2">' +
+    return '<div class="op-sheet space-y-2" data-op-key="' + esc(keyOf(rec)) + '">' +
       '<div class="flex flex-wrap items-center justify-between gap-2">' +
         '<div class="text-[11px] text-slate-500" data-op-meta>' + (meta || "No operating record yet &mdash; type a value to start one.") + '</div>' +
         '<button type="button" id="opBasisToggle" data-basis="' + basis + '" aria-pressed="' + (basis === "monthly") + '" title="Switch the display between annual and monthly (values are stored annually)" class="inline-flex overflow-hidden rounded-lg border border-slate-300 text-xs font-semibold">' +
@@ -251,40 +280,74 @@
           '<th class="py-2 px-2 text-center" title="Controllable expense">Ctl</th><th class="py-2 px-2">Source</th><th class="py-2 pl-2 pr-3 text-right">Updated</th>' +
         '</tr></thead><tbody>' + body + '</tbody></table>' +
       '</div>' +
-      '<p class="text-[11px] text-slate-400">Values are stored annually; the monthly view shows &divide;12 and converts entries &times;12. Rental deductions (vacancy, concessions, bad debt) are entered as negative amounts.</p>' +
+      '<p class="text-[11px] text-slate-400">Values are stored annually; the monthly view shows &divide;12 and converts entries &times;12. Rental deductions (vacancy, concessions, bad debt) are entered as amounts under their &ldquo;Less:&rdquo; captions and stored as negatives.</p>' +
     '</div>';
   }
 
   // ---- DOM ------------------------------------------------------------------------
-  // render(mountEl, { record, derived, basis, onEdit(code, annual),
+  // render(mountEl, { record, derived, basis, expanded?, onEdit(code, annual),
   //                   onToggleControllable(code, bool), onBasisChange(basis) })
   // Idempotent: every call replaces the mount's content with a fresh tree, and the
   // listeners live on that tree (not on the mount), so re-rendering can't stack them.
+  // `committing` is the input whose commit is in flight: a host may redraw
+  // synchronously inside onEdit, the redraw removes the focused input, and the
+  // browser fires that input's `change` again mid-removal — the latch makes that
+  // one edit, one write.
+  var committing = null;
+  function notHidden(el) { var tr = el.closest ? el.closest("tr") : null; return !(tr && tr.hidden); }
+
   function render(mountEl, props) {
     if (!mountEl || typeof mountEl !== "object" || typeof mountEl.querySelector !== "function")
       throw new Error("OperatingSheet.render: mountEl must be a DOM element (got " + (mountEl === null ? "null" : typeof mountEl) + ")");
     props = props || {};
     var basis = normBasis(props.basis);
     var rows = buildRows(props.record, props.derived, { basis: basis });
-    var byCode = {};
+    var byCode = Object.create(null), committed = Object.create(null);   // null-prototype: a code is never a prototype key
     rows.forEach(function (r) { if (r.editable) byCode[r.code] = r; });
     var cb = function (name) { return typeof props[name] === "function" ? props[name] : null; };
-    var shown = function (row) { return row.value == null ? "" : formatMoney(row.value); };
     var rowSel = function (code) { return 'tr[data-op-code="' + String(code).replace(/["\\]/g, "\\$&") + '"]'; };
+    var current = function (row) { return (row.code in committed) ? committed[row.code] : row.annual; };
+    // what the input should read for a row, after any commit this tree has made
+    var shownText = function (row) { var a = current(row); if (a == null) return ""; var v = toBasis(a, basis); return formatMoney(row.deduction ? Math.abs(v) : v); };
+    var active = function () { try { return (typeof document !== "undefined") ? document.activeElement : null; } catch (e) { return null; } };
+    var focusIn = function (code, kind) { var el = mountEl.querySelector(rowSel(code) + " " + kind); if (el && !el.disabled) { el.focus(); if (el.select) el.select(); } };
 
-    mountEl.innerHTML = toHtml(rows, { basis: basis, record: props.record });
+    // Fold state and focus carry over from the tree being replaced (the host
+    // redraws after every write): same property → keep what the user opened and
+    // where the caret was; another property → that record's defaults.
+    var prevRoot = mountEl.firstElementChild, expanded = props.expanded, focusCode = null, focusKind = null;
+    if (prevRoot && prevRoot.getAttribute && prevRoot.getAttribute("data-op-key") === keyOf(props.record)) {
+      if (expanded === undefined) {
+        var st = {};
+        Array.prototype.forEach.call(prevRoot.querySelectorAll("[data-op-more]"), function (b) { st[b.getAttribute("data-op-more")] = b.getAttribute("aria-expanded") === "true"; });
+        if (Object.keys(st).length) expanded = st;
+      }
+      var a0 = active();
+      if (a0 && a0 !== committing && a0.closest && mountEl.contains(a0)) {
+        var atr = a0.closest("tr[data-op-code]");
+        if (atr) { focusCode = atr.getAttribute("data-op-code"); focusKind = a0.hasAttribute("data-op-input") ? "[data-op-input]" : a0.hasAttribute("data-op-ctl") ? "[data-op-ctl]" : null; }
+        else if (a0.hasAttribute("data-op-more")) { focusCode = a0.getAttribute("data-op-more"); focusKind = "more"; }
+      }
+    }
+
+    mountEl.innerHTML = toHtml(rows, { basis: basis, record: props.record, expanded: expanded });
     var rootEl = mountEl.firstElementChild;
+    var inputs = function () { return Array.prototype.filter.call(rootEl.querySelectorAll("[data-op-input]"), notHidden); };
+    var commitPending = function () { var a = active(); if (a && a.hasAttribute && a.hasAttribute("data-op-input") && rootEl.contains(a)) a.blur(); };
 
     rootEl.addEventListener("change", function (ev) {
       var t = ev.target, tr = t && t.closest ? t.closest("tr[data-op-code]") : null;
       var row = tr && byCode[tr.getAttribute("data-op-code")];
       if (!row) return;
       if (t.hasAttribute("data-op-input")) {
-        var annual = toAnnual(t.value, basis);
-        if (annual == null) { t.value = shown(row); return; }         // not a number: revert, write nothing
-        t.value = formatMoney(toBasis(annual, basis));                 // normalise even if the host doesn't redraw
-        if (annual === row.annual) return;                             // same number, different spelling: not an edit
-        var onEdit = cb("onEdit"); if (onEdit) onEdit(row.code, annual);
+        if (committing === t) return;                                      // re-entrant change mid-commit: already being written
+        var annual = toAnnual(t.value, basis, row.code);
+        if (annual == null) { t.value = shownText(row); return; }            // not a number: revert, write nothing
+        if (annual === current(row)) { t.value = shownText(row); return; }   // same number, different spelling: not an edit
+        var onEdit = cb("onEdit");
+        committing = t;
+        try { if (onEdit) onEdit(row.code, annual); committed[row.code] = annual; } finally { committing = null; }
+        t.value = shownText(row);                                             // normalise even if the host doesn't redraw
       } else if (t.hasAttribute("data-op-ctl")) {
         var onCtl = cb("onToggleControllable"); if (onCtl) onCtl(row.code, !!t.checked);
       }
@@ -292,33 +355,50 @@
     rootEl.addEventListener("keydown", function (ev) {
       var t = ev.target;
       if (!t || !t.hasAttribute || !t.hasAttribute("data-op-input")) return;
-      if (ev.key === "Enter") { ev.preventDefault(); t.blur(); }        // commit: blur fires change
-      else if (ev.key === "Escape") {                                   // abandon: restore, so blur fires no change
-        var tr = t.closest("tr[data-op-code]"), row = tr && byCode[tr.getAttribute("data-op-code")];
-        if (row) t.value = shown(row);
+      var tr = t.closest("tr[data-op-code]"), row = tr && byCode[tr.getAttribute("data-op-code")];
+      if (!row) return;
+      if (ev.key === "Enter") {
+        // Commit and move down a line (Shift+Enter: up), spreadsheet-style; the
+        // target is re-found by code so it survives the host's redraw.
+        ev.preventDefault();
+        var seq = inputs(), nxt = seq[seq.indexOf(t) + (ev.shiftKey ? -1 : 1)];
+        var down = nxt ? nxt.closest("tr[data-op-code]").getAttribute("data-op-code") : null;
+        t.blur();
+        if (down) focusIn(down, "[data-op-input]");
+      } else if (ev.key === "Escape") {                                      // abandon: restore, so blur fires no change
+        t.value = shownText(row);
         t.blur();
       } else if (ev.key === "Tab") {
         // Only when a commit is pending: blur → change → the host usually redraws, replacing this
         // tree and dropping focus. Work out where native Tab would have gone (the row's toggle, or
         // the next line), commit, then put the caret on that element in the new tree. An unchanged
         // value takes the native path untouched, so toggles stay reachable by keyboard.
-        var tr0 = t.closest("tr[data-op-code]"), row0 = tr0 && byCode[tr0.getAttribute("data-op-code")];
-        if (!row0) return;
-        var pending = toAnnual(t.value, basis);
-        if (pending == null || pending === row0.annual) return;
-        var stops = Array.prototype.slice.call(rootEl.querySelectorAll("[data-op-input], [data-op-ctl]:not([disabled])"));
+        var pending = toAnnual(t.value, basis, row.code);
+        if (pending == null || pending === current(row)) return;
+        var stops = Array.prototype.filter.call(rootEl.querySelectorAll("[data-op-input], [data-op-ctl]:not([disabled]), [data-op-more]"), notHidden);
         var target = stops[stops.indexOf(t) + (ev.shiftKey ? -1 : 1)];
-        if (!target) return;                                              // leaving the sheet: the outside target survives the redraw
+        if (!target) return;                                                 // leaving the sheet: the outside target survives the redraw
+        ev.preventDefault(); t.blur();
+        if (target.hasAttribute("data-op-more")) {                           // a section's fold button, re-found in the new tree
+          var fb = mountEl.querySelector('[data-op-more="' + target.getAttribute("data-op-more") + '"]'); if (fb) fb.focus(); return;
+        }
         var code = target.closest("tr[data-op-code]").getAttribute("data-op-code");
         var kind = target.hasAttribute("data-op-input") ? "[data-op-input]" : "[data-op-ctl]";
-        ev.preventDefault(); t.blur();
-        var next = mountEl.querySelector(rowSel(code) + " " + kind);
-        if (next && !next.disabled) { next.focus(); if (next.select) next.select(); }
+        focusIn(code, kind);
       }
     });
+    // A press on a button must not steal focus from an input mid-edit: that blur
+    // would commit, a synchronous host would redraw, and the click would land on a
+    // node that no longer exists. Keep focus put; the click commits explicitly.
+    rootEl.addEventListener("pointerdown", function (ev) {
+      var t = ev.target;
+      if (t && t.closest && (t.closest("#opBasisToggle") || t.closest("[data-op-more]"))) ev.preventDefault();
+    });
     rootEl.addEventListener("click", function (ev) {
-      var btn = ev.target && ev.target.closest ? ev.target.closest("#opBasisToggle") : null;
-      if (!btn) return;
+      var t = ev.target, more = t && t.closest ? t.closest("[data-op-more]") : null, btn = t && t.closest ? t.closest("#opBasisToggle") : null;
+      if (!more && !btn) return;
+      commitPending();                                                       // an edit still sitting in an input reaches the host first
+      if (more) { foldSection(mountEl, more.getAttribute("data-op-more")); return; }
       var next = basis === "monthly" ? "annual" : "monthly";
       var onBasis = cb("onBasisChange"); if (onBasis) onBasis(next);
       // A host that only records the basis (no redraw) still gets a working toggle;
@@ -326,13 +406,26 @@
       if (mountEl.firstElementChild === rootEl) render(mountEl, Object.assign({}, props, { basis: next }));
     });
 
+    if (focusCode && focusKind === "more") { var fb = rootEl.querySelector('[data-op-more="' + focusCode + '"]'); if (fb) fb.focus(); }
+    else if (focusCode && focusKind) focusIn(focusCode, focusKind);
     return rows;
+  }
+
+  // Show / hide one section's unused rows in place — no redraw needed; the next
+  // redraw reads the state back from the toggle's aria-expanded.
+  function foldSection(scope, section) {
+    var b = scope.querySelector('[data-op-more="' + section + '"]');
+    if (!b) return;
+    var open = b.getAttribute("aria-expanded") !== "true";
+    Array.prototype.forEach.call(scope.querySelectorAll('tr[data-op-optional="' + section + '"]'), function (tr) { tr.hidden = !open; });
+    b.setAttribute("aria-expanded", String(open));
+    b.textContent = moreLabel(Number(b.getAttribute("data-op-count")) || 0, open);
   }
 
   return {
     ORDER: ORDER.slice(), RENTAL: RENTAL.slice(), OTHER: OTHER.slice(), EXPENSE: EXPENSE.slice(),
     ALWAYS: Object.keys(ALWAYS), LABEL: LABEL, SUBTOTAL: SUBTOTAL,
     buildRows: buildRows, toHtml: toHtml, render: render,
-    toAnnual: toAnnual, formatMoney: formatMoney, formatDate: formatDate
+    toAnnual: toAnnual, isDeduction: isDeduction, formatMoney: formatMoney, formatDate: formatDate
   };
 });

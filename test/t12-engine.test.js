@@ -210,10 +210,123 @@ run("E1 · underwriting-style flat statement (GPR line, EGI total, reserves belo
   eq(fg.reconcile.incomeResidual, 0, "income residual 0");
   eq(fg.reconcile.expenseResidual, 0, "expense residual 0");
   eq(JSON.stringify(fg.review.map(function(x){ return [x.name, x.code]; })), JSON.stringify([[amb.label, "OTH"]]), "low-confidence line " + JSON.stringify(amb.label) + " surfaced in review (only that line)");
+  var z = SB.fromParse({ rows: [{ name: amb.label, amount: 0, section: "INCOME" }, { name: amb.label, amount: 5, section: "INCOME" }], totals: {} });
+  eq(JSON.stringify(z.review), JSON.stringify([{ name: amb.label, amount: 5, code: "OTH" }]), "a $0 low-confidence line is never review noise; the same caption with an amount is surfaced");
   var bg = SB.buildSetup({ parsed: pg, units: 120, benchmarks: {} });
   eq(bg.result.inPlace.noi, eg.noi, "buildSetup: in-place NOI === printed NOI");
   eq(bg.review.length, 1, "buildSetup carries the review list for the parsed path");
   eq(bg.result.underwritten.lines.VAC, -0.05 * 1512345.60, "underwritten vacancy prices off the real GPR (would be 0 if GPR were dropped)");
+});
+
+run("E1 · where the operating detail ends (NOI row, TOTAL EXPENSES, summary blocks)", function(){
+  var X = F.noExpenseTotal(), px = T12.parseGrid(X.grid);
+  eq(px.totals.expense, null, "no TOTAL EXPENSES row: expense total null");
+  eq(px.totals.noi, X.expect.noi, "no TOTAL EXPENSES row: NOI read from its row");
+  eq(px.rows.length, X.expect.rows, "no TOTAL EXPENSES row: the NOI row alone ends the detail (Interest after it is not a row)");
+  eq(sumRows(px.rows, "EXPENSE"), X.expect.expenseRows, "no TOTAL EXPENSES row: Σ expense rows = 300.00 (Interest 400.00 excluded)");
+  eq(px.rows.filter(function(r){ return r.name === "Interest"; }).length, 0, "no TOTAL EXPENSES row: 'Interest' never read");
+  eq(px.categories.length, 0, "no TOTAL EXPENSES row: 'NET INCOME' after the NOI is not a category");
+  eq(SB.buildSetup({ parsed: px }).result.inPlace.opex, 300, "no TOTAL EXPENSES row: in-place opex 300.00 (no printed total to plug; Interest never inside)");
+  var D = F.noDividers(), pd = T12.parseGrid(D.grid);
+  eq(pd.totals.income, null, "no TOTAL INCOME / no EXPENSES caption: income total null");
+  eq(pd.totals.expense, D.expect.expense, "…TOTAL EXPENSES read");
+  eq(pd.totals.noi, D.expect.noi, "…NOI read");
+  eq(pd.rows.length, D.expect.rows, "…TOTAL EXPENSES ends the operating detail from any phase: 'Interest' after it is not a row");
+  eq(pd.belowLine.length ? pd.belowLine[0].name : null, "Interest", "…'Interest' reported in belowLine");
+  [true, false].forEach(function(withNoi){
+    var Sm = F.summaryFirst({ noiInSummary: withNoi }), ps = T12.parseGrid(Sm.grid), es = Sm.expect, tag = "summary block above the detail (" + (withNoi ? "with" : "without") + " NOI): ";
+    eq(ps.totals.income, es.income, tag + "TOTAL INCOME");
+    eq(ps.totals.expense, es.expense, tag + "TOTAL EXPENSES");
+    eq(ps.totals.noi, es.noi, tag + "NOI");
+    eq(JSON.stringify(ps.footing), JSON.stringify(es.footing), tag + "footing rows = the summary's rows (first wins" + (withNoi ? ")" : "; NOI from the detail)"));
+    eq(ps.rows.length, es.rows, tag + "detail rows still read");
+    eq(ps.categories.length, es.categories.length, tag + "category subtotals still read");
+    eq(sumRows(ps.rows, "INCOME"), es.income, tag + "income rows foot");
+    eq(sumRows(ps.rows, "EXPENSE"), es.expense, tag + "expense rows foot (split intact)");
+    eq(ps.belowLine.length, 0, tag + "nothing below the line");
+    var bs = SB.buildSetup({ parsed: ps });
+    eq(bs.result.inPlace.noi, es.noi, tag + "in-place NOI ties");
+    eq(bs.reconcile.incomeResidual, 0, tag + "no income plug");
+    eq(bs.reconcile.expenseResidual, 0, tag + "no expense plug");
+  });
+});
+
+run("E1 · mixed-case 'Gross …' captions are detail lines; ALL-CAPS 'GROSS …' is a subtotal", function(){
+  ["Gross Rent", "Gross Rental Income", "Gross Rents"].forEach(function(l){
+    var Gr = F.grossRent(l), q = T12.parseGrid(Gr.grid), ex = Gr.expect, L = JSON.stringify(l);
+    var row = q.rows.filter(function(r){ return r.name === l; })[0];
+    eq(row && row.amount, ex.gpr, L + " is a detail row with its amount");
+    eq(q.rows.length, ex.rows, L + ": detail rows");
+    eq(JSON.stringify(q.categories.map(function(c){ return [c.name, c.amount, c.section]; })), JSON.stringify(ex.categories), L + ": ALL-CAPS GROSS INCOME is still a category subtotal, not a row");
+    var fq = SB.fromParse(q);
+    eq(fq.sums.GPR, ex.gpr, L + ": classified to GPR");
+    eq(fq.reconcile.incomeResidual, 0, L + ": no income plug");
+    var bq = SB.buildSetup({ parsed: q, units: 10, benchmarks: { vacancyPct: 0.05 } });
+    eq(bq.result.underwritten.lines.VAC, -50, L + ": underwritten vacancy = −5% × 1,000.00 GPR (would be 0 if the row were dropped)");
+    eq(bq.result.inPlace.noi, ex.noi, L + ": in-place NOI ties");
+  });
+});
+
+run("E3 · printed totals the detail lines do not foot to: the residual plugs", function(){
+  var U = F.unfooted(), pu = T12.parseGrid(U.grid);
+  eq(pu.totals.income, 1183830.08, "printed TOTAL INCOME = detail 1,182,595.52 + 1,234.56");
+  eq(pu.totals.expense, 512096.63, "printed TOTAL EXPENSES = detail 511,307.62 + 789.01");
+  eq(pu.totals.noi, 671733.45, "printed NOI 671,733.45");
+  eq(sumRows(pu.rows, "INCOME"), 1182595.52, "detail income rows still sum to 1,182,595.52");
+  eq(sumRows(pu.rows, "EXPENSE"), 511307.62, "detail expense rows still sum to 511,307.62");
+  var fu = SB.fromParse(pu);
+  eq(fu.reconcile.incomeResidual, 1234.56, "income plug 1,234.56 reported");
+  eq(fu.reconcile.expenseResidual, 789.01, "expense plug 789.01 reported");
+  eq(fu.sums.OTH, 2549.81, "OTH = 1,315.25 + 1,234.56 plug");
+  eq(fu.sums.GA, 5814.76, "GA = 5,025.75 + 789.01 plug");
+  eq(fu.sums.GPR, 1203456.78, "other codes untouched (GPR)");
+  eq(fu.sums.RET, 150250.00, "other codes untouched (RET)");
+  var role = function(r){ return cents(Object.keys(fu.sums).filter(function(k){ return CL.roleOf(k) === r; }).reduce(function(s, k){ return s + fu.sums[k]; }, 0)) / 100; };
+  eq(role("income"), 1183830.08, "Σ income-role sums = printed TOTAL INCOME");
+  eq(role("expense"), 512096.63, "Σ expense-role sums = printed TOTAL EXPENSES");
+  var bu = SB.buildSetup({ parsed: pu });
+  eq(bu.result.inPlace.noi, 671733.45, "in-place NOI === printed NOI");
+  eq(bu.result.inPlace.egi, 1183830.08, "in-place EGI === printed TOTAL INCOME");
+  eq(bu.result.inPlace.opex, 512096.63, "in-place opex === printed TOTAL EXPENSES");
+  eq(bu.reconcile.ties, true, "ties");
+  var U2 = F.unfooted({ incExtra: -500.00, expExtra: -0.01 }), pu2 = T12.parseGrid(U2.grid), fu2 = SB.fromParse(pu2);
+  eq(pu2.totals.income, 1182095.52, "negative plug: printed TOTAL INCOME 1,182,095.52");
+  eq(fu2.reconcile.incomeResidual, -500, "negative income plug −500.00 reported");
+  eq(fu2.reconcile.expenseResidual, -0.01, "one-cent expense plug −0.01 reported");
+  eq(fu2.sums.OTH, 815.25, "OTH = 1,315.25 − 500.00");
+  eq(fu2.sums.GA, 5025.74, "GA = 5,025.75 − 0.01");
+  eq(SB.buildSetup({ parsed: pu2 }).result.inPlace.noi, 670787.91, "in-place NOI === printed 670,787.91");
+});
+
+run("E3 · expense-side bad debt rides its own pass-through line (a G&A budget never absorbs it)", function(){
+  // Rent 1,000 · Taxes 100 · Bad Debt Expense 40 − Recoveries 10 = 30 · TOTAL EXPENSES 130 · NOI 870
+  var g = [[null].concat(F.MONTHS, ["Total"])], L = function (l, t){ g.push([l].concat([0,0,0,0,0,0,0,0,0,0,0,0], [t])); };
+  L("Rent", 1000); L("TOTAL INCOME", 1000); g.push(["EXPENSES"]); L("Taxes", 100); L("Bad Debt Expense", 40); L("Bad Debt Recoveries", -10); L("TOTAL EXPENSES", 130); L("NET OPERATING INCOME", 870);
+  var q = T12.parseGrid(g), fq = SB.fromParse(q);
+  eq(JSON.stringify([CL.classify("Bad Debt Expense", "EXPENSE", ""), CL.classify("Bad Debt Recoveries", "EXPENSE", "")]), '["BD","BD"]', "both lines classify BD (income-role code in the expense section)");
+  eq(fq.expenseBadDebt, 30, "fromParse reports expense-side bad debt 30.00 (40.00 − 10.00)");
+  eq(fq.sums.GA, 30, "sums.GA still carries it for the store (the taxonomy has no expense-side bad-debt code)");
+  eq(fq.sums.BD, undefined, "no income-side BD is invented");
+  eq(fq.reconcile.expenseResidual, 0, "expense section still foots to the printed 130.00");
+  var b0 = SB.buildSetup({ parsed: q, units: 10, benchmarks: { reservePerUnit: 0 } });
+  var find = function (b, k){ return b.worksheet.lines.filter(function(x){ return x.key === k; })[0]; };
+  eq(find(b0, "BDX") && find(b0, "BDX").t12, 30, "worksheet: a BDX pass-through line with in-place 30.00");
+  eq(find(b0, "BDX").label, "Bad Debt Expense", "worksheet: BDX caption");
+  eq(find(b0, "BDX").method, "value", "worksheet: BDX is a value (pass-through) line");
+  eq(find(b0, "GA").t12, 0, "worksheet: the G&A line no longer carries the bad debt (30.00 − 30.00)");
+  eq(b0.result.inPlace.opex, 130, "in-place opex unchanged at the printed 130.00");
+  eq(b0.result.underwritten.lines.BDX, 30, "no budget: BDX underwritten = its in-place 30.00 (pass-through)");
+  eq(b0.result.inPlace.noi, 870, "in-place NOI === printed 870.00");
+  eq(b0.expenseBadDebt, 30, "buildSetup reports expenseBadDebt");
+  // vacancy 5% → EGI 950 · mgmt 2.5% = 23.75 · taxes 100 · G&A budget 5 × 10 = 50 · bad debt 30 → opex 203.75 · NOI 746.25 (reserves 0)
+  var b1 = SB.buildSetup({ parsed: q, units: 10, benchmarks: { budget: { GA: 5 }, reservePerUnit: 0 } });
+  eq(b1.result.underwritten.lines.GA, 50, "G&A budgeted at 5.00/unit × 10 = 50.00");
+  eq(b1.result.underwritten.lines.BDX, 30, "…and the 30.00 bad debt still passes through");
+  eq(b1.result.underwritten.opex, 203.75, "underwritten opex 100 + 50 + 30 + 23.75 = 203.75");
+  eq(b1.result.underwritten.noi, 746.25, "underwritten NOI 950 − 203.75 = 746.25 (776.25 if the budget had swallowed the bad debt)");
+  var none = SB.buildSetup({ parsed: T12.parseGrid(F.clean().grid), units: 10, benchmarks: {} });
+  eq(find(none, "BDX"), undefined, "no BDX line when the statement has no expense-side bad debt");
+  eq(none.expenseBadDebt, 0, "…and expenseBadDebt = 0");
 });
 
 run("E1 · header / footing detection edge cases", function(){
@@ -230,8 +343,15 @@ run("E1 · header / footing detection edge cases", function(){
   eq(JSON.stringify([dh.headerRow, dh.months]), JSON.stringify([0, [2, 3, 4]]), "'Description' / 'Marketing' header cells are not month columns (3-letter or full month names only)");
   eq(T12.parseGrid(F.twoLabelColumns(C.grid, e.headerRow).map(function(r, i){ return i === e.headerRow ? ["Category", "Description"].concat(r.slice(2)) : r; })).totals.noi, e.noi, "column-A/column-B labels still found with a 'Description' header cell");
   eq(T12.findHeader([["Statement"], ["Account", "Total", "%"], ["Rent", 100, 0.5]], { loose: true }).headerRow, 1, "loose header opt-in");
+  eq(T12.findHeader([["Total", 1, 2, 3], ["Rent", 4, 5, 6]]).headerRow, -1, "a data row ['Total', 1, 2, 3] is not a header (a month-number run needs 'Total' as a column caption)");
+  eq(T12.findHeader([["Total", 45839, 45870, 45900]]).headerRow, -1, "…nor is ['Total', <three serial dates>]");
+  eq(T12.findHeader([[null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, "Total"], ["Rent", 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 12]]).headerRow, 0, "a header of month numbers 1..12 + Total is accepted");
+  eq(T12.findHeader([[null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, "Total", 99]]).headerRow, -1, "…but not with a stray number in the row");
+  var cur = T12.parseGrid([[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["Rent", 0, 0, 0, "$ 2,000.00"], ["Refund", 0, 0, 0, "$ (1,234.56)"], ["Zero", 0, 0, 0, "$ -"], ["TOTAL INCOME", 0, 0, 0, "$765.44"]]);
+  eq(JSON.stringify(cur.rows.map(function(r){ return r.amount; })), JSON.stringify([2000, -1234.56, 0]), "currency-prefixed text: '$ (1,234.56)' is negative, '$ -' is zero");
+  eq(cur.totals.income, 765.44, "currency-prefixed footing text");
   var noiFirst = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["TOTAL INCOME", 0, 0, 0, 500], ["TOTAL EXPENSES", 0, 0, 0, 200], ["NET OPERATING INCOME", 0, 0, 0, 300], ["Rent", 0, 0, 0, 999]];
-  eq(T12.parseGrid(noiFirst).rows.length, 0, "nothing after the NOI row is read, even detail-looking lines");
+  eq(T12.parseGrid(noiFirst).rows.length, 0, "a footing block with no twin further down is the statement's own footing: nothing after its NOI row is read");
   var expFirst = T12.parseGrid([[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["Rent", 0, 0, 0, 100], ["TOTAL REVENUES", 0, 0, 0, 100], ["Taxes", 0, 0, 0, 30], ["TOTAL OPEX", 0, 0, 0, 30], ["NET OPERATING INCOME (NOI)", 0, 0, 0, 70]]);
   eq(JSON.stringify(expFirst.totals), JSON.stringify({ income: 100, expense: 30, noi: 70 }), "TOTAL REVENUES / TOTAL OPEX / NET OPERATING INCOME (NOI) footing labels");
   var defv = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["INCOME", null, null, null, null], ["Rent", 1, 1, 1, 3], ["TOTAL INCOME", 1, 1, 1, 3], ["EXPENSES", null, null, null, null], ["Tax", 1, 1, 1, 3], ["TOTAL EXPENSES", 1, 1, 1, 3], ["NET OPERATING INCOME", 0, 0, 0, 0]];
@@ -264,6 +384,16 @@ run("E1 · malformed / empty / header-less / all-text input never throws", funct
   eq(gap.reconcile.noiDiff, 50, "…and the 50.00 gap is reported in reconcile.noiDiff");
   eq(gap.reconcile.ties, false, "…with ties = false");
   eq(gap.inPlaceNOIReported, 650, "…while the printed figure is still carried");
+  var cent = SB.buildSetup({ parsed: { rows: [{ name: "Rent", amount: 1000, section: "INCOME" }, { name: "Taxes", amount: 300, section: "EXPENSE" }], totals: { income: 1000, expense: 300, noi: 700.01 } } });
+  eq(cent.result.inPlace.noi, 700, "a ONE-CENT real gap (printed 700.01, built 700.00) is not snapped: in-place NOI stays the built 700.00");
+  eq(cent.reconcile.noiDiff, -0.01, "…and reconcile.noiDiff = −0.01");
+  eq(cent.reconcile.ties, false, "…ties = false");
+  eq(cent.inPlaceNOIReported, 700.01, "…the printed 700.01 is still carried");
+  var dust = SB.buildSetup({ parsed: { rows: [{ name: "Rent", amount: 0.1, section: "INCOME" }, { name: "Late Fees", amount: 0.2, section: "INCOME" }], totals: { income: 0.3, expense: 0, noi: 0.31 } } });
+  eq(dust.result.inPlace.noi, 0.3, "float dust is cleaned even on a real gap: 0.1 + 0.2 vs printed 0.31 → in-place NOI is exactly 0.30, not 0.30000000000000004");
+  eq(dust.result.inPlace.egi, 0.3, "…in-place EGI rounded to cents too");
+  eq(dust.reconcile.noiDiff, -0.01, "…and the 1-cent gap is still reported");
+  eq(dust.reconcile.incomeResidual, 0, "…with no income plug (0.30 detail = 0.30 printed)");
 });
 
 run("stable exports / other buildSetup paths", function(){
@@ -273,6 +403,10 @@ run("stable exports / other buildSetup paths", function(){
   eq(SB.OTHER.length + SB.EXPENSE.length, 26, "SetupBuilder.OTHER + EXPENSE cover the 26 non-rental codes");
   ok(CODES.every(function(c){ return SB.RENTAL.indexOf(c) >= 0 || SB.OTHER.indexOf(c) >= 0 || SB.EXPENSE.indexOf(c) >= 0; }), "every classifier code lands on a worksheet line (nothing can drop out of the in-place column)");
   eq(SB.LABEL.RET, "Real Estate Taxes", "SetupBuilder.LABEL");
+  eq(SB.LABEL["TRSH COL"], "Trash Collection Income", "LABEL: TRSH COL has its own caption");
+  eq(SB.LABEL["TRSH RUB"], "Trash Reimbursements", "LABEL: TRSH RUB caption unchanged");
+  var caps = Object.keys(SB.LABEL).map(function(k){ return SB.LABEL[k]; });
+  eq(caps.filter(function(c, i){ return caps.indexOf(c) !== i; }).join(","), "", "LABEL: no two codes share a caption");
   var cs = SB.buildSetup({ categorySums: { GPR: 1000, VAC: -50, RET: 100.25 }, units: 10, benchmarks: {} });
   eq(cs.result.inPlace.noi, 849.75, "categorySums path: in-place NOI");
   eq(cs.inPlaceNOIReported, null, "categorySums path: no reported NOI");
@@ -344,9 +478,22 @@ if (!fs.existsSync(CREST)) {
   eq(bc.inPlaceNOIReported, NOI, "inPlaceNOIReported carried");
   eq(bc.result.inPlace.noiReported, NOI, "result.inPlace.noiReported carried");
   eq(bc.reconcile.ties, true, "reconcile.ties");
+  eq(bc.expenseBadDebt, 388184.69, "expense-side bad debt 415,390.18 − 27,205.49 = 388,184.69 reported");
+  var gaLine = bc.worksheet.lines.filter(function(x){ return x.key === "GA"; })[0], bdxLine = bc.worksheet.lines.filter(function(x){ return x.key === "BDX"; })[0];
+  eq(bdxLine && bdxLine.t12, 388184.69, "worksheet: BDX pass-through line 388,184.69");
+  eq(cents(gaLine.t12 + bdxLine.t12) / 100, fc.sums.GA, "worksheet: G&A line + BDX line = the store's GA sum exactly");
+  eq(cents(bc.result.underwritten.noi) / 100, 9770923.03, "underwritten NOI at units 0 / no budget = 9,770,923.03 to the cent (a pass-through line does not move it; the % math leaves sub-cent dust)");
+  var bud = SB.buildSetup({ parsed: pc, units: 500, benchmarks: { budget: { GA: 1000 } } });
+  eq(bud.result.underwritten.lines.GA, 500000, "with a G&A budget of 1,000/unit × 500: underwritten G&A 500,000.00");
+  eq(bud.result.underwritten.lines.BDX, 388184.69, "…the 388,184.69 bad debt still passes through instead of vanishing");
+  eq(cents(bud.result.underwritten.opex) / 100, cents(bc.result.underwritten.opex - gaLine.t12 + 500000) / 100, "…underwritten opex = no-budget opex − G&A' + 500,000.00");
+  eq(bud.result.inPlace.noi, NOI, "…in-place NOI still 9,483,604.28");
   var shaped = SB.buildSetup({ parsed: { rows: pc.rows, categories: pc.categories, totals: pc.totals }, units: 500, rrGPR: null, benchmarks: { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {}, sizing: {} } });
   eq(shaped.result.inPlace.noi, NOI, "index.html's {rows, categories, totals} call shape → same tie");
-  ok(bc.review.length > 0, "low-confidence Crest lines surfaced via the parsed path (" + bc.review.length + ")");
+  var zeroStubs = pc.rows.filter(function(r){ return r.amount === 0 && !CL.classifyConfident(r.name, r.section, r.sub).confident; });
+  ok(zeroStubs.length >= 1, "Crest carries $0 low-confidence stubs above INCOME (" + zeroStubs.map(function(r){ return r.name; }).join(", ") + ")");
+  eq(bc.review.filter(function(x){ return x.amount === 0; }).length, 0, "…none of them is review noise");
+  eq(JSON.stringify(bc.review), "[]", "review on Crest is exactly [] under the current classifier (a new entry here is a classifier change, not a parser one)");
 });
 
 console.log("\n" + (fails ? "FAILED " + fails + " of " + total : "all " + total + " passed"));

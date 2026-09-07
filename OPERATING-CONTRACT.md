@@ -122,8 +122,12 @@ Bridge in index.html (orchestrator): `window.LDS_OPERATING_HOOKS = {
   currentBalance:    l => compute(l).derived.currentBalance,
   capRate:           l => loanCapRate(l),
   marketRate:        l => <the app's live market rate for that loan's product, or null>,
+  currentRate:       l => <the rate in effect today (compute(l).derived.currentRate), else loan.annualRate, else null>,
+  maturity:          l => <compute(l).derived.maturityDate as an ISO day "YYYY-MM-DD", else loan.maturityDate, else null>,
   propertyKey, loansForProperty, loans: () => loans, today: () => new Date(),
   globalDefaults:    () => uwState.input.bench }`
+(exposed as a getter — `window.LDS_OPERATING_HOOKS` is re-evaluated on every read; the roll-up and the scan use
+`hooks.maturity` / `hooks.currentRate` when present and fall back to the stored loan fields when absent.)
 
 ## 5. Upload → property (P3 — `operating-upload.js` → `OperatingUpload`)
 Reuse the existing pipeline; only the destination changes.
@@ -169,13 +173,21 @@ PortfolioRollup.buildRows(records, loans, hooks, globalDefaults)
 PortfolioRollup.render(mountEl, data, { onOpen(propKey) })   // `data-op-prop` on each row
 
 ActionScan.scan(records, loans, hooks, globalDefaults, opts)
-  → [{ propKey, name, kind: "dscr"|"dy"|"maturity"|"refi"|"expense", severity: 1..3,
-       value, threshold, detail }]   // ranked: severity desc, then impact
-  // dscr: stack dscr < dscrMin ; dy: stack dy < dyMin (per-property assumptions else global)
-  // maturity: earliest loan maturity within opts.maturityMonths (default 18)
-  // refi: hooks.marketRate(loan) != null && marketRate < loan.annualRate - opts.refiSpread (default 0.005)
-  // expense: a NON-controllable line with prevAnnual != null and (annual - prevAnnual)/|prevAnnual| > opts.shockPct (default 0.15)
-ActionScan.render(mountEl, flags, { onOpen(propKey) })     // `data-op-flag` rows
+  → [{ propKey, name, kind: "dscr"|"dy"|"maturity"|"refi"|"expense"|"error", severity: 1..3,
+       value, threshold, impact, detail }]   // ranked: severity desc, then impact desc, then name
+  // dscr: stack dscr < dscrMin ; dy: stack dy < dyMin (per-property assumptions else global, via
+  //       OperatingCalc.mergeAssumptions; a null/blank threshold inherits, floors 1.20× / 7%)
+  // maturity: earliest loan maturity (hooks.maturity else loan.maturityDate) within opts.maturityMonths (default 18);
+  //       already-past maturities are severity 2 ("confirm payoff or archive"); a loan with a KNOWN $0 balance is skipped
+  // refi: hooks.marketRate(loan) != null && marketRate < rateInEffect - opts.refiSpread (default 0.005), where
+  //       rateInEffect = hooks.currentRate(loan) when the hook exists (null → no flag), else loan.annualRate;
+  //       severity 3 at ≥ 1.00 pt over market, 2 at ≥ 0.75 pt, else 1
+  // expense: a NON-controllable EXPENSE-role line (OperatingTaxonomy.role / T12Classify.roleOf) with prevAnnual != null
+  //       and a RISE: annual − prevAnnual > 0 and (annual − prevAnnual)/|prevAnnual| > opts.shockPct (default 0.15)
+  // error: one flag per property whose rules threw (severity 1, impact 0, the message in detail; its other rules still
+  //       report); a missing hooks.propertyKey yields one portfolio-level error flag with propKey null. scan() itself
+  //       never throws for a record/hook failure. Records with no loan (orphans) are judged on the expense rule only.
+ActionScan.render(mountEl, flags, { onOpen(propKey) })     // `data-op-flag` rows; the portfolio-level error row has no data-op-prop
 ```
 
 ## 9. Testing

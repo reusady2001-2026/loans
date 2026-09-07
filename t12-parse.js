@@ -29,8 +29,8 @@
   function toNum(v){
     if (typeof v === "number") return isFinite(v) ? v : null;
     if (typeof v !== "string") return null;
-    var s = v.trim(); if (!s) return null;
-    if (/^[\s$€£]*[-–—]+[\s$€£]*$/.test(s)) return 0;        // accounting zero: "-", "$ -"
+    var s = v.replace(/[\s$€£]/g, ""); if (!s) return null;   // "$ (1,234.56)": the sign sits before the parens
+    if (/^[-–—]+$/.test(s)) return 0;                          // accounting zero: "-", "$ -"
     if (!/\d/.test(s)) return null;
     var neg = /^\(.*\)$/.test(s) || s.indexOf("-") >= 0;
     var n = parseFloat(s.replace(/[^0-9.]/g, ""));
@@ -82,7 +82,9 @@
       }
       if (total < 0 && t.t12 != null) total = t.t12;        // T12 stands in for Total
       if (total < 0) continue;
-      var runs = (serial.length >= 3 ? serial : []).concat(small.length >= 3 ? small : []);
+      // Numeric month runs only count when "Total" is a column caption — not the row's
+      // first cell (["Total", 1, 2, 3] is a data row) — and no other number is in the row.
+      var runs = (total > 0) ? (serial.length >= 3 ? serial : []).concat(small.length >= 6 ? small : []) : [];
       var tCount = Object.keys(t).length;
       if (mon.length >= 3 || tCount >= 2 || (runs.length >= 3 && nums === runs.length)){
         cols.total = total;
@@ -158,6 +160,16 @@
       }
       return "";
     }
+    // Does the same footing (with an amount) print again further down the sheet?
+    function twinBelow(kind, from){
+      var re = kind === "income" ? RE_INCTOT : kind === "expense" ? RE_EXPTOT : RE_NOI;
+      for (var i = from + 1; i < grid.length; i++){
+        var rw = grid[i]; if (!rw || typeof rw !== "object") continue;
+        var nm = labelOf(rw); if (!nm) continue;
+        if (re.test(nm.toUpperCase().replace(/\s+/g, " ").trim()) && toNum(rw[amountCol]) != null) return true;
+      }
+      return false;
+    }
 
     // The statement's own account hierarchy is authoritative: an ALL-CAPS label with
     // no amount is a section/sub-section header; mixed-case rows with an amount are
@@ -179,10 +191,12 @@
       var up = name.toUpperCase().replace(/\s+/g, " ").trim();
       var amt = toNum(row[amountCol]);
       var foot = RE_INCTOT.test(up) ? "income" : RE_EXPTOT.test(up) ? "expense" : RE_NOI.test(up) ? "noi" : null;
-      // "Gross Potential/Scheduled/Market Rent" is the top-line DETAIL of a rent
-      // build-up, not a subtotal — dropping it zeroed GPR on such statements.
+      // A "Gross …" row is a subtotal only when printed ALL-CAPS (GROSS INCOME, GROSS
+      // REVENUE); mixed-case "Gross Rent" / "Gross Rental Income" and any "Gross
+      // Potential/Scheduled/Market Rent" are the top-line DETAIL of a rent build-up —
+      // dropping them zeroed GPR, so underwritten vacancy priced off nothing.
       var isTotal = foot != null || /^(TOTAL|SUB-?TOTAL|NET)\b/.test(up)
-                 || (/^GROSS\b/.test(up) && !/^GROSS\s+(POTENTIAL|SCHEDULED|MARKET)\b/.test(up));
+                 || (isCaps(name) && /^GROSS\b/.test(up) && !/^GROSS\s+(POTENTIAL|SCHEDULED|MARKET)\b/.test(up));
       var section = (phase === "income") ? "INCOME" : "EXPENSE";
 
       if (amt == null){                                        // header / label row
@@ -194,9 +208,13 @@
         sub = name; continue;
       }
       if (isTotal){                                            // a subtotal / footing row
-        if (foot === "income"){ if (totals.income == null){ totals.income = amt; footing.incomeRow = r; } if (phase === "income"){ phase = "expense"; sub = ""; } }
-        else if (foot === "expense"){ if (totals.expense == null){ totals.expense = amt; footing.expenseRow = r; } if (phase === "expense") phase = "below"; }
-        else if (foot === "noi"){ totals.noi = amt; footing.noiRow = r; break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
+        // A footing met before ANY detail row, whose twin prints again further down, is a
+        // summary block above the statement: keep its figures (first wins) but keep
+        // scanning — the detail's own footing rows drive the split and end the detail.
+        var summary = foot != null && !rows.length && !categories.length && twinBelow(foot, r);
+        if (foot === "income"){ if (totals.income == null){ totals.income = amt; footing.incomeRow = r; } if (!summary && phase === "income"){ phase = "expense"; sub = ""; } }
+        else if (foot === "expense"){ if (totals.expense == null){ totals.expense = amt; footing.expenseRow = r; } if (!summary) phase = "below"; }   // ends the operating detail whatever phase came before
+        else if (foot === "noi"){ if (totals.noi == null){ totals.noi = amt; footing.noiRow = r; } if (!summary) break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
         else if (phase === "below") belowLine.push({ name: name, amount: amt, row: r });
         else if (isCaps(name)) categories.push({ name: name, amount: amt, section: section, row: r });
         continue;                                              // never counted as a detail line

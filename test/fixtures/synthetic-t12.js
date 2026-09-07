@@ -32,15 +32,16 @@ Builder.prototype.header = function (labels){
   if (this.periods) h = h.concat(["T6","T3","T1"]);
   return this.push(h);
 };
-Builder.prototype.amountRow = function (label, m){       // m = 12 integer-cent month values
+Builder.prototype.rowOf = function (label, m){           // m = 12 integer-cent month values → one grid row
   var tot = m.reduce(function(a,b){ return a + b; }, 0);
   var row = [label].concat(m.map(function(x){ return x / 100; }), [tot / 100]);
   if (this.periods){
     var sum = function (from){ return m.slice(from).reduce(function(a,b){ return a + b; }, 0) / 100; };
     row = row.concat([sum(6), sum(9), sum(11)]);
   }
-  return this.push(row);
+  return row;
 };
+Builder.prototype.amountRow = function (label, m){ return this.push(this.rowOf(label, m)); };
 Builder.prototype.line = function (label, dollars, keys){  // a detail line; adds into each open subtotal key
   var m = split12(cents(dollars)), self = this;
   (keys || []).forEach(function (k){
@@ -68,9 +69,16 @@ Builder.prototype.total = function (label, key, name){   // a subtotal / footing
 //   T6: income 591,297.80  expense 255,654.16  noi 335,643.64
 //   T3: income 295,648.94  expense 127,827.43  noi 167,821.51
 //   T1: income  98,549.70  expense  42,609.61  noi  55,940.09
-function body(b){
+function body(b, opts){
+  opts = opts || {};
   b.caption("Synthetic Gardens (synth)"); b.caption("Cash Flow (12 months)"); b.caption("Period = Jul 2025-Jun 2026"); b.blank();
   b.at.header = b.header();
+  var sm = null;                                            // a summary block ABOVE the detail, filled in once the totals are known
+  if (opts.summary){
+    b.caption("SUMMARY");
+    sm = { incomeRow: b.blank(), expenseRow: b.blank(), noiRow: (opts.summaryNoi === false) ? -1 : b.blank() };
+    b.blank();
+  }
   b.caption("INCOME");
   b.caption("RENTAL INCOME");
   b.line("Residential Rent",     1203456.78, ["rent","inc"]);
@@ -131,6 +139,12 @@ function body(b){
   // NOI row: income months − expense months
   var m = zeros(); for (var i = 0; i < 12; i++) m[i] = b.acc.inc[i] - b.acc.exp[i];
   b.at.noi = b.amountRow("NET OPERATING INCOME", m);
+  if (sm){
+    b.grid[sm.incomeRow]  = b.rowOf("TOTAL INCOME", b.acc.inc);
+    b.grid[sm.expenseRow] = b.rowOf("TOTAL EXPENSES", b.acc.exp);
+    if (sm.noiRow >= 0) b.grid[sm.noiRow] = b.rowOf("NET OPERATING INCOME", m);
+    b.at.summary = sm;
+  }
 }
 var CLEAN_EXPECT = {
   income: 1182595.52, expense: 511307.62, noi: 671287.90,
@@ -223,6 +237,67 @@ function gprStyle(opts){
   return { grid: b.grid, expect: withFooting(e, b.at) };
 }
 
+// The clean statement with a SUMMARY block (TOTAL INCOME / TOTAL EXPENSES / optionally
+// NET OPERATING INCOME) printed ABOVE the detail. Same figures. The summary's rows are
+// the footing rows the parser must report (first wins) and the detail must still be split.
+function summaryFirst(opts){
+  opts = opts || {};
+  var b = new Builder(); body(b, { summary: true, summaryNoi: opts.noiInSummary !== false });
+  var e = withFooting(CLEAN_EXPECT, b.at), s = b.at.summary;
+  e.footing = { incomeRow: s.incomeRow, expenseRow: s.expenseRow, noiRow: s.noiRow >= 0 ? s.noiRow : b.at.noi };
+  e.detailFooting = { incomeRow: b.at.income, expenseRow: b.at.expense, noiRow: b.at.noi };
+  return { grid: b.grid, expect: e };
+}
+
+// The clean statement whose PRINTED section totals deliberately do not foot to their
+// detail lines (as a Mint-style T12 does): TOTAL INCOME printed incExtra above the detail
+// sum, TOTAL EXPENSES expExtra above, NOI = their difference. fromParse must plug the gap
+// into OTH / GA exactly. Hand arithmetic:
+//   incExtra 1,234.56 / expExtra 789.01 → 1,183,830.08 · 512,096.63 · NOI 671,733.45
+//     OTH 1,315.25 + 1,234.56 = 2,549.81 · GA 5,025.75 + 789.01 = 5,814.76
+//   incExtra −500.00 / expExtra −0.01 → 1,182,095.52 · 511,307.61 · NOI 670,787.91
+//     OTH 815.25 · GA 5,025.74
+function unfooted(opts){
+  opts = opts || {};
+  var incExtra = (opts.incExtra != null) ? opts.incExtra : 1234.56, expExtra = (opts.expExtra != null) ? opts.expExtra : 789.01;
+  var b = new Builder(); body(b);
+  var inc = cents(CLEAN_EXPECT.income) + cents(incExtra), exp = cents(CLEAN_EXPECT.expense) + cents(expExtra);
+  b.grid[b.at.income][13] = inc / 100; b.grid[b.at.expense][13] = exp / 100; b.grid[b.at.noi][13] = (inc - exp) / 100;
+  var e = withFooting(CLEAN_EXPECT, b.at);
+  e.income = inc / 100; e.expense = exp / 100; e.noi = (inc - exp) / 100;
+  e.plug = { income: incExtra, expense: expExtra };
+  e.sums.OTH = (cents(CLEAN_EXPECT.sums.OTH) + cents(incExtra)) / 100;
+  e.sums.GA  = (cents(CLEAN_EXPECT.sums.GA)  + cents(expExtra)) / 100;
+  return { grid: b.grid, expect: e };
+}
+
+// Small single-Total-column statements for the "where does the operating detail end"
+// rules. Month cells are zeros; only the Total column carries the figures.
+function flat(lines){
+  var g = [[null].concat(MONTHS, ["Total"])];
+  lines.forEach(function (l){ g.push(typeof l === "string" ? [l] : [l[0]].concat(zeros(), [l[1]])); });
+  return g;
+}
+// No TOTAL EXPENSES row at all, and lines after NET OPERATING INCOME: the NOI row alone
+// must end the operating detail (Interest is debt service, not an expense).
+function noExpenseTotal(){
+  return { grid: flat([["Rent", 1000.00], ["TOTAL INCOME", 1000.00], "EXPENSES", ["Taxes", 300.00], ["NET OPERATING INCOME", 700.00], ["Interest", 400.00], ["NET INCOME", 300.00]]),
+           expect: { income: 1000.00, expense: null, noi: 700.00, rows: 2, expenseRows: 300.00 } };
+}
+// No TOTAL INCOME row and no EXPENSES caption: TOTAL EXPENSES must still end the operating
+// detail (Interest below it is never a row). The split of the lines above it is
+// unknowable without a divider, so both stay INCOME.
+function noDividers(){
+  return { grid: flat([["Rent", 1000.00], ["Taxes", 300.00], ["TOTAL EXPENSES", 300.00], ["Interest", 400.00], ["NET OPERATING INCOME", 700.00]]),
+           expect: { income: null, expense: 300.00, noi: 700.00, rows: 2 } };
+}
+// A mixed-case "Gross …" caption is the rent build-up's top DETAIL line; only the ALL-CAPS
+// "GROSS INCOME" row is a subtotal. 1,000.00 − 50.00 = 950.00 income; 100.00 taxes; NOI 850.00.
+function grossRent(label){
+  return { grid: flat([[label, 1000.00], ["Less: Vacancy", -50.00], ["GROSS INCOME", 950.00], ["TOTAL INCOME", 950.00], "EXPENSES", ["Taxes", 100.00], ["TOTAL EXPENSES", 100.00], ["NET OPERATING INCOME", 850.00]]),
+           expect: { income: 950.00, expense: 100.00, noi: 850.00, rows: 3, gpr: 1000.00, categories: [["GROSS INCOME", 950.00, "INCOME"]] } };
+}
+
 // ---- transforms (return a NEW grid; expectations are unchanged unless noted) ----
 function copy(grid){ return grid.map(function (r){ return Array.isArray(r) ? r.slice() : r; }); }
 function isRowCaps(s){ return /[A-Z]/.test(s) && s === s.toUpperCase(); }
@@ -279,5 +354,6 @@ function malformed(){
 }
 
 module.exports = { clean: clean, belowTheLine: belowTheLine, periods: periods, gprStyle: gprStyle, malformed: malformed,
+                   summaryFirst: summaryFirst, unfooted: unfooted, noExpenseTotal: noExpenseTotal, noDividers: noDividers, grossRent: grossRent,
                    stringify: stringify, twoLabelColumns: twoLabelColumns, without: without, relabel: relabel,
                    serialHeader: serialHeader, dateHeader: dateHeader, bareMonthHeader: bareMonthHeader, MONTHS: MONTHS };

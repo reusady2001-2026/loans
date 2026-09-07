@@ -43,13 +43,14 @@
   var parse = function (v) {
     if (typeof v === "string") {
       var s = v.trim(), neg = /\(.*\)|-\s*$/.test(s), pct = s.indexOf("%") >= 0;
-      // A plain decimal / scientific literal (once separators, $ and % are
-      // dropped) goes through Number(), so "1e5" is 100000 — the strip-to-digits
-      // fallback would read it as 15. Gating on the literal shape, rather than
-      // on isFinite(Number(c)), keeps "" (Number → 0, but blank must stay
-      // "missing") and "0x10" (→ 16) out; the fallback still handles "(1,200)",
-      // "3,000-" and stray currency text exactly as before.
-      var c = s.replace(/[,$\s%]/g, ""), x;
+      // A plain decimal / scientific literal (once separators, $, % and the
+      // accounting wrapper — parens / trailing minus, whose sign is re-applied
+      // below — are dropped) goes through Number(), so "1e5", "(1e5)" and
+      // "1e5-" read as ±100000 where the strip-to-digits fallback would give
+      // 15. Gating on the literal shape, rather than on isFinite(Number(c)),
+      // keeps "" (Number → 0, but blank must stay "missing") and "0x10" (→ 16)
+      // out; the fallback still handles stray currency text exactly as before.
+      var c = s.replace(/[,$\s%()]/g, "").replace(/-$/, ""), x;
       if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(c)) x = Number(c);
       else x = parseFloat(s.replace(/[^0-9.\-]/g, ""));
       if (neg) x = -Math.abs(x);

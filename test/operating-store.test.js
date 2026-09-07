@@ -29,6 +29,8 @@ function throwsType(fn, msg){
   try { fn(); ok(false, msg, "did not throw"); }
   catch (e) { ok(e instanceof TypeError, msg, e instanceof TypeError ? "" : "threw " + String(e)); }
 }
+// A call that must SUCCEED: reports a throw as a FAIL (instead of aborting the group) and returns null so follow-up checks stay null-safe.
+function attempt(fn, msg){ try { var v = fn(); ok(true, msg); return v; } catch (e) { ok(false, msg, "threw " + String(e)); return null; } }
 function group(name, fn){
   console.log("\n" + name);
   try { fn(); } catch (e) { ok(false, name + " — unexpected exception", (e && e.stack) || String(e)); }
@@ -268,15 +270,33 @@ group("controllable defaults agree with OperatingTaxonomy (when present)", funct
   eq(mine, theirs, "store default == OperatingTaxonomy.defaultControllable(code) for every ORDER code (" + TX.ORDER.length + " codes)");
   eq(TX.ORDER.filter(function (c){ return !theirs[c]; }), ["RET", "INS"], "the taxonomy's non-controllable set is exactly RET, INS");
   eq(S.CODES.slice(), TX.ORDER.slice(), "store CODES (the fallback list) === OperatingTaxonomy.ORDER, same order");
-  eq(Object.keys(r.lines), TX.ORDER.slice(), "every ORDER code is accepted by setLines (taxonomy path)");
-  throwsType(function (){ S.setLine(K, "ZZZ", { annual: 1, source: "manual" }); }, "a code outside ORDER is rejected (taxonomy path)");
-  // Fallback path: make the taxonomy unresolvable AT CALL TIME (stub its require
-  // cache entry) and prove the LOCAL list behaves identically to ORDER.
+  eq(Object.keys(r.lines), TX.ORDER.slice(), "every ORDER code is accepted by setLines (real taxonomy present)");
+  throwsType(function (){ S.setLine(K, "ZZZ", { annual: 1, source: "manual" }); }, "a code outside ORDER is rejected (real taxonomy present)");
   var Module = require("module"), path = require.resolve("../operating-taxonomy.js"), saved = require.cache[path];
-  var stub = new Module(path, null); stub.filename = path; stub.loaded = true; stub.exports = {};
-  require.cache[path] = stub;
+  function stubTaxonomy(exports){ var m = new Module(path, null); m.filename = path; m.loaded = true; m.exports = exports; require.cache[path] = m; }
+  // The store must consult the LIVE taxonomy at call time, not its identical
+  // local copy: install a fake whose ORDER differs from CODES and watch
+  // acceptance follow it (node path: require), then restore and watch it switch
+  // back — nothing may be cached at script load.
+  var FAKE = { ORDER: ["GPR", "ZZZ"] };
+  stubTaxonomy(FAKE);
   try {
-    ok(require("../operating-taxonomy.js") === stub.exports, "(taxonomy require now yields the stub)");
+    ok(require("../operating-taxonomy.js") === FAKE, "(taxonomy require now yields the fake { ORDER: [GPR, ZZZ] })");
+    var st = fresh(), r3 = attempt(function (){ return S.setLine("addr:fake", "ZZZ", { annual: 1, source: "manual" }); }, "node path: ZZZ (in the fake ORDER, not in CODES) is accepted");
+    eq(r3 && [r3.lines.ZZZ.annual, r3.lines.ZZZ.controllable], [1, true], "node path: ZZZ stored (annual 1, local default controllable = true)");
+    throwsType(function (){ S.setLine("addr:fake", "RET", { annual: 1, source: "manual" }); }, "node path: RET (in CODES, not in the fake ORDER) is rejected");
+    throwsType(function (){ S.setLines("addr:fake", { GPR: { annual: 1, source: "manual" }, RET: { annual: 1, source: "manual" } }); }, "node path: a bulk carrying RET is rejected");
+    st.poke(S.KEY, function (o){ var rec = o.records["addr:fake"] = o.records["addr:fake"] || { lines: {} }; rec.lines.RET = { annual: 9, source: "manual" }; rec.lines.GPR = { annual: 8, source: "manual" }; });
+    S.init({ storage: st, now: clock() });
+    eq(Object.keys(S.get("addr:fake").lines).sort(), ["GPR", "ZZZ"], "node path: load() drops RET and keeps GPR / ZZZ under the fake ORDER");
+  } finally { require.cache[path] = saved; }
+  ok(require("../operating-taxonomy.js") === TX, "(taxonomy require restored)");
+  eq(S.setLine("addr:after", "RET", { annual: 1, source: "manual" }).lines.RET.annual, 1, "after the restore RET is accepted again — resolved per call, not cached");
+  throwsType(function (){ S.setLine("addr:after", "ZZZ", { annual: 1, source: "manual" }); }, "…and ZZZ is rejected again");
+  // Fallback path: taxonomy unresolvable at call time (a stub without ORDER) →
+  // the LOCAL list must behave identically to ORDER.
+  stubTaxonomy({});
+  try {
     fresh(); var r2 = S.setLines("addr:fallback", lines), mine2 = {};
     eq(Object.keys(r2.lines), TX.ORDER.slice(), "fallback list accepts every ORDER code");
     TX.ORDER.forEach(function (c){ mine2[c] = r2.lines[c].controllable; });
@@ -284,7 +304,26 @@ group("controllable defaults agree with OperatingTaxonomy (when present)", funct
     throwsType(function (){ S.setLine("addr:fallback", "ZZZ", { annual: 1, source: "manual" }); }, "fallback list rejects a code outside ORDER");
     throwsType(function (){ S.setLine("addr:fallback", "gpr", { annual: 1, source: "manual" }); }, "fallback list rejects a mis-cased code");
   } finally { require.cache[path] = saved; }
-  ok(require("../operating-taxonomy.js") === TX, "(taxonomy require restored)");
+  // Browser path: the renderer has no require (contextIsolation), so the store
+  // reads root.OperatingTaxonomy. Load a fresh instance whose UMD root is a
+  // fake `self` carrying a taxonomy, with require stubbed to yield no ORDER.
+  var storePath = require.resolve("../operating-store.js"), savedStore = require.cache[storePath];
+  stubTaxonomy({});
+  globalThis.self = { OperatingTaxonomy: { ORDER: ["GPR", "ZZZ"] } };
+  try {
+    delete require.cache[storePath];
+    var inst = require(storePath);
+    ok(inst !== S, "(a fresh instance loaded with root = the fake self)");
+    inst.init({ storage: fakeStorage(), now: clock() });
+    var rz = attempt(function (){ return inst.setLine("addr:root", "ZZZ", { annual: 2, source: "manual" }); }, "browser path: ZZZ accepted via root.OperatingTaxonomy.ORDER");
+    eq(rz && rz.lines.ZZZ.annual, 2, "browser path: ZZZ stored with annual 2");
+    throwsType(function (){ inst.setLine("addr:root", "RET", { annual: 1, source: "manual" }); }, "browser path: RET rejected (absent from root's ORDER)");
+    globalThis.self.OperatingTaxonomy = null;                 // taxonomy script "not loaded" → the fallback list
+    var rr = attempt(function (){ return inst.setLine("addr:root", "RET", { annual: 3, source: "manual" }); }, "browser path with no taxonomy loaded: falls back to CODES (RET accepted)");
+    eq(rr && rr.lines.RET.annual, 3, "browser path: RET stored with annual 3");
+    throwsType(function (){ inst.setLine("addr:root", "ZZZ", { annual: 1, source: "manual" }); }, "…and ZZZ rejected — the lookup happens per call, not at script load");
+  } finally { delete globalThis.self; require.cache[storePath] = savedStore; require.cache[path] = saved; globalThis.OperatingStore = S; }
+  ok(require(storePath) === S && require("../operating-taxonomy.js") === TX, "(store and taxonomy requires restored)");
 });
 
 /* ---- 6. setLines (bulk, one save) --------------------------------------- */
@@ -512,15 +551,20 @@ group("prototype safety", function (){
   eq(S.get(K), before, "record unchanged");
   eq(st.writes.length, w, "nothing saved");
   eq(Object.keys(S.all()), [K], "no record was created under a reserved key");
-  // a hostile stored blob: reserved keys are dropped on load, never merged into a prototype
-  var hostile = JSON.parse('{"__proto__":{"lines":{}},"addr:h":{"lines":{"__proto__":{"annual":1},"RET":{"annual":2,"source":"constructor"}},"assumptions":{"__proto__":{"polluted":1},"vacancyPct":0.05}}}');
+  // a hostile stored blob: reserved keys are dropped on load, never merged into a
+  // prototype. All three names are seeded at every level — "__proto__" alone
+  // cannot expose a missing guard (assigning it sets a prototype, not a key),
+  // whereas "constructor" / "prototype" would land as real own keys.
+  var hostile = JSON.parse('{"__proto__":{"lines":{}},"constructor":{"lines":{}},"prototype":{"lines":{}},' +
+    '"addr:h":{"lines":{"__proto__":{"annual":1},"constructor":{"annual":3},"prototype":{"annual":4},"RET":{"annual":2,"source":"constructor"}},' +
+    '"assumptions":{"__proto__":{"polluted":1},"constructor":{"x":1},"prototype":2,"vacancyPct":0.05}}}');
   st = fresh({ "ldsHub.operating.v1": JSON.stringify({ version: 1, records: hostile }) });
-  ok(st.peek(S.KEY).indexOf('"__proto__"') > 0, "(the seeded blob really carries __proto__ keys)");
+  ok(['"__proto__"', '"constructor"', '"prototype"'].every(function (k){ return st.peek(S.KEY).split(k).length >= 4; }), "(the seeded blob carries __proto__ / constructor / prototype at record, line and assumption level)");
   var recs = S.load().records;
-  eq(Object.keys(recs), ["addr:h"], "a record keyed __proto__ is dropped on load");
-  eq(Object.keys(recs["addr:h"].lines), ["RET"], "a line coded __proto__ is dropped on load");
+  eq(Object.keys(recs), ["addr:h"], "records keyed __proto__ / constructor / prototype are all dropped on load");
+  eq(Object.keys(recs["addr:h"].lines), ["RET"], "lines coded __proto__ / constructor / prototype are all dropped on load");
   eq(recs["addr:h"].lines.RET.source, "manual", "a stored source of \"constructor\" loads as \"manual\" (own-key check, not a prototype lookup)");
-  eq(recs["addr:h"].assumptions, { vacancyPct: 0.05 }, "a __proto__ assumption key is dropped on load");
+  eq(recs["addr:h"].assumptions, { vacancyPct: 0.05 }, "__proto__ / constructor / prototype assumption keys are all dropped on load");
   eq(({}).polluted, undefined, "Object.prototype still clean");
   ok(Object.getPrototypeOf(S.get("addr:h").lines) === Object.prototype && Object.getPrototypeOf(S.get("addr:h").assumptions) === Object.prototype, "loaded maps have the plain Object prototype");
 });

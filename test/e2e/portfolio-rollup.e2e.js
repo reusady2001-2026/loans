@@ -8,8 +8,10 @@
    collapse into ONE row (2 loans, named for the senior); clicking that row focuses the
    property; an NOI typed into the sheet shows up in the row, with the combined-stack debt
    yield exact: 1,200,000 / (96,000,000 + 24,000,000 — both loans are interest-only, so
-   their balances are the original amounts) = 1.00%; and the totals ratios are scoped to
-   the properties that HAVE an NOI ("NOI on 1 of 28 properties"), so they equal Avalon's own.
+   their balances are the original amounts) = 1.00%; the totals ratios are scoped per ratio
+   to the NOI'd properties that carry the denominator (DS > 0 for DSCR, balance > 0 for DY),
+   so with Avalon alone they equal Avalon's own, and an NOI on The Pepper Building (matured
+   2024: balance $0.00, DS > 0) joins the DSCR aggregate but leaves the DY at Avalon's 1.00%.
    run:  GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/portfolio-rollup.e2e.js
 */
 "use strict";
@@ -92,7 +94,30 @@ const lower = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return
     ok(totals[COL.dscr] === after[COL.dscr] && totals[COL.dy] === "1.00%", "totals DSCR / DY are Avalon's own, not diluted by 27 NOI-less properties (got " + totals[COL.dscr] + " / " + totals[COL.dy] + " vs row " + after[COL.dscr] + " / " + after[COL.dy] + ")");
     const scope = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
     ok(scope.indexOf("NOI on 1 of " + expected.length + " properties") >= 0, "scope line reads \"NOI on 1 of " + expected.length + " properties\" (got " + JSON.stringify(scope) + ")");
-    ok(scope.indexOf("DSCR " + after[COL.dscr]) === 0 && scope.indexOf("DY 1.00%") >= 0 && scope.indexOf("$120.00M balance") >= 0, "scope line carries the DSCR, DY 1.00% and the $120.00M balance behind them");
+    ok(scope.indexOf("DSCR " + after[COL.dscr] + " (1 of " + expected.length + " properties, ") === 0 && scope.indexOf("DY 1.00% (1 of " + expected.length + " properties, $120.00M balance)") >= 0, "scope line names each ratio's scope: DSCR on 1, DY on 1 with the $120.00M balance behind it");
+
+    // 5. Per-ratio scope, live: The Pepper Building matured 08/09/2024 → balance $0.00 but DS > 0. With an NOI
+    //    it joins the DSCR aggregate, not the DY one — the portfolio DY stays Avalon's 1.00% (not 3.50%).
+    const PEPPER = "addr:1830 lombard street, philadelphia, pa";
+    const num = s => parseFloat(String(s).replace(/[^0-9.\-]/g, ""));
+    const pp = await rowCells(PEPPER);
+    if (pp.length === COL.maturity + 1 && pp[COL.balance] === "$0.00" && num(pp[COL.annualDS]) > 0) {
+      const pk = await H.pickProperty(page, "The Pepper Building");
+      ok(pk === PEPPER, "pickProperty(\"The Pepper Building\") → " + JSON.stringify(pk));
+      const gpr2 = await page.waitForSelector('#opSheetMount tr[data-op-code="GPR"] [data-op-input]', { timeout: 10000 });
+      await gpr2.fill("3000000"); await gpr2.press("Enter");
+      await page.waitForFunction(sel => { const tr = document.querySelector(sel); return !!tr && tr.textContent.indexOf("3,000,000.00") >= 0; }, rowSel(PEPPER), { timeout: 10000 }).catch(() => {});
+      const pr = await rowCells(PEPPER), av2 = await rowCells(AVALON), t2 = await totalsCells();
+      ok(pr[COL.noi] === "$3,000,000.00" && pr[COL.dy] === "—" && pr[COL.ltv] === "—", "Pepper row: NOI $3,000,000.00, DY — and LTV — on a $0.00 balance (got " + pr[COL.noi] + " / " + pr[COL.dy] + " / " + pr[COL.ltv] + ")");
+      const expDscr = (3000000 / num(pr[COL.annualDS])).toFixed(2) + "×";
+      ok(pr[COL.dscr] === expDscr, "Pepper row DSCR = 3,000,000 / " + pr[COL.annualDS] + " = " + expDscr + " (got " + pr[COL.dscr] + ")");
+      ok(t2[COL.noi] === "$4,200,000.00", "totals NOI = $4,200,000.00 (both NOIs)");
+      ok(t2[COL.dy] === "1.00%", "portfolio DY stays Avalon's 1.00% — Pepper's NOI is out of the DY scope (got " + t2[COL.dy] + "; the old definition read 3.50%)");
+      const expTot = (4200000 / (num(av2[COL.annualDS]) + num(pr[COL.annualDS]))).toFixed(2) + "×";
+      ok(t2[COL.dscr] === expTot, "portfolio DSCR = 4,200,000 / (" + av2[COL.annualDS] + " + " + pr[COL.annualDS] + ") = " + expTot + " (got " + t2[COL.dscr] + ")");
+      const scope2 = ((await page.textContent("#opRollupMount [data-op-scope]").catch(() => "")) || "").trim();
+      ok(scope2.indexOf("DSCR " + expTot + " (2 of " + expected.length + " properties, ") === 0 && scope2.indexOf("DY 1.00% (1 of " + expected.length + " properties, $120.00M balance)") >= 0 && scope2.indexOf("NOI on 2 of " + expected.length + " properties") >= 0, "scope line: DSCR on 2, DY on 1, NOI on 2 (got " + JSON.stringify(scope2) + ")");
+    } else ok(false, "The Pepper Building row (balance $0.00, DS > 0) not found — got " + JSON.stringify(pp));
   } catch (e) {
     ok(false, "e2e aborted: " + (e && e.message));
     try { const shot = path.join(os.tmpdir(), "portfolio-rollup-e2e-fail.png"); await page.screenshot({ path: shot }); console.log("  screenshot: " + shot); } catch (_) {}

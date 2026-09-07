@@ -130,16 +130,18 @@
 
   // Portfolio totals. Dollar columns (NOI, UW NOI, balance, DS) are summed over
   // ALL properties — NOI only where a property has one: "unknown" is not zero, so
-  // with no NOI anywhere the total stays null. The coverage ratios are read ONLY
-  // over the properties that HAVE an NOI: DSCR = ΣNOI / Σdebt service and
-  // DY = ΣNOI / Σbalance of those properties (dsCovered / balanceCovered). A
-  // property without an NOI must not sit in the denominator with nothing in the
-  // numerator — one entered NOI would read as 0.01× coverage across the whole
-  // book. noiProps / props state the scope; null, never 0 or NaN, unless both
-  // sides are positive.
+  // with no NOI anywhere the total stays null. Each coverage ratio is read over
+  // its OWN scope, mirroring the row rule that nulls a ratio whose denominator is
+  // not positive: DSCR = ΣNOI / ΣDS over the NOI'd properties with DS > 0
+  // (dscrProps, dscrNoi, dsCovered); DY = ΣNOI / Σbalance over the NOI'd
+  // properties with balance > 0 (dyProps, dyNoi, balanceCovered). A property is
+  // never on one side of a ratio only: a matured loan (balance 0, DS > 0) counts
+  // in DSCR but not in DY, so its NOI cannot lift the portfolio debt yield above
+  // every row's own. noiProps counts every property with an NOI; a ratio is
+  // null, never 0 or NaN, unless both of its sums are positive.
   function totalsOf(rows){
-    var t = { properties: rows.length, props: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0,
-              noiProps: 0, dsCovered: 0, balanceCovered: 0, dscr: null, dy: null };
+    var t = { properties: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0, noiProps: 0,
+              dscrProps: 0, dscrNoi: 0, dsCovered: 0, dyProps: 0, dyNoi: 0, balanceCovered: 0, dscr: null, dy: null };
     rows.forEach(function (r){
       t.loans += r.loans || 0;
       if (r.balance != null)  t.balance  += r.balance;
@@ -148,11 +150,11 @@
       if (r.noi == null) return;
       t.noi = (t.noi == null ? 0 : t.noi) + r.noi;
       t.noiProps++;
-      t.dsCovered += (r.annualDS == null ? 0 : r.annualDS);
-      t.balanceCovered += (r.balance == null ? 0 : r.balance);
+      if (r.annualDS > 0) { t.dscrProps++; t.dscrNoi += r.noi; t.dsCovered += r.annualDS; }
+      if (r.balance > 0)  { t.dyProps++;   t.dyNoi   += r.noi; t.balanceCovered += r.balance; }
     });
-    t.dscr = (t.noi > 0 && t.dsCovered > 0) ? t.noi / t.dsCovered : null;
-    t.dy   = (t.noi > 0 && t.balanceCovered > 0) ? t.noi / t.balanceCovered : null;
+    t.dscr = (t.dscrNoi > 0 && t.dsCovered > 0) ? t.dscrNoi / t.dsCovered : null;
+    t.dy   = (t.dyNoi > 0 && t.balanceCovered > 0) ? t.dyNoi / t.balanceCovered : null;
     return t;
   }
 
@@ -201,19 +203,26 @@
   function pct(v){ v = fin(v); return v == null ? DASH : (v * 100).toFixed(2) + "%"; }
   function ratio(v){ v = fin(v); return v == null ? DASH : v.toFixed(2) + "×"; }
   function int(v){ v = fin(v); return v == null ? DASH : String(Math.round(v)); }
-  // Compact dollars for the scope line ($1.45M, $120.00M, $850K).
+  // Compact dollars for the scope line ($1.45M, $120.00M, $850K). Rounding can
+  // carry into the next unit (999,999 → "1000K"), in which case that unit is used.
+  var UNITS = [[1, "", 0], [1e3, "K", 0], [1e6, "M", 2], [1e9, "B", 2]];
   function short(v){
     v = fin(v); if (v == null) return DASH;
-    var a = Math.abs(v), s = a >= 1e9 ? (a / 1e9).toFixed(2) + "B" : a >= 1e6 ? (a / 1e6).toFixed(2) + "M" : a >= 1e3 ? (a / 1e3).toFixed(0) + "K" : a.toFixed(0);
-    return (v < 0 ? "-$" : "$") + s;
+    var a = Math.abs(v), i = 0;
+    while (i < UNITS.length - 1 && a >= UNITS[i + 1][0]) i++;
+    var s = (a / UNITS[i][0]).toFixed(UNITS[i][2]);
+    if (parseFloat(s) >= 1000 && i < UNITS.length - 1) { i++; s = (a / UNITS[i][0]).toFixed(UNITS[i][2]); }
+    return (v < 0 ? "-$" : "$") + s + UNITS[i][1];
   }
-  // What the totals ratios cover, spelled out next to them.
+  // What each totals ratio covers, spelled out next to it — the two scopes can
+  // differ (a matured loan sits in DSCR, not in DY), so each one is named.
   function scopeText(t){
     t = t || {};
-    var n = (t.props != null ? t.props : t.properties) || 0, k = t.noiProps || 0;
-    var props = n + (n === 1 ? " property" : " properties");
-    if (!k) return "NOI on 0 of " + props + " — enter operating lines to get a portfolio DSCR / debt yield";
-    return "DSCR " + ratio(t.dscr) + " · DY " + pct(t.dy) + " · NOI on " + k + " of " + props + ", " + short(t.dsCovered) + " DS, " + short(t.balanceCovered) + " balance";
+    var N = t.properties || 0, k = t.noiProps || 0;
+    var of = function (n){ return n + " of " + N + (N === 1 ? " property" : " properties"); };
+    if (!k) return "NOI on " + of(0) + " — enter operating lines to get a portfolio DSCR / debt yield";
+    var part = function (label, r, n, covered, what){ return label + " " + r + " (" + of(n) + (n ? ", " + short(covered) + " " + what : "") + ")"; };
+    return part("DSCR", ratio(t.dscr), t.dscrProps || 0, t.dsCovered, "DS") + " · " + part("DY", pct(t.dy), t.dyProps || 0, t.balanceCovered, "balance") + " · NOI on " + of(k);
   }
   function day(iso){ var m = (typeof iso === "string") && iso.match(ISO_DAY); return m ? (m[2] + "/" + m[3] + "/" + m[1]) : DASH; }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
