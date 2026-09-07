@@ -240,11 +240,13 @@
         td(ratio(r.dscr)) + td(pct(r.dy)) + td(pct(r.ltv)) + td(day(r.maturity)) + '</tr>';
     }).join("");
     var empty = rows.length ? "" : '<tr><td colspan="' + COLS.length + '" class="py-3 text-sm text-slate-400">No properties yet &mdash; add a loan or an operating record.</td></tr>';
+    var scope = scopeText(t);
     var total = '<tr data-op-total class="border-t-2 border-slate-200 bg-slate-50/70">' +
       '<td class="py-1 pr-3 text-sm font-bold text-slate-900">Total &mdash; ' + t.properties + (t.properties === 1 ? ' property' : ' properties') + '</td>' +
       td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") +
-      td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold") + td(pct(t.dy), "text-slate-900 font-bold") +
-      td("", "text-slate-900") + td("", "text-slate-900") + '</tr>';
+      td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold", scope) + td(pct(t.dy), "text-slate-900 font-bold", scope) +
+      td("", "text-slate-900") + td("", "text-slate-900") + '</tr>' +
+      '<tr data-op-scope><td colspan="' + COLS.length + '" class="pt-1 text-[11px] text-slate-500">' + esc(scope) + '</td></tr>';
     // Just the table: the host mount (#opRollupMount) already sits inside the
     // app's card with its own heading and horizontal scroll.
     mountEl.innerHTML = '<table class="w-full min-w-[920px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">' + head + '</tr></thead>' +
@@ -254,7 +256,7 @@
     if (!mountEl._opRollupBound) {
       var fire = function (e){
         var tr = e && e.target && e.target.closest && e.target.closest("tr[data-op-prop]");
-        if (!tr) return false;
+        if (!tr || tr.getAttribute("data-op-orphan")) return false;   // a record-only row has nothing to open
         var fn = mountEl._opRollupOpen;
         if (typeof fn === "function") fn(tr.getAttribute("data-op-prop"));
         return true;
@@ -265,5 +267,6 @@
     }
   }
 
-  return { buildRows: buildRows, render: render, COLS: COLS, fmt: { money: money, pct: pct, ratio: ratio, int: int, day: day } };
+  return { buildRows: buildRows, render: render, COLS: COLS, scopeText: scopeText,
+           fmt: { money: money, pct: pct, ratio: ratio, int: int, day: day, short: short } };
 });
