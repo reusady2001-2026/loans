@@ -25,8 +25,25 @@ function init(app){ _app = app; }
 // Keyed by a token the renderer supplies; the value is a kill function. A request
 // registers itself on spawn and removes itself when it settles.
 const activeChats = new Map();
+// Tokens cancelled before their chat registered a killer (the renderer can hit Stop in the
+// brief window before the CLI process is spawned). runCliChat/runApiChat check this on start.
+const canceledTokens = new Set();
 
 const API_MODEL = 'claude-opus-5';        // fallback-path model (see claude-api guidance)
+
+// Selectable models. `cli` is the alias passed to `claude -p --model` (the CLI resolves it
+// to the current build for that tier); null means "let the CLI/subscription pick its default".
+// `api` is the full id used on the Anthropic API fallback path. Order = fastest→most capable
+// after "auto". Keep the keys stable; the renderer stores one of them.
+const MODELS = {
+  auto:   { key:'auto',   label:'Automatic',           note:'your subscription’s default',        cli:null,     api:API_MODEL },
+  haiku:  { key:'haiku',  label:'Haiku — fastest',     note:'quick answers, lightest',            cli:'haiku',  api:'claude-haiku-4-5-20251001' },
+  sonnet: { key:'sonnet', label:'Sonnet — balanced',   note:'fast, strong for most work',         cli:'sonnet', api:'claude-sonnet-5' },
+  opus:   { key:'opus',   label:'Opus — most capable', note:'deepest reasoning, a little slower',  cli:'opus',   api:'claude-opus-5' },
+};
+function modelKey(cfg){ const k = (cfg && cfg.aiModel) || 'auto'; return MODELS[k] ? k : 'auto'; }
+function modelList(){ return Object.keys(MODELS).map(k => ({ key:k, label:MODELS[k].label, note:MODELS[k].note })); }
+
 // Resolve the Claude Code binary. Prefer the copy BUNDLED inside the app (so the
 // user never installs Claude Code separately — it ships in the platform optional
 // dependency @anthropic-ai/claude-code-<os>-<arch>); fall back to a globally
@@ -85,10 +102,12 @@ async function status(){
   // Only probe subscription sign-in when the CLI is actually runnable — `auth status`
   // otherwise just adds latency and can't be true anyway.
   const connected = cli.available ? await subscriptionConnected() : false;
-  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto' };
+  return { cli, apiKey: { configured: !!cfg.apiKey }, oauth: { configured: !!cfg.oauthToken }, subscription: { connected }, mode: cfg.mode || 'auto', model: modelKey(cfg), models: modelList() };
 }
 function setKey(key){ const c = readCfg(); const k = (key == null ? '' : String(key)).trim(); if (k) c.apiKey = k; else delete c.apiKey; writeCfg(c); return { configured: !!c.apiKey }; }
 function setMode(mode){ const c = readCfg(); c.mode = (['auto','cli','api'].indexOf(mode) >= 0) ? mode : 'auto'; writeCfg(c); return { mode: c.mode }; }
+// Choose the model the assistant/chat uses (one of MODELS' keys). Stored per-machine.
+function setModel(key){ const c = readCfg(); c.aiModel = MODELS[key] ? key : 'auto'; writeCfg(c); return { model: c.aiModel }; }
 
 // Environment for a `claude` spawn: inject the stored subscription OAuth token so
 // the CLI runs on the user's Claude subscription (no API key, no per-use billing).
@@ -243,13 +262,14 @@ async function chat(opts){
   if (!opts.prompt) return { ok: false, error: 'Missing prompt.' };
   const cfg = readCfg();
   const mode = cfg.mode || 'auto';
+  const m = MODELS[modelKey(cfg)];                          // the operator's chosen model
   const cli = await detectCli();
   const useCli = (mode === 'cli') || (mode === 'auto' && cli.available);
   if (useCli){
     if (!cli.available) return { ok: false, error: 'CLI mode is selected but the Claude Code CLI was not found on this machine.' };
-    return runCliChat(opts);
+    return runCliChat(Object.assign({}, opts, { model: opts.model || m.cli || undefined }));   // auto → no --model (CLI default)
   }
-  if (cfg.apiKey) return runApiChat(opts, cfg.apiKey);
+  if (cfg.apiKey) return runApiChat(Object.assign({}, opts, { model: opts.model || m.api }), cfg.apiKey);
   return { ok: false, error: cli.available
     ? 'No API key is configured. Switch to CLI mode to use your Claude subscription, or add an API key.'
     : 'Claude Code CLI not found and no API key configured. Install Claude Code (and run `claude` once to sign in) or add an Anthropic API key in Settings.' };
@@ -268,11 +288,14 @@ function runCliChat({ system, prompt, model, timeoutMs, cancelToken }){
     let out = '', err = '', done = false, canceled = false;
     const finish = (v) => { if (!done) { done = true; clearTimeout(to); if (cancelToken) activeChats.delete(cancelToken); resolve(v); } };
     const to = setTimeout(() => { try { p.kill(); } catch (e) {} finish({ ok: false, error: 'Timed out waiting for an answer (over ' + Math.round((timeoutMs || 120000) / 1000) + 's).' }); }, timeoutMs || 120000);
+    // Cancelled before we even started (Stop hit during the pre-request work)? Don't spawn.
+    if (cancelToken && canceledTokens.has(cancelToken)) { canceledTokens.delete(cancelToken); return finish({ ok: false, canceled: true, error: 'Stopped.' }); }
     let p;
     try { p = spawn(cliBin(),args, { stdio: ['pipe', 'pipe', 'pipe'], env: cliEnv() }); }
     catch (e) { return finish({ ok: false, error: 'Could not start the Claude Code CLI.' }); }
     // Register a killer so the renderer's Stop button can abort this request mid-flight.
-    if (cancelToken) activeChats.set(cancelToken, () => { canceled = true; try { p.kill(); } catch (e) {} });
+    if (cancelToken) { activeChats.set(cancelToken, () => { canceled = true; try { p.kill(); } catch (e) {} });
+      if (canceledTokens.has(cancelToken)) { canceledTokens.delete(cancelToken); canceled = true; try { p.kill(); } catch (e) {} } }   // cancel raced the spawn
     try { p.stdin.write(String(prompt || '')); p.stdin.end(); } catch (e) {}
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -293,10 +316,12 @@ function runCliChat({ system, prompt, model, timeoutMs, cancelToken }){
 function cancelChat(token){
   if (!token) return { ok: false };
   const killer = activeChats.get(token);
-  if (!killer) return { ok: false };
-  try { killer(); } catch (e) {}
-  activeChats.delete(token);
-  return { ok: true, canceled: true };
+  if (killer) { try { killer(); } catch (e) {} activeChats.delete(token); return { ok: true, canceled: true }; }
+  // The chat hasn't registered a killer yet (still starting). Record the intent so runCliChat
+  // aborts as soon as it comes up. Auto-expire so a stray token can't leak.
+  canceledTokens.add(token);
+  setTimeout(() => canceledTokens.delete(token), 60000);
+  return { ok: true, canceled: true, pending: true };
 }
 
 // API chat: POST /v1/messages with system + a single user message, no tools;
@@ -305,6 +330,7 @@ function runApiChat({ system, prompt, model, timeoutMs, cancelToken }, apiKey){
   return new Promise((resolve) => {
     let done = false, canceled = false;
     const finish = (v) => { if (!done) { done = true; if (cancelToken) activeChats.delete(cancelToken); resolve(v); } };
+    if (cancelToken && canceledTokens.has(cancelToken)) { canceledTokens.delete(cancelToken); return finish({ ok: false, canceled: true, error: 'Stopped.' }); }
     const body = JSON.stringify({
       model: model || API_MODEL,
       max_tokens: 4096,
@@ -329,7 +355,8 @@ function runApiChat({ system, prompt, model, timeoutMs, cancelToken }, apiKey){
       });
     });
     // Register a killer so Stop can abort an in-flight API request too.
-    if (cancelToken) activeChats.set(cancelToken, () => { canceled = true; try { req.destroy(); } catch (e) {} });
+    if (cancelToken) { activeChats.set(cancelToken, () => { canceled = true; try { req.destroy(); } catch (e) {} });
+      if (canceledTokens.has(cancelToken)) { canceledTokens.delete(cancelToken); canceled = true; try { req.destroy(); } catch (e) {} } }
     req.on('error', () => canceled ? finish({ ok: false, canceled: true, error: 'Stopped.' }) : finish({ ok: false, error: 'Network error contacting the Anthropic API.' }));
     req.on('timeout', () => { try { req.destroy(); } catch (e) {} finish({ ok: false, error: 'The API request timed out.' }); });
     req.write(body); req.end();
@@ -366,4 +393,4 @@ function runApi({ instruction, schema, input, model, timeoutMs }, apiKey){
   });
 }
 
-module.exports = { init, status, setKey, setMode, extract, chat, cancelChat, login, logout, bundledClaudePath, cliBin };
+module.exports = { init, status, setKey, setMode, setModel, extract, chat, cancelChat, login, logout, bundledClaudePath, cliBin };

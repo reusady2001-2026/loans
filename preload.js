@@ -91,6 +91,24 @@ contextBridge.exposeInMainWorld('ldsShell', {
   aiSetKey: (key) => ipcRenderer.invoke('lds:ai-set-key', { key }),
   // Choose the path: 'auto' | 'cli' | 'api'. Resolves {mode}.
   aiSetMode: (mode) => ipcRenderer.invoke('lds:ai-set-mode', { mode }),
+  // Choose the model the assistant uses (a MODELS key: 'auto'|'haiku'|'sonnet'|'opus'). Resolves {model}.
+  aiSetModel: (model) => ipcRenderer.invoke('lds:ai-set-model', { model }),
+
+  // ---- Property documents (per-property file store) ----
+  // Save an original file + its extracted text under a property. Resolves {ok,file}.
+  docSave: (payload) => ipcRenderer.invoke('lds:doc-save', payload),
+  // List one property's saved files (metadata only). Resolves {ok,propName,files}.
+  docList: (propKey) => ipcRenderer.invoke('lds:doc-list', { propKey }),
+  // A light index of every property that has documents (propKey → filenames). Resolves {ok,byKey}.
+  docIndex: () => ipcRenderer.invoke('lds:doc-index'),
+  // The concatenated extracted text of a property's documents (bounded). Resolves {ok,text,files}.
+  docText: (propKey) => ipcRenderer.invoke('lds:doc-text', { propKey }),
+  // Read one original file back (base64) to open/export it. Resolves {ok,base64,name,type}.
+  docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),
+  // Delete one saved file. Resolves {ok}.
+  docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),
+  // Reveal the documents folder in the OS file manager.
+  openDocsFolder: () => ipcRenderer.invoke('lds:docs-open-folder'),
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
   // Free-form chat (no tools): {system, prompt, model?, timeoutMs?, cancelToken?} → {ok,text,via,error}.

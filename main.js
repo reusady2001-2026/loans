@@ -3,6 +3,7 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const ai = require('./ai');   // AI bridge: Claude Code CLI (subscription) or Anthropic API
 
@@ -223,6 +224,100 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
+// ---- Property documents (per-property file store) ---------------------------
+// Files the operator attaches to a property are saved under userData/documents/<hash>/
+// so they persist across restarts and updates (data lives beside the backups, never
+// touched by an update) and the assistant can reuse them without re-uploading. Each
+// property folder holds the ORIGINAL files, a <id>.txt cache of the extracted text
+// (what the assistant actually reads), and an index.json:
+//   { propKey, propName, files: [{ id, stored, name, size, type, savedAt, textLen }] }
+const DOC_TEXT_CAP = 300000;   // max extracted text handed to the assistant per property, per turn
+function documentsDir(){ return path.join(app.getPath('userData'), 'documents'); }
+function propDir(propKey){ const h = crypto.createHash('sha1').update(String(propKey || '')).digest('hex').slice(0, 16); return path.join(documentsDir(), h); }
+function readDocIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
+function writeDocIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
+function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
+function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, savedAt: f.savedAt, textLen: f.textLen || 0 }; }
+
+// Save one original file (base64) + its extracted text under a property. Replaces an
+// existing file of the same name for that property.
+ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type }) => {
+  try {
+    if(!propKey || !name || !base64) return { ok: false, error: 'missing fields' };
+    const dir = propDir(propKey); fs.mkdirSync(dir, { recursive: true });
+    const idx = readDocIndex(dir); idx.propKey = propKey; idx.propName = propName || idx.propName || ''; idx.files = Array.isArray(idx.files) ? idx.files : [];
+    const buf = Buffer.from(base64, 'base64');
+    const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const stored = id + docSafeExt(name);
+    fs.writeFileSync(path.join(dir, stored), buf);
+    const t = String(text || ''); if(t){ try { fs.writeFileSync(path.join(dir, id + '.txt'), t, 'utf8'); } catch (err) {} }
+    // Replace any existing file with the same original name.
+    idx.files.filter(f => f.name === String(name)).forEach(f => { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} });
+    idx.files = idx.files.filter(f => f.name !== String(name));
+    const entry = { id, stored, name: String(name), size: buf.length, type: type || '', savedAt: Date.now(), textLen: t.length };
+    idx.files.push(entry); writeDocIndex(dir, idx);
+    return { ok: true, file: pubFile(entry) };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// List one property's saved files (metadata only, no text).
+ipcMain.handle('lds:doc-list', (e, { propKey }) => {
+  try { const idx = readDocIndex(propDir(propKey)); return { ok: true, propName: idx.propName || '', files: (idx.files || []).map(pubFile).sort((a, b) => b.savedAt - a.savedAt) }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err), files: [] }; }
+});
+// A light index across ALL properties (propKey → filenames) for the assistant snapshot.
+ipcMain.handle('lds:doc-index', () => {
+  const out = {};
+  try {
+    const root = documentsDir(); if(!fs.existsSync(root)) return { ok: true, byKey: out };
+    fs.readdirSync(root).forEach(h => {
+      const idx = readDocIndex(path.join(root, h));
+      if(idx.propKey && Array.isArray(idx.files) && idx.files.length) out[idx.propKey] = { propName: idx.propName || '', files: idx.files.map(f => f.name) };
+    });
+  } catch (e) {}
+  return { ok: true, byKey: out };
+});
+// The concatenated extracted text of a property's documents (bounded) — what the assistant
+// reads when it's focused on that property.
+ipcMain.handle('lds:doc-text', (e, { propKey }) => {
+  try {
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const files = Array.isArray(idx.files) ? idx.files : [];
+    let out = '', used = [], truncated = false;
+    for(const f of files){
+      let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
+      if(!t) continue;
+      if(out.length + t.length > DOC_TEXT_CAP){ t = t.slice(0, Math.max(0, DOC_TEXT_CAP - out.length)); truncated = true; }
+      out += '<file name="' + String(f.name).replace(/"/g, '') + '">\n' + t + '\n</file>\n\n';
+      used.push(f.name);
+      if(truncated) break;
+    }
+    return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err), text: '', files: [] }; }
+});
+// Read one original file back (base64) — for opening/exporting from the Documents panel.
+ipcMain.handle('lds:doc-read', (e, { propKey, id }) => {
+  try {
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const f = (idx.files || []).find(x => x.id === id); if(!f) return { ok: false, error: 'not found' };
+    return { ok: true, base64: fs.readFileSync(path.join(dir, f.stored)).toString('base64'), name: f.name, type: f.type || '' };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Delete one saved file (original + text + index entry).
+ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
+  try {
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const f = (idx.files || []).find(x => x.id === id); if(!f) return { ok: true };
+    try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {}
+    idx.files = (idx.files || []).filter(x => x.id !== id); writeDocIndex(dir, idx);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Reveal the documents folder in the OS file manager.
+ipcMain.handle('lds:docs-open-folder', async () => {
+  try { const d = documentsDir(); fs.mkdirSync(d, { recursive: true }); await shell.openPath(d); return { ok: true, path: d }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
 // ---- Display scale (window zoom) --------------------------------------------
 // The Settings panel in the renderer drives the app scale. We use Chromium's
 // native zoom factor so the entire UI scales crisply and reflows at any size,
@@ -273,6 +368,7 @@ ipcMain.on('lds:update-install', () => { try { autoUpdater.quitAndInstall(); } c
 ipcMain.handle('lds:ai-status', () => ai.status());
 ipcMain.handle('lds:ai-set-key', (e, { key }) => ai.setKey(key));
 ipcMain.handle('lds:ai-set-mode', (e, { mode }) => ai.setMode(mode));
+ipcMain.handle('lds:ai-set-model', (e, { model }) => ai.setModel(model));
 ipcMain.handle('lds:ai-extract', (e, opts) => ai.extract(opts || {}));
 ipcMain.handle('lds:ai-chat', (e, opts) => ai.chat(opts || {}));
 ipcMain.handle('lds:ai-chat-cancel', (e, { token }) => ai.cancelChat(token));

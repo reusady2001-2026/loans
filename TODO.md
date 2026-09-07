@@ -15,6 +15,22 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Property documents + model picker (v2.6.0).**
+  - **Property documents.** Files attached to the assistant used to be read into one message's
+    context and thrown away. Now, when a property is focused, the ORIGINAL file is saved under
+    that property on disk (`userData/documents/<hash>/`, beside the backups — survives restarts
+    and updates), with its extracted text cached for the assistant. Added: a **property picker**
+    in the assistant composer (optional — or name the property in chat); attachments are saved
+    to the focused property; the assistant is handed that property's saved documents each turn
+    (no re-uploading) plus a light index of which properties have files; and a **Documents panel**
+    on each loan's detail view to see/open (Save copy)/remove files and add more. Storage IPC in
+    main.js (doc-save/list/index/text/read/delete), bridge in preload.js.
+  - **Model picker.** The chat now exposes a model choice (Automatic / Haiku / Sonnet / Opus) in
+    the assistant settings, applied to the subscription CLI (`--model`) and the API, with the
+    ACTIVE model shown as a chip on the connection row (previously you couldn't tell what was
+    answering). ai.js MODELS catalog + setModel; status() reports model + models.
+  - Also: Stop now cancels robustly even when it races the request's spawn (a pre-cancel set in
+    ai.js), since the request now fires after a quick document lookup.
 - **Entered NOI was invisible when non-positive (lease-up assets) — fixed.** An approved NOI
   DID persist, but the app conflated "an NOI was entered" with "NOI > 0": every read-site
   (`propertyNOI`, the coverage table's `has`, `openNoiFlow`) gated on `noi > 0`, so a property
