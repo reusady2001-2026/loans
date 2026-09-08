@@ -56,7 +56,7 @@
   var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+account|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
   // …but an insurance line ("Error and Omissions Insurance") or a payables / receivables
   // service ("Accounts Payable Service Fee") is an ordinary expense, not a plug
-  var PLUG_NOT = /insurance|omission|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;
+  var PLUG_NOT = /insurance|omission|write[\s-]*off|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;
   function isPlug(s){ return PLUG.test(s) && !PLUG_NOT.test(s); }
   // Bad debt: the rental-block deduction BD when the statement prints it under
   // INCOME; the expense row BDX when it is booked on the EXPENSE side — flat or
@@ -64,7 +64,7 @@
   var BADDEBT = /bad\s+debt|write[\s-]*off|uncollect|collection\s+loss|credit\s+loss|skips?\b|evict|doubtful\s+accounts/;
   // …but not the cost of collecting it ("Bad Debt Collection Costs", "Eviction Legal Fees"
   // are G&A) and not a non-operating write-off ("Write-off of Fixed Assets" is G&A)
-  var BADDEBT_NOT = /collection\s+(cost|agency|fee)|fixed\s+assets?|evict\w*\s+(cost|fee|expense|legal|attorney|reimb|recover)|legal|attorney/;
+  var BADDEBT_NOT = /collection\s+(cost|agency|fee)|fixed\s+assets?|evict\w*\s+(cost|fee|expense|legal|attorney|reimb|recover)|court\s+cost|legal|attorney|skip\s+trac|skip\s+(loader|bin|hire|rental)|dumpster/;
   function isBadDebt(s){ return !BADDEBT_NOT.test(s) && (BADDEBT.test(s) || (/delinquen/.test(s) && !/tax|penalt|interest|fee/.test(s))); }
 
   // Ordered rules — first match wins; returns a code or null (no confident match).
@@ -156,7 +156,7 @@
     if (has(/\boffice\b|computer|software|copier|subscription|website|domain|\bit\s+(cost|setup|support|supplies|service|expense|monthly)|equipment\s+rental|rent\s*[-–]\s*(office|equipment)/)) return X("GA");
     if (has(/repair|mainten|turn[\s-]*over|make[\s-]*ready|paint|plumb|hvac|a\/c\b|air\s+condition|furnace|boiler|chiller|heater|supplies|\bparts\b|\btools\b|\block(s|smith)?\b|\bkeys?\b|fire\s+(alarm|escape|extinguisher|pump)|smoke\s+(alarm|detector)|extinguisher|appliance|window|shade|blind|screens?\b|hardware|\bbags?\b|liners?\b|janitorial|electrical|roof|gutter|carpet|floor|\btiles?\b|\bdoors?\b|fenc|\bgates?\b|\blight(ing|s|\s*bulb)|fixture|drywall|plaster|welding|\bglass\b|\bpump|generator|compactor|intercom|camera|security|patrol|alarm|monitoring|surveillance|access\s+(control|system)|power\s+wash|pressure\s+wash|paving|striping|asphalt|concrete|cement|masonry|caulk|ptac|filter|\bmold\b|lead\s+abate|environmental|\bpool\b|\bgym\b|fitness|playground|\bsigns?\b|cleaning|clean[\s-]*up|towing|furniture|equipment|materials|lumber|resurfac|reglaz|countertop|cabinet|vinyl|mirror|ceiling|stair|railing|\bdeck\b|balcony|patio|sidewalk|irrigation|shrub|mulch|weed|drain|leak|storm|vandal|graffiti|treatment|\bgrounds\b/)) return X("RM");
     if (has(/\bcable\b|satellite|\btv\b|bulk\s+(internet|wifi)/)) return X("CAB");
-    if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|collection\s+(cost|agency|fee)s?|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
+    if (has(/general\s+and\s+admin|g\s*&\s*a\b|bank\s+(service|charge|fee)|collection\s+(cost|agency|fee)s?|skip\s+trac|skip\s+loader|\bevict|court\s+cost|yardi|screening|background|tech\s+cost|shipping|postage|courier|delivery|phones?\b|telephone|internet|\bdsl\b|uniform|auto\s+expense|employee\s+gift|\bfood\b|meals?\b|groceries|snack|entertain|holiday\s+party|ramp\s+plus|bluemoon|clickpay|matterport|dropbox|\badmin\b|printing|copy\s+machine|\bdues\b|membership|licens|permit|registration|filing|inspection|credit\s+card|merchant|payment\s+(fee|processing)|online\s+payment|wire\s+(transfer|fee)|training|seminar|recruit|hiring|answering|messaging|\bgifts?\b|charit|decor|equipment\s+rental|rent\s*[-–]\s*(office|equipment)|hoa\b|association\s+(dues|fee)|condo\s+(fee|assoc)|ground\s+lease|land\s+lease|temp\s+housing|moving|other\s+fees|misc(ellaneous)?\s+expense|refund|discount|purchases?\b|fees\s+and\s+permits/)) return X("GA");
 
     // ---- other-income catch-alls. A bare "Other Income" / "… Income" line with no
     //      other signal is left unconfident on purpose: on a flat statement it may be

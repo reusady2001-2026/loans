@@ -229,6 +229,31 @@ eq(T12.classify("Eviction Fees", "INCOME", ""), "OTH", "r2-1. \"Eviction Fees\" 
 });
 eq(T12.classify("Application Fees", "INCOME", ""), "APP", "r2-4. …and \"Application Fees\" [INCOME] → APP");
 
+// ---------------------------------------------------------------- 5d. critic round 3 — keyword-edge verdicts
+section("critic round 3 — keyword-edge verdicts");
+// (1) "skip" as bad debt is a skipped TENANT only — collections/equipment/court-cost uses are not bad debt
+[["Skip Tracing","","GA"], ["Skip Tracing","GENERAL AND ADMINISTRATIVE EXPENSES","GA"], ["Dumpster / Skip Rental","","TRSH"], ["Skip Loader Rental","","GA"],
+ ["Evictions - Court Costs","","GA"], ["Evictions - Court Costs","OTHER EXPENSES","GA"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", c[1]); ok(r.code === c[2] && r.confident, "r3-1. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → " + c[2] + " (confident, not bad debt)" + (r.code === c[2] ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+// …while genuine skipped-tenant / eviction bad debt is still BDX on the expense side, BD on the income side
+[["Loss to Skips","EXPENSE","OTHER EXPENSES","BDX"], ["Skips & Evictions","EXPENSE","","BDX"], ["Evictions","EXPENSE","REPAIRS & MAINTENANCE","BDX"], ["Loss to Skips","INCOME","RENTAL INCOME","BD"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], c[1], c[2]); eq(r.code, c[3], "r3-1. " + JSON.stringify(c[0]) + (c[2] ? " under [" + c[2] + "]" : " flat") + " [" + c[1] + "] → " + c[3] + " (still bad debt)");
+});
+// (2) an eviction COST (guarded out of bad debt) now lands confidently in G&A instead of the low-confidence fallback
+[["Eviction Costs",""], ["Eviction Expense",""], ["Eviction Legal Fees",""], ["Eviction Costs","OTHER EXPENSES"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", c[1]); ok(r.code === "GA" && r.confident, "r3-2. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → GA (confident)" + (r.code === "GA" ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+eq(T12.classify("Eviction Fees", "INCOME", ""), "OTH", "r3-2. \"Eviction Fees\" [INCOME] is still a fee charged back → OTH");
+// (3) a receivable WRITE-OFF is bad debt, not a balance-sheet plug (the plug pre-check must not swallow it)
+[["Accounts Receivable Write-off","OTHER EXPENSES"], ["Receivable Write-Off",""], ["A/R Write-off","OTHER EXPENSES"], ["Accounts Receivable Write off","GENERAL AND ADMINISTRATIVE EXPENSES"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", c[1]); ok(r.code === "BDX" && r.confident, "r3-3. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → BDX (write-off beats the receivable plug word)" + (r.code === "BDX" ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+// …but a bare receivable with no write-off is still a plug (low-confidence)
+[["Accounts Receivable",""], ["Loans Receivable","OTHER INCOME"], ["Notes- Loan Payable Rep.Funding","GENERAL AND ADMINISTRATIVE EXPENSES"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], /INCOME/.test(c[1]) ? "INCOME" : "EXPENSE", c[1]); ok(!r.confident, "r3-3. " + JSON.stringify(c[0]) + " (no write-off) is still a plug → low-confidence");
+});
+
 // ---------------------------------------------------------------- 6. synthetic statement → parseGrid → fromParse (residual accounting)
 section("synthetic statement through SetupBuilder.fromParse — sums and the reconcile plug to the cent");
 function grid(incomeTotal, expenseTotal){
