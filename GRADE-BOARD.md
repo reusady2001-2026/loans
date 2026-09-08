@@ -6,14 +6,14 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | **B** (critic) → patching | B — all 9 claims verified, twinBelow narrowing accepted; 3 minors: summary-first "first wins" masks a summary/detail disagreement, category-subtotal summary tree defeats the twin rule, mixed-case "Gross Income" read as detail — fed back | 513 ok |
+| E1 | T12 parsing | A− | **B** (critic) → patching | B — item-1 design approved (detail overrides summary, ties gated on !summaryMismatch), Gross-caps + BDX split correct, Crest row-identical; 1 minor (derived-NOI mismatch hole) + 2 dead-code/pin nits — fed back | 587 ok |
 | E2 | Classifier | A− | **A ✓ done** (nit closures being confirmed) | A — re-checked A: all 7 items + BDX verified, 12/12 mutants killed, Crest diff exactly 8 rows; keyword nits closed (skips/evictions/doubtful, E&O, plug guard) | 836 ok |
-| E3 | In-place NOI tie | A | **A pending** → tie verified; patch with E1 running | tie strict to the cent on Crest with and without a G&A budget (hand-footed); one dead-branch nit (BD→BDX routing) fed back | 513 ok |
+| E3 | In-place NOI tie | A | **A pending** with E1 | tie strict on Crest to the cent; reconcile.ties gated on summaryMismatch | 587 ok |
 | E4 | Underwritten NOI | B+ | **A ✓ done** | A — re-checked A: bit-identical to released engine (200/200 random sweep, 0 diffs); Crest +4,738.85 reconciled to the cent as an E2 category move; one unreachable nit ("(1e5)" text) routed to builder | 207 ok; 6/6 mutants killed; DEFAULTS frozen (verified) |
 | E5 | Single-property sizing | A− | **A ✓ done** | A — re-checked A; negative max-loan leak closed; glue blank sizing box now refilled from s.params (index.html:3374) | 207 ok; 987-entry regression byte-identical |
-| P1 | Per-property store | F | **A ✓ done** | A — re-checked A; test nits closed (M36/M40/M41 die); BDX mirrored (33 codes) | 296 ok; 25/26 mutants (1 equivalent) |
+| P1 | Per-property store | F | **A ✓ done** | A — re-checked A: encoding pure ASCII, removeLine/setControllable strict (knownCode), 25/26 mutants (1 equivalent) | 303 ok |
 | P2 | Per-property NOI → ratios | C | **A ✓ done** | A — module unchanged; 38 BDX pass-through pins hand-verified; all three carried glue items re-verified CLOSED in the live app (DSCR one-basis, tile gating, store code validation) | 220 ok |
-| P3 | Upload → property | D | **A ✓ done** (2 comment nits closing) | A — re-checked A after BDX: ORDER = taxonomy, Crest record GA 554,599.61 + BDX 388,184.69 hand-foots, 7/7 mutants | 418 ok |
+| P3 | Upload → property | D | **A ✓ done** → ties-gating add-on running | A on its own files; add-on: gate linesFromParsed/apply ties on summaryMismatch + surface it (critic-flagged, glue already reads parsed.summaryMismatch) | 418 ok |
 | P4 | Hand-edit sheet | F | **A ✓ done** | A — re-checked A: all 8 findings fixed, deductions stored negative (both bases, −0 handled), all 33 rows hand-enterable, 13/13 unit mutants + Enter/same-value e2e mutants killed | 256 ok; e2e 86/86 |
 | P5 | Controllable flags | F | **A ✓ done** | A — re-checked A after BDX: 15/15 mutants killed, every consumer mirror identical; comment/scaffold nits closed | 134 ok |
 | P6 | Per-property assumptions | D | **A ✓ done** | A — re-checked A: focus survives rebuilds, strict commas, fallback from Underwriting.DEFAULTS; 16/17 mutants (1 equivalent) | 249 ok; e2e 62 ok |
