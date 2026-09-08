@@ -6,9 +6,9 @@ same builder → fix → re-test → re-critique.
 
 | # | Aspect | Start | Now | Critic verdict | Tests |
 |---|---|---|---|---|---|
-| E1 | T12 parsing | A− | **B** (critic) → patching | B — item-1 design approved (detail overrides summary, ties gated on !summaryMismatch), Gross-caps + BDX split correct, Crest row-identical; 1 minor (derived-NOI mismatch hole) + 2 dead-code/pin nits — fed back | 587 ok |
+| E1 | T12 parsing | A− | **A ✓ done** | A — re-checked A: summary-block handling (detail overrides, mismatch surfaced incl. derived-NOI), Gross-caption fix, BDX split; consumer chain verified end-to-end; Crest row-identical | 596 ok |
 | E2 | Classifier | A− | **A ✓ done** (nit closures being confirmed) | A — re-checked A: all 7 items + BDX verified, 12/12 mutants killed, Crest diff exactly 8 rows; keyword nits closed (skips/evictions/doubtful, E&O, plug guard) | 836 ok |
-| E3 | In-place NOI tie | A | **A pending** with E1 | tie strict on Crest to the cent; reconcile.ties gated on summaryMismatch | 587 ok |
+| E3 | In-place NOI tie | A | **A ✓ done** | A — re-checked A: in-place NOI ties to the cent on Crest; reconcile.ties gated on summaryMismatch so a self-contradicting statement never reports a false tie | 596 ok |
 | E4 | Underwritten NOI | B+ | **A ✓ done** | A — re-checked A: bit-identical to released engine (200/200 random sweep, 0 diffs); Crest +4,738.85 reconciled to the cent as an E2 category move; one unreachable nit ("(1e5)" text) routed to builder | 207 ok; 6/6 mutants killed; DEFAULTS frozen (verified) |
 | E5 | Single-property sizing | A− | **A ✓ done** | A — re-checked A; negative max-loan leak closed; glue blank sizing box now refilled from s.params (index.html:3374) | 207 ok; 987-entry regression byte-identical |
 | P1 | Per-property store | F | **A ✓ done** | A — re-checked A: encoding pure ASCII, removeLine/setControllable strict (knownCode), 25/26 mutants (1 equivalent) | 303 ok |
