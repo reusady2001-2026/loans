@@ -5797,10 +5797,31 @@ tr[data-loan]:hover td{background:#eef2f7}
     // records that share the SAME property, so leverage must be read on the
     // COMBINED stack, not each piece alone. Group by address (the reliable shared
     // key across a senior + its mezz), falling back to the property name.
+    // A property is identified by its NAME first — the name is the stable, human identity and never
+    // changes. The address is only a tiebreaker: when two properties genuinely share a name (two
+    // "Avalon"s at different addresses) the address is appended to tell them apart, and it is the
+    // fallback when a loan has no name at all. Address text is normalised (case, spacing, punctuation
+    // and common street-type / direction abbreviations) so "10400 Edgewood Rd" and "10400 Edgewood
+    // Road" are the same place. A senior and its mezz share one key (the "(mezz)" suffix is stripped).
+    function normPropName(s){ return String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+    var ADDR_ABBR = { rd:"road", st:"street", str:"street", ave:"avenue", av:"avenue", blvd:"boulevard", boul:"boulevard",
+      dr:"drive", ln:"lane", ct:"court", cir:"circle", crl:"circle", pkwy:"parkway", pky:"parkway", hwy:"highway",
+      pl:"place", ter:"terrace", terr:"terrace", trl:"trail", sq:"square", ste:"suite", apt:"apartment", bldg:"building",
+      n:"north", s:"south", e:"east", w:"west", ne:"northeast", nw:"northwest", se:"southeast", sw:"southwest",
+      "n.":"north", "s.":"south", "e.":"east", "w.":"west" };
+    function normPropAddr(s){
+      var a = String(s || "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      return a ? a.split(" ").map(function(w){ return ADDR_ABBR[w] || w; }).join(" ") : "";
+    }
+    // true when another loan shares this normalised name but sits at a DIFFERENT normalised address
+    function propNameShared(name, addr){
+      try{ return loans.some(function(l){ var na = normPropAddr(l.propertyAddress); return normPropName(l.propertyName) === name && na && na !== addr; }); }catch(e){ return false; }
+    }
     function propertyKey(loan){
-      const a = String((loan && loan.propertyAddress) || "").trim().toLowerCase();
-      if(a) return "addr:" + a;
-      return "name:" + String((loan && (loan.propertyName || loan._id)) || "").trim().toLowerCase();
+      var name = normPropName(loan && loan.propertyName), addr = normPropAddr(loan && loan.propertyAddress);
+      if(!name) return addr ? ("addr:" + addr) : ("name:" + String((loan && loan._id) || "").trim().toLowerCase());
+      if(addr && propNameShared(name, addr)) return "name:" + name + "|addr:" + addr;   // two same-named properties → split by address
+      return "name:" + name;
     }
     // Senior(s) first, mezz last; among seniors the largest original balance leads (it names the property in the
     // picker, the roll-up and the operating record — never a smaller loan that merely joined the address later).

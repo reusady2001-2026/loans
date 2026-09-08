@@ -7,7 +7,7 @@ const APP = path.resolve(__dirname, '..', '..');
 const { _electron: electron } = require((process.env.GN || '/opt/node22/lib/node_modules') + '/playwright');
 const CREST = path.join(APP, 'test', 'fixtures', 'crest-t12.xlsx');
 const UDATA = fs.mkdtempSync(path.join(os.tmpdir(), 'lds-t12disk-'));
-const KEY = 'addr:10400 edgewood rd, harrison, oh 45030';        // Villages of Whitewater
+const KEY = 'name:villages of whitewater';                        // name-first key (v2.7.2)
 const HASH = crypto.createHash('sha1').update(KEY).digest('hex').slice(0, 16);
 const PROPDIR = path.join(UDATA, 'documents', HASH);
 const fails = { n: 0 }; const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails.n++; };
