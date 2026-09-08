@@ -3340,6 +3340,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="text-sm font-bold text-slate-900 tabular-nums" id="'+id+'">'+val+'</div>'+(hint?'<div class="text-[10px] text-slate-400">'+hint+'</div>':'')+'</div>';
       const szIn = (label,key,val,suf)=> '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+label+
         '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suf||"")+'</span></span></label>';
+      const benchIn = (label,key,val,suf)=> '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+label+
+        '<span class="flex items-center gap-1">'+(suf==="$"?'<span class="text-[11px] text-slate-400">$</span>':'')+'<input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwbench="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-4">'+(suf==="$"?"":suf||"")+'</span></span></label>';
       return review +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
@@ -3349,7 +3351,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
           '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-          '<p class="mt-2 text-[11px] text-slate-400">Underwritten applies a '+uwPctStr(bench.vacancyPct)+'% vacancy floor, a '+uwPctStr(bench.mgmtPct)+'% management fee and $'+uwStr(bench.reservePerUnit)+'/unit reserves; everything else passes through the T12 actual.</p>'+
+          '<div class="mt-3 border-t border-slate-100 pt-3">'+
+            '<div class="text-[11px] font-semibold text-slate-600 mb-2">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; saved to this property; change them to test scenarios</span></div>'+
+            '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
+              benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+
+            '</div>'+
+            '<p class="mt-2 text-[11px] text-slate-400">The underwritten column re-prices vacancy at this rate, the management fee at this percent of effective gross income, and reserves per unit; every other line passes through the T12 actual.</p></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
           '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan</h3>'+
@@ -3384,11 +3391,13 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(k==="basis"){ i.basis = t.value; uwApplyParse(); return; }
         i[k] = (k==="name") ? t.value : uwNum(t.value); saveUW(); return; }
       if(t.hasAttribute("data-uwsize")){ const k = t.getAttribute("data-uwsize"); const pct = {capRate:1,ltvMax:1,dyMin:1,intRate:1}; const v = uwNum(t.value);
-        i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); recomputeSizing(); return; }
+        i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
     // Units / rent-roll GPR feed the underwritten column & sizing — rebuild the Setup on blur (not per keystroke, to keep focus).
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
+      if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
+        uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
       const k = t.getAttribute && t.getAttribute("data-uwf"); if(k==="units"||k==="rrGPR") renderUnderwriting(); });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
@@ -3456,10 +3465,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = "";
       if(key){
         opDeskLoaded.delete(key);
+        i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
         const r = await opReadPropT12(key);
         if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
-      }
+      } else { i.bench = opMergeBench(uwDefaults().bench, null); }
       renderUnderwriting();
     }
     // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
@@ -3490,6 +3500,25 @@ tr[data-loan]:hover td{background:#eef2f7}
       const r = await ldsShell.docSave({ propKey: key, propName: p ? p.name : key, name: file.name, base64, text, type: file.type || "", role: "t12" });
       opDeskLoaded.delete(key); OperatingStore.remove(key);   // force a fresh live re-read/re-parse from the file just saved
       return r;
+    }
+    // Per-property underwriting assumptions live in the property's folder too (a small assumptions.json),
+    // never in browser storage. They default to the app's constants; a property remembers its own.
+    function opMergeBench(def, ov){ var b = JSON.parse(JSON.stringify(def)); if(ov && typeof ov === "object"){ Object.keys(ov).forEach(function(k){ if(k === "sizing" && ov.sizing && typeof ov.sizing === "object") b.sizing = Object.assign({}, b.sizing, ov.sizing); else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
+    async function opLoadAssumptions(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
+      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        var f = (list.files || []).filter(function(x){ return x.role === "assumptions"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
+        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
+        return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64)));
+      }catch(e){ return null; }
+    }
+    async function opSaveAssumptions(key){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      try{ var json = JSON.stringify(uwState.input.bench), bytes = new TextEncoder().encode(json), str = "";
+        for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+        var pr = opProp(key);
+        await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "assumptions.json", base64: btoa(str), text: "", type: "application/json", role: "assumptions" });
+      }catch(e){}
     }
     // The bridge the modules compute through — the app's own engine, never re-implemented.
     function opHooks(){
