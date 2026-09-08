@@ -294,7 +294,7 @@ function kpiNoiTop(){
 function titleGross(label){
   return { grid: flat([["Gross Rent", 1000], ["Less: Vacancy", -50], [label, 950], ["Other Income", 10], ["Total Income", 960],
                        "EXPENSES", ["Taxes", 100], ["TOTAL EXPENSES", 100], ["NET OPERATING INCOME", 860]]),
-           expect: { income: 960, expense: 100, noi: 860, rows: 3, gpr: 1000, incomeResidual: 0 } };
+           expect: { income: 960, expense: 100, noi: 860, rows: 4, gpr: 1000, incomeResidual: 0 } };
 }
 
 // The clean statement whose PRINTED section totals deliberately do not foot to their

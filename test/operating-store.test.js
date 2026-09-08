@@ -256,8 +256,9 @@ group("controllable defaults (contract §3) / setControllable", function (){
   var w2 = st.writes.length;
   throwsType(function (){ S.setControllable(K, "NOPE", false); }, "unknown code → TypeError (as strict as setLine, not a silent no-op)");
   throwsType(function (){ S.setControllable(K, "gpr", true); }, "mis-cased code (gpr) → TypeError");
-  eq(S.setControllable(K, "BDX", false), null, "a REAL code (BDX) with no stored line → null no-op, as before");
+  eq(S.setControllable("name:no-such-record", "BDX", false), null, "a REAL code (BDX) with no stored line → null no-op, as before (no throw)");
   eq(st.writes.length, w2, "…none of those wrote");
+  eq(S.setControllable(K, "BDX", true).lines.BDX.controllable, true, "…while a real code WITH a line still flips normally");
   throwsType(function (){ S.setControllable(K, "RET", "false"); }, "rejects a non-boolean flag");
 });
 

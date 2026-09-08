@@ -249,11 +249,7 @@
       rows.push({ name: name, amount: amt, section: section, sub: sub, row: r });
       if (amt) nzRows++;                                       // $0 stub rows above a summary block must not defeat its detection
     }
-    // A total only the summary printed (e.g. no detail TOTAL EXPENSES) still stands as a fallback.
     var hasSummary = summaryTotals.income != null || summaryTotals.expense != null || summaryTotals.noi != null;
-    ["income", "expense", "noi"].forEach(function (k){
-      if (totals[k] == null && summaryTotals[k] != null){ totals[k] = summaryTotals[k]; footing[k + "Row"] = summaryFooting[k + "Row"]; }
-    });
     // Flag a summary whose figure disagrees with the statement's own detail footing (the one
     // the rows add up to) — the authoritative total wins, but the operator must be told.
     var summaryMismatch = false;
@@ -261,9 +257,14 @@
       if (detailFooted[k] && summaryTotals[k] != null && Math.abs(summaryTotals[k] - totals[k]) > 0.005) summaryMismatch = true;
     });
     if (summaryMismatch) warnings.push("summary totals differ from the statement's own footing; using the footing the detail lines add up to");
-    // Derived NOI as a cross-check / fallback when a statement omits the NOI row
-    // (printed figures are cents, so keep their difference in cents).
+    // A total the detail didn't print (e.g. no detail TOTAL EXPENSES) falls back to the summary.
+    if (hasSummary) ["income", "expense"].forEach(function (k){
+      if (totals[k] == null && summaryTotals[k] != null){ totals[k] = summaryTotals[k]; footing[k + "Row"] = summaryFooting[k + "Row"]; }
+    });
+    // The FOOTED NOI (income − expense) beats a KPI / summary NOI printed on top; a summary NOI
+    // only stands as a last resort. Printed figures are cents, so keep the difference in cents.
     if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = Math.round((totals.income - totals.expense) * 100) / 100;
+    if (hasSummary && totals.noi == null && summaryTotals.noi != null){ totals.noi = summaryTotals.noi; footing.noiRow = summaryFooting.noiRow; }
     return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
              basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
              rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine,

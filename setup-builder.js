@@ -78,11 +78,11 @@
       // a $0 line (balance-sheet stub, zero plug) can never move a figure — not review noise
       if(!cc.confident && amt !== 0) review.push({ name: r.name, amount: amt, code: code });
       if(isExp){
-        // a line in the printed EXPENSE section is an expense dollar, whatever it is
-        // called: income-role codes fold into G&A — except bad debt, which is the
-        // expense-side code BDX (its own pass-through line, never absorbed by a G&A
-        // $/unit budget). The classifier already emits BDX there; BD is routed for safety.
-        var ce = expCode ? code : (code === "BD" ? "BDX" : "GA");
+        // a line in the printed EXPENSE section is an expense dollar, whatever it is called:
+        // an income-role code (no expense-side home in the taxonomy) folds into G&A. Bad debt
+        // is not one of them — the classifier already gives an expense-section bad-debt line
+        // the expense-role code BDX, which flows through as itself (its own pass-through line).
+        var ce = expCode ? code : "GA";
         expSum[ce] = (expSum[ce] || 0) + amt; expRaw += amt;
       } else {
         var ci = expCode ? "OTH" : code;

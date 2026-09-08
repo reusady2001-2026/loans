@@ -312,7 +312,7 @@ run("E1 · mixed-case 'Gross <roll-up>' rows are subtotals (item 3)", function()
   ["Gross Income", "Gross Revenue", "Gross Operating Income"].forEach(function(l){
     var G = F.titleGross(l), q = T12.parseGrid(G.grid), ex = G.expect, L = JSON.stringify(l);
     eq(q.rows.filter(function(r){ return r.name === l; }).length, 0, L + " (title-case roll-up) is NOT a detail row");
-    eq(q.rows.length, ex.rows, L + ": 3 detail rows (Gross Rent, Less: Vacancy, Other Income)");
+    eq(q.rows.length, ex.rows, L + ": 4 detail rows (Gross Rent, Less: Vacancy, Other Income, Taxes) — the roll-up excluded");
     eq(sumRows(q.rows, "INCOME"), ex.income, L + ": income rows foot to 960 (no double count)");
     eq(q.totals.income, ex.income, L + ": TOTAL INCOME 960");
     eq(q.totals.noi, ex.noi, L + ": NOI 860");
@@ -384,9 +384,11 @@ run("E3 · expense-side bad debt rides its own pass-through line (a G&A budget n
   eq(fq.sums.BDX, 30, "sums.BDX = 30.00 is the source of truth (the store's own code)");
   eq(fq.sums.GA, 20, "…G&A carries only its own 20.00 (nothing folded in)");
   eq(SB.fromParse({ rows: [{ name: "x", amount: 7, section: "EXPENSE" }].map(function(r){ return r; }), totals: {} }).sums.BDX, undefined, "a non-bad-debt expense line does not create BDX");
-  eq(CL.classify("Bad Debt", "EXPENSE", "RENTAL INCOME"), "BD", "the classifier calls a bare 'Bad Debt' under a RENTAL INCOME sub BD (income-role), even in the expense section — so the BD→BDX safety branch is REACHABLE, not dead");
+  // The classifier gives an expense-section bad-debt line the expense-role code BDX directly,
+  // so setup-builder needs no BD→BDX fold (the dead branch was removed): pin that end to end.
+  eq(CL.classify("Bad Debt", "EXPENSE", "RENTAL INCOME"), "BDX", "an expense-section bad-debt line classifies BDX directly (no BD-fold branch needed in setup-builder)");
   var routed = SB.fromParse({ rows: [{ name: "Bad Debt", amount: 12, section: "EXPENSE", sub: "RENTAL INCOME" }], totals: {} });
-  eq(routed.sums.BDX, 12, "…and that BD-in-the-expense-section line is routed to BDX (its expense-side home), exercising setup-builder's safety branch");
+  eq(routed.sums.BDX, 12, "…and lands in sums.BDX (its expense-side home)");
   eq(routed.sums.GA, undefined, "…never folded into G&A");
   eq(fq.sums.BD, undefined, "no income-side BD is invented");
   eq(fq.reconcile.expenseResidual, 0, "expense section still foots to the printed 150.00");
