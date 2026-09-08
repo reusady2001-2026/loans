@@ -254,6 +254,19 @@ eq(T12.classify("Eviction Fees", "INCOME", ""), "OTH", "r3-2. \"Eviction Fees\" 
   var r = T12.classifyConfident(c[0], /INCOME/.test(c[1]) ? "INCOME" : "EXPENSE", c[1]); ok(!r.confident, "r3-3. " + JSON.stringify(c[0]) + " (no write-off) is still a plug → low-confidence");
 });
 
+// ---------------------------------------------------------------- 5e. critic round 4 — the write-off plug exception is qualifier-gated
+section("critic round 4 — write-off plug exception is qualifier-gated");
+// only a receivable / bad-debt / tenant / rent write-off escapes the plug rule → BDX
+[["A/R Write-off","OTHER EXPENSES"], ["Accounts Receivable Write-off","OTHER EXPENSES"], ["Receivable Write-Off",""], ["Bad Debt Write-off","GENERAL AND ADMINISTRATIVE EXPENSES"], ["Tenant Write-off","OTHER EXPENSES"]].forEach(function (c){
+  var r = T12.classifyConfident(c[0], "EXPENSE", c[1]); ok(r.code === "BDX" && r.confident, "r4. " + JSON.stringify(c[0]) + (c[1] ? " under [" + c[1] + "]" : " flat") + " → BDX (qualified write-off escapes the plug)" + (r.code === "BDX" ? "" : "   (got " + r.code + (r.confident ? "" : " low") + ")"));
+});
+// a genuine plug write-off (no receivable/bad-debt qualifier) stays a plug → GA low-confidence, even under G&A
+["Suspense write-off", "Clearing write-off", "Opening Balance write-off", "Difference write-off", "Old Code write-off"].forEach(function (n){
+  var r = T12.classifyConfident(n, "EXPENSE", "GENERAL AND ADMINISTRATIVE EXPENSES"); ok(r.code === "GA" && !r.confident, "r4. " + JSON.stringify(n) + " under [G&A] → GA low-confidence (still a plug)" + (r.code === "GA" ? (r.confident ? "   (was confident!)" : "") : "   (got " + r.code + ")"));
+});
+eq(T12.classifyConfident("Accounts Receivable", "EXPENSE", "").confident, false, "r4. bare \"Accounts Receivable\" (no write-off) is still a plug → low-confidence");
+eq(T12.classify("Snow Clearing Contract", "EXPENSE", ""), "CS", "r4. \"Snow Clearing Contract\" unaffected by the widened clearing plug → CS");
+
 // ---------------------------------------------------------------- 6. synthetic statement → parseGrid → fromParse (residual accounting)
 section("synthetic statement through SetupBuilder.fromParse — sums and the reconcile plug to the cent");
 function grid(incomeTotal, expenseTotal){

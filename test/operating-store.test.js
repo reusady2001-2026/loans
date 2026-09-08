@@ -253,8 +253,11 @@ group("controllable defaults (contract §3) / setControllable", function (){
   S.init({ storage: st, now: clock() });
   eq(S.get(K).lines.RET.controllable, true, "the flip survives a reload");
   eq(S.get(K).lines.INS.controllable, true, "init() drops in-memory state: a blob altered before the reload is what get() returns");
-  eq(S.setControllable(K, "NOPE", false), null, "unknown line → null");
-  eq(st.writes.length, writes + 1, "…no save");
+  var w2 = st.writes.length;
+  throwsType(function (){ S.setControllable(K, "NOPE", false); }, "unknown code → TypeError (as strict as setLine, not a silent no-op)");
+  throwsType(function (){ S.setControllable(K, "gpr", true); }, "mis-cased code (gpr) → TypeError");
+  eq(S.setControllable(K, "BDX", false), null, "a REAL code (BDX) with no stored line → null no-op, as before");
+  eq(st.writes.length, w2, "…none of those wrote");
   throwsType(function (){ S.setControllable(K, "RET", "false"); }, "rejects a non-boolean flag");
 });
 
@@ -372,6 +375,11 @@ group("removeLine / setUnits / setPeriod / remove", function (){
   eq(st.writes.length, writes + 1, "…one save");
   eq(S.removeLine(K, "RET"), r, "removing a missing line is a no-op returning the record");
   eq(st.writes.length, writes + 1, "…with no save");
+  var w3 = st.writes.length;
+  throwsType(function (){ S.removeLine(K, "FOO"); }, "removeLine unknown code → TypeError (as strict as setLine)");
+  throwsType(function (){ S.removeLine(K, "gpr"); }, "removeLine mis-cased code (gpr) → TypeError");
+  eq(S.removeLine(K, "BDX"), r, "removeLine of a REAL code (BDX) with no stored line → no-op returning the record, as before");
+  eq(st.writes.length, w3, "…none of those wrote");
   r = S.setUnits(K, 120);                                                  // T2
   eq([r.units, r.meta.lastUpdated], [120, T(2)], "setUnits sets + stamps");
   eq(S.setUnits(K, null).units, null, "setUnits(null) clears");

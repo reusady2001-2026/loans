@@ -53,7 +53,7 @@
   // Bookkeeping plugs / balance-sheet accounts: no taxonomy home. classify() checks
   // this BEFORE the header, so a recognized header cannot absorb an "Error Deposit"
   // or "Suspense" line silently — it takes the bare section fallback, low-confidence.
-  var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+account|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
+  var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+(account|write|entry)|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
   // …but an insurance line ("Error and Omissions Insurance") or a payables / receivables
   // service ("Accounts Payable Service Fee") is an ordinary expense, not a plug
   var PLUG_NOT = /insurance|omission|(a\/?r|receivable|bad\s+debt|tenant|rent)\s*write[\s-]*off|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;

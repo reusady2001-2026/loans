@@ -22,6 +22,7 @@ function sumRows(rows, section){ return cents(rows.filter(function(r){ return r.
 function noThrow(fn, msg){ try { var v = fn(); ok(true, msg); return v; } catch (e) { ok(false, msg + " — threw " + (e && e.message)); return null; } }
 function run(title, fn){ console.log("\n" + title); try { fn(); } catch (e) { total++; fails++; console.log("  FAIL section threw: " + (e && e.stack || e)); } }
 var CODES = Object.keys(CL.INCOME).concat(Object.keys(CL.EXPENSE));
+function flatGrid(lines){ var g = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"]]; lines.forEach(function(l){ g.push(typeof l === "string" ? [l] : [l[0], 0, 0, 0, l[1]]); }); return g; }
 var C = F.clean(), e = C.expect, p = T12.parseGrid(C.grid);
 
 // ---------------------------------------------------------------------------
@@ -238,7 +239,9 @@ run("E1 · where the operating detail ends (NOI row, TOTAL EXPENSES, summary blo
     eq(ps.totals.income, es.income, tag + "TOTAL INCOME");
     eq(ps.totals.expense, es.expense, tag + "TOTAL EXPENSES");
     eq(ps.totals.noi, es.noi, tag + "NOI");
-    eq(JSON.stringify(ps.footing), JSON.stringify(es.footing), tag + "footing rows = the summary's rows (first wins" + (withNoi ? ")" : "; NOI from the detail)"));
+    eq(JSON.stringify(ps.footing), JSON.stringify(es.detailFooting), tag + "footing rows = the detail's own footing (authoritative), not the summary's");
+    eq(JSON.stringify(ps.summaryTotals), JSON.stringify(es.summaryTotals), tag + "summaryTotals exposed");
+    eq(ps.summaryMismatch, false, tag + "summary agrees with the detail → no mismatch");
     eq(ps.rows.length, es.rows, tag + "detail rows still read");
     eq(ps.categories.length, es.categories.length, tag + "category subtotals still read");
     eq(sumRows(ps.rows, "INCOME"), es.income, tag + "income rows foot");
@@ -248,7 +251,79 @@ run("E1 · where the operating detail ends (NOI row, TOTAL EXPENSES, summary blo
     eq(bs.result.inPlace.noi, es.noi, tag + "in-place NOI ties");
     eq(bs.reconcile.incomeResidual, 0, tag + "no income plug");
     eq(bs.reconcile.expenseResidual, 0, tag + "no expense plug");
+    eq(bs.reconcile.summaryMismatch, false, tag + "reconcile.summaryMismatch false");
+    eq(bs.reconcile.ties, true, tag + "reconcile.ties (the detail genuinely foots)");
   });
+
+  // T3 — a summary that DISAGREES with the detail footing: the detail wins, no silent plug, mismatch flagged
+  var D3 = F.summaryDisagree(), p3 = T12.parseGrid(D3.grid), e3 = D3.expect;
+  eq(JSON.stringify(p3.totals), JSON.stringify({ income: e3.income, expense: e3.expense, noi: e3.noi }), "T3: totals are the DETAIL footing 1,000 / 300 / 700 (not the summary's 1,100 / 300 / 800)");
+  eq(JSON.stringify(p3.summaryTotals), JSON.stringify(e3.summaryTotals), "T3: the summary's 1,100 / 300 / 800 is exposed, not discarded");
+  eq(p3.summaryMismatch, true, "T3: summaryMismatch flagged");
+  ok(p3.warnings.length >= 1, "T3: a warning string is carried (" + JSON.stringify(p3.warnings[0]) + ")");
+  eq(p3.rows.length, e3.rows, "T3: 2 detail rows");
+  eq(sumRows(p3.rows, "INCOME"), e3.incomeRows, "T3: income rows foot to 1,000");
+  var f3 = SB.fromParse(p3);
+  eq(f3.reconcile.incomeResidual, 0, "T3: NO silent +100 OTH plug (detail foots to its own 1,000 total)");
+  eq(f3.sums.OTH, undefined, "T3: OTH is not invented");
+  eq(f3.reconcile.summaryMismatch, true, "T3: reconcile.summaryMismatch true");
+  eq(f3.reconcile.ties, false, "T3: reconcile.ties is FALSE — the operator is not told the statement ties while the summary disagrees");
+  eq(JSON.stringify(f3.reconcile.summaryTotals), JSON.stringify(e3.summaryTotals), "T3: reconcile carries the summary totals for the upload to surface");
+  eq(SB.buildSetup({ parsed: p3 }).result.inPlace.noi, 700, "T3: in-place NOI is the footed 700, not the summary's 800");
+
+  // T4 — a summary tree with a CATEGORY subtotal: twin rule still fires, split survives, category deduped
+  var D4 = F.summaryCategories(), p4 = T12.parseGrid(D4.grid), e4 = D4.expect;
+  eq(JSON.stringify(p4.totals), JSON.stringify({ income: e4.income, expense: e4.expense, noi: e4.noi }), "T4: totals 1,000 / 300 / 700");
+  eq(p4.rows.length, e4.rows, "T4: the detail split survives — 2 rows (not [])");
+  eq(JSON.stringify(p4.categories.map(function(c){ return [c.name, c.amount, c.section]; })), JSON.stringify(e4.categories), "T4: TOTAL RENTAL INCOME appears once (summary/detail twin deduped by name)");
+  var f4 = SB.fromParse(p4);
+  eq(f4.sums.GPR, e4.sums.GPR, "T4: GPR 1,000 (not folded to OTH — UW vacancy would price off 0 if the split were lost)");
+  eq(f4.sums.RET, e4.sums.RET, "T4: RET 300");
+  eq(f4.sums.OTH, undefined, "T4: nothing dumped into OTH");
+  eq(f4.reconcile.incomeResidual, 0, "T4: income foots, no plug");
+  eq(SB.buildSetup({ parsed: p4, units: 10, benchmarks: { vacancyPct: 0.05 } }).result.underwritten.lines.VAC, -50, "T4: UW vacancy = −5% × 1,000 GPR (0 if the split were lost)");
+
+  // T7 — partial twin: a detail with TOTAL INCOME + NOI but no TOTAL EXPENSES keeps its split
+  var D7 = F.summaryPartialTwin(), p7 = T12.parseGrid(D7.grid), e7 = D7.expect;
+  eq(JSON.stringify(p7.totals), JSON.stringify({ income: e7.income, expense: e7.expense, noi: e7.noi }), "T7: totals 1,000 / 300 (from the summary fallback) / 700");
+  eq(p7.rows.length, e7.rows, "T7: 2 detail rows — the un-twinned summary TOTAL EXPENSES did NOT push the detail into belowLine");
+  eq(p7.belowLine.length, e7.belowLine, "T7: nothing in belowLine");
+  eq(sumRows(p7.rows, "EXPENSE"), e7.expenseRows, "T7: the Taxes row is read as an EXPENSE (split intact)");
+  eq(p7.summaryMismatch, false, "T7: summary agrees where it twins → no mismatch");
+  eq(SB.buildSetup({ parsed: p7 }).result.inPlace.noi, 700, "T7: in-place NOI ties");
+
+  // T9 — $0 stub rows above the summary block don't defeat detection
+  var D9 = F.summaryStubs(), p9 = T12.parseGrid(D9.grid), e9 = D9.expect;
+  eq(JSON.stringify(p9.totals), JSON.stringify({ income: e9.income, expense: e9.expense, noi: e9.noi }), "T9: totals 1,000 / 300 / 700 (the two $0 stubs above the summary did not block it)");
+  eq(p9.rows.length, e9.rows, "T9: 4 rows (2 zero stubs + Rent + Taxes)");
+  eq(sumRows(p9.rows, "INCOME"), e9.incomeRows, "T9: income rows (stubs are 0) foot to 1,000");
+  eq(sumRows(p9.rows, "EXPENSE"), e9.expenseRows, "T9: expense rows foot to 300");
+
+  // T6 — a KPI NOI on top with no NOI row below: parses fully, footed NOI authoritative
+  var D6 = F.kpiNoiTop(), p6 = T12.parseGrid(D6.grid), e6 = D6.expect;
+  eq(JSON.stringify(p6.totals), JSON.stringify({ income: e6.income, expense: e6.expense, noi: e6.noi }), "T6: totals 1,000 / 300 / 700 (NOI derived from the footing, not the KPI 500)");
+  eq(p6.summaryTotals.noi, e6.summaryNoi, "T6: the KPI 500 is recorded in summaryTotals.noi");
+  eq(p6.footing.noiRow, e6.noiRow, "T6: no authoritative NOI row (derived) → footing.noiRow -1");
+  eq(p6.rows.length, e6.rows, "T6: the whole statement is read (2 rows), not broken at row 1");
+  eq(SB.buildSetup({ parsed: p6 }).result.inPlace.noi, 700, "T6: in-place NOI 700");
+});
+
+run("E1 · mixed-case 'Gross <roll-up>' rows are subtotals (item 3)", function(){
+  ["Gross Income", "Gross Revenue", "Gross Operating Income"].forEach(function(l){
+    var G = F.titleGross(l), q = T12.parseGrid(G.grid), ex = G.expect, L = JSON.stringify(l);
+    eq(q.rows.filter(function(r){ return r.name === l; }).length, 0, L + " (title-case roll-up) is NOT a detail row");
+    eq(q.rows.length, ex.rows, L + ": 3 detail rows (Gross Rent, Less: Vacancy, Other Income)");
+    eq(sumRows(q.rows, "INCOME"), ex.income, L + ": income rows foot to 960 (no double count)");
+    eq(q.totals.income, ex.income, L + ": TOTAL INCOME 960");
+    eq(q.totals.noi, ex.noi, L + ": NOI 860");
+    var fq = SB.fromParse(q);
+    eq(fq.reconcile.incomeResidual, ex.incomeResidual, L + ": incomeResidual 0 (no plug masking a double count)");
+    eq(fq.sums.GPR, ex.gpr, L + ": Gross Rent still classified GPR 1,000");
+    ok(!fq.review.some(function(x){ return x.name === l; }), L + " is not surfaced in review");
+  });
+  // "Gross Rent" stays a DETAIL line (guarded by the ALL-CAPS/roll-up split)
+  var gr = T12.parseGrid(F.titleGross("GROSS INCOME").grid).rows.filter(function(r){ return r.name === "Gross Rent"; })[0];
+  eq(gr && gr.amount, 1000, "'Gross Rent' remains a detail row alongside an ALL-CAPS GROSS INCOME subtotal");
 });
 
 run("E1 · mixed-case 'Gross …' captions are detail lines; ALL-CAPS 'GROSS …' is a subtotal", function(){
@@ -309,8 +384,10 @@ run("E3 · expense-side bad debt rides its own pass-through line (a G&A budget n
   eq(fq.sums.BDX, 30, "sums.BDX = 30.00 is the source of truth (the store's own code)");
   eq(fq.sums.GA, 20, "…G&A carries only its own 20.00 (nothing folded in)");
   eq(SB.fromParse({ rows: [{ name: "x", amount: 7, section: "EXPENSE" }].map(function(r){ return r; }), totals: {} }).sums.BDX, undefined, "a non-bad-debt expense line does not create BDX");
+  eq(CL.classify("Bad Debt", "EXPENSE", "RENTAL INCOME"), "BD", "the classifier calls a bare 'Bad Debt' under a RENTAL INCOME sub BD (income-role), even in the expense section — so the BD→BDX safety branch is REACHABLE, not dead");
   var routed = SB.fromParse({ rows: [{ name: "Bad Debt", amount: 12, section: "EXPENSE", sub: "RENTAL INCOME" }], totals: {} });
-  ok(routed.sums.BDX === 12 || routed.sums.BDX === undefined && CL.classify("Bad Debt", "EXPENSE", "RENTAL INCOME") === "BDX", "an expense-section line the classifier still calls BD is routed to BDX, never G&A (GA=" + routed.sums.GA + ")");
+  eq(routed.sums.BDX, 12, "…and that BD-in-the-expense-section line is routed to BDX (its expense-side home), exercising setup-builder's safety branch");
+  eq(routed.sums.GA, undefined, "…never folded into G&A");
   eq(fq.sums.BD, undefined, "no income-side BD is invented");
   eq(fq.reconcile.expenseResidual, 0, "expense section still foots to the printed 150.00");
   var b0 = SB.buildSetup({ parsed: q, units: 10, benchmarks: { reservePerUnit: 0 } });
@@ -352,6 +429,11 @@ run("E1 · header / footing detection edge cases", function(){
   var decoy = [[null, "Jul 2025", "Aug 2025", "Sep 2025", "Total"], ["Total", 1, 2, 3, 6]];
   eq(T12.findHeader(decoy).headerRow, 0, "a data row named 'Total' is not the header");
   eq(T12.findHeader([["Cash Flow (12 months)"], ["Total", 5]]).headerRow, -1, "metadata / a lone 'Total' cell is not a header");
+  eq(T12.findHeader([["Total", "Jan 2025", "Feb 2025", "Mar 2025"]]).headerRow, -1, "a 'Total' caption in column 0 (the row-label header) is not the totals column → not accepted as a header");
+  eq(T12.findHeader([[null, "Jan 2025", "Feb 2025", "Mar 2025", "Total"]]).cols.total, 4, "…but a 'Total' caption to the RIGHT of the months is the totals column");
+  var noAmtTwin = T12.parseGrid(flatGrid([["Rent", 1000], ["TOTAL INCOME", 1000], "TOTAL INCOME", "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]));
+  eq(noAmtTwin.totals.income, 1000, "twinBelow ignores an amount-less 'TOTAL INCOME' header row (it is a section header, not a footing twin)");
+  eq(noAmtTwin.summaryTotals, null, "…so the real TOTAL INCOME is the statement's own footing, not a summary");
   var dh = T12.findHeader([["Description", "Marketing", "Jul 2025", "August 2025", "Sep-25", "Total"]]);
   eq(JSON.stringify([dh.headerRow, dh.months]), JSON.stringify([0, [2, 3, 4]]), "'Description' / 'Marketing' header cells are not month columns (3-letter or full month names only)");
   eq(T12.parseGrid(F.twoLabelColumns(C.grid, e.headerRow).map(function(r, i){ return i === e.headerRow ? ["Category", "Description"].concat(r.slice(2)) : r; })).totals.noi, e.noi, "column-A/column-B labels still found with a 'Description' header cell");

@@ -3,7 +3,7 @@
    that feed NOI -> DSCR / DY / LTV), persisted under ONE localStorage key,
    "ldsHub.operating.v1". It is a separate, isolated store: this module never
    reads or writes any other key (the loans live in "ldsHub.loans.v7") and never
-   touches a loan object. One record per property key (OPERATING-CONTRACT.md Â§1),
+   touches a loan object. One record per property key (OPERATING-CONTRACT.md section 1),
    shared by every loan on that property - senior and mezz read the same NOI.
    Dollars are stored ANNUAL; the UI converts for a monthly display.
    Every write persists immediately (exactly one save per call); reads hand out
@@ -21,7 +21,7 @@
   var KEY = "ldsHub.operating.v1", VERSION = 1;
   var SOURCES = { t12: 1, manual: 1, budget: 1 };
 
-  // Controllable defaults per contract Â§3, kept LOCAL so this module stays
+  // Controllable defaults per contract section 3, kept LOCAL so this module stays
   // dependency-free (the taxonomy module is built concurrently): taxes and
   // insurance are the two lines an owner cannot push, every other expense -
   // and every income line - defaults to controllable. Unknown codes default
@@ -41,7 +41,7 @@
   function reserved(k){ return k === "__proto__" || k === "constructor" || k === "prototype"; }
   function defaultControllable(code){ return has(CONTROLLABLE_DEFAULT, code) ? CONTROLLABLE_DEFAULT[code] : true; }
 
-  // The 33 taxonomy codes (contract Â§3 + BDX, bad-debt expense, after GA). Lines are keyed by these and nothing
+  // The 33 taxonomy codes (contract section 3 + BDX, bad-debt expense, after GA). Lines are keyed by these and nothing
   // else: a stray or mis-cased code ("FOO", "gpr") would be silently excluded
   // from every total downstream, so setLine/setLines reject it and load() drops
   // it. The live taxonomy module is consulted AT CALL TIME when present (node:
@@ -117,9 +117,9 @@
   function st(){ if (!_state) load(); return _state; }
 
   // Bring whatever was stored up to the v1 shape without losing data:
-  //  â¢ the v1 wrapper { version, records } - version missing, older or newer;
-  //  â¢ the SPEC-draft flat map { key: record } that had no wrapper at all;
-  //  â¢ records / lines with fields missing (filled with the schema defaults).
+  //  - the v1 wrapper { version, records } - version missing, older or newer;
+  //  - the SPEC-draft flat map { key: record } that had no wrapper at all;
+  //  - records / lines with fields missing (filled with the schema defaults).
   // Idempotent: re-normalizing a v1 state changes nothing. Garbage entries
   // (non-object records, lines without a readable amount or under an unknown
   // code, reserved keys) are dropped.
@@ -137,7 +137,7 @@
     var createdAt = strOrNull(meta.createdAt) || lastUpdated;
     var lines = {}, src = isObj(r.lines) ? r.lines : {};
     for (var c in src) if (has(src, c) && !reserved(c) && list.indexOf(c) >= 0 && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
-    return {                                      // field order = contract Â§2 order, so the persisted JSON is canonical
+    return {                                      // field order = contract section 2 order, so the persisted JSON is canonical
       propKey: key,                               // the map key is authoritative over a stored propKey
       propertyName: typeof r.propertyName === "string" ? r.propertyName : (typeof r.name === "string" ? r.name : ""),
       units: unitsOrNull(toNum(r.units)),
@@ -328,7 +328,7 @@
     delete recs[k]; save();
     return true;
   }
-  // Move a record to a new Â§1 key - an address edit changes the key, and the
+  // Move a record to a new section 1 key - an address edit changes the key, and the
   // operating data must follow it rather than be orphaned. The record object
   // moves as-is (lines, assumptions, meta, units, period all preserved); only
   // propKey changes, and being identity it does not stamp lastUpdated. Refuses
