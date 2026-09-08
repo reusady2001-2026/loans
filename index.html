@@ -1147,10 +1147,10 @@
         <div id="aiT12ConnRow" class="text-sm"></div>
         <div id="aiT12Settings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
         <div id="aiT12Drop" class="rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition">
-          <input id="aiT12File" type="file" accept=".md,.markdown,.txt,.text" class="hidden">
+          <input id="aiT12File" type="file" accept=".xlsx,.xls,.csv,.md,.markdown,.txt,.text" class="hidden">
           <svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
           <p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 here, or <button type="button" id="aiT12FileBtn" class="text-brand-700 underline">choose a file</button></p>
-          <p class="mt-1 text-[11px] text-slate-400">A text or Markdown copy of the T12 (.md / .txt) &mdash; convert a PDF to text first, then drop it here &mdash; or paste it below.</p>
+          <p class="mt-1 text-[11px] text-slate-400">The T12 as an Excel/CSV file (.xlsx / .xls / .csv) &mdash; it is saved to the selected property&rsquo;s folder and read here. A text/Markdown copy (.md / .txt), or pasted text, is read by Claude instead.</p>
         </div>
         <div>
           <label for="aiT12Paste" class="block text-[11px] font-semibold text-slate-500 mb-1">&hellip;or paste the T12 text</label>
@@ -3403,7 +3403,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // the DSCR / debt-yield / LTV shown everywhere (see loanNOI). The modules load from <head>;
     // if one is missing (an older build) these sections simply don't render.
     let opFocusKey = "", opBasis = "annual", opInited = false;
-    function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.OperatingSheet && window.OperatingAssumptions && window.PortfolioRollup && window.ActionScan); }
+    function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.OperatingSheet && window.OperatingAssumptions && window.PortfolioRollup); }
     // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
     // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
     // OperatingStore is a SESSION cache only — backed by this in-memory shim, so it persists nothing —
@@ -3462,6 +3462,15 @@ tr[data-loan]:hover td{background:#eef2f7}
         await opEnsureFromDisk(key);
       }
       renderUnderwriting();
+    }
+    // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
+    // so it re-reads only after an upload), then refresh those two panels. Reading, not storing.
+    let opPreloading = false;
+    async function opPreloadAllThenPortfolio(){
+      if(opPreloading || !opReady()) return; opPreloading = true;
+      try{ for(const pr of opProperties()){ await opEnsureFromDisk(pr.key); } }catch(e){}
+      opPreloading = false;
+      try{ opRenderPortfolio(); }catch(e){}
     }
     // base64 → Uint8Array; a workbook's first T12-shaped sheet → a header:1 grid (or null).
     function opB64ToBytes(b64){ const bin = atob(b64), n = bin.length, out = new Uint8Array(n); for(let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
@@ -3708,7 +3717,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const tail = document.createElement("div"); tail.className = "space-y-6";
       tail.innerHTML =
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Portfolio roll-up</h3><div id="opRollupMount" class="mt-2 overflow-x-auto"></div></div>'+
-        '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What needs to be pushed right now</h3><div id="opScanMount" class="mt-2"></div></div>';
+        '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What to push on this property</h3><div id="opScanMount" class="mt-2"></div></div>';
       view.appendChild(tail);
       card.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
       card.querySelector("#opManage").addEventListener("click", opManageEvent);
@@ -3733,6 +3742,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         + tile("DSCR (combined)", stack.dscr != null ? stack.dscr.toFixed(2)+"&times;" : "&mdash;") + tile("Debt yield / LTV", (stack.dy != null ? fmtPct(stack.dy) : "&mdash;")+" / "+(stack.ltv != null ? fmtPct(stack.ltv) : "&mdash;"));
       lo.innerHTML = OperatingCalc.perLoan(record, members, hooks).map(r => { const l = members.find(m => m._id === r.loanId) || {};
         return '<span class="mr-3">'+escapeHtml(String(l.lenderName || l.propertyName || r.loanId))+(isMezz(l) ? ' (mezz)' : '')+': DSCR '+(r.dscr != null ? r.dscr.toFixed(2)+'&times;' : '&mdash;')+' &middot; DY '+(r.dy != null ? fmtPct(r.dy) : '&mdash;')+' &middot; LTV '+(r.ltv != null ? fmtPct(r.ltv) : '&mdash;')+'</span>'; }).join("");
+      // No T12 in this property's folder yet → say so and point at the two ways to add one. The T12 is
+      // read from the property's folder; there is nothing to show until one is saved there.
+      if(!hasLines){
+        sheet.innerHTML = '<div class="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No T12 saved for <b class="text-slate-700">'+escapeHtml((p&&p.name)||key)+'</b> yet.<br>Drop its T12 in the box below (or use &ldquo;Read T12 with Claude&rdquo;) &mdash; it is saved in this property&rsquo;s folder and read here.</div>';
+        asm.innerHTML = ""; return;
+      }
       // The store validates strictly and THROWS on a bad write (NaN, unknown source…); surface it, never leave an uncaught error.
       const write = (fn) => { try{ opEnsure(key); fn(); }catch(e){ toast("Not saved: " + String((e && e.message) || e).slice(0, 140), "error"); } opAfterChange(); };
       // Codes the engine laid out no line for (not in the taxonomy) — their dollars are NOT in any total; never hide that.
@@ -3749,16 +3764,90 @@ tr[data-loan]:hover td{background:#eef2f7}
       OperatingAssumptions.render(asm, { record, globalDefaults: gd,
         onChange: (patch) => write(() => OperatingStore.setAssumptions(key, patch)),
         onReset: () => write(() => OperatingStore.setAssumptions(key, null)) });
+      try{ opRenderPush(); }catch(e){}
+    }
+    // ---- "What to push on this property" — the real question Azriel asked: for THIS property, which
+    // operating levers do we lean on to grow NOI (drop vacancy, raise rents, cut a specific cost)?
+    // Answered by the embedded Claude, grounded in the property's own T12 line items. Per property,
+    // on demand (a Claude call is not free), results cached for the session only.
+    const opPushCache = new Map();   // propKey -> {loading} | {error} | {summary, levers}
+    function aiPushSchema(){
+      return { type:"object", properties:{
+        summary:{ type:"string" },
+        levers:{ type:"array", items:{ type:"object", properties:{
+          lever:{ type:"string" }, direction:{ type:"string" }, priority:{ type:"string" },
+          rationale:{ type:"string" }, estimatedAnnualImpact:{ type:["number","null"] }
+        }, required:["lever","direction","priority","rationale"] } }
+      }, required:["summary","levers"] };
+    }
+    var AI_PUSH_INSTRUCTION = [
+      "You are a multifamily asset manager reviewing ONE property's trailing-12-month operating statement, provided as JSON on stdin: { property, units, inPlaceNOI, income:[{label,annual}], expense:[{label,annual,controllable}], benchmarks }.",
+      "Answer the operator's question: what should we PUSH on THIS property to grow its NOI, and what matters less? Think in operating levers, not loan covenants — do NOT discuss DSCR, maturities, or refinancing.",
+      "Weigh at least: (1) VACANCY / credit loss — is the vacancy + concessions + bad-debt drag large versus the gross rent, i.e. is there room to push occupancy? (2) RENT — does gross potential rent per unit look low, i.e. push rents / loss-to-lease? (3) each EXPENSE line — which specific lines are high per unit or as a share of income and are controllable, i.e. cut them (name the line). Reserves/taxes/insurance are largely fixed — say so rather than proposing to cut them.",
+      "Return 3 to 6 levers, MOST IMPACTFUL FIRST. For each: lever (the specific line name, or \"Vacancy\" / \"Rent\"), direction (\"reduce\" or \"increase\"), priority (\"high\"/\"medium\"/\"low\"), a concrete rationale that cites THIS property's own figures (e.g. \"R&M is $1,240/unit, ~2x a typical $600\"), and estimatedAnnualImpact in dollars when the data supports a number, else null.",
+      "Use ONLY figures derivable from the input — never invent a market rent or a comp you were not given; if you lack a benchmark, say the operator should compare to their submarket. One-line summary in `summary`. Return JSON via the structured-output tool."
+    ].join("\n");
+    function opPushInput(key){
+      const rec = OperatingStore.get(key); if(!rec || !window.OperatingTaxonomy || !window.OperatingCalc) return null;
+      const gd = uwState.input.bench, T = OperatingTaxonomy, L = rec.lines || {};
+      const derived = OperatingCalc.derive(rec, gd);
+      const income = [], expense = [];
+      Object.keys(L).forEach(code => { const ln = L[code]; if(!ln) return; const amt = Number(ln.annual); if(!isFinite(amt)) return;
+        const row = { label: T.label(code), annual: Math.round(amt * 100) / 100 };
+        if(T.role(code) === "income") income.push(row);
+        else expense.push(Object.assign(row, { controllable: (typeof ln.controllable === "boolean") ? ln.controllable : T.defaultControllable(code) })); });
+      const p = opProp(key), units = (rec.units) || (p && p.loans[0] && p.loans[0].units) || null;
+      return { property: (p && p.name) || key, units: units, inPlaceNOI: derived.inPlaceNOI,
+        income: income, expense: expense, benchmarks: { vacancyPct: gd.vacancyPct, mgmtPct: gd.mgmtPct, reservePerUnit: gd.reservePerUnit } };
+    }
+    function opRunPush(key){
+      if(!aiAvailable()){ toast("Reading with Claude needs the desktop app and a connected Claude.","error"); return; }
+      const input = opPushInput(key); if(!input){ opPushCache.set(key, { error: "No T12 for this property yet." }); opRenderPush(); return; }
+      opPushCache.set(key, { loading: true }); opRenderPush();
+      ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 300000 })
+        .then((r) => { if(opFocusKey !== key && opPushCache.has(key)){} 
+          if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude couldn’t analyse this property." }); }
+          else { const d = r.data || {}; opPushCache.set(key, { summary: d.summary || "", levers: Array.isArray(d.levers) ? d.levers : [] }); }
+          opRenderPush(); })
+        .catch((e) => { opPushCache.set(key, { error: String((e && e.message) || e) }); opRenderPush(); });
+    }
+    function opRenderPush(){
+      const mount = el("opScanMount"); if(!mount) return;
+      const key = opFocusKey;
+      if(!key){ mount.innerHTML = '<p class="text-sm text-slate-400">Pick a property above to analyse what to push on it.</p>'; return; }
+      const p = opProp(key), who = escapeHtml((p && p.name) || key);
+      const hasT12 = !!(OperatingStore.get(key) && OperatingStore.get(key).lines && Object.keys(OperatingStore.get(key).lines).length);
+      const state = opPushCache.get(key);
+      const btn = '<button type="button" id="opPushRun" class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"'+((!hasT12||(state&&state.loading))?' disabled':'')+'>'+(state&&state.levers?"Re-analyse":"Analyse what to push")+' with Claude</button>';
+      const head = '<div class="flex items-center justify-between gap-2"><p class="text-[12px] text-slate-500">For <b class="text-slate-700">'+who+'</b>: which operating levers to push to grow NOI &mdash; reasoned by Claude from this property&rsquo;s T12.</p>'+btn+'</div>';
+      let body = "";
+      if(!hasT12) body = '<p class="mt-2 text-sm text-slate-400">Upload this property&rsquo;s T12 first, then analyse.</p>';
+      else if(state && state.loading) body = '<p class="mt-3 text-sm text-slate-500 inline-flex items-center gap-2"><svg class="h-4 w-4 animate-spin text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Claude is reviewing '+who+'&rsquo;s operating lines…</p>';
+      else if(state && state.error) body = '<p class="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">'+escapeHtml(state.error)+'</p>';
+      else if(state && state.levers){
+        const pill = (pr)=>{ const c = pr==="high"?"bg-rose-100 text-rose-700":pr==="medium"?"bg-amber-100 text-amber-800":"bg-slate-100 text-slate-600"; return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+c+'">'+escapeHtml(pr||"")+'</span>'; };
+        const rows = state.levers.map((lv,i)=> '<li class="rounded-xl border border-slate-200 bg-white px-3 py-2">'+
+          '<div class="flex items-center justify-between gap-2"><div class="font-semibold text-slate-800">'+(i+1)+'. '+escapeHtml(lv.direction==="reduce"?"Reduce ":lv.direction==="increase"?"Increase ":"")+escapeHtml(lv.lever||"")+'</div><div class="flex items-center gap-2">'+(lv.estimatedAnnualImpact!=null?'<span class="text-xs font-bold tabular-nums text-emerald-700">'+fmtMoney(lv.estimatedAnnualImpact)+'/yr</span>':'')+pill(lv.priority)+'</div></div>'+
+          '<p class="mt-1 text-[12px] text-slate-600">'+escapeHtml(lv.rationale||"")+'</p></li>').join("");
+        body = (state.summary?'<p class="mt-2 text-[12px] font-semibold text-slate-700">'+escapeHtml(state.summary)+'</p>':'')+'<ul class="mt-2 space-y-2">'+rows+'</ul>'+
+          '<p class="mt-2 text-[10px] text-slate-400">Claude&rsquo;s read of this property&rsquo;s T12 — a starting point for judgement, not advice; verify against your submarket.</p>';
+      } else body = '<p class="mt-2 text-sm text-slate-400">Analyse this property to see which levers to push.</p>';
+      mount.innerHTML = head + body;
+      const run = el("opPushRun"); if(run) run.addEventListener("click", ()=> opRunPush(key));
     }
     function opRenderPortfolio(){
-      const rm = el("opRollupMount"), sm = el("opScanMount"); if(!rm || !sm) return;
+      const rm = el("opRollupMount"); if(!rm) return;
       opInit();
       const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
       const open = (k) => { opSelectProperty(k); };
-      // Each panel is isolated: a bad record must never blank the other panel or the page — say what broke instead.
-      const failed = (host, what, e) => { host.innerHTML = '<p class="text-sm text-rose-600">'+what+' couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; };
-      try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ failed(rm, "The portfolio roll-up", e); }
-      try{ ActionScan.render(sm, ActionScan.scan(records, loans, hooks, gd, {}), { onOpen: open }); }catch(e){ failed(sm, "The action list", e); }
+      try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
+      // The roll-up covers only the properties whose T12 has been read from disk this session (opened,
+      // or loaded on demand) — the app never eagerly reads every folder on open. Offer a one-click load.
+      const total = opProperties().length, loaded = opProperties().filter(pr => OperatingStore.get(pr.key)).length;
+      if(loaded < total){ const bar = document.createElement("div"); bar.className = "mt-2 flex items-center gap-2 text-[11px] text-slate-500";
+        bar.innerHTML = '<span>Showing '+loaded+' of '+total+' properties (those whose T12 has been read).</span><button type="button" id="opLoadAll"'+(opPreloading?' disabled':'')+' class="rounded border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">'+(opPreloading?"Reading…":"Load every property\u2019s T12")+'</button>';
+        rm.appendChild(bar); const b = bar.querySelector("#opLoadAll"); if(b) b.addEventListener("click", opPreloadAllThenPortfolio); }
+      try{ opRenderPush(); }catch(e){}
     }
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
@@ -3893,9 +3982,25 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); aiT12RefreshConn(); aiT12RenderSettings(); }); });
       if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); aiT12RefreshConn(); aiT12RenderSettings(); }); });
     }
-    function aiT12HandleFile(file){
+    async function aiT12HandleFile(file){
       if(!file) return;
-      const name = file.name||"T12";
+      const name = file.name||"T12", ext = (name.split(".").pop()||"").toLowerCase();
+      // A spreadsheet T12 is saved straight into the SELECTED property's folder and read by the exact
+      // rules parser (Claude isn't needed for a clean Excel) — the same place and result as a drop.
+      if(ext==="xlsx"||ext==="xls"||ext==="csv"){
+        if(!opFocusKey){ aiT12SetStatus("Pick a property in the Underwriting window first, then upload its T12 here.","error"); return; }
+        if(!(window.ldsShell && ldsShell.docSave)){ aiT12SetStatus("Saving a T12 to a property needs the desktop app.","error"); return; }
+        let okGrid=false; try{ const buf=await file.arrayBuffer(); okGrid=!!opGridFromWorkbook(new Uint8Array(buf)); }catch(e){ okGrid=false; }
+        if(!okGrid){ aiT12SetStatus("Couldn\u2019t find a T12 sheet in that file (needs a Total column and month columns).","error"); return; }
+        aiT12SetStatus('Saving <b>'+escapeHtml(name)+'</b> to the property folder\u2026',"info");
+        const key=opFocusKey, who=(opProp(key)||{}).name||"this property";
+        const r = await opDiskSaveT12(key, file);
+        if(!r || !r.ok){ aiT12SetStatus("Couldn\u2019t save the T12 ("+escapeHtml((r&&r.error)||"unknown")+").","error"); return; }
+        await opSelectProperty(key); aiT12Close();
+        const noi=(uwState.input.t12Meta&&uwState.input.t12Meta.totals&&uwState.input.t12Meta.totals.noi);
+        toast(who+": T12 saved to the property folder"+(noi!=null?" \u2014 statement NOI "+uwFmt(noi):"")+".","check");
+        return;
+      }
       if(file.size > 8*1024*1024){ aiT12SetStatus("That file is large ("+Math.round(file.size/1024/1024)+" MB). Use a text/Markdown copy of the T12, not a scanned PDF.","error"); return; }
       const reader = new FileReader();
       reader.onload = (e)=> aiT12ExtractAndBuild(String(e.target.result||""), name);
