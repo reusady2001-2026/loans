@@ -56,7 +56,7 @@
   var PLUG = /opening\s+balance|\bdifference\b|\bsuspense\b|clearing\s+account|^clearing$|do\s+not\s+use|old\s+code|receivable|payable|depository|\berror\b/;
   // …but an insurance line ("Error and Omissions Insurance") or a payables / receivables
   // service ("Accounts Payable Service Fee") is an ordinary expense, not a plug
-  var PLUG_NOT = /insurance|omission|write[\s-]*off|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;
+  var PLUG_NOT = /insurance|omission|(a\/?r|receivable|bad\s+debt|tenant|rent)\s*write[\s-]*off|(payable|receivable)s?\s+(service|processing|fee|software|system|automation|clerk|manager|outsourc)/;
   function isPlug(s){ return PLUG.test(s) && !PLUG_NOT.test(s); }
   // Bad debt: the rental-block deduction BD when the statement prints it under
   // INCOME; the expense row BDX when it is booked on the EXPENSE side — flat or

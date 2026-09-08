@@ -76,7 +76,7 @@
         }
         var s = str(v).toLowerCase(); if (!s) continue;
         cells++;
-        if (TOTAL_RE.test(s)) { if (total < 0) total = c; continue; }
+        if (TOTAL_RE.test(s)) { if (total < 0 && c > 0) total = c; continue; }   // a "Total" in col 0 is the label header, not the totals column
         var p = periodOf(s); if (p) { if (t["t"+p] == null) t["t"+p] = c; continue; }
         if (MONTH_RE.test(s)) mon.push(c);
       }
@@ -160,7 +160,8 @@
       }
       return "";
     }
-    // Does the same footing (with an amount) print again further down the sheet?
+    // Does the same footing print again further down the sheet, carrying an amount? (An
+    // amount-less twin is a section header, not a footing, so it does not confirm a summary.)
     function twinBelow(kind, from){
       var re = kind === "income" ? RE_INCTOT : kind === "expense" ? RE_EXPTOT : RE_NOI;
       for (var i = from + 1; i < grid.length; i++){
@@ -183,7 +184,14 @@
     var TOP = /^(INCOME|EXPENSES?|EXPENDITURES?|OPEX|OPERATING\s+(INCOME|EXPENSES?|EXPENDITURES?)|OPERATING\s+REVENUES?|REVENUES?|GROSS\s+(INCOME|REVENUE))$/;
     var rows = [], categories = [], belowLine = [], totals = { income: null, expense: null, noi: null };
     var footing = { incomeRow: -1, expenseRow: -1, noiRow: -1 };
-    var phase = "income", sub = "";
+    // A statement can print a SUMMARY block (its top-line totals, sometimes with category
+    // subtotals) ABOVE the detail. Those figures are a fallback only: the DETAIL footing the
+    // rows actually add up to is authoritative and overrides them, and any disagreement is
+    // surfaced (summaryTotals + a warning) rather than silently absorbed into a residual plug.
+    var summaryTotals = { income: null, expense: null, noi: null };
+    var summaryFooting = { incomeRow: -1, expenseRow: -1, noiRow: -1 };
+    var detailFooted = {}, catSeen = {}, warnings = [];
+    var phase = "income", sub = "", inSummary = false, nzRows = 0;
     for (var r = dataStart; r < grid.length; r++){
       var row = grid[r]; if (!row || typeof row !== "object") continue;
       var name = labelOf(row);
@@ -195,7 +203,12 @@
       // REVENUE); mixed-case "Gross Rent" / "Gross Rental Income" and any "Gross
       // Potential/Scheduled/Market Rent" are the top-line DETAIL of a rent build-up —
       // dropping them zeroed GPR, so underwritten vacancy priced off nothing.
+      // A "Gross …" row is a subtotal when it names an income roll-up — GROSS INCOME /
+      // REVENUE / OPERATING (INCOME) / PROFIT, in ANY case — or when printed ALL-CAPS; a
+      // mixed-case "Gross Rent" / "Gross Rental Income" (and any "Gross Potential/Scheduled/
+      // Market Rent") is the top-line DETAIL of a rent build-up. Dropping the detail zeroed GPR.
       var isTotal = foot != null || /^(TOTAL|SUB-?TOTAL|NET)\b/.test(up)
+                 || /^GROSS\s+(INCOME|REVENUES?|OPERATING|PROFIT)\b/.test(up)
                  || (isCaps(name) && /^GROSS\b/.test(up) && !/^GROSS\s+(POTENTIAL|SCHEDULED|MARKET)\b/.test(up));
       var section = (phase === "income") ? "INCOME" : "EXPENSE";
 
@@ -208,26 +221,54 @@
         sub = name; continue;
       }
       if (isTotal){                                            // a subtotal / footing row
-        // A footing met before ANY detail row, whose twin prints again further down, is a
-        // summary block above the statement: keep its figures (first wins) but keep
-        // scanning — the detail's own footing rows drive the split and end the detail.
-        var summary = foot != null && !rows.length && !categories.length && twinBelow(foot, r);
-        if (foot === "income"){ if (totals.income == null){ totals.income = amt; footing.incomeRow = r; } if (!summary && phase === "income"){ phase = "expense"; sub = ""; } }
-        else if (foot === "expense"){ if (totals.expense == null){ totals.expense = amt; footing.expenseRow = r; } if (!summary) phase = "below"; }   // ends the operating detail whatever phase came before
-        else if (foot === "noi"){ if (totals.noi == null){ totals.noi = amt; footing.noiRow = r; } if (!summary) break; }   // operating bottom line — stop here; rows below (debt service, depreciation, net income) are non-operating and must not be read as income/expense
-        else if (phase === "below") belowLine.push({ name: name, amount: amt, row: r });
-        else if (isCaps(name)) categories.push({ name: name, amount: amt, section: section, row: r });
+        if (foot != null){
+          // A footing seen before any NON-ZERO detail row belongs to a summary block above
+          // the statement when its twin prints again below, when we are already inside such a
+          // block (so a partial summary whose own twin is missing still doesn't end the
+          // detail), or when it's a KPI NOI printed on top before any income total exists.
+          var isSummary = nzRows === 0 && (twinBelow(foot, r) || inSummary || (foot === "noi" && totals.income == null));
+          if (isSummary){
+            inSummary = true;
+            if (summaryTotals[foot] == null){ summaryTotals[foot] = amt; summaryFooting[foot + "Row"] = r; }
+            continue;                                          // a summary line never changes phase or ends the detail
+          }
+          // the DETAIL footing — authoritative; it overrides a summary's provisional figure
+          if (totals[foot] == null || !detailFooted[foot]){ totals[foot] = amt; footing[foot + "Row"] = r; detailFooted[foot] = true; }
+          if (foot === "income"){ if (phase === "income"){ phase = "expense"; sub = ""; } }
+          else if (foot === "expense") phase = "below";        // TOTAL EXPENSES ends the operating detail from any phase
+          else if (foot === "noi") break;                      // operating bottom line — rows below (debt service, depreciation, net income) are not operating
+          continue;
+        }
+        if (phase === "below") belowLine.push({ name: name, amount: amt, row: r });
+        else if (isCaps(name)){                                // ALL-CAPS "TOTAL <category>" subtotal — dedupe a summary/detail twin by name (first wins)
+          if (!catSeen[up]){ catSeen[up] = 1; categories.push({ name: name, amount: amt, section: section, row: r }); }
+        }
         continue;                                              // never counted as a detail line
       }
       if (phase === "below"){ belowLine.push({ name: name, amount: amt, row: r }); continue; }
       rows.push({ name: name, amount: amt, section: section, sub: sub, row: r });
+      if (amt) nzRows++;                                       // $0 stub rows above a summary block must not defeat its detection
     }
+    // A total only the summary printed (e.g. no detail TOTAL EXPENSES) still stands as a fallback.
+    var hasSummary = summaryTotals.income != null || summaryTotals.expense != null || summaryTotals.noi != null;
+    ["income", "expense", "noi"].forEach(function (k){
+      if (totals[k] == null && summaryTotals[k] != null){ totals[k] = summaryTotals[k]; footing[k + "Row"] = summaryFooting[k + "Row"]; }
+    });
+    // Flag a summary whose figure disagrees with the statement's own detail footing (the one
+    // the rows add up to) — the authoritative total wins, but the operator must be told.
+    var summaryMismatch = false;
+    if (hasSummary) ["income", "expense", "noi"].forEach(function (k){
+      if (detailFooted[k] && summaryTotals[k] != null && Math.abs(summaryTotals[k] - totals[k]) > 0.005) summaryMismatch = true;
+    });
+    if (summaryMismatch) warnings.push("summary totals differ from the statement's own footing; using the footing the detail lines add up to");
     // Derived NOI as a cross-check / fallback when a statement omits the NOI row
     // (printed figures are cents, so keep their difference in cents).
     if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = Math.round((totals.income - totals.expense) * 100) / 100;
     return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
              basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
-             rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine };
+             rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine,
+             summaryTotals: hasSummary ? summaryTotals : null, summaryFooting: hasSummary ? summaryFooting : null,
+             summaryMismatch: summaryMismatch, warnings: warnings };
   }
 
   return { parseGrid: parseGrid, findHeader: findHeader };

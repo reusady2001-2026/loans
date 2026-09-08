@@ -105,9 +105,13 @@
     Object.keys(expSum).forEach(function(k){ sums[k] = r2((sums[k] || 0) + expSum[k]); expBuilt += expSum[k]; });
     var noi = (pNoi != null) ? pNoi : (pInc != null && pExp != null) ? r2(pInc - pExp) : null;
     var built = r2(incBuilt - expBuilt);
+    // A summary block that disagreed with the detail footing (t12-parse flags it) is surfaced
+    // here too, and suppresses the "ties" signal so the upload never toasts a false all-clear.
+    var sm = !!parsed.summaryMismatch;
     var reconcile = { incomeRaw: incRaw, expenseRaw: expRaw, incomeResidual: di, expenseResidual: de,
                       noiBuilt: built, noiPrinted: noi, noiDiff: (noi != null) ? r2(built - noi) : null,
-                      ties: (noi != null && Math.abs(built - noi) < 0.005) };
+                      ties: (noi != null && Math.abs(built - noi) < 0.005 && !sm),
+                      summaryMismatch: sm, summaryTotals: parsed.summaryTotals || null };
     return { sums: sums, inPlaceNOI: noi, totals: totals, review: review, reconcile: reconcile, expenseBadDebt: (expSum.BDX || 0) };
   }
 

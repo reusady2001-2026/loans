@@ -242,11 +242,59 @@ function gprStyle(opts){
 // the footing rows the parser must report (first wins) and the detail must still be split.
 function summaryFirst(opts){
   opts = opts || {};
-  var b = new Builder(); body(b, { summary: true, summaryNoi: opts.noiInSummary !== false });
+  var withNoi = opts.noiInSummary !== false;
+  var b = new Builder(); body(b, { summary: true, summaryNoi: withNoi });
   var e = withFooting(CLEAN_EXPECT, b.at), s = b.at.summary;
-  e.footing = { incomeRow: s.incomeRow, expenseRow: s.expenseRow, noiRow: s.noiRow >= 0 ? s.noiRow : b.at.noi };
+  // The parser reports the DETAIL footing (what the rows add up to), not the summary's rows.
   e.detailFooting = { incomeRow: b.at.income, expenseRow: b.at.expense, noiRow: b.at.noi };
+  e.footing = e.detailFooting;
+  e.summaryFooting = { incomeRow: s.incomeRow, expenseRow: s.expenseRow, noiRow: s.noiRow };
+  e.summaryTotals = { income: CLEAN_EXPECT.income, expense: CLEAN_EXPECT.expense, noi: withNoi ? CLEAN_EXPECT.noi : null };
   return { grid: b.grid, expect: e };
+}
+
+// ---- summary-block edge cases (small single-Total-column statements via flat()) ----
+// T3: a summary that DISAGREES with the detail footing. summary 1,100 / 300 / 800 above a
+// detail that foots to 1,000 / 300 / 700 → the detail wins, the summary is exposed, mismatch flagged.
+function summaryDisagree(){
+  return { grid: flat(["SUMMARY", ["TOTAL INCOME", 1100], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 800],
+                       "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 2, incomeRows: 1000, expenseRows: 300,
+                     summaryTotals: { income: 1100, expense: 300, noi: 800 }, summaryMismatch: true } };
+}
+// T4: a summary tree that prints a CATEGORY subtotal (TOTAL RENTAL INCOME) above the detail —
+// the twin rule must still fire and the detail split survive (rows present, category deduped).
+function summaryCategories(){
+  return { grid: flat(["SUMMARY", ["TOTAL RENTAL INCOME", 1000], ["TOTAL INCOME", 1000], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700],
+                       "RENTAL INCOME", ["Residential Rent", 1000], ["TOTAL RENTAL INCOME", 1000], ["TOTAL INCOME", 1000],
+                       "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 2, categories: [["TOTAL RENTAL INCOME", 1000, "INCOME"]],
+                     sums: { GPR: 1000, RET: 300 }, summaryMismatch: false } };
+}
+// T7: a summary above a detail that prints TOTAL INCOME and NOI but NO TOTAL EXPENSES — the
+// summary's un-twinned TOTAL EXPENSES must not push the detail into belowLine; expense from summary.
+function summaryPartialTwin(){
+  return { grid: flat(["SUMMARY", ["TOTAL INCOME", 1000], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700],
+                       "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["NET OPERATING INCOME", 700]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 2, incomeRows: 1000, expenseRows: 300, belowLine: 0 } };
+}
+// T9: Crest-style $0 stub rows ABOVE the summary block must not defeat its detection.
+function summaryStubs(){
+  return { grid: flat([["Old Code Stub", 0], ["Suspense Stub", 0], "SUMMARY", ["TOTAL INCOME", 1000], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700],
+                       "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 4, incomeRows: 1000, expenseRows: 300 } };
+}
+// T6: a KPI NET OPERATING INCOME printed on top with NO NOI row below — recorded as a summary
+// figure, but the footed NOI (derived income − expense) is authoritative.
+function kpiNoiTop(){
+  return { grid: flat([["NET OPERATING INCOME", 500], "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 2, summaryNoi: 500, noiRow: -1 } };
+}
+// Title-case "Gross <roll-up>" is a subtotal (skipped), not a detail row: 1,000 − 50 + 10 = 960.
+function titleGross(label){
+  return { grid: flat([["Gross Rent", 1000], ["Less: Vacancy", -50], [label, 950], ["Other Income", 10], ["Total Income", 960],
+                       "EXPENSES", ["Taxes", 100], ["TOTAL EXPENSES", 100], ["NET OPERATING INCOME", 860]]),
+           expect: { income: 960, expense: 100, noi: 860, rows: 3, gpr: 1000, incomeResidual: 0 } };
 }
 
 // The clean statement whose PRINTED section totals deliberately do not foot to their
@@ -354,6 +402,8 @@ function malformed(){
 }
 
 module.exports = { clean: clean, belowTheLine: belowTheLine, periods: periods, gprStyle: gprStyle, malformed: malformed,
-                   summaryFirst: summaryFirst, unfooted: unfooted, noExpenseTotal: noExpenseTotal, noDividers: noDividers, grossRent: grossRent,
+                   summaryFirst: summaryFirst, summaryDisagree: summaryDisagree, summaryCategories: summaryCategories,
+                   summaryPartialTwin: summaryPartialTwin, summaryStubs: summaryStubs, kpiNoiTop: kpiNoiTop, titleGross: titleGross,
+                   unfooted: unfooted, noExpenseTotal: noExpenseTotal, noDividers: noDividers, grossRent: grossRent,
                    stringify: stringify, twoLabelColumns: twoLabelColumns, without: without, relabel: relabel,
                    serialHeader: serialHeader, dateHeader: dateHeader, bareMonthHeader: bareMonthHeader, MONTHS: MONTHS };
