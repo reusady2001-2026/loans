@@ -15,6 +15,26 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **"What to push" is Claude's analysis now, and the T12 follows a renamed property (v2.7.3).** Two fixes.
+  (1) **The T12 folder follows the loan when its property key changes.** The durable T12 lives in the
+  property's on-disk folder keyed by the property key; a name edit (or an address edit on a property with no
+  name, or one sharing a name) re-keys the property, and now the whole folder moves with it (new IPC
+  `lds:doc-move` + `opMoveDiskDocs`, wired into the loan-save flow). Guarded so nothing is ever lost: it is
+  refused, not merged, if the new key already has its own documents, and it stays put when other loans still
+  sit at the old key. (2) **"What to push" is produced by Claude, not the app.** The earlier version had the
+  app build and rank the list and Claude only annotate — wrong division of labour. Now the app hands Claude a
+  MENU of possible moves, each with its exact effect on the underwritten NOI (engine, to the cent) and, for
+  assumption-gated moves, the real occupancy/fee swing needed from today's actual; **Claude** chooses which to
+  push, picks the target size, and RANKS them by real value weighed against effort — then the app renders
+  Claude's list with the engine's dollars. This fixes the vacancy weighting: instead of a flat "one point
+  below the assumption = $175,533.63," Claude can pick the deeper target it judges worth pushing (e.g. to 3%
+  vacancy, a ~3 percentage point occupancy improvement from the trailing 6.11%, ~$351,067 per year) and weigh
+  it as the harder move it is. Claude's analysis runs automatically the moment a property with a T12 is
+  focused (cached per session; a "Re-analyse" button refreshes it). Full words throughout; NOI is the only
+  abbreviation; every dollar is the engine's, never invented. Verified in the real Electron app (folder-move
+  + guards; Claude-first push that auto-runs, picks the deeper occupancy target with the real swing shown, and
+  whose shown dollars equal the engine numbers sent).
+
 - **Underwriting tab cleaned up + "what to push" made underwriting-aware (v2.7.2).** Five changes
   the operator asked for. (1) **Properties are keyed by NAME first**, address only as a tiebreaker when
   two share a name — a property's name never changes, and real estate can't be lifted off the ground to

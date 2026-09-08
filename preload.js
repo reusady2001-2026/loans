@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),
   // Delete one saved file. Resolves {ok}.
   docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),
+  // Move a property's whole document folder when its key changes (an address edit). Resolves {ok,moved,reason?}.
+  docMove: (fromKey, toKey, propName) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName }),
   // Reveal the documents folder in the OS file manager.
   openDocsFolder: () => ipcRenderer.invoke('lds:docs-open-folder'),
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.

@@ -313,6 +313,24 @@ ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
     return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// Move a property's WHOLE document folder when its property key changes (an address edit re-keys
+// the property). Guarded so a T12 is never lost or clobbered: refuses if the destination already has
+// its own files (kept at the old key), no-ops if the source has none, and carries the index's
+// propKey/propName across. Same parent directory, so a plain rename moves it atomically.
+ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName }) => {
+  try {
+    if(!fromKey || !toKey || fromKey === toKey) return { ok: true, moved: false, reason: 'same key' };
+    const src = propDir(fromKey), dst = propDir(toKey);
+    const srcIdx = readDocIndex(src);
+    if(!fs.existsSync(src) || !(Array.isArray(srcIdx.files) && srcIdx.files.length)) return { ok: true, moved: false, reason: 'nothing to move' };
+    const dstIdx = readDocIndex(dst);
+    if(fs.existsSync(dst) && Array.isArray(dstIdx.files) && dstIdx.files.length) return { ok: true, moved: false, reason: 'target exists' };
+    if(fs.existsSync(dst)){ try { fs.rmSync(dst, { recursive: true, force: true }); } catch (x) {} }   // an empty stub at the destination
+    fs.renameSync(src, dst);
+    srcIdx.propKey = toKey; if(propName) srcIdx.propName = propName; writeDocIndex(dst, srcIdx);
+    return { ok: true, moved: true };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 // Reveal the documents folder in the OS file manager.
 ipcMain.handle('lds:docs-open-folder', async () => {
   try { const d = documentsDir(); fs.mkdirSync(d, { recursive: true }); await shell.openPath(d); return { ok: true, path: d }; }
