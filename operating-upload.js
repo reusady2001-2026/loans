@@ -74,7 +74,15 @@
     });
     var printed = isNum(fp.inPlaceNOI) ? fp.inPlaceNOI : null;
     var built = any ? inc - exp : null;                     // no lines → no NOI (not 0)
-    return { lines: lines, printedNOI: printed, builtNOI: built, ties: tie(built, printed) };
+    // The parser flags summaryMismatch when a T12's printed summary block disagrees with its own
+    // detail footing. printedNOI is the DETAIL footing (authoritative), so built ties it — but a
+    // self-contradicting statement must never report ties:true, and the disagreement (summaryTotals,
+    // warnings) is surfaced so the glue/UI can show it instead of a false all-clear.
+    var mismatch = !!(parsed && parsed.summaryMismatch);
+    var summaryTotals = (parsed && parsed.summaryTotals) || null;
+    var warnings = (parsed && Array.isArray(parsed.warnings)) ? parsed.warnings.slice() : [];
+    return { lines: lines, printedNOI: printed, builtNOI: built, ties: tie(built, printed) && !mismatch,
+             summaryMismatch: mismatch, summaryTotals: summaryTotals, warnings: warnings };
   }
 
   // The record's in-place NOI, computed exactly the way OperatingCalc.derive does
@@ -117,7 +125,8 @@
       // An empty parse (no rows, no printed totals) has nothing to say about the
       // property: do not create a record or stamp a sourceFile from it.
       return { record: before, written: [], overwroteManual: [], untouched: untouched,
-               inPlaceNOI: recordNOI(before), builtNOI: null, printedNOI: lf.printedNOI, ties: false };
+               inPlaceNOI: recordNOI(before), builtNOI: null, printedNOI: lf.printedNOI, ties: false,
+               summaryMismatch: lf.summaryMismatch, summaryTotals: lf.summaryTotals, warnings: lf.warnings };
     }
     var units = toUnits(opts.units), init = {};
     init.propertyName = (opts.propertyName != null) ? String(opts.propertyName) : (before ? before.propertyName : propKey);
@@ -131,7 +140,8 @@
     store.setLines(propKey, write, meta);                     // lines + sourceFile + period: one save
     var after = store.get(propKey), noi = recordNOI(after);
     return { record: after, written: codes, overwroteManual: overwroteManual, untouched: untouched,
-             inPlaceNOI: noi, builtNOI: lf.builtNOI, printedNOI: lf.printedNOI, ties: tie(noi, lf.printedNOI) };
+             inPlaceNOI: noi, builtNOI: lf.builtNOI, printedNOI: lf.printedNOI, ties: tie(noi, lf.printedNOI) && !lf.summaryMismatch,
+             summaryMismatch: lf.summaryMismatch, summaryTotals: lf.summaryTotals, warnings: lf.warnings };
   }
 
   return { linesFromParsed: linesFromParsed, preview: preview, apply: apply, ORDER: ORDER, label: label };

@@ -271,9 +271,9 @@ function suite(label, make){
 
   // 8. empty / malformed input never throws and never touches the store
   var pE = P.parseGrid([]), lE = OU.linesFromParsed(pE);
-  deq(lE, { lines: {}, printedNOI: null, builtNOI: null, ties: false }, "empty grid: lines {}, NOIs null, ties false");
-  deq(OU.linesFromParsed(null), { lines: {}, printedNOI: null, builtNOI: null, ties: false }, "null parsed: same");
-  deq(OU.linesFromParsed({ rows: null, totals: null }), { lines: {}, printedNOI: null, builtNOI: null, ties: false }, "parsed with null rows/totals: same");
+  deq(lE, { lines: {}, printedNOI: null, builtNOI: null, ties: false, summaryMismatch: false, summaryTotals: null, warnings: [] }, "empty grid: lines {}, NOIs null, ties false, no summary mismatch");
+  deq(OU.linesFromParsed(null), { lines: {}, printedNOI: null, builtNOI: null, ties: false, summaryMismatch: false, summaryTotals: null, warnings: [] }, "null parsed: same");
+  deq(OU.linesFromParsed({ rows: null, totals: null }), { lines: {}, printedNOI: null, builtNOI: null, ties: false, summaryMismatch: false, summaryTotals: null, warnings: [] }, "parsed with null rows/totals: same");
   deq(OU.preview(S, "name:empty", pE), [], "empty grid: preview []");
   S.reset(); var w0 = sto.writes;
   var resE = OU.apply(S, "name:empty", pE, { fileName: "junk.xlsx", period: "?", propertyName: "Empty" });
@@ -305,6 +305,47 @@ function suite(label, make){
   eq(persisted && persisted.records[PK] && persisted.records[PK].lines.GPR.annual, 1250000, "persisted GPR = 1,250,000");
 
   // 11. Crest fixture (real statement; git-ignored)
+
+  // ---- summary/detail mismatch: a statement that contradicts itself never reports ties:true -----
+  // The parser exposes summaryMismatch when a printed summary block disagrees with the detail footing
+  // it uses (authoritative). printedNOI stays the detail figure and built ties it, but the module must
+  // AND that away and surface the disagreement (summaryTotals + warnings) — else a consumer of res.ties
+  // sees a false all-clear on a broken statement. Grid: summary 1,100/300/800 over detail 1,000/300/700.
+  var MM_MONTHS = ["Jul 2025","Aug 2025","Sep 2025","Oct 2025","Nov 2025","Dec 2025","Jan 2026","Feb 2026","Mar 2026","Apr 2026","May 2026","Jun 2026"];
+  function mmRow(l, a){ var m = new Array(12).fill(0); m[0] = a; return [l].concat(m, [a]); }
+  var mmGrid = [[null].concat(MM_MONTHS, ["Total"]),
+    mmRow("TOTAL INCOME", 1100), mmRow("TOTAL EXPENSES", 300), mmRow("NET OPERATING INCOME", 800),   // summary block
+    mmRow("Rental Income", 1000), mmRow("TOTAL INCOME", 1000), mmRow("Repairs & Maintenance", 300),
+    mmRow("TOTAL EXPENSES", 300), mmRow("NET OPERATING INCOME", 700)];                                // detail foots 1000/300/700
+  var pMM = P.parseGrid(mmGrid, { basis: "total" }), snapMM = JSON.stringify(pMM);
+  eq(pMM.summaryMismatch, true, "mismatch fixture: parser flags summaryMismatch");
+  eq(pMM.totals.noi, 700, "mismatch fixture: parser totals.noi = detail footing 700");
+  var lMM = OU.linesFromParsed(pMM);
+  deq(lMM.lines, { GPR: 1000, RM: 300 }, "mismatch: lines = { GPR 1000, RM 300 }");
+  eq(lMM.printedNOI, 700, "mismatch: printedNOI = detail footing 700 (unchanged)");
+  cents(lMM.builtNOI, 700, "mismatch: builtNOI = 700 (foots the detail)");
+  eq(lMM.ties, false, "mismatch: ties:false even though built === printed (statement contradicts itself)");
+  eq(lMM.summaryMismatch, true, "mismatch: linesFromParsed surfaces summaryMismatch:true");
+  eq(lMM.summaryTotals && lMM.summaryTotals.noi, 800, "mismatch: summaryTotals carries the disagreeing 800");
+  ok(Array.isArray(lMM.warnings) && lMM.warnings.length >= 1, "mismatch: warnings surfaced (" + JSON.stringify(lMM.warnings) + ")");
+  var PKM = "name:mismatch", SM = spy(store);
+  var rMM = OU.apply(SM, PKM, pMM, { fileName: "mismatch.xlsx", period: "12-mo Total", propertyName: "Mismatch Manor" });
+  eq(JSON.stringify(pMM), snapMM, "mismatch: parsed object not mutated");
+  deq(rMM.written, ["GPR", "RM"], "mismatch apply: written = [GPR, RM] (lines still written from the detail)");
+  cents(rMM.inPlaceNOI, 700, "mismatch apply: record in-place NOI = 700 (GPR 1000 − RM 300)");
+  eq(rMM.printedNOI, 700, "mismatch apply: printedNOI = detail 700");
+  cents(rMM.builtNOI, 700, "mismatch apply: builtNOI = 700");
+  eq(rMM.ties, false, "mismatch apply: ties:false (never a false all-clear on a self-contradicting statement)");
+  eq(rMM.summaryMismatch, true, "mismatch apply: returns summaryMismatch:true");
+  eq(rMM.summaryTotals && rMM.summaryTotals.noi, 800, "mismatch apply: returns summaryTotals.noi 800");
+  ok(Array.isArray(rMM.warnings) && rMM.warnings.length >= 1, "mismatch apply: returns warnings");
+  // A clean statement (no summary block) still ties and does NOT flag.
+  var clnGrid = [[null].concat(MM_MONTHS, ["Total"]), mmRow("Rental Income", 1000), mmRow("TOTAL INCOME", 1000),
+    mmRow("Repairs & Maintenance", 300), mmRow("TOTAL EXPENSES", 300), mmRow("NET OPERATING INCOME", 700)];
+  var lCln = OU.linesFromParsed(P.parseGrid(clnGrid, { basis: "total" }));
+  eq(lCln.summaryMismatch, false, "clean statement: summaryMismatch:false");
+  eq(lCln.ties, true, "clean statement: ties:true (built 700 === printed 700, no contradiction)");
+  eq(lCln.summaryTotals, null, "clean statement: summaryTotals null (no summary block)");
   var CREST = path.join(ROOT, "test", "fixtures", "crest-t12.xlsx");
   if (!fs.existsSync(CREST)) { console.log("  skipped: fixture missing (" + CREST + ")"); return; }
   var XLSX = require(path.join(ROOT, "vendor", "xlsx.full.min.js"));
@@ -321,6 +362,7 @@ function suite(label, make){
   cents(expX, 8840010.03, "Crest: Σ expense lines = printed TOTAL EXPENSES 8,840,010.03");
   cents(lX.builtNOI, 9483604.28, "Crest: builtNOI = 9,483,604.28");
   eq(lX.ties, true, "Crest: ties:true");
+  eq(lX.summaryMismatch, false, "Crest: summaryMismatch:false (statement is self-consistent)");
   ["GPR", "VAC", "CONC", "RET", "INS", "UTIL", "RM", "PAY", "MGMT", "GA", "BDX"].forEach(function (c){ ok(c in lX.lines, "Crest: line " + c + " present"); });
   // Expense-side bad debt has its own row since the taxonomy grew BDX: rows 575/576 (415,390.18 − 27,205.49) leave G&A.
   eq(lX.lines.BDX, 388184.69, "Crest: BDX = 388,184.69 (bad debts expense 415,390.18 − recoveries 27,205.49)");

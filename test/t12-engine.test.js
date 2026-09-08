@@ -299,13 +299,25 @@ run("E1 · where the operating detail ends (NOI row, TOTAL EXPENSES, summary blo
   eq(sumRows(p9.rows, "INCOME"), e9.incomeRows, "T9: income rows (stubs are 0) foot to 1,000");
   eq(sumRows(p9.rows, "EXPENSE"), e9.expenseRows, "T9: expense rows foot to 300");
 
-  // T6 — a KPI NOI on top with no NOI row below: parses fully, footed NOI authoritative
-  var D6 = F.kpiNoiTop(), p6 = T12.parseGrid(D6.grid), e6 = D6.expect;
-  eq(JSON.stringify(p6.totals), JSON.stringify({ income: e6.income, expense: e6.expense, noi: e6.noi }), "T6: totals 1,000 / 300 / 700 (NOI derived from the footing, not the KPI 500)");
-  eq(p6.summaryTotals.noi, e6.summaryNoi, "T6: the KPI 500 is recorded in summaryTotals.noi");
-  eq(p6.footing.noiRow, e6.noiRow, "T6: no authoritative NOI row (derived) → footing.noiRow -1");
-  eq(p6.rows.length, e6.rows, "T6: the whole statement is read (2 rows), not broken at row 1");
-  eq(SB.buildSetup({ parsed: p6 }).result.inPlace.noi, 700, "T6: in-place NOI 700");
+  // T6 — a KPI NOI on top with no NOI row below: parses fully, footed NOI authoritative.
+  // T6a: the KPI AGREES with the derived footing (700) → no mismatch.
+  var D6 = F.kpiNoiTop(700), p6 = T12.parseGrid(D6.grid), e6 = D6.expect;
+  eq(JSON.stringify(p6.totals), JSON.stringify({ income: e6.income, expense: e6.expense, noi: e6.noi }), "T6a: totals 1,000 / 300 / 700 (NOI derived from the footing)");
+  eq(p6.summaryTotals.noi, 700, "T6a: the KPI 700 is recorded in summaryTotals.noi");
+  eq(p6.footing.noiRow, e6.noiRow, "T6a: no authoritative NOI row (derived) → footing.noiRow -1");
+  eq(p6.rows.length, e6.rows, "T6a: the whole statement is read (2 rows), not broken at row 1");
+  eq(p6.summaryMismatch, false, "T6a: KPI 700 == derived 700 → NO mismatch");
+  eq(p6.warnings.length, 0, "T6a: no warning");
+  eq(SB.buildSetup({ parsed: p6 }).result.inPlace.noi, 700, "T6a: in-place NOI 700");
+  // T6b: the KPI DISAGREES with the derived footing (900 vs 700) → mismatch, even with no detail NOI row.
+  var D6b = F.kpiNoiTop(900), p6b = T12.parseGrid(D6b.grid);
+  eq(p6b.totals.noi, 700, "T6b: NOI is the derived footing 700, not the KPI 900");
+  eq(p6b.summaryTotals.noi, 900, "T6b: the KPI 900 is exposed in summaryTotals.noi");
+  eq(p6b.summaryMismatch, true, "T6b: summaryMismatch true — a KPI NOI disagreeing with the DERIVED footing is caught");
+  ok(p6b.warnings.length >= 1, "T6b: a warning is carried (" + JSON.stringify(p6b.warnings[0]) + ")");
+  eq(p6b.footing.noiRow, -1, "T6b: still no authoritative NOI row");
+  eq(SB.fromParse(p6b).reconcile.summaryMismatch, true, "T6b: reconcile.summaryMismatch true");
+  eq(SB.fromParse(p6b).reconcile.ties, false, "T6b: reconcile.ties false — the operator is not told it ties");
 });
 
 run("E1 · mixed-case 'Gross <roll-up>' rows are subtotals (item 3)", function(){
@@ -433,9 +445,13 @@ run("E1 · header / footing detection edge cases", function(){
   eq(T12.findHeader([["Cash Flow (12 months)"], ["Total", 5]]).headerRow, -1, "metadata / a lone 'Total' cell is not a header");
   eq(T12.findHeader([["Total", "Jan 2025", "Feb 2025", "Mar 2025"]]).headerRow, -1, "a 'Total' caption in column 0 (the row-label header) is not the totals column → not accepted as a header");
   eq(T12.findHeader([[null, "Jan 2025", "Feb 2025", "Mar 2025", "Total"]]).cols.total, 4, "…but a 'Total' caption to the RIGHT of the months is the totals column");
-  var noAmtTwin = T12.parseGrid(flatGrid([["Rent", 1000], ["TOTAL INCOME", 1000], "TOTAL INCOME", "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]));
-  eq(noAmtTwin.totals.income, 1000, "twinBelow ignores an amount-less 'TOTAL INCOME' header row (it is a section header, not a footing twin)");
-  eq(noAmtTwin.summaryTotals, null, "…so the real TOTAL INCOME is the statement's own footing, not a summary");
+  // twinBelow must require the twin to carry an AMOUNT: here the first TOTAL INCOME sits before
+  // any detail row, and the only other 'TOTAL INCOME' below is amount-less (a section header).
+  // If the amount check were dropped, that header would be mistaken for a twin and the first
+  // TOTAL INCOME would be read as a summary (summaryTotals populated) — so pin summaryTotals null.
+  var noAmtTwin = T12.parseGrid(flatGrid([["TOTAL INCOME", 1000], "TOTAL INCOME", ["TOTAL EXPENSES", 300], ["NET OPERATING INCOME", 700]]));
+  eq(noAmtTwin.totals.income, 1000, "amount-less twin: the first TOTAL INCOME is the statement's own footing (1,000)");
+  eq(noAmtTwin.summaryTotals, null, "amount-less 'TOTAL INCOME' header is NOT a summary twin → summaryTotals null (dies if twinBelow drops its amount check)");
   var dh = T12.findHeader([["Description", "Marketing", "Jul 2025", "August 2025", "Sep-25", "Total"]]);
   eq(JSON.stringify([dh.headerRow, dh.months]), JSON.stringify([0, [2, 3, 4]]), "'Description' / 'Marketing' header cells are not month columns (3-letter or full month names only)");
   eq(T12.parseGrid(F.twoLabelColumns(C.grid, e.headerRow).map(function(r, i){ return i === e.headerRow ? ["Category", "Description"].concat(r.slice(2)) : r; })).totals.noi, e.noi, "column-A/column-B labels still found with a 'Description' header cell");

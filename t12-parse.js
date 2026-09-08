@@ -233,7 +233,7 @@
             continue;                                          // a summary line never changes phase or ends the detail
           }
           // the DETAIL footing — authoritative; it overrides a summary's provisional figure
-          if (totals[foot] == null || !detailFooted[foot]){ totals[foot] = amt; footing[foot + "Row"] = r; detailFooted[foot] = true; }
+          if (totals[foot] == null){ totals[foot] = amt; footing[foot + "Row"] = r; detailFooted[foot] = true; }
           if (foot === "income"){ if (phase === "income"){ phase = "expense"; sub = ""; } }
           else if (foot === "expense") phase = "below";        // TOTAL EXPENSES ends the operating detail from any phase
           else if (foot === "noi") break;                      // operating bottom line — rows below (debt service, depreciation, net income) are not operating
@@ -256,6 +256,10 @@
     if (hasSummary) ["income", "expense", "noi"].forEach(function (k){
       if (detailFooted[k] && summaryTotals[k] != null && Math.abs(summaryTotals[k] - totals[k]) > 0.005) summaryMismatch = true;
     });
+    // The DERIVED footing (income − expense) is as authoritative as a printed NOI row, so a
+    // summary/KPI NOI that disagrees with it is a mismatch too (no detail NOI row to catch above).
+    if (hasSummary && summaryTotals.noi != null && !detailFooted.noi && detailFooted.income && detailFooted.expense
+        && Math.abs(summaryTotals.noi - (totals.income - totals.expense)) > 0.005) summaryMismatch = true;
     if (summaryMismatch) warnings.push("summary totals differ from the statement's own footing; using the footing the detail lines add up to");
     // A total the detail didn't print (e.g. no detail TOTAL EXPENSES) falls back to the summary.
     if (hasSummary) ["income", "expense"].forEach(function (k){

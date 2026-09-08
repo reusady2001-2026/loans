@@ -3591,7 +3591,9 @@ tr[data-loan]:hover td{background:#eef2f7}
         // footing the line items add up to (the honest figure), but we must NOT say "ties" — the operator needs
         // to know the statement contradicts itself. This wins over the built-vs-printed check (which would read as
         // a tie, since built and the footing agree).
-        const sm = parsed && parsed.summaryMismatch, st = (parsed && parsed.summaryTotals) || {};
+        // The upload module ANDs its own ties with !summaryMismatch and carries the flag + the disagreeing
+        // summary totals in its return; prefer that (parsed is the raw grid, res is the module's verdict).
+        const sm = res.summaryMismatch || (parsed && parsed.summaryMismatch), st = res.summaryTotals || (parsed && parsed.summaryTotals) || {};
         if(sm) toast(who + ": T12 saved — the statement’s summary NOI (" + fmtMoney(st.noi) + ") does NOT match its own detail footing (" + fmtMoney(res.builtNOI) + "); used the detail — check the Review list", "error");
         else if(res.printedNOI == null) toast(who + ": T12 saved — the statement prints no NOI line to check against (built NOI " + fmtMoney(res.builtNOI) + ")" + keptTxt, "info");
         else if(Math.abs((res.builtNOI || 0) - res.printedNOI) < 0.005) toast(who + ": T12 saved — NOI ties to the statement" + keptTxt, "info");

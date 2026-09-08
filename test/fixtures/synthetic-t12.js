@@ -286,9 +286,10 @@ function summaryStubs(){
 }
 // T6: a KPI NET OPERATING INCOME printed on top with NO NOI row below — recorded as a summary
 // figure, but the footed NOI (derived income − expense) is authoritative.
-function kpiNoiTop(){
-  return { grid: flat([["NET OPERATING INCOME", 500], "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300]]),
-           expect: { income: 1000, expense: 300, noi: 700, rows: 2, summaryNoi: 500, noiRow: -1 } };
+function kpiNoiTop(kpi){
+  kpi = (kpi == null) ? 700 : kpi;                          // derived footing is 1000 − 300 = 700
+  return { grid: flat([["NET OPERATING INCOME", kpi], "INCOME", ["Rent", 1000], ["TOTAL INCOME", 1000], "EXPENSES", ["Taxes", 300], ["TOTAL EXPENSES", 300]]),
+           expect: { income: 1000, expense: 300, noi: 700, rows: 2, summaryNoi: kpi, noiRow: -1, summaryMismatch: Math.abs(kpi - 700) > 0.005 } };
 }
 // Title-case "Gross <roll-up>" is a subtotal (skipped), not a detail row: 1,000 − 50 + 10 = 960.
 function titleGross(label){
