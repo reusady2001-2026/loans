@@ -15,6 +15,25 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Per-property operating model, portfolio roll-up & action scan (v2.7.0).** Delivers
+  SPEC-v2.3.0: each property (a senior and its mezz share ONE record, keyed by the app's
+  `propertyKey`) gets a saved operating model — a T12 upload or hand-typed lines, stored as
+  YEARLY dollars with a monthly display toggle, driving that property's DSCR, debt yield and
+  LTV across the whole app. Eleven dependency-free UMD modules coded to a written contract
+  (`OPERATING-CONTRACT.md`): `operating-store` (localStorage `ldsHub.operating.v1`, taxonomy-
+  validated codes), `operating-taxonomy` (33 codes incl. `BDX` bad-debt-expense after `GA`),
+  `operating-calc` (in-place vs underwritten NOI, per-loan + combined stack), `t12-classify` /
+  `t12-parse` / `setup-builder` (classify every line, foot to the printed NOI to the cent, and
+  now surface a summary-vs-detail disagreement instead of a false "ties"), `operating-upload`
+  (T12 → property), `operating-sheet` (hand-edit, deductions stored negative, all 33 rows with
+  per-section fold), `operating-assumptions` (per-property benchmark overrides; taxes/insurance
+  default non-controllable but flippable), `portfolio-rollup` (one row per property, DSCR/DY
+  over the properties that actually carry the relevant debt), `action-scan` (what to push now:
+  DSCR/DY breaches, maturities, refi opportunities on the loan's current rate, non-controllable
+  expense shocks). Verified on the real Crest T12 to the cent (in-place NOI $9,483,604.28).
+  ~4,000 unit assertions across 12 suites plus 5 Playwright-Electron e2e suites; every aspect
+  built, tested, and signed off by an independent adversarial critic (mutation-tested).
+
 - **T12 "statement NOI" read the wrong footing row — fixed (v2.6.5).** On a statement that
   prints BOTH a `NET OPERATING INCOME` row and a below-the-line `NET INCOME` row (after debt
   service / depreciation), the parser's NOI matcher also matched `NET INCOME` and "last wins,"

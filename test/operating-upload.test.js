@@ -1,6 +1,6 @@
 /* node test/operating-upload.test.js — P3 (OperatingUpload) acceptance, plain node, no framework.
    Runs every assertion against an in-test fake store that implements exactly the §2 methods the
-   module uses (ensure / get / setLines / setUnits — plus setPeriod, kept only so the spy can assert
+   module uses (ensure / get / setLines / setUnits; setPeriod is no longer called — the spy asserts
    the module never calls it) and, when operating-store.js is
    present, against the real store too. Synthetic grids carry hand-computed expectations (below);
    the Crest fixture block is skipped with a clear line when the git-ignored file is absent. */

@@ -1,6 +1,6 @@
 # Spec — v2.3.0: Per-Property Operating Model (editable underwriting inputs)
 
-**Status:** draft for review · **Target version:** 2.3.0 · **Held (not shipped)**
+**Status:** SHIPPED in v2.7.0 (per-property operating model, portfolio roll-up, and action scan). **Target version:** 2.3.0 spec, delivered as app v2.7.0
 
 ## 1. Summary
 
