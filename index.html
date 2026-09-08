@@ -3164,25 +3164,24 @@ tr[data-loan]:hover td{background:#eef2f7}
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
       bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
-    // Read a dropped T12 workbook, find the operating-statement sheet, parse it.
-    function uwHandleFile(file){
+    // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
+    // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
+    // see is always parsed from the saved file, never a number stashed in the browser.
+    async function uwHandleFile(file){
       if(!file || !window.XLSX || !window.T12Parse){ toast("Setup engine not ready","error"); return; }
-      const reader = new FileReader();
-      reader.onload = (e)=>{
-        try{
-          const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
-          let grid = null;
-          for(const nm of wb.SheetNames){
-            const g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header:1, raw:true, defval:null });
-            if(T12Parse.findHeader(g).headerRow >= 0){ grid = g; break; }
-          }
-          if(!grid){ toast("Couldn’t find a T12 sheet (needs a Total column and month columns).","error"); return; }
-          const i = uwState.input; i.t12Grid = grid; i.fileName = file.name; i.basis = "total";
-          i.aiParsed = null; i.aiT12 = null;   // this file (rules-based) path supersedes any prior AI-read Setup
-          uwApplyParse({ fromDrop: true });    // only an actual drop writes into the focused property (a basis toggle must never)
-        }catch(err){ toast("Couldn’t read that file.","error"); }
-      };
-      reader.readAsArrayBuffer(file);
+      if(!opFocusKey){ toast("Pick a property above first, then drop its T12 here.","info"); return; }
+      if(!(window.ldsShell && ldsShell.docSave)){ toast("Saving T12s to a property needs the desktop app.","error"); return; }
+      // Verify it's actually a T12 sheet before committing it to the folder.
+      let ok = false; try{ const buf = await file.arrayBuffer(); ok = !!opGridFromWorkbook(new Uint8Array(buf)); }catch(e){ ok = false; }
+      if(!ok){ toast("Couldn’t find a T12 sheet in that file (needs a Total column and month columns).","error"); return; }
+      const key = opFocusKey, who = (opProp(key) || {}).name || "this property";
+      try{
+        const r = await opDiskSaveT12(key, file);
+        if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
+        await opSelectProperty(key);   // re-read + re-parse from the file just saved
+        const noi = (uwState.input.t12Meta && uwState.input.t12Meta.totals && uwState.input.t12Meta.totals.noi);
+        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — statement NOI "+uwFmt(noi) : "")+".","check");
+      }catch(err){ toast("Couldn’t read that file.","error"); }
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
     // Also read the statement's printed NOI at every available period column so a
@@ -3191,11 +3190,6 @@ tr[data-loan]:hover td{background:#eef2f7}
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
       i.t12Rows = d.rows;
-      // A dropped file ALSO lands in the focused property's own operating record — but ONLY on the
-      // drop. Re-parsing for the DISPLAY basis toggle (Total / T6 / T3 / T1) must never rewrite the
-      // saved record (it would overwrite the annual figures with trailing-period ones and fake an
-      // expense shock).
-      if(opts && opts.fromDrop) opApplyUploadToFocused(d, i);
       const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
       const labels = { total:"12-mo Total", t6:"Trailing 6-mo (ann.)", t3:"Trailing 3-mo (ann.)", t1:"Trailing 1-mo (ann.)" };
       const periods = ["total","t6","t3","t1"].filter(k => d.cols[k] >= 0).map(k => {
@@ -3209,11 +3203,16 @@ tr[data-loan]:hover td{background:#eef2f7}
       const leaseUp = periods.length > 1 && lo > 0 && (hi - lo) / hi > 0.25;
       i.t12Meta = { descCol: gl(d.descCol), periods: periods, leaseUp: leaseUp,
         totals: d.totals, categories: d.categories.length };
-      saveUW(); renderUnderwriting();
+      saveUW(); if(!(opts && opts.noRender)) renderUnderwriting();
     }
-    let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench) return s; }catch(e){} return { input: uwDefaults() }; })();
+    let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench){ delete s.input.t12Grid; delete s.input.t12Rows; delete s.input.t12Meta; delete s.input.aiParsed; delete s.input.aiT12; delete s.input.fileName; return s; } }catch(e){} return { input: uwDefaults() }; })();
     let uwLastBuilt = null;
-    function saveUW(){ try{ localStorage.setItem(UW_KEY, JSON.stringify(uwState)); }catch(e){} }
+    // The T12 itself lives on disk in the property folder — NEVER in browser storage. uwState keeps
+    // only the benchmarks / units / sizing prefs; the T12 grid + parsed meta are transient mirrors of
+    // the file on disk and are stripped before persisting, so no operating figure is ever frozen here.
+    function saveUW(){ try{ const c = { input: Object.assign({}, uwState.input) };
+      delete c.input.t12Grid; delete c.input.t12Rows; delete c.input.t12Meta; delete c.input.aiParsed; delete c.input.aiT12; delete c.input.fileName;
+      localStorage.setItem(UW_KEY, JSON.stringify(c)); }catch(e){} }
     function uwResetModel(){ uwState = { input: uwDefaults() }; uwLastBuilt = null; saveUW(); renderUnderwriting(); }
 
     const uwNum = (v)=>{ if(typeof v === "string") v = parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v === "number" && isFinite(v)) ? v : null; };
@@ -3405,7 +3404,85 @@ tr[data-loan]:hover td{background:#eef2f7}
     // if one is missing (an older build) these sections simply don't render.
     let opFocusKey = "", opBasis = "annual", opInited = false;
     function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.OperatingSheet && window.OperatingAssumptions && window.PortfolioRollup && window.ActionScan); }
-    function opInit(){ if(opInited || !window.OperatingStore) return; opInited = true; try{ OperatingStore.init({ storage: window.localStorage }); OperatingStore.load(); }catch(e){} }
+    // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
+    // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
+    // OperatingStore is a SESSION cache only — backed by this in-memory shim, so it persists nothing —
+    // and it is refilled from disk (opEnsureFromDisk) each time a property is opened. On open there is
+    // no stored figure; the numbers are recomputed from the file every time.
+    const opMemStorage = (function(){ const m = Object.create(null);
+      return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } }; })();
+    let opStaleCleared = false;
+    function opClearStale(){ if(opStaleCleared) return; opStaleCleared = true;
+      // Kill anything an earlier (browser-storage) build left behind, so no frozen number survives an update.
+      try{ localStorage.removeItem("ldsHub.operating.v1"); }catch(e){}
+      try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input){ delete s.input.t12Grid; delete s.input.t12Rows; delete s.input.t12Meta; delete s.input.aiParsed; delete s.input.aiT12; delete s.input.fileName; localStorage.setItem(UW_KEY, JSON.stringify(s)); } }catch(e){}
+    }
+    function opInit(){ if(opInited || !window.OperatingStore) return; opInited = true; opClearStale(); try{ OperatingStore.init({ storage: opMemStorage }); OperatingStore.load(); }catch(e){} }
+    const opDeskLoaded = new Set();   // propKeys whose disk T12 we've read into the session store already (in-memory, not persisted)
+    // Read a property's T12 straight from its on-disk folder and parse it LIVE. Returns
+    // { grid, parsed, name } or null when the folder holds no readable T12. Nothing is cached
+    // to browser storage — every call re-reads the file, so the numbers can never go stale.
+    async function opReadPropT12(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead && window.XLSX && window.T12Parse)) return null;
+      try{
+        const list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        const files = (list.files || []);
+        const t12 = files.filter(f => f.role === "t12").sort((a, b) => b.savedAt - a.savedAt)[0]
+                 || files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "")).sort((a, b) => b.savedAt - a.savedAt)[0];
+        if(!t12) return null;
+        const rd = await ldsShell.docRead(key, t12.id); if(!rd || !rd.ok || !rd.base64) return null;
+        const grid = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) return null;
+        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name };
+      }catch(e){ return null; }
+    }
+    // Refill the session operating store for a property from its on-disk T12 (once per session,
+    // until an upload invalidates it), so the operating card / roll-up show figures recomputed
+    // from the actual file.
+    async function opEnsureFromDisk(key){
+      opInit();
+      if(!key || opDeskLoaded.has(key)) return;
+      opDeskLoaded.add(key);
+      if(!window.OperatingUpload) return;
+      const r = await opReadPropT12(key); if(!r) return;
+      try{ const p = opProp(key);
+        OperatingUpload.apply(OperatingStore, key, r.parsed, { fileName: r.name, period: "12-mo Total · " + r.name, propertyName: p ? p.name : key, units: (p && p.loans[0] && p.loans[0].units) || null });
+      }catch(e){}
+    }
+    // Select a property in the underwriting tab: read its T12 from disk, rebuild BOTH the sizing
+    // Setup and the operating card from that live parse, and show it. The dropped-in T12 (uwState)
+    // is transient — a mirror of the file on disk, never persisted (saveUW strips it).
+    async function opSelectProperty(key){
+      opFocusKey = key || ""; opBasis = "annual";
+      const i = uwState.input;
+      i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = "";
+      if(key){
+        opDeskLoaded.delete(key);
+        const r = await opReadPropT12(key);
+        if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
+        await opEnsureFromDisk(key);
+      }
+      renderUnderwriting();
+    }
+    // base64 → Uint8Array; a workbook's first T12-shaped sheet → a header:1 grid (or null).
+    function opB64ToBytes(b64){ const bin = atob(b64), n = bin.length, out = new Uint8Array(n); for(let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
+    function opGridFromWorkbook(bytes){
+      try{ const wb = XLSX.read(bytes, { type: "array" });
+        for(const nm of wb.SheetNames){ const g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null }); if(T12Parse.findHeader(g).headerRow >= 0) return g; }
+      }catch(e){}
+      return null;
+    }
+    // Save an uploaded T12 into the property's on-disk folder (the ONLY place it is kept), with a CSV
+    // text cache so the assistant can read it too, then drop the session cache so it re-reads from disk.
+    async function opDiskSaveT12(key, file){
+      if(!(window.ldsShell && ldsShell.docSave)) return { ok: false, error: "desktop file store unavailable" };
+      const buf = await file.arrayBuffer(), bytes = new Uint8Array(buf);
+      let base64 = ""; { let s = ""; for(let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); base64 = btoa(s); }
+      let text = ""; try{ const wb = XLSX.read(bytes, { type: "array" }), out = []; wb.SheetNames.forEach(nm => { const csv = XLSX.utils.sheet_to_csv(wb.Sheets[nm], { blankrows: false }); if(csv && csv.trim()) out.push("# Sheet: " + nm + "\n" + csv); }); text = out.join("\n\n"); }catch(e){}
+      const p = opProp(key);
+      const r = await ldsShell.docSave({ propKey: key, propName: p ? p.name : key, name: file.name, base64, text, type: file.type || "", role: "t12" });
+      opDeskLoaded.delete(key); OperatingStore.remove(key);   // force a fresh live re-read/re-parse from the file just saved
+      return r;
+    }
     // The bridge the modules compute through — the app's own engine, never re-implemented.
     function opHooks(){
       return { propertyKey, loansForProperty, loans: () => loans, today: () => new Date(),
@@ -3633,7 +3710,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Portfolio roll-up</h3><div id="opRollupMount" class="mt-2 overflow-x-auto"></div></div>'+
         '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What needs to be pushed right now</h3><div id="opScanMount" class="mt-2"></div></div>';
       view.appendChild(tail);
-      card.querySelector("#opPropPick").addEventListener("change", (e) => { opFocusKey = e.target.value; opBasis = "annual"; opRenderFocused(); opRenderExtras(); });
+      card.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
       card.querySelector("#opManage").addEventListener("click", opManageEvent);
       card.querySelector("#opManage").addEventListener("change", opManageEvent);
       card.querySelector("#opOrphans").addEventListener("click", opOrphanClick);
@@ -3677,7 +3754,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const rm = el("opRollupMount"), sm = el("opScanMount"); if(!rm || !sm) return;
       opInit();
       const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
-      const open = (k) => { opFocusKey = k; opBasis = "annual"; renderUnderwriting(); };
+      const open = (k) => { opSelectProperty(k); };
       // Each panel is isolated: a bad record must never blank the other panel or the page — say what broke instead.
       const failed = (host, what, e) => { host.innerHTML = '<p class="text-sm text-rose-600">'+what+' couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; };
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ failed(rm, "The portfolio roll-up", e); }
@@ -3686,7 +3763,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
     // Open a property's operating model from anywhere (e.g. the loan view).
-    function opOpenProperty(loan){ opFocusKey = propertyKey(loan); opBasis = "annual"; openTab("underwriting"); }
+    function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
     // saying where the NOI comes from, with a button that opens the property's sheet.
     function renderLoanOpPanel(){
