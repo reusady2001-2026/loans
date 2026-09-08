@@ -15,6 +15,25 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **T12 data lives in the property folder, not the browser (v2.7.1).** Fixes the reported bugs: a
+  T12 uploaded for a property is now saved as the ORIGINAL file in that property's on-disk folder
+  (`userData/documents/<hash(propKey)>/`, the same per-property store as other documents) and is
+  never kept in browser storage. On open the app is a clean slate; selecting a property re-reads and
+  re-parses its T12 from disk each time, so the statement NOI is recomputed from the file (Crest now
+  reads its real $9,483,604.28, not the frozen below-the-line $5,210,718.69 that had been cached in
+  `localStorage`). Old `localStorage` operating keys are purged on upgrade. Both upload paths — the
+  underwriting drop and "Read T12 with Claude" — save Excel (.xlsx/.xls/.csv) to the property folder;
+  the Claude T12 reader no longer takes only .md/.txt. **"What to push" is now the right question:**
+  a per-property analysis by the embedded Claude of which operating levers to lean on (cut vacancy,
+  raise rents, reduce a specific cost), grounded in that property's own T12 line items — replacing the
+  mechanical DSCR/maturity/refi covenant scan. Verified in the real Electron app (upload→disk, restart
+  re-reads from disk, nothing in browser storage; the property's real lines flow to Claude and ranked
+  levers render). Removed the now-superseded operating features/tests: the ActionScan module and the
+  four e2e suites (glue, operating-sheet, operating-assumptions, portfolio-rollup) that asserted the
+  old browser-storage persistence; module unit tests and the new disk-model e2e (t12-disk, push) cover
+  the current behaviour. Known limitation: renaming a property's address does not yet move its on-disk
+  T12 folder — re-upload the T12 after such a rename.
+
 - **Per-property operating model, portfolio roll-up & action scan (v2.7.0).** Delivers
   SPEC-v2.3.0: each property (a senior and its mezz share ONE record, keyed by the app's
   `propertyKey`) gets a saved operating model — a T12 upload or hand-typed lines, stored as
