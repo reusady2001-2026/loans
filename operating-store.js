@@ -1,10 +1,10 @@
 /* ============================================================================
-   Operating store — the per-PROPERTY operating model (income / expense lines
-   that feed NOI → DSCR / DY / LTV), persisted under ONE localStorage key,
+   Operating store â the per-PROPERTY operating model (income / expense lines
+   that feed NOI â DSCR / DY / LTV), persisted under ONE localStorage key,
    "ldsHub.operating.v1". It is a separate, isolated store: this module never
    reads or writes any other key (the loans live in "ldsHub.loans.v7") and never
-   touches a loan object. One record per property key (OPERATING-CONTRACT.md §1),
-   shared by every loan on that property — senior and mezz read the same NOI.
+   touches a loan object. One record per property key (OPERATING-CONTRACT.md Â§1),
+   shared by every loan on that property â senior and mezz read the same NOI.
    Dollars are stored ANNUAL; the UI converts for a monthly display.
    Every write persists immediately (exactly one save per call); reads hand out
    deep copies so nothing can mutate the store by reference. Node tests inject
@@ -21,10 +21,10 @@
   var KEY = "ldsHub.operating.v1", VERSION = 1;
   var SOURCES = { t12: 1, manual: 1, budget: 1 };
 
-  // Controllable defaults per contract §3, kept LOCAL so this module stays
+  // Controllable defaults per contract Â§3, kept LOCAL so this module stays
   // dependency-free (the taxonomy module is built concurrently): taxes and
-  // insurance are the two lines an owner cannot push, every other expense —
-  // and every income line — defaults to controllable. Unknown codes default
+  // insurance are the two lines an owner cannot push, every other expense â
+  // and every income line â defaults to controllable. Unknown codes default
   // true for the same reason: RET / INS are the only exceptions.
   var CONTROLLABLE_DEFAULT = {
     GPR:true, EMPL:true, MOD:true, VAC:true, CONC:true, BD:true,
@@ -35,18 +35,18 @@
   };
   function has(o, k){ return Object.prototype.hasOwnProperty.call(o, k); }
   // Keys that would reach Object.prototype when used as a map key or merge
-  // target (JSON.parse('{"__proto__":…}') creates a real own property). They
+  // target (JSON.parse('{"__proto__":â¦}') creates a real own property). They
   // are never valid propKeys, line codes or assumption fields: rejected on
   // write, dropped on load.
   function reserved(k){ return k === "__proto__" || k === "constructor" || k === "prototype"; }
   function defaultControllable(code){ return has(CONTROLLABLE_DEFAULT, code) ? CONTROLLABLE_DEFAULT[code] : true; }
 
-  // The 33 taxonomy codes (contract §3 + BDX, bad-debt expense, after GA). Lines are keyed by these and nothing
+  // The 33 taxonomy codes (contract Â§3 + BDX, bad-debt expense, after GA). Lines are keyed by these and nothing
   // else: a stray or mis-cased code ("FOO", "gpr") would be silently excluded
   // from every total downstream, so setLine/setLines reject it and load() drops
   // it. The live taxonomy module is consulted AT CALL TIME when present (node:
-  // require; browser: root.OperatingTaxonomy — script order is irrelevant);
-  // this local list is the fallback and must stay in sync — the test binds the
+  // require; browser: root.OperatingTaxonomy â script order is irrelevant);
+  // this local list is the fallback and must stay in sync â the test binds the
   // two, so it is exported (frozen) for that comparison.
   var CODES = Object.freeze(["GPR","EMPL","MOD","VAC","CONC","BD",
     "RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH",
@@ -94,12 +94,12 @@
     if (opts.storage != null){
       if (typeof opts.storage.getItem !== "function" || typeof opts.storage.setItem !== "function") throw new TypeError("OperatingStore.init: storage must expose getItem/setItem");
       _storage = opts.storage;
-    } else _storage = null;                       // resolved lazily → window.localStorage
+    } else _storage = null;                       // resolved lazily â window.localStorage
     if (opts.now != null){
       if (typeof opts.now !== "function") throw new TypeError("OperatingStore.init: now must be a function returning an ISO string");
       _now = opts.now;
     } else _now = defaultNow;
-    _state = null;                                // a fresh init re-reads its storage on the next call — that is how a reload is simulated
+    _state = null;                                // a fresh init re-reads its storage on the next call â that is how a reload is simulated
     return api;
   }
 
@@ -107,7 +107,7 @@
   function load(){
     var raw = null, parsed = null;
     try { raw = storage().getItem(KEY); } catch (e) { raw = null; }
-    // Corrupt JSON → start empty, never throw. The bad blob is deliberately
+    // Corrupt JSON â start empty, never throw. The bad blob is deliberately
     // left in place (load never writes) so nothing is destroyed until the
     // user's first real write replaces it.
     if (typeof raw === "string" && raw !== "") { try { parsed = JSON.parse(raw); } catch (e) { parsed = null; } }
@@ -117,9 +117,9 @@
   function st(){ if (!_state) load(); return _state; }
 
   // Bring whatever was stored up to the v1 shape without losing data:
-  //  • the v1 wrapper { version, records } — version missing, older or newer;
-  //  • the SPEC-draft flat map { key: record } that had no wrapper at all;
-  //  • records / lines with fields missing (filled with the schema defaults).
+  //  â¢ the v1 wrapper { version, records } â version missing, older or newer;
+  //  â¢ the SPEC-draft flat map { key: record } that had no wrapper at all;
+  //  â¢ records / lines with fields missing (filled with the schema defaults).
   // Idempotent: re-normalizing a v1 state changes nothing. Garbage entries
   // (non-object records, lines without a readable amount or under an unknown
   // code, reserved keys) are dropped.
@@ -137,7 +137,7 @@
     var createdAt = strOrNull(meta.createdAt) || lastUpdated;
     var lines = {}, src = isObj(r.lines) ? r.lines : {};
     for (var c in src) if (has(src, c) && !reserved(c) && list.indexOf(c) >= 0 && isObj(src[c])) { var ln = normLine(c, src[c], lastUpdated); if (ln) lines[c] = ln; }
-    return {                                      // field order = contract §2 order, so the persisted JSON is canonical
+    return {                                      // field order = contract Â§2 order, so the persisted JSON is canonical
       propKey: key,                               // the map key is authoritative over a stored propKey
       propertyName: typeof r.propertyName === "string" ? r.propertyName : (typeof r.name === "string" ? r.name : ""),
       units: unitsOrNull(toNum(r.units)),
@@ -177,6 +177,10 @@
   function validKey(k){ return typeof k === "string" && k !== "" && !reserved(k); }
   function key(k, fn){ if (!validKey(k)) throw new TypeError("OperatingStore." + fn + ": propKey must be a non-empty, non-reserved string"); return k; }
   function code(c, fn){ if (!validKey(c)) throw new TypeError("OperatingStore." + fn + ": code must be a non-empty, non-reserved string"); return c; }
+  // A code the caller names must be a real taxonomy code â reject an unknown or
+  // mis-cased one (same shape as checkLine) BEFORE touching the record, so
+  // removeLine/setControllable are as strict as setLine (stricter, not softer).
+  function knownCode(c, fn){ code(c, fn); var list = codeList(); if (list.indexOf(c) < 0) throw new TypeError("OperatingStore." + fn + ": unknown line code " + JSON.stringify(c) + " â lines are keyed by taxonomy codes (GPR … PLL, exact case)"); return c; }
   function newRecord(k, name, units, ts){
     return { propKey: k, propertyName: name, units: units, period: null, lines: {}, assumptions: null,
              meta: { createdAt: ts, lastUpdated: ts, sourceFile: null } };
@@ -187,7 +191,7 @@
 
   // Create-if-missing, and keep the record's IDENTITY current. The display
   // name comes from the loans (it is never typed on the record), so a non-blank
-  // name that differs from the stored one is refreshed — an operator's
+  // name that differs from the stored one is refreshed â an operator's
   // correction to a loan's name must reach the roll-up on the next pick; a
   // blank name never clobbers a real one. Units are filled only when the
   // record has none (they may have been set by hand) and never overwritten
@@ -213,7 +217,7 @@
   // rejected BEFORE anything changes so the persisted schema is always exact.
   function checkLine(c, p, fn, list){
     code(c, fn);
-    if (list.indexOf(c) < 0) throw new TypeError("OperatingStore." + fn + ": unknown line code " + JSON.stringify(c) + " — lines are keyed by taxonomy codes (GPR … PLL, exact case)");
+    if (list.indexOf(c) < 0) throw new TypeError("OperatingStore." + fn + ": unknown line code " + JSON.stringify(c) + " â lines are keyed by taxonomy codes (GPR â¦ PLL, exact case)");
     if (!isObj(p)) throw new TypeError("OperatingStore." + fn + ": " + c + " needs { annual, source }");
     if (!isNum(p.annual)) throw new TypeError("OperatingStore." + fn + ": " + c + ".annual must be a finite number (annual dollars)");
     if (!has(SOURCES, p.source)) throw new TypeError("OperatingStore." + fn + ": " + c + ".source must be \"t12\", \"manual\" or \"budget\"");
@@ -221,7 +225,7 @@
     if (p.note !== undefined && p.note !== null && typeof p.note !== "string") throw new TypeError("OperatingStore." + fn + ": " + c + ".note must be a string or null");
   }
   // Apply one validated line patch. prevAnnual moves ONLY when the amount
-  // actually changes — it feeds expense-shock detection, so re-setting the same
+  // actually changes â it feeds expense-shock detection, so re-setting the same
   // figure (a re-upload) must not erase the real previous value. updatedAt
   // always moves: a set is a set, even to the same number ("loaded from the
   // T12 today"). controllable / note are patch-optional: omitted = keep.
@@ -242,7 +246,7 @@
     key(k, "setLines"); opts = opts || {};
     if (!isObj(lines)) throw new TypeError("OperatingStore.setLines: lines must be an object of { code: { annual, source } }");
     var codes = Object.keys(lines), list = codeList();
-    codes.forEach(function (c){ checkLine(c, lines[c], "setLines", list); });   // validate everything first — a bad entry must not leave a half-written record
+    codes.forEach(function (c){ checkLine(c, lines[c], "setLines", list); });   // validate everything first â a bad entry must not leave a half-written record
     if (opts.sourceFile != null && typeof opts.sourceFile !== "string") throw new TypeError("OperatingStore.setLines: sourceFile must be a string or null");
     if (opts.period != null && typeof opts.period !== "string") throw new TypeError("OperatingStore.setLines: period must be a string or null");
     var ts = _now(), r = getOrCreate(k, ts);
@@ -253,14 +257,14 @@
     return clone(r);
   }
   function removeLine(k, c){
-    key(k, "removeLine"); code(c, "removeLine");
+    key(k, "removeLine"); knownCode(c, "removeLine");
     var recs = st().records; if (!has(recs, k)) return null;
     var r = recs[k];
     if (has(r.lines, c)) { delete r.lines[c]; r.meta.lastUpdated = _now(); save(); }
     return clone(r);
   }
   function setControllable(k, c, flag){
-    key(k, "setControllable"); code(c, "setControllable");
+    key(k, "setControllable"); knownCode(c, "setControllable");
     if (typeof flag !== "boolean") throw new TypeError("OperatingStore.setControllable: flag must be a boolean");
     var recs = st().records; if (!has(recs, k) || !has(recs[k].lines, c)) return null;   // the flag lives on a line; nothing to flip without one
     var r = recs[k];
@@ -271,9 +275,9 @@
   }
 
   // Assumptions: a patch carries finite numbers (set), nulls (clear that field
-  // → inherit the global default) or nested plain objects of the same. The
-  // stored form is canonical — null when nothing is overridden, never an empty
-  // sub-object — so "is anything overridden?" is a null check.
+  // â inherit the global default) or nested plain objects of the same. The
+  // stored form is canonical â null when nothing is overridden, never an empty
+  // sub-object â so "is anything overridden?" is a null check.
   function checkPatch(p, path){
     for (var k in p) if (has(p, k)) {
       var v = p[k], at = path ? path + "." + k : k;
@@ -323,7 +327,7 @@
     delete recs[k]; save();
     return true;
   }
-  // Move a record to a new §1 key — an address edit changes the key, and the
+  // Move a record to a new Â§1 key â an address edit changes the key, and the
   // operating data must follow it rather than be orphaned. The record object
   // moves as-is (lines, assumptions, meta, units, period all preserved); only
   // propKey changes, and being identity it does not stamp lastUpdated. Refuses
