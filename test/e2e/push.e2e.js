@@ -11,7 +11,7 @@ const FAKE=path.join(SP,'fake-claude-push.js');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-push-'));
 const INPUT=path.join(UDATA,'push-input.json');
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
-const KEY='addr:10400 edgewood rd, harrison, oh 45030';
+const KEY='name:villages of whitewater';  // name-first key (v2.7.2)
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
 (async()=>{
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),

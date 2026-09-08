@@ -3699,30 +3699,23 @@ tr[data-loan]:hover td{background:#eef2f7}
       const props = opProperties();
       if(opFocusKey && !props.some(p => p.key === opFocusKey)) opFocusKey = "";
       const opts = props.map(p => '<option value="'+escapeHtml(p.key)+'"'+(p.key === opFocusKey ? ' selected' : '')+'>'+escapeHtml(p.name)+(p.loans.length > 1 ? ' ('+p.loans.length+' loans)' : '')+'</option>').join('');
-      const card = document.createElement("div"); card.id = "opSections"; card.className = "boxline rounded-2xl border border-brand-200 bg-white p-4 shadow-sm space-y-3";
-      card.innerHTML =
-        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
-          '<div><h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Property operating model</h3>'+
-            '<p class="text-[11px] text-slate-500">Pick a property. Its T12 upload and every line you type are saved to that property (a senior and its mezz share one record) and drive its DSCR, debt yield and LTV across the app.</p></div>'+
-          '<select id="opPropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property &mdash;</option>'+opts+'</select>'+
-        '</div>'+
-        '<div id="opSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>'+
-        '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="lg:col-span-2 overflow-x-auto" id="opSheetMount"></div><div id="opAssumpMount"></div></div>'+
-        '<div id="opLoans" class="text-[11px] text-slate-500"></div>'+
-        '<div id="opManage" class="text-[11px] text-slate-500" hidden></div>'+
-        '<div id="opOrphans" hidden></div>';
+      // Property picker at the very TOP of the drop card: choose a property (reads its saved T12 from the
+      // property folder) or drop a new T12 for it. One place, one flow.
       const dropCard = view.querySelector("#uwDrop") && view.querySelector("#uwDrop").closest(".boxline");
-      if(dropCard) view.insertBefore(card, dropCard); else view.appendChild(card);
-      const tail = document.createElement("div"); tail.className = "space-y-6";
+      if(dropCard){
+        const pick = document.createElement("div"); pick.className = "flex flex-col sm:flex-row sm:items-center gap-2 pb-1 mb-1 border-b border-slate-100";
+        pick.innerHTML = '<label class="text-sm font-semibold text-slate-700" for="opPropPick">Property</label>'+
+          '<select id="opPropPick" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property, then drop its T12 below &mdash;</option>'+opts+'</select>';
+        dropCard.insertBefore(pick, dropCard.firstChild);
+        pick.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
+      }
+      // Below the classified lines + sizing + assumptions: the portfolio roll-up, then "what to push".
+      const tail = document.createElement("div"); tail.className = "space-y-6 mt-6";
       tail.innerHTML =
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Portfolio roll-up</h3><div id="opRollupMount" class="mt-2 overflow-x-auto"></div></div>'+
         '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What to push on this property</h3><div id="opScanMount" class="mt-2"></div></div>';
       view.appendChild(tail);
-      card.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
-      card.querySelector("#opManage").addEventListener("click", opManageEvent);
-      card.querySelector("#opManage").addEventListener("change", opManageEvent);
-      card.querySelector("#opOrphans").addEventListener("click", opOrphanClick);
-      opRenderFocused(); opRenderPortfolio(); opRenderExtras();
+      opRenderPortfolio(); opRenderPush();
     }
     function opRenderFocused(){
       const sheet = el("opSheetMount"), asm = el("opAssumpMount"), sum = el("opSummary"), lo = el("opLoans");

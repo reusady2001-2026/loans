@@ -57,6 +57,14 @@ const bodyText = (page) => page.evaluate(() => document.getElementById('uwView')
   const stored = (idx.files || []).find(f => f.role === 't12');
   ok(stored && fs.statSync(path.join(PROPDIR, stored.stored)).size === fs.statSync(CREST).size, 'the stored file is the original T12, byte-for-byte');
 
+  // layout (v2.7.2): the editable operating-model card + CTL are gone; sections in the right order
+  ok(!(await page.evaluate(() => !!document.getElementById('opSheetMount'))), 'the duplicate editable operating-model sheet (#opSheetMount) is gone');
+  ok(!(await page.evaluate(() => /\bCTL\b/.test((document.getElementById('uwView')||{}).innerText||''))), 'no "CTL" column anywhere');
+  const order = await page.evaluate(() => { const t = document.getElementById('uwView').innerText;
+    const idx = (re) => { const m = t.match(re); return m ? m.index : -1; };
+    return { drop: idx(/Drop the T12 file here/i), noi: idx(/statement NOI/i), sizing: idx(/Debt sizing/i), rollup: idx(/Portfolio roll-up/i), push: idx(/What to push on this property/i) }; });
+  ok(order.drop >= 0 && order.noi > order.drop && order.sizing > order.noi && order.rollup > order.sizing && order.push > order.rollup,
+     'order top-to-bottom: drop/classify -> statement NOI -> debt sizing -> portfolio roll-up -> what to push (got ' + JSON.stringify(order) + ')');
   ok((await ls(page, 'ldsHub.operating.v1')) === null, 'after upload: STILL nothing in browser storage (ldsHub.operating.v1 null)');
   const setup1 = await ls(page, 'lds_setup_v1');
   ok(!setup1 || (!/t12Grid/.test(setup1) && !/t12Meta/.test(setup1) && !/9,?483,?604|948360/.test(setup1)), 'after upload: the T12 grid/parsed figures are NOT persisted to browser storage');
