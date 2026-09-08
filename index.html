@@ -3587,7 +3587,13 @@ tr[data-loan]:hover td{background:#eef2f7}
         const kept = Object.keys(lines).filter(c => lines[c] && lines[c].source === "manual").length;   // hand-entered lines the statement left alone
         const keptTxt = kept ? " (" + kept + " manual line" + (kept > 1 ? "s" : "") + " kept)" : "";
         const who = p ? p.name : "Property";
-        if(res.printedNOI == null) toast(who + ": T12 saved — the statement prints no NOI line to check against (built NOI " + fmtMoney(res.builtNOI) + ")" + keptTxt, "info");
+        // A statement whose printed SUMMARY block disagrees with its own detail footing: the parser used the
+        // footing the line items add up to (the honest figure), but we must NOT say "ties" — the operator needs
+        // to know the statement contradicts itself. This wins over the built-vs-printed check (which would read as
+        // a tie, since built and the footing agree).
+        const sm = parsed && parsed.summaryMismatch, st = (parsed && parsed.summaryTotals) || {};
+        if(sm) toast(who + ": T12 saved — the statement’s summary NOI (" + fmtMoney(st.noi) + ") does NOT match its own detail footing (" + fmtMoney(res.builtNOI) + "); used the detail — check the Review list", "error");
+        else if(res.printedNOI == null) toast(who + ": T12 saved — the statement prints no NOI line to check against (built NOI " + fmtMoney(res.builtNOI) + ")" + keptTxt, "info");
         else if(Math.abs((res.builtNOI || 0) - res.printedNOI) < 0.005) toast(who + ": T12 saved — NOI ties to the statement" + keptTxt, "info");
         else toast(who + ": T12 saved — but the classified lines do NOT foot to the statement’s printed NOI (" + fmtMoney(res.builtNOI) + " vs " + fmtMoney(res.printedNOI) + ") — check the Review list", "error");
       }catch(e){ toast("Couldn’t save the T12 to the property.", "error"); }
