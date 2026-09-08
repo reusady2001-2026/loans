@@ -15,6 +15,31 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Underwriting tab cleaned up + "what to push" made underwriting-aware (v2.7.2).** Five changes
+  the operator asked for. (1) **Properties are keyed by NAME first**, address only as a tiebreaker when
+  two share a name — a property's name never changes, and real estate can't be lifted off the ground to
+  a new address, so the name is the stable identity; the address is normalized ("Rd" = "Road") so a
+  cosmetic edit no longer splits a property in two. (2) **The duplicate editable "operating model" card
+  and its controllable ("CTL") checkboxes are gone** — it was a second, hand-editable copy of the same
+  T12 data the Setup already shows, and the checkboxes drove nothing after the covenant scan was cut.
+  Its two view modules (`operating-sheet.js`, `operating-assumptions.js`) and their tests were removed.
+  (3) **The underwriting assumptions are editable per property and stored in the property's folder**
+  (`assumptions.json`, never in browser storage), shown once, driving the underwritten column live —
+  raise the vacancy assumption 5%→6% and the underwritten NOI drops, and the property remembers its own
+  assumptions across restarts. (4) **The tab reads top-to-bottom**: choose a property / drop its T12 →
+  classified T12 lines + debt sizing + assumptions → portfolio roll-up → what to push. (5) **"What to
+  push" is now ranked by each move's effect on the UNDERWRITTEN NOI** — the number the loan is sized on.
+  The app's own engine computes, to the cent, how much each move adds by re-running the build with that
+  one line perturbed. The key reframing: a move only counts if it BEATS what the underwriting already
+  assumes — raising rents and cutting a controllable cost pass straight through; vacancy and the
+  management fee are assumption-gated (closing a 6.11%→5% vacancy gap collects cash but the loan already
+  credits it — only sub-5% raises the underwritten NOI). Every move shows its annual NOI gain (labeled,
+  per property) and the investment/effort; Claude only annotates effort, investment and feasibility — it
+  never invents a dollar. Full words throughout; NOI is the only abbreviation. Verified in the real
+  Electron app (name-keying + layout + no duplicate card, editable assumptions that move the NOI and
+  persist to the folder, engine-computed levers that render before any Claude call, the assumption-gating
+  narrative, no covenant talk, and Claude's notes merging in).
+
 - **T12 data lives in the property folder, not the browser (v2.7.1).** Fixes the reported bugs: a
   T12 uploaded for a property is now saved as the ORIGINAL file in that property's on-disk folder
   (`userData/documents/<hash(propKey)>/`, the same per-property store as other documents) and is

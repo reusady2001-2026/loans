@@ -21,8 +21,6 @@
   <script src="./operating-taxonomy.js"></script>
   <script src="./operating-calc.js"></script>
   <script src="./operating-upload.js"></script>
-  <script src="./operating-sheet.js"></script>
-  <script src="./operating-assumptions.js"></script>
   <script src="./portfolio-rollup.js"></script>
   <script>
     tailwind.config = {
@@ -3411,7 +3409,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // the DSCR / debt-yield / LTV shown everywhere (see loanNOI). The modules load from <head>;
     // if one is missing (an older build) these sections simply don't render.
     let opFocusKey = "", opBasis = "annual", opInited = false;
-    function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.OperatingSheet && window.OperatingAssumptions && window.PortfolioRollup); }
+    function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.PortfolioRollup); }
     // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
     // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
     // OperatingStore is a SESSION cache only — backed by this in-memory shim, so it persists nothing —
@@ -3720,7 +3718,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     let opRedrawQueued = false;
     function opAfterChange(){
       if(opRedrawQueued) return; opRedrawQueued = true;
-      setTimeout(() => { opRedrawQueued = false; try{ opRenderFocused(); }catch(e){} try{ opRenderExtras(); }catch(e){} try{ opRenderPortfolio(); }catch(e){} try{ render(); }catch(e){} }, 0);
+      setTimeout(() => { opRedrawQueued = false; try{ opRenderExtras(); }catch(e){} try{ opRenderPortfolio(); }catch(e){} try{ render(); }catch(e){} }, 0);
     }
     function opRenderSections(view){
       if(!opReady()) return;
@@ -3746,47 +3744,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       view.appendChild(tail);
       opRenderPortfolio(); opRenderPush();
     }
-    function opRenderFocused(){
-      const sheet = el("opSheetMount"), asm = el("opAssumpMount"), sum = el("opSummary"), lo = el("opLoans");
-      if(!sheet || !asm || !sum || !lo) return;
-      const key = opFocusKey;
-      if(!key){ sheet.innerHTML = '<p class="text-sm text-slate-400">Choose a property above to see and edit its operating model.</p>'; asm.innerHTML = ""; sum.innerHTML = ""; lo.innerHTML = ""; return; }
-      const p = opProp(key), members = p ? p.loans : [], gd = uwState.input.bench, hooks = opHooks();
-      if(OperatingStore.get(key)) opEnsure(key);   // an existing record takes the loan's CURRENT name (a rename shows everywhere); never creates one just by looking
-      const record = opRecordFor(key);
-      const derived = OperatingCalc.derive(record, gd);
-      const stack = OperatingCalc.stack(record, members, hooks);
-      // No lines yet → nothing to show (an empty record would otherwise "underwrite" to −reserves × units).
-      const hasLines = !!(record.lines && Object.keys(record.lines).length);
-      const tile = (l, v) => '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div></div>';
-      sum.innerHTML = tile("In-place NOI", (hasLines && derived.inPlaceNOI != null) ? fmtMoney(derived.inPlaceNOI) : "&mdash;") + tile("Underwritten NOI", (hasLines && derived.underwrittenNOI != null) ? fmtMoney(derived.underwrittenNOI) : "&mdash;")
-        + tile("DSCR (combined)", stack.dscr != null ? stack.dscr.toFixed(2)+"&times;" : "&mdash;") + tile("Debt yield / LTV", (stack.dy != null ? fmtPct(stack.dy) : "&mdash;")+" / "+(stack.ltv != null ? fmtPct(stack.ltv) : "&mdash;"));
-      lo.innerHTML = OperatingCalc.perLoan(record, members, hooks).map(r => { const l = members.find(m => m._id === r.loanId) || {};
-        return '<span class="mr-3">'+escapeHtml(String(l.lenderName || l.propertyName || r.loanId))+(isMezz(l) ? ' (mezz)' : '')+': DSCR '+(r.dscr != null ? r.dscr.toFixed(2)+'&times;' : '&mdash;')+' &middot; DY '+(r.dy != null ? fmtPct(r.dy) : '&mdash;')+' &middot; LTV '+(r.ltv != null ? fmtPct(r.ltv) : '&mdash;')+'</span>'; }).join("");
-      // No T12 in this property's folder yet → say so and point at the two ways to add one. The T12 is
-      // read from the property's folder; there is nothing to show until one is saved there.
-      if(!hasLines){
-        sheet.innerHTML = '<div class="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No T12 saved for <b class="text-slate-700">'+escapeHtml((p&&p.name)||key)+'</b> yet.<br>Drop its T12 in the box below (or use &ldquo;Read T12 with Claude&rdquo;) &mdash; it is saved in this property&rsquo;s folder and read here.</div>';
-        asm.innerHTML = ""; return;
-      }
-      // The store validates strictly and THROWS on a bad write (NaN, unknown source…); surface it, never leave an uncaught error.
-      const write = (fn) => { try{ opEnsure(key); fn(); }catch(e){ toast("Not saved: " + String((e && e.message) || e).slice(0, 140), "error"); } opAfterChange(); };
-      // Codes the engine laid out no line for (not in the taxonomy) — their dollars are NOT in any total; never hide that.
-      if(derived.dropped && derived.dropped.length){
-        const note = document.createElement("p"); note.className = "mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800";
-        note.textContent = "Ignored (not a recognised line code, excluded from every total): " + derived.dropped.join(", ");
-        sheet.innerHTML = ""; sheet.appendChild(note);
-        const mount = document.createElement("div"); sheet.appendChild(mount); var sheetHost = mount;
-      } else { var sheetHost = sheet; }
-      OperatingSheet.render(sheetHost, { record, derived, basis: opBasis,
-        onEdit: (code, annual) => write(() => OperatingStore.setLine(key, code, { annual: Number(annual), source:"manual" })),
-        onToggleControllable: (code, on) => write(() => OperatingStore.setControllable(key, code, !!on)),
-        onBasisChange: (b) => { opBasis = b; opRenderFocused(); } });
-      OperatingAssumptions.render(asm, { record, globalDefaults: gd,
-        onChange: (patch) => write(() => OperatingStore.setAssumptions(key, patch)),
-        onReset: () => write(() => OperatingStore.setAssumptions(key, null)) });
-      try{ opRenderPush(); }catch(e){}
-    }
+    // (Removed in v2.7.2) The separate editable "operating model" card + controllable checkboxes lived here
+    // as opRenderFocused(), rendering a second, hand-editable copy of the same T12 data the underwriting tab
+    // already shows. It was a redundant duplicate (the checkboxes drove nothing after the covenant scan was
+    // cut), so it and its two view modules (operating-sheet.js, operating-assumptions.js) are gone. The
+    // classified T12 lines, the editable assumptions, and "what to push" now live once, in the Setup itself.
     // ---- "What to push on this property" — for THIS property, which operating moves add the most to
     // its UNDERWRITTEN NOI (the figure the loan is sized on)? The app's own underwriting engine computes,
     // to the cent, how much each move adds by re-running the build with that one line perturbed. The key
