@@ -3963,6 +3963,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
+    try{ window.opProperties = opProperties; window.propertyKey = propertyKey; }catch(e){}   // diagnostics for tests: the per-property grouping
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -5932,9 +5933,21 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ return loans.some(function(l){ var na = normPropAddr(l.propertyAddress); return normPropName(l.propertyName) === name && na && na !== addr; }); }catch(e){ return false; }
     }
     function propertyKey(loan){
-      var name = normPropName(loan && loan.propertyName), addr = normPropAddr(loan && loan.propertyAddress);
-      if(!name) return addr ? ("addr:" + addr) : ("name:" + String((loan && loan._id) || "").trim().toLowerCase());
-      if(addr && propNameShared(name, addr)) return "name:" + name + "|addr:" + addr;   // two same-named properties → split by address
+      if(!loan) return "name:";
+      // A property is ONE physical location, and every loan against it — senior AND mezzanine — belongs to
+      // that one property. A subordinate loan carries a different NAME string from its senior on the very
+      // same building ("Avalon WP (Mezz)" vs "Avalon White Plains", "K2 Sweetwater (Mezz)" vs "K2 Sweetwater
+      // (FIU Residences)"), so keying by name alone would wrongly split the mezz off into its own row. So
+      // anchor every loan to the SENIOR sharing its address, and key by THAT senior's name — the human,
+      // stable identity, while the shared address is what proves two loans are the same property.
+      var addr = normPropAddr(loan.propertyAddress), anchor = loan;
+      if(addr){
+        var here = loans.filter(function(l){ return normPropAddr(l.propertyAddress) === addr; });
+        if(here.length > 1){ var sr = here.slice().sort(loanRank)[0]; if(sr) anchor = sr; }   // seniors before mezz, largest first
+      }
+      var name = normPropName(anchor.propertyName), aAddr = normPropAddr(anchor.propertyAddress);
+      if(!name) return aAddr ? ("addr:" + aAddr) : ("name:" + String(anchor._id || "").trim().toLowerCase());
+      if(aAddr && propNameShared(name, aAddr)) return "name:" + name + "|addr:" + aAddr;   // two same-named properties at different addresses → split by address
       return "name:" + name;
     }
     // Senior(s) first, mezz last; among seniors the largest original balance leads (it names the property in the

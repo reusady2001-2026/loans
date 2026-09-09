@@ -15,6 +15,21 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Every loan against a property — senior AND mezzanine — groups into that one property (v2.7.4).** The
+  name-first keying (v2.7.2) had a real bug: a property is one physical building, and its senior and mezzanine
+  loans belong to it together, but a mezzanine loan carries a different NAME string from its senior on the
+  same building ("Avalon WP (Mezz)" vs "Avalon White Plains"; "K2 Sweetwater (Mezz)" vs "K2 Sweetwater (FIU
+  Residences)"). Keying purely by name split the mezzanine into its own row, so the underwriting selector
+  listed loans rather than properties — and, worse, the senior's combined position, debt service coverage,
+  loan-to-value, debt yield and refinance sizing were computed WITHOUT the mezzanine debt. `propertyKey` now
+  anchors every loan to the SENIOR sharing its address and keys by that senior's name: the shared address
+  proves two loans are the same building, while the name stays the human, stable identity. Senior and
+  mezzanine group into one property (named by the senior); a single-loan property keeps its exact key, so no
+  uploaded T12 folder is orphaned, and the per-property document folders (keyed the same way) are fixed by the
+  same change. In the portfolio this drops two spurious rows — the selector lists 28 properties, "Avalon White
+  Plains" and "K2 Sweetwater (FIU Residences)" each carry their 2 loans, and no "(Mezz)" row appears. Verified
+  in the real Electron app (property-grouping e2e + the existing suites, all green).
+
 - **"What to push" is Claude's analysis now, and the T12 follows a renamed property (v2.7.3).** Two fixes.
   (1) **The T12 folder follows the loan when its property key changes.** The durable T12 lives in the
   property's on-disk folder keyed by the property key; a name edit (or an address edit on a property with no
