@@ -3157,7 +3157,7 @@ tr[data-loan]:hover td{background:#eef2f7}
        operator types the T12 actuals and the benchmarks and it computes live.
        ================================================================ */
     const UW_KEY = "lds_setup_v1";
-    function uwDefaults(){ return { name:"", units:null, rrGPR:null, t12Text:"",
+    function uwDefaults(){ return { name:"", units:null, rrGPR:null, avgRentUnit:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
       bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
@@ -3296,11 +3296,20 @@ tr[data-loan]:hover td{background:#eef2f7}
           (i.t12Meta && i.t12Meta.ai ? aiT12MetaHtml(i) : '')+
           (i.t12Meta && i.t12Meta.leaseUp ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
             '<span class="font-bold uppercase tracking-wide">Lease-up detected</span> &mdash; income ramped over the year, so the 12-month figure understates the stabilized NOI. '+
-            'Pick a trailing-period basis above to annualize, or enter the stabilized rent-roll GPR. The in-place NOI below is exact for the selected basis.</div>' : '')+
+            'Pick a trailing-period basis above to annualize, or enter the stabilized gross potential rent. The in-place NOI below is exact for the selected basis.</div>' : '')+
           '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
-            '<label class="text-sm text-slate-600">Property<input class="'+inCls+' mt-1" data-uwf="name" value="'+escapeHtml(i.name||"")+'" placeholder="(optional)"></label>'+
-            '<label class="text-sm text-slate-600">Units<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="from rent roll"></label>'+
-            '<label class="text-sm text-slate-600">Rent-roll GPR / yr<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="rrGPR" value="'+uwStr(i.rrGPR)+'" placeholder="optional"></label>'+
+            '<label class="text-sm font-medium text-slate-700">Units'+
+              '<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="e.g. 200">'+
+              '<span class="mt-1 block text-[11px] leading-snug text-slate-400">How many apartments the property has, from the rent roll. Sets the replacement reserve and any per-unit costs in the underwriting.</span>'+
+            '</label>'+
+            '<label class="text-sm font-medium text-slate-700">Gross potential rent &mdash; per year'+
+              '<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="rrGPR" value="'+uwStr(i.rrGPR)+'" placeholder="e.g. 3,600,000">'+
+              '<span class="mt-1 block text-[11px] leading-snug text-slate-400">A whole year&rsquo;s rent if every unit were leased at market, before vacancy. Leave it blank to use the rent already on the statement.</span>'+
+            '</label>'+
+            '<label class="text-sm font-medium text-slate-700">Average rent per unit &mdash; per month'+
+              '<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="avgRentUnit" value="'+uwStr(i.avgRentUnit)+'" placeholder="e.g. 1,500">'+
+              '<span class="mt-1 block text-[11px] leading-snug text-slate-400">Easier than the yearly figure? Enter the average monthly rent for one unit and the app fills the year in for you &mdash; average &times; units &times; 12.</span>'+
+            '</label>'+
           '</div>'+
         '</div>'+
         (b ? uwSetupOutputHtml(b) : '')+
@@ -3353,7 +3362,13 @@ tr[data-loan]:hover td{background:#eef2f7}
           (eff.vacancyFromActual && eff.managementFromActual ? '; ' : '')+
           (eff.managementFromActual ? (eff.vacancyFromActual?'the ':'the management fee is credited at the statement’s ')+(eff.vacancyFromActual?'management fee at the statement’s ':'')+fmtPct(eff.actualManagementFee)+' (better than the '+fmtPct(eff.assumeManagementFee)+' assumed)' : '')+
           '.</p>' : '';
-      return review +
+      // Lease-up: when this property's General Data marks the in-place NOI as annualized from the last
+      // 3 months (the statement's gross rent didn't begin until after month 2), say so — the 12-month
+      // total below understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
+      const gdRec = gdFullCache[opFocusKey], luNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "leaseup") ? gdRec.noi : null;
+      const leaseUpBanner = luNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
+        '<span class="font-bold uppercase tracking-wide">Lease-up</span> &mdash; the statement&rsquo;s gross rent didn&rsquo;t begin until after the second month, so the twelve-month total ('+(luNoi.inPlaceStatement!=null?fmtMoney(luNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is annualized from the last 3 months &times; 4: <strong>'+fmtMoney(luNoi.inPlace)+'</strong>'+((luNoi.leaseUpMonths&&luNoi.leaseUpMonths.length)?' ('+luNoi.leaseUpMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+      return review + leaseUpBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<0.005) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+   // to the cent, same tolerance the engine reconciles at
@@ -3405,11 +3420,20 @@ tr[data-loan]:hover td{background:#eef2f7}
         i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
-    // Units / rent-roll GPR feed the underwritten column & sizing — rebuild the Setup on blur (not per keystroke, to keep focus).
+    // Average monthly rent per unit → the yearly gross potential rent the underwriting uses (average × units × 12).
+    function uwFillRentFromAvg(){
+      const u = uwNum(uwState.input.units), a = uwNum(uwState.input.avgRentUnit);
+      if(u!=null && u>0 && a!=null && a>0){ uwState.input.rrGPR = Math.round(a*u*12); saveUW(); }
+    }
+    // Units / yearly rent / average-per-unit feed the underwritten column & sizing — rebuild the Setup on blur
+    // (not per keystroke, to keep focus). An average per unit fills the yearly rent; typing the yearly figure
+    // directly clears the average so the two can never disagree.
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
       if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
-      const k = t.getAttribute && t.getAttribute("data-uwf"); if(k==="units"||k==="rrGPR") renderUnderwriting(); });
+      const k = t.getAttribute && t.getAttribute("data-uwf");
+      if(k==="avgRentUnit" || k==="units"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
+      if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); renderUnderwriting(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
@@ -3466,6 +3490,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ const p = opProp(key);
         OperatingUpload.apply(OperatingStore, key, r.parsed, { fileName: r.name, period: "12-mo Total · " + r.name, propertyName: p ? p.name : key, units: (p && p.loans[0] && p.loans[0].units) || null });
       }catch(e){}
+      try{ await opEnsureGeneralData(key); }catch(e){}   // warm the folder NOI cache too, so coverage/DSCR/debt yield can read it folder-first
     }
     // Select a property in the underwriting tab: read its T12 from disk, rebuild BOTH the sizing
     // Setup and the operating card from that live parse, and show it. The dropped-in T12 (uwState)
@@ -3587,10 +3612,21 @@ tr[data-loan]:hover td{background:#eef2f7}
       var setup = SetupBuilder.buildSetup({ parsed: parsedM, units: units, rrGPR: rrGPR, benchmarks: bench });
       return { r: r, parsedM: parsedM, bench: bench, p: p, sr: sr, setup: setup };
     }
-    function opGDNoi(ctx){
-      return { inPlace: ctx.setup.result.inPlace.noi, underwritten: ctx.setup.result.underwritten.noi,
+    // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
+    // lease-up rule: when the statement's gross rent doesn't begin in the first or second month, the
+    // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
+    // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
+    function opGDNoi(ctx, series){
+      if(!series && window.GeneralData) series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
+      var statementNOI = ctx.setup.result.inPlace.noi;
+      var lu = (series && window.GeneralData) ? GeneralData.leaseUpNOI(series) : { applied: false };
+      var inPlace = (lu && lu.applied && lu.noi != null) ? lu.noi : statementNOI;
+      return { inPlace: inPlace, inPlaceStatement: statementNOI,
+               inPlaceBasis: (lu && lu.applied) ? "leaseup" : "statement", leaseUpMonths: (lu && lu.applied) ? lu.monthsUsed : null,
+               underwritten: ctx.setup.result.underwritten.noi,
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
+    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, underwritten: noi.underwritten, period: noi.period }; }
     // On a T12 upload: parse its month columns, roll them into general-data.json
     // (24-month window, newer months win), and refresh the two NOIs.
     async function opUpdateGeneralData(key){
@@ -3598,12 +3634,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(!key || !window.GeneralData) return null;
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
         var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
-        var noi = opGDNoi(ctx);
+        var noi = opGDNoi(ctx, series);
         var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: (ctx.sr && ctx.sr.units) || null };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
         await opWriteGeneralDataFile(key, gd);
-        gdNOICache[key] = { inPlace: noi.inPlace, underwritten: noi.underwritten, period: noi.period };
+        gdNOICache[key] = opGDCache(noi);
         gdFullCache[key] = gd;
         return gd;
       }catch(e){ return null; }
@@ -3617,7 +3653,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         var noi = opGDNoi(ctx); noi.computedAt = new Date().toISOString();
         existing.noi = noi; existing.updatedAt = noi.computedAt;
         await opWriteGeneralDataFile(key, existing);
-        gdNOICache[key] = { inPlace: noi.inPlace, underwritten: noi.underwritten, period: noi.period };
+        gdNOICache[key] = opGDCache(noi);
         gdFullCache[key] = existing;
       }catch(e){}
     }
@@ -3628,7 +3664,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
       var gd = await opLoadGeneralData(key);
       gdFullCache[key] = gd || null;
-      gdNOICache[key] = (gd && gd.noi) ? { inPlace: gd.noi.inPlace, underwritten: gd.noi.underwritten, period: gd.noi.period } : null;
+      gdNOICache[key] = (gd && gd.noi) ? opGDCache(gd.noi) : null;
       return gdNOICache[key];
     }
     // The General Data card for the underwriting tab: identity + both NOIs + a per-line
@@ -3662,7 +3698,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<span class="text-[11px] text-slate-400">'+months.length+' month'+(months.length===1?'':'s')+' &middot; '+span+'</span>'+
         '</div>'+
         '<div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">'+
-          '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div></div>'+
+          '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+(noi.inPlaceBasis==="leaseup"?"In-place NOI &middot; lease-up":"In-place NOI (T12)")+'</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div>'+
+            (noi.inPlaceBasis==="leaseup"?'<div class="text-[10px] text-slate-400">last 3 months &times; 4 &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;")+'</div>':'')+'</div>'+
           '<div class="rounded-lg border border-brand-200 bg-brand-50 p-2"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="font-bold tabular-nums text-brand-700">'+(noi.underwritten!=null?fmtMoney(noi.underwritten):"&mdash;")+'</div></div>'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">Saved to the folder</div><div class="font-semibold text-[12px] text-slate-600">general-data.json</div></div>'+
         '</div>'+
@@ -3857,7 +3894,11 @@ tr[data-loan]:hover td{background:#eef2f7}
         });
       }
     }
-    function loanNOI(loan){ const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
+    // The property's in-place NOI, FOLDER-FIRST: general-data.json (the property's own saved figure,
+    // which carries any lease-up correction) wins; then the live operating model read from the T12;
+    // then the loan's hand-entered NOI. Nothing is deleted — the in-app value is simply the fallback.
+    function folderNOI(loan){ if(!loan) return null; const g = gdNOICache[propertyKey(loan)]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
+    function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
     // A T12 dropped while a property is focused is ALSO written into that property's record.
     function opApplyUploadToFocused(parsed, input){
       if(!opFocusKey || !opReady()) return;
@@ -5330,7 +5371,7 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<div>&bull; <b>Floating / Hybrid ARM</b>: '+chip(L("index"))+' '+chip(L("spread"))+'</div>'+
             '<div>&bull; <b>Hybrid ARM</b> also: '+chip(L("armInitialFixedMonths"))+' '+chip(L("armAdjustFreqMonths"))+'</div>'+
           '</div></div>'+
-        '<div><div class="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Optional &mdash; used if present</div>'+
+        '<div><div class="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Used if present</div>'+
           '<div class="flex flex-wrap gap-1.5">'+optional.map(chip).join('')+'</div></div>';
     }
     function openImportChecklist(){
@@ -6082,6 +6123,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
+      const g = (list && list.length) ? folderNOI(list[0]) : null;   // folder-first: general-data.json's saved NOI (lease-up-corrected when it applies)
+      if(g != null) return g;
       const o = (list && list.length) ? opNOI(list[0]) : null;   // the property's operating model, when it has one
       if(o != null) return o;
       for(const l of list){ if(noiEntered(l) && Number(l.noi) > 0) return Number(l.noi); }

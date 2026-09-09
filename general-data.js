@@ -140,5 +140,36 @@
     return res;
   }
 
-  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift };
+  // Monthly NOI for one calendar month: income-role lines add (including the negative
+  // vacancy / concession lines), expense-role lines subtract. Raw classified figures —
+  // an annualized run-rate estimate, not a printed statement footing.
+  function monthNOI(byCode, ym){
+    var noi = 0;
+    for (var c in byCode) if (Object.prototype.hasOwnProperty.call(byCode, c)){
+      var ln = byCode[c], v = ln.monthly[ym];
+      if (!isNum(v)) continue;
+      noi += (ln.role === "expense") ? -v : v;
+    }
+    return r2(noi);
+  }
+  // Lease-up in-place NOI. When the trailing statement's gross rent doesn't begin in the
+  // first OR second month (the property was still leasing up at the start of the trailing
+  // twelve), the plain 12-month sum understates the run-rate — so annualize the last three
+  // months' NOI (× 4). Trigger: NO gross rent in BOTH month 1 and month 2. Any gross rent in
+  // month 1 or 2 → not applied (use the 12-month sum, even if a later month is zero).
+  // series = monthlySeries() output. Returns { applied, noi, monthsUsed, basis, reason }.
+  function leaseUpNOI(series){
+    var byCode = (series && series.byCode) || {};
+    var months = (series && Array.isArray(series.months)) ? series.months.slice().sort() : [];
+    if (months.length < 3) return { applied: false, noi: null, reason: "fewer than 3 months of data" };
+    var gpr = byCode.GPR ? byCode.GPR.monthly : null;
+    if (!gpr) return { applied: false, noi: null, reason: "no gross-rent line to judge the lease-up" };   // can't detect lease-up without gross rent — never a false positive
+    var g1 = gpr[months[0]], g2 = gpr[months[1]];
+    if ((isNum(g1) && g1 > 0) || (isNum(g2) && g2 > 0)) return { applied: false, noi: null, reason: "gross rent present in month 1 or 2" };
+    var last3 = months.slice(months.length - 3), noi3 = 0;
+    last3.forEach(function (ym){ noi3 += monthNOI(byCode, ym); });
+    return { applied: true, noi: r2(noi3 * 4), monthsUsed: last3, basis: "last 3 months × 4" };
+  }
+
+  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, leaseUpNOI: leaseUpNOI };
 });

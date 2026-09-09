@@ -95,5 +95,32 @@ group("deltas — income line and empty record", function (){
   ok(G.deltas({}).length === 0, "deltas of an empty record is empty, no throw");
 });
 
+group("leaseUpNOI — last 3 months × 4 when rent starts after month 2", function (){
+  function ym(n){ return "2026-" + (n < 10 ? "0" : "") + n; }
+  function build(gprArr, retArr){   // arrays indexed 0..11 for Jan..Dec 2026
+    var gpr = {}, ret = {};
+    for (var i = 0; i < 12; i++){ if (gprArr[i] != null) gpr[ym(i+1)] = gprArr[i]; if (retArr[i] != null) ret[ym(i+1)] = retArr[i]; }
+    return G.monthlySeries({ rows: [ { name:"GPR", section:"INCOME", monthly: gpr }, { name:"RET", section:"EXPENSE", monthly: ret } ] }, classify);
+  }
+  var ret = [100,100,100,100,100,100,100,100,100,100,100,100];
+
+  // lease-up: no rent in Jan or Feb, ramps from Mar; last 3 months (Oct/Nov/Dec) run GPR 1000 each
+  var lu = G.leaseUpNOI(build([0,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret));
+  ok(lu.applied === true, "lease-up detected: no gross rent in month 1 or 2");
+  near(lu.noi, 10800, "NOI = last 3 months × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
+  ok(lu.monthsUsed && lu.monthsUsed.join(",") === "2026-10,2026-11,2026-12", "the last 3 calendar months were used");
+
+  ok(G.leaseUpNOI(build([500,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when month 1 has gross rent");
+  ok(G.leaseUpNOI(build([0,500,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when only month 2 has gross rent");
+  ok(G.leaseUpNOI(build([500,500,500,500,500,500,500,500,500,500,500,0], ret)).applied === false, "a later EMPTY month does not trigger it when rent began in month 1 (still the 12-month sum)");
+
+  var few = G.monthlySeries({ rows: [ { name:"GPR", section:"INCOME", monthly:{ "2026-01":0, "2026-02":0 } }, { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100, "2026-02":100 } } ] }, classify);
+  ok(G.leaseUpNOI(few).applied === false, "NOT applied with fewer than 3 months of data");
+
+  // no gross-rent line at all → never a false positive (can't judge a lease-up without gross rent)
+  var noGpr = G.monthlySeries({ rows: [ { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100 } } ] }, classify);
+  ok(G.leaseUpNOI(noGpr).applied === false, "NOT applied when there is no gross-rent line to judge");
+});
+
 console.log("\n" + (fails ? "FAIL — " + fails + " failing, " + passes + " passing" : "all " + passes + " general-data checks passed"));
 process.exit(fails ? 1 : 0);

@@ -15,6 +15,23 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **Underwriting input clean-up, folder-first NOI, and the lease-up rule (v2.8.1).** Three things.
+  (1) The underwriting inputs stopped nagging and started explaining: the dead duplicate "Property" box is
+  gone; the word "optional" is gone from the placeholders; "Rent-roll GPR / yr" is now plain "Gross potential
+  rent — per year" with a one-line explainer, and Units carries one too; and a new "Average rent per unit —
+  per month" box fills the yearly figure for you (average × units × 12), following the unit count and clearing
+  itself if you type a yearly figure by hand. (2) Coverage, DSCR and debt yield now read each property's NOI
+  **folder-first** — from general-data.json when it's there, falling back to the in-app value (the live T12
+  read, then the hand-entered NOI) when it isn't. Nothing was deleted; the folder is simply preferred. (3) The
+  **lease-up rule**: when a property's T12 shows no gross rent in the first OR second month (it was still
+  leasing up), the plain 12-month sum understates the run-rate, so the in-place NOI becomes the **last 3 months
+  × 4**; if gross rent is present in month 1 or 2 the 12-month sum stands, even if a later month is zero. The
+  annualized figure is stored in general-data.json and — because coverage/DSCR/debt yield/refinance read
+  folder-first — flows everywhere, with a lease-up banner in the Setup that shows both the annualized working
+  NOI and the 12-month statement total. Pure lease-up/merge logic stays in general-data.js with its own unit
+  suite; an Electron e2e proves the input clean-up, and a second proves the lease-up path end-to-end against a
+  synthetic lease-up statement (statement 1,760,000 → annualized 2,760,000).
+
 - **General Data — a per-property rolling 24-month operating history + a refi NOI-basis switch (v2.8.0).**
   Every property folder now carries a `general-data.json` beside its T12 (same on-disk pattern as
   `assumptions.json`), holding the property's identity, its two NOIs (the in-place T12 NOI and the calculated
