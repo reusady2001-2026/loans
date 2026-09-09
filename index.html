@@ -3796,16 +3796,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     // assumes and reason for itself. Returns null until a property with a T12 is focused.
     function opT12Lines(key){
       if(!key || opFocusKey !== key || !uwLastBuilt) return null;
-      const b = uwLastBuilt, ws = b.worksheet, r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+      const ws = uwLastBuilt.worksheet, r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
       const income = [], expense = [];
       ws.lines.forEach(l => { const row = { line: (OP_PUSH_LABEL[l.key] || l.label), annual: r2(l.t12) };
         if(l.section === "rental" || l.section === "other") income.push(row);
         else if(l.section === "expense") expense.push(row); });
-      const base = ["GPR","EMPL","MOD"].reduce((s,c) => { const x = ws.lines.find(l => l.key === c); return s + (x ? Number(x.t12)||0 : 0); }, 0);
-      const vac = ws.lines.find(l => l.key === "VAC"), mg = ws.lines.find(l => l.key === "MGMT"), egi = Number(b.result.inPlace.egi) || 0;
-      return { income: income, expense: expense,
-        actualVacancy: base > 0 ? Math.max(0, -(Number(vac && vac.t12) || 0)) / base : null,
-        actualManagementFee: egi > 0 ? (Number(mg && mg.t12) || 0) / egi : null };
+      return { income: income, expense: expense };
     }
     function aiPushSchema(){
       return { type:"object", properties:{
@@ -3816,25 +3812,28 @@ tr[data-loan]:hover td{background:#eef2f7}
         }, required:["title","rank","impact","effort","rationale"] } }
       }, required:["summary","moves"] };
     }
-    // The prompt the embedded Claude gets. It is deliberately SHORT: Claude reads the property's own T12 and
-    // decides what to push — the app does not pre-chew a menu of moves. The only thing it must hold in mind is
-    // the underwriting (the underwritten NOI, built from the assumptions, is what the loan is sized on), so it
-    // compares what the statement actually runs at against what the underwriting assumes.
+    // The prompt the embedded Claude gets. It is deliberately SHORT and gets ONLY the assumptions and the T12
+    // — no menu of moves, no pre-computed numbers. It explains how the assumptions turn the statement into the
+    // underwritten NOI (the figure the loan is sized on), and asks Claude to find what raises that NOI the
+    // most. A move is not judged by whether it "beats" an assumption — it is judged by how much underwritten
+    // NOI it adds.
     var AI_PUSH_INSTRUCTION = [
-      "You are the asset manager for ONE multifamily property. Read its trailing-twelve-month operating statement and its underwriting assumptions, provided as JSON on stdin: { property, units, underwritingAssumptions, actualsFromStatement, inPlaceNOI, underwrittenNOI, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure.",
-      "Decide what the owner should PUSH to grow this property's value, and rank the moves — most important first. Work it out yourself from the statement; you are NOT given a list of moves to choose from. The one thing to hold in mind is the underwriting: the underwritten NOI is what the loan is sized on, and it is built from the underwritingAssumptions, so a move is worth pushing when it makes the underwritten NOI better than those assumptions currently credit. Compare actualsFromStatement to underwritingAssumptions: where the property already runs BETTER than an assumption (for example it runs a tighter vacancy than the underwriting assumes), the push may simply be to underwrite it at the level the statement proves — no operational change; where a cost line looks high or an income line looks low, the push is operational. Never tell the owner to move a figure in the WRONG direction (e.g. to a worse vacancy than they already run).",
-      "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect on this property's NOI, as a short phrase grounded in the statement's own figures (for example \"about $100,000 a year\"); never invent a market rent or comparable you were not given — if you cannot ground a number, describe the impact in words; effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
-      "Use FULL WORDS only. The ONLY abbreviation permitted anywhere in your output is NOI. Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
+      "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement and the underwriting assumptions, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%).",
+      "The loan is sized on the property's UNDERWRITTEN NOI — the statement re-priced with these assumptions: vacancy is charged at the vacancy assumption (not the statement's own vacancy), the management fee at the assumed share of effective gross income, replacement reserves at the assumed dollars per unit, and every other line passes through at its actual amount from the statement.",
+      "Read the statement against those assumptions and decide what the owner should PUSH to raise this property's underwritten NOI the most, then rank the moves by how much they raise it. A move does NOT have to 'beat' an assumption — weigh each one only by how much underwritten NOI it adds. Consider anything the statement supports: raising an income line, cutting a controllable cost, or — where the statement proves the property runs better than an assumption currently credits — underwriting that input closer to what the statement shows. Never tell the owner to move a figure the wrong way (for example toward a worse vacancy than the statement already runs). Work it out yourself; you are not given a list of moves.",
+      "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect on the underwritten NOI, grounded in the statement's own figures (for example \"about $100,000 a year\"); never invent a market rent or comparable you were not given — if you cannot ground a number, describe the impact in words; effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
+      "Use FULL WORDS only. The ONLY abbreviation permitted is NOI (so \"underwritten NOI\" is fine). Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
       "Return { summary, moves:[{ title, rank, impact, effort, rationale }] } via the structured-output tool, best first."
     ].join("\n");
     function opPushInput(key){
       const t = opT12Lines(key); if(!t) return null;
-      const p = opProp(key), bench = uwState.input.bench, b = uwLastBuilt;
-      return { property: (p && p.name) || key, units: b.worksheet.units || null,
+      const p = opProp(key), bench = uwState.input.bench;
+      // Claude gets ONLY the assumptions and the T12. The assumptions are the user's own EDITABLE,
+      // per-property values (read live from bench, never hardcoded) — change them in the underwriting tab
+      // and re-analyse, and Claude works from the new numbers. Nothing else is pre-computed for Claude.
+      return { property: (p && p.name) || key, units: uwLastBuilt.worksheet.units || null,
         underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
           reservePerUnit: bench.reservePerUnit, capRate: (bench.sizing && bench.sizing.capRate) },
-        actualsFromStatement: { vacancy: t.actualVacancy, managementFee: t.actualManagementFee },
-        inPlaceNOI: b.result.inPlace.noi, underwrittenNOI: b.result.underwritten.noi,
         t12: { income: t.income, expense: t.expense } };
     }
     function opRunPush(key){
