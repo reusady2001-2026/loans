@@ -38,6 +38,55 @@
   }
   function descriptive(s){ return /[A-Za-z]{3,}/.test(s) && !/^[\d\-.\s]+$/.test(s); }
 
+  // --- Calendar month of a period-column HEADER cell (opt-in monthly extraction) ---
+  // A month column's header → { y, m } (m = 1..12), or { y:null, m } for a bare
+  // month with no year, or null when the cell names no month. Accepts a Date, an
+  // Excel serial date, a bare month number, or the common string forms a property
+  // accounting export prints: "Jan 2026", "Jan-26", "January 2026", "2026-01",
+  // "01/2026", "1/31/2026". Years are resolved across the row afterwards.
+  var MONTH_NAME = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, sept:9, oct:10, nov:11, dec:12,
+    january:1, february:2, march:3, april:4, june:6, july:7, august:8, september:9, october:10, november:11, december:12 };
+  function ym2(y){ return y < 100 ? 2000 + y : y; }        // a 2-digit year is this century ("26" → 2026)
+  function pad2(n){ return (n < 10 ? "0" : "") + n; }
+  function ymStr(y, m){ return y + "-" + pad2(m); }
+  function monthTok(cell){
+    if (cell instanceof Date && !isNaN(cell.getTime())) return { y: cell.getUTCFullYear(), m: cell.getUTCMonth() + 1 };
+    if (typeof cell === "number" && isFinite(cell)){
+      if (cell === Math.floor(cell) && cell >= 25569 && cell <= 73050){    // Excel serial (epoch 1899-12-30)
+        var d = new Date(Math.round(cell) * 86400000 + Date.UTC(1899, 11, 30));
+        return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
+      }
+      if (cell >= 1 && cell <= 12 && cell === Math.floor(cell)) return { y: null, m: cell };   // bare month number
+      return null;
+    }
+    var s = str(cell).toLowerCase().trim(); if (!s) return null;
+    var m;
+    if ((m = /^([a-z]{3,9})\.?[\s.\-\/'’]*(\d{2,4})?$/.exec(s)) && MONTH_NAME[m[1]] != null) return { y: m[2] != null ? ym2(+m[2]) : null, m: MONTH_NAME[m[1]] };
+    if ((m = /^(\d{4})[-\/.](\d{1,2})(?:[-\/.]\d{1,2})?$/.exec(s)) && +m[2] >= 1 && +m[2] <= 12) return { y: +m[1], m: +m[2] };   // YYYY-MM[-DD]
+    if ((m = /^(\d{1,2})[-\/.](\d{4})$/.exec(s)) && +m[1] >= 1 && +m[1] <= 12) return { y: +m[2], m: +m[1] };                     // MM/YYYY
+    if ((m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/.exec(s)) && +m[1] >= 1 && +m[1] <= 12) return { y: ym2(+m[3]), m: +m[1] }; // MM/DD/YYYY
+    return null;
+  }
+  // Resolve every month column to a calendar "YYYY-MM". A T12's month columns are
+  // consecutive, so one dated anchor fixes the whole row: each column is the
+  // anchor's month ± its offset. If a column that carries its OWN year/month
+  // disagrees with that model the row isn't a clean run, so fall back to each
+  // column's own parsed date (null where a header names no datable month). With no
+  // dated anchor at all, months carry m only (ym null) and the caller degrades.
+  function resolveMonthCols(headerRow, monthIdx){
+    var toks = monthIdx.map(function (c){ return { col: c, tok: monthTok(headerRow ? headerRow[c] : null) }; });
+    var out = toks.map(function (t){ return { col: t.col, label: str(headerRow ? headerRow[t.col] : ""), ym: null, m: t.tok ? t.tok.m : null }; });
+    var a = -1;
+    for (var i = 0; i < toks.length; i++) if (toks[i].tok && toks[i].tok.y != null){ a = i; break; }
+    if (a < 0) return out;
+    var ya = toks[a].tok.y, ma = toks[a].tok.m, ok = true;
+    var comp = out.map(function (o, i){ var tot = (ma - 1) + (i - a), y = ya + Math.floor(tot / 12), mm = ((tot % 12) + 12) % 12 + 1; return { y: y, m: mm }; });
+    for (var j = 0; j < toks.length && ok; j++){ var tk = toks[j].tok; if (tk && ((tk.m != null && tk.m !== comp[j].m) || (tk.y != null && tk.y !== comp[j].y))) ok = false; }
+    if (ok){ out.forEach(function (o, i){ o.ym = ymStr(comp[i].y, comp[i].m); }); return out; }
+    out.forEach(function (o, i){ var tk = toks[i].tok; o.ym = (tk && tk.y != null && tk.m != null) ? ymStr(tk.y, tk.m) : null; });
+    return out;
+  }
+
   // Locate the header row and the period columns. The header row is the one that
   // carries a "Total" (12-month / YTD / annual) label AND several month columns —
   // that month test keeps metadata like "Statement (12 months)" from matching. A
@@ -137,6 +186,15 @@
     if (!grid || typeof grid !== "object") grid = [];          // junk input → empty parse, never a throw
     var h = findHeader(grid, { loose: true }), cols = h.cols;
     var dataStart = h.headerRow >= 0 ? h.headerRow + 1 : 0;
+    // Opt-in: resolve the detected month columns to calendar months so each detail
+    // line can carry its own monthly values (rolling per-line history). Off by
+    // default, so the standard single-column parse is byte-for-byte unchanged.
+    var monthCols = opts.monthly ? resolveMonthCols(grid[h.headerRow] || null, h.months) : null;
+    function monthlyOf(row){
+      var mm = {};
+      for (var i = 0; i < monthCols.length; i++){ var mc = monthCols[i]; if (!mc.ym) continue; var v = toNum(row[mc.col]); if (v != null) mm[mc.ym] = v; }
+      return mm;
+    }
     var basis = String(opts.basis || "total").toLowerCase();
     var byBasis = { total: cols.total, t12: (cols.t12 >= 0 ? cols.t12 : cols.total), t6: cols.t6, t3: cols.t3, t1: cols.t1 };
     var amountCol = (opts.amountCol != null) ? +opts.amountCol
@@ -246,7 +304,9 @@
         continue;                                              // never counted as a detail line
       }
       if (phase === "below"){ belowLine.push({ name: name, amount: amt, row: r }); continue; }
-      rows.push({ name: name, amount: amt, section: section, sub: sub, row: r });
+      var rowObj = { name: name, amount: amt, section: section, sub: sub, row: r };
+      if (monthCols) rowObj.monthly = monthlyOf(row);         // per-line calendar-month values, only when opts.monthly
+      rows.push(rowObj);
       if (amt) nzRows++;                                       // $0 stub rows above a summary block must not defeat its detection
     }
     var hasSummary = summaryTotals.income != null || summaryTotals.expense != null || summaryTotals.noi != null;
@@ -270,11 +330,11 @@
     if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = Math.round((totals.income - totals.expense) * 100) / 100;
     if (hasSummary && totals.noi == null && summaryTotals.noi != null){ totals.noi = summaryTotals.noi; footing.noiRow = summaryFooting.noiRow; }
     return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
-             basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
+             monthCols: monthCols, basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
              rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine,
              summaryTotals: hasSummary ? summaryTotals : null, summaryFooting: hasSummary ? summaryFooting : null,
              summaryMismatch: summaryMismatch, warnings: warnings };
   }
 
-  return { parseGrid: parseGrid, findHeader: findHeader };
+  return { parseGrid: parseGrid, findHeader: findHeader, monthTok: monthTok, resolveMonthCols: resolveMonthCols };
 });

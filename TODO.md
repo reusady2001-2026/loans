@@ -15,6 +15,23 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **General Data — a per-property rolling 24-month operating history + a refi NOI-basis switch (v2.8.0).**
+  Every property folder now carries a `general-data.json` beside its T12 (same on-disk pattern as
+  `assumptions.json`), holding the property's identity, its two NOIs (the in-place T12 NOI and the calculated
+  underwritten NOI), and a **rolling monthly history of every operating line**. The T12 parser was taught to
+  read each statement's month columns (it already detected them; now it resolves each to a real calendar month
+  and emits per-line monthly values), so every upload merges its months in — overlapping months take the newer
+  statement, and the most recent **24 months** are kept. Three months after a 12-month T12 you carry 15 months;
+  once two years build up you get a clean trailing-12-vs-prior-12 read of how each line moved. The underwriting
+  tab shows a compact **General Data** card (both NOIs + each line's trailing-12 and its rise/fall — so "how
+  much did taxes go up?" is answered at a glance). The refinance calculator gains a **NOI basis** toggle —
+  *In-place T12* vs *Underwritten* — that re-drives DSCR, debt yield, value and leverage off the chosen figure
+  (default underwritten, the number a lender sizes to). This is the "under 2.8 you can't refi, at 3.2 you can"
+  question made concrete: switch the basis and the coverage moves with it, and the gap between the two is the
+  story told to the lender. Pure history/merge logic lives in `general-data.js` with its own unit suite; the
+  monthly parse has one too; and an Electron e2e proves the file is written (12 real months off the crest T12),
+  the card renders, and the toggle flips the refinance between the in-place and underwritten NOI.
+
 - **The underwriting uses the BETTER of the assumption and what the statement proves (v2.7.7).** For the two
   operating lines the underwritten column prices off an assumption — vacancy and the management fee — the
   engine now underwrites at `min(actual, assumption)` (lower is better for both). So a property running a

@@ -22,6 +22,7 @@
   <script src="./operating-calc.js"></script>
   <script src="./operating-upload.js"></script>
   <script src="./portfolio-rollup.js"></script>
+  <script src="./general-data.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -3176,6 +3177,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         const r = await opDiskSaveT12(key, file);
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
         await opSelectProperty(key);   // re-read + re-parse from the file just saved
+        try{ await opUpdateGeneralData(key); if(opFocusKey === key) renderUnderwriting(); }catch(e){}   // roll this T12's months into General Data (history + both NOIs), then show the history
         const noi = (uwState.input.t12Meta && uwState.input.t12Meta.totals && uwState.input.t12Meta.totals.noi);
         toast(who + ": T12 saved to the property folder"+(noi!=null ? " — statement NOI "+uwFmt(noi) : "")+".","check");
       }catch(err){ toast("Couldn’t read that file.","error"); }
@@ -3301,7 +3303,8 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<label class="text-sm text-slate-600">Rent-roll GPR / yr<input class="'+inCls+' mt-1 tabular-nums" inputmode="decimal" data-uwf="rrGPR" value="'+uwStr(i.rrGPR)+'" placeholder="optional"></label>'+
           '</div>'+
         '</div>'+
-        (b ? uwSetupOutputHtml(b) : '');
+        (b ? uwSetupOutputHtml(b) : '')+
+        opGeneralDataHtml(opFocusKey);
       // attach file-drop handlers (innerHTML was just replaced)
       const fileInput = view.querySelector("#uwFile");
       if(fileInput) fileInput.onchange = (ev)=>{ const f = ev.target.files && ev.target.files[0]; if(f) uwHandleFile(f); };
@@ -3477,6 +3480,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         const r = await opReadPropT12(key);
         if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
+        delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
       } else { i.bench = opMergeBench(uwDefaults().bench, null); }
       renderUnderwriting();
       // Claude works out what to push the moment a property with a T12 is focused (once per session, cached).
@@ -3528,7 +3532,145 @@ tr[data-loan]:hover td{background:#eef2f7}
         for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
         var pr = opProp(key);
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "assumptions.json", base64: btoa(str), text: "", type: "application/json", role: "assumptions" });
+        await opRefreshGeneralDataNOI(key);   // the underwritten NOI just moved — keep General Data current
       }catch(e){}
+    }
+
+    // ---- General Data (general-data.json) --------------------------------------
+    // The per-property "General Data" record lives in the folder beside the T12,
+    // mirroring assumptions.json (role "general"). It carries the property's
+    // identity, its two NOIs (in-place T12 and the calculated underwritten NOI),
+    // and a ROLLING 24-MONTH history of every operating line — built up across
+    // uploads so you can see how taxes and the rest have moved. The refi
+    // calculator reads its two NOIs to switch the NOI basis. Pure merge/rollup
+    // logic is general-data.js; here we only do the disk I/O and feed it the
+    // app's own parse + classifier + Setup so the figures match the tab exactly.
+    var gdNOICache = {};    // propKey -> { inPlace, underwritten, period } | null — synchronous read for the refi panel
+    var gdFullCache = {};   // propKey -> the whole general-data record | null — synchronous read for the history card
+    function opClassifyLine(name, section, sub){
+      try{
+        if(!(window.T12Classify && T12Classify.classifyConfident)) return null;
+        var cc = T12Classify.classifyConfident(name, section, sub); if(!cc || !cc.code) return null;
+        var role = T12Classify.roleOf ? T12Classify.roleOf(cc.code) : null;
+        var label = (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[cc.code]) || cc.code;
+        return { code: cc.code, role: role, label: label };
+      }catch(e){ return null; }
+    }
+    async function opLoadGeneralData(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
+      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        var f = (list.files || []).filter(function(x){ return x.role === "general"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
+        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
+        return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64)));
+      }catch(e){ return null; }
+    }
+    async function opWriteGeneralDataFile(key, gd){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      try{ var json = JSON.stringify(gd), bytes = new TextEncoder().encode(json), str = "";
+        for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+        var pr = opProp(key);
+        await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
+      }catch(e){}
+    }
+    // Read the property's saved T12 grid + its assumptions and build the Setup — the
+    // authoritative in-place + underwritten NOI, the SAME inputs the tab uses when the
+    // property is focused (so the stored figures equal what's on screen).
+    async function opSetupFromDisk(key){
+      if(!key || !window.T12Parse || !window.SetupBuilder) return null;
+      var r = await opReadPropT12(key); if(!r || !r.grid) return null;
+      var parsedM = T12Parse.parseGrid(r.grid, { basis: "total", monthly: true });
+      var focused = (opFocusKey === key);
+      var bench = focused ? uwState.input.bench : opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));
+      var p = opProp(key), sr = p && p.loans && p.loans[0];
+      var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
+      var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
+      var setup = SetupBuilder.buildSetup({ parsed: parsedM, units: units, rrGPR: rrGPR, benchmarks: bench });
+      return { r: r, parsedM: parsedM, bench: bench, p: p, sr: sr, setup: setup };
+    }
+    function opGDNoi(ctx){
+      return { inPlace: ctx.setup.result.inPlace.noi, underwritten: ctx.setup.result.underwritten.noi,
+               period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
+    }
+    // On a T12 upload: parse its month columns, roll them into general-data.json
+    // (24-month window, newer months win), and refresh the two NOIs.
+    async function opUpdateGeneralData(key){
+      try{
+        if(!key || !window.GeneralData) return null;
+        var ctx = await opSetupFromDisk(key); if(!ctx) return null;
+        var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
+        var noi = opGDNoi(ctx);
+        var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: (ctx.sr && ctx.sr.units) || null };
+        var existing = await opLoadGeneralData(key);
+        var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
+        await opWriteGeneralDataFile(key, gd);
+        gdNOICache[key] = { inPlace: noi.inPlace, underwritten: noi.underwritten, period: noi.period };
+        gdFullCache[key] = gd;
+        return gd;
+      }catch(e){ return null; }
+    }
+    // On an assumptions change: recompute only the NOIs (history untouched) if a record already exists.
+    async function opRefreshGeneralDataNOI(key){
+      try{
+        if(!key || !window.GeneralData) return;
+        var existing = await opLoadGeneralData(key); if(!existing) return;
+        var ctx = await opSetupFromDisk(key); if(!ctx) return;
+        var noi = opGDNoi(ctx); noi.computedAt = new Date().toISOString();
+        existing.noi = noi; existing.updatedAt = noi.computedAt;
+        await opWriteGeneralDataFile(key, existing);
+        gdNOICache[key] = { inPlace: noi.inPlace, underwritten: noi.underwritten, period: noi.period };
+        gdFullCache[key] = existing;
+      }catch(e){}
+    }
+    // Load a property's General Data into the synchronous caches (once per key): the two
+    // NOIs the refi panel reads, and the whole record the history card reads.
+    async function opEnsureGeneralData(key){
+      if(!key) return null;
+      if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
+      var gd = await opLoadGeneralData(key);
+      gdFullCache[key] = gd || null;
+      gdNOICache[key] = (gd && gd.noi) ? { inPlace: gd.noi.inPlace, underwritten: gd.noi.underwritten, period: gd.noi.period } : null;
+      return gdNOICache[key];
+    }
+    // The General Data card for the underwriting tab: identity + both NOIs + a per-line
+    // trailing-12 history with its rise/fall, so you can see how taxes (and the rest) moved.
+    function opGeneralDataHtml(key){
+      var gd = key ? gdFullCache[key] : null;
+      if(!gd || !window.GeneralData || !gd.lines || !gd.window || !Array.isArray(gd.window.months) || !gd.window.months.length) return "";
+      var months = gd.window.months, span = months[0] + " → " + months[months.length - 1];
+      var d = GeneralData.deltas(gd), noi = gd.noi || {};
+      var rank = function(r){ return r === "expense" ? 0 : 1; };
+      var mag = function(x){ return Math.abs(x.changePct != null ? x.changePct : (x.yoyMonthPct != null ? x.yoyMonthPct : 0)); };
+      d.sort(function(a, b){ return (rank(a.role) - rank(b.role)) || (mag(b) - mag(a)); });
+      var rowHtml = function(ln){
+        var pct = (ln.changePct != null) ? ln.changePct : ln.yoyMonthPct, basisTTM = (ln.changePct != null);
+        var chip;
+        if(pct == null){ chip = '<span class="text-[11px] text-slate-400">building history</span>'; }
+        else {
+          var up = pct > 0.0005, dn = pct < -0.0005, flat = !up && !dn, goodUp = (ln.role === "income");
+          var good = (up && goodUp) || (dn && !goodUp);
+          var cls = flat ? "text-slate-500" : (good ? "text-emerald-600" : "text-rose-600");
+          var arrow = flat ? "&rarr;" : (up ? "&#9650;" : "&#9660;");
+          chip = '<span class="'+cls+' font-semibold tabular-nums">'+arrow+' '+Math.abs(pct*100).toFixed(1)+'%</span> <span class="text-[10px] text-slate-400">'+(basisTTM ? "vs prior yr" : "YoY, latest mo")+'</span>';
+        }
+        return '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+fmtMoney(ln.ttm)+'</td>'+
+          '<td class="py-1 pl-2 text-right text-sm">'+chip+'</td></tr>';
+      };
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm mt-4">'+
+        '<div class="flex flex-wrap items-center justify-between gap-2">'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">General Data &mdash; operating history</h3>'+
+          '<span class="text-[11px] text-slate-400">'+months.length+' month'+(months.length===1?'':'s')+' &middot; '+span+'</span>'+
+        '</div>'+
+        '<div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">'+
+          '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI (T12)</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div></div>'+
+          '<div class="rounded-lg border border-brand-200 bg-brand-50 p-2"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="font-bold tabular-nums text-brand-700">'+(noi.underwritten!=null?fmtMoney(noi.underwritten):"&mdash;")+'</div></div>'+
+          '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">Saved to the folder</div><div class="font-semibold text-[12px] text-slate-600">general-data.json</div></div>'+
+        '</div>'+
+        '<div class="mt-3 overflow-x-auto"><table class="w-full min-w-[420px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-1">Line</th><th class="pb-1 px-2 text-right">Trailing 12&#8209;mo</th><th class="pb-1 pl-2 text-right">Change</th></tr></thead><tbody>'+
+          d.map(rowHtml).join('')+
+        '</tbody></table></div>'+
+        '<p class="mt-2 text-[11px] text-slate-400">Every T12 you upload adds its months here (up to 24 kept). Change is the trailing 12 months vs the 12 before &mdash; or the latest month vs a year earlier, until a full prior year builds up.</p>'+
+      '</div>';
     }
     // The bridge the modules compute through — the app's own engine, never re-implemented.
     function opHooks(){
@@ -3933,6 +4075,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
     try{ window.opProperties = opProperties; window.propertyKey = propertyKey; window.opPushInput = opPushInput; }catch(e){}   // diagnostics for tests: the per-property grouping + what Claude is sent for "what to push"
+    try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -5859,8 +6002,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     // appears in the basic loan form. DSCR = annual NOI / annual level P&I — the
     // amortizing debt-service basis agencies size to (IO periods use the level P&I).
     function annualDebtService(d){ return (d.amortizingPI || d.monthlyPI || 0) * 12; }
-    function loanDSCR(loan){
-      const d = compute(loan).derived, ads = annualDebtService(d), n = loanNOI(loan);   // the property's operating NOI when it has one
+    function loanDSCR(loan, nOverride){
+      const d = compute(loan).derived, ads = annualDebtService(d), n = (nOverride != null ? nOverride : loanNOI(loan));   // the property's operating NOI when it has one (or a basis override for refi)
       return (loan && n != null && n > 0 && ads > 0) ? (n / ads) : null;
     }
     // Stage 2 — value & leverage. Value is estimated as NOI / cap rate (cap rate
@@ -5868,12 +6011,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     const CAP_RATE_DEFAULTS = { "Multifamily":0.055, "Office":0.075, "Retail":0.068, "Industrial":0.062, "Mixed-Use":0.065, "Other":0.065 };
     function defaultCapRate(loan){ return CAP_RATE_DEFAULTS[loan && loan.propertyType] || 0.06; }
     function loanCapRate(loan){ return (loan && loan.capRate != null && loan.capRate > 0) ? loan.capRate : defaultCapRate(loan); }
-    function loanValue(loan){ const cr = loanCapRate(loan), n = loanNOI(loan); return (loan && n > 0 && cr > 0) ? (n / cr) : null; }
-    function loanLTV(loan){ const v = loanValue(loan), bal = compute(loan).derived.currentBalance; return (v > 0 && bal > 0) ? (bal / v) : null; }
+    function loanValue(loan, nOverride){ const cr = loanCapRate(loan), n = (nOverride != null ? nOverride : loanNOI(loan)); return (loan && n > 0 && cr > 0) ? (n / cr) : null; }
+    function loanLTV(loan, nOverride){ const v = loanValue(loan, nOverride), bal = compute(loan).derived.currentBalance; return (v > 0 && bal > 0) ? (bal / v) : null; }
     // Debt yield = NOI ÷ current loan balance. Life-company and CMBS lenders (which
     // are interest-only) underwrite to this instead of DSCR: the higher the debt
     // yield, the better the terms. Independent of rate, term and amortization.
-    function loanDebtYield(loan){ const bal = compute(loan).derived.currentBalance, n = loanNOI(loan); return (loan && n != null && n > 0 && bal > 0) ? (n / bal) : null; }
+    function loanDebtYield(loan, nOverride){ const bal = compute(loan).derived.currentBalance, n = (nOverride != null ? nOverride : loanNOI(loan)); return (loan && n != null && n > 0 && bal > 0) ? (n / bal) : null; }
 
     // ---- Property grouping ------------------------------------------------
     // A property may carry more than one loan — classically a senior plus a
@@ -6308,7 +6451,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     function stackCombined(loan){
       const sm = stackSeniorMezz(loan); if(!sm) return null;
-      const noi = (loan.noi>0 ? loan.noi : null), cr = loanCapRate(loan), value = (noi>0 && cr>0) ? noi/cr : null;
+      const rn = refiNOI(loan), noi = (rn>0 ? rn : null), cr = loanCapRate(loan), value = (noi>0 && cr>0) ? noi/cr : null;   // honor the chosen NOI basis
       const combBal = sm.senior.bal + sm.mezz.bal;
       const combADS = annualDebtService(compute(sm.senior.loan).derived) + annualDebtService(compute(sm.mezz.loan).derived);
       const seniorADS = annualDebtService(compute(sm.senior.loan).derived);
@@ -6365,17 +6508,66 @@ tr[data-loan]:hover td{background:#eef2f7}
         '</div>'+body+
       '</div>';
     }
+    // ---- Refinance NOI basis: in-place T12 vs the grossed-up underwritten NOI ----
+    // The two figures come from General Data (written on every T12 upload). The
+    // advanced analysis can run on either — the in-place NOI as the property runs
+    // today, or the underwritten NOI a lender sizes to. This is the "2.8 you can't
+    // refi, 3.2 you can" question: switch the basis and the DSCR / debt yield /
+    // coverage move with it. The choice is per property, held for the session
+    // (default = underwritten when we have it — the figure the loan is sized on).
+    var refiBasisByKey = {};
+    function refiNOIOptions(loan){
+      const g = loan ? gdNOICache[propertyKey(loan)] : null;
+      const inPlace = (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null;
+      const underwritten = (g && g.underwritten != null && isFinite(g.underwritten)) ? g.underwritten : null;
+      return { inPlace: inPlace, underwritten: underwritten, hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
+    }
+    function refiBasis(loan){
+      const o = refiNOIOptions(loan), b = loan ? refiBasisByKey[propertyKey(loan)] : null;
+      if(b === "inplace" && o.inPlace != null) return "inplace";
+      if(b === "underwritten" && o.underwritten != null) return "underwritten";
+      if(o.underwritten != null) return "underwritten";   // default: the sized-to figure
+      if(o.inPlace != null) return "inplace";
+      return "manual";                                     // no General Data → today's hand-entered NOI
+    }
+    function refiNOI(loan){
+      const o = refiNOIOptions(loan), b = refiBasis(loan);
+      if(b === "underwritten") return o.underwritten;
+      if(b === "inplace") return o.inPlace;
+      return loanNOI(loan);
+    }
+    function refiNOIBasisHtml(loan){
+      const o = refiNOIOptions(loan);
+      if(o.inPlace == null && o.underwritten == null) return "";   // no General Data yet → no toggle, manual NOI as before
+      const b = refiBasis(loan);
+      const opt = (id, label, val, active) => '<button type="button" data-noibasis="'+id+'"'+(val==null?' disabled':'')+
+        ' class="rounded-md px-3 py-1.5 text-xs font-semibold transition '+(active?'bg-brand-600 text-white shadow-sm':'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200')+(val==null?' opacity-40 cursor-not-allowed':'')+'">'+
+        label+' <span class="ml-1 font-bold tabular-nums">'+(val!=null?fmtMoney(val):"&mdash;")+'</span></button>';
+      return '<div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">'+
+        '<div class="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">NOI basis for this analysis</div>'+
+        '<div class="flex flex-wrap gap-2">'+
+          opt("inplace", "In-place T12", o.inPlace, b==="inplace")+
+          opt("underwritten", "Underwritten", o.underwritten, b==="underwritten")+
+        '</div>'+
+        '<p class="mt-2 text-[11px] leading-relaxed text-slate-500">'+(b==="underwritten"
+          ? "Sizing on the grossed-up <strong>underwritten</strong> NOI &mdash; the figure a lender underwrites to. Switch to in-place to see coverage on the T12 as it runs today."
+          : "Sizing on the <strong>in-place</strong> T12 NOI as the property runs today. Switch to underwritten for the grossed-up figure a refinance is sized on.")+
+          (o.hasBoth ? ' The gap between the two is the story you tell the lender.' : '')+'</p>'+
+      '</div>';
+    }
     function refiAdvancedHtml(loan){
       const d = compute(loan).derived, ads = annualDebtService(d);
-      const dscr = loanDSCR(loan), val = loanValue(loan), ltv = loanLTV(loan), cr = loanCapRate(loan), dy = loanDebtYield(loan);
+      const rn = refiNOI(loan);
+      const dscr = loanDSCR(loan, rn), val = loanValue(loan, rn), ltv = loanLTV(loan, rn), cr = loanCapRate(loan), dy = loanDebtYield(loan, rn);
       const dscrOk = dscr != null && dscr >= 1.25;
       return '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
         '<div class="flex items-center justify-between">'+
           '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Advanced analysis</h3>'+
           '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>'+
         '</div>'+
+        refiNOIBasisHtml(loan)+
         '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
-          refiStat("Annual NOI", fmtMoney(loan.noi))+
+          refiStat("Annual NOI", rn != null ? fmtMoney(rn) : "&mdash;")+
           refiStat("Cap rate", fmtPct(cr))+
           refiStat("Est. value", val != null ? fmtMoney(val) : "&mdash;")+
           refiStat("LTV", ltv != null ? fmtPct(ltv) : "&mdash;")+
@@ -6605,7 +6797,12 @@ tr[data-loan]:hover td{background:#eef2f7}
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
-      const advReady = (loan.noi != null);
+      // Load this property's General Data NOIs once, then repaint so the basis toggle appears
+      // and advanced mode can run off the T12/underwritten NOI without a hand-entered figure.
+      const _gk = propertyKey(loan);
+      if(!Object.prototype.hasOwnProperty.call(gdNOICache, _gk)) opEnsureGeneralData(_gk).then(() => { if(state.activeId === loan._id || loan._combined) renderRefi(loan); });
+      const gOpts = refiNOIOptions(loan);
+      const advReady = (loan.noi != null) || (gOpts.inPlace != null) || (gOpts.underwritten != null);   // a T12/underwritten NOI is enough — no manual entry required
       const mode = (refiAnalysisMode === "advanced" && advReady) ? "advanced" : "regular";
       ensureRefiDrafts(loan, mode);
       let resetNote = "";
@@ -6676,12 +6873,19 @@ tr[data-loan]:hover td{background:#eef2f7}
       ensureIndexLive(matchedTenorId(loan), () => renderRefi(loan));
       ensureIndexLive(ymReinvestTenor(loan), () => renderRefi(loan));
 
-      // Analysis mode toggle. Advanced needs NOI + cap rate first.
+      // Analysis mode toggle. Advanced needs an NOI — a hand-entered one, OR the
+      // property's in-place / underwritten NOI from General Data (then no prompt).
       dom.refiView.querySelectorAll("[data-refimode]").forEach(b => b.addEventListener("click", () => {
         const m = b.getAttribute("data-refimode");
-        if(m === "advanced" && loan.noi == null){ openNoiFlow(loan, () => { refiAnalysisMode = "advanced"; refiDraftsKey = ""; renderRefi(loan); }); return; }
+        if(m === "advanced" && loan.noi == null && gOpts.inPlace == null && gOpts.underwritten == null){ openNoiFlow(loan, () => { refiAnalysisMode = "advanced"; refiDraftsKey = ""; renderRefi(loan); }); return; }
         refiAnalysisMode = m; refiDraftsKey = "";   // rebuild option drafts at the new mode's rate
         renderRefi(loan);
+      }));
+      // NOI-basis toggle (in-place T12 vs underwritten) — re-drives DSCR / debt yield / coverage.
+      dom.refiView.querySelectorAll("[data-noibasis]").forEach(b => b.addEventListener("click", () => {
+        if(b.disabled) return;
+        refiBasisByKey[propertyKey(loan)] = b.getAttribute("data-noibasis");
+        refiDraftsKey = ""; renderRefi(loan);
       }));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => { refiDraftsKey = ""; renderRefi(loan); }));
