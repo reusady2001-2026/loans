@@ -126,6 +126,22 @@
     else { cs = classifySum(input.t12Lines); }
     var sums = cs.sums;
     var has = function (c){ return sums[c] != null; };
+    // "Use the better of the assumption and what the statement proves." Vacancy and the management fee are
+    // the two operating lines the underwritten column prices off an assumption, and lower is better for both.
+    // When the trailing-twelve-month statement runs a TIGHTER vacancy (or a LOWER management fee) than the
+    // underwriting assumes, credit the statement's own proven rate in the underwritten column; when it runs
+    // worse, fall back to the assumption (the conservative floor). Each rate is measured on the same base the
+    // engine prices the line on, so crediting the actual reproduces the statement's own figure exactly.
+    // (Reserves and the cap rate have no statement actual, so they are untouched. A line the statement does
+    // not report at all — no vacancy line, no management-fee line — keeps the assumption, never a phantom 0%.)
+    var assumeVac = (bm.vacancyPct != null ? num(bm.vacancyPct) : 0.05);
+    var vacBase = (sums.GPR || 0) + (sums.EMPL || 0) + (sums.MOD || 0);                     // the running rental subtotal VAC prices off
+    var actualVac = (has("VAC") && vacBase > 0) ? Math.max(0, -(sums.VAC || 0)) / vacBase : null;
+    var effVac = (actualVac != null) ? Math.min(actualVac, assumeVac) : assumeVac;
+    var assumeMgmt = (bm.mgmtPct != null ? num(bm.mgmtPct) : 0.025);
+    var inPlaceEGI = 0; RENTAL.concat(OTHER).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
+    var actualMgmt = (has("MGMT") && inPlaceEGI > 0) ? Math.max(0, sums.MGMT || 0) / inPlaceEGI : null;
+    var effMgmt = (actualMgmt != null) ? Math.min(actualMgmt, assumeMgmt) : assumeMgmt;
     var lines = [];
     var L = function (key, section, method, opts){
       opts = opts || {};
@@ -139,7 +155,7 @@
     L("GPR", "rental", "value", { t12: sums.GPR || 0, uw: (input.rrGPR != null ? num(input.rrGPR) : (sums.GPR || 0)) });
     if(has("EMPL")) L("EMPL", "rental", "value", { uw: sums.EMPL });
     if(has("MOD"))  L("MOD",  "rental", "value", { uw: sums.MOD });
-    L("VAC", "rental", "pctBase", { param: (bm.vacancyPct != null ? bm.vacancyPct : 0.05), t12: sums.VAC || 0 });
+    L("VAC", "rental", "pctBase", { param: effVac, t12: sums.VAC || 0 });
     if(has("CONC")) L("CONC", "rental", "value", { uw: sums.CONC });
     if(has("BD"))   L("BD",   "rental", "value", { uw: sums.BD });
 
@@ -149,7 +165,7 @@
     // Expenses — budget $/unit where a benchmark is given, else pass-through;
     // management fee is % of EGI; reserves are $/unit.
     EXPENSE.forEach(function (c){
-      if(c === "MGMT"){ L("MGMT", "expense", "pctEGI", { param: (bm.mgmtPct != null ? bm.mgmtPct : 0.025), t12: sums.MGMT || 0 }); return; }
+      if(c === "MGMT"){ L("MGMT", "expense", "pctEGI", { param: effMgmt, t12: sums.MGMT || 0 }); return; }
       if(!has(c)) return;
       // BDX (expense-side bad debt) is not in BUDGET: it always passes through, so a G&A
       // $/unit budget never absorbs it — on the parsed AND the store (categorySums) path.
@@ -174,7 +190,13 @@
     if(inPlaceAuth != null) result.inPlace.noiReported = inPlaceAuth;
     var sizing = UW.sizeLoan(result.underwritten.noi, bm.sizing || {});
     return { categorySums: sums, review: cs.review, worksheet: ws, result: result, sizing: sizing,
-             inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX) };
+             inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX),
+             // The rates the underwritten column actually used, and where each came from (the statement's own
+             // actual, or the assumption) — so the UI can say when a property was credited its proven figure.
+             effective: { vacancy: effVac, managementFee: effMgmt, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt,
+                          actualVacancy: actualVac, actualManagementFee: actualMgmt,
+                          vacancyFromActual: (actualVac != null && actualVac < assumeVac),
+                          managementFromActual: (actualMgmt != null && actualMgmt < assumeMgmt) } };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).

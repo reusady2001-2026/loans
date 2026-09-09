@@ -44,6 +44,14 @@ async function setVac(page,v){ await page.evaluate((v)=>{const e=document.queryS
   ok(Math.abs((asm.vacancyPct||0)-0.06)<1e-9,'the saved assumption records vacancy 0.06 (got '+asm.vacancyPct+')');
   const setup=await page.evaluate(()=>localStorage.getItem('lds_setup_v1'));
   ok(!/0\.06|"vacancyPct":0\.06/.test(String(setup))||true,'(browser storage holds only the global scratchpad; per-property lives in the folder)');
+  // "Use the better": raising the vacancy assumption ABOVE what the statement actually runs (~6.11%) does NOT
+  // keep lowering the underwritten NOI — the underwriting credits the proven figure, so it plateaus.
+  await setVac(page,'8'); const noi8=num(await uwNoi(page));
+  await setVac(page,'10'); const noi10=num(await uwNoi(page));
+  ok(noi8>0 && Math.abs(noi8-noi10)<1,'better-of: a vacancy assumption ABOVE the statement’s ~6.11% credits the proven figure — 8% and 10% give the SAME underwritten NOI ('+noi8+' == '+noi10+')');
+  ok(noi8<noi6,'better-of: crediting the proven ~6.11% (at an 8% assumption) sits just below the 6% run ('+noi8+' < '+noi6+')');
+  ok(/credited at the statement/i.test(await page.evaluate(()=>document.getElementById('uwView').innerText||'')),'the underwriting tab says the vacancy was credited from the statement (better than the assumption)');
+  await setVac(page,'6');   // restore, so the restart check below sees the saved 6%
   ok(errors.length===0,'run1: no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close();
   // restart: the property keeps its 6% vacancy

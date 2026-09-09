@@ -62,24 +62,30 @@ var dA = Calc.derive(recA, BENCH);
 cents(dA.egi, 1182500, "in-place EGI = 1,182,500");
 cents(dA.opex, 356000, "in-place opex = 356,000");
 cents(dA.inPlaceNOI, 826500, "in-place NOI = 826,500");
-// Underwritten (record overrides: vacancy 7%, mgmt 3%, reserves $250/unit):
-//   VAC_uw  = −0.07 × 1,200,000                                          =   −84,000
-//   ERI_uw  = 1,200,000 − 84,000 − 12,000 (CONC pass-through)            = 1,104,000
-//   EGI_uw  = 1,104,000 + 54,500                                         = 1,158,500
-//   MGMT_uw = 0.03 × 1,158,500                                           =    34,755
-//   opex_uw = 95,000+30,000+55,000+42,000+88,000+12,000 (=322,000) + 34,755 =  356,755
+// Underwritten — "use the better of the assumption and what the statement proves". The record runs 5%
+// vacancy (−60,000 / 1,200,000) and a 2.875% management fee (34,000 / 1,182,500 in-place EGI), BOTH better
+// (lower) than the 7% and 3% overrides, so the underwritten column CREDITS the proven actuals — never the
+// worse override:
+//   VAC_uw  = −0.05 × 1,200,000 (the proven actual rate)                 =   −60,000
+//   ERI_uw  = 1,200,000 − 60,000 − 12,000 (CONC pass-through)            = 1,128,000
+//   EGI_uw  = 1,128,000 + 54,500                                         = 1,182,500  (ties the in-place EGI)
+//   MGMT_uw = 0.028752… × 1,182,500 (the proven actual rate)             =    34,000
+//   opex_uw = 322,000 + 34,000                                           =   356,000  (ties the in-place opex)
 //   reserves = 250 × 100                                                 =    25,000
-//   NOI_uw  = 1,158,500 − 356,755 − 25,000                               =   776,745
-cents(dA.egiUW, 1158500, "underwritten EGI = 1,158,500 (vacancy at 7% of GPR)");
-cents(dA.opexUW, 356755, "underwritten opex = 356,755 (mgmt 3% of UW EGI, reserves excluded)");
+//   NOI_uw  = 1,182,500 − 356,000 − 25,000                               =   801,500
+cents(dA.egiUW, 1182500, "underwritten EGI = 1,182,500 (vacancy credited at the proven 5%, better than the 7% override)");
+cents(dA.opexUW, 356000, "underwritten opex = 356,000 (management fee credited at the proven 2.875%, better than the 3% override)");
 cents(dA.reservesUW, 25000, "underwritten reserves = 25,000 ($250 × 100 units)");
-cents(dA.underwrittenNOI, 776745, "underwritten NOI = 776,745");
+cents(dA.underwrittenNOI, 801500, "underwritten NOI = 801,500");
 cents(dA.underwrittenNOI, dA.egiUW - dA.opexUW - dA.reservesUW, "identity: underwrittenNOI = egiUW − opexUW − reservesUW");
-cents(dA.result.underwritten.lines.VAC, -84000, "result.underwritten.lines.VAC = −84,000");
-cents(dA.result.underwritten.lines.MGMT, 34755, "result.underwritten.lines.MGMT = 34,755");
+cents(dA.result.underwritten.lines.VAC, -60000, "result.underwritten.lines.VAC = −60,000 (the proven actual, credited)");
+cents(dA.result.underwritten.lines.MGMT, 34000, "result.underwritten.lines.MGMT = 34,000 (the proven actual, credited)");
 cents(dA.result.underwritten.lines.reserves, 25000, "result.underwritten.lines.reserves = 25,000");
 cents(dA.result.inPlace.reserves, 0, "in-place reserves = 0 (reserves as today: underwritten column only)");
-ok(dA.egi !== dA.egiUW && dA.opex !== dA.opexUW, "egi/opex are the IN-PLACE figures, distinct from egiUW/opexUW");
+// Both the vacancy and the management fee ran BETTER than their overrides, so the underwritten income and
+// operating expense TIE the in-place figures — the only gap to the in-place NOI is the underwritten reserves.
+ok(dA.egiUW === dA.egi && dA.opexUW === dA.opex, "underwritten EGI/opex tie the in-place figures when the actuals beat both overrides");
+cents(dA.underwrittenNOI, dA.inPlaceNOI - dA.reservesUW, "underwritten NOI = in-place NOI − reserves (nothing else re-priced — the proven actuals won)");
 eq(dA.units, 100, "units carried through");
 eq(dA.hasLines, true, "hasLines true");
 deepEq(dA.dropped, [], "every code on the record is a taxonomy code → dropped []");
@@ -88,19 +94,19 @@ var keysA = dA.worksheet.lines.map(function (l){ return l.key; });
 ok(keysA.indexOf("GPR") === 0 && keysA.indexOf("VAC") > 0 && keysA.indexOf("MGMT") > 0 && keysA[keysA.length - 1] === "reserves", "worksheet has GPR first, VAC, MGMT, reserves last");
 ok(keysA.indexOf("CONC") > 0 && keysA.indexOf("EMPL") < 0 && keysA.indexOf("BD") < 0, "worksheet carries only the lines present (CONC yes; EMPL/BD no)");
 var vacLine = dA.worksheet.lines.filter(function (l){ return l.key === "VAC"; })[0];
-ok(vacLine.method === "pctBase" && vacLine.param === 0.07 && vacLine.t12 === -60000, "VAC line: pctBase at the record's 7%, in-place −60,000");
-// Sizing on the underwritten NOI with the record's sizing (amortYears 0 → interest-only constant = 6%):
-//   value    = 776,745 / 0.06                    = 12,945,750
-//   loanLTV  = 0.70 × 12,945,750                 =  9,062,025
-//   loanDSCR = 776,745 / (1.25 × 0.06)           = 10,356,600
-//   loanDY   = 776,745 / 0.08                    =  9,709,312.50
-//   maxLoan  = min(...)                          =  9,062,025  → binding LTV
-//   impliedLTV 0.70 ; impliedDSCR = 776,745 / (9,062,025 × 0.06) = 10/7 ; impliedDY = 776,745 / 9,062,025 = 3/35
-cents(dA.sizing.value, 12945750, "sizing.value = 12,945,750");
-cents(dA.sizing.loanLTV, 9062025, "sizing.loanLTV = 9,062,025");
-cents(dA.sizing.loanDSCR, 10356600, "sizing.loanDSCR = 10,356,600");
-cents(dA.sizing.loanDY, 9709312.5, "sizing.loanDY = 9,709,312.50");
-cents(dA.sizing.maxLoan, 9062025, "sizing.maxLoan = 9,062,025");
+ok(vacLine.method === "pctBase" && vacLine.param === 0.05 && vacLine.t12 === -60000, "VAC line: pctBase at the CREDITED actual 5% (better than the 7% override), in-place −60,000");
+// Sizing on the underwritten NOI 801,500 with the record's sizing (amortYears 0 → interest-only constant = 6%):
+//   value    = 801,500 / 0.06                    = 13,358,333.33
+//   loanLTV  = 0.70 × 13,358,333.33              =  9,350,833.33
+//   loanDSCR = 801,500 / (1.25 × 0.06)           = 10,686,666.67
+//   loanDY   = 801,500 / 0.08                    = 10,018,750
+//   maxLoan  = min(...)                          =  9,350,833.33  → binding LTV
+//   impliedLTV 0.70 ; impliedDSCR = 801,500 / (9,350,833.33 × 0.06) = 10/7 ; impliedDY = 801,500 / 9,350,833.33 = 3/35
+cents(dA.sizing.value, 13358333.33, "sizing.value = 13,358,333.33");
+cents(dA.sizing.loanLTV, 9350833.33, "sizing.loanLTV = 9,350,833.33");
+cents(dA.sizing.loanDSCR, 10686666.67, "sizing.loanDSCR = 10,686,666.67");
+cents(dA.sizing.loanDY, 10018750, "sizing.loanDY = 10,018,750");
+cents(dA.sizing.maxLoan, 9350833.33, "sizing.maxLoan = 9,350,833.33");
 eq(dA.sizing.binding, "LTV", "sizing.binding = LTV");
 ratio(dA.sizing.impliedLTV, 0.70, "sizing.impliedLTV = 0.70");
 ratio(dA.sizing.impliedDSCR, 10 / 7, "sizing.impliedDSCR = 10/7");
@@ -143,13 +149,15 @@ section("derive — bench budget $/unit flows through (engine behaviour, unchang
 var benchBudget = JSON.parse(JSON.stringify(BENCH)); benchBudget.budget = { INS: 400 };
 var recA2 = Object.assign({}, recA, { assumptions: { vacancyPct: 0.07, mgmtPct: 0.03, reservePerUnit: 250 } });
 var dA3 = Calc.derive(recA2, benchBudget);
-// INS_uw = 400 × 100 = 40,000 replaces the 30,000 actual → opex_uw = 356,755 − 30,000 + 40,000 = 366,755 ; NOI_uw = 1,158,500 − 366,755 − 25,000 = 766,745
+// The vacancy (5%) and management fee (2.875%) are still credited at the proven actuals; only INS is re-priced
+// by the budget: INS_uw = 400 × 100 = 40,000 replaces the 30,000 actual → opex_uw = 356,000 − 30,000 + 40,000
+// = 366,000 ; NOI_uw = 1,182,500 − 366,000 − 25,000 = 791,500
 cents(dA3.result.underwritten.lines.INS, 40000, "INS priced at $400/unit in the underwritten column");
-cents(dA3.opexUW, 366755, "underwritten opex = 366,755");
-cents(dA3.underwrittenNOI, 766745, "underwritten NOI = 766,745");
+cents(dA3.opexUW, 366000, "underwritten opex = 366,000");
+cents(dA3.underwrittenNOI, 791500, "underwritten NOI = 791,500");
 cents(dA3.opex, 356000, "in-place opex unchanged at 356,000");
 deepEq(dA3.assumptions.sizing, BENCH.sizing, "sizing absent on the record → the bench's sizing");
-cents(dA3.sizing.value, 766745 / 0.055, "sizing.value uses the bench cap rate 5.5% = 13,940,818.18");
+cents(dA3.sizing.value, 791500 / 0.055, "sizing.value uses the bench cap rate 5.5% = 14,390,909.09");
 
 // ---------------------------------------------------------------------------
 section("mergeAssumptions — override beats global, null inherits, 0 overrides");

@@ -62,15 +62,18 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   ok(!abbr.test(panel),'no forbidden abbreviations in the panel (full words only)'+(abbr.test(panel)?' — found: '+(panel.match(abbr)||[])[0]:''));
   ok(!/DSCR|debt service coverage|maturit|refinanc/i.test(panel),'the panel does NOT talk about loan covenants (operations only)');
 
-  // ---- Re-analyse with a HIGHER assumption (8%): now the actual (6.11%) is BELOW it → credit framing ----
+  // ---- Raise the vacancy assumption to 8% (ABOVE the statement's 6.11%): the engine now CREDITS the proven
+  //      6.11% ("use the better"), the underwriting tab says so, and Claude never proposes "credit it" (automatic). ----
   await page.evaluate(()=>{const i=[...document.querySelectorAll('#uwView [data-uwbench]')].find(x=>x.getAttribute('data-uwbench')==='vacancyPct');if(i){i.value='8';i.dispatchEvent(new Event('change',{bubbles:true}));}});
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(500);
+  const uwText=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
+  ok(/credited at the statement.{0,6}6\.11%/i.test(uwText)&&/better than the 8\.00% assumed/i.test(uwText),'the underwriting tab shows vacancy CREDITED at the proven 6.11% (better than the 8% assumed) — the "use the better" rule, visible to the user');
   await page.evaluate(()=>{const b=document.getElementById('opPushRun');if(b)b.click();});
-  await page.waitForFunction(()=>/underwrite vacancy nearer the proven/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
+  await page.waitForFunction(()=>/already credits the proven/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
   const panel2=await panelText(page), sent2=readInput();
   ok(sent2&&Math.abs(sent2.underwritingAssumptions.vacancy-0.08)<1e-9,'on re-analysis Claude is sent the new 8% assumption');
-  ok(/underwrite vacancy nearer the proven 6\.0\d%/i.test(panel2),'now that the property runs UNDER the assumption, the move is to CREDIT proven occupancy — never "improve to a worse vacancy"');
-  ok(!/improve/i.test((panel2.split('estimated NOI impact')[0]||'')),'the credit case is not mislabelled as an occupancy "improvement"');
+  ok(/already credits the proven 6\.\d\d%/i.test(panel2),'Claude acknowledges the underwriting ALREADY credits the proven occupancy — there is no "credit it" move to make');
+  ok(!/nearer the proven/i.test(panel2)&&!/improve/i.test((panel2.split('estimated NOI impact')[0]||'')),'no "credit the proven vacancy" move, and no "improve to a worse vacancy"');
 
   ok(await page.evaluate(()=>!!document.getElementById('opPushRun')),'a "Re-analyse" button is offered');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));

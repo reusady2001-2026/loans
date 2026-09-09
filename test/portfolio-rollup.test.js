@@ -446,7 +446,9 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   const lines = () => ({ GPR: line(1000000), VAC: line(-50000), RUBS: line(20000), RET: line(100000, false), INS: line(30000, false), MGMT: line(25000) });
   const recs = {
     "addr:308 finn ln": { propKey: "addr:308 finn ln", propertyName: "Weaver Mill", units: 100, period: "T12 ending 2026-06-30", lines: lines(), assumptions: null, meta },
-    // vacancy overridden to 10%: ERI 900,000 ; EGI 920,000 ; mgmt 23,000 ; opex 153,000 ; NOI = 920,000 − 153,000 − 20,000 = 747,000 (in-place unchanged)
+    // vacancy overridden to 10% — but the statement PROVES 5% (−50,000 / 1,000,000), which is better, so the
+    // "use the better" rule credits the proven 5% and the pessimistic 10% override is ignored: uwNoi = 795,750,
+    // the same as Weaver (in-place unchanged at 815,000).
     "addr:5 override ave": { propKey: "addr:5 override ave", propertyName: "Override Court", units: 100, period: null, lines: lines(), assumptions: { vacancyPct: 0.10 }, meta }
   };
   let res; try { res = PR.buildRows(recs, loans, hooks, GD); } catch (e) { ok(false, "real engine threw: " + (e && e.stack || e)); return; }
@@ -461,12 +463,12 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   ok(w && approx(w.dy, 0.0815, 1e-12), "stack dy = 815,000 / 10,000,000 = 0.0815 (got " + (w && w.dy) + ")");
   ok(w && approx(w.ltv, 0.73619632, 1e-7), "stack ltv = 10,000,000 / (815,000 / 0.06) = 0.73619632 (got " + (w && w.ltv) + ")");
   ok(w && w.maturity === "2029-01-01", "earliest maturity is the mezz's 2029-01-01 (got " + (w && w.maturity) + ")");
-  ok(v && cents(v.noi, 815000) && cents(v.uwNoi, 747000), "per-property vacancy override → uwNoi 747,000.00, in-place still 815,000.00 (got " + (v && v.uwNoi) + ")");
+  ok(v && cents(v.noi, 815000) && cents(v.uwNoi, 795750), "a WORSE vacancy override (10%) is ignored — the underwriting credits the proven 5%: uwNoi 795,750.00, in-place still 815,000.00 (got " + (v && v.uwNoi) + ")");
   ok(v && approx(v.dscr, 815000 / 300000, 1e-12) && approx(v.dy, 0.163, 1e-12) && approx(v.ltv, 0.39877301, 1e-7), "override row ratios: dscr 2.7167, dy 16.3%, ltv 39.88%");
   ok(o && o.noi === null && o.uwNoi === null && o.dscr === null && cents(o.balance, 1500000) && cents(o.annualDS, 90000), "loan-only row next to real-engine rows: NOI null, debt shown");
   const t = res.totals;
   ok(t.properties === 3 && t.loans === 4, "totals: 3 properties, 4 loans");
-  ok(cents(t.noi, 1630000) && cents(t.uwNoi, 1542750), "totals noi 1,630,000.00 / uwNoi 1,542,750.00 (got " + t.noi + " / " + t.uwNoi + ")");
+  ok(cents(t.noi, 1630000) && cents(t.uwNoi, 1591500), "totals noi 1,630,000.00 / uwNoi 1,591,500.00 = 795,750 (Weaver) + 795,750 (Override, actual credited) (got " + t.noi + " / " + t.uwNoi + ")");
   ok(cents(t.balance, 16500000) && cents(t.annualDS, 940000), "totals balance 16,500,000.00 / annualDS 940,000.00");
   // Coverage over the two NOI'd properties: Weaver (DS 550,000 / bal 10,000,000) + Override (300,000 / 5,000,000); Loan Only stays out
   ok(t.noiProps === 2 && t.properties === 3 && t.dscrProps === 2 && t.dyProps === 2 && cents(t.dsCovered, 850000) && cents(t.balanceCovered, 15000000), "scope: NOI on 2 of 3 (DSCR scope 2, DY scope 2), DS 850,000.00 / balance 15,000,000.00 behind the ratios");

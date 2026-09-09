@@ -216,7 +216,7 @@ run("E1 · underwriting-style flat statement (GPR line, EGI total, reserves belo
   var bg = SB.buildSetup({ parsed: pg, units: 120, benchmarks: {} });
   eq(bg.result.inPlace.noi, eg.noi, "buildSetup: in-place NOI === printed NOI");
   eq(bg.review.length, 1, "buildSetup carries the review list for the parsed path");
-  eq(bg.result.underwritten.lines.VAC, -0.05 * 1512345.60, "underwritten vacancy prices off the real GPR (would be 0 if GPR were dropped)");
+  eq(cents(bg.result.underwritten.lines.VAC), cents(-0.05 * 1512345.60), "underwritten vacancy prices off the real GPR — the statement runs 5%, which the 'use the better' rule credits exactly (would be 0 if GPR were dropped)");
 });
 
 run("E1 · where the operating detail ends (NOI row, TOTAL EXPENSES, summary blocks)", function(){

@@ -15,6 +15,21 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **The underwriting uses the BETTER of the assumption and what the statement proves (v2.7.7).** For the two
+  operating lines the underwritten column prices off an assumption — vacancy and the management fee — the
+  engine now underwrites at `min(actual, assumption)` (lower is better for both). So a property running a
+  tighter vacancy than assumed (e.g. it runs 1.7% while the assumption is 5%) is CREDITED its proven 1.7% in
+  the underwritten NOI, not held to the 5%; a property running worse falls back to the assumption (the
+  conservative floor); and a line the statement does not report keeps the assumption (never a phantom 0%).
+  Because every underwritten-NOI view (the underwriting tab, the debt sizing, the portfolio roll-up, the
+  coverage / debt-yield / loan-to-value figures) runs through the same `setup-builder`, they all pick up the
+  rule together. The underwriting tab shows a green note when a figure was credited from the statement, and
+  the Claude "what to push" prompt now knows the rule — so it no longer proposes "credit the proven occupancy"
+  as a move (the engine already did it); the only vacancy upside it surfaces is pushing occupancy EVEN tighter,
+  with the real operational moves in rents and costs. Verified in the real Electron app (raising the assumption
+  above the actual plateaus the underwritten NOI at the proven figure; the tab shows the credit) plus the unit
+  suites re-derived to the new math.
+
 - **"What to push" is Claude reading the T12 itself — the app stopped pre-chewing the moves (v2.7.5–2.7.6).**
   The earlier design had the app build a hidden MENU of candidate moves (raise rents 2/3/5%, "improve
   occupancy to 4%/3%", cut each cost line 10/20%, …), each with an engine-computed dollar, and told Claude to
