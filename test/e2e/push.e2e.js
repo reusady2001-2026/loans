@@ -1,10 +1,11 @@
-/* e2e for v2.7.3 "what to push" — CLAUDE is the analyst. The app hands Claude a menu of possible moves,
-   each with its EXACT engine-computed effect on the underwritten NOI (and, for assumption-gated moves, the
-   real occupancy swing needed from today's actual). Claude chooses which to push, picks the target size, and
-   ranks them; the app renders Claude's list with engine-true dollars. Verifies: the analysis is Claude's and
-   auto-runs on select (no app-made list, no manual click); Claude can pick the DEEPER vacancy target; the
-   real-swing framing is shown; full words only; no covenant talk; the menu (not a ranked list) is sent with
-   engine gains; and sent==shown end to end. Fake CLI (real Claude quality judged live).
+/* e2e for v2.7.5 "what to push" — CLAUDE READS THE T12. The app no longer builds a menu of moves; it hands
+   Claude the property's own classified statement (income + expense lines, actual annual dollars), the
+   underwriting assumptions, and the two figures that make them concrete (the vacancy and management fee the
+   statement ACTUALLY runs at), then Claude decides and ranks what to push. Verifies: the analysis auto-runs
+   and is Claude's; the app sends the T12 + assumptions + actuals (NOT a pre-built list); the actual vacancy
+   sent matches the statement (so Claude can never be told to move a figure the wrong way); full words only;
+   no covenant talk; and a re-analysis with a higher assumption flips the framing to crediting proven
+   occupancy. Fake CLI (real Claude quality judged live).
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/push.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -15,10 +16,10 @@ const FAKE=path.join(SP,'fake-claude-push.js');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-push-'));
 const INPUT=path.join(UDATA,'push-input.json');
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
-const KEY='name:villages of whitewater';  // name-first key
+const KEY='name:villages of whitewater';
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
 const panelText=(page)=>page.evaluate(()=>(document.getElementById('opScanMount')||{}).innerText||'');
-const money=(x)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(x);
+const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch(e){return null;}};
 (async()=>{
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),
     args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,
@@ -34,37 +35,44 @@ const money=(x)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',
   await page.waitForTimeout(500);
   await page.setInputFiles('#uwFile',CREST);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
-  // Claude's analysis must appear on its own — auto-run on select, no manual click.
-  await page.waitForFunction(()=>/FAKE-REALISTIC/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
+  await page.waitForFunction(()=>/FAKE-MOVE/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
   await page.waitForTimeout(300);
   const panel=await panelText(page);
 
+  // ---- The analysis is Claude's and auto-ran ----
   ok(/What to push on this property/i.test(await page.evaluate(()=>document.getElementById('uwView').innerText)),'the section is titled "What to push on this property"');
-  ok(/Claude’s read of what to push/i.test(panel),'the panel is framed as Claude’s analysis');
-  ok(/FAKE-REALISTIC/i.test(panel)&&/FAKE-RATIONALE/i.test(panel),'the ranked moves are Claude’s (its feasibility + rationale are shown) — and appeared WITHOUT a manual click (auto-run)');
-  ok(/FAKE-SUMMARY/i.test(panel),'Claude’s headline summary is shown');
-  ok(/per year of NOI/i.test(panel)&&/\+\$[\d,]+/.test(panel),'each move shows its engine dollar NOI gain');
+  ok(/Claude’s read of what to push/i.test(panel),'the panel is framed as Claude reading the statement');
+  ok(/FAKE-MOVE/i.test(panel)&&/FAKE-RATIONALE/i.test(panel)&&/FAKE-SUMMARY/i.test(panel),'Claude’s moves rendered WITHOUT a manual click (auto-run)');
+  ok(/estimated NOI impact/i.test(panel)&&/FAKE-IMPACT/i.test(panel),'each move shows Claude’s own estimated NOI impact (not an app-computed engine figure)');
 
-  // Claude picked the DEEPER vacancy target (vac_2 → 3% vacancy), and the real occupancy swing is shown.
-  ok(/Improve occupancy to 3\.00% vacancy/i.test(panel),'Claude chose the deeper occupancy target (to 3.00% vacancy), not just one point');
-  ok(/percentage point occupancy improvement from today/i.test(panel),'the real occupancy swing needed from today is spelled out (the weighting the operator asked for)');
-  ok(/HEAVY EFFORT/i.test(panel),'the two-point occupancy push is weighed as heavy effort');
+  // ---- The app hands Claude the T12 + assumptions + actuals — NOT a menu of moves ----
+  const sent=readInput();
+  ok(sent&&/Villages of Whitewater/i.test(sent.property||''),'Claude was sent THIS property by name');
+  ok(sent&&!('possibleMoves' in sent),'the app sends NO pre-built menu of moves (possibleMoves is gone)');
+  ok(sent&&sent.t12&&Array.isArray(sent.t12.income)&&sent.t12.income.length>0&&Array.isArray(sent.t12.expense)&&sent.t12.expense.length>0,'Claude is sent the property’s own classified T12 (income + expense lines)');
+  ok(sent&&sent.t12.income.every(r=>r.line&&typeof r.annual==='number')&&sent.t12.expense.some(r=>/repairs and maintenance/i.test(r.line)),'the T12 lines are full-word labels with actual annual dollars (e.g. "repairs and maintenance")');
+  ok(sent&&sent.underwritingAssumptions&&Math.abs(sent.underwritingAssumptions.vacancy-0.05)<1e-9,'Claude is sent the underwriting vacancy assumption (5%)');
+  ok(sent&&typeof sent.underwrittenNOI==='number'&&typeof sent.inPlaceNOI==='number','Claude is sent both the in-place and the underwritten NOI');
 
-  // Full words; no covenant talk.
+  // ---- The ACTUAL vacancy the statement runs at is sent (so Claude reasons from the truth, never "improves" to a worse number) ----
+  ok(sent&&sent.actualsFromStatement&&typeof sent.actualsFromStatement.vacancy==='number','Claude is sent the vacancy the statement ACTUALLY runs at');
+  ok(sent&&Math.abs(sent.actualsFromStatement.vacancy-0.0611)<0.002,'the actual vacancy sent matches the statement (~6.11%, got '+(sent&&(sent.actualsFromStatement.vacancy*100).toFixed(2))+'%)');
+  ok(/6\.11% vacancy against a 5\.00% underwriting assumption/i.test(panel),'Claude reasoned from the real actual-vs-assumption (6.11% vs 5.00%)');
+
+  // ---- Full words; no covenant talk ----
   const abbr=/\bGPR\b|\bEGI\b|\bEGR\b|\bOpEx\b|\bR&M\b|\bG&A\b|\bbps\b|\bCapEx\b/;
   ok(!abbr.test(panel),'no forbidden abbreviations in the panel (full words only)'+(abbr.test(panel)?' — found: '+(panel.match(abbr)||[])[0]:''));
   ok(!/DSCR|debt service coverage|maturit|refinanc/i.test(panel),'the panel does NOT talk about loan covenants (operations only)');
 
-  // The app sent Claude a MENU (not a pre-ranked list), each move engine-priced, with multiple vacancy targets.
-  const sent=(()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch(e){return null;}})();
-  ok(sent&&/Villages of Whitewater/i.test(sent.property||''),'Claude was sent THIS property by name');
-  ok(sent&&Array.isArray(sent.possibleMoves)&&sent.possibleMoves.length>=6,'Claude was sent a MENU of possible moves (not a ready-made ranked list)');
-  ok(sent&&sent.possibleMoves.every(m=>m.id&&typeof m.annualNoiGain==='number'&&m.context),'every menu move carries an id, an engine-computed annualNoiGain, and grounded context');
-  ok(sent&&sent.possibleMoves.some(m=>m.id==='vac_1')&&sent.possibleMoves.some(m=>m.id==='vac_2'),'the menu offers MULTIPLE vacancy targets so Claude picks how far to push');
-  const vac2=sent&&sent.possibleMoves.find(m=>m.id==='vac_2'), vac1=sent&&sent.possibleMoves.find(m=>m.id==='vac_1');
-  ok(vac2&&vac1&&vac2.annualNoiGain>vac1.annualNoiGain*1.5,'the deeper vacancy target is worth materially more (roughly double the one-point gain)');
-  ok(vac2&&panel.indexOf(money(vac2.annualNoiGain))>=0,'the vacancy gain shown is exactly the engine number sent for the target Claude chose ('+(vac2&&money(vac2.annualNoiGain))+')');
-  ok(sent&&sent.assumptions&&Math.abs(sent.assumptions.vacancyPercent-0.05)<1e-9,'Claude was sent the vacancy assumption (5%)');
+  // ---- Re-analyse with a HIGHER assumption (8%): now the actual (6.11%) is BELOW it → credit framing ----
+  await page.evaluate(()=>{const i=[...document.querySelectorAll('#uwView [data-uwbench]')].find(x=>x.getAttribute('data-uwbench')==='vacancyPct');if(i){i.value='8';i.dispatchEvent(new Event('change',{bubbles:true}));}});
+  await page.waitForTimeout(400);
+  await page.evaluate(()=>{const b=document.getElementById('opPushRun');if(b)b.click();});
+  await page.waitForFunction(()=>/underwrite vacancy nearer the proven/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
+  const panel2=await panelText(page), sent2=readInput();
+  ok(sent2&&Math.abs(sent2.underwritingAssumptions.vacancy-0.08)<1e-9,'on re-analysis Claude is sent the new 8% assumption');
+  ok(/underwrite vacancy nearer the proven 6\.11%/i.test(panel2),'now that the property runs UNDER the assumption, the move is to CREDIT proven occupancy — never "improve to a worse vacancy"');
+  ok(!/improve/i.test((panel2.split('estimated NOI impact')[0]||'')),'the credit case is not mislabelled as an occupancy "improvement"');
 
   ok(await page.evaluate(()=>!!document.getElementById('opPushRun')),'a "Re-analyse" button is offered');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));

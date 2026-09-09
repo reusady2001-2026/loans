@@ -15,6 +15,23 @@ re-amortize at the projected reset rate instead. The **fixed-period** payment ti
 note to the cent either way.
 
 ## Done
+- **"What to push" is Claude reading the T12 itself — the app stopped pre-chewing the moves (v2.7.5).** The
+  earlier design had the app build a hidden MENU of candidate moves (raise rents 2/3/5%, "improve occupancy
+  to 4%/3%", cut each cost line 10/20%, …), each with an engine-computed dollar, and told Claude to pick and
+  rank from that list. That is how a property running 1.76% vacancy got told to "improve occupancy to 3%" with
+  a nonsensical "-1.2 percentage point improvement": the APP put that option on the list. Now there is no
+  menu. The app hands Claude the property's own classified trailing-twelve-month statement (income and expense
+  lines with their actual annual dollars), the underwriting assumptions, both the in-place and the underwritten
+  NOI, and the two figures that make the assumptions concrete — the vacancy and management fee the statement
+  ACTUALLY runs at — and Claude reads it and decides what matters most, considering how the statement compares
+  to what the underwriting assumes. The prompt is short and does not tell Claude what to focus on; it only
+  holds it to the underwriting (the underwritten NOI is what the loan is sized on) and forbids moving a figure
+  the wrong way (never "improve" to a worse vacancy than the property already runs). The impact figures are now
+  Claude's own estimates, grounded in the statement and labelled as estimates — the trade for letting Claude
+  analyse freely rather than pick from app-computed numbers. Verified in the real Electron app: the app sends
+  the T12 + assumptions + actuals (no menu), the actual vacancy sent matches the statement, and raising the
+  assumption flips Claude from improving occupancy to crediting the proven level.
+
 - **Every loan against a property — senior AND mezzanine — groups into that one property (v2.7.4).** The
   name-first keying (v2.7.2) had a real bug: a property is one physical building, and its senior and mezzanine
   loans belong to it together, but a mezzanine loan carries a different NAME string from its senior on the

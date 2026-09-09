@@ -3789,86 +3789,53 @@ tr[data-loan]:hover td{background:#eef2f7}
       "TRSH COL":"trash collection income", PARK:"parking income", PET:"pet fees", MTM:"month-to-month fees",
       LATE:"late fees", APP:"application fees", ADM:"administrative income", AMEN:"amenity fees",
       COM:"commercial rent", CAM:"common area maintenance income", ANT:"antenna income", OTH:"other income" };
-    const OP_PUSH_CONTROLLABLE = { UTIL:1, PAY:1, GA:1, MKT:1, RM:1, CS:1, TRSH:1, CAB:1, PLL:1 };   // taxes/insurance/reserves are not levers
-    // Build the MENU of possible moves for the focused property, each with its exact underwritten-NOI effect
-    // (engine, to the cent) and a grounded one-line context. Several target sizes per lever so Claude can pick
-    // the realistic one (e.g. how far to push occupancy). Returns { options:[...], byId:{} } or null.
-    function opPushFacts(key){
-      if(!key || opFocusKey !== key || !uwLastBuilt || !window.Underwriting) return null;
-      const ws = uwLastBuilt.worksheet, base = uwLastBuilt.result.underwritten.noi, units = ws.units;
-      const byKey = {}; ws.lines.forEach(l => { byKey[l.key] = l; });
-      const r2 = (x) => Math.round(x * 100) / 100, pts = (x) => Math.round(x * 1000) / 10;   // decimal → percentage points, 1 dp
-      const gainOf = (mutate) => { const lines = ws.lines.map(l => Object.assign({}, l)), m = {}; lines.forEach(l => { m[l.key] = l; });
-        try{ mutate(m); return r2(Underwriting.computeNOI({ units: units, lines: lines }).underwritten.noi - base); }catch(e){ return 0; } };
-      const opts = [], add = (o) => { if(o && o.gain > 0) opts.push(o); };
-      // Rent — raise gross potential rent (direct: flows through net of vacancy and the management fee).
-      const gpr = byKey.GPR; if(gpr){ const gprUw = Number(gpr.uw) || 0;
-        const rentCtx = "Gross potential rent underwrites at "+fmtMoney(r2(gprUw))+(units && gprUw ? " ("+fmtMoney(r2(gprUw/units/12))+" per unit per month)" : "")+"; raising it flows to the underwritten NOI net of vacancy and the management fee.";
-        [2,3,5].forEach(pct => add({ id:"rent_"+pct, leverId:"rent", kind:"direct", title:"Raise rents "+pct+"%",
-          detail:rentCtx, gain:gainOf(m => { m.GPR.uw = gprUw * (1 + pct/100); m.GPR.method = "value"; }) }));
-      }
-      // Vacancy — assumption-gated. Targets BELOW the assumption, each labelled with the full occupancy swing
-      // needed from TODAY's actual, so Claude sees the true effort (the gap to the assumption earns nothing).
-      const vac = byKey.VAC; if(vac){ const assume = Number(vac.param) || 0;
-        const rentalBaseT12 = ["GPR","EMPL","MOD"].reduce((s,c) => s + (byKey[c] ? Number(byKey[c].t12)||0 : 0), 0);
-        const actual = rentalBaseT12 > 0 ? Math.max(0, -(Number(vac.t12)||0)) / rentalBaseT12 : null;
-        [1,2].forEach(p => { const target = assume - p/100; if(target < 0) return;
-          const swing = (actual != null) ? actual - target : null;
-          add({ id:"vac_"+p, leverId:"vacancy", kind:"gated", title:"Improve occupancy to "+fmtPct(target)+" vacancy",
-            detail:"The underwriting already assumes "+fmtPct(assume)+" vacancy"+(actual != null ? "; the trailing twelve months ran at "+fmtPct(actual) : "")+
-              ". Only vacancy below the assumed "+fmtPct(assume)+" raises the underwritten NOI"+
-              (swing != null ? "; reaching "+fmtPct(target)+" is a "+pts(swing)+" percentage point occupancy improvement from today" : "")+".",
-            gain:gainOf(m => { m.VAC.param = Math.max(0, target); }) }); });
-      }
-      // Management fee — assumption-gated; targets below the assumed rate.
-      const mg = byKey.MGMT; if(mg){ const assume = Number(mg.param) || 0;
-        [0.5,1].forEach(p => { const target = assume - p/100; if(target < 0) return;
-          add({ id:"mgmt_"+String(p).replace(".","_"), leverId:"mgmt", kind:"gated", title:"Negotiate the management fee to "+fmtPct(target),
-            detail:"The underwriting assumes a "+fmtPct(assume)+" management fee (a percent of effective gross income); only a rate below "+fmtPct(assume)+" raises the underwritten NOI.",
-            gain:gainOf(m => { m.MGMT.param = Math.max(0, target); }) }); });
-      }
-      // Controllable operating costs — pass straight through, so every dollar cut is a dollar of NOI. Biggest
-      // lines first; two cut sizes so Claude picks how hard to push. Taxes / insurance / reserves are not here.
-      ws.lines.filter(l => l.section === "expense" && OP_PUSH_CONTROLLABLE[l.key] && Number(l.uw) > 0)
-        .sort((a,b) => Number(b.uw) - Number(a.uw)).slice(0, 5).forEach(l => { const uw = Number(l.uw) || 0, name = OP_PUSH_LABEL[l.key] || String(l.label).toLowerCase();
-          const ctx = "This line underwrites at "+fmtMoney(r2(uw))+(units ? " ("+fmtMoney(r2(uw/units))+" per unit)" : "")+" and passes straight through to the underwritten NOI, so every dollar cut is a dollar of NOI.";
-          [10,20].forEach(pct => add({ id:"exp_"+l.key+"_"+pct, leverId:"exp_"+l.key, kind:"direct", title:"Cut "+name+" "+pct+"%",
-            detail:ctx, gain:gainOf(m => { m[l.key].uw = uw * (1 - pct/100); m[l.key].method = "value"; }) })); });
-      // Other income — raising it flows through net of the management fee.
-      ws.lines.filter(l => l.section === "other" && Number(l.uw) > 0).sort((a,b) => Number(b.uw) - Number(a.uw)).slice(0, 3)
-        .forEach(l => { const uw = Number(l.uw) || 0, name = OP_PUSH_LABEL[l.key] || String(l.label).toLowerCase();
-          [10,20].forEach(pct => add({ id:"inc_"+l.key+"_"+pct, leverId:"inc_"+l.key, kind:"direct", title:"Grow "+name+" "+pct+"%",
-            detail:"This line underwrites at "+fmtMoney(r2(uw))+"; growing it flows to the underwritten NOI net of the management fee.",
-            gain:gainOf(m => { m[l.key].uw = uw * (1 + pct/100); m[l.key].method = "value"; }) })); });
-      return { options: opts, byId: opts.reduce((a,o) => { a[o.id] = o; return a; }, {}) };
+    // The property's classified trailing-twelve-month statement, as plain-word income and expense lines with
+    // their actual annual dollars — the raw material Claude READS to decide what to push. No menu, no
+    // pre-chosen moves. Plus the two figures that make the underwriting assumptions concrete: the vacancy and
+    // the management fee the statement ACTUALLY runs at, so Claude can compare them to what the underwriting
+    // assumes and reason for itself. Returns null until a property with a T12 is focused.
+    function opT12Lines(key){
+      if(!key || opFocusKey !== key || !uwLastBuilt) return null;
+      const b = uwLastBuilt, ws = b.worksheet, r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+      const income = [], expense = [];
+      ws.lines.forEach(l => { const row = { line: (OP_PUSH_LABEL[l.key] || l.label), annual: r2(l.t12) };
+        if(l.section === "rental" || l.section === "other") income.push(row);
+        else if(l.section === "expense") expense.push(row); });
+      const base = ["GPR","EMPL","MOD"].reduce((s,c) => { const x = ws.lines.find(l => l.key === c); return s + (x ? Number(x.t12)||0 : 0); }, 0);
+      const vac = ws.lines.find(l => l.key === "VAC"), mg = ws.lines.find(l => l.key === "MGMT"), egi = Number(b.result.inPlace.egi) || 0;
+      return { income: income, expense: expense,
+        actualVacancy: base > 0 ? Math.max(0, -(Number(vac && vac.t12) || 0)) / base : null,
+        actualManagementFee: egi > 0 ? (Number(mg && mg.t12) || 0) / egi : null };
     }
     function aiPushSchema(){
       return { type:"object", properties:{
         summary:{ type:"string" },
         moves:{ type:"array", items:{ type:"object", properties:{
-          optionId:{ type:"string" }, rank:{ type:"number" }, effort:{ type:"string" },
-          investment:{ type:"string" }, feasibility:{ type:"string" }, rationale:{ type:"string" }
-        }, required:["optionId","rank","effort","investment","feasibility","rationale"] } }
+          title:{ type:"string" }, rank:{ type:"number" }, impact:{ type:"string" },
+          effort:{ type:"string" }, rationale:{ type:"string" }
+        }, required:["title","rank","impact","effort","rationale"] } }
       }, required:["summary","moves"] };
     }
+    // The prompt the embedded Claude gets. It is deliberately SHORT: Claude reads the property's own T12 and
+    // decides what to push — the app does not pre-chew a menu of moves. The only thing it must hold in mind is
+    // the underwriting (the underwritten NOI, built from the assumptions, is what the loan is sized on), so it
+    // compares what the statement actually runs at against what the underwriting assumes.
     var AI_PUSH_INSTRUCTION = [
-      "You are the asset manager for ONE multifamily property, deciding what the owner should PUSH to grow its value — and in what order. Input on stdin is JSON: { property, units, underwrittenNOI, assumptions, possibleMoves:[{id, move, kind, annualNoiGain, context}] }.",
-      "possibleMoves is a menu the app built. For EACH move the app's own underwriting engine has ALREADY computed annualNoiGain — exactly how many dollars that move adds to this property's UNDERWRITTEN NOI, the figure the loan is sized on. Treat every annualNoiGain and every number in `context` as fixed truth: never recompute or override a dollar figure, and never invent a market rent or comparable you were not given.",
-      "YOUR job is the judgement the app cannot do: choose which moves are worth pushing, pick the right target size for each, and RANK them by real value weighed against how hard they are. Do not just sort by dollars.",
-      "Weigh the real-world effort honestly. A move whose kind is \"beats an assumption\" (vacancy, the management fee) only adds NOI by beating a level the underwriting already assumes — the `context` gives the full real-world swing required (for example, reaching a vacancy target below the assumption may take a two percentage point occupancy improvement from today, and the first part of that improvement, up to the assumption, adds nothing). Let that lower its rank or push you to a more realistic target. Direct moves (rent, controllable costs, other income) add NOI immediately but still cost money, time or capital to achieve.",
-      "Pick AT MOST ONE option per underlying lever (do not list the same line at two different sizes) — choose the target size you judge most realistic, and say why in the feasibility note. Return the 4 to 6 moves genuinely worth pushing, best first, each with a distinct rank starting at 1.",
-      "For each chosen move return: optionId (copied exactly from the menu); rank (1 = push first); effort — exactly one of \"light\", \"moderate\", or \"heavy\"; investment — a short plain phrase naming what the owner must spend (money, time, or capital); feasibility — one sentence on how realistic that target is for THIS property, citing its own figures; rationale — one or two plain sentences on why it matters and why it ranks where it does. A one-line `summary` gives the headline.",
-      "Use FULL WORDS only. The ONLY abbreviation permitted anywhere in your output is NOI. Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\", \"basis points\").",
-      "Return { summary, moves:[{optionId, rank, effort, investment, feasibility, rationale}] } via the structured-output tool."
+      "You are the asset manager for ONE multifamily property. Read its trailing-twelve-month operating statement and its underwriting assumptions, provided as JSON on stdin: { property, units, underwritingAssumptions, actualsFromStatement, inPlaceNOI, underwrittenNOI, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure.",
+      "Decide what the owner should PUSH to grow this property's value, and rank the moves — most important first. Work it out yourself from the statement; you are NOT given a list of moves to choose from. The one thing to hold in mind is the underwriting: the underwritten NOI is what the loan is sized on, and it is built from the underwritingAssumptions, so a move is worth pushing when it makes the underwritten NOI better than those assumptions currently credit. Compare actualsFromStatement to underwritingAssumptions: where the property already runs BETTER than an assumption (for example it runs a tighter vacancy than the underwriting assumes), the push may simply be to underwrite it at the level the statement proves — no operational change; where a cost line looks high or an income line looks low, the push is operational. Never tell the owner to move a figure in the WRONG direction (e.g. to a worse vacancy than they already run).",
+      "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect on this property's NOI, as a short phrase grounded in the statement's own figures (for example \"about $100,000 a year\"); never invent a market rent or comparable you were not given — if you cannot ground a number, describe the impact in words; effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
+      "Use FULL WORDS only. The ONLY abbreviation permitted anywhere in your output is NOI. Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
+      "Return { summary, moves:[{ title, rank, impact, effort, rationale }] } via the structured-output tool, best first."
     ].join("\n");
     function opPushInput(key){
-      const facts = opPushFacts(key); if(!facts || !facts.options.length) return null;
-      const p = opProp(key), bench = uwState.input.bench;
-      return { property: (p && p.name) || key, units: uwLastBuilt.worksheet.units || null,
-        underwrittenNOI: uwLastBuilt.result.underwritten.noi,
-        assumptions: { vacancyPercent: bench.vacancyPct, managementFeePercent: bench.mgmtPct },
-        possibleMoves: facts.options.map(o => ({ id: o.id, move: o.title,
-          kind: (o.kind === "gated" ? "beats an assumption" : "direct"), annualNoiGain: o.gain, context: o.detail })) };
+      const t = opT12Lines(key); if(!t) return null;
+      const p = opProp(key), bench = uwState.input.bench, b = uwLastBuilt;
+      return { property: (p && p.name) || key, units: b.worksheet.units || null,
+        underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
+          reservePerUnit: bench.reservePerUnit, capRate: (bench.sizing && bench.sizing.capRate) },
+        actualsFromStatement: { vacancy: t.actualVacancy, managementFee: t.actualManagementFee },
+        inPlaceNOI: b.result.inPlace.noi, underwrittenNOI: b.result.underwritten.noi,
+        t12: { income: t.income, expense: t.expense } };
     }
     function opRunPush(key){
       if(!aiAvailable()){ toast("Analysing what to push needs the desktop app and a connected Claude.","error"); return; }
@@ -3882,32 +3849,31 @@ tr[data-loan]:hover td{background:#eef2f7}
           opRenderPush(); })
         .catch((e) => { opPushCache.set(key, { error: String((e && e.message) || e) }); opRenderPush(); });
     }
-    // Run Claude's analysis once per property automatically (this IS Claude's list, produced from the start),
-    // cached for the session. Called on property select; a manual "Re-analyse" refreshes it.
+    // Run Claude's read of the T12 once per property automatically, cached for the session. Called on
+    // property select; a manual "Re-analyse" refreshes it.
     function opMaybeAutoPush(key){
       if(!key || !aiAvailable() || opPushCache.has(key)) return;
-      const facts = opPushFacts(key); if(!facts || !facts.options.length) return;
+      if(!opPushInput(key)) return;   // no T12 read yet
       opRunPush(key);
     }
     function opRenderPush(){
       const mount = el("opScanMount"); if(!mount) return;
       const key = opFocusKey;
-      if(!key){ mount.innerHTML = '<p class="text-sm text-slate-400">Pick a property above &mdash; Claude will work out what to push on it.</p>'; return; }
+      if(!key){ mount.innerHTML = '<p class="text-sm text-slate-400">Pick a property above &mdash; Claude will read its T12 and work out what to push.</p>'; return; }
       const p = opProp(key), who = escapeHtml((p && p.name) || key);
-      const facts = opPushFacts(key), bench = uwState.input.bench;
-      if(!facts || !facts.options.length){ mount.innerHTML = '<p class="text-sm text-slate-400">Read this property&rsquo;s T12 first &mdash; then Claude works out what to push on it.</p>'; return; }
+      const input = opPushInput(key), bench = uwState.input.bench;
+      if(!input){ mount.innerHTML = '<p class="text-sm text-slate-400">Read this property&rsquo;s T12 first &mdash; then Claude reads it and works out what to push.</p>'; return; }
       const uwNoi = uwLastBuilt.result.underwritten.noi;
       const state = opPushCache.get(key);
       const intro = '<p class="text-[12px] text-slate-600"><b class="text-slate-700">Claude&rsquo;s read of what to push on '+who+'.</b> '+
-        'Underwritten NOI today is <b class="tabular-nums text-slate-800">'+fmtMoney(uwNoi)+'</b>, priced at '+fmtPct(bench.vacancyPct)+' vacancy and a '+fmtPct(bench.mgmtPct)+' management fee &mdash; the number the loan is sized on. '+
-        'Claude ranks the moves by real value against how hard they are; every dollar is the app&rsquo;s engine.</p>';
+        'Claude reads this property&rsquo;s trailing twelve-month statement against the underwriting assumptions ('+fmtPct(bench.vacancyPct)+' vacancy, '+fmtPct(bench.mgmtPct)+' management fee; underwritten NOI '+fmtMoney(uwNoi)+', the number the loan is sized on) and ranks what matters most.</p>';
       const canRun = aiAvailable();
       const runBtn = (label) => '<button type="button" id="opPushRun" class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"'+((state&&state.loading)?' disabled':'')+'>'+label+'</button>';
       let head, body = "";
       if(!canRun){
         head = intro; body = '<p class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-500">Analysing what to push runs on the embedded Claude &mdash; open the desktop app with Claude connected, and it appears here.</p>';
       } else if(state && state.loading){
-        head = intro; body = '<p class="mt-3 text-[12px] text-slate-500 inline-flex items-center gap-2"><svg class="h-4 w-4 animate-spin text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Claude is working out what to push on '+who+'&hellip;</p>';
+        head = intro; body = '<p class="mt-3 text-[12px] text-slate-500 inline-flex items-center gap-2"><svg class="h-4 w-4 animate-spin text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Claude is reading '+who+'&rsquo;s statement&hellip;</p>';
       } else if(state && state.error){
         head = '<div class="flex items-start justify-between gap-2"><div class="flex-1">'+intro+'</div><div class="shrink-0">'+runBtn("Try again")+'</div></div>';
         body = '<p class="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">'+escapeHtml(state.error)+'</p>';
@@ -3915,34 +3881,28 @@ tr[data-loan]:hover td{background:#eef2f7}
         const changed = state.at && (state.at.vacancyPct !== bench.vacancyPct || state.at.mgmtPct !== bench.mgmtPct);
         head = '<div class="flex items-start justify-between gap-2"><div class="flex-1">'+intro+
           (state.summary ? '<p class="mt-1 text-[12px] font-semibold text-slate-700">'+escapeHtml(state.summary)+'</p>' : '')+
-          (changed ? '<p class="mt-1 text-[11px] text-amber-700">Assumptions changed since this analysis &mdash; re-analyse to refresh Claude&rsquo;s ranking.</p>' : '')+
+          (changed ? '<p class="mt-1 text-[11px] text-amber-700">Assumptions changed since this read &mdash; re-analyse to refresh it.</p>' : '')+
           '</div><div class="shrink-0">'+runBtn("Re-analyse")+'</div></div>';
-        // Join Claude's chosen moves to the LIVE engine facts (gains recompute with the current assumptions);
-        // one per lever, in Claude's rank order. Claude owns the list; the app owns the dollars.
-        const seen = {}, chosen = [];
-        state.moves.slice().sort((a,b) => (Number(a.rank)||99) - (Number(b.rank)||99)).forEach(mv => {
-          const o = facts.byId[mv.optionId]; if(!o || seen[o.leverId]) return; seen[o.leverId] = 1; chosen.push({ o: o, mv: mv }); });
-        if(!chosen.length){ body = '<p class="mt-3 text-[12px] text-slate-500">Claude did not surface a move worth pushing on this property from its current figures.</p>'; }
+        const moves = state.moves.slice().sort((a,b) => (Number(a.rank)||99) - (Number(b.rank)||99));
+        if(!moves.length){ body = '<p class="mt-3 text-[12px] text-slate-500">Claude did not surface a move worth pushing on this property from its statement.</p>'; }
         else {
           const effortPill = (e) => { const k = (e||"").toLowerCase(), c = k==="heavy"?"bg-rose-100 text-rose-700":k==="light"?"bg-emerald-100 text-emerald-700":"bg-amber-100 text-amber-800"; return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+c+'">'+escapeHtml(e||"moderate")+' effort</span>'; };
-          const cards = chosen.map((c,i) => { const o = c.o, mv = c.mv;
-            const feas = mv.feasibility ? '<p class="mt-1 text-[12px] text-slate-600"><span class="font-semibold text-slate-700">Realistic?</span> '+escapeHtml(mv.feasibility)+'</p>' : '';
+          const cards = moves.map((mv,i) => {
             const rat = mv.rationale ? '<p class="mt-1 text-[12px] text-slate-600">'+escapeHtml(mv.rationale)+'</p>' : '';
+            const impact = mv.impact ? '<div class="text-sm font-extrabold text-emerald-700">'+escapeHtml(mv.impact)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">estimated NOI impact</div>' : '';
             return '<li class="rounded-xl border border-slate-200 bg-white px-3 py-2.5">'+
               '<div class="flex items-start justify-between gap-3">'+
-                '<div class="font-semibold text-slate-800">'+(i+1)+'. '+escapeHtml(o.title)+'</div>'+
-                '<div class="text-right shrink-0"><div class="text-sm font-extrabold tabular-nums text-emerald-700">+'+fmtMoney(o.gain)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">per year of NOI</div></div>'+
-              '</div>'+
-              '<p class="mt-1 text-[11px] text-slate-500">'+escapeHtml(o.detail)+'</p>'+ feas + rat +
-              '<div class="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">'+effortPill(mv.effort)+
-                (mv.investment ? '<span><span class="font-semibold text-slate-600">Investment:</span> '+escapeHtml(mv.investment)+'</span>' : '')+'</div>'+
+                '<div class="font-semibold text-slate-800">'+(i+1)+'. '+escapeHtml(mv.title || "")+'</div>'+
+                '<div class="text-right shrink-0 max-w-[45%]">'+impact+'</div>'+
+              '</div>'+ rat +
+              '<div class="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">'+effortPill(mv.effort)+'</div>'+
             '</li>'; }).join("");
           body = '<ul class="mt-3 space-y-2">'+cards+'</ul>'+
-            '<p class="mt-2 text-[10px] text-slate-400">Claude chose and ranked these moves and judged the effort, investment and feasibility; every dollar figure is the app&rsquo;s own underwriting engine for the labelled move. A starting point, not advice.</p>';
+            '<p class="mt-2 text-[10px] text-slate-400">Claude read this property&rsquo;s own statement and chose, ranked and sized these itself; the impact figures are Claude&rsquo;s estimates, grounded in the statement. A starting point, not advice.</p>';
         }
       } else {
         head = '<div class="flex items-start justify-between gap-2"><div class="flex-1">'+intro+'</div><div class="shrink-0">'+runBtn("Analyse with Claude")+'</div></div>';
-        body = '<p class="mt-3 text-[12px] text-slate-500">Claude will work out what to push &mdash; the moves that most grow this property&rsquo;s underwritten NOI, ranked by value against effort.</p>';
+        body = '<p class="mt-3 text-[12px] text-slate-500">Claude will read this property&rsquo;s statement and work out what to push, ranked by what matters most.</p>';
       }
       mount.innerHTML = head + body;
       const run = el("opPushRun"); if(run) run.addEventListener("click", () => opRunPush(key));
@@ -3963,7 +3923,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
-    try{ window.opProperties = opProperties; window.propertyKey = propertyKey; }catch(e){}   // diagnostics for tests: the per-property grouping
+    try{ window.opProperties = opProperties; window.propertyKey = propertyKey; window.opPushInput = opPushInput; }catch(e){}   // diagnostics for tests: the per-property grouping + what Claude is sent for "what to push"
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
