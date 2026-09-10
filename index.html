@@ -6254,63 +6254,26 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(t.minIndex && sVal != null && tVal != null && matchedT !== "sofr" && sAllIn < tAllIn){ baseId = "sofr"; baseVal = sVal; floating = true; capApplied = capCost; }
       return { t:t, spread:spread, baseSpread:(mp.spread||0), baseId:baseId, baseVal:baseVal, floating:floating, capCost:capCost, capApplied:capApplied, matchedT:matchedT, tVal:tVal, sVal:sVal, tBase:tBase, tAllIn:tAllIn, sAllIn:sAllIn, rate: baseVal + spread + capApplied };
     }
+    // Credit tier readout — the property's grade (DSCR / LTV) and the spread discount
+    // it earns on the proposed loan. The rate itself is built in the proposed-loan card
+    // below (index + spread − tier); this block no longer auto-prices, auto-switches
+    // Treasury↔SOFR, or assumes a cap cost — those were removed in the honest-rate rebuild.
     function creditAwareSectionHtml(loan){
-      const cam = creditAwareMarket(loan); if(!cam) return '';
-      const cur = compute(loan).derived.currentRate || 0, gap = cur - cam.rate, cand = gap > 0.0025;
-      const baseLbl = (cam.baseId === "sofr") ? "SOFR" : tenorShort(cam.baseId);
-      const tierBadge = cam.mezz ? "bg-indigo-100 text-indigo-700" : cam.t.tier >= 3 ? "bg-emerald-100 text-emerald-700" : cam.t.tier === 2 ? "bg-slate-100 text-slate-600" : "bg-rose-100 text-rose-700";
-      const verdict = cam.t.tier === 0 ? "Coverage below the 1.25× floor — not financeable as sized."
-        : cand ? ("Above market by " + Math.round(gap*10000) + " bps — refi candidate.")
-        : (gap < -0.0025 ? ("Already below the "+(cam.mezz?"mezzanine":"credit-aware")+" market — hold.") : ("At the "+(cam.mezz?"mezzanine":"credit-aware")+" market."));
-      const verdictCls = cam.t.tier === 0 ? "border-rose-300 bg-rose-50 text-rose-900"
-        : cand ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700";
-      const stats = [
-        refiStat("Base index", baseLbl+" "+fmtPct(cam.baseVal)+(cam.floating?" (floating)":"")),
-        refiStat(cam.mezz?"Mezz spread":"Spread (tier-adj)", Math.round(cam.spread*10000)+" bps"+(cam.t.delta?(" &middot; "+(cam.t.delta*10000)+" tier"):"")),
-      ];
-      if(cam.floating && !cam.mezz) stats.push(refiStat("SOFR cap cost", "&#43;"+Math.round(cam.capApplied*10000)+" bps"));
-      stats.push(refiStat(cam.mezz?"Mezz market":"Credit-aware market", fmtPct(cam.rate)));
-      stats.push(refiStat("Your rate", fmtPct(cur)));
-      // Mezzanine: an editable subordinate-debt spread over SOFR in place of the
-      // senior tier grid + Treasury/SOFR index choice.
-      let mezzChoice = '';
-      if(cam.mezz){
-        const mzIn = '<input id="refiMezzSpread" type="number" step="25" min="0" value="'+String(+(cam.spread*10000).toFixed(1))+'" class="w-20 rounded-md border border-indigo-300 px-1.5 py-0.5 text-xs text-right tabular-nums"> bps over SOFR';
-        mezzChoice = '<div class="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700">'+
-          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">'+
-            '<span class="font-bold uppercase tracking-wide text-indigo-400">Mezzanine pricing</span>'+
-            '<span>SOFR '+fmtPct(cam.sVal!=null?cam.sVal:cam.baseVal)+' + '+mzIn+' = '+fmtPct(cam.rate)+'</span>'+
-          '</div>'+
-        '</div>';
-      }
-      // Stage 6 — explicit Treasury-vs-SOFR head-to-head, net of the cap cost, with
-      // an editable cap estimate. Shown whenever the loan is eligible to switch
-      // (Tier 3+ currently on a Treasury).
-      let indexChoice = '';
-      if(cam.t.minIndex && cam.matchedT !== "sofr" && cam.tVal != null && cam.sVal != null){
-        const sofrWins = cam.sAllIn < cam.tAllIn, byBps = Math.round(Math.abs(cam.tAllIn - cam.sAllIn)*10000);
-        const capIn = '<input id="refiCapPct" type="number" step="5" min="0" value="'+String(+(cam.capCost*10000).toFixed(1))+'" class="w-16 rounded-md border border-slate-300 px-1.5 py-0.5 text-xs text-right tabular-nums"> bps cap';
-        indexChoice = '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">'+
-          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">'+
-            '<span class="font-bold uppercase tracking-wide text-slate-400">Index choice</span>'+
-            '<span>'+tenorShort(cam.matchedT)+' all-in '+fmtPct(cam.tAllIn)+'</span>'+
-            '<span class="text-slate-400">vs</span>'+
-            '<span>SOFR '+fmtPct(cam.sVal)+' + '+capIn+' = '+fmtPct(cam.sAllIn)+'</span>'+
-            '<span class="font-semibold '+(sofrWins?"text-brand-700":"text-slate-700")+'">&#8594; '+(sofrWins?"SOFR":tenorShort(cam.matchedT))+' cheaper by '+byBps+' bps</span>'+
-          '</div>'+
-        '</div>';
-      }
+      const t = loanTier(loan); if(!t) return '';
+      const dscr = loanDSCR(loan), ltv = loanLTV(loan), disc = Math.round((t.delta||0)*10000);   // discount is ≤ 0
+      const tierBadge = t.tier >= 3 ? "bg-emerald-100 text-emerald-700" : t.tier === 2 ? "bg-slate-100 text-slate-600" : "bg-rose-100 text-rose-700";
+      const line = t.tier === 0
+        ? "Coverage is below the 1.25&#215; floor — not financeable as sized."
+        : (disc < 0
+            ? ("This tier shaves <strong>"+Math.abs(disc)+" bps</strong> off any spread you set on the proposed loan below.")
+            : "No spread discount at this tier — stronger coverage or lower leverage would earn one.");
+      const lineCls = t.tier === 0 ? "border-rose-300 bg-rose-50 text-rose-900" : disc < 0 ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700";
       return '<div class="mt-4 border-t border-slate-100 pt-4">'+
         '<div class="mb-2 flex flex-wrap items-center gap-2">'+
-          '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+tierBadge+'">'+cam.t.label+'</span>'+
-          '<span class="text-[11px] text-slate-500">DSCR '+(loanDSCR(loan)||0).toFixed(2)+'× &middot; LTV '+fmtPct(loanLTV(loan))+((cam.floating && !cam.mezz)?' &middot; <span class="font-semibold text-brand-700">SOFR beats Treasury today</span>':'')+'</span>'+
+          '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '+tierBadge+'">'+t.label+'</span>'+
+          '<span class="text-[11px] text-slate-500">DSCR '+(dscr||0).toFixed(2)+'&#215; &middot; LTV '+fmtPct(ltv)+'</span>'+
         '</div>'+
-        '<dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
-          stats.join('')+
-        '</dl>'+
-        indexChoice+
-        mezzChoice+
-        '<div class="mt-3 rounded-xl border px-4 py-2.5 text-sm font-semibold '+verdictCls+'">'+verdict+'</div>'+
+        '<div class="rounded-xl border px-4 py-2.5 text-sm font-semibold '+lineCls+'">'+line+'</div>'+
       '</div>';
     }
     // Stage 4 — exit cost (the penalty to pay the current loan off early). Prepay
@@ -6681,33 +6644,78 @@ tr[data-loan]:hover td{background:#eef2f7}
       {key:"servicingFee",label:"Servicing fee"},{key:"trusteeFee",label:"Trustee fee"},{key:"otherFee1Amt",label:"Other fee 1"},{key:"otherFee2Amt",label:"Other fee 2"}
     ];
     let refiDrafts = {}, refiDraftsKey = "";   // one suggested loan (refiDrafts[1]); no options, no regular/advanced modes
-    function refiOptionRate(loan, n, mode){
-      const opt = refiTermOptions(loan)[n];
-      if(mode === "advanced"){ const cam = creditAwareMarket(loan); if(cam && cam.rate > 0) return cam.rate; }
-      const mp = refiMarketParts(loan, { rateType: loan.rateType||"Fixed", loanTermMonths: opt.term, armInitialFixedMonths: loan.armInitialFixedMonths }, { tenorId: opt.tenor, termMonths: opt.term });
-      return mp.marketRate;
+    const REFI_RATE_TYPES = ["Fixed", "Floating", "Hybrid ARM"];
+    // The tier's spread discount (a negative decimal, e.g. −0.004), or 0 when the
+    // property isn't tiered / not financeable. The tier only ever REDUCES a spread —
+    // never invents one, never pushes below 0 (that floor is enforced where applied).
+    function refiTierDelta(loan){ const t = loanTier(loan); return (t && t.tier > 0) ? (t.delta || 0) : 0; }
+    // The default base margin for a FLOATING / hybrid proposal — kept exactly as the
+    // app derives it today (calibrated from the borrower's own recent SOFR deals, with
+    // a market fallback). The FIXED side defaults to 0 instead (see applyProposedPricing).
+    function floatingBaseSpread(loan, termMonths){
+      const calib = calibratedSpread(loan, "sofr", termMonths);
+      if(calib && calib.spread > 0) return calib.spread;
+      return (marketBps(detectMarket(loan && loan.propertyAddress)) || 155) / 10000;
     }
-    function buildRefiOption(loan, n, rate){
+    // Today's value of the chosen base index (live, else catalog fallback).
+    function refiIndexVal(draft){ return liveOrFallbackDecimal(draft && draft.index); }
+    // Price the proposed loan HONESTLY: rate = chosen index + (base spread − tier
+    // discount), floored at 0. The base spread is the user's — 0 by default on the
+    // fixed side, the comp-derived margin on the floating side. Bakes the effective
+    // (post-tier) spread into draft.spread / draft.annualRate so compute() prices the
+    // draft as a real loan of its type. No fabricated spread, no auto index switch, no
+    // auto cap cost — every input is user-chosen or a live index.
+    function applyProposedPricing(loan, draft){
+      const type = REFI_RATE_TYPES.indexOf(draft.rateType) >= 0 ? draft.rateType : "Fixed";
+      const tierDelta = refiTierDelta(loan);
+      const base = (draft._baseSpread != null && isFinite(draft._baseSpread) && draft._baseSpread >= 0) ? draft._baseSpread : 0;
+      const eff  = Math.max(0, base + tierDelta);          // tier delta is ≤ 0 — reduces the spread, never below 0
+      draft.rateType = type; draft.isHistorical = false;
+      draft._baseSpread = base; draft._tierDelta = tierDelta; draft._effSpread = eff; draft.spread = eff;
+      const idxVal = refiIndexVal(draft);
+      if(type === "Fixed"){
+        draft.annualRate = null; draft.rateFloor = null; draft.rateCap = null; draft.sofrCapPct = null;
+        draft.floatIndexValue = null; draft.floatRepricedOn = null; draft.floatIndexLive = null;
+        draft.armInitialFixedMonths = null; draft.armAdjustFreqMonths = null;
+      } else {
+        // Floating / Hybrid: snapshot the index so the schedule prices off it without a save() churn.
+        draft.floatIndexValue = idxVal; draft.floatIndexLive = true; draft.floatRepricedOn = firstOfThisMonthISO();
+        if(draft.sofrCapPct == null) draft.sofrCapPct = 0;   // a cap costs nothing here until you actually buy one
+        if(type === "Hybrid ARM"){
+          draft.annualRate = idxVal + eff;                   // fixed first-leg rate, locked at today's index + effective spread
+          if(!draft.armInitialFixedMonths) draft.armInitialFixedMonths = loan.armInitialFixedMonths || 60;
+          if(!draft.armAdjustFreqMonths)   draft.armAdjustFreqMonths   = loan.armAdjustFreqMonths   || 60;
+        } else {
+          draft.annualRate = null; draft.armInitialFixedMonths = null; draft.armAdjustFreqMonths = null;
+        }
+      }
+    }
+    function buildRefiOption(loan, n){
       const d = compute(loan).derived, today = todayParts(), fpm = addMonths(today, 1);
       const opt = refiTermOptions(loan)[n] || refiTermOptions(loan)[1];
       const io    = (n === 1) ? Math.max(0, loan.ioMonths||0) : 0;              // Option 1 matches the current loan's interest-only
       const amort = (n === 1) ? (loan.amortizationMonths||360) : 360;
       const newMat = addMonths(fpm, opt.term - 1);
       const draft = JSON.parse(JSON.stringify(loan));
+      const type = REFI_RATE_TYPES.indexOf(loan.rateType) >= 0 ? loan.rateType : "Fixed";   // default: the type of the loan we're refinancing
+      const idx  = (type === "Floating") ? "sofr" : matchedTenorId({ rateType:"Fixed", loanTermMonths: opt.term });
+      const baseSpread = (type === "Fixed") ? 0 : floatingBaseSpread(loan, opt.term);        // fixed → 0; floating/hybrid → comp-derived margin
       Object.assign(draft, {
-        _id: "refiopt"+n, rateType:"Fixed", isHistorical:true, annualRate: rate, index:null, spread:null, rateFloor:null, rateCap:null,
-        armInitialFixedMonths:null, armAdjustFreqMonths:null,
+        _id: "refiopt"+n, rateType: type, isHistorical:false, index: idx, _baseSpread: baseSpread, spread: 0,
+        armInitialFixedMonths:null, armAdjustFreqMonths:null, rateFloor:null, rateCap:null, sofrCapPct:null,
+        annualRate:null, floatIndexValue:null, floatRepricedOn:null, floatIndexLive:null, armAssumedIndex:null,
         originalAmount: d.currentBalance, loanTermMonths: opt.term, amortizationMonths: amort, ioMonths: io,
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1), maturityDate: partsToISO(newMat.y,newMat.mo,1),
         noi:null, capRate:null, refiIO:null, refiTermMonths:null, stackWith:null, prepayType:null, prepayConfirmed:null,
         _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years,
       });
+      applyProposedPricing(loan, draft);
       return draft;
     }
     function ensureRefiDrafts(loan){
       const key = loan._id;
       if(refiDraftsKey !== key){
-        refiDrafts = { 1: buildRefiOption(loan, 1, refiOptionRate(loan, 1, "advanced")) };   // the single suggested loan, priced credit-aware
+        refiDrafts = { 1: buildRefiOption(loan, 1) };   // the single suggested loan, priced honestly (index + spread − tier)
         refiDraftsKey = key;
       }
     }
@@ -6793,6 +6801,46 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<th class="px-2 py-1.5 text-left">#</th><th class="px-2 py-1.5 text-left">Pays</th><th class="px-2 py-1.5 text-right">Rate</th><th class="px-2 py-1.5 text-right">Interest</th><th class="px-2 py-1.5 text-right">Payment</th><th class="px-2 py-1.5 text-right">Principal</th><th class="px-2 py-1.5 text-right">Balance</th>'+
         '</tr></thead><tbody class="divide-y divide-slate-100 tabular-nums">'+body+'</tbody></table></div>';
     }
+    // Indices you can price a proposed loan over: SOFR + the Treasury tenors the app tracks.
+    const REFI_INDEX_CHOICES = ["sofr","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
+    // The honest rate build-up shown at the top of the proposed loan: a rate-type toggle,
+    // the base-index picker, an editable spread (0 by default on the fixed side, the
+    // comp-derived margin on the floating side), and the resulting rate spelled out —
+    // index + spread − tier discount. Floating adds a floor, a cap and a cap cost (default 0).
+    function refiPricingRowHtml(loan, n, draft){
+      const floating = draft.rateType === "Floating" || draft.rateType === "Hybrid ARM";
+      const idxVal = refiIndexVal(draft), rate = compute(draft).derived.currentRate || 0;
+      const baseBps = Math.round((draft._baseSpread||0)*10000), tierBps = Math.round((draft._tierDelta||0)*10000);
+      const tier = loanTier(loan), showTier = tierBps < 0 && baseBps > 0;
+      const idxOpts = REFI_INDEX_CHOICES.map(function(id){ return '<option value="'+id+'"'+(id===draft.index?' selected':'')+'>'+INDEX_BY_ID[id].label+'</option>'; }).join("");
+      const typeToggle = '<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
+        REFI_RATE_TYPES.map(function(t,i){ var on=(draft.rateType===t), lbl=(t==="Hybrid ARM")?"Hybrid":t;
+          return '<button data-rtype="'+t+'" type="button" class="px-4 py-2 '+(i>0?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">'+lbl+'</button>'; }).join("")+'</div>';
+      let floatFields = '';
+      if(floating){
+        floatFields =
+          refiNumField("o"+n+"_floor","Rate floor (%)", draft.rateFloor!=null?+(draft.rateFloor*100).toFixed(3):"")+
+          refiNumField("o"+n+"_cap","Rate cap (%)", draft.rateCap!=null?+(draft.rateCap*100).toFixed(3):"")+
+          refiNumField("o"+n+"_capcost","Cap cost (bps/yr)", Math.round((draft.sofrCapPct||0)*10000));
+      }
+      const build = '= '+tenorShort(draft.index)+' '+fmtPct(idxVal)+' + '+baseBps+' bps spread'+
+        (showTier?(' &minus; '+Math.abs(tierBps)+' bps ('+(tier?tier.label:"tier")+')'):'')+
+        (showTier && (baseBps+tierBps)<0?' (floored at 0)':'');
+      return '<div class="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">'+
+        '<div class="mb-3 flex flex-wrap items-center gap-3">'+
+          '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Loan type</span>'+typeToggle+
+          '<span class="text-[11px] text-slate-400">defaults to your current loan&rsquo;s type; floating adds a margin, a cap and a cap cost you set</span>'+
+        '</div>'+
+        '<div class="grid grid-cols-2 sm:grid-cols-3 '+(floating?"lg:grid-cols-5":"lg:grid-cols-2")+' gap-3">'+
+          '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Base index</span>'+
+            '<select id="o'+n+'_index" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+idxOpts+'</select></label>'+
+          refiNumField("o"+n+"_spread","Spread (bps)", baseBps)+
+          floatFields+
+        '</div>'+
+        '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900">'+fmtPct(rate)+'</span> '+
+          '<span class="text-[11px] text-slate-500">'+build+'</span></p>'+
+      '</div>';
+    }
     // The single, full-width detail card for the selected proposed option.
     function refiOptionCardHtml(loan, n){
       const draft = refiDrafts[n], nd = compute(draft).derived;
@@ -6800,9 +6848,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       const diff = curPay - newPay;
       const escRows = REFI_ESC_FEE.map(f=>refiEscRow(n,f,draft)).join(""), feeRows = REFI_FEES.map(f=>refiEscRow(n,f,draft)).join("");
       return '<div class="rounded-2xl border-2 border-brand-300 bg-white p-5 shadow-sm">'+
-        '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">'+
+        refiPricingRowHtml(loan, n, draft)+
+        '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">'+
           refiNumField("o"+n+"_amount","Loan amount ($)", draft.originalAmount!=null?Math.round(draft.originalAmount):"")+
-          refiNumField("o"+n+"_rate","Rate (%)", +((draft.annualRate||0)*100).toFixed(3))+
           refiNumField("o"+n+"_termYrs","Term (yrs)", Math.round((draft.loanTermMonths||0)/12))+
           refiNumField("o"+n+"_amortYrs","Amortization (yrs)", Math.round((draft.amortizationMonths||360)/12))+
           refiNumField("o"+n+"_io","Interest-only (mo)", io)+
@@ -6909,12 +6957,30 @@ tr[data-loan]:hover td{background:#eef2f7}
       // The proposed loan's boxes — edit any field live.
       const optWrap = el("refiOptions");
       if(optWrap){
+        // Rate-type toggle → rebuild the draft's pricing at the new type's defaults
+        // (fixed → spread 0 over the matched Treasury; floating → comp margin over SOFR).
+        optWrap.addEventListener("click", (e) => {
+          const b = e.target.closest && e.target.closest("[data-rtype]"); if(!b) return;
+          const draft = refiDrafts[1]; if(!draft) return;
+          const type = b.getAttribute("data-rtype"); if(draft.rateType === type) return;
+          draft.rateType = type;
+          draft.index = (type === "Floating") ? "sofr" : matchedTenorId({ rateType:"Fixed", loanTermMonths: draft.loanTermMonths });
+          draft._baseSpread = (type === "Fixed") ? 0 : floatingBaseSpread(loan, draft.loanTermMonths);
+          draft.rateFloor = null; draft.rateCap = null; draft.sofrCapPct = (type === "Fixed") ? null : 0;
+          applyProposedPricing(loan, draft);
+          renderRefi(loan);
+        });
         optWrap.addEventListener("change", (e) => {
           const t = e.target, m = t && (t.id||"").match(/^o(1)_(.+)$/); if(!m) return;
           const n = Number(m[1]), field = m[2], draft = refiDrafts[n]; if(!draft) return;
+          if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
+          const blank = String(t.value||"").trim() === "";
           const raw = parseFloat((t.value||"").replace(/[^0-9.\-]/g,"")), v = isNaN(raw) ? 0 : raw;
           if(field === "amount") draft.originalAmount = v;
-          else if(field === "rate") draft.annualRate = v/100;
+          else if(field === "spread"){ draft._baseSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }   // bps → decimal; tier re-applied
+          else if(field === "floor") draft.rateFloor = blank ? null : v/100;
+          else if(field === "cap")   draft.rateCap   = blank ? null : v/100;
+          else if(field === "capcost") draft.sofrCapPct = Math.max(0, v)/10000;   // bps/yr → decimal; a separate cost, default 0
           else if(field === "termYrs"){ draft.loanTermMonths = Math.max(1, Math.round(v*12)); const tp = todayParts(), fp = addMonths(tp,1), nm = addMonths(fp, draft.loanTermMonths-1); draft.maturityDate = partsToISO(nm.y,nm.mo,1); }
           else if(field === "amortYrs") draft.amortizationMonths = Math.max(12, Math.round(v*12));
           else if(field === "io") draft.ioMonths = Math.max(0, Math.round(v));
