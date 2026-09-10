@@ -32,6 +32,12 @@ const rtxt=(page)=>page.evaluate(()=>(document.getElementById('refiView')||{}).i
   await page.waitForFunction(()=>{const v=document.getElementById('refiView');return v&&!v.hidden;},null,{timeout:8000}).catch(()=>{});
   await page.waitForFunction(()=>document.querySelectorAll('#refiView [data-rtype]').length>0,null,{timeout:8000}).catch(()=>{});
   await page.waitForTimeout(300);
+  // v2.8.7 gates the proposed-loan card on a "Refinance" verdict. Villages clears Can-I, and at
+  // a 0 spread its proposed rate beats the current rate, so the card is up. Take a little cash out
+  // (a bigger new loan than the payoff — its own reason to refi) so the card stays visible when a
+  // 250-bps spread later pushes the rate above the current one. This test is about pricing, not the verdict.
+  await page.evaluate(()=>{const e=document.getElementById('o1_amount'); if(e){ e.value=String(Math.round(Number((e.value||'0').replace(/[^0-9.]/g,''))+5000000)); e.dispatchEvent(new Event('change',{bubbles:true})); }});
+  await page.waitForTimeout(300);
 
   // ---- rate-type toggle, defaulting to the loan's own type ----
   ok((await count(page,'#refiView [data-rtype]'))===3,'the Fixed / Floating / Hybrid toggle is present (3 options)');

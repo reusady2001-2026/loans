@@ -3529,7 +3529,9 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
     // so it re-reads only after an upload), then refresh those two panels. Reading, not storing.
-    let opPreloading = false;
+    // opAutoPreloaded fires this exactly once per session the first time the roll-up shows, so the
+    // whole book is loaded automatically (no button to click) — see opRenderPortfolio.
+    let opPreloading = false, opAutoPreloaded = false;
     async function opPreloadAllThenPortfolio(){
       if(opPreloading || !opReady()) return; opPreloading = true;
       try{ for(const pr of opProperties()){ await opEnsureFromDisk(pr.key); } }catch(e){}
@@ -4129,12 +4131,17 @@ tr[data-loan]:hover td{background:#eef2f7}
       const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
       const open = (k) => { opSelectProperty(k); };
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
-      // The roll-up covers only the properties whose T12 has been read from disk this session (opened,
-      // or loaded on demand) — the app never eagerly reads every folder on open. Offer a one-click load.
+      // The roll-up covers the whole book. It shows the properties whose T12 has been read from disk;
+      // the rest are loaded automatically below (no button), and any with no T12 uploaded stay out.
       const total = opProperties().length, loaded = opProperties().filter(pr => OperatingStore.get(pr.key)).length;
-      if(loaded < total){ const bar = document.createElement("div"); bar.className = "mt-2 flex items-center gap-2 text-[11px] text-slate-500";
-        bar.innerHTML = '<span>Showing '+loaded+' of '+total+' properties (those whose T12 has been read).</span><button type="button" id="opLoadAll"'+(opPreloading?' disabled':'')+' class="rounded border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">'+(opPreloading?"Reading…":"Load every property\u2019s T12")+'</button>';
-        rm.appendChild(bar); const b = bar.querySelector("#opLoadAll"); if(b) b.addEventListener("click", opPreloadAllThenPortfolio); }
+      // First time the roll-up shows this session, load every property's T12 from disk automatically
+      // (once, via opAutoPreloaded) so it's complete without a button; opPreloadAllThenPortfolio re-renders when done.
+      if(loaded < total && !opAutoPreloaded && !opPreloading && opReady()){ opAutoPreloaded = true; opPreloadAllThenPortfolio(); }
+      if(loaded < total){ const bar = document.createElement("div"); bar.className = "mt-2 text-[11px] text-slate-500";
+        bar.textContent = opPreloading
+          ? ("Reading every property's T12 from disk... "+loaded+" of "+total+" ready.")
+          : (loaded+" of "+total+" properties have a T12 read; the rest have none uploaded yet.");
+        rm.appendChild(bar); }
       try{ opRenderPush(); }catch(e){}
     }
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
@@ -4143,6 +4150,8 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     try{ window.LDS_loanTier=(l)=>loanTier(l); window.LDS_loanDSCR=(l)=>loanDSCR(l); window.LDS_loanLTV=(l)=>loanLTV(l); window.LDS_loanDebtYield=(l)=>loanDebtYield(l); window.LDS_activeLoan=()=>getLoan(state.activeId); window.LDS_combinedRefiLoan=(members)=>combinedRefiLoan(members); window.LDS_computeBalance=(l)=>compute(l).derived.currentBalance; }catch(e){}   // diagnostics: the credit tier (3 metrics) + combined-stack refi
     try{ window.LDS_clearGDCache=()=>{ gdNOICache={}; gdFullCache={}; }; window.LDS_gdNOICache=()=>gdNOICache; window.LDS_opEnsureGeneralData=(k)=>opEnsureGeneralData(k); window.LDS_refiNOIOptionsFor=(l)=>refiNOIOptions(l); }catch(e){}   // diagnostics: exercise the cross-session disk read of general-data (the NOI-basis toggle)
+    try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
+    try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -6764,65 +6773,134 @@ tr[data-loan]:hover td{background:#eef2f7}
         refiDraftsKey = key;
       }
     }
-    // Binary refinance verdict. Per the rolling-refinance premise, the decision is
-    // driven by the MONTHLY carrying cost at equal-or-greater proceeds — not by the
-    // total repaid over the term (you refinance again long before maturity, so the
-    // balloon / lifetime interest never lands). Rule: get the same or more money at
-    // the same or a lower monthly payment, with at least one of the two strictly better.
-    function refiVerdict(loan, draft){
-      const cd = compute(loan).derived, nd = compute(draft).derived;
-      const payoff = cd.currentBalance||0, newAmt = draft.originalAmount||payoff, cashOut = newAmt - payoff;
-      const curRate = cd.currentRate||0, newRate = nd.currentRate||0, term = draft.loanTermMonths||120;
-      const oldPay = cd.totalDebtService||cd.monthlyPI||0, newPay = nd.totalDebtService||nd.monthlyPI||0;
-      const paymentSaveMo = oldPay - newPay;                                     // + → cheaper to carry
-      const EPS = 1;
-      const sameOrMoreMoney = cashOut >= -EPS, sameOrLessPay = paymentSaveMo >= -EPS;
-      const strictBetter = cashOut > EPS || paymentSaveMo > EPS;
-      const refi = sameOrMoreMoney && sameOrLessPay && strictBetter;
-      const exit = exitCost(loan).cost, closingPct = (draft._closingPct!=null?draft._closingPct:loanClosingPct(loan)), closing = closingPct*newAmt, execCost = exit + closing;
-      const payback = paymentSaveMo > 0 ? execCost/paymentSaveMo : Infinity;     // shown as context, not the driver
-      const interestSavMo = payoff*(curRate - newRate)/12;
-      return { refi:refi, curRate:curRate, newRate:newRate, term:term, oldPay:oldPay, newPay:newPay, paymentSaveMo:paymentSaveMo,
-               interestSavMo:interestSavMo, exit:exit, closing:closing, execCost:execCost, payback:payback, cashOut:cashOut,
-               curIO: loanIsIONow(loan), newIO:(draft.ioMonths||0)>0, payoff:payoff, newAmt:newAmt,
-               sameOrMoreMoney:sameOrMoreMoney, sameOrLessPay:sameOrLessPay };
+    // ── Two-stage refinance verdict ────────────────────────────────────────────
+    // The decision is two questions, asked in order — not one blurred payment test.
+    //   Stage 1 — CAN you? The property has to support a NEW loan at least as big as
+    //     what you owe, sized on all three lender limits at once (LTV ≤ 75%, DSCR ≥
+    //     1.25×, debt yield ≥ 7%), priced at the proposed loan's own rate and
+    //     amortization. The smallest of the three limits is the ceiling; if that
+    //     ceiling is below the payoff, you can't refinance the whole balance — full
+    //     stop, and no proposal is shown.
+    //   Stage 2 — SHOULD you (only if you can)? The rolling-refinance rule: the SAME
+    //     money at a LOWER rate is worth it; the same money at a higher-or-equal rate
+    //     is not. A smaller monthly payment that comes only from stretching the
+    //     amortization is NOT a saving — it's more interest on the same money, so it
+    //     never counts as a reason. Pulling cash out (a bigger loan) and a loan that's
+    //     about to mature are separate reasons to go ahead, whatever the rate does.
+    const REFI_MATURITY_WINDOW_MO = 12;
+    function refiBindingWord(binding){
+      return binding === "Debt Yield" ? "debt yield (income ÷ loan, held at 7%)"
+           : binding === "LTV"        ? "loan-to-value (capped at 75% of value)"
+           : binding === "DSCR"       ? "debt coverage (income ÷ payment, held at 1.25×)"
+           : "a lender limit";
     }
-    function refiVerdictHtml(loan){
-      const v = refiVerdict(loan, refiDrafts[1]), yes = v.refi;
-      const cls = yes ? "border-emerald-400 bg-emerald-50" : "border-rose-300 bg-rose-50", head = yes ? "text-emerald-800" : "text-rose-800";
-      const moneyWord = v.cashOut > 1 ? ("<strong>"+fmtMoney(v.newAmt)+"</strong> &mdash; "+fmtMoney(v.cashOut)+" more than the "+fmtMoney(v.payoff)+" you owe today")
-                       : (v.cashOut < -1 ? ("<strong>"+fmtMoney(v.newAmt)+"</strong> &mdash; "+fmtMoney(-v.cashOut)+" less than the "+fmtMoney(v.payoff)+" you owe today")
-                       : "the same <strong>"+fmtMoney(v.newAmt)+"</strong> you owe today");
-      const payWord = v.paymentSaveMo > 1 ? "drops to <strong>"+fmtMoney(v.newPay)+"/mo</strong> &mdash; <strong>"+fmtMoney(v.paymentSaveMo)+"/mo cheaper</strong> than your "+fmtMoney(v.oldPay)
-                    : (v.paymentSaveMo < -1 ? "rises to <strong>"+fmtMoney(v.newPay)+"/mo</strong> &mdash; <strong>"+fmtMoney(-v.paymentSaveMo)+"/mo more</strong> than your "+fmtMoney(v.oldPay)
-                    : "holds about level at <strong>"+fmtMoney(v.newPay)+"/mo</strong>");
-      const rateLine = "The rate goes from <strong>"+fmtPct(v.curRate)+"</strong> to <strong>"+fmtPct(v.newRate)+"</strong>. ";
-      const moneyLine = "You keep "+moneyWord+", and the monthly payment "+payWord+". ";
-      const ioLine = (v.curIO && !v.newIO) ? "This option amortizes rather than staying interest-only, so part of that payment now buys down principal &mdash; equity you build, not a cost. "
-                   : (v.curIO && v.newIO ? "Both loans are interest-only, so the payment is pure carry either way. " : "");
-      const costLine = "Switching costs about <strong>"+fmtMoney(v.execCost)+"</strong> up front ("+fmtMoney(v.exit)+" exit penalty + "+fmtMoney(v.closing)+" closing) &mdash; a one-time friction each time you roll. ";
-      const rollLine = "What you&rsquo;d owe at maturity isn&rsquo;t the test here: you refinance again whenever it pays, rolling from loan to loan, so what matters is the monthly carrying cost for the money in hand &mdash; not the balloon you never reach. ";
-      const bottom = yes ? "Same or more money at the same or a lower monthly payment &mdash; so refinance."
-                         : (v.paymentSaveMo < -1 ? "You&rsquo;d pay more each month for the same money &mdash; so don&rsquo;t refinance."
-                            : (v.cashOut < -1 ? "This option leaves you with less money and no payment relief &mdash; so don&rsquo;t refinance."
-                               : "No gain in money or in the monthly payment &mdash; so don&rsquo;t refinance."));
-      return '<div class="boxline rounded-2xl border-2 '+cls+' p-5 shadow-sm">'+
+    function refiBasisWord(loan){
+      const b = refiBasis(loan);
+      return b === "underwritten" ? "underwritten" : b === "inplace" ? "in-place T12" : "entered";
+    }
+    // Stage 1 — the most this property supports (all three limits), vs what you owe.
+    function refiCanStage(loan, draft){
+      const noi = refiNOI(loan);
+      const nd = draft ? compute(draft).derived : null;
+      const rate = nd ? (nd.currentRate || 0) : 0;
+      const amortYears = Math.max(0, Math.round(((draft && draft.amortizationMonths) || 360) / 12));
+      const s = Underwriting.sizeLoan(noi, { capRate: loanCapRate(loan), ltvMax: 0.75, dscrMin: 1.25, dyMin: 0.07, intRate: rate, amortYears: amortYears });
+      const payoff = compute(loan).derived.currentBalance || 0;
+      const sized = (noi != null && isFinite(noi) && noi > 0 && s.maxLoan > 0);
+      const can = sized && s.maxLoan >= payoff - 1;
+      return { can: can, sized: sized, maxLoan: s.maxLoan, payoff: payoff, binding: s.binding,
+               gap: s.maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears };
+    }
+    // Stage 2 — cost of money. Rate-based, never payment-based.
+    function refiShouldStage(loan, draft){
+      const cd = compute(loan).derived, nd = compute(draft).derived;
+      const payoff = cd.currentBalance || 0, newAmt = (draft.originalAmount != null ? draft.originalAmount : payoff), cashOut = newAmt - payoff;
+      const curRate = cd.currentRate || 0, newRate = nd.currentRate || 0;
+      const EPS_MONEY = 1, EPS_RATE = 0.00005;                 // $1 / half a basis point
+      const cheaper = newRate < curRate - EPS_RATE;            // same money, strictly lower rate
+      const pricier = newRate > curRate + EPS_RATE;
+      const cashOutYes = cashOut > EPS_MONEY;                  // the new loan is bigger — you're pulling money out
+      const monthsToMat = cd.monthsToMaturity;
+      const maturityYes = (monthsToMat != null && isFinite(monthsToMat) && monthsToMat <= REFI_MATURITY_WINDOW_MO);
+      const should = cheaper || cashOutYes || maturityYes;
+      const exit = exitCost(loan).cost, closingPct = (draft._closingPct != null ? draft._closingPct : loanClosingPct(loan)), execCost = exit + closingPct * newAmt;
+      return { should: should, cheaper: cheaper, pricier: pricier, cashOut: cashOut, cashOutYes: cashOutYes,
+               maturityYes: maturityYes, monthsToMat: monthsToMat, curRate: curRate, newRate: newRate,
+               payoff: payoff, newAmt: newAmt, execCost: execCost };
+    }
+    function refiVerdict(loan, draft){
+      const can = refiCanStage(loan, draft);
+      const should = can.can ? refiShouldStage(loan, draft) : null;
+      return { can: can, should: should, refi: can.can && !!should && should.should };
+    }
+    function refiVerdictHtml(loan, v){
+      v = v || refiVerdict(loan, refiDrafts[1]);
+      const can = v.can, should = v.should, yes = v.refi;
+      const cd = compute(loan).derived, curRate = cd.currentRate || 0;
+
+      // No NOI at all → nothing to size. Ask for it instead of faking a verdict.
+      if(!can.sized){
+        return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">'+
+          '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge this yet</p>'+
+          '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>'+
+        '</div>';
+      }
+
+      const banner = yes ? "border-emerald-400 bg-emerald-50" : "border-rose-300 bg-rose-50";
+      const bhead  = yes ? "text-emerald-800" : "text-rose-800";
+      const mark = (ok) => '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full '+(ok?"bg-emerald-100 text-emerald-700":"bg-rose-100 text-rose-700")+' text-sm font-black">'+(ok?"&#10003;":"&#10007;")+'</span>';
+
+      // Stage 1 line.
+      const canLine = can.can
+        ? ("This property supports up to <strong>"+fmtMoney(can.maxLoan)+"</strong> &mdash; "+
+           (can.gap > 1 ? fmtMoney(can.gap)+" more than" : "enough to cover")+" the <strong>"+fmtMoney(can.payoff)+"</strong> you owe. "+
+           "Its "+refiBindingWord(can.binding)+" is the limit that sets that ceiling.")
+        : ("The most this property supports today is <strong>"+fmtMoney(can.maxLoan)+"</strong>, but you owe <strong>"+fmtMoney(can.payoff)+"</strong> &mdash; a <strong>"+fmtMoney(-can.gap)+"</strong> shortfall. "+
+           "Its "+refiBindingWord(can.binding)+" is what caps it. You can&rsquo;t refinance the whole balance until NOI rises, the rate falls, or you pay that gap down.");
+
+      // Stage 2 line (only when Stage 1 clears).
+      let shouldBlock = "";
+      if(can.can){
+        const s = should;
+        const rateMove = "The rate "+(s.cheaper ? "drops" : s.pricier ? "rises" : "holds")+" from <strong>"+fmtPct(s.curRate)+"</strong> to <strong>"+fmtPct(s.newRate)+"</strong>";
+        let sLine;
+        if(s.cashOutYes){
+          sLine = "You&rsquo;d draw <strong>"+fmtMoney(s.cashOut)+"</strong> out (the new loan is bigger than the "+fmtMoney(s.payoff)+" payoff). "+rateMove+". Pulling equity is a separate call from the rate &mdash; do it if you have a use for the cash.";
+        } else if(s.cheaper){
+          sLine = rateMove+" on the same money &mdash; a real saving on debt you already carry, so it&rsquo;s worth doing. Switching costs about <strong>"+fmtMoney(s.execCost)+"</strong> up front each time you roll.";
+        } else if(s.maturityYes){
+          sLine = "Your current loan matures in <strong>"+s.monthsToMat+" month"+(s.monthsToMat===1?"":"s")+"</strong>, so you&rsquo;ll refinance or pay it off regardless. "+rateMove+" &mdash; line up the new loan even though it&rsquo;s not cheaper.";
+        } else {
+          sLine = rateMove+" on the same money, so refinancing just resets the clock at "+(s.pricier?"a higher":"no better")+" rate. A lower monthly payment from a longer schedule isn&rsquo;t a saving &mdash; it&rsquo;s more interest on the same money. Don&rsquo;t refinance.";
+        }
+        shouldBlock = '<div class="mt-3 flex items-start gap-3 border-t border-slate-200/70 pt-3">'+mark(s.should)+
+          '<div><p class="text-sm font-bold text-slate-800">Should you? '+(s.should?"Yes":"No")+'</p>'+
+          '<p class="text-sm leading-relaxed text-slate-700">'+sLine+'</p></div>'+
+        '</div>';
+      }
+
+      const bottom = yes ? "Refinance &mdash; you can, and on this money the numbers say you should."
+        : (!can.can ? "Don&rsquo;t refinance &mdash; the property can&rsquo;t support a loan the size of the payoff yet."
+                    : "Don&rsquo;t refinance &mdash; you can, but on the same money it costs the same or more.");
+
+      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm">'+
         '<div class="flex items-center gap-3">'+
-          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+head+'">'+(yes?"&#10003;":"&#10007;")+'</span>'+
-          '<div><p class="text-xl font-extrabold '+head+'">'+(yes?"Refinance":"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">Based on the proposed loan &mdash; '+Math.round(v.term/12)+'-yr'+(v.newIO?", interest-only":"")+' at '+fmtPct(v.newRate)+'.</p></div>'+
+          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":"&#10007;")+'</span>'+
+          '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":"Don&rsquo;t refinance")+'</p>'+
+          '<p class="text-sm text-slate-600">'+(loan._combined?"The whole property":"This loan")+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
-          refiStat("New monthly payment", fmtMoney(v.newPay))+
-          refiStat("vs your current", (v.paymentSaveMo>=0?"saves ":"adds ")+fmtMoney(Math.abs(v.paymentSaveMo))+"/mo")+
-          refiStat("Money in hand", fmtMoney(v.newAmt))+
-          refiStat(v.cashOut>1?"Cash out":"vs today", v.cashOut>1?fmtMoney(v.cashOut):(Math.abs(v.cashOut)<=1?"same money":("&minus;"+fmtMoney(-v.cashOut))))+
-          refiStat("New rate", fmtPct(v.newRate))+
-          refiStat("Your rate", fmtPct(v.curRate))+
-          refiStat("Cost to switch", fmtMoney(v.execCost))+
-          refiStat("Amortization", v.newIO?"interest-only":"amortizing")+
+          refiStat("You owe (payoff)", fmtMoney(can.payoff))+
+          refiStat("Property supports", fmtMoney(can.maxLoan))+
+          refiStat("Your rate today", fmtPct(curRate))+
+          refiStat("Proposed rate", fmtPct(can.rate))+
         '</dl>'+
-        '<p class="mt-3 text-sm leading-relaxed text-slate-700">'+rateLine+moneyLine+ioLine+costLine+rollLine+'<span class="font-semibold text-slate-900">'+bottom+'</span></p>'+
+        '<div class="mt-4 flex items-start gap-3">'+mark(can.can)+
+          '<div><p class="text-sm font-bold text-slate-800">Can you? '+(can.can?"Yes":"No")+'</p>'+
+          '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
+        '</div>'+
+        shouldBlock+
+        '<p class="mt-4 text-sm font-semibold text-slate-900">'+bottom+'</p>'+
       '</div>';
     }
     function refiNumField(id,label,val){ return '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">'+label+'</span>'+
@@ -6922,6 +7000,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       const _gk = propertyKey(loan);
       if(!Object.prototype.hasOwnProperty.call(gdNOICache, _gk)) opEnsureGeneralData(_gk).then(() => { if(state.activeId === loan._id || loan._combined) renderRefi(loan); });
       ensureRefiDrafts(loan);
+      // The two-stage verdict drives what's shown: the proposed loan + its schedule (and the
+      // "Save as a loan" button) appear ONLY when the answer is Refinance — you can, and you should.
+      const verdict = refiVerdict(loan, refiDrafts[1]);
+      const showProposal = verdict.refi;
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
         for(let i=d.paymentsMade; i<cur.rows.length; i++){
@@ -6938,7 +7020,7 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<p class="text-sm text-slate-500">'+escapeHtml(loan._combined?loan.propertyName:loanLabel(loan))+(loan._combined?' — refinance the whole property?':' — should you refinance?')+'</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
-            '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as a loan</button>'+
+            (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as a loan</button>' : '')+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -6953,14 +7035,23 @@ tr[data-loan]:hover td{background:#eef2f7}
           '</dl>'+ resetNote +
         '</div>'+
         refiAdvancedHtml(loan)+
-        refiVerdictHtml(loan)+
-        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
-          '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
-          '<p class="mb-3 text-[11px] text-slate-400">Matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s credit-aware rate. Every box is editable &mdash; the analysis and verdict above update live as you change them.</p>'+
-          '<div id="refiOptions">'+
-            refiOptionCardHtml(loan, 1)+
-          '</div>'+
-        '</div>';
+        refiVerdictHtml(loan, verdict)+
+        (showProposal
+          ? '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+              '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
+              '<p class="mb-3 text-[11px] text-slate-400">Matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s credit-aware rate. Every box is editable &mdash; the analysis and verdict above update live as you change them.</p>'+
+              '<div id="refiOptions">'+
+                refiOptionCardHtml(loan, 1)+
+              '</div>'+
+            '</div>'
+          : '<div class="boxline rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">'+
+              '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Proposed New Loan</h3>'+
+              '<p>The proposed loan and its amortization schedule show here only when the answer above is <strong class="text-slate-700">Refinance</strong>. '+
+              (verdict.can && verdict.can.can
+                ? 'Right now you can, but on the same money the rate isn&rsquo;t better &mdash; so there&rsquo;s nothing worth proposing.'
+                : 'Right now the property can&rsquo;t support a loan the size of the payoff, so there&rsquo;s no loan to propose.')+
+              ' Change the NOI basis or your inputs above; close and reopen to reset the proposal.</p>'+
+            '</div>');
 
       // The proposed loan follows the current loan's rate type + term, priced at today's
       // credit-aware rate (buildRefiOption), and every box stays editable below.

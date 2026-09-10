@@ -23,6 +23,16 @@ const val=(page,id)=>page.evaluate(i=>{const e=document.getElementById(i);return
   const row=page.locator('#portfolioView tr[data-goto]:visible').first();
   const loanId=await row.getAttribute('data-goto').catch(()=>null);
   ok(!!loanId,'a loan exists to open');
+  // The proposed-loan card shows only on a "Refinance" verdict (v2.8.7's two-stage gate).
+  // Force one so this test can still assert the card's editable boxes + schedule: a high NOI
+  // clears the Can-I sizing, and a high current rate makes today's proposed rate cheaper
+  // (Should-I = yes). No T12 on disk in this fresh profile, so refiNOI reads l.noi directly.
+  await page.evaluate((lid)=>{ const l=(window.LDS_loans?window.LDS_loans():[]).find(x=>x._id===lid); if(l){
+    l.rateType='Fixed'; l.isHistorical=false; l.amortType='Level'; l.annualRate=0.13;
+    l.noi=20000000; l.capRate=0.05;
+    l.floatIndexValue=null; l.floatIndexLive=null; l.floatRepricedOn=null;
+    l.armInitialFixedMonths=null; l.armAdjustFreqMonths=null; l.rateFloor=null; l.rateCap=null; l.stackWith=null;
+  }}, loanId);
   await row.click().catch(()=>{});
   await page.waitForFunction(()=>{const b=document.getElementById('refiBtn');return b&&!b.disabled;},null,{timeout:8000}).catch(()=>{});
   await page.click('#refiBtn').catch(()=>{});
