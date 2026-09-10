@@ -36,6 +36,15 @@ const activeBasis=(page)=>page.evaluate(()=>{
   const b=[...document.querySelectorAll('#refiView [data-noibasis]')].find(x=>/bg-brand-600/.test(x.className));
   return b?b.getAttribute('data-noibasis'):null;
 });
+// The DSCR shown in the Coverage & Value panel (dt/dd) and the DSCR shown in the credit-tier
+// readout ("DSCR x× · LTV …"). v2.8.5 makes the tier grade on the toggled NOI, so they must match.
+const dscrPair=(page)=>page.evaluate(()=>{
+  const rv=document.getElementById('refiView'); const txt=rv?rv.innerText||'':'';
+  const dt=[...(rv?rv.querySelectorAll('dt'):[])].find(d=>/^DSCR$/i.test((d.textContent||'').trim()));
+  const panel=dt&&dt.nextElementSibling?parseFloat((dt.nextElementSibling.textContent||'').replace(/[^0-9.]/g,'')):null;
+  const m=txt.match(/DSCR\s+([\d.]+)×\s*·\s*LTV/i);   // the tier readout line: "DSCR x× · LTV …"
+  return { panel, tier:m?parseFloat(m[1]):null };
+});
 
 (async()=>{
   const {app,page,errors}=await launch();
@@ -91,6 +100,8 @@ const activeBasis=(page)=>page.evaluate(()=>{
     ok((await activeBasis(page))==='underwritten','the default basis is Underwritten — the figure a loan is sized on');
     const noiUW=await refiNoiShown(page);
     ok(gd&&noiUW!=null&&Math.abs(noiUW-gd.noi.underwritten)<2,'the analysis runs on the underwritten NOI by default ('+noiUW+')');
+    const dpUW=await dscrPair(page);   // v2.8.5: the tier grades on the SAME (underwritten) NOI the panel shows
+    ok(dpUW.panel!=null&&dpUW.tier!=null&&Math.abs(dpUW.panel-dpUW.tier)<0.02,'on Underwritten, the credit tier DSCR ('+dpUW.tier+'×) matches the panel DSCR ('+dpUW.panel+'×)');
     // switch to in-place → the analysis re-drives off the in-place NOI
     await page.click('#refiView [data-noibasis="inplace"]').catch(()=>{});
     await page.waitForTimeout(300);
@@ -98,6 +109,9 @@ const activeBasis=(page)=>page.evaluate(()=>{
     const noiIP=await refiNoiShown(page);
     ok(gd&&noiIP!=null&&Math.abs(noiIP-gd.noi.inPlace)<2,'the analysis now runs on the in-place NOI ('+noiIP+')');
     ok(noiIP!=null&&noiUW!=null&&Math.abs(noiIP-noiUW)>1,'switching the basis actually changes the NOI the refinance is judged on');
+    const dpIP=await dscrPair(page);
+    ok(dpIP.panel!=null&&dpIP.tier!=null&&Math.abs(dpIP.panel-dpIP.tier)<0.02,'on In-place, the tier DSCR ('+dpIP.tier+'×) still matches the panel DSCR ('+dpIP.panel+'×) — the tier tracks the toggle');
+    ok(dpIP.tier!=null&&dpUW.tier!=null&&Math.abs(dpIP.tier-dpUW.tier)>0.01,'and the tier DSCR moved when the basis flipped ('+dpUW.tier+'× → '+dpIP.tier+'×)');
   }
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));

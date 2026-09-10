@@ -14,18 +14,32 @@ a defensible approximation and is what both loans currently do; a future refinem
 re-amortize at the projected reset rate instead. The **fixed-period** payment ties to each
 note to the cent either way.
 
-## Refinance decision rebuild (in progress, 2.8.2 → 2.8.7)
+## Refinance decision rebuild (in progress, 2.8.2 → 2.8.8)
 Reworking the refinance calculator into a single, decision-first flow, one version at a time. The
 rate itself was fabricated (a calibrated spread, an auto Treasury↔SOFR switch, an assumed cap cost),
 so the honest-pricing rebuild was inserted ahead of the verdict — a verdict on a wrong rate is worthless:
 - **2.8.2 (done):** collapse the Regular/Advanced toggle into one analysis and the two loan options into one editable suggested loan.
 - **2.8.3 (done):** honest proposed-loan rate — a Fixed/Floating/Hybrid toggle (defaulting to the loan's type), a base-index picker, and an editable spread (0 by default on the fixed side; the comp-derived margin on the floating side). Rate = index + spread − tier discount. The fabricated calibrated spread, the 25 bps floor, the auto Treasury↔SOFR switch, and the auto 35 bps cap are gone (cap → floating-only, default 0).
 - **2.8.4 (done):** the credit tier reads all three metrics (DSCR, LTV, debt yield) — a property earns a tier only when all three clear, and is "not financeable" if it fails any one floor (DSCR < 1.25, LTV > 75%, debt yield < 7%). It grades the combined property position on a senior+mezz stack (the combo loan carries the total balance + property NOI), which already refinances as one loan against the combined payoff; a combined proposal now defaults to the senior's rate type.
-- **2.8.5:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ combined payoff) then "Should I refinance?" (don't if the total cost of the same money is higher), hiding the proposed loan + schedule unless both are yes.
-- **2.8.6:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
-- **2.8.7:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
+- **2.8.5 (done):** the whole "Specific Loan" window becomes a **Specific Property** window — the selector lists properties (senior+mezz collapsed to one), and selecting a stack opens the combined position (Edit/Remove act on individual loans via their cards; the refinance is one loan vs the combined payoff). Plus the tier now grades on the toggled NOI (in-place vs underwritten), matching the Coverage & Value panel instead of silently using the in-place figure.
+- **2.8.6:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ combined payoff) then "Should I refinance?" (don't if the total cost of the same money is higher), hiding the proposed loan + schedule unless both are yes.
+- **2.8.7:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
+- **2.8.8:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
 
 ## Done
+- **The window is property-based — "Specific Property," not "Specific Loan" (v2.8.5).** The selector lists
+  **properties** (`renderSelect` maps over `opProperties()`, senior+mezz collapsed into one entry, counted as
+  "N properties"); its option value is the property's position id — the loan id for a single-loan property, a
+  `combo:<key>` id for a stack, which `getLoan` resolves to the combined position. Selecting a stack opens the
+  combined position (KPIs, the combined-position panel, one schedule); Edit/Remove are off for the synthetic
+  combo and act on individual loans via their cards (the existing loan-jump rows), and the refinance is one loan
+  vs the combined payoff. The scope button and label read "Specific Property" / "Select a property." Also fixed:
+  the credit tier grades on `refiNOI` (the in-place/underwritten basis you toggle), so the tier's DSCR/LTV/debt
+  yield match the Coverage & Value panel instead of silently using the in-place figure. Verified with a new
+  property-window e2e (properties, not loans, in the selector; a stack opens combined with Edit/Remove off and a
+  combined refinance; a single loan opens editable) and a tier-tracks-the-toggle check in the general-data e2e
+  (tier DSCR = panel DSCR on both bases, and moves when the basis flips).
+
 - **The credit tier reads all three sizing tests, on the combined property (v2.8.4).** `loanTier` now grades on
   DSCR, LTV **and debt yield** together: a property earns a tier only when all three clear it (Tier 4 needs
   DSCR ≥ 1.55, LTV ≤ 55%, debt yield ≥ 10%; Tier 3 ≥ 1.35 / ≤ 65% / ≥ 8.5%), and is "not financeable as sized"
