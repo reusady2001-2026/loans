@@ -20,12 +20,22 @@ rate itself was fabricated (a calibrated spread, an auto Treasury↔SOFR switch,
 so the honest-pricing rebuild was inserted ahead of the verdict — a verdict on a wrong rate is worthless:
 - **2.8.2 (done):** collapse the Regular/Advanced toggle into one analysis and the two loan options into one editable suggested loan.
 - **2.8.3 (done):** honest proposed-loan rate — a Fixed/Floating/Hybrid toggle (defaulting to the loan's type), a base-index picker, and an editable spread (0 by default on the fixed side; the comp-derived margin on the floating side). Rate = index + spread − tier discount. The fabricated calibrated spread, the 25 bps floor, the auto Treasury↔SOFR switch, and the auto 35 bps cap are gone (cap → floating-only, default 0).
-- **2.8.4:** tiers read all three metrics (DSCR, LTV, debt yield) on the combined property stack; a senior+mezz property refinances as one new loan against the combined payoff.
+- **2.8.4 (done):** the credit tier reads all three metrics (DSCR, LTV, debt yield) — a property earns a tier only when all three clear, and is "not financeable" if it fails any one floor (DSCR < 1.25, LTV > 75%, debt yield < 7%). It grades the combined property position on a senior+mezz stack (the combo loan carries the total balance + property NOI), which already refinances as one loan against the combined payoff; a combined proposal now defaults to the senior's rate type.
 - **2.8.5:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ combined payoff) then "Should I refinance?" (don't if the total cost of the same money is higher), hiding the proposed loan + schedule unless both are yes.
 - **2.8.6:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
 - **2.8.7:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
 
 ## Done
+- **The credit tier reads all three sizing tests, on the combined property (v2.8.4).** `loanTier` now grades on
+  DSCR, LTV **and debt yield** together: a property earns a tier only when all three clear it (Tier 4 needs
+  DSCR ≥ 1.55, LTV ≤ 55%, debt yield ≥ 10%; Tier 3 ≥ 1.35 / ≤ 65% / ≥ 8.5%), and is "not financeable as sized"
+  if it fails any one floor (DSCR < 1.25, LTV > 75%, or debt yield < 7%), naming which. Because the refi opens
+  on the combo loan (total balance + property NOI), the tier grades the whole senior+mezz stack, which already
+  refinances as one loan against the combined payoff; a combined proposal now defaults to the senior's rate
+  type. The tier readout gained the debt-yield figure. Verified with a new tier e2e (three-metric rule checked
+  against the app's own computed DSCR/LTV/DY; debt yield shown to gate a would-be Tier 4 down to Tier 2; the
+  combined loan carrying the whole stack's balance and grading on the combined debt yield).
+
 - **The proposed loan is priced honestly (v2.8.3).** The refinance calculator no longer fabricates a rate.
   The proposed-loan card gained a Fixed / Floating / Hybrid toggle (defaulting to the loan's own type), a
   base-index picker (SOFR + the Treasury tenors), and an editable spread — 0 by default on the fixed side,
