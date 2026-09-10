@@ -14,7 +14,20 @@ a defensible approximation and is what both loans currently do; a future refinem
 re-amortize at the projected reset rate instead. The **fixed-period** payment ties to each
 note to the cent either way.
 
+## Refinance decision rebuild (in progress, 2.8.2 → 2.8.5)
+Reworking the refinance calculator into a single, decision-first flow, one version at a time:
+- **2.8.2 (done):** collapse the Regular/Advanced toggle into one analysis and the two loan options into one editable suggested loan.
+- **2.8.3:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ payoff) then "Should I refinance?", hiding the proposed loan + schedule unless both are yes.
+- **2.8.4:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved to the file with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
+- **2.8.5:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
+
 ## Done
+- **The refinance calculator is one analysis + one editable suggested loan (v2.8.2).** Removed the Regular/Advanced
+  toggle and the whole "regular" (market-rate-only) path — the analysis that prices off DSCR, debt yield, value and
+  leverage is now the only one, unlabeled. Collapsed the Option 1 / Option 2 selector into a single suggested loan,
+  every box still editable. The verdict and the amortization schedule are unchanged; this is pure structural
+  simplification ahead of the two-stage decision (2.8.3). Verified with a new e2e plus the refi-touching suites.
+
 - **Underwriting input clean-up, folder-first NOI, and the lease-up rule (v2.8.1).** Three things.
   (1) The underwriting inputs stopped nagging and started explaining: the dead duplicate "Property" box is
   gone; the word "optional" is gone from the placeholders; "Rent-roll GPR / yr" is now plain "Gross potential

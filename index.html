@@ -6605,7 +6605,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       const dscrOk = dscr != null && dscr >= 1.25;
       return '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
         '<div class="flex items-center justify-between">'+
-          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Advanced analysis</h3>'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Coverage &amp; value</h3>'+
           '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>'+
         '</div>'+
         refiNOIBasisHtml(loan)+
@@ -6680,7 +6680,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     const REFI_FEES = [
       {key:"servicingFee",label:"Servicing fee"},{key:"trusteeFee",label:"Trustee fee"},{key:"otherFee1Amt",label:"Other fee 1"},{key:"otherFee2Amt",label:"Other fee 2"}
     ];
-    let refiActiveOption = 1, refiAnalysisMode = "regular", refiDrafts = {}, refiDraftsKey = "";
+    let refiDrafts = {}, refiDraftsKey = "";   // one suggested loan (refiDrafts[1]); no options, no regular/advanced modes
     function refiOptionRate(loan, n, mode){
       const opt = refiTermOptions(loan)[n];
       if(mode === "advanced"){ const cam = creditAwareMarket(loan); if(cam && cam.rate > 0) return cam.rate; }
@@ -6704,12 +6704,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       });
       return draft;
     }
-    function ensureRefiDrafts(loan, mode){
-      const key = loan._id + ":" + mode;
+    function ensureRefiDrafts(loan){
+      const key = loan._id;
       if(refiDraftsKey !== key){
-        refiDrafts = { 1: buildRefiOption(loan,1,refiOptionRate(loan,1,mode)), 2: buildRefiOption(loan,2,refiOptionRate(loan,2,mode)) };
+        refiDrafts = { 1: buildRefiOption(loan, 1, refiOptionRate(loan, 1, "advanced")) };   // the single suggested loan, priced credit-aware
         refiDraftsKey = key;
-        if(refiActiveOption !== 1 && refiActiveOption !== 2) refiActiveOption = 1;
       }
     }
     // Binary refinance verdict. Per the rolling-refinance premise, the decision is
@@ -6736,7 +6735,7 @@ tr[data-loan]:hover td{background:#eef2f7}
                sameOrMoreMoney:sameOrMoreMoney, sameOrLessPay:sameOrLessPay };
     }
     function refiVerdictHtml(loan){
-      const v = refiVerdict(loan, refiDrafts[refiActiveOption]), yes = v.refi;
+      const v = refiVerdict(loan, refiDrafts[1]), yes = v.refi;
       const cls = yes ? "border-emerald-400 bg-emerald-50" : "border-rose-300 bg-rose-50", head = yes ? "text-emerald-800" : "text-rose-800";
       const moneyWord = v.cashOut > 1 ? ("<strong>"+fmtMoney(v.newAmt)+"</strong> &mdash; "+fmtMoney(v.cashOut)+" more than the "+fmtMoney(v.payoff)+" you owe today")
                        : (v.cashOut < -1 ? ("<strong>"+fmtMoney(v.newAmt)+"</strong> &mdash; "+fmtMoney(-v.cashOut)+" less than the "+fmtMoney(v.payoff)+" you owe today")
@@ -6758,7 +6757,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="flex items-center gap-3">'+
           '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+head+'">'+(yes?"&#10003;":"&#10007;")+'</span>'+
           '<div><p class="text-xl font-extrabold '+head+'">'+(yes?"Refinance":"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">Based on Option '+refiActiveOption+' &mdash; '+Math.round(v.term/12)+'-yr'+(v.newIO?", interest-only":"")+' at '+fmtPct(v.newRate)+'.</p></div>'+
+          '<p class="text-sm text-slate-600">Based on the proposed loan &mdash; '+Math.round(v.term/12)+'-yr'+(v.newIO?", interest-only":"")+' at '+fmtPct(v.newRate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("New monthly payment", fmtMoney(v.newPay))+
@@ -6771,21 +6770,6 @@ tr[data-loan]:hover td{background:#eef2f7}
           refiStat("Amortization", v.newIO?"interest-only":"amortizing")+
         '</dl>'+
         '<p class="mt-3 text-sm leading-relaxed text-slate-700">'+rateLine+moneyLine+ioLine+costLine+rollLine+'<span class="font-semibold text-slate-900">'+bottom+'</span></p>'+
-      '</div>';
-    }
-    function refiRegularHtml(loan){
-      const opt = refiTermOptions(loan)[refiActiveOption];
-      const mp = refiMarketParts(loan, { rateType: loan.rateType||"Fixed", loanTermMonths: opt.term, armInitialFixedMonths: loan.armInitialFixedMonths }, { tenorId: opt.tenor, termMonths: opt.term });
-      const cur = compute(loan).derived.currentRate||0, mkt = mp.marketRate, gap = cur - mkt, below = gap > 0.0005;
-      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
-        '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Regular analysis &mdash; today&rsquo;s market vs your rate</h3>'+
-        '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
-          refiStat("Your rate", fmtPct(cur))+
-          refiStat("Today&rsquo;s market", fmtPct(mkt))+
-          refiStat("Base + spread", tenorShort(mp.tenorId)+" "+fmtPct(mp.baseValue)+" + "+Math.round(mp.spread*10000)+" bps")+
-          refiStat("Gap", (gap>=0?"&minus;":"+")+fmtPct(Math.abs(gap))+(below?" (below market)":" (above market)"))+
-        '</dl>'+
-        '<p class="mt-2 text-[11px] text-slate-400">Today&rsquo;s market = a like loan at the live '+tenorShort(mp.tenorId)+' + your recent-deal spread. Switch to Advanced to price off DSCR &amp; leverage.</p>'+
       '</div>';
     }
     function refiNumField(id,label,val){ return '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">'+label+'</span>'+
@@ -6840,14 +6824,11 @@ tr[data-loan]:hover td{background:#eef2f7}
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
-      // Load this property's General Data NOIs once, then repaint so the basis toggle appears
-      // and advanced mode can run off the T12/underwritten NOI without a hand-entered figure.
+      // Load this property's General Data NOIs once, then repaint so the NOI-basis toggle appears
+      // and the analysis can run off the T12/underwritten NOI without a hand-entered figure.
       const _gk = propertyKey(loan);
       if(!Object.prototype.hasOwnProperty.call(gdNOICache, _gk)) opEnsureGeneralData(_gk).then(() => { if(state.activeId === loan._id || loan._combined) renderRefi(loan); });
-      const gOpts = refiNOIOptions(loan);
-      const advReady = (loan.noi != null) || (gOpts.inPlace != null) || (gOpts.underwritten != null);   // a T12/underwritten NOI is enough — no manual entry required
-      const mode = (refiAnalysisMode === "advanced" && advReady) ? "advanced" : "regular";
-      ensureRefiDrafts(loan, mode);
+      ensureRefiDrafts(loan);
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
         for(let i=d.paymentsMade; i<cur.rows.length; i++){
@@ -6864,7 +6845,7 @@ tr[data-loan]:hover td{background:#eef2f7}
             '<p class="text-sm text-slate-500">'+escapeHtml(loan._combined?loan.propertyName:loanLabel(loan))+(loan._combined?' — refinance the whole property?':' — should you refinance?')+'</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
-            '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save active option</button>'+
+            '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as a loan</button>'+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -6878,52 +6859,27 @@ tr[data-loan]:hover td{background:#eef2f7}
             refiStat("Matures", fmtDateUS(d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
-        '<div class="mt-4 flex flex-wrap items-center gap-3">'+
-          '<span class="text-xs font-bold uppercase tracking-wider text-slate-500">Analysis</span>'+
-          '<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
-            '<button data-refimode="regular" type="button" class="px-4 py-2 '+(mode==="regular"?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">Regular</button>'+
-            '<button data-refimode="advanced" type="button" class="px-4 py-2 border-l border-brand-300 '+(mode==="advanced"?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">Advanced</button>'+
-          '</div>'+
-          '<span class="text-[11px] text-slate-400">'+(mode==="advanced"?"DSCR &amp; leverage-based pricing":"today&rsquo;s market rate vs your rate")+'</span>'+
-        '</div>'+
-        (mode === "advanced" ? refiAdvancedHtml(loan) : refiRegularHtml(loan))+
+        refiAdvancedHtml(loan)+
         refiVerdictHtml(loan)+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
           '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
-          '<p class="mb-3 text-[11px] text-slate-400">Option 1 matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s '+(mode==="advanced"?"credit-aware":"market")+' rate; Option 2 steps the term up a rung. Pick an option to see it in full &mdash; the analysis and verdict above reflect your choice, and updates live as you edit.</p>'+
+          '<p class="mb-3 text-[11px] text-slate-400">Matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s credit-aware rate. Every box is editable &mdash; the analysis and verdict above update live as you change them.</p>'+
           '<div id="refiOptions">'+
-            '<div class="mb-4 flex flex-wrap items-center gap-3">'+
-              '<span class="text-xs font-bold uppercase tracking-wider text-slate-500">Option</span>'+
-              '<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
-                [1,2].map(function(n){ var t=refiTermOptions(loan)[n], io=(refiDrafts[n].ioMonths||0)>0, on=(n===refiActiveOption);
-                  return '<button data-refiselect="'+n+'" type="button" class="px-4 py-2 '+(n>1?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">Option '+n+' &middot; '+t.years+' yr'+(io?" &middot; IO":"")+'</button>'; }).join("")+
-              '</div>'+
-              '<span class="text-[11px] text-slate-400">the one you pick drives the verdict above</span>'+
-            '</div>'+
-            refiOptionCardHtml(loan, refiActiveOption)+
+            refiOptionCardHtml(loan, 1)+
           '</div>'+
         '</div>';
 
-      // The proposed loan is populated by the active term option (below), which follows
-      // the current loan's rate type and prices it at today's market for that option's
-      // tenor + term. See applyRefiOption().
+      // The proposed loan follows the current loan's rate type + term, priced at today's
+      // credit-aware rate (buildRefiOption), and every box stays editable below.
       el("refiCloseBtn").addEventListener("click", closeRefi);
       const saveBtn = el("refiSaveBtn");
       if(saveBtn) saveBtn.addEventListener("click", () => saveActiveRefiOption(loan));
 
-      // The verdict/exit cost need live indices in BOTH modes.
+      // The verdict / exit cost need the live indices.
       ensureIndexLive("sofr", () => renderRefi(loan));
       ensureIndexLive(matchedTenorId(loan), () => renderRefi(loan));
       ensureIndexLive(ymReinvestTenor(loan), () => renderRefi(loan));
 
-      // Analysis mode toggle. Advanced needs an NOI — a hand-entered one, OR the
-      // property's in-place / underwritten NOI from General Data (then no prompt).
-      dom.refiView.querySelectorAll("[data-refimode]").forEach(b => b.addEventListener("click", () => {
-        const m = b.getAttribute("data-refimode");
-        if(m === "advanced" && loan.noi == null && gOpts.inPlace == null && gOpts.underwritten == null){ openNoiFlow(loan, () => { refiAnalysisMode = "advanced"; refiDraftsKey = ""; renderRefi(loan); }); return; }
-        refiAnalysisMode = m; refiDraftsKey = "";   // rebuild option drafts at the new mode's rate
-        renderRefi(loan);
-      }));
       // NOI-basis toggle (in-place T12 vs underwritten) — re-drives DSCR / debt yield / coverage.
       dom.refiView.querySelectorAll("[data-noibasis]").forEach(b => b.addEventListener("click", () => {
         if(b.disabled) return;
@@ -6933,7 +6889,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => { refiDraftsKey = ""; renderRefi(loan); }));
 
-      if(mode === "advanced"){
+      // Pricing inputs (prepay type, rate cap, mezz stack) refresh the proposed rate live.
+      {
         const reprice = () => { refiDraftsKey = ""; renderRefi(loan); };   // pricing inputs → refresh proposed rate
         const ptSel = el("refiPrepayType");
         if(ptSel) ptSel.addEventListener("change", () => { loan.prepayType = ptSel.value; loan.prepayConfirmed = true; save(); renderRefi(loan); });
@@ -6949,12 +6906,11 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(mzIn) mzIn.addEventListener("change", () => { const v = parseFloat(mzIn.value); if(!isNaN(v) && v >= 0) loan.mezzSpread = v/10000; save(); reprice(); });
       }
 
-      // Proposed option cards — select the analyzed option + edit fields live.
+      // The proposed loan's boxes — edit any field live.
       const optWrap = el("refiOptions");
       if(optWrap){
-        optWrap.addEventListener("click", (e) => { const b = e.target.closest("[data-refiselect]"); if(b){ refiActiveOption = Number(b.getAttribute("data-refiselect")); renderRefi(loan); } });
         optWrap.addEventListener("change", (e) => {
-          const t = e.target, m = t && (t.id||"").match(/^o([12])_(.+)$/); if(!m) return;
+          const t = e.target, m = t && (t.id||"").match(/^o(1)_(.+)$/); if(!m) return;
           const n = Number(m[1]), field = m[2], draft = refiDrafts[n]; if(!draft) return;
           const raw = parseFloat((t.value||"").replace(/[^0-9.\-]/g,"")), v = isNaN(raw) ? 0 : raw;
           if(field === "amount") draft.originalAmount = v;
@@ -6970,7 +6926,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     // Save the currently-analyzed proposed option as a real loan.
     function saveActiveRefiOption(loan){
-      const draft = refiDrafts[refiActiveOption]; if(!draft){ toast("Nothing to save", "info"); return; }
+      const draft = refiDrafts[1]; if(!draft){ toast("Nothing to save", "info"); return; }
       const nl = JSON.parse(JSON.stringify(draft));
       nl._id = uid();
       nl.propertyName = (loan.propertyName || loanLabel(loan)) + " (Refinanced)";
