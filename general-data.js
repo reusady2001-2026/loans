@@ -152,12 +152,18 @@
     }
     return r2(noi);
   }
-  // Lease-up in-place NOI. When the trailing statement's gross rent doesn't begin in the
-  // first OR second month (the property was still leasing up at the start of the trailing
-  // twelve), the plain 12-month sum understates the run-rate — so annualize the last three
-  // months' NOI (× 4). Trigger: NO gross rent in BOTH month 1 and month 2. Any gross rent in
-  // month 1 or 2 → not applied (use the 12-month sum, even if a later month is zero).
-  // series = monthlySeries() output. Returns { applied, noi, monthsUsed, basis, reason }.
+  // Lease-up / partial-year in-place NOI. A trailing statement understates the annual
+  // run-rate in two cases: (1) LEASE-UP — the property was still leasing up at the start,
+  // so gross rent doesn't begin in the first OR second month; (2) PARTIAL YEAR — the
+  // statement covers fewer than a full 12 dated months (a property acquired or reporting
+  // mid-year). In BOTH, the plain sum of the months present understates the year, so
+  // annualize the last three months × 4 — for every line, not just NOI, so a caller can
+  // rebuild the underwritten column on the same annualized run-rate (reserves, which are an
+  // annual per-unit figure, must not be summed off a short statement). A full 12-month
+  // statement with gross rent from the start is left alone (the 12-month sum stands, even if
+  // a later month is zero). A gross-rent line is still required — without it we can't judge a
+  // lease-up and never annualize on a false positive. series = monthlySeries() output.
+  // Returns { applied, noi, monthsUsed, codeSums, basis, partial, leaseUpStart, reason }.
   function leaseUpNOI(series){
     var byCode = (series && series.byCode) || {};
     var months = (series && Array.isArray(series.months)) ? series.months.slice().sort() : [];
@@ -165,10 +171,18 @@
     var gpr = byCode.GPR ? byCode.GPR.monthly : null;
     if (!gpr) return { applied: false, noi: null, reason: "no gross-rent line to judge the lease-up" };   // can't detect lease-up without gross rent — never a false positive
     var g1 = gpr[months[0]], g2 = gpr[months[1]];
-    if ((isNum(g1) && g1 > 0) || (isNum(g2) && g2 > 0)) return { applied: false, noi: null, reason: "gross rent present in month 1 or 2" };
-    var last3 = months.slice(months.length - 3), noi3 = 0;
+    var leaseUpStart = !((isNum(g1) && g1 > 0) || (isNum(g2) && g2 > 0));   // no gross rent in either of the first two months
+    var partial = months.length < 12;                                       // fewer than a full year of dated months
+    if (!leaseUpStart && !partial) return { applied: false, noi: null, reason: "full 12-month statement, gross rent from the start" };
+    var last3 = months.slice(months.length - 3), noi3 = 0, codeSums = {};
     last3.forEach(function (ym){ noi3 += monthNOI(byCode, ym); });
-    return { applied: true, noi: r2(noi3 * 4), monthsUsed: last3, basis: "last 3 months × 4" };
+    for (var c in byCode) if (Object.prototype.hasOwnProperty.call(byCode, c)){
+      var mo = byCode[c].monthly, s = 0;
+      last3.forEach(function (ym){ if (isNum(mo[ym])) s += mo[ym]; });
+      codeSums[c] = r2(s * 4);                                              // per-line last 3 months × 4 (annualized run-rate)
+    }
+    return { applied: true, noi: r2(noi3 * 4), monthsUsed: last3, codeSums: codeSums,
+             basis: "last 3 months × 4", partial: partial, leaseUpStart: leaseUpStart };
   }
 
   return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, leaseUpNOI: leaseUpNOI };

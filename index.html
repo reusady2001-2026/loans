@@ -3192,8 +3192,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{
         const r = await opDiskSaveT12(key, file);
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
-        await opSelectProperty(key);   // re-read + re-parse from the file just saved
-        try{ await opUpdateGeneralData(key); if(opFocusKey === key) renderUnderwriting(); }catch(e){}   // roll this T12's months into General Data (history + both NOIs), then show the history
+        await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
+        try{ await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
+        try{ opPushCache.delete(key); if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // regenerate "what to push" ONCE against the fresh statement
+        if(opFocusKey === key) renderUnderwriting();
         const noi = (uwState.input.t12Meta && uwState.input.t12Meta.totals && uwState.input.t12Meta.totals.noi);
         toast(who + ": T12 saved to the property folder"+(noi!=null ? " — statement NOI "+uwFmt(noi) : "")+".","check");
       }catch(err){ toast("Couldn’t read that file.","error"); }
@@ -3271,9 +3273,17 @@ tr[data-loan]:hover td{background:#eef2f7}
       // from the statement's own printed footing (t12-parse totals), so the Setup's
       // in-place NOI matches the T12's NET OPERATING INCOME to the dollar.
       if(i.t12Grid && window.T12Parse){
-        const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
-        uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
-          units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench });
+        // Default (12-mo Total) basis: build through the shared helper so a lease-up / partial-year
+        // T12 is annualized (last 3 months × 4) for BOTH the in-place and underwritten NOI shown here
+        // — the same figures written to general-data.json and read by the refinance calculator. An
+        // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
+        if((i.basis || "total") === "total"){
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench }).setup;
+        } else {
+          const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
+          uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
+            units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench });
+        }
         return;
       }
       const lines = parseT12Text(i.t12Text||"");
@@ -3394,7 +3404,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
           '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
-            '<div class="text-[11px] font-semibold text-slate-600 mb-2">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; saved to this property; change them to test scenarios</span></div>'+
+            '<div class="mb-2 flex flex-wrap items-center justify-between gap-2"><div class="text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; change them to test scenarios, then Save</span></div>'+
+              '<button type="button" id="uwSaveBtn" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-brand-400 hover:to-brand-500">Save to property record</button></div>'+
             '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
               benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+
             '</div>'+
@@ -3454,7 +3465,27 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
+      if(t.closest("#uwSaveBtn")){ opSaveGeneralData(); return; }
     });
+    // The one Save point: commit this property's inputs, its two NOIs (recomputed from those inputs),
+    // and Claude's saved "what to push" (with its two impact figures) into general-data.json — the
+    // durable record the refinance calculator reads. Regenerate the push if the inputs it was run
+    // against have since changed.
+    async function opSaveGeneralData(){
+      const key = opFocusKey; if(!key){ toast("Pick a property first.","info"); return; }
+      const who = (opProp(key) || {}).name || "this property";
+      try{ opSaveAssumptions(key); }catch(e){}                       // inputs → assumptions.json (per-property)
+      try{ const existing = await opLoadGeneralData(key);
+        if(existing) await opRefreshGeneralDataNOI(key); else await opUpdateGeneralData(key); }catch(e){}   // refresh both NOIs from the current inputs (preserves history + saved push)
+      const bench = uwState.input.bench;
+      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, sizing: Object.assign({}, bench.sizing || {}) };
+      const cur = opPushCache.get(key), push = (cur && Array.isArray(cur.moves)) ? cur : undefined;
+      try{ await opPersistGeneralExtras(key, { assumptions: snap, push: push }); }catch(e){}
+      let regen = false;
+      try{ if(aiAvailable() && cur && cur.at && (cur.at.vacancyPct !== bench.vacancyPct || cur.at.mgmtPct !== bench.mgmtPct) && opPushInput(key)){ opPushCache.delete(key); opRunPush(key); regen = true; } }catch(e){}
+      toast("Saved " + who + " to its property record" + (regen ? " — re-analysing what to push" : "") + ".", "check");
+      renderUnderwriting();
+    }
 
     // ===== Per-property operating model — glue to operating-*.js (SPEC-v2.3.0) =====
     // Each property (a senior and its mezz share ONE record) carries its own income/expense
@@ -3511,7 +3542,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // Select a property in the underwriting tab: read its T12 from disk, rebuild BOTH the sizing
     // Setup and the operating card from that live parse, and show it. The dropped-in T12 (uwState)
     // is transient — a mirror of the file on disk, never persisted (saveUW strips it).
-    async function opSelectProperty(key){
+    async function opSelectProperty(key, opts){
       opFocusKey = key || ""; opBasis = "annual";
       const i = uwState.input;
       i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = "";
@@ -3525,7 +3556,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       } else { i.bench = opMergeBench(uwDefaults().bench, null); }
       renderUnderwriting();
       // Claude works out what to push the moment a property with a T12 is focused (once per session, cached).
-      if(key){ try{ opMaybeAutoPush(key); }catch(e){} }
+      // The upload path passes skipAutoPush and runs it once itself AFTER rebuilding General Data (so the
+      // stale push is dropped first) — otherwise the fresh statement would trigger two overlapping runs.
+      if(key && !(opts && opts.skipAutoPush)){ try{ opMaybeAutoPush(key); }catch(e){} }
     }
     // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
     // so it re-reads only after an upload), then refresh those two panels. Reading, not storing.
@@ -3615,32 +3648,75 @@ tr[data-loan]:hover td{background:#eef2f7}
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
       }catch(e){}
     }
+    // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
+    // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
+    // are available to the refinance calculator's push checkboxes without re-running Claude.
+    async function opPersistGeneralExtras(key, extras){
+      try{
+        if(!key || !extras) return;
+        var gd = gdFullCache[key] || await opLoadGeneralData(key);
+        if(!gd || !gd.noi){ gd = await opUpdateGeneralData(key) || gd; }   // make sure the record exists (built from the folder T12)
+        if(!gd) return;
+        if(extras.push !== undefined) gd.push = extras.push;
+        if(extras.assumptions !== undefined) gd.assumptions = extras.assumptions;
+        gd.updatedAt = new Date().toISOString();
+        await opWriteGeneralDataFile(key, gd);
+        gdFullCache[key] = gd;
+      }catch(e){}
+    }
+    // Build a property's Setup from its T12 grid, applying the lease-up / partial-year
+    // annualization when the monthly columns show it. When the statement covers fewer than a
+    // full 12 dated months, or the property was still leasing up at the start, its printed
+    // total understates the annual run-rate — so each line is annualized to its last 3 dated
+    // months × 4 (GeneralData.leaseUpNOI) and the Setup is built from those category sums, so
+    // the in-place AND underwritten NOI (and the sizing) all reflect the annualized run-rate;
+    // reserves stay annual, vacancy/management ratios are preserved. Otherwise the statement
+    // build stands. Returns { setup, lu, parsedM, statementNOI } — statementNOI is the printed
+    // 12-month footing, kept for reference alongside the annualized figure.
+    function uwBuildSetupFromGrid(grid, opt){
+      opt = opt || {};
+      var parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
+      var statementNOI = null;
+      try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
+      var lu = { applied: false };
+      try{ if(window.GeneralData){ lu = GeneralData.leaseUpNOI(GeneralData.monthlySeries(parsedM, opClassifyLine)) || { applied: false }; } }catch(e){}
+      var setup;
+      if(lu && lu.applied && lu.codeSums){
+        setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
+      } else {
+        setup = SetupBuilder.buildSetup({ parsed: { rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
+      }
+      return { setup: setup, lu: lu, parsedM: parsedM, statementNOI: statementNOI };
+    }
     // Read the property's saved T12 grid + its assumptions and build the Setup — the
     // authoritative in-place + underwritten NOI, the SAME inputs the tab uses when the
     // property is focused (so the stored figures equal what's on screen).
     async function opSetupFromDisk(key){
       if(!key || !window.T12Parse || !window.SetupBuilder) return null;
       var r = await opReadPropT12(key); if(!r || !r.grid) return null;
-      var parsedM = T12Parse.parseGrid(r.grid, { basis: "total", monthly: true });
       var focused = (opFocusKey === key);
       var bench = focused ? uwState.input.bench : opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
-      var setup = SetupBuilder.buildSetup({ parsed: parsedM, units: units, rrGPR: rrGPR, benchmarks: bench });
-      return { r: r, parsedM: parsedM, bench: bench, p: p, sr: sr, setup: setup };
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
+      return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
     // lease-up rule: when the statement's gross rent doesn't begin in the first or second month, the
     // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
     // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
-    function opGDNoi(ctx, series){
-      if(!series && window.GeneralData) series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
-      var statementNOI = ctx.setup.result.inPlace.noi;
-      var lu = (series && window.GeneralData) ? GeneralData.leaseUpNOI(series) : { applied: false };
-      var inPlace = (lu && lu.applied && lu.noi != null) ? lu.noi : statementNOI;
+    function opGDNoi(ctx){
+      // ctx comes from opSetupFromDisk: when the T12 is lease-up / partial-year, ctx.setup was
+      // built from the annualized (last 3 months × 4) category sums, so BOTH the in-place and the
+      // underwritten NOI already reflect the annualized run-rate; ctx.statementNOI is the printed
+      // 12-month footing, kept alongside for reference. A full-year statement leaves ctx.setup as
+      // the statement build and lu.applied false.
+      var lu = ctx.lu || { applied: false };
+      var inPlace = (lu.applied && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
+      var statementNOI = (ctx.statementNOI != null) ? ctx.statementNOI : ctx.setup.result.inPlace.noi;
       return { inPlace: inPlace, inPlaceStatement: statementNOI,
-               inPlaceBasis: (lu && lu.applied) ? "leaseup" : "statement", leaseUpMonths: (lu && lu.applied) ? lu.monthsUsed : null,
+               inPlaceBasis: lu.applied ? "leaseup" : "statement", leaseUpMonths: lu.applied ? lu.monthsUsed : null,
                underwritten: ctx.setup.result.underwritten.noi,
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
@@ -3652,7 +3728,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(!key || !window.GeneralData) return null;
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
         var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
-        var noi = opGDNoi(ctx, series);
+        var noi = opGDNoi(ctx);
         var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: (ctx.sr && ctx.sr.units) || null };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
@@ -3691,6 +3767,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       }
       gdFullCache[key] = gd || null;
       gdNOICache[key] = (gd && gd.noi) ? opGDCache(gd.noi) : null;
+      // Hydrate Claude's saved "what to push" (with its two NOI-impact figures) into the session
+      // cache, so the moves show in the refi's push checkboxes without re-running Claude this session.
+      try{ if(gd && gd.push && !opPushCache.has(key)) opPushCache.set(key, gd.push); }catch(e){}
       return gdNOICache[key];
     }
     // The General Data card for the underwriting tab: identity + both NOIs + a per-line
@@ -4027,8 +4106,9 @@ tr[data-loan]:hover td{background:#eef2f7}
         summary:{ type:"string" },
         moves:{ type:"array", items:{ type:"object", properties:{
           title:{ type:"string" }, rank:{ type:"number" }, impact:{ type:"string" },
+          impactInPlace:{ type:"number" }, impactUnderwritten:{ type:"number" },
           effort:{ type:"string" }, rationale:{ type:"string" }
-        }, required:["title","rank","impact","effort","rationale"] } }
+        }, required:["title","rank","impact","effort","rationale"] } }   // the two numeric impacts are requested in the instruction but kept optional in the schema, so a move Claude can't ground a number for still returns (it just won't get a refi checkbox)
       }, required:["summary","moves"] };
     }
     // The prompt the embedded Claude gets. It is deliberately SHORT and gets ONLY the assumptions and the T12
@@ -4040,17 +4120,20 @@ tr[data-loan]:hover td{background:#eef2f7}
       "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement and the underwriting assumptions, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%).",
       "The loan is sized on the property's UNDERWRITTEN NOI — the statement re-priced with these assumptions: vacancy is charged at the BETTER of the vacancy assumption and the vacancy the statement actually runs (a property running TIGHTER than assumed is already credited its proven, lower vacancy; one running looser is held to the assumption), the management fee likewise at the better of the assumed share of effective gross income and what the statement actually pays, replacement reserves at the assumed dollars per unit, and every other line passes through at its actual amount from the statement.",
       "Read the statement against those assumptions and decide what the owner should PUSH to raise this property's underwritten NOI the most, then rank the moves by how much they raise it. A move does NOT have to 'beat' an assumption — weigh each one only by how much underwritten NOI it adds. Because vacancy and the management fee are ALREADY underwritten at the better of the assumption and the statement, there is no 'credit the proven figure' move to make on those — real upside there means pushing them EVEN BETTER than the statement already runs (usually hard when the property is already tight; say so), while for rents and each cost line the upside is operational, straight from the statement's own figures. Never tell the owner to move a figure the wrong way (for example toward a worse vacancy than the statement already runs). Work it out yourself; you are not given a list of moves.",
-      "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect on the underwritten NOI, grounded in the statement's own figures (for example \"about $100,000 a year\"); never invent a market rent or comparable you were not given — if you cannot ground a number, describe the impact in words; effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
+      "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect, in words, grounded in the statement's own figures (for example \"about $100,000 a year\"); impactInPlace — the SAME effect as a plain annual dollar NUMBER on the property's IN-PLACE NOI (the statement's own actual net operating income), positive when it RAISES NOI; impactUnderwritten — the annual dollar NUMBER effect on the UNDERWRITTEN NOI (the re-priced figure the loan is sized on). The two numbers are usually close, but differ where a line is already re-priced by an assumption (pushing vacancy or the management fee below what the statement runs moves in-place fully but underwritten only to the extent it beats the assumption). Use 0 for a number you genuinely cannot ground, and say so in the rationale rather than inventing one — never invent a market rent or comparable you were not given. effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
       "Use FULL WORDS only. The ONLY abbreviation permitted is NOI (so \"underwritten NOI\" is fine). Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
-      "Return { summary, moves:[{ title, rank, impact, effort, rationale }] } via the structured-output tool, best first."
+      "Consider the property's LOCATION (its address, when given) in judging what is realistic to push and how to rank the moves — rent upside, tax and insurance pressure, and utility costs all vary by market.",
+      "Return { summary, moves:[{ title, rank, impact, impactInPlace, impactUnderwritten, effort, rationale }] } via the structured-output tool, best first."
     ].join("\n");
     function opPushInput(key){
       const t = opT12Lines(key); if(!t) return null;
-      const p = opProp(key), bench = uwState.input.bench;
-      // Claude gets ONLY the assumptions and the T12. The assumptions are the user's own EDITABLE,
-      // per-property values (read live from bench, never hardcoded) — change them in the underwriting tab
-      // and re-analyse, and Claude works from the new numbers. Nothing else is pre-computed for Claude.
-      return { property: (p && p.name) || key, units: uwLastBuilt.worksheet.units || null,
+      const p = opProp(key), sr = p && p.loans && p.loans[0], bench = uwState.input.bench;
+      // Claude gets ONLY the assumptions, the T12 and the property's address (for location-aware
+      // prioritization). The assumptions are the user's own EDITABLE, per-property values (read live from
+      // bench, never hardcoded) — change them in the underwriting tab and re-analyse, and Claude works from
+      // the new numbers. Nothing else is pre-computed for Claude.
+      return { property: (p && p.name) || key, address: (sr && sr.propertyAddress) || null,
+        units: uwLastBuilt.worksheet.units || null,
         underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
           reservePerUnit: bench.reservePerUnit, capRate: (bench.sizing && bench.sizing.capRate) },
         t12: { income: t.income, expense: t.expense } };
@@ -4063,7 +4146,11 @@ tr[data-loan]:hover td{background:#eef2f7}
       ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 300000 })
         .then((r) => {
           if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude could not analyse this property." }); }
-          else { const d = r.data || {}; opPushCache.set(key, { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], at: at }); }
+          else { const d = r.data || {};
+            const push = { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], at: at, address: (input.address || null), computedAt: new Date().toISOString() };
+            opPushCache.set(key, push);
+            opPersistGeneralExtras(key, { push: push });   // durable: survives a restart, feeds the refi's push checkboxes
+          }
           opRenderPush(); })
         .catch((e) => { opPushCache.set(key, { error: String((e && e.message) || e) }); opRenderPush(); });
     }
@@ -4152,6 +4239,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_clearGDCache=()=>{ gdNOICache={}; gdFullCache={}; }; window.LDS_gdNOICache=()=>gdNOICache; window.LDS_opEnsureGeneralData=(k)=>opEnsureGeneralData(k); window.LDS_refiNOIOptionsFor=(l)=>refiNOIOptions(l); }catch(e){}   // diagnostics: exercise the cross-session disk read of general-data (the NOI-basis toggle)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
+    try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -6589,9 +6677,48 @@ tr[data-loan]:hover td{background:#eef2f7}
     }
     function refiNOI(loan){
       const o = refiNOIOptions(loan), b = refiBasis(loan);
-      if(b === "underwritten") return o.underwritten;
-      if(b === "inplace") return o.inPlace;
-      return loanNOI(loan);
+      var base = (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : loanNOI(loan);
+      if(base == null) return null;
+      return base + refiMoveBoost(loan, b);   // + any "what to push" moves ticked below (a live what-if)
+    }
+    // ── Push moves in the refi (a live what-if) ─────────────────────────────────
+    // Claude's saved "what to push" moves (each with an in-place and an underwritten annual
+    // dollar impact) can be ticked in the refinance to add their effect to the working NOI on the
+    // basis you're viewing, so the coverage, the tier and the two-stage verdict all re-compute as if
+    // you'd executed them. State is per property, held for the session (a simulation, never saved).
+    var refiAppliedMoves = {};   // propKey -> Set of applied move indices (into refiPushMoves order)
+    function refiPushMoves(loan){
+      if(!loan) return [];
+      var st = opPushCache.get(propertyKey(loan));
+      if(!st || !Array.isArray(st.moves)) return [];
+      return st.moves.filter(function(m){ return m && (isFinite(m.impactInPlace) || isFinite(m.impactUnderwritten)); });   // only numeric-impact moves can drive the NOI
+    }
+    function refiMoveBoost(loan, basis){
+      var moves = refiPushMoves(loan); if(!moves.length) return 0;
+      var set = refiAppliedMoves[propertyKey(loan)]; if(!set || !set.size) return 0;
+      var sum = 0;
+      moves.forEach(function(m, i){ if(set.has(i)){ var v = (basis === "inplace") ? m.impactInPlace : m.impactUnderwritten; if(typeof v === "number" && isFinite(v)) sum += v; } });
+      return sum;
+    }
+    function refiPushMovesHtml(loan){
+      var moves = refiPushMoves(loan); if(!moves.length) return "";
+      var key = propertyKey(loan), set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
+      var basis = refiBasis(loan), boost = refiMoveBoost(loan, basis);
+      var rows = moves.map(function(m, i){
+        var on = set.has(i), dIn = isFinite(m.impactInPlace) ? m.impactInPlace : null, dUw = isFinite(m.impactUnderwritten) ? m.impactUnderwritten : null;
+        var sign = function(v){ return (v == null) ? "&mdash;" : (v >= 0 ? "+" : "&minus;") + fmtMoney(Math.abs(v)); };
+        return '<label class="flex items-start gap-3 rounded-lg border '+(on?"border-emerald-300 bg-emerald-50":"border-slate-200 bg-white")+' px-3 py-2 cursor-pointer">'+
+          '<input type="checkbox" data-refimove="'+i+'"'+(on?" checked":"")+' class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30">'+
+          '<span class="min-w-0 flex-1"><span class="block text-sm font-semibold text-slate-800">'+escapeHtml(m.title||"")+'</span>'+
+            '<span class="block text-[11px] text-slate-500 tabular-nums">in&#8209;place '+sign(dIn)+' &middot; underwritten '+sign(dUw)+' a year</span></span>'+
+        '</label>';
+      }).join("");
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+        '<div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">What to push &mdash; test it against this refinance</h3>'+
+          (boost !== 0 ? '<span class="text-sm font-bold '+(boost>0?"text-emerald-700":"text-rose-700")+' tabular-nums">'+(boost>0?"+":"&minus;")+fmtMoney(Math.abs(boost))+'/yr applied to the working NOI</span>' : '')+'</div>'+
+        '<p class="mb-3 mt-1 text-[11px] leading-relaxed text-slate-500">Tick a move to add its estimated annual impact to the working '+(basis==="inplace"?"in&#8209;place":basis==="underwritten"?"underwritten":"")+' NOI &mdash; the coverage, the credit tier and the verdict above re&#8209;compute live. Claude&rsquo;s estimates from the statement; a what&#8209;if, not a commitment.</p>'+
+        '<div class="space-y-2">'+rows+'</div>'+
+      '</div>';
     }
     function refiNOIBasisHtml(loan){
       const o = refiNOIOptions(loan);
@@ -7035,6 +7162,7 @@ tr[data-loan]:hover td{background:#eef2f7}
           '</dl>'+ resetNote +
         '</div>'+
         refiAdvancedHtml(loan)+
+        refiPushMovesHtml(loan)+
         refiVerdictHtml(loan, verdict)+
         (showProposal
           ? '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
@@ -7072,6 +7200,15 @@ tr[data-loan]:hover td{background:#eef2f7}
       }));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => { refiDraftsKey = ""; renderRefi(loan); }));
+
+      // "What to push" checkboxes — tick a move to add its impact to the working NOI, then re-price
+      // the proposed loan (tier moves with the NOI) and re-drive the two-stage verdict live.
+      dom.refiView.querySelectorAll("[data-refimove]").forEach(cb => cb.addEventListener("change", () => {
+        const key = propertyKey(loan), set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
+        const idx = Number(cb.getAttribute("data-refimove"));
+        if(cb.checked) set.add(idx); else set.delete(idx);
+        refiDraftsKey = ""; renderRefi(loan);
+      }));
 
       // Pricing inputs (prepay type, rate cap, mezz stack) refresh the proposed rate live.
       {

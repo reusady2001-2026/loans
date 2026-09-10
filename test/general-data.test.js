@@ -114,6 +114,21 @@ group("leaseUpNOI — last 3 months × 4 when rent starts after month 2", functi
   ok(G.leaseUpNOI(build([0,500,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when only month 2 has gross rent");
   ok(G.leaseUpNOI(build([500,500,500,500,500,500,500,500,500,500,500,0], ret)).applied === false, "a later EMPTY month does not trigger it when rent began in month 1 (still the 12-month sum)");
 
+  // PARTIAL YEAR (the 2.8.8 fix — Avalon White Plains): a statement with fewer than 12 dated
+  // months, even with gross rent from month 1, understates the year → annualize last 3 × 4,
+  // per line, so the underwritten column can be rebuilt on the same run-rate.
+  var partialS = G.monthlySeries({ rows: [
+    { name:"GPR", section:"INCOME",  monthly:{ "2026-01":1000,"2026-02":1000,"2026-03":1000,"2026-04":1000,"2026-05":1000,"2026-06":1000 } },
+    { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100,"2026-05":100,"2026-06":100 } } ] }, classify);
+  var pl = G.leaseUpNOI(partialS);
+  ok(pl.applied === true && pl.partial === true, "partial-year (6 months, rent from month 1) → annualized (partial flag set)");
+  near(pl.noi, 10800, "partial-year NOI = last 3 months × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
+  ok(pl.codeSums && Math.abs(pl.codeSums.GPR - 12000) < 1 && Math.abs(pl.codeSums.RET - 1200) < 1, "codeSums annualizes each line (GPR 3×1000×4=12,000; RET 3×100×4=1,200)");
+  var full12 = G.monthlySeries({ rows: [
+    { name:"GPR", section:"INCOME",  monthly:(function(){var m={};for(var i=1;i<=12;i++)m["2026-"+(i<10?"0":"")+i]=1000;return m;})() },
+    { name:"RET", section:"EXPENSE", monthly:(function(){var m={};for(var i=1;i<=12;i++)m["2026-"+(i<10?"0":"")+i]=100;return m;})() } ] }, classify);
+  ok(G.leaseUpNOI(full12).applied === false, "a full 12-month statement with rent from the start is NOT annualized");
+
   var few = G.monthlySeries({ rows: [ { name:"GPR", section:"INCOME", monthly:{ "2026-01":0, "2026-02":0 } }, { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100, "2026-02":100 } } ] }, classify);
   ok(G.leaseUpNOI(few).applied === false, "NOT applied with fewer than 3 months of data");
 
