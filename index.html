@@ -3679,6 +3679,14 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(!key) return null;
       if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
       var gd = await opLoadGeneralData(key);
+      // BACKFILL: a property can have a T12 in its folder but no general-data.json — a T12
+      // saved before General Data existed (pre-2.8.0), or added outside the underwriting-tab
+      // drop (the only path that writes it). Generate it from the folder's T12 so the two NOIs
+      // and the refi's in-place/underwritten toggle appear without a re-upload. opUpdateGeneralData
+      // is a no-op (returns null) when there is no T12, so no-T12 properties are unaffected.
+      if(!gd || !gd.noi){
+        try{ var made = await opUpdateGeneralData(key); if(made && made.noi) return gdNOICache[key]; }catch(e){}
+      }
       gdFullCache[key] = gd || null;
       gdNOICache[key] = (gd && gd.noi) ? opGDCache(gd.noi) : null;
       return gdNOICache[key];
@@ -4134,6 +4142,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.opProperties = opProperties; window.propertyKey = propertyKey; window.opPushInput = opPushInput; }catch(e){}   // diagnostics for tests: the per-property grouping + what Claude is sent for "what to push"
     try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     try{ window.LDS_loanTier=(l)=>loanTier(l); window.LDS_loanDSCR=(l)=>loanDSCR(l); window.LDS_loanLTV=(l)=>loanLTV(l); window.LDS_loanDebtYield=(l)=>loanDebtYield(l); window.LDS_activeLoan=()=>getLoan(state.activeId); window.LDS_combinedRefiLoan=(members)=>combinedRefiLoan(members); window.LDS_computeBalance=(l)=>compute(l).derived.currentBalance; }catch(e){}   // diagnostics: the credit tier (3 metrics) + combined-stack refi
+    try{ window.LDS_clearGDCache=()=>{ gdNOICache={}; gdFullCache={}; }; window.LDS_gdNOICache=()=>gdNOICache; window.LDS_opEnsureGeneralData=(k)=>opEnsureGeneralData(k); window.LDS_refiNOIOptionsFor=(l)=>refiNOIOptions(l); }catch(e){}   // diagnostics: exercise the cross-session disk read of general-data (the NOI-basis toggle)
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,

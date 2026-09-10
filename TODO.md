@@ -14,7 +14,7 @@ a defensible approximation and is what both loans currently do; a future refinem
 re-amortize at the projected reset rate instead. The **fixed-period** payment ties to each
 note to the cent either way.
 
-## Refinance decision rebuild (in progress, 2.8.2 → 2.8.8)
+## Refinance decision rebuild (in progress, 2.8.2 → 2.8.9)
 Reworking the refinance calculator into a single, decision-first flow, one version at a time. The
 rate itself was fabricated (a calibrated spread, an auto Treasury↔SOFR switch, an assumed cap cost),
 so the honest-pricing rebuild was inserted ahead of the verdict — a verdict on a wrong rate is worthless:
@@ -22,11 +22,24 @@ so the honest-pricing rebuild was inserted ahead of the verdict — a verdict on
 - **2.8.3 (done):** honest proposed-loan rate — a Fixed/Floating/Hybrid toggle (defaulting to the loan's type), a base-index picker, and an editable spread (0 by default on the fixed side; the comp-derived margin on the floating side). Rate = index + spread − tier discount. The fabricated calibrated spread, the 25 bps floor, the auto Treasury↔SOFR switch, and the auto 35 bps cap are gone (cap → floating-only, default 0).
 - **2.8.4 (done):** the credit tier reads all three metrics (DSCR, LTV, debt yield) — a property earns a tier only when all three clear, and is "not financeable" if it fails any one floor (DSCR < 1.25, LTV > 75%, debt yield < 7%). It grades the combined property position on a senior+mezz stack (the combo loan carries the total balance + property NOI), which already refinances as one loan against the combined payoff; a combined proposal now defaults to the senior's rate type.
 - **2.8.5 (done):** the whole "Specific Loan" window becomes a **Specific Property** window — the selector lists properties (senior+mezz collapsed to one), and selecting a stack opens the combined position (Edit/Remove act on individual loans via their cards; the refinance is one loan vs the combined payoff). Plus the tier now grades on the toggled NOI (in-place vs underwritten), matching the Coverage & Value panel instead of silently using the in-place figure.
-- **2.8.6:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ combined payoff) then "Should I refinance?" (don't if the total cost of the same money is higher), hiding the proposed loan + schedule unless both are yes.
-- **2.8.7:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
-- **2.8.8:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
+- **2.8.6 (done, hotfix):** backfill General Data — a property whose T12 was saved before General Data existed (or outside the underwriting-tab drop) had a T12 but no general-data.json, so the refi's in-place/underwritten NOI toggle never appeared. `opEnsureGeneralData` now generates it from the folder's T12 on load, so the two NOIs and the toggle appear without a re-upload.
+- **2.8.7:** the two-stage verdict — "Can I refinance?" (max supportable loan, all three limits, ≥ combined payoff) then "Should I refinance?" (don't if the total cost of the same money is higher), hiding the proposed loan + schedule unless both are yes.
+- **2.8.8:** a Save button that persists the editable underwriting inputs to general-data.json (one save point); Claude's "what to push" saved with two impact figures per move (in-place + underwritten); regenerate on Save-of-changed-inputs / rethink / new T12; property address fed to Claude for location-aware prioritization.
+- **2.8.9:** the push moves become checkboxes in the refi that raise both working NOIs and re-drive the two-stage decision live.
 
 ## Done
+- **Backfill General Data so the NOI-basis toggle appears for older T12s (v2.8.6, hotfix).** The two NOIs the
+  in-place/underwritten toggle needs live in a *derived* file, `general-data.json`, which was written by exactly
+  one path — the underwriting-tab T12 drop (`opUpdateGeneralData`, index.html:3196). A property whose T12 was
+  saved before General Data existed (v2.8.0), or added another way, had the T12 in its folder but no
+  `general-data.json` — so the refi loaded null NOIs and showed no toggle, falling back to the hand-entered NOI.
+  `opEnsureGeneralData` now backfills: when a property has a T12 but no general-data, it generates it from the
+  folder's T12 on load (and writes it back so it persists), so the NOIs and the toggle appear without a
+  re-upload. No-T12 properties are untouched (a no-op). Verified two ways: a disk-read test proving the reader
+  recovers both NOIs from a persisted file, and a backfill test that removes general-data.json (leaving the T12)
+  and confirms the refi regenerates both NOIs and the file. The e2e never caught this because it uploaded and
+  read the NOIs from the in-memory cache in one session — never the from-disk, no-derived-file path the real app hits.
+
 - **The window is property-based — "Specific Property," not "Specific Loan" (v2.8.5).** The selector lists
   **properties** (`renderSelect` maps over `opProperties()`, senior+mezz collapsed into one entry, counted as
   "N properties"); its option value is the property's position id — the loan id for a single-loan property, a
