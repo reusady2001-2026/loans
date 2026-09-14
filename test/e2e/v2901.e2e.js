@@ -56,7 +56,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(cons.all,'every snapshot noi equals loanNOI — the figure the four screens show ('+cons.n+' loans)');
   const inj=await page.evaluate(()=>{
     const ls=window.LDS_loans(),L=ls[0],key=window.propertyKey(L);
-    window.LDS_setGDNOI(key,{inPlace:1777000,underwritten:1500000,inPlaceStatement:1777000,inPlaceBasis:'statement',leaseUpMonths:null,months:['2025-09','2025-10','2025-11','2025-12','2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08'],period:'12-mo Total'});
+    window.LDS_setGDNOI(key,{inPlace:1777000,underwritten:1500000,inPlaceStatement:1777000,inPlaceBasis:'statement',annualizedMonths:null,months:['2025-09','2025-10','2025-11','2025-12','2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08'],period:'12-mo Total'});
     let idx=-1;for(let i=0;i<ls.length;i++){ if(window.propertyKey(ls[i])===key && !/mezz/i.test(ls[i].propertyName||'')){idx=i;break;} }
     const e=window.LDS_aiAsstSnapshot()[idx];
     return {noi:e.noi,basis:e.noiBasis,egi:e.egi,opex:e.opex,loanNOI:window.LDS_loanNOI(ls[idx])};

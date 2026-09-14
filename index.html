@@ -3255,7 +3255,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
     // Also read the statement's printed NOI at every available period column so a
-    // lease-up (income that ramped over the year) can be spotted and annualized.
+    // an annualized statement (income that ramped over the year) can be spotted and annualized.
     function uwApplyParse(opts){
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
@@ -3321,7 +3321,7 @@ tr.flagged:hover td{background:#fee2e2}
       // from the statement's own printed footing (t12-parse totals), so the Setup's
       // in-place NOI matches the T12's NET OPERATING INCOME to the dollar.
       if(i.t12Grid && window.T12Parse){
-        // Default (12-mo Total) basis: build through the shared helper so a lease-up / partial-year
+        // Default (12-mo Total) basis: build through the shared helper so a partial-year
         // T12 is annualized (last 3 months × 4) for BOTH the in-place and underwritten NOI shown here
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
@@ -3436,11 +3436,11 @@ tr.flagged:hover td{background:#fee2e2}
       // Annualized: when this property's General Data marks the in-place NOI as annualized from the last
       // 3 months (the statement's first two months had no NOI), say so — the 12-month total below
       // understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
-      const gdRec = gdFullCache[opFocusKey], luNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "leaseup") ? gdRec.noi : null;
+      const gdRec = gdFullCache[opFocusKey], annNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "annualized") ? gdRec.noi : null;
       const noiMethod = (gdRec && gdRec.noi) ? noiMethodLabel(gdRec.noi) : "";   // "T12 · Sep 2025 → Aug 2026" or "T3 × 4 · Oct → Dec 2026"
-      const leaseUpBanner = luNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
-        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the twelve-month total ('+(luNoi.inPlaceStatement!=null?fmtMoney(luNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(luNoi.inPlace)+'</strong>'+((luNoi.leaseUpMonths&&luNoi.leaseUpMonths.length)?' ('+luNoi.leaseUpMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
-      return review + leaseUpBanner +
+      const annualizedBanner = annNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
+        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the twelve-month total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+annNoi.annualizedMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+      return review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
@@ -4028,11 +4028,11 @@ tr.flagged:hover td{background:#fee2e2}
         gdFullCache[key] = gd;
       }catch(e){}
     }
-    // Build a property's Setup from its T12 grid, applying the lease-up / partial-year
+    // Build a property's Setup from its T12 grid, applying the partial-year
     // annualization when the monthly columns show it. When the statement covers fewer than a
     // full 12 dated months, or the property was still leasing up at the start, its printed
     // total understates the annual run-rate — so each line is annualized to its last 3 dated
-    // months × 4 (GeneralData.leaseUpNOI) and the Setup is built from those category sums, so
+    // months × 4 (GeneralData.annualizedNOI) and the Setup is built from those category sums, so
     // the in-place AND underwritten NOI (and the sizing) all reflect the annualized run-rate;
     // reserves stay annual, vacancy/management ratios are preserved. Otherwise the statement
     // build stands. Returns { setup, lu, parsedM, statementNOI } — statementNOI is the printed
@@ -4043,8 +4043,8 @@ tr.flagged:hover td{background:#fee2e2}
       var statementNOI = null;
       try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
       var lu = { applied: false }, months = [];
-      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.leaseUpNOI(series) || { applied: false }; } }catch(e){}
-      // A lease-up / partial-year statement is annualized (last 3 months × 4) automatically — there is
+      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.annualizedNOI(series) || { applied: false }; } }catch(e){}
+      // A partial-year statement is annualized (last 3 months × 4) automatically — there is
       // no manual override (the Status dropdown was removed): the annualization always follows the rule.
       var annualized = !!(lu && lu.applied && lu.codeSums);
       var setup;
@@ -4070,11 +4070,11 @@ tr.flagged:hover td{background:#fee2e2}
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
-    // lease-up rule: when the statement's gross rent doesn't begin in the first or second month, the
+    // annualization rule: when the statement's gross rent doesn't begin in the first or second month, the
     // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
     // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
     function opGDNoi(ctx){
-      // ctx comes from opSetupFromDisk: when a lease-up / partial-year T12 is annualized, ctx.setup was
+      // ctx comes from opSetupFromDisk: when a partial-year T12 is annualized, ctx.setup was
       // built from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
       // reflect the annualized run-rate; ctx.statementNOI is the printed 12-month footing, kept
       // alongside for reference. ctx.annualized is the single truth of whether that happened — false
@@ -4084,21 +4084,21 @@ tr.flagged:hover td{background:#fee2e2}
       var inPlace = (annualized && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
       var statementNOI = (ctx.statementNOI != null) ? ctx.statementNOI : ctx.setup.result.inPlace.noi;
       return { inPlace: inPlace, inPlaceStatement: statementNOI,
-               inPlaceBasis: annualized ? "leaseup" : "statement", leaseUpMonths: annualized ? lu.monthsUsed : null,
+               inPlaceBasis: annualized ? "annualized" : "statement", annualizedMonths: annualized ? lu.monthsUsed : null,
                months: (ctx.months && ctx.months.length) ? ctx.months : null,   // the T12's dated months, for the NOI method label
                underwritten: ctx.setup.result.underwritten.noi,
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
-    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, leaseUpMonths: noi.leaseUpMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period }; }
+    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period }; }
     // 2.9.0 — the annualization-method label shown wherever an NOI appears: "T12 · Sep 2025 → Aug 2026"
-    // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year / lease-up statement annualized
+    // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year statement annualized
     // from its last three months. Reads only what the cache already stores; adds no computation.
     function ymShort(ym){ if(!ym || typeof ym !== "string") return ""; var y = ym.slice(0,4), m = +ym.slice(5,7);
       var MON = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (MON[m]||"") + " " + y; }
     function ymRange(list){ if(!Array.isArray(list) || !list.length) return ""; var s = list.slice().sort(); var a = ymShort(s[0]), b = ymShort(s[s.length-1]); return a === b ? a : (a + " → " + b); }
     function noiMethodLabel(noi){
       if(!noi) return "";
-      if(noi.inPlaceBasis === "leaseup"){ var r = ymRange(noi.leaseUpMonths); return "T3 × 4" + (r ? " · " + r : ""); }
+      if(noi.inPlaceBasis === "annualized"){ var r = ymRange(noi.annualizedMonths); return "T3 × 4" + (r ? " · " + r : ""); }
       var w = ymRange(noi.months); return "T12" + (w ? " · " + w : "");
     }
     // On a T12 upload: parse its month columns, roll them into general-data.json
@@ -4186,7 +4186,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>'+
         '<div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div>'+
-            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="leaseup"?' &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
+            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="annualized"?' &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
           '<div class="rounded-lg border border-brand-200 bg-brand-50 p-2"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="font-bold tabular-nums text-brand-700">'+(noi.underwritten!=null?fmtMoney(noi.underwritten):"&mdash;")+'</div>'+
             '<div class="text-[10px] text-brand-600/70">'+escapeHtml(noiMethodLabel(noi))+'</div></div>'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">Saved to the folder</div><div class="font-semibold text-[12px] text-slate-600">general-data.json</div></div>'+
@@ -4389,7 +4389,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
     }
     // The property's in-place NOI, FOLDER-FIRST: general-data.json (the property's own saved figure,
-    // which carries any lease-up correction) wins; then the live operating model read from the T12;
+    // which carries any annualization correction) wins; then the live operating model read from the T12;
     // then the loan's hand-entered NOI. Nothing is deleted — the in-app value is simply the fallback.
     function folderNOI(loan){ if(!loan) return null; const g = gdNOICache[propertyKey(loan)]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
     function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
@@ -6863,7 +6863,7 @@ tr.flagged:hover td{background:#fee2e2}
       return loans.filter(l => propertyKey(l) === k).sort(loanRank);
     }
     // Has an NOI figure actually been ENTERED for this loan? Any sign counts — a property
-    // in lease-up can post a negative trailing NOI (expenses > income). This is distinct
+    // still filling up can post a negative trailing NOI (expenses > income). This is distinct
     // from "positive enough to value" (noi > 0), which the DSCR/debt-yield/value/LTV math
     // still requires. Conflating the two is what hid an entered-but-negative NOI and kept
     // showing "Add NOI" for a property that already had one.
@@ -6871,7 +6871,7 @@ tr.flagged:hover td{background:#fee2e2}
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
-      const g = (list && list.length) ? folderNOI(list[0]) : null;   // folder-first: general-data.json's saved NOI (lease-up-corrected when it applies)
+      const g = (list && list.length) ? folderNOI(list[0]) : null;   // folder-first: general-data.json's saved NOI (annualization-corrected when it applies)
       if(g != null) return g;
       const o = (list && list.length) ? opNOI(list[0]) : null;   // the property's operating model, when it has one
       if(o != null) return o;
@@ -8441,7 +8441,7 @@ tr.flagged:hover td{background:#fee2e2}
           monthlyPI: keep(d.monthlyPI), totalMonthlyDebtService: keep(d.totalDebtService),
           monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade),
           // Property financials (so the assistant can SEE and confirm what it edits). noi/egi/opex are
-          // annual dollars; noi may be 0 or negative for a lease-up asset. dscr/debtYield are computed and
+          // annual dollars; noi may be 0 or negative while a property is still filling up. dscr/debtYield are computed and
           // appear only when NOI is positive. noi matches the app's own screens; noiBasis names its source
           // when a T12 drives it.
           noi: keep(noiVal), noiBasis: hasGD ? noiMethodLabel(gnoi) : undefined,

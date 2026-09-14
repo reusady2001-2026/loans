@@ -95,7 +95,7 @@ group("deltas — income line and empty record", function (){
   ok(G.deltas({}).length === 0, "deltas of an empty record is empty, no throw");
 });
 
-group("leaseUpNOI — last 3 months × 4 when the first two months' NOI are ≤ 0", function (){
+group("annualizedNOI — last 3 months × 4 when the first two months' NOI are ≤ 0", function (){
   function ym(n){ return "2026-" + (n < 10 ? "0" : "") + n; }
   function build(gprArr, retArr){   // arrays indexed 0..11 for Jan..Dec 2026
     var gpr = {}, ret = {};
@@ -107,23 +107,23 @@ group("leaseUpNOI — last 3 months × 4 when the first two months' NOI are ≤ 
   // The rule: last 3 months × 4 when the FIRST TWO months' NOI are BOTH <= 0 (leasing up at the
   // start). Here month 1 NOI = 0−100 = −100 and month 2 = −100; last 3 months (Oct/Nov/Dec) run
   // GPR 1000, NOI 900 each.
-  var lu = G.leaseUpNOI(build([0,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret));
+  var lu = G.annualizedNOI(build([0,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret));
   ok(lu.applied === true, "applied: the first two months' NOI are <= 0");
   near(lu.noi, 10800, "NOI = last 3 months × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
   ok(lu.monthsUsed && lu.monthsUsed.join(",") === "2026-10,2026-11,2026-12", "the last 3 calendar months were used");
   ok(lu.codeSums && Math.abs(lu.codeSums.GPR - 12000) < 1 && Math.abs(lu.codeSums.RET - 1200) < 1, "codeSums annualizes each line (GPR 3×1000×4=12,000; RET 3×100×4=1,200)");
 
   // BOTH of the first two months must be <= 0.
-  ok(G.leaseUpNOI(build([500,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when month 1 NOI is positive (500−100=400)");
-  ok(G.leaseUpNOI(build([0,500,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when only month 1 is <= 0 (month 2 is positive) — both are required");
-  ok(G.leaseUpNOI(build([500,500,500,500,500,500,500,500,500,500,500,0], ret)).applied === false, "a later empty month does not trigger it when the first two months are positive (12-month total stands)");
+  ok(G.annualizedNOI(build([500,0,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when month 1 NOI is positive (500−100=400)");
+  ok(G.annualizedNOI(build([0,500,200,400,600,800,1000,1000,1000,1000,1000,1000], ret)).applied === false, "NOT applied when only month 1 is <= 0 (month 2 is positive) — both are required");
+  ok(G.annualizedNOI(build([500,500,500,500,500,500,500,500,500,500,500,0], ret)).applied === false, "a later empty month does not trigger it when the first two months are positive (12-month total stands)");
 
   // STATEMENT LENGTH IS IRRELEVANT — the trigger is always the first two months.
   // A 6-month statement whose first two months are <= 0 IS annualized:
   var shortLease = G.monthlySeries({ rows: [
     { name:"GPR", section:"INCOME",  monthly:{ "2026-01":0,"2026-02":0,"2026-03":500,"2026-04":1000,"2026-05":1000,"2026-06":1000 } },
     { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100,"2026-05":100,"2026-06":100 } } ] }, classify);
-  var sl = G.leaseUpNOI(shortLease);
+  var sl = G.annualizedNOI(shortLease);
   ok(sl.applied === true, "a 6-month statement with the first two months <= 0 IS annualized (length doesn't matter)");
   near(sl.noi, 10800, "its NOI = last 3 (Apr/May/Jun) × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
   // A short statement whose first two months are POSITIVE is NOT annualized — summed as-is. (This is
@@ -131,19 +131,19 @@ group("leaseUpNOI — last 3 months × 4 when the first two months' NOI are ≤ 
   var partialPositive = G.monthlySeries({ rows: [
     { name:"GPR", section:"INCOME",  monthly:{ "2026-01":1000,"2026-02":1000,"2026-03":1000,"2026-04":1000,"2026-05":1000,"2026-06":1000 } },
     { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100,"2026-05":100,"2026-06":100 } } ] }, classify);
-  ok(G.leaseUpNOI(partialPositive).applied === false, "a 6-month statement whose first two months are POSITIVE is NOT annualized (12-month rule removed)");
+  ok(G.annualizedNOI(partialPositive).applied === false, "a 6-month statement whose first two months are POSITIVE is NOT annualized (12-month rule removed)");
 
   var full12 = G.monthlySeries({ rows: [
     { name:"GPR", section:"INCOME",  monthly:(function(){var m={};for(var i=1;i<=12;i++)m["2026-"+(i<10?"0":"")+i]=1000;return m;})() },
     { name:"RET", section:"EXPENSE", monthly:(function(){var m={};for(var i=1;i<=12;i++)m["2026-"+(i<10?"0":"")+i]=100;return m;})() } ] }, classify);
-  ok(G.leaseUpNOI(full12).applied === false, "a full 12-month statement whose first two months are positive is NOT annualized");
+  ok(G.annualizedNOI(full12).applied === false, "a full 12-month statement whose first two months are positive is NOT annualized");
 
   var few = G.monthlySeries({ rows: [ { name:"GPR", section:"INCOME", monthly:{ "2026-01":0, "2026-02":0 } }, { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100, "2026-02":100 } } ] }, classify);
-  ok(G.leaseUpNOI(few).applied === false, "NOT applied with fewer than 3 months of data");
+  ok(G.annualizedNOI(few).applied === false, "NOT applied with fewer than 3 months of data");
 
   // no gross-rent line at all → never annualize a statement of pure expenses (a real statement is required)
   var noGpr = G.monthlySeries({ rows: [ { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100 } } ] }, classify);
-  ok(G.leaseUpNOI(noGpr).applied === false, "NOT applied when there is no gross-rent line (pure expenses)");
+  ok(G.annualizedNOI(noGpr).applied === false, "NOT applied when there is no gross-rent line (pure expenses)");
 });
 
 console.log("\n" + (fails ? "FAIL — " + fails + " failing, " + passes + " passing" : "all " + passes + " general-data checks passed"));

@@ -21,14 +21,14 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const GD = { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {},
   sizing: { capRate: 0.055, ltvMax: 0.75, dscrMin: 1.20, dyMin: 0.07, intRate: 0.055, amortYears: 30 } };
 const K = { avalon: "addr:white plains, ny", weaver: "addr:308 finn ln, florence, ky 41042",
-  mlofts: "addr:1107 mississippi ave, st. louis, mo 63104", zeta: "name:zeta court", lease: "addr:9 lease up way", orphan: "name:orphan record" };
+  mlofts: "addr:1107 mississippi ave, st. louis, mo 63104", zeta: "name:zeta court", lease: "addr:9 linden way", orphan: "name:orphan record" };
 const L = {
   avSr:   { _id: "l-av-sr",  propertyName: "Avalon White Plains", propertyAddress: "White Plains, NY", maturityDate: "2029-02-10" },
   avMz:   { _id: "l-av-mz",  propertyName: "Avalon WP (Mezz)",    propertyAddress: "White Plains, NY", lienPosition: "Mezzanine", maturityDate: "2028-02-10" },   // mezz matures a year earlier — the row must pick it
   weaver: { _id: "l-weaver", propertyName: "Weaver Mill",  propertyAddress: "308 Finn Ln, Florence, KY 41042", maturityDate: "2030-12-01" },
   mlofts: { _id: "l-mlofts", propertyName: "M Lofts",      propertyAddress: "1107 Mississippi Ave, St. Louis, MO 63104", maturityDate: "2027-05-01" },
   zeta:   { _id: "l-zeta",   propertyName: "Zeta Court",   propertyAddress: "",  maturityDate: "" },                          // no address → name key; no maturity
-  lease:  { _id: "l-lease",  propertyName: "Lease-Up Lofts", propertyAddress: "9 Lease Up Way", maturityDate: "2031-06-15T00:00:00.000Z" }   // full timestamp → normalized to the day
+  lease:  { _id: "l-lease",  propertyName: "Linden Lofts", propertyAddress: "9 Linden Way", maturityDate: "2031-06-15T00:00:00.000Z" }   // full timestamp → normalized to the day
 };
 // Hand-set debt figures per loan (what the app's hooks would return).
 const DS  = { "l-av-sr": 5145600, "l-av-mz": 1646400, "l-weaver": 400000, "l-mlofts": 360000, "l-zeta": 12000, "l-lease": 60000 };
@@ -39,7 +39,7 @@ const meta = { createdAt: "2026-09-01T00:00:00.000Z", lastUpdated: "2026-09-01T0
 const REC = {};
 REC[K.avalon] = { propKey: K.avalon, propertyName: "", units: 400, period: null, lines: { GPR: line(20000000), RET: line(3000000, false) }, assumptions: null, meta };   // no record name → the SENIOR's name
 REC[K.weaver] = { propKey: K.weaver, propertyName: "Weaver Mill Apartments", units: 120, period: null, lines: { GPR: line(1000000) }, assumptions: null, meta };   // record name wins over the loan's
-REC[K.lease]  = { propKey: K.lease, propertyName: "Lease-Up Lofts", units: 80, period: null, lines: { GPR: line(100000), RET: line(150000, false) }, assumptions: null, meta };
+REC[K.lease]  = { propKey: K.lease, propertyName: "Linden Lofts", units: 80, period: null, lines: { GPR: line(100000), RET: line(150000, false) }, assumptions: null, meta };
 REC[K.orphan] = { propKey: K.orphan, propertyName: "Orphan Record", units: 10, period: null, lines: {}, assumptions: null, meta };   // record, no loans, no lines
 // Hand-set NOIs the fake engine returns per property (in-place / underwritten).
 const NOI = {}; NOI[K.avalon] = 12000000; NOI[K.weaver] = 815000; NOI[K.lease] = -50000;
@@ -156,7 +156,7 @@ section("totals", () => {
   ok(cents(t.uwNoi, 12255750), "uwNoi = 11,500,000 + 795,750 − 40,000 = 12,255,750.00 (got " + t.uwNoi + ")");
   ok(cents(t.balance, 135470000), "balance = 120,000,000 + 1,000,000 + 6,370,000 + 0 + 8,000,000 + 100,000 = 135,470,000.00 (got " + t.balance + ")");
   ok(cents(t.annualDS, 7624000), "annualDS = 6,792,000 + 60,000 + 360,000 + 0 + 400,000 + 12,000 = 7,624,000.00 (got " + t.annualDS + ")");
-  // Coverage is read over the 3 properties that HAVE an NOI (Avalon, Weaver, Lease-Up); M Lofts, Zeta and
+  // Coverage is read over the 3 properties that HAVE an NOI (Avalon, Weaver, Linden); M Lofts, Zeta and
   // the Orphan record carry no NOI, so their debt must stay OUT of the ratio's denominator:
   //   dsCovered = 6,792,000 + 400,000 + 60,000 = 7,252,000 ; balanceCovered = 120,000,000 + 8,000,000 + 1,000,000 = 129,000,000
   ok(t.noiProps === 3 && t.properties === 6 && t.dscrProps === 3 && t.dyProps === 3 && !("props" in t), "NOI on 3 of 6 properties; all 3 carry DS > 0 and balance > 0, so both ratio scopes are 3 (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + " of " + t.properties + ")");
@@ -187,7 +187,7 @@ section("totals", () => {
 });
 
 section("sorting — by name, deterministic on ties, independent of input order", () => {
-  ok(out.rows.map(r => r.name).join(" | ") === "Avalon White Plains | Lease-Up Lofts | M Lofts | Orphan Record | Weaver Mill Apartments | Zeta Court", "rows sorted by name (got " + out.rows.map(r => r.name).join(" | ") + ")");
+  ok(out.rows.map(r => r.name).join(" | ") === "Avalon White Plains | Linden Lofts | M Lofts | Orphan Record | Weaver Mill Apartments | Zeta Court", "rows sorted by name (got " + out.rows.map(r => r.name).join(" | ") + ")");
   const rev = PR.buildRows(Object.fromEntries(Object.keys(REC).reverse().map(k => [k, REC[k]])), LOANS.slice().reverse(), hooksFor(LOANS.slice().reverse()), GD);
   ok(JSON.stringify(rev.rows) === JSON.stringify(out.rows), "reversed loans + reversed records → identical rows");
   const twins = [{ _id: "t2", propertyName: "Twin Oaks", propertyAddress: "2 Twin Rd" }, { _id: "t1", propertyName: "Twin Oaks", propertyAddress: "1 Twin Rd" }];

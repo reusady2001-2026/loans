@@ -160,8 +160,8 @@
   // the underwritten column on the same run-rate — reserves are an annual per-unit figure and are never
   // summed off a short statement. A gross-rent line is still required, only so a statement of pure
   // expenses (no income at all) can't produce a false positive. series = monthlySeries() output.
-  // Returns { applied, noi, monthsUsed, codeSums, basis, leaseUpStart, reason }.
-  function leaseUpNOI(series){
+  // Returns { applied, noi, monthsUsed, codeSums, basis, annualizedStart, reason }.
+  function annualizedNOI(series){
     var byCode = (series && series.byCode) || {};
     var months = (series && Array.isArray(series.months)) ? series.months.slice().sort() : [];
     if (months.length < 3) return { applied: false, noi: null, reason: "fewer than 3 months of data" };
@@ -176,8 +176,8 @@
       codeSums[c] = r2(s * 4);                                              // per-line last 3 months × 4 (annualized run-rate)
     }
     return { applied: true, noi: r2(noi3 * 4), monthsUsed: last3, codeSums: codeSums,
-             basis: "last 3 months × 4", leaseUpStart: true };
+             basis: "last 3 months × 4", annualizedStart: true };
   }
 
-  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, leaseUpNOI: leaseUpNOI };
+  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI };
 });

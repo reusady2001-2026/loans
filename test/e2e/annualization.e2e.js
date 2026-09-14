@@ -1,15 +1,15 @@
-/* e2e for v2.8.1 lease-up NOI rule: a T12 whose gross rent doesn't begin until after the
+/* e2e for v2.8.1 annualization NOI rule: a T12 whose gross rent doesn't begin until after the
    second month gets its in-place NOI annualized from the last 3 months × 4 (not the 12-month
-   sum). Verifies general-data.json records the lease-up basis + both figures, the underwriting
-   tab shows the lease-up banner, and the refinance calculator's in-place basis uses the
+   sum). Verifies general-data.json records the annualized basis + both figures, the underwriting
+   tab shows the annualization banner, and the refinance calculator's in-place basis uses the
    annualized figure (folder-first) — not the understated statement total.
-   Fixture: leaseup-t12.xlsx — statement NOI 1,760,000; lease-up NOI 2,760,000 (last3 230,000 ×3 ×4).
-   Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/leaseup.e2e.js */
+   Fixture: annualized-t12.xlsx — statement NOI 1,760,000; annualized NOI 2,760,000 (last3 230,000 ×3 ×4).
+   Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/annualization.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs'),crypto=require('crypto');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-lu-'));
-// A synthetic lease-up T12, generated at runtime (no binary fixture): gross rent is $0 for the
+// A synthetic annualizing T12, generated at runtime (no binary fixture): gross rent is $0 for the
 // first two months (Jul/Aug 2025), then ramps; taxes flat at 20,000/mo. 12-month NOI = 1,760,000;
 // last-3-months (Apr/May/Jun 2026) NOI 230,000 each → annualized 2,760,000.
 function makeFixture(){
@@ -20,7 +20,7 @@ function makeFixture(){
   const aoa=[["Account",...MONTHS,"Total"],["Gross Potential Rent",...gpr,sum(gpr)],["TOTAL INCOME",...gpr,sum(gpr)],
     ["Real Estate Taxes",...tax,sum(tax)],["TOTAL EXPENSES",...tax,sum(tax)],["NET OPERATING INCOME",...noi,sum(noi)]];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),"Report1");
-  const p=path.join(UDATA,'leaseup-t12.xlsx'); fs.writeFileSync(p,XLSX.write(wb,{type:"buffer",bookType:"xlsx"})); return p;
+  const p=path.join(UDATA,'annualized-t12.xlsx'); fs.writeFileSync(p,XLSX.write(wb,{type:"buffer",bookType:"xlsx"})); return p;
 }
 const FIX=makeFixture();
 const KEY='name:villages of whitewater';
@@ -50,10 +50,10 @@ const refiNoiShown=(page)=>page.evaluate(()=>{const dt=[...document.querySelecto
   // ---- general-data.json records the annualization ----
   const gd=readGD();
   ok(!!gd,'general-data.json written');
-  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='leaseup','the in-place NOI basis is recorded as annualized (internal basis tag)');
+  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='annualized','the in-place NOI basis is recorded as annualized (internal basis tag)');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-LU)<2,'in-place NOI is annualized from the last 3 months × 4 = 2,760,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlaceStatement-STMT)<2,'the statement 12-month total is kept alongside = 1,760,000 (got '+(gd&&gd.noi&&gd.noi.inPlaceStatement)+')');
-  ok(gd&&gd.noi&&Array.isArray(gd.noi.leaseUpMonths)&&gd.noi.leaseUpMonths.length===3,'the 3 months used are recorded');
+  ok(gd&&gd.noi&&Array.isArray(gd.noi.annualizedMonths)&&gd.noi.annualizedMonths.length===3,'the 3 months used are recorded');
 
   // ---- the underwriting tab shows the annualization banner ----
   const uw=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
@@ -61,7 +61,7 @@ const refiNoiShown=(page)=>page.evaluate(()=>{const dt=[...document.querySelecto
   ok(uw.indexOf('2,760,000')>=0,'the banner shows the annualized working NOI (2,760,000)');
   ok(uw.indexOf('1,760,000')>=0,'the banner shows the 12-month statement total (1,760,000) for reference');
 
-  // ---- the refinance calculator uses the lease-up figure (folder-first), not the statement total ----
+  // ---- the refinance calculator uses the annualized figure (folder-first), not the statement total ----
   const loanId=await page.evaluate((k)=>{const ps=(window.opProperties?window.opProperties():[]);const p=ps.find(x=>x.key===k);return p&&p.loans&&p.loans[0]?p.loans[0]._id:null;},KEY);
   ok(!!loanId,'a loan exists on the property');
   if(loanId){
@@ -76,13 +76,13 @@ const refiNoiShown=(page)=>page.evaluate(()=>{const dt=[...document.querySelecto
     await page.click('#refiView [data-noibasis="inplace"]').catch(()=>{});
     await page.waitForTimeout(300);
     const noiIP=await refiNoiShown(page);
-    ok(noiIP!=null&&Math.abs(noiIP-LU)<2,'the refinance in-place NOI is the lease-up figure 2,760,000 (got '+noiIP+')');
+    ok(noiIP!=null&&Math.abs(noiIP-LU)<2,'the refinance in-place NOI is the annualized figure 2,760,000 (got '+noiIP+')');
     ok(noiIP!=null&&Math.abs(noiIP-STMT)>1000,'it is NOT the understated 12-month statement total (1,760,000)');
   }
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close();
   try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
-  console.log(fails.n?fails.n+' FAILED':'all lease-up e2e checks passed');
+  console.log(fails.n?fails.n+' FAILED':'all annualization e2e checks passed');
   process.exit(fails.n?1:0);
 })().catch(e=>{console.error('E2E CRASH',e);process.exit(2);});

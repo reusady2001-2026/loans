@@ -47,10 +47,10 @@ function readGD(){ try{ const idx=JSON.parse(fs.readFileSync(path.join(PROPDIR,'
   // ---- general-data.json keeps the 7-month statement as-is; NO annualization (first two months are positive) ----
   const gd=readGD();
   ok(!!gd,'general-data.json written');
-  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='statement','a statement with positive first two months is NOT annualized (basis "statement", not "leaseup")');
+  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='statement','a statement with positive first two months is NOT annualized (basis "statement", not "annualized")');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-STMT)<2,'IN-PLACE NOI is the 7-month sum 630,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-ANNUALIZED)>2,'IN-PLACE NOI is NOT the annualized 1,080,000');
-  ok(gd&&gd.noi&&(gd.noi.leaseUpMonths==null),'no annualization months are recorded');
+  ok(gd&&gd.noi&&(gd.noi.annualizedMonths==null),'no annualization months are recorded');
   ok(gd&&gd.noi&&gd.noi.underwritten>0&&gd.noi.underwritten<700000,'UNDERWRITTEN NOI is off the 7-month statement (well under 700k), not annualized — got '+(gd&&gd.noi&&Math.round(gd.noi.underwritten)));
 
   // ---- the underwriting tab shows the statement figure, not an annualized one ----
