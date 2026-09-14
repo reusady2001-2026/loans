@@ -376,30 +376,30 @@ section("hardening — null lines, mezz-only names, hooks.maturity, per-row erro
 });
 
 section("totals — per-ratio scope: DSCR over NOI'd properties with DS > 0, DY over those with balance > 0", () => {
-  // The Pepper Building matured in 2024: balance 0, DS 3,724,389.60. With NOI 3,000,000 it belongs in the DSCR
-  // aggregate but NOT in the DY one, so Avalon's 1.00% stays the portfolio DY (the old definition read 3.50%).
+  // A matured property (balance 0, DS 3,724,389.60): with NOI 3,000,000 it belongs in the DSCR aggregate
+  // but NOT in the DY one, so Avalon's 1.00% stays the portfolio DY (the old definition read 3.50%).
   const AV = { _id: "av", propertyName: "Avalon White Plains", propertyAddress: "White Plains, NY" };
-  const PEP = { _id: "pep", propertyName: "The Pepper Building", propertyAddress: "1830 Lombard Street, Philadelphia, PA" };
+  const PEP = { _id: "pep", propertyName: "Matured Zero-Balance Co.", propertyAddress: "1 Matured Way" };
   const NODS = { _id: "nods", propertyName: "No Debt Service", propertyAddress: "1 Paid Off Ln" };
-  const kAv = "addr:white plains, ny", kPep = "addr:1830 lombard street, philadelphia, pa", kNo = "addr:1 paid off ln";
+  const kAv = "addr:white plains, ny", kPep = "addr:1 matured way", kNo = "addr:1 paid off ln";
   const ds = { av: 7040000, pep: 3724389.60, nods: 0 }, bal = { av: 120000000, pep: 0, nods: 5000000 };
   const recOf = (k, name) => ({ propKey: k, propertyName: name, units: null, period: null, lines: { GPR: line(1) }, assumptions: null, meta });
   const hk = loans => hooksFor(loans, { annualDebtService: l => ds[l._id], currentBalance: l => bal[l._id], capRate: () => 0.06 });
   global.OperatingCalc = fakeCalc({ [kAv]: 1200000, [kPep]: 3000000, [kNo]: 500000 }, { [kAv]: 1100000, [kPep]: 2900000, [kNo]: 450000 });
-  const two = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "The Pepper Building") }, [AV, PEP], hk([AV, PEP]), GD);
+  const two = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "Matured Zero-Balance Co.") }, [AV, PEP], hk([AV, PEP]), GD);
   const pep = byKey(two.rows)[kPep], av = byKey(two.rows)[kAv];
-  ok(pep.dscr === 3000000 / 3724389.60 && PR.fmt.ratio(pep.dscr) === "0.81×" && pep.dy === null && pep.ltv === null && pep.balance === 0, "Pepper row: DSCR 3,000,000 / 3,724,389.60 = 0.81×, DY — and LTV — on a zero balance");
+  ok(pep.dscr === 3000000 / 3724389.60 && PR.fmt.ratio(pep.dscr) === "0.81×" && pep.dy === null && pep.ltv === null && pep.balance === 0, "matured row: DSCR 3,000,000 / 3,724,389.60 = 0.81×, DY — and LTV — on a zero balance");
   ok(av.dy === 0.01, "Avalon row DY = 1,200,000 / 120,000,000 = 1.00%");
   let t = two.totals;
   ok(t.noiProps === 2 && t.dscrProps === 2 && t.dyProps === 1, "scopes: NOI on 2, DSCR on 2, DY on 1 (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + ")");
   ok(cents(t.dscrNoi, 4200000) && cents(t.dsCovered, 10764389.60) && approx(t.dscr, 0.3901754, 1e-7) && t.dscr === 4200000 / (7040000 + 3724389.60), "DSCR = (1,200,000 + 3,000,000) / (7,040,000 + 3,724,389.60) = 0.3901754 (got " + t.dscr + ")");
-  ok(t.dyNoi === 1200000 && t.balanceCovered === 120000000 && t.dy === 0.01, "DY = 1,200,000 / 120,000,000 = 1.00% — Pepper's NOI stays out (got " + t.dy + "; the old definition gave 0.035)");
+  ok(t.dyNoi === 1200000 && t.balanceCovered === 120000000 && t.dy === 0.01, "DY = 1,200,000 / 120,000,000 = 1.00% — the matured property's NOI stays out (got " + t.dy + "; the old definition gave 0.035)");
   ok(t.dy !== 4200000 / 120000000 && cents(t.noi, 4200000) && t.balance === 120000000 && cents(t.annualDS, 10764389.60), "…while the dollar totals still cover both (NOI 4,200,000.00, DS 10,764,389.60)");
   // the mirror case: an NOI'd property with DS 0 and a balance → out of DSCR, in DY
-  const three = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "The Pepper Building"), [kNo]: recOf(kNo, "No Debt Service") }, [AV, PEP, NODS], hk([AV, PEP, NODS]), GD);
+  const three = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "Matured Zero-Balance Co."), [kNo]: recOf(kNo, "No Debt Service") }, [AV, PEP, NODS], hk([AV, PEP, NODS]), GD);
   const nod = byKey(three.rows)[kNo]; t = three.totals;
   ok(nod.dscr === null && nod.dy === 0.1 && approx(nod.ltv, 0.6, 1e-12), "No-DS row: DSCR —, DY 500,000 / 5,000,000 = 10%, LTV 60%");
-  ok(t.noiProps === 3 && t.dscrProps === 2 && t.dyProps === 2, "scopes: NOI on 3, DSCR on 2 (Avalon, Pepper), DY on 2 (Avalon, No-DS) (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + ")");
+  ok(t.noiProps === 3 && t.dscrProps === 2 && t.dyProps === 2, "scopes: NOI on 3, DSCR on 2 (Avalon, matured), DY on 2 (Avalon, No-DS) (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + ")");
   ok(t.dscr === 4200000 / (7040000 + 3724389.60) && cents(t.dsCovered, 10764389.60) && t.dscrNoi === 4200000, "DSCR unchanged by a property without debt service");
   ok(t.dyNoi === 1700000 && t.balanceCovered === 125000000 && t.dy === 1700000 / 125000000 && approx(t.dy, 0.0136, 1e-12), "DY = (1,200,000 + 500,000) / (120,000,000 + 5,000,000) = 1.36% (got " + t.dy + ")");
   ok(PR.scopeText(t) === "DSCR 0.39× (2 of 3 properties, $10.76M DS) · DY 1.36% (2 of 3 properties, $125.00M balance) · NOI on 3 of 3 properties", "scope line names both scopes (got " + JSON.stringify(PR.scopeText(t)) + ")");

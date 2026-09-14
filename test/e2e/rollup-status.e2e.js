@@ -1,7 +1,8 @@
-/* e2e for v2.9.0: a loan that has matured (or whose extension is undecided) is flagged on its row in
-   the portfolio roll-up, so a maturity decision that's due can't slip past. The seed's "The Pepper
-   Building" matured on 2024-08-09, so it is flagged "matured" with no input at all (derived status).
-   A future loan set to "Extension undecided" reads as "undecided" (the manual override).
+/* e2e for v2.9.0.1: a loan that has matured (or whose extension is undecided) is flagged on its row in
+   the portfolio roll-up, so a maturity decision that's due can't slip past. The seed has NO matured loan
+   (every loan matures in the future), so this drives the flags directly: push one loan's maturity date
+   into the past (derived "matured", no manual status) and set a second to "Extension undecided" (manual),
+   then clear it and confirm the derived "matured" stays.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/rollup-status.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -20,29 +21,40 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   const rollup=()=>page.evaluate(()=>{const m=document.getElementById('opRollupMount');return m?m.innerText:'';});
   const t0=await rollup();
-  // The Pepper Building matured on 2024-08-09 — derived "matured", no input needed.
-  ok(/matured/i.test(t0),'clean seed → the past-due loan (The Pepper Building) is flagged "matured" in the roll-up');
+  // clean seed: every loan matures in the future — nothing is flagged yet.
+  ok(!/matured/i.test(t0),'clean seed → no loan reads "matured" (all mature in the future)');
   ok(!/undecided/i.test(t0),'clean seed → nothing reads "undecided" until a status is set');
 
-  // set a loan's extension status to undecided, re-render the roll-up
-  const flagged=await page.evaluate(()=>{
+  // push one loan's maturity date into the past → derived "matured" (no manual status set).
+  const matured=await page.evaluate(()=>{
     const ls=window.LDS_loans?window.LDS_loans():[]; if(!ls.length) return null;
-    const l=ls.find(x=>!/pepper/i.test(x.propertyName||''))||ls[0];   // not Pepper (keep its derived "matured" separate)
-    l.loanStatus='Extension undecided';
+    const l=ls[0]; l.maturityDate='2020-01-01'; l.loanStatus='';
     if(window.LDS_renderPortfolio) window.LDS_renderPortfolio();
     return l.propertyName||'';
   });
   await page.waitForTimeout(300);
-  ok(!!flagged,'a non-Pepper loan was found to flag');
+  ok(!!matured,'a loan was found to push past its maturity date');
+  const tM=await rollup();
+  ok(/matured/i.test(tM),'a past-maturity loan is flagged "matured" in the roll-up (derived, no manual status)');
+
+  // set a DIFFERENT loan's extension status to undecided (manual), re-render the roll-up
+  const flagged=await page.evaluate(()=>{
+    const ls=window.LDS_loans?window.LDS_loans():[]; if(ls.length<2) return null;
+    const l=ls[1]; l.loanStatus='Extension undecided';
+    if(window.LDS_renderPortfolio) window.LDS_renderPortfolio();
+    return l.propertyName||'';
+  });
+  await page.waitForTimeout(300);
+  ok(!!flagged,'a second loan was found to flag');
   const t1=await rollup();
   ok(/undecided/i.test(t1),'after setting one loan to "Extension undecided", the roll-up reads "undecided"');
-  ok(/matured/i.test(t1),'and The Pepper Building still reads "matured" alongside it');
+  ok(/matured/i.test(t1),'and the past-maturity loan still reads "matured" alongside it');
 
-  // clearing that manual status (back to Active) removes the undecided flag; Pepper's derived "matured" stays
-  await page.evaluate(()=>{const ls=window.LDS_loans?window.LDS_loans():[]; const l=ls.find(x=>!/pepper/i.test(x.propertyName||''))||ls[0]; if(l) l.loanStatus='Active'; if(window.LDS_renderPortfolio) window.LDS_renderPortfolio();});
+  // clearing the manual "undecided" status (back to Active) removes that flag; the derived "matured" stays
+  await page.evaluate(()=>{const ls=window.LDS_loans?window.LDS_loans():[]; const l=ls[1]; if(l) l.loanStatus='Active'; if(window.LDS_renderPortfolio) window.LDS_renderPortfolio();});
   await page.waitForTimeout(300);
   const t2=await rollup();
-  ok(/matured/i.test(t2)&&!/undecided/i.test(t2),'the derived "matured" (Pepper) stays; the cleared loan no longer reads "undecided"');
+  ok(/matured/i.test(t2)&&!/undecided/i.test(t2),'the derived "matured" stays; the cleared loan no longer reads "undecided"');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
