@@ -3266,12 +3266,7 @@ tr.flagged:hover td{background:#fee2e2}
         const pd = (k === (i.basis||"total")) ? d : T12Parse.parseGrid(i.t12Grid, { basis:k });
         return { key:k, label:labels[k], noi: pd.totals.noi };
       });
-      // Lease-up: the trailing-annualized NOI diverges sharply from the full-year
-      // figure because occupancy was still climbing. Deterministic, not a guess.
-      const nois = periods.map(p=>p.noi).filter(n=>typeof n==="number" && isFinite(n));
-      const lo = Math.min.apply(null, nois), hi = Math.max.apply(null, nois);
-      const leaseUp = periods.length > 1 && lo > 0 && (hi - lo) / hi > 0.25;
-      i.t12Meta = { descCol: gl(d.descCol), periods: periods, leaseUp: leaseUp,
+      i.t12Meta = { descCol: gl(d.descCol), periods: periods,
         totals: d.totals, categories: d.categories.length };
       saveUW(); if(!(opts && opts.noRender)) renderUnderwriting();
     }
@@ -3373,9 +3368,6 @@ tr.flagged:hover td{background:#fee2e2}
               i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+(p.noi!=null?' &mdash; '+fmtMoney(p.noi):'')+'</option>').join('')+'</select></label>' : '')+
           '</div>' : '')+
           (i.t12Meta && i.t12Meta.ai ? aiT12MetaHtml(i) : '')+
-          (i.t12Meta && i.t12Meta.leaseUp ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
-            '<span class="font-bold uppercase tracking-wide">Lease-up detected</span> &mdash; income ramped over the year, so the 12-month figure understates the stabilized NOI. '+
-            'Pick a trailing-period basis above to annualize, or enter the stabilized gross potential rent. The in-place NOI below is exact for the selected basis.</div>' : '')+
           '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
             '<label class="text-sm font-medium text-slate-700">Units'+
               '<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="e.g. 200">'+
@@ -3441,13 +3433,13 @@ tr.flagged:hover td{background:#fee2e2}
           (eff.vacancyFromActual && eff.managementFromActual ? '; ' : '')+
           (eff.managementFromActual ? (eff.vacancyFromActual?'the ':'the management fee is credited at the statement’s ')+(eff.vacancyFromActual?'management fee at the statement’s ':'')+fmtPct(eff.actualManagementFee)+' (better than the '+fmtPct(eff.assumeManagementFee)+' assumed)' : '')+
           '.</p>' : '';
-      // Lease-up: when this property's General Data marks the in-place NOI as annualized from the last
-      // 3 months (the statement's gross rent didn't begin until after month 2), say so — the 12-month
-      // total below understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
+      // Annualized: when this property's General Data marks the in-place NOI as annualized from the last
+      // 3 months (the statement's first two months had no NOI), say so — the 12-month total below
+      // understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
       const gdRec = gdFullCache[opFocusKey], luNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "leaseup") ? gdRec.noi : null;
       const noiMethod = (gdRec && gdRec.noi) ? noiMethodLabel(gdRec.noi) : "";   // "T12 · Sep 2025 → Aug 2026" or "T3 × 4 · Oct → Dec 2026"
       const leaseUpBanner = luNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
-        '<span class="font-bold uppercase tracking-wide">Lease-up</span> &mdash; the statement&rsquo;s gross rent didn&rsquo;t begin until after the second month, so the twelve-month total ('+(luNoi.inPlaceStatement!=null?fmtMoney(luNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is annualized from the last 3 months &times; 4: <strong>'+fmtMoney(luNoi.inPlace)+'</strong>'+((luNoi.leaseUpMonths&&luNoi.leaseUpMonths.length)?' ('+luNoi.leaseUpMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the twelve-month total ('+(luNoi.inPlaceStatement!=null?fmtMoney(luNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(luNoi.inPlace)+'</strong>'+((luNoi.leaseUpMonths&&luNoi.leaseUpMonths.length)?' ('+luNoi.leaseUpMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
       return review + leaseUpBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
@@ -3793,7 +3785,6 @@ tr.flagged:hover td{background:#fee2e2}
       if(field === "propertyName"){ var p = opProp(key); return (sr && sr.propertyName) || (p && p.name) || null; }
       if(field === "address") return (sr && sr.propertyAddress) || null;
       if(field === "residentialUnits") return (sr && sr.units != null && sr.units !== "") ? sr.units : null;
-      if(field === "status") return propertyStatusOf(key);
       return null;
     }
     // The effective value the rest of the app should use: the profile value if set, else the default.
@@ -3993,8 +3984,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(archived.length){ pickerOpts += '<optgroup label="Archived">'+archived.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+' (archived)</option>'; }).join('')+'</optgroup>'; }
       var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+pickerOpts+'</select>';
       var comphtml = comp.complete
-        ? '<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Profile complete</span>'
-        : '<span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700" title="Missing: '+escapeHtml(comp.missing.map(function(k){return Profile.labelFor(k);}).join(", "))+'">Incomplete — '+comp.filled+'/'+comp.total+'</span>';
+        ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
+        : '<span class="text-[11px] font-semibold text-amber-600">Incomplete — still needs '+escapeHtml(comp.missing.map(function(k){return String(Profile.labelFor(k)).toLowerCase();}).join(", "))+'</span>';
       var archBtn = key ? '<button type="button" id="profileArchiveBtn" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archivedNow?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'">'+(archivedNow?'Un-archive':'Archive')+'</button>' : '';
       var newBtn = '<button type="button" id="profileNewBtn" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">+ New property</button>';
       var addForm = profileAddOpen ? '<div class="rounded-2xl border border-brand-200 bg-brand-50 p-3 flex flex-wrap items-end gap-2">'+
@@ -4452,7 +4443,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function healthWhen(iso){ try{ return new Date(iso).toLocaleString(); }catch(e){ return String(iso || ''); } }
     function healthStatusBadge(status){
-      const map = { "Stabilized":"bg-emerald-100 text-emerald-700", "Lease-up":"bg-sky-100 text-sky-700",
+      const map = { "Stabilized":"bg-emerald-100 text-emerald-700",
         "Third-party managed":"bg-violet-100 text-violet-700", "No T12 yet":"bg-amber-100 text-amber-700",
         "No loan data yet":"bg-slate-100 text-slate-600" };
       return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+(map[status] || "bg-slate-100 text-slate-600")+'">'+escapeHtml(status)+'</span>';
@@ -8476,7 +8467,7 @@ tr.flagged:hover td{background:#fee2e2}
     var AI_ASST_SYSTEM = [
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
-      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while an asset is in lease-up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized by the last-3-months×4 rule when the statement starts in lease-up), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
+      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while a property is still filling up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized to the last 3 months × 4 when the statement's first two months have no NOI), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",

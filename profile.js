@@ -34,9 +34,6 @@
   var FIELDS = [
     { key: "propertyName",    label: "Property name",       type: "text",     group: "Identity" },
     { key: "address",         label: "Address / market",    type: "text",     group: "Identity" },
-    { key: "status",          label: "Status",              type: "select",   group: "Identity",
-      options: ["", "Stabilized", "Lease-up", "Third-party managed"],
-      help: "Left blank it's read from the data. Set Lease-up or Third-party managed here when the data can't show it." },
     { key: "residentialUnits", label: "Residential units",  type: "int",      group: "Size", unit: "units" },
     { key: "commercialUnits",  label: "Commercial units",   type: "int",      group: "Size", unit: "units",
       help: "Ground-floor retail or restaurants - counted in NOI, kept out of the per-unit and average-rent figures." },
@@ -52,8 +49,8 @@
     { key: "notes",           label: "Notes",               type: "textarea", group: "Notes" }
   ];
 
-  // A property's profile is "complete" when these five are filled (checklist 2.9.1).
-  var COMPLETENESS = ["propertyName", "residentialUnits", "acquisitionDate", "manager", "status"];
+  // A property's profile is "complete" when these are filled.
+  var COMPLETENESS = ["propertyName", "residentialUnits", "acquisitionDate", "manager"];
 
   var FIELD_BY_KEY = {}; FIELDS.forEach(function (f) { FIELD_BY_KEY[f.key] = f; });
 

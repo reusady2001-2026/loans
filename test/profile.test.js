@@ -15,11 +15,11 @@ section("schema + fields", () => {
   ok(e.schema === P.SCHEMA && e.propKey === "name:test" && e.archived === false, "emptyProfile has schema, propKey, archived=false");
   ok(e.fields && Object.keys(e.fields).length === 0, "emptyProfile has no fields yet");
   const keys = P.FIELDS.map(f => f.key);
-  ["propertyName", "residentialUnits", "commercialUnits", "acquisitionDate", "manager", "status", "yardiCode", "notes"].forEach(k =>
+  ["propertyName", "residentialUnits", "commercialUnits", "acquisitionDate", "manager", "yardiCode", "notes"].forEach(k =>
     ok(keys.indexOf(k) >= 0, "FIELDS includes " + k));
   ok(P.COMPLETENESS.every(k => keys.indexOf(k) >= 0), "every COMPLETENESS key is a real field");
-  const st = P.fieldDef("status");
-  ok(st && st.type === "select" && st.options.indexOf("Lease-up") >= 0, "status is a select with a Lease-up option");
+  ok(keys.indexOf("status") < 0, "there is no manual status field");
+  ok(P.COMPLETENESS.indexOf("status") < 0, "status is not a completeness field");
 });
 
 section("coerce", () => {
@@ -77,16 +77,15 @@ section("value() treats blanks as unset", () => {
 section("completeness", () => {
   const p = P.emptyProfile("k");
   let c = P.completeness(p);
-  ok(!c.complete && c.missing.length === 5, "empty profile → incomplete, all 5 missing");
+  ok(!c.complete && c.missing.length === 4, "empty profile → incomplete, all 4 missing");
   P.setField(p, "propertyName", "The Crest");
   P.setField(p, "residentialUnits", 704);
   P.setField(p, "acquisitionDate", "2021-06-01");
+  c = P.completeness(p);
+  ok(!c.complete && c.missing.length === 1 && c.missing[0] === "manager", "three of four filled → still incomplete, manager missing");
   P.setField(p, "manager", "Living");
   c = P.completeness(p);
-  ok(!c.complete && c.missing.length === 1 && c.missing[0] === "status", "four of five filled → still incomplete, status missing");
-  P.setField(p, "status", "Stabilized");
-  c = P.completeness(p);
-  ok(c.complete && c.missing.length === 0, "all five → complete");
+  ok(c.complete && c.missing.length === 0, "all four → complete");
 });
 
 section("mismatch rule", () => {

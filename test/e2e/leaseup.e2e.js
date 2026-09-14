@@ -44,20 +44,20 @@ const refiNoiShown=(page)=>page.evaluate(()=>{const dt=[...document.querySelecto
   await page.waitForTimeout(500);
   await page.setInputFiles('#uwFile',FIX);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
-  await page.waitForFunction(()=>/lease-?up/i.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:8000}).catch(()=>{});
+  await page.waitForFunction(()=>/last 3 months/i.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:8000}).catch(()=>{});
   await page.waitForTimeout(400);
 
-  // ---- general-data.json records the lease-up correction ----
+  // ---- general-data.json records the annualization ----
   const gd=readGD();
   ok(!!gd,'general-data.json written');
-  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='leaseup','the in-place NOI basis is recorded as lease-up');
+  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='leaseup','the in-place NOI basis is recorded as annualized (internal basis tag)');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-LU)<2,'in-place NOI is annualized from the last 3 months × 4 = 2,760,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlaceStatement-STMT)<2,'the statement 12-month total is kept alongside = 1,760,000 (got '+(gd&&gd.noi&&gd.noi.inPlaceStatement)+')');
   ok(gd&&gd.noi&&Array.isArray(gd.noi.leaseUpMonths)&&gd.noi.leaseUpMonths.length===3,'the 3 months used are recorded');
 
-  // ---- the underwriting tab shows the lease-up banner ----
+  // ---- the underwriting tab shows the annualization banner ----
   const uw=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
-  ok(/Lease-?up/i.test(uw)&&/last 3 months/i.test(uw),'the Setup shows a lease-up banner explaining the annualized figure');
+  ok(/Annualized/i.test(uw)&&/last 3 months/i.test(uw),'the Setup shows an "Annualized — last 3 months × 4" banner explaining the figure');
   ok(uw.indexOf('2,760,000')>=0,'the banner shows the annualized working NOI (2,760,000)');
   ok(uw.indexOf('1,760,000')>=0,'the banner shows the 12-month statement total (1,760,000) for reference');
 

@@ -29,7 +29,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const after=await page.evaluate((k)=>({ units: window.LDS_profileEffective(k,'residentialUnits'), stored: window.LDS_profile(k).fields.residentialUnits, comp: window.LDS_profileComplete(k) }), key);
   ok(after.units===704,'residential units read back as 704');
   ok(after.stored && after.stored.value===704 && !!after.stored.changedBy && !!after.stored.changedAt,'the units field carries value + changedBy + changedAt (provenance)');
-  ok(after.comp.complete,'with units + acquisition + manager set (name + status derived), the profile is complete ('+after.comp.filled+'/'+after.comp.total+')');
+  ok(after.comp.complete,'with units + acquisition + manager set (name derived), the profile is complete ('+after.comp.filled+'/'+after.comp.total+')');
 
   // an untouched integer field is EMPTY, not 0
   ok(await page.evaluate((k)=>window.LDS_profile(k).fields.commercialUnits===undefined, key),'an untouched field (commercial units) is empty, not stored as 0');
