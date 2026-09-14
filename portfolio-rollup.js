@@ -105,6 +105,11 @@
       row.name = (rec && rec.propertyName) || loanName(group) || key;   // a row is never anonymous
       row.units = fin(rec && rec.units);
       row.maturity = earliest(group, hooks);
+      // A loan that has matured (or whose extension is undecided) is flagged on its row so it can't
+      // be missed — hooks.maturityFlag(loan) returns the status string when a decision is due, else "".
+      if (typeof hooks.maturityFlag === "function") {
+        for (var mi = 0; mi < group.length; mi++) { var f = ""; try { f = hooks.maturityFlag(group[mi]); } catch (e) { f = ""; } if (f) { row.decision = f; break; } }
+      }
       var st;
       if (rec) {
         if (calcErr) throw calcErr;
@@ -227,6 +232,14 @@
     return part("DSCR", ratio(t.dscr), t.dscrProps || 0, t.dsCovered, "DS") + " · " + part("DY", pct(t.dy), t.dyProps || 0, t.balanceCovered, "balance") + " · NOI on " + of(k);
   }
   function day(iso){ var m = (typeof iso === "string") && iso.match(ISO_DAY); return m ? (m[2] + "/" + m[3] + "/" + m[1]) : DASH; }
+  // Maturity cell: normally the date; when a loan on the row has matured or its extension is undecided,
+  // the date is shown in red with a short flag so a decision that's due can't slip past unnoticed.
+  function shortDecision(s){ s = String(s || ""); return /undecid/i.test(s) ? "undecided" : /matur/i.test(s) ? "matured" : /extend/i.test(s) ? "extended" : s.toLowerCase(); }
+  function matCell(r){
+    if (!r.decision) return td(day(r.maturity));
+    return '<td class="py-1 px-2 text-right text-sm tabular-nums font-semibold text-rose-700 whitespace-nowrap" title="' + esc(r.decision) + '">' +
+      day(r.maturity) + ' <span class="rounded bg-rose-100 px-1 text-[9px] font-bold uppercase text-rose-700">' + esc(shortDecision(r.decision)) + '</span></td>';
+  }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
 
   var COLS = ["Property", "Units", "Loans", "In-place NOI", "UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
@@ -250,7 +263,7 @@
         '<td class="py-1 pr-3 text-sm font-semibold ' + (orphan ? 'text-slate-400' : 'text-slate-800') + ' whitespace-nowrap">' + esc(r.name) +
           (r.error ? ' <span data-op-error class="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-700" title="' + esc(r.error) + '">!</span>' : '') + '</td>' +
         td(int(r.units)) + td(int(r.loans)) + td(money(r.noi), "text-slate-800") + td(money(r.uwNoi)) + td(money(r.balance)) + td(money(r.annualDS)) +
-        td(ratio(r.dscr)) + td(pct(r.dy)) + td(pct(r.ltv)) + td(day(r.maturity)) + '</tr>';
+        td(ratio(r.dscr)) + td(pct(r.dy)) + td(pct(r.ltv)) + matCell(r) + '</tr>';
     }).join("");
     var empty = rows.length ? "" : '<tr><td colspan="' + COLS.length + '" class="py-3 text-sm text-slate-400">No properties yet &mdash; add a loan or an operating record.</td></tr>';
     var scope = scopeText(t);

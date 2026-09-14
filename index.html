@@ -3199,6 +3199,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         try{ await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
         try{ opPushCache.delete(key); if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // regenerate "what to push" ONCE against the fresh statement
         if(opFocusKey === key) renderUnderwriting();
+        if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
         const noi = (uwState.input.t12Meta && uwState.input.t12Meta.totals && uwState.input.t12Meta.totals.noi);
         toast(who + ": T12 saved to the property folder"+(noi!=null ? " — statement NOI "+uwFmt(noi) : "")+".","check");
       }catch(err){ toast("Couldn’t read that file.","error"); }
@@ -3897,6 +3898,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         currentRate: l => { try{ const d = compute(l).derived; return (d && isFinite(d.currentRate)) ? d.currentRate : ((l && isFinite(l.annualRate)) ? l.annualRate : null); }catch(e){ return (l && isFinite(l.annualRate)) ? l.annualRate : null; } },
         // The maturity the app itself uses — derived from first payment + term when the field is blank — as "YYYY-MM-DD".
         maturity: l => { try{ const d = compute(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
+        // The loan's status when it needs a maturity decision (Matured / Extension undecided), else "" — the roll-up flags it on the row.
+        maturityFlag: l => { try{ return loanNeedsMaturityDecision(l) ? loanStatusOf(l) : ""; }catch(e){ return ""; } },
         globalDefaults: () => uwState.input.bench };
     }
     // One entry per property (keyed exactly like the rest of the app), named by its senior loan.
@@ -4499,7 +4502,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); window.LDS_setPropStatus=(k,s)=>opSetPropStatus(k,s); window.LDS_propIsLeaseUp=(k)=>propIsLeaseUp(k); }catch(e){}   // diagnostics: 2.9.0 property + loan status
-    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(l=>l.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks
+    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(l=>l.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -4646,6 +4649,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         const r = await opDiskSaveT12(key, file);
         if(!r || !r.ok){ aiT12SetStatus("Couldn\u2019t save the T12 ("+escapeHtml((r&&r.error)||"unknown")+").","error"); return; }
         await opSelectProperty(key); aiT12Close();
+        if(r.duplicate){ toast(who+": that exact T12 is already on file \u2014 nothing changed.","info"); return; }   // same bytes \u2192 not re-saved (checksum)
         const noi=(uwState.input.t12Meta&&uwState.input.t12Meta.totals&&uwState.input.t12Meta.totals.noi);
         toast(who+": T12 saved to the property folder"+(noi!=null?" \u2014 statement NOI "+uwFmt(noi):"")+".","check");
         return;
@@ -4717,7 +4721,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     function aiT12MetaHtml(i){
       const t = (i.t12Meta && i.t12Meta.totals) || {};
       const rec = (i.aiT12 && i.aiT12.reconcile) || null;
-      const parts = ['<span class="font-bold uppercase tracking-wide text-brand-700">Read by Claude</span>'];
+      const parts = ['<span class="rounded bg-amber-100 px-1.5 py-0.5 font-bold uppercase tracking-wide text-amber-800">AI-parsed — verify</span>'];
       if(i.aiT12 && i.aiT12.periodLabel) parts.push(escapeHtml(i.aiT12.periodLabel));
       parts.push((i.t12Rows?i.t12Rows.length:0)+" lines read");
       if(t.income!=null)  parts.push("printed total income "+uwFmt(t.income));
