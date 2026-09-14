@@ -23,6 +23,7 @@
   <script src="./operating-upload.js"></script>
   <script src="./portfolio-rollup.js"></script>
   <script src="./general-data.js"></script>
+  <script src="./profile.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -941,6 +942,8 @@
       <section id="uwView" class="space-y-6" hidden></section>
       <!-- Data Health: what the app knows per property, duplicate check, recompute-all -->
       <section id="healthView" class="space-y-6" hidden></section>
+      <!-- 2.9.1 — Property Profile: the static facts of a property (units, sq ft, acquisition, manager, status, notes) -->
+      <section id="profileView" class="space-y-6" hidden></section>
       <!-- Maturity & Reset calendar (iframe host; same self-contained doc as the pop-out) -->
       <div id="calendarPanel" hidden><iframe id="calendarFrame" class="w-full rounded-2xl border border-slate-200 bg-white" style="height:calc(100vh - 180px);min-height:520px" title="Maturity &amp; Reset Calendar"></iframe></div>
     </main>
@@ -3741,6 +3744,141 @@ tr.flagged:hover td{background:#fee2e2}
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
       }catch(e){}
     }
+    // ── 2.9.1 — Property Profile storage (profile.json in the property folder) ─────────────────────
+    // The profile is the static, hand-entered / AI-extracted facts a property carries that its loans and
+    // T12 don't — units, sq ft, acquisition date, manager, status, notes — each field with its provenance.
+    // It exists even for a property with NO loan and NO T12 (a name-only Add Property), so it is stored on
+    // its own (role "profile") and is NEVER rebuilt from the T12.
+    var profileCache = {};   // propKey -> coerced Profile record; synchronous read for the UI
+    function opOperator(){ try{ return localStorage.getItem("lds.operator") || "You"; }catch(e){ return "You"; } }
+    async function opLoadProfile(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
+      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        var f = (list.files || []).filter(function(x){ return x.role === "profile"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
+        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
+        return Profile.coerce(JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))), key);
+      }catch(e){ return null; }
+    }
+    async function opWriteProfile(key, profile){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      try{ var json = JSON.stringify(profile), bytes = new TextEncoder().encode(json), str = "";
+        for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+        var pr = opProp(key), nm = (pr && pr.name) || Profile.value(profile, "propertyName") || key;
+        await ldsShell.docSave({ propKey: key, propName: nm, name: "profile.json", base64: btoa(str), text: "", type: "application/json", role: "profile" });
+        profileCache[key] = profile;
+      }catch(e){}
+    }
+    // Load a property's profile into the synchronous cache (once per key). Returns a coerced profile,
+    // never null — an unseeded property gets a fresh empty one.
+    async function opEnsureProfile(key){
+      if(!key) return null;
+      if(Object.prototype.hasOwnProperty.call(profileCache, key)) return profileCache[key];
+      var p = await opLoadProfile(key);
+      profileCache[key] = p || Profile.emptyProfile(key);
+      return profileCache[key];
+    }
+    // Synchronous read for render code: the cached profile, or a fresh empty one. Never null.
+    function opProfileSync(key){
+      if(key && Object.prototype.hasOwnProperty.call(profileCache, key)) return profileCache[key];
+      return Profile.emptyProfile(key || null);
+    }
+    // The sensible default for a profile field when it isn't set — derived from the loan / the app's
+    // derived status — shown as a faded placeholder so a blank field stays visibly blank, never 0.
+    function opProfileDefault(key, field){
+      var sr = propSeniorLoan(key);
+      if(field === "propertyName"){ var p = opProp(key); return (sr && sr.propertyName) || (p && p.name) || null; }
+      if(field === "address") return (sr && sr.propertyAddress) || null;
+      if(field === "residentialUnits") return (sr && sr.units != null && sr.units !== "") ? sr.units : null;
+      if(field === "status") return propertyStatusOf(key);
+      return null;
+    }
+    // The effective value the rest of the app should use: the profile value if set, else the default.
+    function opProfileEffective(key, field){
+      var v = Profile.value(opProfileSync(key), field);
+      return (v !== undefined) ? v : opProfileDefault(key, field);
+    }
+    // Completeness over EFFECTIVE values: a loan-backed property already knows its name (from the loan)
+    // and a status (derived), so those count as present; the profile still needs units, acquisition date
+    // and manager. A name-only property with no loan is missing more.
+    function opProfileCompleteness(key){
+      var missing = [];
+      Profile.COMPLETENESS.forEach(function(f){ if(Profile.isEmptyVal(opProfileEffective(key, f))) missing.push(f); });
+      return { complete: missing.length === 0, missing: missing, filled: Profile.COMPLETENESS.length - missing.length, total: Profile.COMPLETENESS.length };
+    }
+    // Write a profile field through to disk with provenance, then refresh the Profile tab.
+    async function opProfileSetField(key, field, rawVal, opts){
+      if(!key) return;
+      opts = opts || {};
+      var profile = await opEnsureProfile(key);
+      var fd = Profile.fieldDef(field), val = rawVal;
+      if(fd && fd.type === "int"){ val = (rawVal === "" || rawVal == null) ? "" : (isFinite(+rawVal) ? Math.round(+rawVal) : rawVal); }
+      Profile.setField(profile, field, val, { changedBy: opts.changedBy || opOperator(), source: opts.source, reason: opts.reason });
+      profileCache[key] = profile;
+      await opWriteProfile(key, profile);
+      if(profileTabActive()) renderProfileTab();
+    }
+    function profileTabActive(){ var at = ldsTabs.find(function(t){ return t.id === ldsActiveTab; }); return !!(at && at.kind === "profile"); }
+    // ── 2.9.1 — Property Profile tab ──────────────────────────────────────────────
+    var profileFocusKey = null;
+    function pfInputVal(v){ return (v == null) ? "" : String(v); }
+    function pfWhenWho(f){
+      if(!f || !f.changedAt) return "";
+      var who = f.changedBy || "—", when = "";
+      try{ when = new Date(f.changedAt).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }catch(e){ when = String(f.changedAt).slice(0,10); }
+      var src = (f.source && f.source.kind && f.source.kind !== "manual") ? (" · from "+escapeHtml(f.source.kind)+(f.source.page?(" p."+f.source.page):"")) : "";
+      return "last changed by "+escapeHtml(who)+" · "+when+src;
+    }
+    // One field row: label, input (blank shows the loan-derived value as a faded placeholder), hint, stamp.
+    function pfFieldHtml(key, profile, fd){
+      var f = Profile.getField(profile, fd.key), val = f ? f.value : undefined;
+      var def = opProfileDefault(key, fd.key);
+      var ph = (def != null && (val == null || val === "")) ? String(def) : "";
+      var input;
+      if(fd.type === "select"){
+        input = '<select data-pf="'+fd.key+'" class="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          fd.options.map(function(o){ var lbl = o === "" ? (ph ? ("— "+ph+" (from data) —") : "— not set —") : o; return '<option value="'+escapeHtml(o)+'"'+(((val||"")===o)?" selected":"")+'>'+escapeHtml(lbl)+'</option>'; }).join('')+'</select>';
+      } else if(fd.type === "textarea"){
+        input = '<textarea data-pf="'+fd.key+'" rows="2" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+escapeHtml(pfInputVal(val))+'</textarea>';
+      } else {
+        var itype = fd.type === "int" ? "number" : fd.type === "date" ? "date" : "text";
+        input = '<input type="'+itype+'" data-pf="'+fd.key+'"'+(fd.type==="int"?' min="0" step="1"':'')+' value="'+escapeHtml(pfInputVal(val))+'" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">';
+      }
+      var unit = fd.unit ? ' <span class="text-[10px] font-normal text-slate-400">('+escapeHtml(fd.unit)+')</span>' : '';
+      var hint = fd.help ? '<p class="mt-0.5 text-[10px] leading-snug text-slate-400">'+escapeHtml(fd.help)+'</p>' : '';
+      var stamp = f ? '<p class="mt-0.5 text-[10px] text-slate-400">'+escapeHtml(pfWhenWho(f))+'</p>'
+                    : (ph ? '<p class="mt-0.5 text-[10px] text-slate-300">not set — the value shown is read from the loan</p>' : '');
+      return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+input+hint+stamp+'</label>';
+    }
+    function renderProfileTab(){
+      var host = el("profileView"); if(!host) return;
+      var props = opProperties();
+      if(!props.length){ host.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No properties yet.</div>'; return; }
+      if(!profileFocusKey || !props.some(function(p){ return p.key === profileFocusKey; })){
+        profileFocusKey = (typeof opFocusKey !== "undefined" && opFocusKey && props.some(function(p){ return p.key === opFocusKey; })) ? opFocusKey : props[0].key;
+      }
+      var key = profileFocusKey;
+      if(!Object.prototype.hasOwnProperty.call(profileCache, key)){
+        opEnsureProfile(key).then(function(){ if(profileTabActive() && profileFocusKey === key) renderProfileTab(); });
+      }
+      var profile = opProfileSync(key), comp = opProfileCompleteness(key);
+      var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+
+        props.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+'</option>'; }).join('')+'</select>';
+      var comphtml = comp.complete
+        ? '<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Profile complete</span>'
+        : '<span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700" title="Missing: '+escapeHtml(comp.missing.map(function(k){return Profile.labelFor(k);}).join(", "))+'">Incomplete — '+comp.filled+'/'+comp.total+'</span>';
+      var groups = {}, order = [];
+      Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
+      var body = order.map(function(g){
+        var rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
+        return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">'+escapeHtml(g)+'</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
+      }).join('');
+      host.innerHTML =
+        '<div class="flex flex-wrap items-center justify-between gap-3">'+
+          '<div><h2 class="text-lg font-extrabold text-slate-800">Property Profile</h2>'+
+            '<p class="text-xs text-slate-500">The facts that don’t change — set once, they persist. Empty fields stay blank, never zero.</p></div>'+
+          '<div class="flex items-center gap-2">'+picker+comphtml+'</div>'+
+        '</div>'+body;
+    }
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
     // are available to the refinance calculator's push checkboxes without re-running Claude.
@@ -4551,6 +4689,17 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true; _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } }); } }catch(e){}
+    // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
+    // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
+    // never interrupts typing.
+    try{ var _prv = el("profileView"); if(_prv && !_prv._profBound){ _prv._profBound = true;
+      _prv.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
+        var fk = t.getAttribute("data-pf");
+        if(fk){ opProfileSetField(profileFocusKey, fk, t.value); return; }
+        if(t.id === "profilePropPick"){ profileFocusKey = t.value; renderProfileTab(); return; }
+      });
+    } }catch(e){}
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; }catch(e){}   // diagnostics: 2.9.1 profile
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -4806,12 +4955,13 @@ tr.flagged:hover td{background:#fee2e2}
       calendar:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
       underwriting:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
       health:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+      profile:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3z"/><path d="M3 11h10M3 15h10M3 19h6"/><circle cx="18" cy="15" r="3"/></svg>',
       x:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
       pop:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>'
     };
     let ldsTabs = [{ id:"home", title:"Portfolio", kind:"home", fixed:true }];
     let ldsActiveTab = "home";
-    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : k==="health" ? "Data Health" : "Portfolio";
+    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : k==="health" ? "Data Health" : k==="profile" ? "Property Profile" : "Portfolio";
 
     function renderTabStrip(){
       const strip = el("tabStrip"); if(!strip) return;
@@ -4843,6 +4993,7 @@ tr.flagged:hover td{background:#fee2e2}
         m.innerHTML =
           '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
           '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
+          '<button type="button" data-tabopen="profile" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.profile+'Property Profile</button>'+
           '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
           '<button type="button" data-tabopen="health" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.health+'Data Health</button>';
         document.body.appendChild(m);
@@ -4867,9 +5018,11 @@ tr.flagged:hover td{background:#fee2e2}
       el("uwView").hidden = (tab.kind !== "underwriting");
       el("calendarPanel").hidden = (tab.kind !== "calendar");
       { const h = el("healthView"); if(h) h.hidden = (tab.kind !== "health"); }
+      { const pv = el("profileView"); if(pv) pv.hidden = (tab.kind !== "profile"); }
       if(tab.kind === "underwriting") renderUnderwriting();
       if(tab.kind === "calendar") loadCalendarFrame();
       if(tab.kind === "health") renderDataHealth();
+      if(tab.kind === "profile") renderProfileTab();
       renderTabStrip();
       try{ window.scrollTo(0,0); }catch(e){}
     }
