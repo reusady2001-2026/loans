@@ -3495,6 +3495,23 @@ tr.flagged:hover td{background:#fee2e2}
         i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
+    // 2.9.1 — when the operator changes units in the Sizing tab away from the profile's value, offer to
+    // update the profile too. Accept → the profile's residential units are set (Sizing is the source of
+    // truth again next time); decline → the profile is left untouched and only this session's Setup changes.
+    function uwMaybeUpdateProfileUnits(){
+      var key = opFocusKey; if(!key) return;
+      var u = uwNum(uwState.input.units);
+      if(u == null) return;
+      var eff = opProfileEffective(key, "residentialUnits");
+      if(u === eff) return;                                   // unchanged from what it was pre-filled to
+      var stored = Profile.value(opProfileSync(key), "residentialUnits");
+      if(u === stored) return;                                // already the profile's own value
+      try{
+        if(confirm("You set residential units to " + u + ". Update this property’s profile to match?")){
+          opProfileSetField(key, "residentialUnits", u, { changedBy: opOperator() });
+        }
+      }catch(e){}
+    }
     // Average monthly rent per unit → the yearly gross potential rent the underwriting uses (average × units × 12).
     function uwFillRentFromAvg(){
       const u = uwNum(uwState.input.units), a = uwNum(uwState.input.avgRentUnit);
@@ -3507,7 +3524,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
       const k = t.getAttribute && t.getAttribute("data-uwf");
-      if(k==="avgRentUnit" || k==="units"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
+      if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); renderUnderwriting(); return; }
+      if(k==="avgRentUnit"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
       if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); renderUnderwriting(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
@@ -3612,6 +3630,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
+        // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
+        try{ await opEnsureProfile(key); var pu = opProfileEffective(key, "residentialUnits"); i.units = (pu != null && pu !== "") ? pu : null; }catch(e){}
       } else { i.bench = opMergeBench(uwDefaults().bench, null); }
       renderUnderwriting();
       // Claude works out what to push the moment a property with a T12 is focused (once per session, cached).
@@ -4581,7 +4601,8 @@ tr.flagged:hover td{background:#fee2e2}
       const view = el("healthView"); if(!view) return;
       view.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">Reading each property’s files…</div>';
       try{ await opComputeVersion(); }catch(e){}
-      try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); }catch(e){} } }catch(e){}
+      try{ await opLoadAllProfiles(); }catch(e){}   // 2.9.1 — profiles into the cache, for the completeness column
+      try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); await opEnsureProfile(props[i].key); }catch(e){} } }catch(e){}
       if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
       view.innerHTML = dataHealthHtml();
       const rc = view.querySelector('[data-health-recompute]');
@@ -4655,7 +4676,8 @@ tr.flagged:hover td{background:#fee2e2}
       const gd = gdFullCache[key], gnoi = gdNOICache[key], noi = gd && gd.noi;
       const status = propertyStatusOf(key), hasT12 = propertyHasT12(key);
       const months = (gd && gd.window && Array.isArray(gd.window.months)) ? gd.window.months : [];
-      const units = (sr && sr.units) ? sr.units : null;
+      const units = opProfileEffective(key, "residentialUnits");   // 2.9.1 — profile first, then the loan
+      const comp = opProfileCompleteness(key);
       const inPlace = (gnoi && gnoi.inPlace != null) ? gnoi.inPlace : null;
       const method = noiMethodLabel(gnoi);
       const ver = opAppVersion || "dev", cw = (noi && noi.computedWith) ? noi.computedWith : null;
@@ -4670,7 +4692,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(staleVer) warns.push('figures from v' + cw);
       const warnHtml = warns.length ? warns.map(w => '<span class="rounded bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">'+escapeHtml(w)+'</span>').join(' ')
         : '<span class="text-[11px] font-semibold text-emerald-600">ok</span>';
-      const nameCell = '<div class="font-semibold text-slate-900">'+escapeHtml(p.name)+'</div>'+(p.loans.length > 1 ? '<div class="text-[10px] text-slate-400">'+p.loans.length+' loans</div>' : '');
+      const compTag = comp.complete ? '<div class="text-[10px] font-medium text-emerald-600">Profile complete</div>'
+        : '<div class="text-[10px] text-amber-600">Profile incomplete — needs '+escapeHtml(comp.missing.map(k => String(Profile.labelFor(k)).toLowerCase()).join(', '))+'</div>';
+      const nameCell = '<div class="font-semibold text-slate-900">'+escapeHtml(p.name)+'</div>'+(p.loans.length > 1 ? '<div class="text-[10px] text-slate-400">'+p.loans.length+' loans</div>' : '')+compTag;
       const t12Cell = hasT12 ? '<div class="text-slate-700">'+escapeHtml(method || 'T12 loaded')+'</div>'+(months.length ? '<div class="text-[10px] text-slate-400">'+months.length+' mo history</div>' : '')
         : '<span class="text-slate-400">—</span>';
       const noiCell = inPlace != null ? escapeHtml(fmtMoney(inPlace)) : '<span class="text-slate-400">—</span>';
@@ -5007,7 +5031,7 @@ tr.flagged:hover td{background:#fee2e2}
     } }catch(e){}
     // Home toolbar → Add Property: open the Profile tab with the inline "new property" form ready.
     try{ var _apb = el("addPropBtn"); if(_apb && !_apb._bound){ _apb._bound = true; _apb.addEventListener("click", function(){ profileAddOpen = true; openTab("profile"); }); } }catch(e){}
-    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive + Read agreement
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
