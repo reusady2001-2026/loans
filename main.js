@@ -237,7 +237,7 @@ function propDir(propKey){ const h = crypto.createHash('sha1').update(String(pro
 function readDocIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
 function writeDocIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
-function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0 }; }
+function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '' }; }
 
 // Save one original file (base64) + its extracted text under a property. Replaces an
 // existing file of the same name for that property. `role` tags what the file is
@@ -248,6 +248,11 @@ ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type
     const dir = propDir(propKey); fs.mkdirSync(dir, { recursive: true });
     const idx = readDocIndex(dir); idx.propKey = propKey; idx.propName = propName || idx.propName || ''; idx.files = Array.isArray(idx.files) ? idx.files : [];
     const buf = Buffer.from(base64, 'base64');
+    const sha = crypto.createHash('sha1').update(buf).digest('hex');
+    // Exact-duplicate guard: the same bytes already stored under this role is not re-saved (a second
+    // identical T12 shouldn't create a phantom "newer" statement). The caller is told it was a dup.
+    const already = idx.files.find(f => f.sha === sha && (f.role || '') === (role || ''));
+    if(already){ return { ok: true, duplicate: true, file: pubFile(already) }; }
     const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const stored = id + docSafeExt(name);
     fs.writeFileSync(path.join(dir, stored), buf);
@@ -255,7 +260,7 @@ ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type
     // Replace any existing file with the same original name.
     idx.files.filter(f => f.name === String(name)).forEach(f => { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} });
     idx.files = idx.files.filter(f => f.name !== String(name));
-    const entry = { id, stored, name: String(name), size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length };
+    const entry = { id, stored, name: String(name), size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha };
     idx.files.push(entry); writeDocIndex(dir, idx);
     return { ok: true, file: pubFile(entry) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
