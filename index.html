@@ -3282,7 +3282,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench, suppressAnnualize: propIsLeaseUp(opFocusKey) }).setup;
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench }).setup;
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
@@ -3731,11 +3731,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
       var lu = { applied: false }, months = [];
       try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.leaseUpNOI(series) || { applied: false }; } }catch(e){}
-      // A property held in LEASE-UP (still ramping from zero occupancy) is NOT annualized — the last
-      // 3 months × 4 of a climbing asset is neither current nor stabilized, so its raw statement stands
-      // (the Lease-up status badge carries the "not stabilized" signal). Owned-but-partial-year
-      // properties are still annualized as usual.
-      var annualized = !!(lu && lu.applied && lu.codeSums && !opt.suppressAnnualize);
+      // A lease-up / partial-year statement is annualized (last 3 months × 4) automatically — there is
+      // no manual override (the Status dropdown was removed): the annualization always follows the rule.
+      var annualized = !!(lu && lu.applied && lu.codeSums);
       var setup;
       if(annualized){
         setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
@@ -3755,7 +3753,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
-      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench, suppressAnnualize: propIsLeaseUp(key) });
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
@@ -3763,12 +3761,11 @@ tr[data-loan]:hover td{background:#eef2f7}
     // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
     // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
     function opGDNoi(ctx){
-      // ctx comes from opSetupFromDisk: when a partial-year T12 is annualized, ctx.setup was built
-      // from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
+      // ctx comes from opSetupFromDisk: when a lease-up / partial-year T12 is annualized, ctx.setup was
+      // built from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
       // reflect the annualized run-rate; ctx.statementNOI is the printed 12-month footing, kept
-      // alongside for reference. ctx.annualized is the single truth of whether that happened — it is
-      // false for a full-year statement AND for a property held in lease-up (suppressAnnualize), whose
-      // raw statement stands under its "not stabilized" badge rather than being annualized as a climb.
+      // alongside for reference. ctx.annualized is the single truth of whether that happened — false
+      // for a full-year statement, true when the rule fired. There is no manual override.
       var lu = ctx.lu || { applied: false };
       var annualized = !!ctx.annualized;
       var inPlace = (annualized && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
@@ -4091,35 +4088,19 @@ tr[data-loan]:hover td{background:#eef2f7}
       return "Active";
     }
     function loanNeedsMaturityDecision(loan){ const s = loanStatusOf(loan); return s === "Matured" || s === "Extension undecided"; }
-    // Property status: a manual flag ("Lease-up" | "Third-party managed") held on the property's SENIOR
-    // loan (loan.propStatus, a persisted schema field), else derived from what data exists. Lease-up
-    // gets no annualization and is left out of the portfolio-weighted coverage (see the weight code).
-    const PROP_STATUS_MANUAL = ["Lease-up","Third-party managed"];   // the two hand-set overrides (blank = Auto)
+    // Property status is DERIVED from what data exists — there is NO manual override (the Status
+    // dropdown was removed): a property with no loan reads "No loan data yet", one with a loan but no
+    // T12 "No T12 yet", otherwise "Stabilized". It is a display label in Data Health; it never touches
+    // the NOI, which always follows the automatic annualization rule.
     function propSeniorLoan(propKey){ const ls = loans.filter(l => propertyKey(l) === propKey); if(!ls.length) return null; return ls.find(l => !isMezz(l)) || ls[0]; }
-    function propStatusManual(propKey){ const sr = propSeniorLoan(propKey); const v = sr && sr.propStatus; return (PROP_STATUS_MANUAL.indexOf(v) >= 0) ? v : ""; }
     function propertyHasT12(propKey){
       try{ if(window.OperatingStore && OperatingStore.get(propKey)) return true; }catch(e){}
       const gd = gdNOICache[propKey]; return !!(gd && gd.inPlace != null);   // General Data implies its T12 was read
     }
     function propertyStatusOf(propKey){
-      const manual = propStatusManual(propKey);
-      if(manual) return manual;   // "Lease-up" or "Third-party managed"
       if(!loans.some(l => propertyKey(l) === propKey)) return "No loan data yet";
       if(!propertyHasT12(propKey)) return "No T12 yet";
       return "Stabilized";
-    }
-    function propIsLeaseUp(propKey){ return propertyStatusOf(propKey) === "Lease-up"; }
-    // Set (or clear, with "") a property's manual status on its senior loan, persist it, and recompute
-    // its General Data so the annualization rule takes effect at once across every screen.
-    async function opSetPropStatus(propKey, status){
-      const sr = propSeniorLoan(propKey); if(!sr) return false;
-      if(PROP_STATUS_MANUAL.indexOf(status) >= 0) sr.propStatus = status; else delete sr.propStatus;
-      try{ save(); }catch(e){}
-      try{ delete gdNOICache[propKey]; delete gdFullCache[propKey]; await opUpdateGeneralData(propKey); }catch(e){}
-      try{ opRenderPortfolio(); }catch(e){}
-      try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
-      try{ render(); }catch(e){}
-      return true;
     }
     // ── 2.9.0 — Data Health ─────────────────────────────────────────────────────
     // One page showing, per property, what the app actually knows — is there a T12 (and how many
@@ -4299,22 +4280,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       const dropCard = view.querySelector("#uwDrop") && view.querySelector("#uwDrop").closest(".boxline");
       if(dropCard){
         const pick = document.createElement("div"); pick.className = "flex flex-col sm:flex-row sm:items-center gap-2 pb-1 mb-1 border-b border-slate-100";
-        // When a property is focused, offer its manual status. "Lease-up" tells the app this building is
-        // still filling up: don't annualize its partial year, and leave it out of the portfolio coverage
-        // until it stabilizes. Blank = Auto (Stabilized once a T12 is loaded).
-        const curStatus = opFocusKey ? propStatusManual(opFocusKey) : "";
-        const statusSel = opFocusKey ? (
-          '<label class="text-sm font-semibold text-slate-700 sm:ml-2" for="opPropStatus">Status</label>'+
-          '<select id="opPropStatus" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700">'+
-            '<option value=""'+(curStatus===""?" selected":"")+'>Auto (Stabilized)</option>'+
-            PROP_STATUS_MANUAL.map(s => '<option value="'+escapeHtml(s)+'"'+(curStatus===s?" selected":"")+'>'+escapeHtml(s)+'</option>').join('')+
-          '</select>') : "";
         pick.innerHTML = '<label class="text-sm font-semibold text-slate-700" for="opPropPick">Property</label>'+
-          '<select id="opPropPick" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property, then drop its T12 below &mdash;</option>'+opts+'</select>'+statusSel;
+          '<select id="opPropPick" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property, then drop its T12 below &mdash;</option>'+opts+'</select>';
         dropCard.insertBefore(pick, dropCard.firstChild);
         pick.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
-        const ss = pick.querySelector("#opPropStatus");
-        if(ss) ss.addEventListener("change", (e) => { const k = opFocusKey; opSetPropStatus(k, e.target.value).then(() => { toast((e.target.value || "Auto") + " · " + (opProp(k) ? opProp(k).name : "property"), "check"); }); });
       }
       // Below the classified lines + sizing + assumptions: the portfolio roll-up, then "what to push".
       const tail = document.createElement("div"); tail.className = "space-y-6 mt-6";
@@ -4501,7 +4470,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
-    try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); window.LDS_setPropStatus=(k,s)=>opSetPropStatus(k,s); window.LDS_propIsLeaseUp=(k)=>propIsLeaseUp(k); }catch(e){}   // diagnostics: 2.9.0 property + loan status
+    try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(l=>l.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
@@ -5170,14 +5139,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         byType[loan.rateType]=(byType[loan.rateType]||0)+(d.currentBalance||0);
         const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
       const wAvg=totalBal>0?rateWB/totalBal:0;
-      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,leaseUp:propIsLeaseUp(propertyKey(sr))}; });
+      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
       let covBal=0,dscrW=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0;
-      // A property in lease-up is left OUT of the portfolio-weighted coverage: its ratios reflect a
-      // half-filled building, not stabilized performance, so folding them in would drag the whole
-      // portfolio DSCR/DY down and hide the real coverage of the stabilized book.
-      items.forEach(it=>{const cp=it.cp; if(cp.noi>0 && !it.leaseUp){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
+      // Every property with a positive NOI is weighted into the portfolio coverage (by balance). A
+      // property with NOI ≤ 0 has no meaningful ratio and is simply not counted.
+      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
       const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
-      const nLease=items.filter(it=>it.leaseUp).length;   // shown as an explained exclusion, not a gap
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: loans.length+" loans · "+moneyShort(totalOrig)+" originated"})+
@@ -5197,7 +5164,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
       const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)))
         .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr.propertyName||loanLabel(it.sr))+'</span>').join(' ');
-      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI"+(nLease?" · "+nLease+" in lease-up (excluded)":""),
+      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
         dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
         '<div class="h-3"></div>'+
         dashGauge(wDy, COV_DY_FLOOR, Math.max(0.14,(wDy||0.09)*1.5), {label:"Portfolio Debt Yield", fmt:v=>fmtPct(v)})+
@@ -5211,9 +5178,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       const tbody=sorted.map(it=>{const cp=it.cp,entered=cp.entered,covered=cp.noi>0;   // entered = an NOI figure exists (any sign); covered = positive, so ratios exist
         const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
         const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
-          :(it.leaseUp?'<span class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-700">lease-up</span>'
           :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
-          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>')));
+          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>'));
         const action=!entered?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
           :'<button type="button" data-covpath="'+(it.combo?('combo:'+propertyKey(it.sr)):it.sr._id)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
         return '<tr class="hover:bg-slate-50'+(covered?'':' bg-slate-50/40')+'">'+
