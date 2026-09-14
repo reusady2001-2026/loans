@@ -4006,21 +4006,30 @@ tr.flagged:hover td{background:#fee2e2}
       });
       return out;
     }
-    var _agreementFile = "";
+    var _agreementFile = "", _agreementKey = "";
     function opReadAgreementClose(){ var m = el("readAgreementModal"); if(m && m.parentNode) m.parentNode.removeChild(m); }
     function agRowHtml(p){
       var f = AGREEMENT_BY_KEY[p.key]; if(!f) return "";
       var tgt = f.target === "loan" ? "loan" : "profile";
-      return '<tr class="border-t border-slate-100 align-top">'+
-        '<td class="p-2"><input type="checkbox" data-ag-ok="'+escapeHtml(p.key)+'" data-ag-page="'+escapeHtml(p.page==null?"":String(p.page))+'" data-ag-quote="'+escapeHtml(p.quote||"")+'" checked></td>'+
+      // 2.9.1-E — mismatch: a profile field the property already carries a DIFFERENT value for. Show both
+      // (with the agreement's citation), default the input to the EXISTING value so plain "confirm" KEEPS
+      // it, and offer a reason box for changing it (the reason lands in the field's history).
+      var existing = (f.target === "profile") ? Profile.value(opProfileSync(_agreementKey), f.profileKey || p.key) : undefined;
+      var mism = (existing !== undefined && Profile.isMismatch(existing, p.value));
+      var shown = mism ? existing : p.value;
+      var mismRow = mism ? '<div class="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-800">Mismatch — the profile says <b>'+escapeHtml(String(existing))+'</b>; the agreement says <b>'+escapeHtml(String(p.value))+'</b>. Keeping it leaves the profile value; change it above and give a reason.'+
+        '<input data-ag-reason="'+escapeHtml(p.key)+'" placeholder="Reason to change it (kept in the field’s history)" class="mt-1 w-full rounded border border-amber-300 bg-white px-2 py-1 text-[11px]"></div>' : '';
+      return '<tr class="border-t border-slate-100 align-top'+(mism?' bg-amber-50/40':'')+'">'+
+        '<td class="p-2"><input type="checkbox" data-ag-ok="'+escapeHtml(p.key)+'" data-ag-page="'+escapeHtml(p.page==null?"":String(p.page))+'" data-ag-quote="'+escapeHtml(p.quote||"")+'"'+(mism?' data-ag-mism="1"':'')+' checked></td>'+
         '<td class="p-2"><div class="text-sm font-semibold text-slate-700">'+escapeHtml(f.label)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">→ '+tgt+'</div></td>'+
-        '<td class="p-2"><input data-ag-val="'+escapeHtml(p.key)+'" value="'+escapeHtml(String(p.value))+'" class="w-full rounded border border-slate-300 px-2 py-1 text-sm tabular-nums"></td>'+
+        '<td class="p-2"><input data-ag-val="'+escapeHtml(p.key)+'" value="'+escapeHtml(String(shown))+'" class="w-full rounded border '+(mism?'border-amber-300':'border-slate-300')+' px-2 py-1 text-sm tabular-nums">'+mismRow+'</td>'+
         '<td class="p-2 text-[11px] text-slate-500">'+(p.page!=null&&String(p.page)!==""?'<div class="font-semibold text-slate-600">p. '+escapeHtml(String(p.page))+'</div>':'')+(p.quote?'<div class="italic">“'+escapeHtml(p.quote.slice(0,160))+'”</div>':'<span class="text-slate-300">no quote given</span>')+'</td>'+
       '</tr>';
     }
     // Build/refresh the review modal. phase: "reading" | "review" | "empty" | "error:<msg>".
     function opReadAgreementModal(key, proposals, phase){
       opReadAgreementClose();
+      _agreementKey = key;
       var name = (opProp(key) || {}).name || key, inner;
       if(phase === "reading"){ inner = '<div class="p-8 text-center text-sm text-slate-600"><svg class="mx-auto mb-3 h-6 w-6 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>Reading the agreement — this can take a minute or two…</div>'; }
       else if(phase === "empty"){ inner = '<div class="p-8 text-sm text-slate-600">Claude didn’t find any fields to propose. Is the loan agreement uploaded to this property’s Documents?</div>'; }
@@ -4077,7 +4086,16 @@ tr.flagged:hover td{background:#fee2e2}
         if(f.kind === "int" || f.kind === "money" || f.kind === "pct"){ val = (raw === "" ? "" : Number(raw)); if(val !== "" && !isFinite(val)) val = raw; else if(f.kind === "int" && val !== "") val = Math.round(val); }
         else val = String(raw).trim();
         var source = { kind:"agreement", file: _agreementFile || null, page: (cb.getAttribute("data-ag-page") || null), quote: (cb.getAttribute("data-ag-quote") || null) };
-        if(f.target === "profile"){ await opProfileSetField(key, f.profileKey || k, val, { source: source }); savedProfile++; }
+        if(f.target === "profile"){
+          var pk = f.profileKey || k, stored = Profile.value(opProfileSync(key), pk);
+          // A kept mismatch (the value still equals the stored profile value) is a no-op — leave its
+          // original provenance untouched. Otherwise save the (possibly edited) value, with any reason.
+          if(stored !== undefined && !Profile.isMismatch(stored, val)) continue;
+          var reasonEl = host.querySelector('[data-ag-reason="'+k+'"]');   // 2.9.1-E: the mismatch resolution note
+          var reason = reasonEl ? String(reasonEl.value || "").trim() : "";
+          await opProfileSetField(key, pk, val, { source: source, reason: reason || undefined });
+          savedProfile++;
+        }
         else if(f.target === "loan"){ loanFields[k] = val; sawLoan = true; }
       }
       if(sawLoan) opReadAgreementSaveLoan(key, loanFields);
