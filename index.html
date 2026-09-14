@@ -3494,6 +3494,17 @@ tr[data-loan]:hover td{background:#eef2f7}
     // if one is missing (an older build) these sections simply don't render.
     let opFocusKey = "", opBasis = "annual", opInited = false;
     function opReady(){ return !!(window.OperatingStore && window.OperatingCalc && window.OperatingTaxonomy && window.OperatingUpload && window.PortfolioRollup); }
+    // 2.9.0 — the derived General Data figures (NOI, annualized NOI, DSCR, debt yield, LTV) are a
+    // CACHE, never a source of truth. Each cache carries the app version it was computed under; on
+    // read it is rebuilt from the stored T12 rows whenever that version doesn't match the running
+    // one. This kills the "batch computed under an older code version disagrees with a screen
+    // computed under the new one" bug (100 Forge / Altos) — every update recomputes everything.
+    let opAppVersion = null;
+    async function opComputeVersion(){
+      if(opAppVersion) return opAppVersion;
+      try{ if(window.ldsShell && ldsShell.getVersion){ opAppVersion = await ldsShell.getVersion(); } }catch(e){}
+      return opAppVersion || "dev";
+    }
     // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
     // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
     // OperatingStore is a SESSION cache only — backed by this in-memory shim, so it persists nothing —
@@ -3728,7 +3739,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(!key || !window.GeneralData) return null;
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
         var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
-        var noi = opGDNoi(ctx);
+        var noi = opGDNoi(ctx); noi.computedWith = await opComputeVersion();
         var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: (ctx.sr && ctx.sr.units) || null };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
@@ -3744,7 +3755,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         if(!key || !window.GeneralData) return;
         var existing = await opLoadGeneralData(key); if(!existing) return;
         var ctx = await opSetupFromDisk(key); if(!ctx) return;
-        var noi = opGDNoi(ctx); noi.computedAt = new Date().toISOString();
+        var noi = opGDNoi(ctx); noi.computedAt = new Date().toISOString(); noi.computedWith = await opComputeVersion();
         existing.noi = noi; existing.updatedAt = noi.computedAt;
         await opWriteGeneralDataFile(key, existing);
         gdNOICache[key] = opGDCache(noi);
@@ -3757,12 +3768,14 @@ tr[data-loan]:hover td{background:#eef2f7}
       if(!key) return null;
       if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
       var gd = await opLoadGeneralData(key);
-      // BACKFILL: a property can have a T12 in its folder but no general-data.json — a T12
-      // saved before General Data existed (pre-2.8.0), or added outside the underwriting-tab
-      // drop (the only path that writes it). Generate it from the folder's T12 so the two NOIs
-      // and the refi's in-place/underwritten toggle appear without a re-upload. opUpdateGeneralData
+      // BACKFILL a missing record (a T12 saved before General Data existed, or added outside the
+      // underwriting-tab drop), AND REBUILD a STALE one — a cache computed under a different app
+      // version (2.9.0). Recomputing from the folder's T12 under the running code is what makes the
+      // property page, dashboard, rollup and refi agree (the 100 Forge / Altos bug). opUpdateGeneralData
       // is a no-op (returns null) when there is no T12, so no-T12 properties are unaffected.
-      if(!gd || !gd.noi){
+      var ver = await opComputeVersion();
+      var stale = !!(gd && gd.noi && gd.noi.computedWith !== ver);
+      if(!gd || !gd.noi || stale){
         try{ var made = await opUpdateGeneralData(key); if(made && made.noi) return gdNOICache[key]; }catch(e){}
       }
       gdFullCache[key] = gd || null;
