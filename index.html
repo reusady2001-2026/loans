@@ -803,6 +803,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
+            <button id="addPropBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Add a property — a name is enough; its loans, T12 and documents come later">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>
+              Add Property
+            </button>
             <button id="aiReadBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Read a loan agreement with Claude and pre-fill a loan">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
               Read Agreement
@@ -3805,6 +3809,70 @@ tr.flagged:hover td{background:#fee2e2}
       Profile.COMPLETENESS.forEach(function(f){ if(Profile.isEmptyVal(opProfileEffective(key, f))) missing.push(f); });
       return { complete: missing.length === 0, missing: missing, filled: Profile.COMPLETENESS.length - missing.length, total: Profile.COMPLETENESS.length };
     }
+    // ── 2.9.1 — Add Property: a property is now first-class and can exist with a profile and NO loan ──
+    var standaloneProps = {};   // propKey -> { key, name } for a property that has a profile but no loan
+    var _allProfilesLoaded = false, _loadingAllProfiles = false;
+    // Load every property folder's profile into the sync cache once per session (via the doc index), and
+    // register a property that has a profile but no backing loan as a standalone property. A no-op on the
+    // seed — the 27 loan-backed properties carry no profile.json yet.
+    async function opLoadAllProfiles(){
+      if(_allProfilesLoaded || _loadingAllProfiles) return false;
+      if(!(window.ldsShell && ldsShell.docIndex)){ _allProfilesLoaded = true; return false; }
+      _loadingAllProfiles = true; var changed = false;
+      try{
+        var idx = await ldsShell.docIndex(), byKey = (idx && idx.byKey) || {};
+        var loanKeys = {}; loans.forEach(function(l){ loanKeys[propertyKey(l)] = 1; });
+        for(var k in byKey) if(Object.prototype.hasOwnProperty.call(byKey, k)){
+          if((byKey[k].files || []).indexOf("profile.json") < 0) continue;
+          var prof = await opEnsureProfile(k);
+          if(!loanKeys[k] && prof && prof.fields && Object.keys(prof.fields).length){
+            if(!standaloneProps[k]) changed = true;
+            standaloneProps[k] = { key: k, name: (Profile.value(prof, "propertyName") || byKey[k].propName || k) };
+          }
+        }
+      }catch(e){}
+      _allProfilesLoaded = true; _loadingAllProfiles = false;
+      return changed;
+    }
+    // Create a property from a name alone (Add Property). "Add loan" never comes here — it adds a loan to
+    // whatever property its name/address resolves to. Returns the new property key (or null).
+    async function opAddProperty(name){
+      name = String(name || "").trim(); if(!name) return null;
+      var key = propertyKey({ propertyName: name, propertyAddress: "" });
+      var existing = opProperties().some(function(p){ return p.key === key; });
+      if(existing){ try{ toast("A property named “"+name+"” already exists.", "info"); }catch(e){} return null; }
+      var prof = await opEnsureProfile(key);
+      prof.archived = false;
+      Profile.setField(prof, "propertyName", name, { changedBy: opOperator() });
+      profileCache[key] = prof;
+      await opWriteProfile(key, prof);
+      standaloneProps[key] = { key: key, name: name };
+      try{ opRenderPortfolio(); }catch(e){}
+      profileFocusKey = key; openTab("profile");
+      try{ toast("Added “"+name+"”. Fill in its profile, add a loan, or read its agreement.", "success"); }catch(e){}
+      return key;
+    }
+    // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
+    // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
+    async function opArchiveProperty(key, archived){
+      if(!key) return;
+      var prof = await opEnsureProfile(key);
+      prof.archived = !!archived;
+      profileCache[key] = prof;
+      await opWriteProfile(key, prof);
+      try{ opRenderPortfolio(); }catch(e){}
+      if(profileTabActive()) renderProfileTab();
+    }
+    // Archived properties (loan-backed or standalone) — shown only in the Profile picker so one can be
+    // selected and un-archived.
+    function opArchivedProps(){
+      var out = [], seen = {}, byKey = {};
+      loans.forEach(function(l){ var k = propertyKey(l); (byKey[k] = byKey[k] || []).push(l); });
+      Object.keys(byKey).forEach(function(k){ var pr = profileCache[k]; if(pr && pr.archived){ var sr = propSeniorLoan(k); out.push({ key: k, name: (sr && sr.propertyName) || k }); seen[k] = 1; } });
+      for(var sk in standaloneProps) if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen[sk]){ var p2 = profileCache[sk]; if(p2 && p2.archived) out.push({ key: sk, name: standaloneProps[sk].name || sk }); }
+      return out.sort(function(a, b){ return a.name.localeCompare(b.name); });
+    }
+    function opIsArchived(key){ var pr = key && profileCache[key]; return !!(pr && pr.archived); }
     // Write a profile field through to disk with provenance, then refresh the Profile tab.
     async function opProfileSetField(key, field, rawVal, opts){
       if(!key) return;
@@ -3849,35 +3917,52 @@ tr.flagged:hover td{background:#fee2e2}
                     : (ph ? '<p class="mt-0.5 text-[10px] text-slate-300">not set — the value shown is read from the loan</p>' : '');
       return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+input+hint+stamp+'</label>';
     }
+    var profileAddOpen = false;   // the inline "new property" form is showing
     function renderProfileTab(){
       var host = el("profileView"); if(!host) return;
-      var props = opProperties();
-      if(!props.length){ host.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No properties yet.</div>'; return; }
-      if(!profileFocusKey || !props.some(function(p){ return p.key === profileFocusKey; })){
-        profileFocusKey = (typeof opFocusKey !== "undefined" && opFocusKey && props.some(function(p){ return p.key === opFocusKey; })) ? opFocusKey : props[0].key;
+      var props = opProperties(), archived = opArchivedProps();
+      if(!props.length && !archived.length && !profileAddOpen){
+        host.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No properties yet. <button type="button" id="profileNewBtn" class="font-semibold text-brand-600 underline">Add one</button>.</div>';
+        return;
+      }
+      var allKeys = props.map(function(p){ return p.key; }).concat(archived.map(function(p){ return p.key; }));
+      if(!profileFocusKey || allKeys.indexOf(profileFocusKey) < 0){
+        profileFocusKey = (typeof opFocusKey !== "undefined" && opFocusKey && allKeys.indexOf(opFocusKey) >= 0) ? opFocusKey : (props[0] ? props[0].key : (archived[0] ? archived[0].key : null));
       }
       var key = profileFocusKey;
-      if(!Object.prototype.hasOwnProperty.call(profileCache, key)){
+      if(key && !Object.prototype.hasOwnProperty.call(profileCache, key)){
         opEnsureProfile(key).then(function(){ if(profileTabActive() && profileFocusKey === key) renderProfileTab(); });
       }
-      var profile = opProfileSync(key), comp = opProfileCompleteness(key);
-      var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+
-        props.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+'</option>'; }).join('')+'</select>';
+      var profile = opProfileSync(key), comp = opProfileCompleteness(key), archivedNow = opIsArchived(key);
+      var pickerOpts = props.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+'</option>'; }).join('');
+      if(archived.length){ pickerOpts += '<optgroup label="Archived">'+archived.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+' (archived)</option>'; }).join('')+'</optgroup>'; }
+      var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+pickerOpts+'</select>';
       var comphtml = comp.complete
         ? '<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Profile complete</span>'
         : '<span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700" title="Missing: '+escapeHtml(comp.missing.map(function(k){return Profile.labelFor(k);}).join(", "))+'">Incomplete — '+comp.filled+'/'+comp.total+'</span>';
+      var archBtn = key ? '<button type="button" id="profileArchiveBtn" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archivedNow?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'">'+(archivedNow?'Un-archive':'Archive')+'</button>' : '';
+      var newBtn = '<button type="button" id="profileNewBtn" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">+ New property</button>';
+      var addForm = profileAddOpen ? '<div class="rounded-2xl border border-brand-200 bg-brand-50 p-3 flex flex-wrap items-end gap-2">'+
+          '<label class="flex-1 min-w-[220px]"><span class="text-[11px] font-semibold text-slate-600">New property name</span>'+
+            '<input id="profileNewName" type="text" placeholder="e.g. Test Property 2.9.1" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"></label>'+
+          '<button type="button" id="profileNewCreate" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-500">Create</button>'+
+          '<button type="button" id="profileNewCancel" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>'+
+          '<p class="w-full text-[10px] text-slate-500">A name is enough — its loans, T12 and documents come later.</p>'+
+        '</div>' : '';
+      var archivedBanner = archivedNow ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the lists, the roll-up and the count. Un-archive to bring it back.</div>' : '';
       var groups = {}, order = [];
       Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
-      var body = order.map(function(g){
+      var body = key ? order.map(function(g){
         var rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
         return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">'+escapeHtml(g)+'</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
-      }).join('');
+      }).join('') : '';
       host.innerHTML =
         '<div class="flex flex-wrap items-center justify-between gap-3">'+
           '<div><h2 class="text-lg font-extrabold text-slate-800">Property Profile</h2>'+
             '<p class="text-xs text-slate-500">The facts that don’t change — set once, they persist. Empty fields stay blank, never zero.</p></div>'+
-          '<div class="flex items-center gap-2">'+picker+comphtml+'</div>'+
-        '</div>'+body;
+          '<div class="flex flex-wrap items-center gap-2">'+(key?picker:'')+comphtml+archBtn+newBtn+'</div>'+
+        '</div>'+ addForm + archivedBanner + body;
+      if(profileAddOpen){ var nm = el("profileNewName"); if(nm) nm.focus(); }
     }
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
@@ -4083,8 +4168,12 @@ tr.flagged:hover td{background:#fee2e2}
     function opProperties(){
       const seen = new Map(), clean = (s) => String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
       loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[] }); seen.get(k).loans.push(l); });
-      const arr = Array.from(seen.values());
-      arr.forEach(p => { p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); });
+      // 2.9.1 — standalone properties: a profile with no loan (Add Property with a name only).
+      for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen.has(sk)) seen.set(sk, { key:sk, name: standaloneProps[sk].name || sk, loans:[] }); }
+      let arr = Array.from(seen.values());
+      arr.forEach(p => { if(p.loans.length){ p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); } });
+      // 2.9.1 — archived properties leave every list, the roll-up and the count (profile stays on disk).
+      arr = arr.filter(p => !opIsArchived(p.key));
       return arr.sort((a, b) => a.name.localeCompare(b.name));
     }
     function opProp(key){ return opProperties().find(p => p.key === key) || null; }
@@ -4658,7 +4747,12 @@ tr.flagged:hover td{background:#fee2e2}
       const rm = el("opRollupMount"); if(!rm) return;
       opInit();
       try{ opRecomputeOnVersionChange(); }catch(e){}   // first roll-up after an app update → recompute every property's figures once, logged
-      const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
+      // Load every property's profile once per session (registers standalone/archived properties), then
+      // re-render if that changed the property set.
+      if(!_allProfilesLoaded && !_loadingAllProfiles){ opLoadAllProfiles().then(function(ch){ if(ch) opRenderPortfolio(); }); }
+      const hooks = opHooks(), gd = uwState.input.bench, records = Object.assign({}, OperatingStore.all());
+      // 2.9.1 — include standalone (loan-less) properties so they show in the roll-up as an explained blank.
+      opProperties().forEach(function(p){ if(!p.loans.length && !records[p.key]) records[p.key] = opRecordFor(p.key); });
       const open = (k) => { opSelectProperty(k); };
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
       // The roll-up covers the whole book. It shows the properties whose T12 has been read from disk;
@@ -4698,8 +4792,17 @@ tr.flagged:hover td{background:#fee2e2}
         if(fk){ opProfileSetField(profileFocusKey, fk, t.value); return; }
         if(t.id === "profilePropPick"){ profileFocusKey = t.value; renderProfileTab(); return; }
       });
+      _prv.addEventListener("click", function(e){ if(!e.target || !e.target.closest) return; var b = e.target.closest("button"); if(!b) return;
+        if(b.id === "profileNewBtn"){ profileAddOpen = true; renderProfileTab(); }
+        else if(b.id === "profileNewCancel"){ profileAddOpen = false; renderProfileTab(); }
+        else if(b.id === "profileNewCreate"){ var nm = el("profileNewName"); var v = nm ? nm.value : ""; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } else if(nm){ nm.focus(); } }
+        else if(b.id === "profileArchiveBtn" && profileFocusKey){ opArchiveProperty(profileFocusKey, !opIsArchived(profileFocusKey)); }
+      });
+      _prv.addEventListener("keydown", function(e){ if(e.key === "Enter" && e.target && e.target.id === "profileNewName"){ e.preventDefault(); var v = e.target.value; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } } });
     } }catch(e){}
-    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; }catch(e){}   // diagnostics: 2.9.1 profile
+    // Home toolbar → Add Property: open the Profile tab with the inline "new property" form ready.
+    try{ var _apb = el("addPropBtn"); if(_apb && !_apb._bound){ _apb._bound = true; _apb.addEventListener("click", function(){ profileAddOpen = true; openTab("profile"); }); } }catch(e){}
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
