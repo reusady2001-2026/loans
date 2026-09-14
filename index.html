@@ -23,6 +23,7 @@
   <script src="./operating-upload.js"></script>
   <script src="./portfolio-rollup.js"></script>
   <script src="./general-data.js"></script>
+  <script src="./profile.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -802,6 +803,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
+            <button id="addPropBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Add a property — a name is enough; its loans, T12 and documents come later">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>
+              Add Property
+            </button>
             <button id="aiReadBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Read a loan agreement with Claude and pre-fill a loan">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
               Read Agreement
@@ -941,6 +946,8 @@
       <section id="uwView" class="space-y-6" hidden></section>
       <!-- Data Health: what the app knows per property, duplicate check, recompute-all -->
       <section id="healthView" class="space-y-6" hidden></section>
+      <!-- 2.9.1 — Property Profile: the static facts of a property (units, sq ft, acquisition, manager, status, notes) -->
+      <section id="profileView" class="space-y-6" hidden></section>
       <!-- Maturity & Reset calendar (iframe host; same self-contained doc as the pop-out) -->
       <div id="calendarPanel" hidden><iframe id="calendarFrame" class="w-full rounded-2xl border border-slate-200 bg-white" style="height:calc(100vh - 180px);min-height:520px" title="Maturity &amp; Reset Calendar"></iframe></div>
     </main>
@@ -3248,7 +3255,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
     // Also read the statement's printed NOI at every available period column so a
-    // lease-up (income that ramped over the year) can be spotted and annualized.
+    // an annualized statement (income that ramped over the year) can be spotted and annualized.
     function uwApplyParse(opts){
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
       const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
@@ -3259,12 +3266,7 @@ tr.flagged:hover td{background:#fee2e2}
         const pd = (k === (i.basis||"total")) ? d : T12Parse.parseGrid(i.t12Grid, { basis:k });
         return { key:k, label:labels[k], noi: pd.totals.noi };
       });
-      // Lease-up: the trailing-annualized NOI diverges sharply from the full-year
-      // figure because occupancy was still climbing. Deterministic, not a guess.
-      const nois = periods.map(p=>p.noi).filter(n=>typeof n==="number" && isFinite(n));
-      const lo = Math.min.apply(null, nois), hi = Math.max.apply(null, nois);
-      const leaseUp = periods.length > 1 && lo > 0 && (hi - lo) / hi > 0.25;
-      i.t12Meta = { descCol: gl(d.descCol), periods: periods, leaseUp: leaseUp,
+      i.t12Meta = { descCol: gl(d.descCol), periods: periods,
         totals: d.totals, categories: d.categories.length };
       saveUW(); if(!(opts && opts.noRender)) renderUnderwriting();
     }
@@ -3319,7 +3321,7 @@ tr.flagged:hover td{background:#fee2e2}
       // from the statement's own printed footing (t12-parse totals), so the Setup's
       // in-place NOI matches the T12's NET OPERATING INCOME to the dollar.
       if(i.t12Grid && window.T12Parse){
-        // Default (12-mo Total) basis: build through the shared helper so a lease-up / partial-year
+        // Default (12-mo Total) basis: build through the shared helper so a partial-year
         // T12 is annualized (last 3 months × 4) for BOTH the in-place and underwritten NOI shown here
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
@@ -3366,9 +3368,6 @@ tr.flagged:hover td{background:#fee2e2}
               i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+(p.noi!=null?' &mdash; '+fmtMoney(p.noi):'')+'</option>').join('')+'</select></label>' : '')+
           '</div>' : '')+
           (i.t12Meta && i.t12Meta.ai ? aiT12MetaHtml(i) : '')+
-          (i.t12Meta && i.t12Meta.leaseUp ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
-            '<span class="font-bold uppercase tracking-wide">Lease-up detected</span> &mdash; income ramped over the year, so the 12-month figure understates the stabilized NOI. '+
-            'Pick a trailing-period basis above to annualize, or enter the stabilized gross potential rent. The in-place NOI below is exact for the selected basis.</div>' : '')+
           '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
             '<label class="text-sm font-medium text-slate-700">Units'+
               '<input class="'+inCls+' mt-1 tabular-nums" inputmode="numeric" data-uwf="units" value="'+uwStr(i.units)+'" placeholder="e.g. 200">'+
@@ -3434,14 +3433,14 @@ tr.flagged:hover td{background:#fee2e2}
           (eff.vacancyFromActual && eff.managementFromActual ? '; ' : '')+
           (eff.managementFromActual ? (eff.vacancyFromActual?'the ':'the management fee is credited at the statement’s ')+(eff.vacancyFromActual?'management fee at the statement’s ':'')+fmtPct(eff.actualManagementFee)+' (better than the '+fmtPct(eff.assumeManagementFee)+' assumed)' : '')+
           '.</p>' : '';
-      // Lease-up: when this property's General Data marks the in-place NOI as annualized from the last
-      // 3 months (the statement's gross rent didn't begin until after month 2), say so — the 12-month
-      // total below understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
-      const gdRec = gdFullCache[opFocusKey], luNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "leaseup") ? gdRec.noi : null;
+      // Annualized: when this property's General Data marks the in-place NOI as annualized from the last
+      // 3 months (the statement's first two months had no NOI), say so — the 12-month total below
+      // understates the run-rate, and coverage/debt yield/refinance use the annualized figure.
+      const gdRec = gdFullCache[opFocusKey], annNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "annualized") ? gdRec.noi : null;
       const noiMethod = (gdRec && gdRec.noi) ? noiMethodLabel(gdRec.noi) : "";   // "T12 · Sep 2025 → Aug 2026" or "T3 × 4 · Oct → Dec 2026"
-      const leaseUpBanner = luNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
-        '<span class="font-bold uppercase tracking-wide">Lease-up</span> &mdash; the statement&rsquo;s gross rent didn&rsquo;t begin until after the second month, so the twelve-month total ('+(luNoi.inPlaceStatement!=null?fmtMoney(luNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is annualized from the last 3 months &times; 4: <strong>'+fmtMoney(luNoi.inPlace)+'</strong>'+((luNoi.leaseUpMonths&&luNoi.leaseUpMonths.length)?' ('+luNoi.leaseUpMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
-      return review + leaseUpBanner +
+      const annualizedBanner = annNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
+        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the twelve-month total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+annNoi.annualizedMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+      return review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
@@ -3496,6 +3495,23 @@ tr.flagged:hover td{background:#fee2e2}
         i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
+    // 2.9.1 — when the operator changes units in the Sizing tab away from the profile's value, offer to
+    // update the profile too. Accept → the profile's residential units are set (Sizing is the source of
+    // truth again next time); decline → the profile is left untouched and only this session's Setup changes.
+    function uwMaybeUpdateProfileUnits(){
+      var key = opFocusKey; if(!key) return;
+      var u = uwNum(uwState.input.units);
+      if(u == null) return;
+      var eff = opProfileEffective(key, "residentialUnits");
+      if(u === eff) return;                                   // unchanged from what it was pre-filled to
+      var stored = Profile.value(opProfileSync(key), "residentialUnits");
+      if(u === stored) return;                                // already the profile's own value
+      try{
+        if(confirm("You set residential units to " + u + ". Update this property’s profile to match?")){
+          opProfileSetField(key, "residentialUnits", u, { changedBy: opOperator() });
+        }
+      }catch(e){}
+    }
     // Average monthly rent per unit → the yearly gross potential rent the underwriting uses (average × units × 12).
     function uwFillRentFromAvg(){
       const u = uwNum(uwState.input.units), a = uwNum(uwState.input.avgRentUnit);
@@ -3508,7 +3524,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
       const k = t.getAttribute && t.getAttribute("data-uwf");
-      if(k==="avgRentUnit" || k==="units"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
+      if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); renderUnderwriting(); return; }
+      if(k==="avgRentUnit"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
       if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); renderUnderwriting(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
@@ -3613,6 +3630,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
+        // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
+        try{ await opEnsureProfile(key); var pu = opProfileEffective(key, "residentialUnits"); i.units = (pu != null && pu !== "") ? pu : null; }catch(e){}
       } else { i.bench = opMergeBench(uwDefaults().bench, null); }
       renderUnderwriting();
       // Claude works out what to push the moment a property with a T12 is focused (once per session, cached).
@@ -3741,6 +3760,431 @@ tr.flagged:hover td{background:#fee2e2}
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
       }catch(e){}
     }
+    // ── 2.9.1 — Property Profile storage (profile.json in the property folder) ─────────────────────
+    // The profile is the static, hand-entered / AI-extracted facts a property carries that its loans and
+    // T12 don't — units, sq ft, acquisition date, manager, status, notes — each field with its provenance.
+    // It exists even for a property with NO loan and NO T12 (a name-only Add Property), so it is stored on
+    // its own (role "profile") and is NEVER rebuilt from the T12.
+    var profileCache = {};   // propKey -> coerced Profile record; synchronous read for the UI
+    function opOperator(){ try{ return localStorage.getItem("lds.operator") || "You"; }catch(e){ return "You"; } }
+    async function opLoadProfile(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
+      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        var f = (list.files || []).filter(function(x){ return x.role === "profile"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
+        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
+        return Profile.coerce(JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))), key);
+      }catch(e){ return null; }
+    }
+    async function opWriteProfile(key, profile){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      try{ var json = JSON.stringify(profile), bytes = new TextEncoder().encode(json), str = "";
+        for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+        var pr = opProp(key), nm = (pr && pr.name) || Profile.value(profile, "propertyName") || key;
+        await ldsShell.docSave({ propKey: key, propName: nm, name: "profile.json", base64: btoa(str), text: "", type: "application/json", role: "profile" });
+        profileCache[key] = profile;
+      }catch(e){}
+    }
+    // Load a property's profile into the synchronous cache (once per key). Returns a coerced profile,
+    // never null — an unseeded property gets a fresh empty one.
+    async function opEnsureProfile(key){
+      if(!key) return null;
+      if(Object.prototype.hasOwnProperty.call(profileCache, key)) return profileCache[key];
+      var p = await opLoadProfile(key);
+      profileCache[key] = p || Profile.emptyProfile(key);
+      return profileCache[key];
+    }
+    // Synchronous read for render code: the cached profile, or a fresh empty one. Never null.
+    function opProfileSync(key){
+      if(key && Object.prototype.hasOwnProperty.call(profileCache, key)) return profileCache[key];
+      return Profile.emptyProfile(key || null);
+    }
+    // The sensible default for a profile field when it isn't set — derived from the loan / the app's
+    // derived status — shown as a faded placeholder so a blank field stays visibly blank, never 0.
+    function opProfileDefault(key, field){
+      var sr = propSeniorLoan(key);
+      if(field === "propertyName"){ var p = opProp(key); return (sr && sr.propertyName) || (p && p.name) || null; }
+      if(field === "address") return (sr && sr.propertyAddress) || null;
+      if(field === "residentialUnits") return (sr && sr.units != null && sr.units !== "") ? sr.units : null;
+      return null;
+    }
+    // The effective value the rest of the app should use: the profile value if set, else the default.
+    function opProfileEffective(key, field){
+      var v = Profile.value(opProfileSync(key), field);
+      return (v !== undefined) ? v : opProfileDefault(key, field);
+    }
+    // Completeness over EFFECTIVE values: a loan-backed property already knows its name (from the loan)
+    // and a status (derived), so those count as present; the profile still needs units, acquisition date
+    // and manager. A name-only property with no loan is missing more.
+    function opProfileCompleteness(key){
+      var missing = [];
+      Profile.COMPLETENESS.forEach(function(f){ if(Profile.isEmptyVal(opProfileEffective(key, f))) missing.push(f); });
+      return { complete: missing.length === 0, missing: missing, filled: Profile.COMPLETENESS.length - missing.length, total: Profile.COMPLETENESS.length };
+    }
+    // ── 2.9.1 — Add Property: a property is now first-class and can exist with a profile and NO loan ──
+    var standaloneProps = {};   // propKey -> { key, name } for a property that has a profile but no loan
+    var _allProfilesLoaded = false, _loadingAllProfiles = false;
+    // Load every property folder's profile into the sync cache once per session (via the doc index), and
+    // register a property that has a profile but no backing loan as a standalone property. A no-op on the
+    // seed — the 27 loan-backed properties carry no profile.json yet.
+    async function opLoadAllProfiles(){
+      if(_allProfilesLoaded || _loadingAllProfiles) return false;
+      if(!(window.ldsShell && ldsShell.docIndex)){ _allProfilesLoaded = true; return false; }
+      _loadingAllProfiles = true; var changed = false;
+      try{
+        var idx = await ldsShell.docIndex(), byKey = (idx && idx.byKey) || {};
+        var loanKeys = {}; loans.forEach(function(l){ loanKeys[propertyKey(l)] = 1; });
+        for(var k in byKey) if(Object.prototype.hasOwnProperty.call(byKey, k)){
+          if((byKey[k].files || []).indexOf("profile.json") < 0) continue;
+          var prof = await opEnsureProfile(k);
+          if(!loanKeys[k] && prof && prof.fields && Object.keys(prof.fields).length){
+            if(!standaloneProps[k]) changed = true;
+            standaloneProps[k] = { key: k, name: (Profile.value(prof, "propertyName") || byKey[k].propName || k) };
+          }
+        }
+      }catch(e){}
+      _allProfilesLoaded = true; _loadingAllProfiles = false;
+      return changed;
+    }
+    // Create a property from a name alone (Add Property). "Add loan" never comes here — it adds a loan to
+    // whatever property its name/address resolves to. Returns the new property key (or null).
+    async function opAddProperty(name){
+      name = String(name || "").trim(); if(!name) return null;
+      var key = propertyKey({ propertyName: name, propertyAddress: "" });
+      var existing = opProperties().some(function(p){ return p.key === key; });
+      if(existing){ try{ toast("A property named “"+name+"” already exists.", "info"); }catch(e){} return null; }
+      var prof = await opEnsureProfile(key);
+      prof.archived = false;
+      Profile.setField(prof, "propertyName", name, { changedBy: opOperator() });
+      profileCache[key] = prof;
+      await opWriteProfile(key, prof);
+      standaloneProps[key] = { key: key, name: name };
+      try{ opRenderPortfolio(); }catch(e){}
+      profileFocusKey = key; openTab("profile");
+      try{ toast("Added “"+name+"”. Fill in its profile, add a loan, or read its agreement.", "success"); }catch(e){}
+      return key;
+    }
+    // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
+    // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
+    async function opArchiveProperty(key, archived){
+      if(!key) return;
+      var prof = await opEnsureProfile(key);
+      prof.archived = !!archived;
+      profileCache[key] = prof;
+      await opWriteProfile(key, prof);
+      try{ opRenderPortfolio(); }catch(e){}
+      if(profileTabActive()) renderProfileTab();
+    }
+    // Archived properties (loan-backed or standalone) — shown only in the Profile picker so one can be
+    // selected and un-archived.
+    function opArchivedProps(){
+      var out = [], seen = {}, byKey = {};
+      loans.forEach(function(l){ var k = propertyKey(l); (byKey[k] = byKey[k] || []).push(l); });
+      Object.keys(byKey).forEach(function(k){ var pr = profileCache[k]; if(pr && pr.archived){ var sr = propSeniorLoan(k); out.push({ key: k, name: (sr && sr.propertyName) || k }); seen[k] = 1; } });
+      for(var sk in standaloneProps) if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen[sk]){ var p2 = profileCache[sk]; if(p2 && p2.archived) out.push({ key: sk, name: standaloneProps[sk].name || sk }); }
+      return out.sort(function(a, b){ return a.name.localeCompare(b.name); });
+    }
+    function opIsArchived(key){ var pr = key && profileCache[key]; return !!(pr && pr.archived); }
+    // Write a profile field through to disk with provenance, then refresh the Profile tab.
+    async function opProfileSetField(key, field, rawVal, opts){
+      if(!key) return;
+      opts = opts || {};
+      var profile = await opEnsureProfile(key);
+      var fd = Profile.fieldDef(field), val = rawVal;
+      if(fd && fd.type === "int"){ val = (rawVal === "" || rawVal == null) ? "" : (isFinite(+rawVal) ? Math.round(+rawVal) : rawVal); }
+      Profile.setField(profile, field, val, { changedBy: opts.changedBy || opOperator(), source: opts.source, reason: opts.reason });
+      profileCache[key] = profile;
+      await opWriteProfile(key, profile);
+      if(profileTabActive()) renderProfileTab();
+    }
+    function profileTabActive(){ var at = ldsTabs.find(function(t){ return t.id === ldsActiveTab; }); return !!(at && at.kind === "profile"); }
+    // ── 2.9.1 — Property Profile tab ──────────────────────────────────────────────
+    var profileFocusKey = null;
+    function pfInputVal(v){ return (v == null) ? "" : String(v); }
+    function pfWhenWho(f){
+      if(!f || !f.changedAt) return "";
+      var who = f.changedBy || "—", when = "";
+      try{ when = new Date(f.changedAt).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }catch(e){ when = String(f.changedAt).slice(0,10); }
+      var src = (f.source && f.source.kind && f.source.kind !== "manual") ? (" · from "+escapeHtml(f.source.kind)+(f.source.page?(" p."+f.source.page):"")) : "";
+      return "last changed by "+escapeHtml(who)+" · "+when+src;
+    }
+    // One field row: label, input (blank shows the loan-derived value as a faded placeholder), hint, stamp.
+    function pfFieldHtml(key, profile, fd){
+      var f = Profile.getField(profile, fd.key), val = f ? f.value : undefined;
+      var def = opProfileDefault(key, fd.key);
+      var ph = (def != null && (val == null || val === "")) ? String(def) : "";
+      var input;
+      if(fd.type === "select"){
+        input = '<select data-pf="'+fd.key+'" class="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+
+          fd.options.map(function(o){ var lbl = o === "" ? (ph ? ("— "+ph+" (from data) —") : "— not set —") : o; return '<option value="'+escapeHtml(o)+'"'+(((val||"")===o)?" selected":"")+'>'+escapeHtml(lbl)+'</option>'; }).join('')+'</select>';
+      } else if(fd.type === "textarea"){
+        input = '<textarea data-pf="'+fd.key+'" rows="2" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+escapeHtml(pfInputVal(val))+'</textarea>';
+      } else {
+        var itype = fd.type === "int" ? "number" : fd.type === "date" ? "date" : "text";
+        input = '<input type="'+itype+'" data-pf="'+fd.key+'"'+(fd.type==="int"?' min="0" step="1"':'')+' value="'+escapeHtml(pfInputVal(val))+'" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">';
+      }
+      var unit = fd.unit ? ' <span class="text-[10px] font-normal text-slate-400">('+escapeHtml(fd.unit)+')</span>' : '';
+      var hint = fd.help ? '<p class="mt-0.5 text-[10px] leading-snug text-slate-400">'+escapeHtml(fd.help)+'</p>' : '';
+      var stamp = f ? '<p class="mt-0.5 text-[10px] text-slate-400">'+escapeHtml(pfWhenWho(f))+'</p>'
+                    : (ph ? '<p class="mt-0.5 text-[10px] text-slate-300">not set — the value shown is read from the loan</p>' : '');
+      return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+input+hint+stamp+'</label>';
+    }
+    // ── 2.9.1 — Documents from the property page (typed upload + list) ────────────
+    var PROFILE_DOC_TYPES = [
+      { role:"agreement", label:"Loan agreement" }, { role:"t12", label:"T12" },
+      { role:"rentroll", label:"Rent roll" }, { role:"unitstats", label:"Unit Statistics" },
+      { role:"other", label:"Other" }
+    ];
+    function profileDocLabel(role){ var d = PROFILE_DOC_TYPES.find(function(x){ return x.role === role; }); return d ? d.label : (role === "general" ? "General data" : role === "profile" ? "Profile" : role === "assumptions" ? "Assumptions" : (role || "Document")); }
+    // Save a file to the focused property's folder with a chosen type (role), extracting its text so a
+    // loan agreement can later be read by "Read agreement". Then refresh the Documents list.
+    async function opProfileDocUpload(key, file, role){
+      if(!key || !file || !docsAvailable()) return;
+      if(file.size > 25*1024*1024){ try{ toast(file.name+" is too large (25 MB max)", "info"); }catch(e){} return; }
+      try{
+        var pair = await Promise.all([fileToBase64(file), aiExtractFileText(file)]);
+        var b64 = pair[0], ex = pair[1] || {}; if(!b64) return;
+        var pr = opProp(key), nm = (pr && pr.name) || key;
+        await ldsShell.docSave({ propKey: key, propName: nm, name: file.name, base64: b64, text: (ex.text || ""), type: file.type || "", role: role || "other" });
+        try{ toast("Saved “"+file.name+"” as "+profileDocLabel(role), "check"); }catch(e){}
+      }catch(e){}
+      renderProfileDocs(key);
+      try{ aiAsstUpdatePropDocs && aiAsstUpdatePropDocs(); }catch(e){}
+    }
+    async function opProfileDocDelete(key, id){
+      if(!key || !id || !(window.ldsShell && ldsShell.docDelete)) return;
+      try{ await ldsShell.docDelete(key, id); }catch(e){}
+      renderProfileDocs(key);
+    }
+    // Fill the Profile tab's Documents card (async): the property's saved files with their type + size,
+    // newest first. The Profile-JSON / General-data / Assumptions housekeeping files are not listed.
+    async function renderProfileDocs(key){
+      var host = el("profileDocs"); if(!host) return;
+      var typeSel = '<select id="profileDocType" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">'+
+        PROFILE_DOC_TYPES.map(function(d){ return '<option value="'+d.role+'">'+escapeHtml(d.label)+'</option>'; }).join('')+'</select>';
+      var uploader = '<div class="flex flex-wrap items-center gap-2">'+typeSel+
+        '<label class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer">'+
+          '<input id="profileDocFile" type="file" class="hidden" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md">Upload a document</label>'+
+        (aiAvailable() ? '<button type="button" id="profileReadAgreement" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and propose each field with its page citation for you to confirm">✨ Read agreement</button>' : '')+
+        '<span class="text-[11px] text-slate-400">PDF, Word, Excel, text — stored in this property’s folder.</span></div>';
+      var listHtml = '<p class="mt-2 text-[11px] text-slate-400">Loading…</p>';
+      host.innerHTML = '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Documents</h3>'+uploader+'<div id="profileDocList" class="mt-3">'+listHtml+'</div>';
+      if(!docsAvailable()){ el("profileDocList").innerHTML = '<p class="text-[11px] text-slate-400">Document storage is only available in the desktop app.</p>'; return; }
+      var r = null; try{ r = await ldsShell.docList(key); }catch(e){}
+      if(profileFocusKey !== key) return;   // navigated away
+      var files = (r && r.files ? r.files : []).filter(function(f){ return ["profile", "general", "assumptions"].indexOf(f.role || "") < 0; });
+      var lst = el("profileDocList"); if(!lst) return;
+      if(!files.length){ lst.innerHTML = '<p class="text-[11px] text-slate-400">No documents yet.</p>'; return; }
+      lst.innerHTML = files.map(function(f){
+        var when = ""; try{ when = new Date(f.savedAt).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }catch(e){}
+        return '<div class="flex items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">'+
+          '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">'+escapeHtml(profileDocLabel(f.role))+'</span>'+
+          '<span class="flex-1 min-w-0 truncate text-sm text-slate-700" title="'+escapeHtml(f.name)+'">'+escapeHtml(f.name)+'</span>'+
+          '<span class="shrink-0 text-[10px] text-slate-400">'+fmtBytes(f.size)+' · '+when+'</span>'+
+          '<button type="button" data-docdel="'+escapeHtml(f.id)+'" class="shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove">✕</button>'+
+        '</div>';
+      }).join('');
+    }
+    // ── 2.9.1 — Read agreement: Claude proposes each field with a page citation; confirm / edit / reject ──
+    // Each proposed field routes to the profile (with its citation stored as the field's source) or to the
+    // property's loan. Nothing is saved until you confirm it. Works on a property with no loan yet.
+    var AGREEMENT_FIELDS = [
+      { key:"propertyAddress",    label:"Address",              kind:"text",  target:"profile", profileKey:"address" },
+      { key:"residentialUnits",   label:"Residential units",    kind:"int",   target:"profile", profileKey:"residentialUnits" },
+      { key:"yearBuilt",          label:"Year built",           kind:"int",   target:"profile", profileKey:"yearBuilt" },
+      { key:"acquisitionDate",    label:"Acquisition date",     kind:"date",  target:"profile", profileKey:"acquisitionDate" },
+      { key:"lenderName",         label:"Lender",               kind:"text",  target:"loan" },
+      { key:"originalAmount",     label:"Loan amount",          kind:"money", target:"loan" },
+      { key:"annualRate",         label:"Interest rate",        kind:"pct",   target:"loan" },
+      { key:"rateType",           label:"Rate type",            kind:"text",  target:"loan" },
+      { key:"maturityDate",       label:"Maturity date",        kind:"date",  target:"loan" },
+      { key:"ioMonths",           label:"Interest-only months", kind:"int",   target:"loan" },
+      { key:"amortizationMonths", label:"Amortization (months)",kind:"int",   target:"loan" },
+      { key:"prepayType",         label:"Prepayment",           kind:"text",  target:"loan" }
+    ];
+    var AGREEMENT_BY_KEY = {}; AGREEMENT_FIELDS.forEach(function(f){ AGREEMENT_BY_KEY[f.key] = f; });
+    function aiAgreementSchema(){
+      var cell = { type:["object","null"], properties: { value:{ type:["string","number","null"] }, page:{ type:["integer","string","null"] }, quote:{ type:["string","null"] } } };
+      var props = {}; AGREEMENT_FIELDS.forEach(function(f){ props[f.key] = cell; });
+      return { type:"object", properties: props, required: [] };
+    }
+    var AI_AGREEMENT_INSTRUCTION = [
+      "You are extracting facts about a commercial real-estate property and its loan from the property's documents (chiefly the executed loan agreement) on stdin. Return ONE JSON object. For each field you find, return { value, page, quote }: the value the document states, the page or section it came from (a number or short reference, or null), and a SHORT verbatim quote (<= 200 chars) of the sentence it came from. Use ONLY what the document states; OMIT a field or set it null if it is not stated. Never guess or compute a value that is not written down.",
+      "Fields: propertyAddress (street address); residentialUnits (integer count of apartments); yearBuilt (integer); acquisitionDate (ISO yyyy-mm-dd, if stated); lenderName; originalAmount (loan amount in dollars, number); annualRate (interest rate as a DECIMAL, 4.305% -> 0.04305); rateType (\"Fixed\" / \"Floating\" / \"Hybrid ARM\"); maturityDate (ISO yyyy-mm-dd); ioMonths (number of interest-only payments); amortizationMonths (e.g. 360); prepayType (\"Yield Maintenance\" / \"Step-down\" / \"Defeasance\" / \"Open / at par\").",
+      "Return the JSON through the structured-output tool."
+    ].join("\n");
+    // Turn the raw extraction into proposal rows [{ key, value, page, quote }], coercing + dropping empties.
+    function agreementProposals(data){
+      var out = [];
+      AGREEMENT_FIELDS.forEach(function(f){
+        var cell = data && data[f.key];
+        if(cell != null && typeof cell !== "object") cell = { value: cell };
+        if(!cell || cell.value == null || cell.value === "") return;
+        var v = cell.value;
+        if(f.kind === "int" || f.kind === "money" || f.kind === "pct"){ v = Number(v); if(!isFinite(v)) return; if(f.kind === "int") v = Math.round(v); }
+        else v = String(v).trim();
+        out.push({ key: f.key, value: v, page: (cell.page != null ? cell.page : null), quote: (cell.quote != null ? String(cell.quote) : null) });
+      });
+      return out;
+    }
+    var _agreementFile = "", _agreementKey = "";
+    function opReadAgreementClose(){ var m = el("readAgreementModal"); if(m && m.parentNode) m.parentNode.removeChild(m); }
+    function agRowHtml(p){
+      var f = AGREEMENT_BY_KEY[p.key]; if(!f) return "";
+      var tgt = f.target === "loan" ? "loan" : "profile";
+      // 2.9.1-E — mismatch: a profile field the property already carries a DIFFERENT value for. Show both
+      // (with the agreement's citation), default the input to the EXISTING value so plain "confirm" KEEPS
+      // it, and offer a reason box for changing it (the reason lands in the field's history).
+      var existing = (f.target === "profile") ? Profile.value(opProfileSync(_agreementKey), f.profileKey || p.key) : undefined;
+      var mism = (existing !== undefined && Profile.isMismatch(existing, p.value));
+      var shown = mism ? existing : p.value;
+      var mismRow = mism ? '<div class="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-800">Mismatch — the profile says <b>'+escapeHtml(String(existing))+'</b>; the agreement says <b>'+escapeHtml(String(p.value))+'</b>. Keeping it leaves the profile value; change it above and give a reason.'+
+        '<input data-ag-reason="'+escapeHtml(p.key)+'" placeholder="Reason to change it (kept in the field’s history)" class="mt-1 w-full rounded border border-amber-300 bg-white px-2 py-1 text-[11px]"></div>' : '';
+      return '<tr class="border-t border-slate-100 align-top'+(mism?' bg-amber-50/40':'')+'">'+
+        '<td class="p-2"><input type="checkbox" data-ag-ok="'+escapeHtml(p.key)+'" data-ag-page="'+escapeHtml(p.page==null?"":String(p.page))+'" data-ag-quote="'+escapeHtml(p.quote||"")+'"'+(mism?' data-ag-mism="1"':'')+' checked></td>'+
+        '<td class="p-2"><div class="text-sm font-semibold text-slate-700">'+escapeHtml(f.label)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">→ '+tgt+'</div></td>'+
+        '<td class="p-2"><input data-ag-val="'+escapeHtml(p.key)+'" value="'+escapeHtml(String(shown))+'" class="w-full rounded border '+(mism?'border-amber-300':'border-slate-300')+' px-2 py-1 text-sm tabular-nums">'+mismRow+'</td>'+
+        '<td class="p-2 text-[11px] text-slate-500">'+(p.page!=null&&String(p.page)!==""?'<div class="font-semibold text-slate-600">p. '+escapeHtml(String(p.page))+'</div>':'')+(p.quote?'<div class="italic">“'+escapeHtml(p.quote.slice(0,160))+'”</div>':'<span class="text-slate-300">no quote given</span>')+'</td>'+
+      '</tr>';
+    }
+    // Build/refresh the review modal. phase: "reading" | "review" | "empty" | "error:<msg>".
+    function opReadAgreementModal(key, proposals, phase){
+      opReadAgreementClose();
+      _agreementKey = key;
+      var name = (opProp(key) || {}).name || key, inner;
+      if(phase === "reading"){ inner = '<div class="p-8 text-center text-sm text-slate-600"><svg class="mx-auto mb-3 h-6 w-6 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>Reading the agreement — this can take a minute or two…</div>'; }
+      else if(phase === "empty"){ inner = '<div class="p-8 text-sm text-slate-600">Claude didn’t find any fields to propose. Is the loan agreement uploaded to this property’s Documents?</div>'; }
+      else if(String(phase).slice(0,6) === "error:"){ inner = '<div class="p-8 text-sm text-rose-600">Couldn’t read the agreement — '+escapeHtml(String(phase).slice(6))+'</div>'; }
+      else {
+        var rows = (proposals || []).map(agRowHtml).join('');
+        inner = '<div class="max-h-[55vh] overflow-auto"><table class="w-full text-left"><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400"><th class="p-2 w-8">Use</th><th class="p-2">Field</th><th class="p-2">Value (edit before saving)</th><th class="p-2">From the document</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+          '<div class="flex items-center justify-between gap-2 border-t border-slate-100 p-4"><p class="text-[11px] text-slate-500">Only ticked rows are saved. Edit a value inline, or untick to reject. Confirmed fields keep their citation.</p>'+
+          '<div class="flex gap-2"><button type="button" id="readAgreementCancel" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>'+
+          '<button type="button" id="readAgreementSave" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-500">Save confirmed</button></div></div>';
+      }
+      var overlay = document.createElement("div");
+      overlay.id = "readAgreementModal";
+      overlay.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+      overlay.innerHTML = '<div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">'+
+        '<div class="flex items-center justify-between border-b border-slate-100 p-4"><h3 class="text-base font-bold text-slate-900">Read agreement — '+escapeHtml(name)+'</h3>'+
+          '<button type="button" id="readAgreementX" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">✕</button></div>'+
+        inner + '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", function(e){ if(e.target === overlay) opReadAgreementClose(); });
+      var x = el("readAgreementX"); if(x) x.addEventListener("click", opReadAgreementClose);
+      var c = el("readAgreementCancel"); if(c) c.addEventListener("click", opReadAgreementClose);
+      var s = el("readAgreementSave"); if(s) s.addEventListener("click", function(){ opReadAgreementApply(key); });
+    }
+    async function opReadAgreementStart(key){
+      if(!key) return;
+      if(!aiAvailable()){ try{ toast("Connect Claude in Settings first, then Read agreement.", "info"); }catch(e){} return; }
+      var text = "", file = "";
+      try{
+        var list = await ldsShell.docList(key), files = (list && list.files) || [];
+        var ag = files.filter(function(f){ return f.role === "agreement"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0];
+        file = ag ? ag.name : "";
+        var dt = await ldsShell.docText(key); text = (dt && dt.text) || "";
+      }catch(e){}
+      if(!text || text.trim().length < 40){ try{ toast("Upload the loan agreement to this property (Documents) first, then Read agreement.", "info"); }catch(e){} return; }
+      _agreementFile = file;
+      opReadAgreementModal(key, null, "reading");
+      try{
+        var r = await ldsShell.aiExtract({ instruction: AI_AGREEMENT_INSTRUCTION, schema: aiAgreementSchema(), input: text, timeoutMs: 300000 });
+        if(!r || !r.ok){ opReadAgreementModal(key, null, "error:"+((r && r.error) || "unknown error")); return; }
+        var proposals = agreementProposals(r.data || {});
+        opReadAgreementModal(key, proposals, proposals.length ? "review" : "empty");
+      }catch(e){ opReadAgreementModal(key, null, "error:"+String((e && e.message) || e).slice(0,160)); }
+    }
+    // Save only the ticked rows: profile fields (with their citation) and, for the loan fields, fill a
+    // name-only loan for a property that has none, or fill blank fields on the existing senior loan.
+    async function opReadAgreementApply(key){
+      var host = el("readAgreementModal"); if(!host) return;
+      var cbs = host.querySelectorAll("[data-ag-ok]"), loanFields = {}, sawLoan = false, savedProfile = 0;
+      for(var i = 0; i < cbs.length; i++){
+        var cb = cbs[i]; if(!cb.checked) continue;
+        var k = cb.getAttribute("data-ag-ok"), f = AGREEMENT_BY_KEY[k]; if(!f) continue;
+        var valEl = host.querySelector('[data-ag-val="'+k+'"]'), raw = valEl ? valEl.value : "", val = raw;
+        if(f.kind === "int" || f.kind === "money" || f.kind === "pct"){ val = (raw === "" ? "" : Number(raw)); if(val !== "" && !isFinite(val)) val = raw; else if(f.kind === "int" && val !== "") val = Math.round(val); }
+        else val = String(raw).trim();
+        var source = { kind:"agreement", file: _agreementFile || null, page: (cb.getAttribute("data-ag-page") || null), quote: (cb.getAttribute("data-ag-quote") || null) };
+        if(f.target === "profile"){
+          var pk = f.profileKey || k, stored = Profile.value(opProfileSync(key), pk);
+          // A kept mismatch (the value still equals the stored profile value) is a no-op — leave its
+          // original provenance untouched. Otherwise save the (possibly edited) value, with any reason.
+          if(stored !== undefined && !Profile.isMismatch(stored, val)) continue;
+          var reasonEl = host.querySelector('[data-ag-reason="'+k+'"]');   // 2.9.1-E: the mismatch resolution note
+          var reason = reasonEl ? String(reasonEl.value || "").trim() : "";
+          await opProfileSetField(key, pk, val, { source: source, reason: reason || undefined });
+          savedProfile++;
+        }
+        else if(f.target === "loan"){ loanFields[k] = val; sawLoan = true; }
+      }
+      if(sawLoan) opReadAgreementSaveLoan(key, loanFields);
+      opReadAgreementClose();
+      try{ toast("Saved "+savedProfile+" profile field"+(savedProfile === 1 ? "" : "s")+(sawLoan ? " and the loan terms" : "")+".", "check"); }catch(e){}
+      try{ opRenderPortfolio(); }catch(e){}
+      if(profileTabActive()) renderProfileTab();
+    }
+    function opReadAgreementSaveLoan(key, fields){
+      var sr = propSeniorLoan(key);
+      if(sr){ Object.keys(fields).forEach(function(k){ if(sr[k] == null || sr[k] === "") sr[k] = fields[k]; }); try{ migrateLoan(sr); }catch(e){} save(); return; }
+      // No loan yet: create one keyed by NAME only (no address), so it merges with the standalone profile's
+      // name-based key instead of splitting off a second property. The address lives in the profile.
+      var name = (opProp(key) || {}).name || Profile.value(opProfileSync(key), "propertyName") || key;
+      var loan = Object.assign(emptyLoan(), { _id: uid(), propertyName: name, propertyType: "Multifamily", isHistorical: true }, fields);
+      loan.propertyAddress = "";
+      try{ migrateLoan(loan); }catch(e){}
+      loans.push(loan); save();
+      delete standaloneProps[key];
+    }
+    var profileAddOpen = false;   // the inline "new property" form is showing
+    function renderProfileTab(){
+      var host = el("profileView"); if(!host) return;
+      var props = opProperties(), archived = opArchivedProps();
+      if(!props.length && !archived.length && !profileAddOpen){
+        host.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No properties yet. <button type="button" id="profileNewBtn" class="font-semibold text-brand-600 underline">Add one</button>.</div>';
+        return;
+      }
+      var allKeys = props.map(function(p){ return p.key; }).concat(archived.map(function(p){ return p.key; }));
+      if(!profileFocusKey || allKeys.indexOf(profileFocusKey) < 0){
+        profileFocusKey = (typeof opFocusKey !== "undefined" && opFocusKey && allKeys.indexOf(opFocusKey) >= 0) ? opFocusKey : (props[0] ? props[0].key : (archived[0] ? archived[0].key : null));
+      }
+      var key = profileFocusKey;
+      if(key && !Object.prototype.hasOwnProperty.call(profileCache, key)){
+        opEnsureProfile(key).then(function(){ if(profileTabActive() && profileFocusKey === key) renderProfileTab(); });
+      }
+      var profile = opProfileSync(key), comp = opProfileCompleteness(key), archivedNow = opIsArchived(key);
+      var pickerOpts = props.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+'</option>'; }).join('');
+      if(archived.length){ pickerOpts += '<optgroup label="Archived">'+archived.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+' (archived)</option>'; }).join('')+'</optgroup>'; }
+      var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+pickerOpts+'</select>';
+      var comphtml = comp.complete
+        ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
+        : '<span class="text-[11px] font-semibold text-amber-600">Incomplete — still needs '+escapeHtml(comp.missing.map(function(k){return String(Profile.labelFor(k)).toLowerCase();}).join(", "))+'</span>';
+      var archBtn = key ? '<button type="button" id="profileArchiveBtn" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archivedNow?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'">'+(archivedNow?'Un-archive':'Archive')+'</button>' : '';
+      var newBtn = '<button type="button" id="profileNewBtn" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">+ New property</button>';
+      var addForm = profileAddOpen ? '<div class="rounded-2xl border border-brand-200 bg-brand-50 p-3 flex flex-wrap items-end gap-2">'+
+          '<label class="flex-1 min-w-[220px]"><span class="text-[11px] font-semibold text-slate-600">New property name</span>'+
+            '<input id="profileNewName" type="text" placeholder="e.g. Test Property 2.9.1" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"></label>'+
+          '<button type="button" id="profileNewCreate" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-500">Create</button>'+
+          '<button type="button" id="profileNewCancel" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>'+
+          '<p class="w-full text-[10px] text-slate-500">A name is enough — its loans, T12 and documents come later.</p>'+
+        '</div>' : '';
+      var archivedBanner = archivedNow ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the lists, the roll-up and the count. Un-archive to bring it back.</div>' : '';
+      var groups = {}, order = [];
+      Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
+      var body = key ? order.map(function(g){
+        var rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
+        return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">'+escapeHtml(g)+'</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
+      }).join('') : '';
+      var docsCard = key ? '<div id="profileDocs" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"></div>' : '';
+      host.innerHTML =
+        '<div class="flex flex-wrap items-center justify-between gap-3">'+
+          '<div><h2 class="text-lg font-extrabold text-slate-800">Property Profile</h2>'+
+            '<p class="text-xs text-slate-500">The facts that don’t change — set once, they persist. Empty fields stay blank, never zero.</p></div>'+
+          '<div class="flex flex-wrap items-center gap-2">'+(key?picker:'')+comphtml+archBtn+newBtn+'</div>'+
+        '</div>'+ addForm + archivedBanner + body + docsCard;
+      if(profileAddOpen){ var nm = el("profileNewName"); if(nm) nm.focus(); }
+      if(key) renderProfileDocs(key);
+    }
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
     // are available to the refinance calculator's push checkboxes without re-running Claude.
@@ -3757,11 +4201,11 @@ tr.flagged:hover td{background:#fee2e2}
         gdFullCache[key] = gd;
       }catch(e){}
     }
-    // Build a property's Setup from its T12 grid, applying the lease-up / partial-year
+    // Build a property's Setup from its T12 grid, applying the partial-year
     // annualization when the monthly columns show it. When the statement covers fewer than a
     // full 12 dated months, or the property was still leasing up at the start, its printed
     // total understates the annual run-rate — so each line is annualized to its last 3 dated
-    // months × 4 (GeneralData.leaseUpNOI) and the Setup is built from those category sums, so
+    // months × 4 (GeneralData.annualizedNOI) and the Setup is built from those category sums, so
     // the in-place AND underwritten NOI (and the sizing) all reflect the annualized run-rate;
     // reserves stay annual, vacancy/management ratios are preserved. Otherwise the statement
     // build stands. Returns { setup, lu, parsedM, statementNOI } — statementNOI is the printed
@@ -3772,8 +4216,8 @@ tr.flagged:hover td{background:#fee2e2}
       var statementNOI = null;
       try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
       var lu = { applied: false }, months = [];
-      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.leaseUpNOI(series) || { applied: false }; } }catch(e){}
-      // A lease-up / partial-year statement is annualized (last 3 months × 4) automatically — there is
+      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.annualizedNOI(series) || { applied: false }; } }catch(e){}
+      // A partial-year statement is annualized (last 3 months × 4) automatically — there is
       // no manual override (the Status dropdown was removed): the annualization always follows the rule.
       var annualized = !!(lu && lu.applied && lu.codeSums);
       var setup;
@@ -3799,11 +4243,11 @@ tr.flagged:hover td{background:#fee2e2}
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
-    // lease-up rule: when the statement's gross rent doesn't begin in the first or second month, the
+    // annualization rule: when the statement's gross rent doesn't begin in the first or second month, the
     // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
     // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
     function opGDNoi(ctx){
-      // ctx comes from opSetupFromDisk: when a lease-up / partial-year T12 is annualized, ctx.setup was
+      // ctx comes from opSetupFromDisk: when a partial-year T12 is annualized, ctx.setup was
       // built from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
       // reflect the annualized run-rate; ctx.statementNOI is the printed 12-month footing, kept
       // alongside for reference. ctx.annualized is the single truth of whether that happened — false
@@ -3813,21 +4257,21 @@ tr.flagged:hover td{background:#fee2e2}
       var inPlace = (annualized && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
       var statementNOI = (ctx.statementNOI != null) ? ctx.statementNOI : ctx.setup.result.inPlace.noi;
       return { inPlace: inPlace, inPlaceStatement: statementNOI,
-               inPlaceBasis: annualized ? "leaseup" : "statement", leaseUpMonths: annualized ? lu.monthsUsed : null,
+               inPlaceBasis: annualized ? "annualized" : "statement", annualizedMonths: annualized ? lu.monthsUsed : null,
                months: (ctx.months && ctx.months.length) ? ctx.months : null,   // the T12's dated months, for the NOI method label
                underwritten: ctx.setup.result.underwritten.noi,
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
-    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, leaseUpMonths: noi.leaseUpMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period }; }
+    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period }; }
     // 2.9.0 — the annualization-method label shown wherever an NOI appears: "T12 · Sep 2025 → Aug 2026"
-    // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year / lease-up statement annualized
+    // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year statement annualized
     // from its last three months. Reads only what the cache already stores; adds no computation.
     function ymShort(ym){ if(!ym || typeof ym !== "string") return ""; var y = ym.slice(0,4), m = +ym.slice(5,7);
       var MON = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (MON[m]||"") + " " + y; }
     function ymRange(list){ if(!Array.isArray(list) || !list.length) return ""; var s = list.slice().sort(); var a = ymShort(s[0]), b = ymShort(s[s.length-1]); return a === b ? a : (a + " → " + b); }
     function noiMethodLabel(noi){
       if(!noi) return "";
-      if(noi.inPlaceBasis === "leaseup"){ var r = ymRange(noi.leaseUpMonths); return "T3 × 4" + (r ? " · " + r : ""); }
+      if(noi.inPlaceBasis === "annualized"){ var r = ymRange(noi.annualizedMonths); return "T3 × 4" + (r ? " · " + r : ""); }
       var w = ymRange(noi.months); return "T12" + (w ? " · " + w : "");
     }
     // On a T12 upload: parse its month columns, roll them into general-data.json
@@ -3915,7 +4359,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>'+
         '<div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div>'+
-            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="leaseup"?' &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
+            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="annualized"?' &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
           '<div class="rounded-lg border border-brand-200 bg-brand-50 p-2"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="font-bold tabular-nums text-brand-700">'+(noi.underwritten!=null?fmtMoney(noi.underwritten):"&mdash;")+'</div>'+
             '<div class="text-[10px] text-brand-600/70">'+escapeHtml(noiMethodLabel(noi))+'</div></div>'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">Saved to the folder</div><div class="font-semibold text-[12px] text-slate-600">general-data.json</div></div>'+
@@ -3945,8 +4389,12 @@ tr.flagged:hover td{background:#fee2e2}
     function opProperties(){
       const seen = new Map(), clean = (s) => String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
       loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[] }); seen.get(k).loans.push(l); });
-      const arr = Array.from(seen.values());
-      arr.forEach(p => { p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); });
+      // 2.9.1 — standalone properties: a profile with no loan (Add Property with a name only).
+      for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen.has(sk)) seen.set(sk, { key:sk, name: standaloneProps[sk].name || sk, loans:[] }); }
+      let arr = Array.from(seen.values());
+      arr.forEach(p => { if(p.loans.length){ p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); } });
+      // 2.9.1 — archived properties leave every list, the roll-up and the count (profile stays on disk).
+      arr = arr.filter(p => !opIsArchived(p.key));
       return arr.sort((a, b) => a.name.localeCompare(b.name));
     }
     function opProp(key){ return opProperties().find(p => p.key === key) || null; }
@@ -4114,7 +4562,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
     }
     // The property's in-place NOI, FOLDER-FIRST: general-data.json (the property's own saved figure,
-    // which carries any lease-up correction) wins; then the live operating model read from the T12;
+    // which carries any annualization correction) wins; then the live operating model read from the T12;
     // then the loan's hand-entered NOI. Nothing is deleted — the in-app value is simply the fallback.
     function folderNOI(loan){ if(!loan) return null; const g = gdNOICache[propertyKey(loan)]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
     function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
@@ -4153,7 +4601,8 @@ tr.flagged:hover td{background:#fee2e2}
       const view = el("healthView"); if(!view) return;
       view.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">Reading each property’s files…</div>';
       try{ await opComputeVersion(); }catch(e){}
-      try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); }catch(e){} } }catch(e){}
+      try{ await opLoadAllProfiles(); }catch(e){}   // 2.9.1 — profiles into the cache, for the completeness column
+      try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); await opEnsureProfile(props[i].key); }catch(e){} } }catch(e){}
       if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
       view.innerHTML = dataHealthHtml();
       const rc = view.querySelector('[data-health-recompute]');
@@ -4168,7 +4617,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function healthWhen(iso){ try{ return new Date(iso).toLocaleString(); }catch(e){ return String(iso || ''); } }
     function healthStatusBadge(status){
-      const map = { "Stabilized":"bg-emerald-100 text-emerald-700", "Lease-up":"bg-sky-100 text-sky-700",
+      const map = { "Stabilized":"bg-emerald-100 text-emerald-700",
         "Third-party managed":"bg-violet-100 text-violet-700", "No T12 yet":"bg-amber-100 text-amber-700",
         "No loan data yet":"bg-slate-100 text-slate-600" };
       return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+(map[status] || "bg-slate-100 text-slate-600")+'">'+escapeHtml(status)+'</span>';
@@ -4227,7 +4676,8 @@ tr.flagged:hover td{background:#fee2e2}
       const gd = gdFullCache[key], gnoi = gdNOICache[key], noi = gd && gd.noi;
       const status = propertyStatusOf(key), hasT12 = propertyHasT12(key);
       const months = (gd && gd.window && Array.isArray(gd.window.months)) ? gd.window.months : [];
-      const units = (sr && sr.units) ? sr.units : null;
+      const units = opProfileEffective(key, "residentialUnits");   // 2.9.1 — profile first, then the loan
+      const comp = opProfileCompleteness(key);
       const inPlace = (gnoi && gnoi.inPlace != null) ? gnoi.inPlace : null;
       const method = noiMethodLabel(gnoi);
       const ver = opAppVersion || "dev", cw = (noi && noi.computedWith) ? noi.computedWith : null;
@@ -4242,7 +4692,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(staleVer) warns.push('figures from v' + cw);
       const warnHtml = warns.length ? warns.map(w => '<span class="rounded bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">'+escapeHtml(w)+'</span>').join(' ')
         : '<span class="text-[11px] font-semibold text-emerald-600">ok</span>';
-      const nameCell = '<div class="font-semibold text-slate-900">'+escapeHtml(p.name)+'</div>'+(p.loans.length > 1 ? '<div class="text-[10px] text-slate-400">'+p.loans.length+' loans</div>' : '');
+      const compTag = comp.complete ? '<div class="text-[10px] font-medium text-emerald-600">Profile complete</div>'
+        : '<div class="text-[10px] text-amber-600">Profile incomplete — needs '+escapeHtml(comp.missing.map(k => String(Profile.labelFor(k)).toLowerCase()).join(', '))+'</div>';
+      const nameCell = '<div class="font-semibold text-slate-900">'+escapeHtml(p.name)+'</div>'+(p.loans.length > 1 ? '<div class="text-[10px] text-slate-400">'+p.loans.length+' loans</div>' : '')+compTag;
       const t12Cell = hasT12 ? '<div class="text-slate-700">'+escapeHtml(method || 'T12 loaded')+'</div>'+(months.length ? '<div class="text-[10px] text-slate-400">'+months.length+' mo history</div>' : '')
         : '<span class="text-slate-400">—</span>';
       const noiCell = inPlace != null ? escapeHtml(fmtMoney(inPlace)) : '<span class="text-slate-400">—</span>';
@@ -4520,7 +4972,12 @@ tr.flagged:hover td{background:#fee2e2}
       const rm = el("opRollupMount"); if(!rm) return;
       opInit();
       try{ opRecomputeOnVersionChange(); }catch(e){}   // first roll-up after an app update → recompute every property's figures once, logged
-      const hooks = opHooks(), gd = uwState.input.bench, records = OperatingStore.all();
+      // Load every property's profile once per session (registers standalone/archived properties), then
+      // re-render if that changed the property set.
+      if(!_allProfilesLoaded && !_loadingAllProfiles){ opLoadAllProfiles().then(function(ch){ if(ch) opRenderPortfolio(); }); }
+      const hooks = opHooks(), gd = uwState.input.bench, records = Object.assign({}, OperatingStore.all());
+      // 2.9.1 — include standalone (loan-less) properties so they show in the roll-up as an explained blank.
+      opProperties().forEach(function(p){ if(!p.loans.length && !records[p.key]) records[p.key] = opRecordFor(p.key); });
       const open = (k) => { opSelectProperty(k); };
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
       // The roll-up covers the whole book. It shows the properties whose T12 has been read from disk;
@@ -4551,6 +5008,30 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true; _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } }); } }catch(e){}
+    // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
+    // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
+    // never interrupts typing.
+    try{ var _prv = el("profileView"); if(_prv && !_prv._profBound){ _prv._profBound = true;
+      _prv.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
+        var fk = t.getAttribute("data-pf");
+        if(fk){ opProfileSetField(profileFocusKey, fk, t.value); return; }
+        if(t.id === "profilePropPick"){ profileFocusKey = t.value; renderProfileTab(); return; }
+        if(t.id === "profileDocFile"){ var role = (el("profileDocType") || {}).value || "other"; var files = Array.prototype.slice.call(t.files || []); files.forEach(function(f){ opProfileDocUpload(profileFocusKey, f, role); }); t.value = ""; return; }
+      });
+      _prv.addEventListener("click", function(e){ if(!e.target || !e.target.closest) return;
+        var del = e.target.closest("[data-docdel]"); if(del){ opProfileDocDelete(profileFocusKey, del.getAttribute("data-docdel")); return; }
+        var b = e.target.closest("button"); if(!b) return;
+        if(b.id === "profileNewBtn"){ profileAddOpen = true; renderProfileTab(); }
+        else if(b.id === "profileNewCancel"){ profileAddOpen = false; renderProfileTab(); }
+        else if(b.id === "profileNewCreate"){ var nm = el("profileNewName"); var v = nm ? nm.value : ""; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } else if(nm){ nm.focus(); } }
+        else if(b.id === "profileArchiveBtn" && profileFocusKey){ opArchiveProperty(profileFocusKey, !opIsArchived(profileFocusKey)); }
+        else if(b.id === "profileReadAgreement" && profileFocusKey){ opReadAgreementStart(profileFocusKey); }
+      });
+      _prv.addEventListener("keydown", function(e){ if(e.key === "Enter" && e.target && e.target.id === "profileNewName"){ e.preventDefault(); var v = e.target.value; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } } });
+    } }catch(e){}
+    // Home toolbar → Add Property: open the Profile tab with the inline "new property" form ready.
+    try{ var _apb = el("addPropBtn"); if(_apb && !_apb._bound){ _apb._bound = true; _apb.addEventListener("click", function(){ profileAddOpen = true; openTab("profile"); }); } }catch(e){}
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -4806,12 +5287,13 @@ tr.flagged:hover td{background:#fee2e2}
       calendar:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
       underwriting:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
       health:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+      profile:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3z"/><path d="M3 11h10M3 15h10M3 19h6"/><circle cx="18" cy="15" r="3"/></svg>',
       x:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
       pop:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>'
     };
     let ldsTabs = [{ id:"home", title:"Portfolio", kind:"home", fixed:true }];
     let ldsActiveTab = "home";
-    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : k==="health" ? "Data Health" : "Portfolio";
+    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : k==="health" ? "Data Health" : k==="profile" ? "Property Profile" : "Portfolio";
 
     function renderTabStrip(){
       const strip = el("tabStrip"); if(!strip) return;
@@ -4843,6 +5325,7 @@ tr.flagged:hover td{background:#fee2e2}
         m.innerHTML =
           '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
           '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
+          '<button type="button" data-tabopen="profile" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.profile+'Property Profile</button>'+
           '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
           '<button type="button" data-tabopen="health" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.health+'Data Health</button>';
         document.body.appendChild(m);
@@ -4867,9 +5350,11 @@ tr.flagged:hover td{background:#fee2e2}
       el("uwView").hidden = (tab.kind !== "underwriting");
       el("calendarPanel").hidden = (tab.kind !== "calendar");
       { const h = el("healthView"); if(h) h.hidden = (tab.kind !== "health"); }
+      { const pv = el("profileView"); if(pv) pv.hidden = (tab.kind !== "profile"); }
       if(tab.kind === "underwriting") renderUnderwriting();
       if(tab.kind === "calendar") loadCalendarFrame();
       if(tab.kind === "health") renderDataHealth();
+      if(tab.kind === "profile") renderProfileTab();
       renderTabStrip();
       try{ window.scrollTo(0,0); }catch(e){}
     }
@@ -6556,7 +7041,7 @@ tr.flagged:hover td{background:#fee2e2}
       return loans.filter(l => propertyKey(l) === k).sort(loanRank);
     }
     // Has an NOI figure actually been ENTERED for this loan? Any sign counts — a property
-    // in lease-up can post a negative trailing NOI (expenses > income). This is distinct
+    // still filling up can post a negative trailing NOI (expenses > income). This is distinct
     // from "positive enough to value" (noi > 0), which the DSCR/debt-yield/value/LTV math
     // still requires. Conflating the two is what hid an entered-but-negative NOI and kept
     // showing "Add NOI" for a property that already had one.
@@ -6564,7 +7049,7 @@ tr.flagged:hover td{background:#fee2e2}
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
-      const g = (list && list.length) ? folderNOI(list[0]) : null;   // folder-first: general-data.json's saved NOI (lease-up-corrected when it applies)
+      const g = (list && list.length) ? folderNOI(list[0]) : null;   // folder-first: general-data.json's saved NOI (annualization-corrected when it applies)
       if(g != null) return g;
       const o = (list && list.length) ? opNOI(list[0]) : null;   // the property's operating model, when it has one
       if(o != null) return o;
@@ -8134,7 +8619,7 @@ tr.flagged:hover td{background:#fee2e2}
           monthlyPI: keep(d.monthlyPI), totalMonthlyDebtService: keep(d.totalDebtService),
           monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade),
           // Property financials (so the assistant can SEE and confirm what it edits). noi/egi/opex are
-          // annual dollars; noi may be 0 or negative for a lease-up asset. dscr/debtYield are computed and
+          // annual dollars; noi may be 0 or negative while a property is still filling up. dscr/debtYield are computed and
           // appear only when NOI is positive. noi matches the app's own screens; noiBasis names its source
           // when a T12 drives it.
           noi: keep(noiVal), noiBasis: hasGD ? noiMethodLabel(gnoi) : undefined,
@@ -8160,7 +8645,7 @@ tr.flagged:hover td{background:#fee2e2}
     var AI_ASST_SYSTEM = [
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
-      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while an asset is in lease-up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized by the last-3-months×4 rule when the statement starts in lease-up), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
+      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while a property is still filling up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized to the last 3 months × 4 when the statement's first two months have no NOI), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",
