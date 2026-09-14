@@ -589,6 +589,8 @@
             </div>
             <button type="button" id="scaleReset" class="mt-3 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition">Reset to 100%</button>
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
+            <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
+            <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
             <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
               <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Cloud</span>
@@ -1318,7 +1320,7 @@
       { sec:"Loan Terms", key:"annualRate",         label:"Annual Interest Rate",         type:"pct",    kind:"input", hint:"actual locked rate from your loan docs", cond:(l)=>l.rateType==="Hybrid ARM" || (l.rateType==="Fixed" && l.isHistorical) },
       { sec:"Loan Terms", key:"rateType",           label:"Rate Type",                    type:"select", kind:"input", options:["Fixed","Floating","Hybrid ARM"] },
       { sec:"Loan Terms", key:"lienPosition",       label:"Lien Position",                type:"select", kind:"input", options:["Senior","Mezzanine"], hint:"Mezzanine (subordinate) debt is priced over SOFR at a wide spread in the refinance tools" },
-      { sec:"Loan Terms", key:"loanStatus",         label:"Loan Status",                  type:"select", kind:"input", options:["Active","Matured","Extended","Extension undecided","Paid off"], hint:"Left blank, it reads Active — or Matured once the maturity date has passed. Matured / Extension undecided are highlighted in the maturity calendar and the rollup (Pepper Building).", aliases:["Status","Loan Status"] },
+      { sec:"Loan Terms", key:"loanStatus",         label:"Loan Status",                  type:"select", kind:"input", options:["Active","Matured","Extended","Extension undecided","Paid off"], hint:"Left blank, it reads Active — or Matured once the maturity date has passed. Matured / Extension undecided are highlighted in the maturity calendar and the rollup.", aliases:["Status","Loan Status"] },
       { sec:"Loan Terms", key:"originationDate",    label:"Origination Date",             type:"date",   kind:"input", required:true },
       { sec:"Loan Terms", key:"firstPaymentDate",   label:"First Payment Date",           type:"date",   kind:"input", required:true, hint:"the first scheduled payment of any kind — an interest-only payment counts (so it's the first interest-only payment for an IO loan, the first P&I otherwise)", aliases:["First Payment Date","First P&I Date"] },
       { sec:"Loan Terms", key:"maturityDate",        label:"Maturity Date",                type:"date",   kind:"input", hint:"from the loan docs — the schedule is anchored to this (first payment = maturity − term)", aliases:["Maturity"] },
@@ -1997,9 +1999,11 @@
     // data and edits), this brings the validated work into an existing book by
     // ADDING only the loans it is missing and REFRESHING only the two records
     // whose terms were corrected. Everything else is left exactly as the operator
-    // has it. Pepper, Living Lofts and Village at Bridgewater are deliberately
-    // excluded — they are pending documents from Azriel and must not change yet.
-    const PORTFOLIO_REV = "2026-08-27.2";               // bump when the manifest below changes
+    // has it. Living Lofts and Village at Bridgewater are deliberately excluded
+    // from the refresh — pending documents from Azriel, they must not change yet.
+    // The Pepper Building is pulled from the book entirely (SYNC_REMOVE) — Yuval
+    // has not confirmed it belongs on the app.
+    const PORTFOLIO_REV = "2026-09-14.1";               // bump when the manifest below changes
     const PORTFOLIO_REV_KEY = "ldsHub.portfolioRev";
     const SYNC_ADD = [                                   // add only if the book lacks this loan (by name)
       "The Botanic (Carteret)",
@@ -2022,6 +2026,7 @@
       "1415 Washington (Project Loan)",
       "1395 Washington (Building Loan)",
       "1395 Washington (Project Loan)",
+      "The Pepper Building",   // pulled entirely — Yuval hasn't confirmed it belongs on the app
     ];
     function normName(s){ return String(s||"").toLowerCase().replace(/\s+/g," ").trim(); }
     // Returns { loans, changed, added:[], refreshed:[], removed:[] }. Pure — writes nothing.
@@ -2134,7 +2139,9 @@
         mk({ propertyName:"The Botanic (Carteret)", propertyAddress:"36 Washington Avenue, Carteret, NJ", propertyType:"Multifamily", lenderName:"Customers Bank", originalAmount:64000000, annualRate:0.0594, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.0594, originationDate:"2025-11-07", firstPaymentDate:"2026-01-01", maturityDate:"2035-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:384807.04, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "The Botanic" per the Rent Roll; borrower Living Carteret Urban Renewal LLC. Note: IO Jan–Dec 2026, then $384,807.04 P&I (30-yr amort), rate resets Jan 2031 (UST5Y+2.50%, floor 5.94%, 26-yr amort). Fixed P&I holds the stated $384,807.04; the 2031 reset payment (future-UST-dependent) is approximated.
         mk({ propertyName:"K2 Sweetwater (FIU Residences)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"AIG (National Union Fire Ins.)", originalAmount:127000000, annualRate:0.0375, rateType:"Floating", index:"sofr", spread:0.0375, rateFloor:0.0375, originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
         mk({ propertyName:"K2 Sweetwater (Mezz)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"MSD Capital (MSD Partners)", originalAmount:20000000, annualRate:0.135, rateType:"Fixed", lienPosition:"Mezzanine", originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60 }),
-        mk({ propertyName:"The Pepper Building", propertyAddress:"1830 Lombard Street, Philadelphia, PA", propertyType:"Multifamily", lenderName:"FS CREIT Originator LLC (Rialto)", originalAmount:53160000, annualRate:0.033, rateType:"Floating", index:"sofr", spread:0.0315, rateFloor:0.033, originationDate:"2021-08-09", firstPaymentDate:"2021-09-09", maturityDate:"2024-08-09", loanTermMonths:36, ioMonths:36, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
+        // The Pepper Building is deliberately NOT in the portfolio. Yuval has not decided whether it
+        // belongs on the app; until he says so it must not appear (the book is 27 properties without it).
+        // Do NOT add a mk() for it back here. It is also pulled from existing books via SYNC_REMOVE below.
         mk({ propertyName:"Legacy at Kissimmee", propertyAddress:"1225 Utica Drive, Kissimmee, FL", propertyType:"Multifamily", lenderName:"Bank Hapoalim B.M.", originalAmount:41000000, annualRate:0.0685, rateType:"Floating", index:"sofr", spread:0.04, rateFloor:0.0685, originationDate:"2024-11-26", firstPaymentDate:"2024-12-26", maturityDate:"2027-05-26", loanTermMonths:30, ioMonths:30 }),
         mk({ propertyName:"Creekside at Grand Prairie", propertyAddress:"4115 S. Great Southwest Pkwy, Grand Prairie, TX 75052", propertyType:"Multifamily", lenderName:"Arbor Realty SR, Inc.", loanNumber:"946197", originalAmount:50000000, annualRate:0.0697867, rateType:"Floating", index:"sofr", spread:0.0265, rateFloor:0.0697867, originationDate:"2025-05-15", firstPaymentDate:"2025-07-01", maturityDate:"2028-05-14", loanTermMonths:36, ioMonths:36 }),
       ].map(l => { if(l.rateType==="Fixed") l.isHistorical = true; return l; });   // the portfolio is all already-originated loans
@@ -3013,7 +3020,23 @@ details.filt[open]>summary{border-color:#7fb62b;box-shadow:0 0 0 2px rgba(127,18
 tr[data-loan]{cursor:pointer}
 tr[data-loan]:hover td{background:#eef2f7}
 .callegend{margin-top:10px;font-size:12px;color:#64748b;display:flex;gap:16px;flex-wrap:wrap}
-@media print{body{background:#fff;padding:0}.printbtn,.toolbar{display:none}.chip,.wall,table.events,.yr{box-shadow:none}.mgrid{display:grid}}
+.decision{margin:14px 0 4px;border:1px solid #fecaca;background:#fef2f2;border-radius:12px;overflow:hidden}
+.dechead{background:#b91c1c;color:#fff;font-weight:800;font-size:13px;padding:8px 14px}
+.decbody{padding:4px 10px}
+.decrow{display:flex;align-items:center;gap:9px;padding:7px 4px;border-bottom:1px solid #fee2e2;cursor:pointer}
+.decrow:last-child{border-bottom:0}
+.decrow:hover{background:#fff}
+.decrow b{color:#1e293b;font-weight:700}
+.decmeta{color:#64748b;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
+.decbadge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:999px;color:#fff;background:#b91c1c;white-space:nowrap}
+.decbadge.undecided{background:#b45309}
+tr.flagged td{background:#fff5f5}
+tr.flagged:hover td{background:#fee2e2}
+.mev.flagged{background:#fef2f2;border-left-width:4px}
+.mev.flagged.undecided{background:#fffbeb}
+.mevflag{display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#b91c1c}
+.mev.flagged.undecided .mevflag{color:#b45309}
+@media print{body{background:#fff;padding:0}.printbtn,.toolbar{display:none}.chip,.wall,table.events,.yr,.decision{box-shadow:none}.mgrid{display:grid}}
 `;
     const CAL_JS = `
 (function(){
@@ -3052,7 +3075,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     var yrs=Object.keys(wm).map(Number).sort(function(a,b){return a-b;});var mx=yrs.reduce(function(m,y){return Math.max(m,wm[y]);},1)||1;
     var wall=yrs.map(function(y){var soon=y<=D.nowY+1;return '<div class="wallrow"><div class="wallyear">'+y+'</div><div class="walltrack"><div class="wallbar" style="width:'+Math.max(2,wm[y]/mx*100).toFixed(1)+'%;'+(soon?'background:#b91c1c':'')+'"></div></div><div class="wallamt">'+money(wm[y])+'</div></div>';}).join('')||'<div class="empty">No maturities in the current filter.</div>';
     var s=sortEv(evs),rows='',lastY=null,group=(st.sort==='date');
-    s.forEach(function(e){if(group&&e.y!==lastY){rows+='<tr class="yearrow"><td colspan="5">'+e.y+'</td></tr>';lastY=e.y;}var soon=away(e.y,e.m)<=12;rows+='<tr data-loan="'+esc(e.loanId)+'" data-iso="'+esc(e.iso)+'"'+(soon?' class="soon"':'')+'><td class="nowrap">'+usd(e.iso)+'</td><td><span class="badge" style="color:'+TC[e.type]+';background:'+TB[e.type]+'">'+e.type+'</span></td><td>'+esc(e.loanName)+'</td><td class="num">'+money(e.amount)+'</td><td class="detail">'+esc(e.detail)+'</td></tr>';});
+    s.forEach(function(e){if(group&&e.y!==lastY){rows+='<tr class="yearrow"><td colspan="5">'+e.y+'</td></tr>';lastY=e.y;}var soon=away(e.y,e.m)<=12;var cls=((e.flag?'flagged':'')+(soon?' soon':'')).trim();var badge='<span class="badge" style="color:'+TC[e.type]+';background:'+TB[e.type]+'">'+e.type+'</span>'+(e.flag?' <span class="decbadge '+esc(e.flag)+'">'+flagWord(e.flag)+'</span>':'');rows+='<tr data-loan="'+esc(e.loanId)+'" data-iso="'+esc(e.iso)+'"'+(cls?' class="'+cls+'"':'')+'><td class="nowrap">'+usd(e.iso)+'</td><td>'+badge+'</td><td>'+esc(e.loanName)+'</td><td class="num">'+money(e.amount)+'</td><td class="detail">'+esc(e.detail)+'</td></tr>';});
     if(!s.length)rows='<tr><td colspan="5" class="empty">No events match the filter.</td></tr>';
     return '<section><h2>Maturity wall — debt coming due by year</h2><div class="wall">'+wall+'</div></section><section><h2>Upcoming events</h2><table class="events"><thead><tr><th>Date</th><th>Event</th><th>Loan</th><th class="num">Amount</th><th>Detail</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
   }
@@ -3066,11 +3089,20 @@ tr[data-loan]:hover td{background:#eef2f7}
       var matSum=ev.reduce(function(a,e){return a+(e.type==='Maturity'?e.amount:0);},0);
       var head='<div class="yrhead" data-year="'+y+'"><span class="yrtoggle">'+(open?'&#9662;':'&#9656;')+'</span><span class="yrname">'+y+'</span><span class="yrsum">'+ev.length+' event'+(ev.length===1?'':'s')+(matSum?' · '+money(matSum)+' maturing':'')+'</span></div>';
       var body='';
-      if(open){var mg='';for(var mo=0;mo<12;mo++){var mev=ev.filter(function(e){return e.m===mo;});var it=mev.map(function(e){return '<div class="mev" data-loan="'+esc(e.loanId)+'" data-iso="'+esc(e.iso)+'" style="border-color:'+TC[e.type]+'" title="'+esc(e.detail)+'"><b>'+esc(e.loanName)+'</b><span class="mevmeta">'+e.type+' · '+money(e.amount)+'</span></div>';}).join('');mg+='<div class="mbox'+(mev.length?' has':'')+'"><div class="mname">'+MON3[mo]+'</div>'+(it||'<div class="mnone">—</div>')+'</div>';}body='<div class="mgrid">'+mg+'</div>';}
+      if(open){var mg='';for(var mo=0;mo<12;mo++){var mev=ev.filter(function(e){return e.m===mo;});var it=mev.map(function(e){return '<div class="mev'+(e.flag?' flagged '+esc(e.flag):'')+'" data-loan="'+esc(e.loanId)+'" data-iso="'+esc(e.iso)+'" style="border-color:'+(e.flag==='undecided'?'#b45309':e.flag?'#b91c1c':TC[e.type])+'" title="'+esc(e.detail)+'">'+(e.flag?'<span class="mevflag">&#9888; '+flagWord(e.flag)+'</span>':'')+'<b>'+esc(e.loanName)+'</b><span class="mevmeta">'+e.type+' · '+money(e.amount)+'</span></div>';}).join('');mg+='<div class="mbox'+(mev.length?' has':'')+'"><div class="mname">'+MON3[mo]+'</div>'+(it||'<div class="mnone">—</div>')+'</div>';}body='<div class="mgrid">'+mg+'</div>';}
       return '<div class="yr">'+head+body+'</div>';
     }).join('')+'</div>';
   }
-  function renderContent(){var evs=fEvents();document.getElementById('content').innerHTML=chipsHtml(evs)+(st.view==='list'?listHtml(evs):calHtml(evs));}
+  function flagWord(f){return f==='undecided'?'Extension undecided':'Matured';}
+  function decisionsHtml(evs){
+    var f=evs.filter(function(e){return e.flag;});
+    if(!f.length)return '';
+    var items=f.slice().sort(function(a,b){return a.iso<b.iso?-1:1;}).map(function(e){
+      return '<div class="decrow" data-loan="'+esc(e.loanId)+'" data-iso="'+esc(e.iso)+'"><span class="decbadge '+esc(e.flag)+'">'+flagWord(e.flag)+'</span><b>'+esc(e.loanName)+'</b><span class="decmeta">'+usd(e.iso)+' &middot; '+money(e.amount)+'</span></div>';
+    }).join('');
+    return '<div class="decision"><div class="dechead">&#9888; Needs a maturity decision ('+f.length+')</div><div class="decbody">'+items+'</div></div>';
+  }
+  function renderContent(){var evs=fEvents();document.getElementById('content').innerHTML=decisionsHtml(evs)+chipsHtml(evs)+(st.view==='list'?listHtml(evs):calHtml(evs));}
   function updateCounts(){var l=selCount(st.lenders),lo=selCount(st.loans);var a=document.querySelector('#fLender summary');if(a)a.textContent='Lender'+(l?' ('+l+')':'');var b=document.querySelector('#fLoan summary');if(b)b.textContent='Loans'+(lo?' ('+lo+')':'');}
   function setSeg(){var bs=document.querySelectorAll('.segbtn');for(var i=0;i<bs.length;i++)bs[i].classList.toggle('on',bs[i].getAttribute('data-view')===st.view);}
   function filterLoanOpts(){var os=document.querySelectorAll('#loanOpts .opt');for(var i=0;i<os.length;i++)os[i].style.display=os[i].getAttribute('data-name').indexOf(st.search)>=0?'':'none';}
@@ -3103,8 +3135,18 @@ tr[data-loan]:hover td{background:#eef2f7}
         const d = cur.derived, rows = cur.rows;
         totalDebt += d.currentBalance||0;
         const balloon = rows.length ? rows[rows.length-1].startingBalance : (d.currentBalance||0);
-        const add=(iso,type,amount,detail)=>{ const p=isoToParts(iso); if(!p) return; events.push({iso,y:p.y,m:p.mo,d:p.d,type,loanId:loan._id,loanName:loanLabel(loan),lender:loan.lenderName||'—',amount,detail}); loanMeta[loan._id]={id:loan._id,name:loanLabel(loan),lender:loan.lenderName||'—'}; };
-        if(d.maturityDate && monthsAway(d.maturityDate)>=0) add(d.maturityDate,"Maturity",balloon,"Balloon / payoff of "+fmtMoney(balloon)+" comes due");
+        const add=(iso,type,amount,detail,flag)=>{ const p=isoToParts(iso); if(!p) return; events.push({iso,y:p.y,m:p.mo,d:p.d,type,loanId:loan._id,loanName:loanLabel(loan),lender:loan.lenderName||'—',amount,detail,flag:flag||null}); loanMeta[loan._id]={id:loan._id,name:loanLabel(loan),lender:loan.lenderName||'—'}; };
+        // Maturity: a future balloon as usual; a loan that has MATURED or whose extension is UNDECIDED is
+        // added and flagged even when its maturity date is already past, so an overdue decision can't slip
+        // off the calendar. Extended / Paid-off loans past their date carry no flag and stay off.
+        const mStatus=loanStatusOf(loan), mFlag=mStatus==="Extension undecided"?"undecided":mStatus==="Matured"?"matured":null;
+        const mAway=d.maturityDate?monthsAway(d.maturityDate):null;
+        if(d.maturityDate && (mAway>=0 || mFlag)){
+          const mDetail = mFlag==="matured" ? "Matured "+fmtDateUS(d.maturityDate)+" — balloon "+fmtMoney(balloon)+" outstanding; needs a decision"
+                        : mFlag==="undecided" ? "Extension undecided — balloon "+fmtMoney(balloon)+" at maturity; needs a decision"
+                        : "Balloon / payoff of "+fmtMoney(balloon)+" comes due";
+          add(d.maturityDate,"Maturity",balloon,mDetail,mFlag);
+        }
         if(loan.rateType==="Hybrid ARM"){ for(let i=Math.max(0,d.paymentsMade); i<rows.length; i++){ if(rows[i].isReset && monthsAway(rows[i].paymentDate)>=0) add(rows[i].paymentDate,"ARM reset",rows[i].startingBalance,"Rate resets to "+fmtPct(rows[i].rate)+" — payment to "+fmtMoney(rows[i].payment)+"/mo"); } }
         const io=d.originalIO||0, term=loan.loanTermMonths||loan.amortizationMonths||0;
         if(io>0 && io<term && io>=d.paymentsMade && rows[io] && monthsAway(rows[io].paymentDate)>=0) add(rows[io].paymentDate,"IO ends",rows[io].startingBalance,"Interest-only ends — payment to "+fmtMoney(rows[io].payment)+"/mo (P&I)");
@@ -3282,7 +3324,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench, suppressAnnualize: propIsLeaseUp(opFocusKey) }).setup;
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench }).setup;
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
@@ -3731,11 +3773,9 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
       var lu = { applied: false }, months = [];
       try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.leaseUpNOI(series) || { applied: false }; } }catch(e){}
-      // A property held in LEASE-UP (still ramping from zero occupancy) is NOT annualized — the last
-      // 3 months × 4 of a climbing asset is neither current nor stabilized, so its raw statement stands
-      // (the Lease-up status badge carries the "not stabilized" signal). Owned-but-partial-year
-      // properties are still annualized as usual.
-      var annualized = !!(lu && lu.applied && lu.codeSums && !opt.suppressAnnualize);
+      // A lease-up / partial-year statement is annualized (last 3 months × 4) automatically — there is
+      // no manual override (the Status dropdown was removed): the annualization always follows the rule.
+      var annualized = !!(lu && lu.applied && lu.codeSums);
       var setup;
       if(annualized){
         setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
@@ -3755,7 +3795,7 @@ tr[data-loan]:hover td{background:#eef2f7}
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
-      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench, suppressAnnualize: propIsLeaseUp(key) });
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
@@ -3763,12 +3803,11 @@ tr[data-loan]:hover td{background:#eef2f7}
     // 12-month sum understates the run-rate, so the in-place NOI becomes the last 3 months × 4. The
     // statement's own 12-month total is kept alongside (inPlaceStatement) for reference.
     function opGDNoi(ctx){
-      // ctx comes from opSetupFromDisk: when a partial-year T12 is annualized, ctx.setup was built
-      // from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
+      // ctx comes from opSetupFromDisk: when a lease-up / partial-year T12 is annualized, ctx.setup was
+      // built from the last-3-months × 4 category sums, so BOTH the in-place and the underwritten NOI
       // reflect the annualized run-rate; ctx.statementNOI is the printed 12-month footing, kept
-      // alongside for reference. ctx.annualized is the single truth of whether that happened — it is
-      // false for a full-year statement AND for a property held in lease-up (suppressAnnualize), whose
-      // raw statement stands under its "not stabilized" badge rather than being annualized as a climb.
+      // alongside for reference. ctx.annualized is the single truth of whether that happened — false
+      // for a full-year statement, true when the rule fired. There is no manual override.
       var lu = ctx.lu || { applied: false };
       var annualized = !!ctx.annualized;
       var inPlace = (annualized && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
@@ -4082,7 +4121,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     // ── 2.9.0 — loan & property status ──────────────────────────────────────────
     // Loan status is manual (loan.loanStatus) when set, else derived: Matured once the maturity date
     // has passed, otherwise Active. Matured / Extension undecided need a decision, so they are flagged
-    // in the maturity calendar and the rollup (Pepper Building).
+    // in the maturity calendar and the rollup.
     const LOAN_STATUSES = ["Active","Matured","Extended","Extension undecided","Paid off"];
     function loanStatusOf(loan){
       if(!loan) return "Active";
@@ -4091,40 +4130,24 @@ tr[data-loan]:hover td{background:#eef2f7}
       return "Active";
     }
     function loanNeedsMaturityDecision(loan){ const s = loanStatusOf(loan); return s === "Matured" || s === "Extension undecided"; }
-    // Property status: a manual flag ("Lease-up" | "Third-party managed") held on the property's SENIOR
-    // loan (loan.propStatus, a persisted schema field), else derived from what data exists. Lease-up
-    // gets no annualization and is left out of the portfolio-weighted coverage (see the weight code).
-    const PROP_STATUS_MANUAL = ["Lease-up","Third-party managed"];   // the two hand-set overrides (blank = Auto)
+    // Property status is DERIVED from what data exists — there is NO manual override (the Status
+    // dropdown was removed): a property with no loan reads "No loan data yet", one with a loan but no
+    // T12 "No T12 yet", otherwise "Stabilized". It is a display label in Data Health; it never touches
+    // the NOI, which always follows the automatic annualization rule.
     function propSeniorLoan(propKey){ const ls = loans.filter(l => propertyKey(l) === propKey); if(!ls.length) return null; return ls.find(l => !isMezz(l)) || ls[0]; }
-    function propStatusManual(propKey){ const sr = propSeniorLoan(propKey); const v = sr && sr.propStatus; return (PROP_STATUS_MANUAL.indexOf(v) >= 0) ? v : ""; }
     function propertyHasT12(propKey){
       try{ if(window.OperatingStore && OperatingStore.get(propKey)) return true; }catch(e){}
       const gd = gdNOICache[propKey]; return !!(gd && gd.inPlace != null);   // General Data implies its T12 was read
     }
     function propertyStatusOf(propKey){
-      const manual = propStatusManual(propKey);
-      if(manual) return manual;   // "Lease-up" or "Third-party managed"
       if(!loans.some(l => propertyKey(l) === propKey)) return "No loan data yet";
       if(!propertyHasT12(propKey)) return "No T12 yet";
       return "Stabilized";
     }
-    function propIsLeaseUp(propKey){ return propertyStatusOf(propKey) === "Lease-up"; }
-    // Set (or clear, with "") a property's manual status on its senior loan, persist it, and recompute
-    // its General Data so the annualization rule takes effect at once across every screen.
-    async function opSetPropStatus(propKey, status){
-      const sr = propSeniorLoan(propKey); if(!sr) return false;
-      if(PROP_STATUS_MANUAL.indexOf(status) >= 0) sr.propStatus = status; else delete sr.propStatus;
-      try{ save(); }catch(e){}
-      try{ delete gdNOICache[propKey]; delete gdFullCache[propKey]; await opUpdateGeneralData(propKey); }catch(e){}
-      try{ opRenderPortfolio(); }catch(e){}
-      try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
-      try{ render(); }catch(e){}
-      return true;
-    }
     // ── 2.9.0 — Data Health ─────────────────────────────────────────────────────
     // One page showing, per property, what the app actually knows — is there a T12 (and how many
     // months of history), are units set, is there a loan, when were the figures last computed and
-    // under which app version — plus warnings, a portfolio duplicate check (the "28 vs 27" ghost),
+    // under which app version — plus warnings, a portfolio duplicate check (same-address entries),
     // the maturity decisions outstanding, and a Recompute-all button.
     async function renderDataHealth(){
       const view = el("healthView"); if(!view) return;
@@ -4150,20 +4173,54 @@ tr[data-loan]:hover td{background:#eef2f7}
         "No loan data yet":"bg-slate-100 text-slate-600" };
       return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+(map[status] || "bg-slate-100 text-slate-600")+'">'+escapeHtml(status)+'</span>';
     }
-    // Candidate duplicate properties: distinct property keys whose senior address shares the same street
+    // Candidate duplicate properties: distinct property keys whose senior loan sits at the SAME street
     // number + first street word. Two genuinely different buildings almost never collide on both, so this
-    // is the "same building entered twice" (ghost 28-vs-27) signal — flagged for human review, never merged.
+    // is the "same building entered twice" signal — flagged for HUMAN review, never merged. Returns
+    // [{ props:[...], reason }]. It is deliberately narrow: near-neighbours on one street (e.g. 1107 vs
+    // 1119 Mississippi Ave — two real, separate St. Louis lofts) are NOT flagged, so it never cries wolf.
     function healthDuplicateCandidates(props){
-      const bySig = new Map();
-      props.forEach(p => {
-        const sr = propSeniorLoan(p.key), a = normPropAddr(sr && sr.propertyAddress);
-        const m = a.match(/^(\d+)\s+(\S+)/); if(!m) return;
-        const sig = m[1] + " " + m[2];
-        if(!bySig.has(sig)) bySig.set(sig, []);
-        bySig.get(sig).push(p);
+      var bySig = {};
+      props.forEach(function(p){
+        var sr = propSeniorLoan(p.key), a = normPropAddr(sr && sr.propertyAddress);
+        var m = a.match(/^(\d+)\s+(\S+)/); if(!m) return;   // needs a street number + first word
+        var sig = m[1] + " " + m[2];
+        (bySig[sig] = bySig[sig] || []).push(p);
       });
-      const out = []; bySig.forEach(list => { if(list.length > 1) out.push(list); });
+      var out = [];
+      for(var sig in bySig) if(Object.prototype.hasOwnProperty.call(bySig, sig) && bySig[sig].length > 1)
+        out.push({ props: bySig[sig], reason: "same street address" });
       return out;
+    }
+    // The Settings dropdown's Portfolio section: the property count with every property named (so you can
+    // compare it to your own list and catch anything that shouldn't be there) plus any duplicate-property
+    // candidates. Filled when Settings opens.
+    function renderSettingsPortfolio(){
+      var host = el("settingsPortfolio"); if(!host) return;
+      var props = opProperties(), dups = healthDuplicateCandidates(props);
+      // The count is never given on faith — every property is listed by name (scrollable), numbered, so
+      // you can read the whole set and spot a ghost yourself. The senior loan's address is shown so two
+      // near-identical names are told apart.
+      var list = props.map(function(p, i){
+        var sr = propSeniorLoan(p.key), addr = (sr && sr.propertyAddress) ? String(sr.propertyAddress).split(",").slice(0,2).join(",") : "";
+        return '<div class="flex gap-1.5 py-0.5 border-b border-slate-50 last:border-0">'+
+          '<span class="w-5 shrink-0 text-right tabular-nums text-slate-400">'+(i+1)+'</span>'+
+          '<span class="flex-1"><span class="font-semibold text-slate-700">'+escapeHtml(p.name)+'</span>'+(addr?'<span class="block text-[10px] text-slate-400">'+escapeHtml(addr)+'</span>':'')+'</span></div>';
+      }).join('');
+      var html = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Portfolio</span>'+
+        '<div class="mt-1.5 flex items-baseline justify-between"><span class="text-sm font-semibold text-slate-700">Properties</span>'+
+          '<span class="text-sm font-extrabold tabular-nums text-brand-700">'+props.length+'</span></div>'+
+        '<p class="text-[10px] text-slate-400">'+loans.length+' loans, grouped into '+props.length+' propert'+(props.length===1?'y':'ies')+'. Every one listed below.</p>'+
+        '<div class="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 p-1.5 text-[11px]">'+list+'</div>';
+      if(dups.length){
+        html += '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">'+
+          '<div class="text-[11px] font-bold text-amber-800">Possible duplicate propert'+(dups.length===1?'y':'ies')+' ('+dups.length+')</div>'+
+          dups.map(function(g){ return '<div class="mt-0.5 text-[11px] text-slate-700">'+g.props.map(function(p){ return escapeHtml(p.name); }).join(' &harr; ')+(g.reason?' <span class="text-amber-600">('+escapeHtml(g.reason)+')</span>':'')+'</div>'; }).join('')+
+          '<div class="mt-1 text-[10px] leading-snug text-amber-700">Review — if two names are one building, rename one to match so they merge into a single property.</div>'+
+        '</div>';
+      } else {
+        html += '<div class="mt-2 text-[11px] font-medium text-emerald-600">No duplicate properties detected.</div>';
+      }
+      host.innerHTML = html;
     }
     function healthRowHtml(p){
       const key = p.key, sr = propSeniorLoan(key);
@@ -4231,8 +4288,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       const dupCard = dups.length ?
         '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">'+
           '<h3 class="text-sm font-bold text-amber-800">Possible duplicate properties ('+dups.length+')</h3>'+
-          '<p class="text-xs text-amber-700 mb-2">Same street address, tracked as separate properties — review, they may be one building entered twice.</p>'+
-          dups.map(list => '<div class="mb-1 text-sm text-slate-800">'+list.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+'</div>').join('')+
+          '<p class="text-xs text-amber-700 mb-2">These share an address, tracked as separate properties — review, they may be one building entered twice.</p>'+
+          dups.map(g => '<div class="mb-1 text-sm text-slate-800">'+g.props.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+(g.reason?' <span class="text-[11px] text-amber-600">('+escapeHtml(g.reason)+')</span>':'')+'</div>').join('')+
         '</div>'
         : '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">No duplicate properties detected — '+props.length+' distinct properties across '+loans.length+' loans.</div>';
       const decisionCard = decisions.length ?
@@ -4299,22 +4356,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       const dropCard = view.querySelector("#uwDrop") && view.querySelector("#uwDrop").closest(".boxline");
       if(dropCard){
         const pick = document.createElement("div"); pick.className = "flex flex-col sm:flex-row sm:items-center gap-2 pb-1 mb-1 border-b border-slate-100";
-        // When a property is focused, offer its manual status. "Lease-up" tells the app this building is
-        // still filling up: don't annualize its partial year, and leave it out of the portfolio coverage
-        // until it stabilizes. Blank = Auto (Stabilized once a T12 is loaded).
-        const curStatus = opFocusKey ? propStatusManual(opFocusKey) : "";
-        const statusSel = opFocusKey ? (
-          '<label class="text-sm font-semibold text-slate-700 sm:ml-2" for="opPropStatus">Status</label>'+
-          '<select id="opPropStatus" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700">'+
-            '<option value=""'+(curStatus===""?" selected":"")+'>Auto (Stabilized)</option>'+
-            PROP_STATUS_MANUAL.map(s => '<option value="'+escapeHtml(s)+'"'+(curStatus===s?" selected":"")+'>'+escapeHtml(s)+'</option>').join('')+
-          '</select>') : "";
         pick.innerHTML = '<label class="text-sm font-semibold text-slate-700" for="opPropPick">Property</label>'+
-          '<select id="opPropPick" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property, then drop its T12 below &mdash;</option>'+opts+'</select>'+statusSel;
+          '<select id="opPropPick" class="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700"><option value="">&mdash; choose a property, then drop its T12 below &mdash;</option>'+opts+'</select>';
         dropCard.insertBefore(pick, dropCard.firstChild);
         pick.querySelector("#opPropPick").addEventListener("change", (e) => { opSelectProperty(e.target.value); });
-        const ss = pick.querySelector("#opPropStatus");
-        if(ss) ss.addEventListener("change", (e) => { const k = opFocusKey; opSetPropStatus(k, e.target.value).then(() => { toast((e.target.value || "Auto") + " · " + (opProp(k) ? opProp(k).name : "property"), "check"); }); });
       }
       // Below the classified lines + sizing + assumptions: the portfolio roll-up, then "what to push".
       const tail = document.createElement("div"); tail.className = "space-y-6 mt-6";
@@ -4501,8 +4546,11 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
-    try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); window.LDS_setPropStatus=(k,s)=>opSetPropStatus(k,s); window.LDS_propIsLeaseUp=(k)=>propIsLeaseUp(k); }catch(e){}   // diagnostics: 2.9.0 property + loan status
-    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(l=>l.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
+    try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
+    try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
+    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
+    // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
+    try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true; _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } }); } }catch(e){}
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -5170,14 +5218,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         byType[loan.rateType]=(byType[loan.rateType]||0)+(d.currentBalance||0);
         const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
       const wAvg=totalBal>0?rateWB/totalBal:0;
-      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,leaseUp:propIsLeaseUp(propertyKey(sr))}; });
+      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
       let covBal=0,dscrW=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0;
-      // A property in lease-up is left OUT of the portfolio-weighted coverage: its ratios reflect a
-      // half-filled building, not stabilized performance, so folding them in would drag the whole
-      // portfolio DSCR/DY down and hide the real coverage of the stabilized book.
-      items.forEach(it=>{const cp=it.cp; if(cp.noi>0 && !it.leaseUp){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
+      // Every property with a positive NOI is weighted into the portfolio coverage (by balance). A
+      // property with NOI ≤ 0 has no meaningful ratio and is simply not counted.
+      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
       const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
-      const nLease=items.filter(it=>it.leaseUp).length;   // shown as an explained exclusion, not a gap
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: loans.length+" loans · "+moneyShort(totalOrig)+" originated"})+
@@ -5197,7 +5243,7 @@ tr[data-loan]:hover td{background:#eef2f7}
         dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
       const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)))
         .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr.propertyName||loanLabel(it.sr))+'</span>').join(' ');
-      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI"+(nLease?" · "+nLease+" in lease-up (excluded)":""),
+      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
         dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
         '<div class="h-3"></div>'+
         dashGauge(wDy, COV_DY_FLOOR, Math.max(0.14,(wDy||0.09)*1.5), {label:"Portfolio Debt Yield", fmt:v=>fmtPct(v)})+
@@ -5211,9 +5257,8 @@ tr[data-loan]:hover td{background:#eef2f7}
       const tbody=sorted.map(it=>{const cp=it.cp,entered=cp.entered,covered=cp.noi>0;   // entered = an NOI figure exists (any sign); covered = positive, so ratios exist
         const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
         const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
-          :(it.leaseUp?'<span class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-700">lease-up</span>'
           :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
-          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>')));
+          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>'));
         const action=!entered?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
           :'<button type="button" data-covpath="'+(it.combo?('combo:'+propertyKey(it.sr)):it.sr._id)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
         return '<tr class="hover:bg-slate-50'+(covered?'':' bg-slate-50/40')+'">'+
@@ -6009,8 +6054,8 @@ tr[data-loan]:hover td{background:#eef2f7}
           '<div class="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-4 text-sm text-slate-700">'+
             (res.added.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Added ('+res.added.length+')</div><ul class="space-y-1">'+li(res.added)+'</ul></div>' : "")+
             (res.refreshed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Corrected terms refreshed ('+res.refreshed.length+')</div><ul class="space-y-1">'+li(res.refreshed)+'</ul></div>' : "")+
-            (res.removed && res.removed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Removed ('+res.removed.length+')</div><ul class="space-y-1">'+liR(res.removed)+'</ul><p class="mt-1.5 text-[11px] text-slate-400">Pulled pending Azriel — the 1415/1395 Washington building+project split isn’t confirmed.</p></div>' : "")+
-            '<p class="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-500">Left unchanged on purpose (awaiting documents): <b>The Pepper Building</b>, <b>Living Lofts</b>, <b>Village at Bridgewater</b>.</p>'+
+            (res.removed && res.removed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Removed ('+res.removed.length+')</div><ul class="space-y-1">'+liR(res.removed)+'</ul><p class="mt-1.5 text-[11px] text-slate-400">Removed pending confirmation — not yet certain these belong in the portfolio.</p></div>' : "")+
+            '<p class="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-500">Left unchanged on purpose (awaiting documents): <b>Living Lofts</b>, <b>Village at Bridgewater</b>.</p>'+
           '</div>'+
           '<div class="flex justify-end border-t border-slate-100 px-5 py-3">'+
             '<button type="button" id="syncNoticeClose" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition">Got it</button>'+
@@ -8069,6 +8114,12 @@ tr[data-loan]:hover td{background:#eef2f7}
         var d = {}; try { d = (compute(l).derived) || {}; } catch(e){ d = {}; }
         var esc = {};
         ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt","servicingFee","trusteeFee"].forEach(function(k){ if(l[k]) esc[k] = l[k]; });
+        // NOI comes from the SAME place the underwriting / refi / roll-up / Data Health screens read it:
+        // the property's stored General Data (a T12, run through the annualization rule) via loanNOI().
+        // When a T12 drives it, egi/opex from the loan record are left out (they'd disagree with the T12
+        // NOI) and a noiBasis label says how it was derived ("T12 · …" / "T3 × 4 · …").
+        var pk = propertyKey(l), gnoi = gdNOICache[pk], hasGD = !!(gnoi && gnoi.inPlace != null);
+        var noiVal = loanNOI(l);
         var o = {
           property: keep(l.propertyName) || loanLabel(l),
           lender: keep(l.lenderName), propertyType: keep(l.propertyType), lienPosition: keep(l.lienPosition),
@@ -8082,10 +8133,12 @@ tr[data-loan]:hover td{background:#eef2f7}
           currentBalance: keep(d.currentBalance), currentRate: keep(d.currentRate),
           monthlyPI: keep(d.monthlyPI), totalMonthlyDebtService: keep(d.totalDebtService),
           monthsToMaturity: keep(d.monthsToMaturity), paymentsMade: keep(d.paymentsMade),
-          // Property financials (so the assistant can SEE and confirm what it edits). noi/egi/
-          // opex are annual dollars; noi may be 0 or negative for a lease-up asset. dscr/debtYield
-          // are computed and appear only when NOI is positive.
-          noi: keep(l.noi), egi: keep(l.egi), opex: keep(l.opex), capRate: keep(l.capRate),
+          // Property financials (so the assistant can SEE and confirm what it edits). noi/egi/opex are
+          // annual dollars; noi may be 0 or negative for a lease-up asset. dscr/debtYield are computed and
+          // appear only when NOI is positive. noi matches the app's own screens; noiBasis names its source
+          // when a T12 drives it.
+          noi: keep(noiVal), noiBasis: hasGD ? noiMethodLabel(gnoi) : undefined,
+          egi: hasGD ? undefined : keep(l.egi), opex: hasGD ? undefined : keep(l.opex), capRate: keep(l.capRate),
           dscr: keep(loanDSCR(l)), debtYield: keep(loanDebtYield(l))
         };
         if(Object.keys(esc).length) o.monthlyEscrowsAndFees = esc;
@@ -8107,7 +8160,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     var AI_ASST_SYSTEM = [
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
-      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while an asset is in lease-up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
+      "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while an asset is in lease-up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized by the last-3-months×4 rule when the statement starts in lease-up), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",

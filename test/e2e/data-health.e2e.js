@@ -1,7 +1,7 @@
 /* e2e for v2.9.0: the Data Health page. Opens the tab, checks it lists every property (count matches
    the loan-derived property set), shows the KPI summary, the duplicate check, the maturity-decision
    list, and that "Recompute all figures" runs and leaves a log line. Also exercises the ghost-duplicate
-   heuristic: give two differently-named loans the SAME street address and it flags them as candidates.
+   heuristic: two properties sharing a street number + name (in different cities) are flagged for review.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/data-health.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -36,10 +36,12 @@ async function openHealth(page){
   const kpiProps=await page.evaluate(()=>{const m=(document.getElementById('healthView').innerText||'').match(/Properties\s*\n?\s*(\d+)/i);return m?+m[1]:-1;});
   ok(kpiProps===nProps,'the Properties KPI equals the property count ('+kpiProps+')');
 
-  // duplicate check: clean seed has no same-address duplicates
+  // duplicate check: the clean seed has NO exact-address duplicates. The two St. Louis "Lofts" on
+  // Mississippi Ave are 1107 vs 1119 — real, separate buildings — and are deliberately NOT flagged, so
+  // the check doesn't cry wolf. The heuristic is exercised by the injection below.
   const dups0=await page.evaluate(()=>window.LDS_dupCandidates?window.LDS_dupCandidates():null);
-  ok(Array.isArray(dups0)&&dups0.length===0,'clean seed → no duplicate candidates');
-  ok(/No duplicate properties detected/.test(t),'the page states no duplicates for the clean seed');
+  ok(Array.isArray(dups0)&&dups0.length===0,'the clean seed surfaces no duplicate candidates ('+(dups0?dups0.length:0)+')');
+  ok(/No duplicate properties detected/i.test(t),'the page reports no duplicates on the clean seed');
 
   // recompute-all runs and leaves a log line
   await page.evaluate(()=>{const b=document.querySelector('#healthView [data-health-recompute]');if(b)b.click();});
@@ -50,16 +52,20 @@ async function openHealth(page){
   const logN=await page.evaluate(()=>{try{return (JSON.parse(localStorage.getItem('lds.recomputeLog')||'[]')).length;}catch(e){return 0;}});
   ok(logN>=1,'the recompute log has at least one entry ('+logN+')');
 
-  // ghost-duplicate heuristic: point two different-named loans at the SAME street address
+  // ghost-duplicate heuristic: two properties that share a street NUMBER + street name but sit at
+  // different full addresses (here, different cities) — the app keeps them as SEPARATE properties (a
+  // shared full address would instead auto-merge them into one, the senior+mezz grouping), yet they
+  // collide on the address signature, so they're surfaced for a human to review as a possible double-entry.
+  const before=Array.isArray(dups0)?dups0.length:0;
   const flagged=await page.evaluate(()=>{
     const ls=window.LDS_loans?window.LDS_loans():[];
     if(ls.length<2) return null;
-    // distinct names → two distinct property keys; same street number + street word → same building
-    ls[0].propertyName='Ghost Test A'; ls[0].propertyAddress='999 Twin Oaks Dr, Testville, OH 45000';
-    ls[1].propertyName='Ghost Test B'; ls[1].propertyAddress='999 Twin Oaks Drive, Testville OH';
+    ls[0].propertyName='Ghost Test A'; ls[0].propertyAddress='1107 Ghost Lane, Testville, OH 45000';
+    ls[1].propertyName='Ghost Test B'; ls[1].propertyAddress='1107 Ghost Lane, Otherville, PA 19000';
     return window.LDS_dupCandidates?window.LDS_dupCandidates():null;
   });
-  ok(Array.isArray(flagged)&&flagged.some(g=>g.length>=2),'two loans at the same street address are flagged as duplicate candidates');
+  ok(Array.isArray(flagged)&&flagged.length>before,'the injected same-address pair adds a new duplicate candidate ('+before+' → '+(flagged?flagged.length:0)+')');
+  ok(Array.isArray(flagged)&&flagged.some(g=>g.some(k=>/ghost/i.test(k))),'the injected Ghost Test pair is flagged');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
