@@ -937,6 +937,8 @@
       <!-- ===================== TOOL PANELS (opened as tabs) ===================== -->
       <!-- Underwriting & sizing worksheet -->
       <section id="uwView" class="space-y-6" hidden></section>
+      <!-- Data Health: what the app knows per property, duplicate check, recompute-all -->
+      <section id="healthView" class="space-y-6" hidden></section>
       <!-- Maturity & Reset calendar (iframe host; same self-contained doc as the pop-out) -->
       <div id="calendarPanel" hidden><iframe id="calendarFrame" class="w-full rounded-2xl border border-slate-200 bg-white" style="height:calc(100vh - 180px);min-height:520px" title="Maturity &amp; Reset Calendar"></iframe></div>
     </main>
@@ -4116,6 +4118,136 @@ tr[data-loan]:hover td{background:#eef2f7}
       try{ render(); }catch(e){}
       return true;
     }
+    // ── 2.9.0 — Data Health ─────────────────────────────────────────────────────
+    // One page showing, per property, what the app actually knows — is there a T12 (and how many
+    // months of history), are units set, is there a loan, when were the figures last computed and
+    // under which app version — plus warnings, a portfolio duplicate check (the "28 vs 27" ghost),
+    // the maturity decisions outstanding, and a Recompute-all button.
+    async function renderDataHealth(){
+      const view = el("healthView"); if(!view) return;
+      view.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">Reading each property’s files…</div>';
+      try{ await opComputeVersion(); }catch(e){}
+      try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); }catch(e){} } }catch(e){}
+      if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
+      view.innerHTML = dataHealthHtml();
+      const rc = view.querySelector('[data-health-recompute]');
+      if(rc) rc.addEventListener('click', async () => {
+        rc.disabled = true; rc.textContent = 'Recomputing…';
+        try{ await opRecomputeAll('manual'); }catch(e){}
+        renderDataHealth();
+      });
+      view.querySelectorAll('[data-health-open]').forEach(b => b.addEventListener('click', () => {
+        openTab('underwriting'); opSelectProperty(b.getAttribute('data-health-open'));
+      }));
+    }
+    function healthWhen(iso){ try{ return new Date(iso).toLocaleString(); }catch(e){ return String(iso || ''); } }
+    function healthStatusBadge(status){
+      const map = { "Stabilized":"bg-emerald-100 text-emerald-700", "Lease-up":"bg-sky-100 text-sky-700",
+        "Third-party managed":"bg-violet-100 text-violet-700", "No T12 yet":"bg-amber-100 text-amber-700",
+        "No loan data yet":"bg-slate-100 text-slate-600" };
+      return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+(map[status] || "bg-slate-100 text-slate-600")+'">'+escapeHtml(status)+'</span>';
+    }
+    // Candidate duplicate properties: distinct property keys whose senior address shares the same street
+    // number + first street word. Two genuinely different buildings almost never collide on both, so this
+    // is the "same building entered twice" (ghost 28-vs-27) signal — flagged for human review, never merged.
+    function healthDuplicateCandidates(props){
+      const bySig = new Map();
+      props.forEach(p => {
+        const sr = propSeniorLoan(p.key), a = normPropAddr(sr && sr.propertyAddress);
+        const m = a.match(/^(\d+)\s+(\S+)/); if(!m) return;
+        const sig = m[1] + " " + m[2];
+        if(!bySig.has(sig)) bySig.set(sig, []);
+        bySig.get(sig).push(p);
+      });
+      const out = []; bySig.forEach(list => { if(list.length > 1) out.push(list); });
+      return out;
+    }
+    function healthRowHtml(p){
+      const key = p.key, sr = propSeniorLoan(key);
+      const gd = gdFullCache[key], gnoi = gdNOICache[key], noi = gd && gd.noi;
+      const status = propertyStatusOf(key), hasT12 = propertyHasT12(key);
+      const months = (gd && gd.window && Array.isArray(gd.window.months)) ? gd.window.months : [];
+      const units = (sr && sr.units) ? sr.units : null;
+      const inPlace = (gnoi && gnoi.inPlace != null) ? gnoi.inPlace : null;
+      const method = noiMethodLabel(gnoi);
+      const ver = opAppVersion || "dev", cw = (noi && noi.computedWith) ? noi.computedWith : null;
+      const staleVer = !!(cw && cw !== ver), updated = (gd && gd.updatedAt) ? gd.updatedAt : null;
+      const warns = [];
+      if(!hasT12) warns.push('no T12');
+      if(!units) warns.push('units unknown');
+      if(inPlace != null && inPlace <= 0) warns.push('NOI ≤ 0');
+      let matured = false, undecided = false;
+      p.loans.forEach(l => { const s = loanStatusOf(l); if(s === 'Matured') matured = true; else if(s === 'Extension undecided') undecided = true; });
+      if(matured) warns.push('loan matured'); if(undecided) warns.push('extension undecided');
+      if(staleVer) warns.push('figures from v' + cw);
+      const warnHtml = warns.length ? warns.map(w => '<span class="rounded bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">'+escapeHtml(w)+'</span>').join(' ')
+        : '<span class="text-[11px] font-semibold text-emerald-600">ok</span>';
+      const nameCell = '<div class="font-semibold text-slate-900">'+escapeHtml(p.name)+'</div>'+(p.loans.length > 1 ? '<div class="text-[10px] text-slate-400">'+p.loans.length+' loans</div>' : '');
+      const t12Cell = hasT12 ? '<div class="text-slate-700">'+escapeHtml(method || 'T12 loaded')+'</div>'+(months.length ? '<div class="text-[10px] text-slate-400">'+months.length+' mo history</div>' : '')
+        : '<span class="text-slate-400">—</span>';
+      const noiCell = inPlace != null ? escapeHtml(fmtMoney(inPlace)) : '<span class="text-slate-400">—</span>';
+      const compCell = updated ? '<div class="text-[11px] text-slate-500">'+escapeHtml(healthWhen(updated))+'</div><div class="text-[10px] '+(staleVer ? 'text-rose-500 font-semibold' : 'text-slate-400')+'">v'+escapeHtml(cw || ver)+'</div>'
+        : '<span class="text-slate-400">—</span>';
+      return '<tr class="hover:bg-slate-50">'+
+        '<td class="px-3 py-2 align-top">'+nameCell+'</td>'+
+        '<td class="px-3 py-2 align-top">'+healthStatusBadge(status)+'</td>'+
+        '<td class="px-3 py-2 align-top">'+t12Cell+'</td>'+
+        '<td class="px-3 py-2 align-top text-right tabular-nums text-slate-700">'+(units != null ? escapeHtml(String(units)) : '<span class="text-slate-400">—</span>')+'</td>'+
+        '<td class="px-3 py-2 align-top text-right tabular-nums font-semibold text-slate-800">'+noiCell+'</td>'+
+        '<td class="px-3 py-2 align-top">'+compCell+'</td>'+
+        '<td class="px-3 py-2 align-top"><div class="flex flex-wrap gap-1">'+warnHtml+'</div></td>'+
+        '<td class="px-3 py-2 align-top text-right"><button type="button" data-health-open="'+escapeHtml(key)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Open</button></td>'+
+      '</tr>';
+    }
+    function dataHealthHtml(){
+      const props = opProperties(), ver = opAppVersion || "dev";
+      let nT12 = 0, nUnits = 0, nNOI = 0;
+      props.forEach(p => {
+        if(propertyHasT12(p.key)) nT12++;
+        const sr = propSeniorLoan(p.key); if(sr && sr.units) nUnits++;
+        const g = gdNOICache[p.key]; if(g && g.inPlace != null) nNOI++;
+      });
+      const decisions = loans.filter(loanNeedsMaturityDecision);
+      const dups = healthDuplicateCandidates(props);
+      const last = opLastRecompute();
+      const lastLine = last ? ("Last recompute " + healthWhen(last.at) + " · " + (last.recomputed || 0) + " of " + (last.properties || 0) + " properties · " + (last.reason || "manual"))
+        : "No recompute run yet on this install.";
+      const header =
+        '<div class="flex flex-wrap items-start justify-between gap-3">'+
+          '<div><h2 class="text-lg font-bold text-slate-900">Data Health</h2>'+
+            '<p class="text-sm text-slate-500">What the app knows about each property — and what’s missing. Running app v'+escapeHtml(ver)+'.</p></div>'+
+          '<div class="text-right"><button type="button" data-health-recompute class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100">Recompute all figures</button>'+
+            '<div class="mt-1 text-[11px] text-slate-400">'+escapeHtml(lastLine)+'</div></div>'+
+        '</div>';
+      const kpis = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+
+        kpiCard("Properties", String(props.length), { sub: loans.length + " loans" })+
+        kpiCard("With a T12", nT12 + " of " + props.length, { sub: (props.length - nT12) + " missing" })+
+        kpiCard("Units known", nUnits + " of " + props.length, { sub: (props.length - nUnits) + " blank" })+
+        kpiCard("Need a maturity decision", String(decisions.length), { sub: decisions.length ? "matured / undecided" : "all current" })+
+      '</div>';
+      const dupCard = dups.length ?
+        '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">'+
+          '<h3 class="text-sm font-bold text-amber-800">Possible duplicate properties ('+dups.length+')</h3>'+
+          '<p class="text-xs text-amber-700 mb-2">Same street address, tracked as separate properties — review, they may be one building entered twice.</p>'+
+          dups.map(list => '<div class="mb-1 text-sm text-slate-800">'+list.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+'</div>').join('')+
+        '</div>'
+        : '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">No duplicate properties detected — '+props.length+' distinct properties across '+loans.length+' loans.</div>';
+      const decisionCard = decisions.length ?
+        '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4">'+
+          '<h3 class="text-sm font-bold text-rose-800">Loans needing a maturity decision ('+decisions.length+')</h3>'+
+          '<div class="mt-2 flex flex-wrap gap-1.5">'+decisions.map(l => '<span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-800">'+escapeHtml(l.propertyName || loanLabel(l))+' <span class="text-rose-400">·</span> '+escapeHtml(loanStatusOf(l))+'</span>').join('')+'</div>'+
+        '</div>' : '';
+      const sorted = props.slice().sort((a, b) => {
+        const rank = p => { let r = 0; if(!propertyHasT12(p.key)) r -= 4; const sr = propSeniorLoan(p.key); if(!(sr && sr.units)) r -= 1; return r; };
+        return (rank(a) - rank(b)) || a.name.localeCompare(b.name);
+      });
+      const table = '<div class="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">'+
+        '<div class="border-b border-slate-200 px-5 py-3"><h3 class="text-base font-bold text-slate-900">Every property</h3><p class="text-xs text-slate-500">T12, units, in-place NOI + its basis, and when each figure was last computed</p></div>'+
+        '<div class="overflow-x-auto"><table class="w-full min-w-[820px] text-sm"><thead class="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">'+
+          '<tr><th class="px-3 py-2">Property</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">T12 / NOI basis</th><th class="px-3 py-2 text-right">Units</th><th class="px-3 py-2 text-right">In-place NOI</th><th class="px-3 py-2">Computed</th><th class="px-3 py-2">Warnings</th><th class="px-3 py-2"></th></tr>'+
+        '</thead><tbody class="divide-y divide-slate-100">'+sorted.map(healthRowHtml).join('')+'</tbody></table></div></div>';
+      return '<div class="space-y-4">'+header+kpis+dupCard+decisionCard+table+'</div>';
+    }
     // A T12 dropped while a property is focused is ALSO written into that property's record.
     function opApplyUploadToFocused(parsed, input){
       if(!opFocusKey || !opReady()) return;
@@ -4367,6 +4499,7 @@ tr[data-loan]:hover td{background:#eef2f7}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); window.LDS_setPropStatus=(k,s)=>opSetPropStatus(k,s); window.LDS_propIsLeaseUp=(k)=>propIsLeaseUp(k); }catch(e){}   // diagnostics: 2.9.0 property + loan status
+    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(l=>l.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -4620,12 +4753,13 @@ tr[data-loan]:hover td{background:#eef2f7}
       home:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>',
       calendar:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
       underwriting:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+      health:'<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
       x:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
       pop:'<svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>'
     };
     let ldsTabs = [{ id:"home", title:"Portfolio", kind:"home", fixed:true }];
     let ldsActiveTab = "home";
-    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : "Portfolio";
+    const tabTitle = (k)=> k==="calendar" ? "Calendar" : k==="underwriting" ? "Underwriting" : k==="health" ? "Data Health" : "Portfolio";
 
     function renderTabStrip(){
       const strip = el("tabStrip"); if(!strip) return;
@@ -4657,7 +4791,8 @@ tr[data-loan]:hover td{background:#eef2f7}
         m.innerHTML =
           '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
           '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
-          '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>';
+          '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
+          '<button type="button" data-tabopen="health" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.health+'Data Health</button>';
         document.body.appendChild(m);
       }
       return m;
@@ -4679,8 +4814,10 @@ tr[data-loan]:hover td{background:#eef2f7}
       el("homePanel").hidden = (tab.kind !== "home");
       el("uwView").hidden = (tab.kind !== "underwriting");
       el("calendarPanel").hidden = (tab.kind !== "calendar");
+      { const h = el("healthView"); if(h) h.hidden = (tab.kind !== "health"); }
       if(tab.kind === "underwriting") renderUnderwriting();
       if(tab.kind === "calendar") loadCalendarFrame();
+      if(tab.kind === "health") renderDataHealth();
       renderTabStrip();
       try{ window.scrollTo(0,0); }catch(e){}
     }
