@@ -75,8 +75,14 @@ const bodyText = (page) => page.evaluate(() => document.getElementById('uwView')
   ({ app, page, errors } = await launch());
   await openUw(page);
   ok((await ls(page, 'ldsHub.operating.v1')) === null, 'restart: clean slate — nothing operating in browser storage');
+  // v2.8.7: opening the Underwriting tab auto-loads every property's T12 from disk into the roll-up,
+  // so a correct figure CAN appear before you pick a property — read from the folder, never from
+  // browser storage. Let that settle, then confirm the store is STILL empty (the figure is a disk
+  // read, not a cache) and the wrong below-the-line figure never shows.
+  await page.waitForTimeout(1000);
   const t2before = await bodyText(page);
-  ok(!/9,483,604\.28|5,210,718\.69/.test(t2before), 'restart: before selecting a property, no T12 figure is shown (nothing cached)');
+  ok(!/5,210,718\.69/.test(t2before), 'restart: the wrong below-the-line NET INCOME never appears');
+  ok((await ls(page, 'ldsHub.operating.v1')) === null, 'restart: the roll-up auto-loads its figures from disk — browser storage stays empty (nothing cached)');
   await pick(page);
   await page.waitForFunction(() => /statement NOI/.test((document.getElementById('uwView') || {}).innerText || ''), null, { timeout: 12000 }).catch(() => {});
   await page.waitForTimeout(600);
