@@ -3944,6 +3944,7 @@ tr.flagged:hover td{background:#fee2e2}
       var uploader = '<div class="flex flex-wrap items-center gap-2">'+typeSel+
         '<label class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer">'+
           '<input id="profileDocFile" type="file" class="hidden" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md">Upload a document</label>'+
+        (aiAvailable() ? '<button type="button" id="profileReadAgreement" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and propose each field with its page citation for you to confirm">✨ Read agreement</button>' : '')+
         '<span class="text-[11px] text-slate-400">PDF, Word, Excel, text — stored in this property’s folder.</span></div>';
       var listHtml = '<p class="mt-2 text-[11px] text-slate-400">Loading…</p>';
       host.innerHTML = '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Documents</h3>'+uploader+'<div id="profileDocList" class="mt-3">'+listHtml+'</div>';
@@ -3962,6 +3963,140 @@ tr.flagged:hover td{background:#fee2e2}
           '<button type="button" data-docdel="'+escapeHtml(f.id)+'" class="shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove">✕</button>'+
         '</div>';
       }).join('');
+    }
+    // ── 2.9.1 — Read agreement: Claude proposes each field with a page citation; confirm / edit / reject ──
+    // Each proposed field routes to the profile (with its citation stored as the field's source) or to the
+    // property's loan. Nothing is saved until you confirm it. Works on a property with no loan yet.
+    var AGREEMENT_FIELDS = [
+      { key:"propertyAddress",    label:"Address",              kind:"text",  target:"profile", profileKey:"address" },
+      { key:"residentialUnits",   label:"Residential units",    kind:"int",   target:"profile", profileKey:"residentialUnits" },
+      { key:"yearBuilt",          label:"Year built",           kind:"int",   target:"profile", profileKey:"yearBuilt" },
+      { key:"acquisitionDate",    label:"Acquisition date",     kind:"date",  target:"profile", profileKey:"acquisitionDate" },
+      { key:"lenderName",         label:"Lender",               kind:"text",  target:"loan" },
+      { key:"originalAmount",     label:"Loan amount",          kind:"money", target:"loan" },
+      { key:"annualRate",         label:"Interest rate",        kind:"pct",   target:"loan" },
+      { key:"rateType",           label:"Rate type",            kind:"text",  target:"loan" },
+      { key:"maturityDate",       label:"Maturity date",        kind:"date",  target:"loan" },
+      { key:"ioMonths",           label:"Interest-only months", kind:"int",   target:"loan" },
+      { key:"amortizationMonths", label:"Amortization (months)",kind:"int",   target:"loan" },
+      { key:"prepayType",         label:"Prepayment",           kind:"text",  target:"loan" }
+    ];
+    var AGREEMENT_BY_KEY = {}; AGREEMENT_FIELDS.forEach(function(f){ AGREEMENT_BY_KEY[f.key] = f; });
+    function aiAgreementSchema(){
+      var cell = { type:["object","null"], properties: { value:{ type:["string","number","null"] }, page:{ type:["integer","string","null"] }, quote:{ type:["string","null"] } } };
+      var props = {}; AGREEMENT_FIELDS.forEach(function(f){ props[f.key] = cell; });
+      return { type:"object", properties: props, required: [] };
+    }
+    var AI_AGREEMENT_INSTRUCTION = [
+      "You are extracting facts about a commercial real-estate property and its loan from the property's documents (chiefly the executed loan agreement) on stdin. Return ONE JSON object. For each field you find, return { value, page, quote }: the value the document states, the page or section it came from (a number or short reference, or null), and a SHORT verbatim quote (<= 200 chars) of the sentence it came from. Use ONLY what the document states; OMIT a field or set it null if it is not stated. Never guess or compute a value that is not written down.",
+      "Fields: propertyAddress (street address); residentialUnits (integer count of apartments); yearBuilt (integer); acquisitionDate (ISO yyyy-mm-dd, if stated); lenderName; originalAmount (loan amount in dollars, number); annualRate (interest rate as a DECIMAL, 4.305% -> 0.04305); rateType (\"Fixed\" / \"Floating\" / \"Hybrid ARM\"); maturityDate (ISO yyyy-mm-dd); ioMonths (number of interest-only payments); amortizationMonths (e.g. 360); prepayType (\"Yield Maintenance\" / \"Step-down\" / \"Defeasance\" / \"Open / at par\").",
+      "Return the JSON through the structured-output tool."
+    ].join("\n");
+    // Turn the raw extraction into proposal rows [{ key, value, page, quote }], coercing + dropping empties.
+    function agreementProposals(data){
+      var out = [];
+      AGREEMENT_FIELDS.forEach(function(f){
+        var cell = data && data[f.key];
+        if(cell != null && typeof cell !== "object") cell = { value: cell };
+        if(!cell || cell.value == null || cell.value === "") return;
+        var v = cell.value;
+        if(f.kind === "int" || f.kind === "money" || f.kind === "pct"){ v = Number(v); if(!isFinite(v)) return; if(f.kind === "int") v = Math.round(v); }
+        else v = String(v).trim();
+        out.push({ key: f.key, value: v, page: (cell.page != null ? cell.page : null), quote: (cell.quote != null ? String(cell.quote) : null) });
+      });
+      return out;
+    }
+    var _agreementFile = "";
+    function opReadAgreementClose(){ var m = el("readAgreementModal"); if(m && m.parentNode) m.parentNode.removeChild(m); }
+    function agRowHtml(p){
+      var f = AGREEMENT_BY_KEY[p.key]; if(!f) return "";
+      var tgt = f.target === "loan" ? "loan" : "profile";
+      return '<tr class="border-t border-slate-100 align-top">'+
+        '<td class="p-2"><input type="checkbox" data-ag-ok="'+escapeHtml(p.key)+'" data-ag-page="'+escapeHtml(p.page==null?"":String(p.page))+'" data-ag-quote="'+escapeHtml(p.quote||"")+'" checked></td>'+
+        '<td class="p-2"><div class="text-sm font-semibold text-slate-700">'+escapeHtml(f.label)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">→ '+tgt+'</div></td>'+
+        '<td class="p-2"><input data-ag-val="'+escapeHtml(p.key)+'" value="'+escapeHtml(String(p.value))+'" class="w-full rounded border border-slate-300 px-2 py-1 text-sm tabular-nums"></td>'+
+        '<td class="p-2 text-[11px] text-slate-500">'+(p.page!=null&&String(p.page)!==""?'<div class="font-semibold text-slate-600">p. '+escapeHtml(String(p.page))+'</div>':'')+(p.quote?'<div class="italic">“'+escapeHtml(p.quote.slice(0,160))+'”</div>':'<span class="text-slate-300">no quote given</span>')+'</td>'+
+      '</tr>';
+    }
+    // Build/refresh the review modal. phase: "reading" | "review" | "empty" | "error:<msg>".
+    function opReadAgreementModal(key, proposals, phase){
+      opReadAgreementClose();
+      var name = (opProp(key) || {}).name || key, inner;
+      if(phase === "reading"){ inner = '<div class="p-8 text-center text-sm text-slate-600"><svg class="mx-auto mb-3 h-6 w-6 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>Reading the agreement — this can take a minute or two…</div>'; }
+      else if(phase === "empty"){ inner = '<div class="p-8 text-sm text-slate-600">Claude didn’t find any fields to propose. Is the loan agreement uploaded to this property’s Documents?</div>'; }
+      else if(String(phase).slice(0,6) === "error:"){ inner = '<div class="p-8 text-sm text-rose-600">Couldn’t read the agreement — '+escapeHtml(String(phase).slice(6))+'</div>'; }
+      else {
+        var rows = (proposals || []).map(agRowHtml).join('');
+        inner = '<div class="max-h-[55vh] overflow-auto"><table class="w-full text-left"><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400"><th class="p-2 w-8">Use</th><th class="p-2">Field</th><th class="p-2">Value (edit before saving)</th><th class="p-2">From the document</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+          '<div class="flex items-center justify-between gap-2 border-t border-slate-100 p-4"><p class="text-[11px] text-slate-500">Only ticked rows are saved. Edit a value inline, or untick to reject. Confirmed fields keep their citation.</p>'+
+          '<div class="flex gap-2"><button type="button" id="readAgreementCancel" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>'+
+          '<button type="button" id="readAgreementSave" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-500">Save confirmed</button></div></div>';
+      }
+      var overlay = document.createElement("div");
+      overlay.id = "readAgreementModal";
+      overlay.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+      overlay.innerHTML = '<div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">'+
+        '<div class="flex items-center justify-between border-b border-slate-100 p-4"><h3 class="text-base font-bold text-slate-900">Read agreement — '+escapeHtml(name)+'</h3>'+
+          '<button type="button" id="readAgreementX" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">✕</button></div>'+
+        inner + '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", function(e){ if(e.target === overlay) opReadAgreementClose(); });
+      var x = el("readAgreementX"); if(x) x.addEventListener("click", opReadAgreementClose);
+      var c = el("readAgreementCancel"); if(c) c.addEventListener("click", opReadAgreementClose);
+      var s = el("readAgreementSave"); if(s) s.addEventListener("click", function(){ opReadAgreementApply(key); });
+    }
+    async function opReadAgreementStart(key){
+      if(!key) return;
+      if(!aiAvailable()){ try{ toast("Connect Claude in Settings first, then Read agreement.", "info"); }catch(e){} return; }
+      var text = "", file = "";
+      try{
+        var list = await ldsShell.docList(key), files = (list && list.files) || [];
+        var ag = files.filter(function(f){ return f.role === "agreement"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0];
+        file = ag ? ag.name : "";
+        var dt = await ldsShell.docText(key); text = (dt && dt.text) || "";
+      }catch(e){}
+      if(!text || text.trim().length < 40){ try{ toast("Upload the loan agreement to this property (Documents) first, then Read agreement.", "info"); }catch(e){} return; }
+      _agreementFile = file;
+      opReadAgreementModal(key, null, "reading");
+      try{
+        var r = await ldsShell.aiExtract({ instruction: AI_AGREEMENT_INSTRUCTION, schema: aiAgreementSchema(), input: text, timeoutMs: 300000 });
+        if(!r || !r.ok){ opReadAgreementModal(key, null, "error:"+((r && r.error) || "unknown error")); return; }
+        var proposals = agreementProposals(r.data || {});
+        opReadAgreementModal(key, proposals, proposals.length ? "review" : "empty");
+      }catch(e){ opReadAgreementModal(key, null, "error:"+String((e && e.message) || e).slice(0,160)); }
+    }
+    // Save only the ticked rows: profile fields (with their citation) and, for the loan fields, fill a
+    // name-only loan for a property that has none, or fill blank fields on the existing senior loan.
+    async function opReadAgreementApply(key){
+      var host = el("readAgreementModal"); if(!host) return;
+      var cbs = host.querySelectorAll("[data-ag-ok]"), loanFields = {}, sawLoan = false, savedProfile = 0;
+      for(var i = 0; i < cbs.length; i++){
+        var cb = cbs[i]; if(!cb.checked) continue;
+        var k = cb.getAttribute("data-ag-ok"), f = AGREEMENT_BY_KEY[k]; if(!f) continue;
+        var valEl = host.querySelector('[data-ag-val="'+k+'"]'), raw = valEl ? valEl.value : "", val = raw;
+        if(f.kind === "int" || f.kind === "money" || f.kind === "pct"){ val = (raw === "" ? "" : Number(raw)); if(val !== "" && !isFinite(val)) val = raw; else if(f.kind === "int" && val !== "") val = Math.round(val); }
+        else val = String(raw).trim();
+        var source = { kind:"agreement", file: _agreementFile || null, page: (cb.getAttribute("data-ag-page") || null), quote: (cb.getAttribute("data-ag-quote") || null) };
+        if(f.target === "profile"){ await opProfileSetField(key, f.profileKey || k, val, { source: source }); savedProfile++; }
+        else if(f.target === "loan"){ loanFields[k] = val; sawLoan = true; }
+      }
+      if(sawLoan) opReadAgreementSaveLoan(key, loanFields);
+      opReadAgreementClose();
+      try{ toast("Saved "+savedProfile+" profile field"+(savedProfile === 1 ? "" : "s")+(sawLoan ? " and the loan terms" : "")+".", "check"); }catch(e){}
+      try{ opRenderPortfolio(); }catch(e){}
+      if(profileTabActive()) renderProfileTab();
+    }
+    function opReadAgreementSaveLoan(key, fields){
+      var sr = propSeniorLoan(key);
+      if(sr){ Object.keys(fields).forEach(function(k){ if(sr[k] == null || sr[k] === "") sr[k] = fields[k]; }); try{ migrateLoan(sr); }catch(e){} save(); return; }
+      // No loan yet: create one keyed by NAME only (no address), so it merges with the standalone profile's
+      // name-based key instead of splitting off a second property. The address lives in the profile.
+      var name = (opProp(key) || {}).name || Profile.value(opProfileSync(key), "propertyName") || key;
+      var loan = Object.assign(emptyLoan(), { _id: uid(), propertyName: name, propertyType: "Multifamily", isHistorical: true }, fields);
+      loan.propertyAddress = "";
+      try{ migrateLoan(loan); }catch(e){}
+      loans.push(loan); save();
+      delete standaloneProps[key];
     }
     var profileAddOpen = false;   // the inline "new property" form is showing
     function renderProfileTab(){
@@ -4848,12 +4983,13 @@ tr.flagged:hover td{background:#fee2e2}
         else if(b.id === "profileNewCancel"){ profileAddOpen = false; renderProfileTab(); }
         else if(b.id === "profileNewCreate"){ var nm = el("profileNewName"); var v = nm ? nm.value : ""; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } else if(nm){ nm.focus(); } }
         else if(b.id === "profileArchiveBtn" && profileFocusKey){ opArchiveProperty(profileFocusKey, !opIsArchived(profileFocusKey)); }
+        else if(b.id === "profileReadAgreement" && profileFocusKey){ opReadAgreementStart(profileFocusKey); }
       });
       _prv.addEventListener("keydown", function(e){ if(e.key === "Enter" && e.target && e.target.id === "profileNewName"){ e.preventDefault(); var v = e.target.value; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } } });
     } }catch(e){}
     // Home toolbar → Add Property: open the Profile tab with the inline "new property" form ready.
     try{ var _apb = el("addPropBtn"); if(_apb && !_apb._bound){ _apb._bound = true; _apb.addEventListener("click", function(){ profileAddOpen = true; openTab("profile"); }); } }catch(e){}
-    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive + Read agreement
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
