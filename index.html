@@ -3917,6 +3917,61 @@ tr.flagged:hover td{background:#fee2e2}
                     : (ph ? '<p class="mt-0.5 text-[10px] text-slate-300">not set — the value shown is read from the loan</p>' : '');
       return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+input+hint+stamp+'</label>';
     }
+    // ── 2.9.1 — Documents from the property page (typed upload + list) ────────────
+    var PROFILE_DOC_TYPES = [
+      { role:"agreement", label:"Loan agreement" }, { role:"t12", label:"T12" },
+      { role:"rentroll", label:"Rent roll" }, { role:"unitstats", label:"Unit Statistics" },
+      { role:"other", label:"Other" }
+    ];
+    function profileDocLabel(role){ var d = PROFILE_DOC_TYPES.find(function(x){ return x.role === role; }); return d ? d.label : (role === "general" ? "General data" : role === "profile" ? "Profile" : role === "assumptions" ? "Assumptions" : (role || "Document")); }
+    // Save a file to the focused property's folder with a chosen type (role), extracting its text so a
+    // loan agreement can later be read by "Read agreement". Then refresh the Documents list.
+    async function opProfileDocUpload(key, file, role){
+      if(!key || !file || !docsAvailable()) return;
+      if(file.size > 25*1024*1024){ try{ toast(file.name+" is too large (25 MB max)", "info"); }catch(e){} return; }
+      try{
+        var pair = await Promise.all([fileToBase64(file), aiExtractFileText(file)]);
+        var b64 = pair[0], ex = pair[1] || {}; if(!b64) return;
+        var pr = opProp(key), nm = (pr && pr.name) || key;
+        await ldsShell.docSave({ propKey: key, propName: nm, name: file.name, base64: b64, text: (ex.text || ""), type: file.type || "", role: role || "other" });
+        try{ toast("Saved “"+file.name+"” as "+profileDocLabel(role), "check"); }catch(e){}
+      }catch(e){}
+      renderProfileDocs(key);
+      try{ aiAsstUpdatePropDocs && aiAsstUpdatePropDocs(); }catch(e){}
+    }
+    async function opProfileDocDelete(key, id){
+      if(!key || !id || !(window.ldsShell && ldsShell.docDelete)) return;
+      try{ await ldsShell.docDelete(key, id); }catch(e){}
+      renderProfileDocs(key);
+    }
+    // Fill the Profile tab's Documents card (async): the property's saved files with their type + size,
+    // newest first. The Profile-JSON / General-data / Assumptions housekeeping files are not listed.
+    async function renderProfileDocs(key){
+      var host = el("profileDocs"); if(!host) return;
+      var typeSel = '<select id="profileDocType" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm">'+
+        PROFILE_DOC_TYPES.map(function(d){ return '<option value="'+d.role+'">'+escapeHtml(d.label)+'</option>'; }).join('')+'</select>';
+      var uploader = '<div class="flex flex-wrap items-center gap-2">'+typeSel+
+        '<label class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer">'+
+          '<input id="profileDocFile" type="file" class="hidden" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md">Upload a document</label>'+
+        '<span class="text-[11px] text-slate-400">PDF, Word, Excel, text — stored in this property’s folder.</span></div>';
+      var listHtml = '<p class="mt-2 text-[11px] text-slate-400">Loading…</p>';
+      host.innerHTML = '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Documents</h3>'+uploader+'<div id="profileDocList" class="mt-3">'+listHtml+'</div>';
+      if(!docsAvailable()){ el("profileDocList").innerHTML = '<p class="text-[11px] text-slate-400">Document storage is only available in the desktop app.</p>'; return; }
+      var r = null; try{ r = await ldsShell.docList(key); }catch(e){}
+      if(profileFocusKey !== key) return;   // navigated away
+      var files = (r && r.files ? r.files : []).filter(function(f){ return ["profile", "general", "assumptions"].indexOf(f.role || "") < 0; });
+      var lst = el("profileDocList"); if(!lst) return;
+      if(!files.length){ lst.innerHTML = '<p class="text-[11px] text-slate-400">No documents yet.</p>'; return; }
+      lst.innerHTML = files.map(function(f){
+        var when = ""; try{ when = new Date(f.savedAt).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }catch(e){}
+        return '<div class="flex items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">'+
+          '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">'+escapeHtml(profileDocLabel(f.role))+'</span>'+
+          '<span class="flex-1 min-w-0 truncate text-sm text-slate-700" title="'+escapeHtml(f.name)+'">'+escapeHtml(f.name)+'</span>'+
+          '<span class="shrink-0 text-[10px] text-slate-400">'+fmtBytes(f.size)+' · '+when+'</span>'+
+          '<button type="button" data-docdel="'+escapeHtml(f.id)+'" class="shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove">✕</button>'+
+        '</div>';
+      }).join('');
+    }
     var profileAddOpen = false;   // the inline "new property" form is showing
     function renderProfileTab(){
       var host = el("profileView"); if(!host) return;
@@ -3956,13 +4011,15 @@ tr.flagged:hover td{background:#fee2e2}
         var rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
         return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">'+escapeHtml(g)+'</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
       }).join('') : '';
+      var docsCard = key ? '<div id="profileDocs" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"></div>' : '';
       host.innerHTML =
         '<div class="flex flex-wrap items-center justify-between gap-3">'+
           '<div><h2 class="text-lg font-extrabold text-slate-800">Property Profile</h2>'+
             '<p class="text-xs text-slate-500">The facts that don’t change — set once, they persist. Empty fields stay blank, never zero.</p></div>'+
           '<div class="flex flex-wrap items-center gap-2">'+(key?picker:'')+comphtml+archBtn+newBtn+'</div>'+
-        '</div>'+ addForm + archivedBanner + body;
+        '</div>'+ addForm + archivedBanner + body + docsCard;
       if(profileAddOpen){ var nm = el("profileNewName"); if(nm) nm.focus(); }
+      if(key) renderProfileDocs(key);
     }
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
@@ -4791,8 +4848,11 @@ tr.flagged:hover td{background:#fee2e2}
         var fk = t.getAttribute("data-pf");
         if(fk){ opProfileSetField(profileFocusKey, fk, t.value); return; }
         if(t.id === "profilePropPick"){ profileFocusKey = t.value; renderProfileTab(); return; }
+        if(t.id === "profileDocFile"){ var role = (el("profileDocType") || {}).value || "other"; var files = Array.prototype.slice.call(t.files || []); files.forEach(function(f){ opProfileDocUpload(profileFocusKey, f, role); }); t.value = ""; return; }
       });
-      _prv.addEventListener("click", function(e){ if(!e.target || !e.target.closest) return; var b = e.target.closest("button"); if(!b) return;
+      _prv.addEventListener("click", function(e){ if(!e.target || !e.target.closest) return;
+        var del = e.target.closest("[data-docdel]"); if(del){ opProfileDocDelete(profileFocusKey, del.getAttribute("data-docdel")); return; }
+        var b = e.target.closest("button"); if(!b) return;
         if(b.id === "profileNewBtn"){ profileAddOpen = true; renderProfileTab(); }
         else if(b.id === "profileNewCancel"){ profileAddOpen = false; renderProfileTab(); }
         else if(b.id === "profileNewCreate"){ var nm = el("profileNewName"); var v = nm ? nm.value : ""; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } else if(nm){ nm.focus(); } }
