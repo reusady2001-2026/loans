@@ -134,14 +134,24 @@
     // engine prices the line on, so crediting the actual reproduces the statement's own figure exactly.
     // (Reserves and the cap rate have no statement actual, so they are untouched. A line the statement does
     // not report at all — no vacancy line, no management-fee line — keeps the assumption, never a phantom 0%.)
+    // 2.9.2 — underwriting BASIS. The better-of / worse-of choice is a PARAMETER of this one engine,
+    // never a second code path. Borrower case (default) prices vacancy and the management fee at the
+    // BETTER of the assumption and the statement's proven rate (min — lower is better; today's rule).
+    // Lender case prices them at the WORSE (max — the conservative floor a lender underwrites to:
+    // vacancy = max(actual, 5%), management = max(actual, 2.5%)). Borrower-case numbers are therefore
+    // byte-for-byte identical to before this parameter existed.
+    var basis = (input.basis === "lender") ? "lender" : "borrower";
+    var pick = (basis === "lender")
+      ? function (actual, assume){ return (actual != null) ? Math.max(actual, assume) : assume; }
+      : function (actual, assume){ return (actual != null) ? Math.min(actual, assume) : assume; };
     var assumeVac = (bm.vacancyPct != null ? num(bm.vacancyPct) : 0.05);
     var vacBase = (sums.GPR || 0) + (sums.EMPL || 0) + (sums.MOD || 0);                     // the running rental subtotal VAC prices off
     var actualVac = (has("VAC") && vacBase > 0) ? Math.max(0, -(sums.VAC || 0)) / vacBase : null;
-    var effVac = (actualVac != null) ? Math.min(actualVac, assumeVac) : assumeVac;
+    var effVac = pick(actualVac, assumeVac);
     var assumeMgmt = (bm.mgmtPct != null ? num(bm.mgmtPct) : 0.025);
     var inPlaceEGI = 0; RENTAL.concat(OTHER).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
     var actualMgmt = (has("MGMT") && inPlaceEGI > 0) ? Math.max(0, sums.MGMT || 0) / inPlaceEGI : null;
-    var effMgmt = (actualMgmt != null) ? Math.min(actualMgmt, assumeMgmt) : assumeMgmt;
+    var effMgmt = pick(actualMgmt, assumeMgmt);
     var lines = [];
     var L = function (key, section, method, opts){
       opts = opts || {};
@@ -193,10 +203,12 @@
              inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX),
              // The rates the underwritten column actually used, and where each came from (the statement's own
              // actual, or the assumption) — so the UI can say when a property was credited its proven figure.
-             effective: { vacancy: effVac, managementFee: effMgmt, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt,
+             effective: { basis: basis, vacancy: effVac, managementFee: effMgmt, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt,
                           actualVacancy: actualVac, actualManagementFee: actualMgmt,
-                          vacancyFromActual: (actualVac != null && actualVac < assumeVac),
-                          managementFromActual: (actualMgmt != null && actualMgmt < assumeMgmt) } };
+                          // "from actual" = the underwritten column used the statement's proven rate rather than the
+                          // assumption (in Borrower case that happens when the actual is BETTER; in Lender case, WORSE).
+                          vacancyFromActual: (actualVac != null && effVac === actualVac && actualVac !== assumeVac),
+                          managementFromActual: (actualMgmt != null && effMgmt === actualMgmt && actualMgmt !== assumeMgmt) } };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).
