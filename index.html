@@ -3435,6 +3435,7 @@ tr.flagged:hover td{background:#fee2e2}
               '<span class="mt-1 block text-[11px] leading-snug text-slate-400">Easier than the yearly figure? Enter the average monthly rent for one unit and the app fills the year in for you &mdash; average &times; units &times; 12.</span>'+
             '</label>'+
           '</div>'+
+          '<div id="uwRentRollBox"></div>'+
         '</div>'+
         '<div id="uwSetupOut" class="space-y-6">'+(b ? uwSetupOutputHtml(b) : '')+'</div>'+
         opGeneralDataHtml(opFocusKey);
@@ -3448,6 +3449,7 @@ tr.flagged:hover td{background:#fee2e2}
         drop.ondrop = (ev)=>{ ev.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if(f) uwHandleFile(f); };
       }
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
+      try{ uwRenderRentRollBox(); }catch(e){}   // 2.9.3 — the focused property's rent-roll summary + "Use these"
     }
 
     // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
@@ -5360,6 +5362,34 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("click", function(e){ var t = e.target; if(!t || !t.closest) return;
       if(t.closest("#rrWarnToggle")){ var w = el("rrWarnList"); if(w) w.hidden = !w.hidden; }
     });
+    // The compact rent-roll summary in the underwriting tab, for the focused property, with a user-triggered
+    // "Use these" that fills the units + average-rent inputs (nothing is applied to underwriting on its own).
+    function uwRenderRentRollBox(){
+      var host = el("uwRentRollBox"); if(!host) return;
+      var key = opFocusKey; if(!key){ host.innerHTML = ""; return; }
+      if(!Object.prototype.hasOwnProperty.call(loanRRCache, key)){
+        loanRRCache[key] = undefined;
+        opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; if(opFocusKey === key) uwRenderRentRollBox(); });
+        host.innerHTML = ""; return;
+      }
+      var r = loanRRCache[key]; if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
+      var b = r.block;
+      host.innerHTML = '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">'+
+        '<div class="flex items-center justify-between gap-2"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500">From the rent roll</div>'+
+          '<button type="button" id="uwRentRollUse" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Use these</button></div>'+
+        '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div></div>';
+    }
+    // "Use these": fill the underwriting units + average rent from the rent roll (the user's action, not auto).
+    function uwUseRentRoll(){
+      var key = opFocusKey, r = key && loanRRCache[key], b = r && r.block; if(!b) return;
+      if(b.residentialUnits) uwState.input.units = b.residentialUnits;
+      if(b.avgActualRent != null) uwState.input.avgRentUnit = b.avgActualRent;
+      try{ uwFillRentFromAvg(); }catch(e){}
+      saveUW(); try{ opSaveAssumptions(key); }catch(e){}
+      try{ renderUnderwriting(); }catch(e){}
+      try{ toast("Filled "+b.residentialUnits+" units and avg rent "+rrMoney(b.avgActualRent)+" from the rent roll.","check"); }catch(e){}
+    }
+    document.addEventListener("click", function(e){ var t = e.target; if(t && t.closest && t.closest("#uwRentRollUse")){ e.preventDefault(); uwUseRentRoll(); } });
 
     /* ================================================================
        8a-UW-AI. AI-assisted Setup — "Read T12 with Claude" (ALTERNATIVE to the
