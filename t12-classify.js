@@ -299,36 +299,18 @@
     if (p.isExp && isBadDebt(p.s)) return "BDX";
     return subMatch(p.s, S) || rulesMatch(p.s, p.isExp, p.isInc);
   }
-  // 2.9.2 — GL mapping overrides: an opt-in map of normalized account-line name -> category code.
-  // Empty by default, so the pure rules (and every reference number) are unchanged until an operator
-  // deliberately re-maps a line in Settings. A match wins over the rules and counts as confident.
-  var OVERRIDES = {};
-  function normName(name){ return String(name || "").toLowerCase().replace(/\s+/g, " ").trim(); }
-  function setOverrides(map){
-    OVERRIDES = {};
-    if (map && typeof map === "object") {
-      for (var k in map) if (Object.prototype.hasOwnProperty.call(map, k)) {
-        var nk = normName(k);
-        if (nk && map[k]) OVERRIDES[nk] = String(map[k]);
-      }
-    }
-  }
-  function getOverrides(){ return OVERRIDES; }
   // classify(name, section, sub) — a code, or null for an empty name.
   function classify(name, section, sub){
     var p = prep(name, section); if(!p.s) return null;
-    if (OVERRIDES[p.s]) return OVERRIDES[p.s];
     return place(p, sub) || (p.isExp ? "GA" : "OTH");
   }
-  // {code, confident} — confident whenever an override, the hierarchy or a keyword rule placed
-  // the line; only the bare section fallback (no signal at all) is unconfident.
+  // {code, confident} — confident whenever the hierarchy or a keyword rule placed the line;
+  // only the bare section fallback (no signal at all) is unconfident.
   function classifyConfident(name, section, sub){
     var p = prep(name, section); if(!p.s) return { code:null, confident:false };
-    if (OVERRIDES[p.s]) return { code: OVERRIDES[p.s], confident: true };
     var m = place(p, sub);
     return { code: m || (p.isExp ? "GA" : "OTH"), confident: m !== null };
   }
 
-  return { classify: classify, classifyConfident: classifyConfident, subMatch: subMatch, roleOf: roleOf, INCOME: INCOME, EXPENSE: EXPENSE,
-           setOverrides: setOverrides, getOverrides: getOverrides, normName: normName };
+  return { classify: classify, classifyConfident: classifyConfident, subMatch: subMatch, roleOf: roleOf, INCOME: INCOME, EXPENSE: EXPENSE };
 });

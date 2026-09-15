@@ -592,7 +592,6 @@
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
             <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
             <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
-            <div id="settingsGlMap" class="mt-3 pt-3 border-t border-slate-100"></div>
             <div id="settingsBench" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
             <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
@@ -3633,27 +3632,9 @@ tr.flagged:hover td{background:#fee2e2}
     let opAppVersion = null;
     async function opComputeVersion(){
       if(!opAppVersion){ try{ if(window.ldsShell && ldsShell.getVersion){ opAppVersion = await ldsShell.getVersion(); } }catch(e){} opAppVersion = opAppVersion || "dev"; }
-      return opAppVersion + (opGlSig ? "|gl:" + opGlSig : "");   // 2.9.2 — a changed GL mapping bumps the compute version so Recompute reclassifies; empty overrides = today's version exactly
+      return opAppVersion;
     }
-    // ── 2.9.2 — GL mapping: a global, opt-in map of account-line name -> category code, applied to the one
-    // classifier choke point (T12Classify.setOverrides). Empty by default, so the pure rules and every
-    // reference number are unchanged until an operator re-maps a line here. ──
-    var opGlSig = "";
-    function opGlMapLoad(){ try{ var raw = localStorage.getItem("lds.glMap"); if(raw){ var o = JSON.parse(raw); if(o && o.map && typeof o.map === "object") return o.map; } }catch(e){} return {}; }
-    function opGlMapSave(map){ try{ localStorage.setItem("lds.glMap", JSON.stringify({ v: 1, map: map || {} })); }catch(e){} }
-    function opGlSigOf(map){ var keys = Object.keys(map || {}).filter(function(k){ return map[k]; }).sort(); return keys.length ? (keys.length + ":" + keys.map(function(k){ return k + "=" + map[k]; }).join(",")) : ""; }
-    function opGlApply(map){ opGlSig = opGlSigOf(map); try{ if(window.T12Classify && T12Classify.setOverrides) T12Classify.setOverrides(map); }catch(e){} }
-    try{ opGlApply(opGlMapLoad()); }catch(e){}   // apply saved overrides before any classification runs
-    // The category codes an operator can re-map a line to (income + expense), with human labels.
-    function opGlCategories(){
-      var codes = {};
-      try{ ["INCOME","EXPENSE"].forEach(function(g){ var m = T12Classify[g] || {}; for(var c in m) if(Object.prototype.hasOwnProperty.call(m,c)) codes[c] = 1; }); }catch(e){}
-      // ensure the staples are offered even if a build trims the maps
-      ["GPR","VAC","CONC","BD","RUBS","PARK","OTH","COM","RET","INS","UTIL","PAY","RM","CS","TRSH","MKT","GA","MGMT","BDX"].forEach(function(c){ codes[c] = 1; });
-      var lbl = (window.SetupBuilder && SetupBuilder.LABEL) || {};
-      return Object.keys(codes).sort().map(function(c){ return { code: c, label: lbl[c] || c }; });
-    }
-    // ── 2.9.2 — per-line BENCHMARKS (Azriel's numbers, held in Settings): payroll two size bands + a unit
+    // ── per-line BENCHMARKS (Azriel's numbers, held in Settings): payroll two size bands + a unit
     // threshold, R&M, contract services and turnover (blank by default). A line whose actual $/unit is beyond
     // ±15% of its benchmark is highlighted, and the dollar gap is surfaced. Global; not market data. ──
     var BENCH_TOL = 0.15;
@@ -3676,31 +3657,6 @@ tr.flagged:hover td{background:#fee2e2}
       if(bench == null || !(units > 0) || total == null) return null;
       var actual = Math.abs(total) / units, gapU = actual - bench;
       return { bench: bench, actualPerUnit: actual, gapPerUnit: gapU, gapTotal: gapU * units, off: bench > 0 && Math.abs(gapU) / bench > BENCH_TOL };
-    }
-    var opGlLinesCache = null;
-    // Read every property's T12 once and collect the distinct account lines + how the classifier places each.
-    async function opCollectGlLines(){
-      if(opGlLinesCache) return opGlLinesCache;
-      var seen = {}, out = [];
-      try{
-        if(!(window.T12Parse && window.T12Classify)) return out;
-        var props = (typeof opProperties === "function") ? opProperties() : [];
-        for(var i=0;i<props.length;i++){
-          try{
-            var r = await opReadPropT12(props[i].key); if(!r || !r.grid) continue;
-            var parsed = T12Parse.parseGrid(r.grid, {}); var rows = (parsed && parsed.rows) || [];
-            rows.forEach(function(row){
-              var nm = row.name; if(!nm) return;
-              var norm = T12Classify.normName(nm); if(!norm || seen[norm]) return;
-              seen[norm] = 1;
-              var cc = T12Classify.classifyConfident(nm, row.section, row.sub);
-              out.push({ name: nm, norm: norm, section: row.section || "", code: (cc && cc.code) || "OTH" });
-            });
-          }catch(e){}
-        }
-      }catch(e){}
-      out.sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
-      opGlLinesCache = out; return out;
     }
     // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
     // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
@@ -4802,55 +4758,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
       host.innerHTML = html;
     }
-    // 2.9.2 — the Settings GL mapping table: every distinct T12 account line, how the classifier places it
-    // now, and a dropdown to re-map it. A change saves globally, re-applies to the classifier and triggers a
-    // Recompute so the line's dollars move to the new category everywhere. Empty by default (pure rules).
-    var _glMapBusy = false;
-    async function renderSettingsGlMap(){
-      var host = el("settingsGlMap"); if(!host) return;
-      if(_glMapBusy) return; _glMapBusy = true;
-      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">GL mapping</span><p class="mt-1 text-[10px] text-slate-400">Reading each T12…</p>';
-      var lines = [], cats = [], map = {};
-      try{ lines = await opCollectGlLines(); cats = opGlCategories(); map = opGlMapLoad(); }catch(e){}
-      var dd = el("settingsDD"); if(!el("settingsGlMap") || (dd && !dd.open)){ _glMapBusy = false; return; }   // menu closed mid-load
-      var lbl = (window.SetupBuilder && SetupBuilder.LABEL) || {};
-      var overridden = Object.keys(map).filter(function(k){ return map[k]; }).length;
-      var rows = lines.map(function(L){
-        var ov = map[L.norm];
-        return '<div class="flex items-center gap-1.5 py-0.5 border-b border-slate-50 last:border-0">'+
-          '<span class="flex-1 min-w-0"><span class="block truncate font-medium text-slate-700" title="'+escapeHtml(L.name)+'">'+escapeHtml(L.name)+'</span>'+
-            (ov?'<span class="text-[9px] font-semibold text-amber-600">re-mapped</span>':'')+'</span>'+
-          '<select class="rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px]" data-glset="'+escapeHtml(L.norm)+'">'+
-            '<option value=""'+(!ov?' selected':'')+'>Auto ('+escapeHtml(lbl[L.code]||L.code)+')</option>'+
-            cats.map(function(c){ return '<option value="'+c.code+'"'+(ov===c.code?' selected':'')+'>'+escapeHtml(c.label)+' ('+c.code+')</option>'; }).join('')+
-          '</select></div>';
-      }).join('');
-      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">GL mapping</span>'+
-        '<div class="mt-1.5 flex items-baseline justify-between"><span class="text-sm font-semibold text-slate-700">Account lines &rarr; category</span>'+
-          '<span class="text-[10px] tabular-nums text-slate-400">'+lines.length+' line'+(lines.length===1?'':'s')+(overridden?' &middot; '+overridden+' re-mapped':'')+'</span></div>'+
-        '<p class="text-[10px] text-slate-400">How each T12 line is classified. Re-map one and Recompute moves its dollars to the new category everywhere.</p>'+
-        (lines.length ? '<div class="mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 p-1.5 text-[11px]">'+rows+'</div>'
-                      : '<div class="mt-1.5 text-[11px] text-slate-400">No T12s loaded yet — open a property or the roll-up, then reopen Settings.</div>')+
-        (overridden ? '<button type="button" id="glMapReset" class="mt-1.5 text-[10px] font-semibold text-slate-500 hover:text-rose-600">Reset all to Auto</button>' : '');
-      _glMapBusy = false;
-    }
-    // Apply a GL re-map (or reset): persist, re-apply to the classifier, then reclassify every property.
-    async function opGlSetMapping(norm, code){
-      if(!norm) return;
-      norm = (window.T12Classify && T12Classify.normName) ? T12Classify.normName(norm) : String(norm).toLowerCase().replace(/\s+/g," ").trim();
-      if(!norm) return;
-      var map = opGlMapLoad();
-      if(code) map[norm] = code; else delete map[norm];
-      opGlMapSave(map); opGlApply(map); opGlLinesCache = null;
-      try{ await opRecomputeAll("gl-mapping"); }catch(e){}
-      try{ renderSettingsGlMap(); }catch(e){}
-    }
-    async function opGlResetMappings(){
-      opGlMapSave({}); opGlApply({}); opGlLinesCache = null;
-      try{ await opRecomputeAll("gl-mapping-reset"); }catch(e){}
-      try{ renderSettingsGlMap(); }catch(e){}
-    }
-    // 2.9.2 — the Settings Benchmarks editor: payroll (two size bands + threshold), R&M, contract services,
+    // The Settings Benchmarks editor: payroll (two size bands + threshold), R&M, contract services,
     // turnover. Editing re-renders the Setup so the ±15% flags and the dollar gaps update everywhere.
     function renderSettingsBench(){
       var host = el("settingsBench"); if(!host) return;
@@ -5227,14 +5135,12 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit,ov)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchLoad=()=>opBenchLoad(); window.LDS_benchSet=(a,v)=>opBenchSet(a,v); window.LDS_benchStatus=(c,t,u)=>opBenchStatus(c,t,u); window.LDS_benchUnitFor=(c,u)=>opBenchUnitFor(c,u); window.LDS_renderBench=()=>renderSettingsBench(); }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit + line overrides + benchmarks
+    try{ window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit,ov)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchLoad=()=>opBenchLoad(); window.LDS_benchSet=(a,v)=>opBenchSet(a,v); window.LDS_benchStatus=(c,t,u)=>opBenchStatus(c,t,u); window.LDS_benchUnitFor=(c,u)=>opBenchUnitFor(c,u); window.LDS_renderBench=()=>renderSettingsBench(); }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit + line overrides + benchmarks
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
-      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsGlMap(); }catch(e){} try{ renderSettingsBench(); }catch(e){} } });
+      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsBench(); }catch(e){} } });
       _sdd.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
-        if(t.getAttribute("data-glset") != null){ opGlSetMapping(t.getAttribute("data-glset"), t.value); }
-        else if(t.getAttribute("data-bench") != null){ opBenchSet(t.getAttribute("data-bench"), t.value); } });
-      _sdd.addEventListener("click", function(e){ if(e.target && e.target.id === "glMapReset"){ opGlResetMappings(); } });
+        if(t.getAttribute("data-bench") != null){ opBenchSet(t.getAttribute("data-bench"), t.value); } });
     } }catch(e){}
     // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
     // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
