@@ -3427,15 +3427,20 @@ tr.flagged:hover td{background:#fee2e2}
       const ovMap = bench.lineOverrides || {};
       const line = (ln)=>{
         const uwv = r.underwritten.lines[ln.key], ovOn = (ovMap[ln.key] != null);
-        const bs = opBenchStatus(ln.key, uwv, uUnits);   // 2.9.2 — benchmark comparison on the underwritten $/unit
+        const isComm = (ln.key === "COM");   // 2.9.2 — commercial income: in NOI, but NOT a residential per-unit figure
+        const bs = isComm ? null : opBenchStatus(ln.key, uwv, uUnits);   // 2.9.2 — benchmark comparison on the underwritten $/unit
         const rowCls = (bs && bs.off) ? 'border-t border-amber-200 bg-amber-50/40' : 'border-t border-slate-100';
         const benchTag = bs ? ' <span class="text-[9px] '+(bs.off?'font-semibold text-amber-700':'text-slate-400')+'" title="Benchmark '+fmtMoney(bs.bench)+'/unit">vs '+fmtMoney(bs.bench)+'/u'+(bs.off?' &middot; '+(bs.gapTotal>=0?'+':'')+fmtMoney(bs.gapTotal):'')+'</span>' : '';
+        const commTag = isComm ? ' <span class="text-[9px] font-semibold uppercase tracking-wide text-violet-500">commercial</span>' : '';
+        // commercial has no residential $/unit — the denominator is residential units only
+        const commPer = perUnitOn ? '<td class="py-1 pr-2 text-right text-[10px] text-slate-300" title="Commercial — excluded from residential $/unit">&mdash;</td>' : '';
         const totCls = 'w-24 rounded px-1 py-0.5 text-right text-sm tabular-nums '+(ovOn?'border border-brand-300 bg-brand-50 font-semibold text-brand-800':'border border-transparent text-slate-800 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
         const totCell = '<td class="py-1 px-1 text-right whitespace-nowrap"><input class="'+totCls+'" inputmode="numeric" data-uwline="'+ln.key+'" value="'+(uwv==null?'':Math.round(uwv))+'">'+(ovOn?'<button type="button" class="ml-0.5 align-middle text-[11px] text-slate-400 hover:text-rose-500" data-uwlinereset="'+ln.key+'" title="Reset to computed">&times;</button>':'')+'</td>';
         const perCls = 'w-16 rounded px-1 py-0.5 text-right text-[11px] tabular-nums '+(ovOn?'border border-brand-200 bg-brand-50 text-brand-700':'border border-transparent text-slate-400 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
-        const perCell = perUnitOn ? '<td class="py-1 pr-1 text-right"><input class="'+perCls+'" inputmode="numeric" data-uwlineper="'+ln.key+'" value="'+((unitsOk&&uwv!=null)?Math.round(uwv/uUnits):'')+'"></td>' : '';
-        return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide">edited</span>':'')+benchTag+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ puCell(ln.t12) + totCell + perCell +'</tr>';
+        const perCell = !perUnitOn ? '' : (isComm ? commPer : '<td class="py-1 pr-1 text-right"><input class="'+perCls+'" inputmode="numeric" data-uwlineper="'+ln.key+'" value="'+((unitsOk&&uwv!=null)?Math.round(uwv/uUnits):'')+'"></td>');
+        const ipPerCell = isComm ? commPer : puCell(ln.t12);
+        return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide">edited</span>':'')+benchTag+commTag+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ ipPerCell + totCell + perCell +'</tr>';
       };
       const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
         return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
@@ -3644,7 +3649,7 @@ tr.flagged:hover td{background:#fee2e2}
       var codes = {};
       try{ ["INCOME","EXPENSE"].forEach(function(g){ var m = T12Classify[g] || {}; for(var c in m) if(Object.prototype.hasOwnProperty.call(m,c)) codes[c] = 1; }); }catch(e){}
       // ensure the staples are offered even if a build trims the maps
-      ["GPR","VAC","CONC","BD","RUBS","PARK","OTH","RET","INS","UTIL","PAY","RM","CONTR","TURN","MKT","ADMIN","GA","MGMT","COMM","BDX"].forEach(function(c){ codes[c] = 1; });
+      ["GPR","VAC","CONC","BD","RUBS","PARK","OTH","COM","RET","INS","UTIL","PAY","RM","CS","TRSH","MKT","GA","MGMT","BDX"].forEach(function(c){ codes[c] = 1; });
       var lbl = (window.SetupBuilder && SetupBuilder.LABEL) || {};
       return Object.keys(codes).sort().map(function(c){ return { code: c, label: lbl[c] || c }; });
     }
