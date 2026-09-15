@@ -24,7 +24,7 @@ const CSV=[
 
   // the module is loaded and the pure parser works through the app's diagnostic
   ok(await page.evaluate(()=>!!window.RentRoll && typeof window.RentRoll.parse==='function'),'the RentRoll module is loaded in the app');
-  const pure=await page.evaluate(()=>{ var g=[['Unit','Type','Market Rent','Actual Rent'],['1','1BR',1500,1500],['2','1BR',1500,0]]; return window.LDS_rentRollParse(g); });
+  const pure=await page.evaluate(()=>{ var g=[['Unit','Type','Market Rent','Actual Rent'],['1','1BR',1500,1500],['2','1BR',1500,0]]; var r=window.LDS_rentRollParse(g); return r&&r.properties&&r.properties[0]; });
   ok(pure && pure.residentialUnits===2 && pure.gprAnnual===36000 && pure.avgActualRent===1500,'LDS_rentRollParse computes GPR (36,000) and excludes the vacant zero from the actual average');
 
   // open a property and upload the rent roll to its Documents panel
@@ -34,8 +34,8 @@ const CSV=[
   await page.waitForFunction(()=>{ const h=document.getElementById('loanDocsPanel'); return h&&/rent-roll\.csv/i.test(h.innerText||''); },null,{timeout:9000}).catch(()=>{});
   await page.waitForTimeout(400);
 
-  // read it back from the folder and parse it
-  const r=await page.evaluate(async (k)=>{ const res=await window.LDS_rentRoll(k); return res?res.roll:null; }, key);
+  // read it back from the folder and parse it (single-property CSV → properties[0])
+  const r=await page.evaluate(async (k)=>{ const res=await window.LDS_rentRoll(k); return res&&res.roll&&res.roll.properties?res.roll.properties[0]:null; }, key);
   ok(r!=null,'the rent roll is found in the property folder and parsed');
   if(r){
     ok(r.residentialUnits===4,'4 residential units read from the uploaded rent roll');

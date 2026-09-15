@@ -3811,7 +3811,7 @@ tr.flagged:hover td{background:#fee2e2}
           const rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) continue;
           const grid = opRentRollGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) continue;
           const roll = RentRoll.parse(grid);
-          if(roll && roll.headerRow >= 0 && roll.units.length) return { file: f, grid: grid, roll: roll };
+          if(roll && roll.headerRow >= 0 && roll.properties && roll.properties.length) return { file: f, grid: grid, roll: roll };
         }
       }catch(e){}
       return null;
