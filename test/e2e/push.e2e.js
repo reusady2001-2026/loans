@@ -2,7 +2,7 @@
    assumptions (the user's editable per-property variables) and the property's own classified statement
    (income + expense lines, actual annual dollars) — no menu, no pre-computed actuals or NOI. Claude works out
    the actual figures itself and decides what raises the underwritten NOI most. Verifies: the analysis
-   auto-runs and is Claude's; the payload is exactly { property, units, underwritingAssumptions, t12 }; the
+   auto-runs and is Claude's; the payload is { property, address, units, underwritingAssumptions, benchmarksPerUnit, t12 }; the
    assumptions are the editable variables (a change flows straight through); full words only; no covenant talk;
    and a re-analysis at a higher assumption flips Claude to crediting the proven occupancy. Fake CLI.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/push.e2e.js */
@@ -48,7 +48,7 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   const sent=readInput();
   ok(sent&&/Villages of Whitewater/i.test(sent.property||''),'Claude was sent THIS property by name');
   ok(sent&&!('possibleMoves' in sent)&&!('actualsFromStatement' in sent)&&!('underwrittenNOI' in sent)&&!('inPlaceNOI' in sent),'ONLY the assumptions + the T12 are sent — no menu, no pre-computed actuals or NOI (Claude derives what it needs)');
-  ok(sent&&Object.keys(sent).sort().join(',')==='address,property,t12,underwritingAssumptions,units','the payload is exactly { property, address, units, underwritingAssumptions, t12 } — nothing more (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
+  ok(sent&&Object.keys(sent).sort().join(',')==='address,benchmarksPerUnit,property,t12,underwritingAssumptions,units','the payload is exactly { property, address, units, underwritingAssumptions, benchmarksPerUnit, t12 } — nothing more (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
   ok(sent&&sent.t12&&Array.isArray(sent.t12.income)&&sent.t12.income.length>0&&Array.isArray(sent.t12.expense)&&sent.t12.expense.length>0,'Claude is sent the property’s own classified T12 (income + expense lines)');
   ok(sent&&sent.t12.income.every(r=>r.line&&typeof r.annual==='number')&&sent.t12.expense.some(r=>/repairs and maintenance/i.test(r.line)),'the T12 lines are full-word labels with actual annual dollars (e.g. "repairs and maintenance")');
   ok(sent&&sent.t12.income.some(r=>/gross potential rent/i.test(r.line))&&sent.t12.income.some(r=>/vacancy/i.test(r.line)),'the T12 carries gross potential rent AND the vacancy line, so Claude can derive the actual vacancy itself');

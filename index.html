@@ -5086,10 +5086,11 @@ tr.flagged:hover td{background:#fee2e2}
     // most. A move is not judged by whether it "beats" an assumption — it is judged by how much underwritten
     // NOI it adds.
     var AI_PUSH_INSTRUCTION = [
-      "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement and the underwriting assumptions, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%).",
+      "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement, the underwriting assumptions, and the owner's per-unit benchmark targets, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, benchmarksPerUnit:{ payroll, repairsMaintenance, contractServices, turnover }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%); each benchmark is a dollars-per-unit target (null means the owner set none).",
       "The loan is sized on the property's UNDERWRITTEN NOI — the statement re-priced with these assumptions: vacancy is charged at the BETTER of the vacancy assumption and the vacancy the statement actually runs (a property running TIGHTER than assumed is already credited its proven, lower vacancy; one running looser is held to the assumption), the management fee likewise at the better of the assumed share of effective gross income and what the statement actually pays, replacement reserves at the assumed dollars per unit, and every other line passes through at its actual amount from the statement.",
       "Read the statement against those assumptions and decide what the owner should PUSH to raise this property's underwritten NOI the most, then rank the moves by how much they raise it. A move does NOT have to 'beat' an assumption — weigh each one only by how much underwritten NOI it adds. Because vacancy and the management fee are ALREADY underwritten at the better of the assumption and the statement, there is no 'credit the proven figure' move to make on those — real upside there means pushing them EVEN BETTER than the statement already runs (usually hard when the property is already tight; say so), while for rents and each cost line the upside is operational, straight from the statement's own figures. Never tell the owner to move a figure the wrong way (for example toward a worse vacancy than the statement already runs). Work it out yourself; you are not given a list of moves.",
       "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect, in words, grounded in the statement's own figures (for example \"about $100,000 a year\"); impactInPlace — the SAME effect as a plain annual dollar NUMBER on the property's IN-PLACE NOI (the statement's own actual net operating income), positive when it RAISES NOI; impactUnderwritten — the annual dollar NUMBER effect on the UNDERWRITTEN NOI (the re-priced figure the loan is sized on). The two numbers are usually close, but differ where a line is already re-priced by an assumption (pushing vacancy or the management fee below what the statement runs moves in-place fully but underwritten only to the extent it beats the assumption). Use 0 for a number you genuinely cannot ground, and say so in the rationale rather than inventing one — never invent a market rent or comparable you were not given. effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
+      "Use the benchmark targets to find operational upside: for a line that has a benchmark (payroll and repairs & maintenance especially), work out the line's actual dollars per unit from the statement (its annual total divided by units) and compare it to the benchmark. When a line runs more than about 15% ABOVE its benchmark, that gap is real, so name it and STATE the annual dollar gap (the dollars-per-unit gap times the units) in the rationale — that is exactly the money on the table. Do not flag a line that has no benchmark or that already sits at or below it.",
       "Use FULL WORDS only. The ONLY abbreviation permitted is NOI (so \"underwritten NOI\" is fine). Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
       "Consider the property's LOCATION (its address, when given) in judging what is realistic to push and how to rank the moves — rent upside, tax and insurance pressure, and utility costs all vary by market.",
       "Return { summary, moves:[{ title, rank, impact, impactInPlace, impactUnderwritten, effort, rationale }] } via the structured-output tool, best first."
@@ -5101,18 +5102,17 @@ tr.flagged:hover td{background:#fee2e2}
       // prioritization). The assumptions are the user's own EDITABLE, per-property values (read live from
       // bench, never hardcoded) — change them in the underwriting tab and re-analyse, and Claude works from
       // the new numbers. Nothing else is pre-computed for Claude.
-      // 2.9.2 — the benchmark gaps (in dollars) for any underwritten line beyond ±15% of its $/unit target,
-      // so Claude's "what to push" can state the gap. View-time only; never changes an engine number.
-      var units = uwLastBuilt.worksheet.units || null, benchGaps = [];
-      try{ (uwLastBuilt.worksheet.lines || []).forEach(function(ln){
-        var bs = opBenchStatus(ln.key, uwLastBuilt.result.underwritten.lines[ln.key], units);
-        if(bs && bs.off) benchGaps.push({ line: ln.label, benchmarkPerUnit: bs.bench, actualPerUnit: Math.round(bs.actualPerUnit), gapDollars: Math.round(bs.gapTotal) });
-      }); }catch(e){}
+      // 2.9.2 — Yuval's $/unit benchmark TARGETS for this property's size band (payroll picks its band by
+      // units), sent like the assumptions. Claude derives the actual $/unit from the T12 it already reads and
+      // states the gap itself — the app pre-computes nothing (no actuals, no NOI).
+      var units = uwLastBuilt.worksheet.units || null;
+      var benchmarksPerUnit = { payroll: opBenchUnitFor("PAY", units), repairsMaintenance: opBenchUnitFor("RM", units),
+        contractServices: opBenchUnitFor("CONTR", units), turnover: opBenchUnitFor("TURN", units) };
       return { property: (p && p.name) || key, address: (sr && sr.propertyAddress) || null,
         units: units,
         underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
           reservePerUnit: bench.reservePerUnit, capRate: (bench.sizing && bench.sizing.capRate) },
-        benchmarkGaps: benchGaps,
+        benchmarksPerUnit: benchmarksPerUnit,
         t12: { income: t.income, expense: t.expense } };
     }
     function opRunPush(key){
