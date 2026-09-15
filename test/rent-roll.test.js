@@ -66,6 +66,8 @@ group("Maple Court — residential/commercial split, grossed-up GPR, vacant-excl
   eq(m.gprAnnual, 36000, "GPR grossed up: both residential units at market 1,500 × 12 = 36,000 (vacant included)");
   eq(m.avgActualRent, 1500, "average actual rent excludes the vacant zero (only unit 101 counts)");
   eq(m.occupancy, 0.5, "occupancy is 1 of 2 = 0.5");
+  eq(m.occupiedUnits, 1, "1 occupied residential unit");
+  eq(m.residentialSqft, 1600, "total residential square footage = 800 + 800 = 1,600");
   eq(m.commercialAnnual, 60000, "commercial income = the CAM actual 5,000 × 12 = 60,000 (kept for NOI)");
 });
 

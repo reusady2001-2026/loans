@@ -47,15 +47,16 @@ const CSV=[
     ok(r.unitStats.length===2,'two residential unit-type stats rows');
   }
 
-  // the Unit Statistics panel renders on the property view (matched to this property)
-  const blk=await page.evaluate(async(k)=>{ const res=await window.LDS_rentRollBlock(k); return res&&res.block?{units:res.block.residentialUnits, types:res.block.unitStats.length}:null; }, key);
-  ok(blk && blk.units===4 && blk.types===2,'LDS_rentRollBlock matches this property to a rent-roll block (4 units, 2 types)');
-  await page.waitForFunction(()=>{ const h=document.getElementById('loanUnitStatsPanel'); return h && /Unit mix/i.test(h.innerText||''); },null,{timeout:8000}).catch(()=>{});
+  // the rent-roll SUMMARY panel renders on the property view (matched to this property) — no per-unit detail
+  const blk=await page.evaluate(async(k)=>{ const res=await window.LDS_rentRollBlock(k); var b=res&&res.block; return b?{units:b.residentialUnits, occ:b.occupiedUnits, vac:b.vacantUnits, sqft:b.residentialSqft}:null; }, key);
+  ok(blk && blk.units===4 && blk.occ===3 && blk.vac===1 && blk.sqft===3600,'LDS_rentRollBlock matches this property: 4 units, 3 occupied, 1 vacant, 3,600 sf');
+  await page.waitForFunction(()=>{ const h=document.getElementById('loanUnitStatsPanel'); return h && /Rent roll summary/i.test(h.innerText||''); },null,{timeout:8000}).catch(()=>{});
   const panel=await page.evaluate(()=>(document.getElementById('loanUnitStatsPanel')||{}).innerText||'');
-  ok(/Unit mix/i.test(panel),'the Unit Statistics panel renders on the property view');
-  ok(/4 units/i.test(panel),'…showing the residential unit count (4 units)');
-  ok(/75%\s*occupied/i.test(panel),'…and occupancy (75%)');
-  ok(/1BR\/1BA/.test(panel) && /2BR\/2BA/.test(panel),'…and the unit mix by type');
+  ok(/Rent roll summary/i.test(panel),'the rent-roll summary panel renders on the property view');
+  ok(/Units/i.test(panel) && /Occupied/i.test(panel) && /Vacant/i.test(panel),'…showing units / occupied / vacant');
+  ok(/\$1,750/.test(panel) && /\$1,800/.test(panel),'…average market ($1,750) and average in-place ($1,800) rent');
+  ok(/3,600\s*sf/i.test(panel),'…total square footage (3,600 sf)');
+  ok(!/1BR\/1BA/.test(panel),'…and NOT the per-unit-type detail (summary only — no noise)');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

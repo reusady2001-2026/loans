@@ -134,8 +134,8 @@
   // Aggregate one property's collected unit records into its statistics.
   function aggregate(name, units, opts){
     opts = opts || {};
-    var out = { name: name || "(property)", units: units, residentialUnits: 0, commercialUnits: 0,
-      vacantUnits: 0, gprAnnual: null, avgMarketRent: null, avgActualRent: null, occupancy: null,
+    var out = { name: name || "(property)", units: units, residentialUnits: 0, occupiedUnits: 0, commercialUnits: 0,
+      vacantUnits: 0, residentialSqft: null, gprAnnual: null, avgMarketRent: null, avgActualRent: null, occupancy: null,
       unitStats: [], commercialAnnual: null, warnings: [] };
     var propComm = COMMERCIAL_NAME_RE.test(name || "");
     units.forEach(function(u){
@@ -148,7 +148,10 @@
     var comm = units.filter(function(u){ return u.commercial; });
     out.residentialUnits = res.length;
     out.commercialUnits = comm.length;
+    out.occupiedUnits = res.filter(function(u){ return u.occupied; }).length;
     out.vacantUnits = res.filter(function(u){ return !u.occupied; }).length;
+    var resSqfts = res.map(function(u){ return u.sqft; }).filter(function(v){ return v != null; });
+    out.residentialSqft = resSqfts.length ? sum(resSqfts) : null;   // total rentable square footage of the property
 
     var marketVals = res.map(function(u){ return u.marketRent; }).filter(function(v){ return v != null; });
     if (res.length && marketVals.length) out.gprAnnual = round2(sum(marketVals) * 12);

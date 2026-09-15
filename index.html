@@ -5230,34 +5230,31 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function rrPct(x){ return (x == null) ? "—" : Math.round(x * 100) + "%"; }
     function rrMoney(x){ return (x == null) ? "—" : "$" + Math.round(x).toLocaleString(); }
-    // Unit-statistics HTML for a parsed rent-roll block. opts.compact → the tight underwriting version.
+    // Rent-roll SUMMARY HTML for a parsed block — the figures the app derives from the rent roll (never the
+    // per-unit detail; a property can have hundreds of units). opts.compact → the tight underwriting version.
+    function rrStatTile(label, val){ return '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+val+'</div></div>'; }
     function rrUnitStatsHtml(block, opts){
       opts = opts || {};
       var b = block;
-      var head = b.residentialUnits + ' unit' + (b.residentialUnits === 1 ? '' : 's') + ' · ' + rrPct(b.occupancy) + ' occupied · avg market ' + rrMoney(b.avgMarketRent) + '/mo · avg in-place ' + rrMoney(b.avgActualRent) + '/mo';
-      var commLine = b.commercialUnits ? '<div class="text-[11px] text-violet-600 mt-0.5">+ ' + b.commercialUnits + ' commercial · ' + rrMoney(b.commercialAnnual) + '/yr income (out of the residential per-unit math)</div>' : '';
-      var rows = b.unitStats.map(function(s){
-        return '<tr class="border-t border-slate-100">'+
-          '<td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(s.type || "(unspecified)")+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+s.count+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-500">'+rrPct(s.occPct)+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-500">'+(s.avgSqft==null?'—':s.avgSqft.toLocaleString())+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+rrMoney(s.avgMarketRent)+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+rrMoney(s.avgOccupiedRent)+'</td>'+
-        '</tr>';
-      }).join('');
-      var table = '<div class="overflow-x-auto mt-2"><table class="w-full min-w-[440px]"><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400">'+
-        '<th class="py-1 pr-3 text-left">Unit type</th><th class="py-1 px-2 text-right">Units</th><th class="py-1 px-2 text-right">Occ</th><th class="py-1 px-2 text-right">Avg SqFt</th><th class="py-1 px-2 text-right">Avg market</th><th class="py-1 px-2 text-right">Avg in-place</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      var sqft = (b.residentialSqft != null) ? Math.round(b.residentialSqft).toLocaleString() + ' sf' : '—';
+      var grid = '<div class="grid grid-cols-3 sm:grid-cols-6 gap-2">'+
+        rrStatTile('Units', b.residentialUnits)+
+        rrStatTile('Occupied', b.occupiedUnits)+
+        rrStatTile('Vacant', b.vacantUnits)+
+        rrStatTile('Avg market', rrMoney(b.avgMarketRent))+
+        rrStatTile('Avg in-place', rrMoney(b.avgActualRent))+
+        rrStatTile('Sq ft', sqft)+
+      '</div>';
+      var comm = b.commercialUnits ? '<div class="mt-2 text-[11px] text-violet-600">+ ' + b.commercialUnits + ' commercial unit' + (b.commercialUnits > 1 ? 's' : '') + ' · ' + rrMoney(b.commercialAnnual) + '/yr income (kept for the NOI, out of the per-unit math)</div>' : '';
       if(opts.compact){
-        return '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1">Unit mix &middot; rent roll</div><div class="text-xs font-semibold text-slate-700">'+head+'</div>'+commLine+table+'</div>';
+        return '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">From the rent roll</div>'+grid+comm+'</div>';
       }
-      var gpr = b.gprAnnual != null ? '<span class="text-slate-400"> · GPR '+rrMoney(b.gprAnnual)+'/yr (grossed up)</span>' : '';
-      var warnBtn = (b.warnings && b.warnings.length) ? '<button type="button" id="rrWarnToggle" class="text-[11px] font-semibold text-amber-600 hover:underline">'+b.warnings.length+' to check</button>' : '';
+      var warnBtn = (b.warnings && b.warnings.length) ? '<button type="button" id="rrWarnToggle" class="text-[11px] font-semibold text-amber-600 hover:underline shrink-0">'+b.warnings.length+' to check</button>' : '';
       var warnList = (b.warnings && b.warnings.length) ? '<div id="rrWarnList" hidden class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">'+b.warnings.slice(0,20).map(function(w){ return '&bull; '+escapeHtml(w); }).join('<br>')+(b.warnings.length>20?'<br>&hellip; and '+(b.warnings.length-20)+' more':'')+'</div>' : '';
       return '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+
-        '<div class="border-b border-slate-100 px-5 py-4"><h2 class="text-base font-bold text-slate-900">Unit mix &amp; statistics</h2>'+
-          '<p class="text-xs text-slate-500">From the rent roll'+(opts.fileName?' ('+escapeHtml(opts.fileName)+')':'')+(opts.blockName?' &mdash; matched to '+escapeHtml(opts.blockName):'')+'</p></div>'+
-        '<div class="px-5 py-4"><div class="flex items-center justify-between gap-2"><div class="text-sm font-semibold text-slate-800">'+head+gpr+'</div>'+warnBtn+'</div>'+commLine+warnList+table+'</div>'+
+        '<div class="border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-2"><div><h2 class="text-base font-bold text-slate-900">Rent roll summary</h2>'+
+          '<p class="text-xs text-slate-500">From '+(opts.fileName?escapeHtml(opts.fileName):'the rent roll')+(opts.blockName?' &mdash; '+escapeHtml(opts.blockName):'')+'</p></div>'+warnBtn+'</div>'+
+        '<div class="px-5 py-4">'+grid+comm+warnList+'</div>'+
       '</div>';
     }
     function renderLoanUnitStats(){
