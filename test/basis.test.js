@@ -71,5 +71,31 @@ cents(bB_borrow.result.underwritten.noi, 856250, "Borrower underwritten NOI = 85
 cents(bB_lender.result.underwritten.noi, 836750, "Lender underwritten NOI = 836,750 (7% actual)");
 ok(bB_lender.result.underwritten.noi <= bB_borrow.result.underwritten.noi, "Lender NOI <= Borrower NOI in both directions of the vacancy gap");
 
+// ── Bad debt & concessions (the 4th assumption, 1%): Borrower passes the statement's actual through
+//    (reference numbers unchanged); Lender floors it at the assumption. ──
+console.log("\nFixture C — concessions 0.5% (BELOW the 1% assumption): Lender floors, Borrower keeps actual");
+// GPR 1,000,000; CONC −5,000 (0.5%); RET 50,000; 100 units. VAC has no actual → 5% both (−50,000). MGMT 2.5% of EGI.
+var C = { GPR: 1000000, CONC: -5000, RET: 50000 };
+var cBorrow = SB.buildSetup({ categorySums: C, units: 100, benchmarks: BENCH, basis: "borrower" });
+var cLender = SB.buildSetup({ categorySums: C, units: 100, benchmarks: BENCH, basis: "lender" });
+cents(cBorrow.result.underwritten.lines.CONC, -5000, "Borrower keeps concessions at the statement's actual −5,000 (0.5%)");
+cents(cLender.result.underwritten.lines.CONC, -10000, "Lender floors concessions at 1% → −10,000");
+ratio(cBorrow.effective.badDebt, 0.005, "Borrower effective bad-debt rate = the actual 0.5%");
+ratio(cLender.effective.badDebt, 0.01, "Lender effective bad-debt rate = the 1% floor");
+ratio(cBorrow.effective.assumeBadDebt, 0.01, "the assumption is 1%");
+// Borrower: EGI 945,000 − RET 50,000 − MGMT(2.5%×945,000=23,625) − reserves 20,000 = 851,375.
+// Lender:   EGI 940,000 − 50,000 − MGMT(2.5%×940,000=23,500) − 20,000 = 846,500.
+cents(cBorrow.result.underwritten.noi, 851375, "Borrower underwritten NOI = 851,375");
+cents(cLender.result.underwritten.noi, 846500, "Lender underwritten NOI = 846,500 (extra 4,875 of concession floor, net of mgmt on lower EGI)");
+ok(cLender.result.underwritten.noi < cBorrow.result.underwritten.noi, "Lender NOI < Borrower NOI when the concession floor binds");
+
+console.log("\nFixture D — concessions 3% (ABOVE the 1% assumption): both keep the actual, reference numbers unchanged");
+var D = { GPR: 1000000, CONC: -30000, RET: 50000 };
+var dBorrow = SB.buildSetup({ categorySums: D, units: 100, benchmarks: BENCH, basis: "borrower" });
+var dLender = SB.buildSetup({ categorySums: D, units: 100, benchmarks: BENCH, basis: "lender" });
+cents(dBorrow.result.underwritten.lines.CONC, -30000, "Borrower keeps concessions at the actual −30,000 (never inflates NOI by capping at 1%)");
+cents(dLender.result.underwritten.lines.CONC, -30000, "Lender keeps the worse actual −30,000 (the 1% floor doesn't reduce it)");
+eq(JSON.stringify(dBorrow.result.underwritten.lines.CONC), JSON.stringify(dLender.result.underwritten.lines.CONC), "above the assumption, both bases agree on concessions — the number is the statement's own");
+
 console.log("\n" + (fail ? (fail + " FAILED, " + pass + " passed") : ("all " + pass + " basis checks passed")));
 process.exit(fail ? 1 : 0);

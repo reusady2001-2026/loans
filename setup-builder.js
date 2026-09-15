@@ -154,6 +154,25 @@
     var inPlaceEGI = 0; RENTAL.concat(OTHER).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
     var actualMgmt = (has("MGMT") && inPlaceEGI > 0) ? Math.max(0, sums.MGMT || 0) / inPlaceEGI : null;
     var effMgmt = pick(actualMgmt, assumeMgmt);
+    // 2.9.2 — bad debt & concessions (the 4th assumption, default 1%) priced at the BETTER/WORSE of the
+    // assumption vs the statement's own combined concessions + bad debt, on the underwritten gross rental
+    // base, then distributed back to the CONC / BD lines by their actual weights. Because the actual rate is
+    // measured on the same base it is applied to, Borrower reproduces each line's proven figure exactly
+    // whenever the statement runs at or below the assumption (reference numbers unchanged); the assumption
+    // binds only when the statement runs looser (Borrower caps it there) or under Lender (holds the floor).
+    var uwGPR = (input.rrGPR != null ? num(input.rrGPR) : (sums.GPR || 0));
+    var grossRentalUw = uwGPR + (sums.EMPL || 0) + (sums.MOD || 0);
+    var concActual = Math.max(0, -(sums.CONC || 0)), bdActual = Math.max(0, -(sums.BD || 0)), badActual = concActual + bdActual;
+    var assumeBad = (bm.badDebtPct != null ? num(bm.badDebtPct) : 0.01);
+    var actualBad = (grossRentalUw > 0 && (has("CONC") || has("BD"))) ? badActual / grossRentalUw : null;
+    // Borrower keeps the statement's proven concessions / bad debt (no artificial upside, so the reference
+    // numbers are unchanged); Lender floors them at the assumption (the conservative worse-of). Where the
+    // statement reports none, neither case invents a deduction (badTotalUw stays 0 below).
+    var effBad = (actualBad == null) ? assumeBad
+               : (basis === "lender" ? Math.max(actualBad, assumeBad) : actualBad);
+    var badTotalUw = (actualBad != null) ? -(effBad * grossRentalUw) : 0;                       // combined underwritten deduction (<= 0)
+    var concUw = (badActual > 0) ? badTotalUw * (concActual / badActual) : (has("CONC") ? 0 : null);
+    var bdUw   = (badActual > 0) ? badTotalUw * (bdActual   / badActual) : (has("BD")   ? 0 : null);
     var lines = [];
     var L = function (key, section, method, opts){
       opts = opts || {};
@@ -168,8 +187,8 @@
     if(has("EMPL")) L("EMPL", "rental", "value", { uw: sums.EMPL });
     if(has("MOD"))  L("MOD",  "rental", "value", { uw: sums.MOD });
     L("VAC", "rental", "pctBase", { param: effVac, t12: sums.VAC || 0 });
-    if(has("CONC")) L("CONC", "rental", "value", { uw: sums.CONC });
-    if(has("BD"))   L("BD",   "rental", "value", { uw: sums.BD });
+    if(has("CONC")) L("CONC", "rental", "value", { uw: concUw });
+    if(has("BD"))   L("BD",   "rental", "value", { uw: bdUw });
 
     // Other income — one line per category present, pass-through
     OTHER.forEach(function (c){ if(has(c)) L(c, "other", "value", { uw: sums[c] }); });
@@ -205,8 +224,9 @@
              inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX),
              // The rates the underwritten column actually used, and where each came from (the statement's own
              // actual, or the assumption) — so the UI can say when a property was credited its proven figure.
-             effective: { basis: basis, vacancy: effVac, managementFee: effMgmt, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt,
-                          actualVacancy: actualVac, actualManagementFee: actualMgmt,
+             effective: { basis: basis, vacancy: effVac, managementFee: effMgmt, badDebt: effBad, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt, assumeBadDebt: assumeBad,
+                          actualVacancy: actualVac, actualManagementFee: actualMgmt, actualBadDebt: actualBad,
+                          badDebtFromActual: (actualBad != null && effBad === actualBad && actualBad !== assumeBad),
                           // "from actual" = the underwritten column used the statement's proven rate rather than the
                           // assumption (in Borrower case that happens when the actual is BETTER; in Lender case, WORSE).
                           vacancyFromActual: (actualVac != null && effVac === actualVac && actualVac !== assumeVac),

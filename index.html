@@ -3228,7 +3228,7 @@ tr.flagged:hover td{background:#fee2e2}
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, avgRentUnit:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
-      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, basis:"borrower",   // 2.9.2 — underwriting basis: borrower (better-of, default) / lender (worse-of)
+      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, badDebtPct:0.01, budget:{}, basis:"borrower",   // 2.9.2 — four fixed assumptions + underwriting basis (borrower better-of / lender worse-of)
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
     // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
     // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
@@ -3463,13 +3463,13 @@ tr.flagged:hover td{background:#fee2e2}
               '<div class="flex flex-wrap items-center gap-2"><span class="text-[11px] font-semibold text-slate-600">Underwriting basis</span>'+basisToggle+
                 '<span class="text-[10px] text-slate-400">'+(uwBasis==="lender"?"lender floor — the WORSE of actual vs assumption":"borrower — the BETTER of actual vs assumption")+'</span></div>'+
               '<button type="button" id="uwSaveBtn" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-brand-400 hover:to-brand-500">Save to property record</button></div>'+
-            '<div class="mb-2 text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; change them to test scenarios, then Save</span></div>'+
-            '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
-              benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+
+            '<div class="mb-2 text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; four fixed inputs; change them to test scenarios, then Save</span></div>'+
+            '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">'+
+              benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+benchIn("Bad debt & concessions","badDebtPct",uwPctStr(bench.badDebtPct),"%")+
             '</div>'+
             '<p class="mt-2 text-[11px] text-slate-400">'+(uwBasis==="lender"
-              ? 'Lender case: the underwritten column prices vacancy and the management fee at the WORSE of your assumption and what the statement actually runs (a lender holds the property to at least the assumption — vacancy no lower than '+fmtPct(eff.assumeVacancy)+', management no lower than '+fmtPct(eff.assumeManagementFee)+'), reserves at your dollars per unit; every other line passes through the T12 actual.'
-              : 'Borrower case: the underwritten column prices vacancy and the management fee at the BETTER of your assumption and what the statement actually runs (a property that runs tighter than assumed is credited its proven figure), reserves at your dollars per unit; every other line passes through the T12 actual.')+'</p>'+ creditNote +'</div>'+
+              ? 'Lender case: the underwritten column prices vacancy and the management fee at the WORSE of your assumption and what the statement actually runs (a lender holds the property to at least the assumption — vacancy no lower than '+fmtPct(eff.assumeVacancy)+', management no lower than '+fmtPct(eff.assumeManagementFee)+'), concessions &amp; bad debt no lower than '+fmtPct(eff.assumeBadDebt)+', reserves at your dollars per unit; every other line passes through the T12 actual.'
+              : 'Borrower case: the underwritten column prices vacancy and the management fee at the BETTER of your assumption and what the statement actually runs (a property that runs tighter than assumed is credited its proven figure), concessions &amp; bad debt at the statement’s proven figure, reserves at your dollars per unit; every other line passes through the T12 actual.')+'</p>'+ creditNote +'</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
           '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan <span class="font-semibold normal-case text-brand-600/80">&middot; '+uwBasisLabel+'</span></h3>'+
@@ -3533,7 +3533,7 @@ tr.flagged:hover td{background:#fee2e2}
     // (not per keystroke, to keep focus). An average per unit fills the yearly rent; typing the yearly figure
     // directly clears the average so the two can never disagree.
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
-      if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
+      if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1, badDebtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
       const k = t.getAttribute && t.getAttribute("data-uwf");
       if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); renderUnderwriting(); return; }
@@ -3560,7 +3560,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ const existing = await opLoadGeneralData(key);
         if(existing) await opRefreshGeneralDataNOI(key); else await opUpdateGeneralData(key); }catch(e){}   // refresh both NOIs from the current inputs (preserves history + saved push)
       const bench = uwState.input.bench;
-      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, basis: bench.basis || "borrower", sizing: Object.assign({}, bench.sizing || {}) };
+      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, badDebtPct: (bench.badDebtPct != null ? bench.badDebtPct : 0.01), basis: bench.basis || "borrower", sizing: Object.assign({}, bench.sizing || {}) };
       const cur = opPushCache.get(key), push = (cur && Array.isArray(cur.moves)) ? cur : undefined;
       try{ await opPersistGeneralExtras(key, { assumptions: snap, push: push }); }catch(e){}
       let regen = false;
