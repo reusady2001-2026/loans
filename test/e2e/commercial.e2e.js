@@ -1,6 +1,7 @@
-/* e2e for v2.9.2-G: commercial income is its own line — included in NOI, excluded from the residential
-   $/unit view (the denominator is residential units only), and re-mappable to "COM" in the GL mapping.
-   Driven through the LDS_uwSetupHtml / LDS_uwSetupNoi diagnostics.
+/* e2e (cleanup): the per-unit columns are ALWAYS on (no toggle). Every NOI line shows four value columns —
+   in-place $, in-place $/unit, underwritten $ (editable), underwritten $/unit (DERIVED, no input). Commercial
+   income is its own line: in the NOI, but a dash in BOTH residential $/unit columns (residential units are the
+   denominator). Driven through the LDS_uwSetupHtml / LDS_uwSetupNoi diagnostics.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/commercial.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -21,31 +22,31 @@ const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
   ok(noiComm>noiNo,'commercial income raises the NOI (it is included)');
   ok(Math.abs((noiComm-noiNo)-195000)<=1,'…by 200,000 less the 2.5% management fee on it (+195,000)');
 
-  // ---- render: the COM line is present, tagged commercial, with NO residential $/unit ----
+  // ---- render: always-on four columns; commercial excluded from residential $/unit; $/unit never editable ----
   const view=await page.evaluate((m)=>{
-    var html=window.LDS_uwSetupHtml(m,100,true,{});
+    var html=window.LDS_uwSetupHtml(m,100,{});
     var d=document.createElement('div'); d.innerHTML=html;
     var trs=Array.prototype.slice.call(d.querySelectorAll('tbody tr'));
     var com=trs.find(function(r){ return /commercial/i.test((r.cells[0]||{}).innerText||''); });
-    var gpr=trs.find(function(r){ return (r.querySelector('input[data-uwline="GPR"]')); });
-    // in the per-unit view a residential row has BOTH a $/unit input and an in-place $/unit number; COM has neither
+    var gpr=trs.find(function(r){ return r.querySelector('input[data-uwline="GPR"]'); });
+    var ths=Array.prototype.slice.call(d.querySelectorAll('thead th'));
     return {
       hasCom: !!com,
       comTag: com ? /commercial/i.test(com.cells[0].innerText) : false,
-      comHasPerInput: com ? !!com.querySelector('input[data-uwlineper="COM"]') : true,
-      comLastCell: com ? (com.cells[com.cells.length-1].innerText||'').trim() : '',
-      gprHasPerInput: gpr ? !!gpr.querySelector('input[data-uwlineper="GPR"]') : false
+      comDashes: com ? Array.prototype.slice.call(com.cells).filter(function(c){return (c.innerText||'').trim()==='—';}).length : 0,
+      gprHasLineInput: gpr ? !!gpr.querySelector('input[data-uwline="GPR"]') : false,
+      anyPerInput: !!d.querySelector('input[data-uwlineper]'),
+      headerCols: ths.length,
+      gprInPlacePer: gpr ? (gpr.cells[2].innerText||'').trim() : ''
     };
   },WITH_COMM);
-  ok(view.hasCom,'the commercial line renders');
+  ok(view.hasCom,'the commercial line renders (always on — no toggle)');
   ok(view.comTag,'…tagged "commercial"');
-  ok(!view.comHasPerInput,'commercial has NO editable residential $/unit input');
-  ok(view.comLastCell==='—' || view.comLastCell==='—','commercial’s $/unit cell is a dash (excluded from residential per-unit)');
-  ok(view.gprHasPerInput,'a residential line (GPR) still has its $/unit input — only commercial is excluded');
-
-  // ---- "COM" is offered as a re-map target in the GL mapping (so any line can be tagged commercial) ----
-  const cats=await page.evaluate(()=>window.LDS_glCategories().map(function(c){return c.code;}));
-  ok(cats.indexOf('COM')>=0,'the GL mapping offers "COM" (commercial) as a category to re-map a line to');
+  ok(view.comDashes>=2,'commercial shows a dash in BOTH residential $/unit columns (in-place & underwritten)');
+  ok(view.gprHasLineInput,'a residential line (GPR) has its editable underwritten input');
+  ok(!view.anyPerInput,'there is NO $/unit input anywhere — the $/unit column is derived, not editable');
+  ok(view.headerCols===5,'the table shows 5 columns: line + in-place $ + $/unit + underwritten $ + $/unit');
+  ok(/[0-9]/.test(view.gprInPlacePer),'a residential line shows a computed in-place $/unit');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
