@@ -3398,14 +3398,23 @@ tr.flagged:hover td{background:#fee2e2}
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
     }
 
+    // 2.9.2 — the per-unit view is a per-USER preference (remembered across properties and restarts).
+    function opPerUnitOn(){ try{ return localStorage.getItem("lds.perUnit") === "1"; }catch(e){ return false; } }
+    function opPerUnitSet(on){ try{ localStorage.setItem("lds.perUnit", on ? "1" : "0"); }catch(e){} }
     function uwSetupOutputHtml(b){
       const r = b.result, s = b.sizing, sz = uwState.input.bench.sizing, bench = uwState.input.bench, hasNoi = r.underwritten.noi > 0;
+      // 2.9.2 — per-unit columns: $/unit beside in-place and beside underwritten, on residential units (the
+      // Sizing units, pre-filled from the profile). Off = today's two-column table; the toggle is per user.
+      const perUnitOn = opPerUnitOn();
+      const uUnits = uwNum(uwState.input.units), unitsOk = (uUnits != null && uUnits > 0);
+      const puVal = (v)=> (unitsOk && v != null) ? uwFmt(v / uUnits) : "&mdash;";
+      const puCell = (v, c)=> perUnitOn ? '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+(c||'')+'">'+puVal(v)+'</td>' : '';
       const line = (ln)=> '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+'</td>'+
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+uwFmt(r.underwritten.lines[ln.key])+'</td></tr>';
+        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ puCell(ln.t12) +
+        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+uwFmt(r.underwritten.lines[ln.key])+'</td>'+ puCell(r.underwritten.lines[ln.key]) +'</tr>';
       const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
         return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td><td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td></tr>'; };
+          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puCell(ip, c) +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puCell(uw, c) +'</tr>'; };
       let rows = "", prev = null;
       b.worksheet.lines.forEach(ln => {
         if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri);
@@ -3458,7 +3467,11 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
-          '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          '<div class="mb-2 flex flex-wrap items-center justify-between gap-2">'+
+            '<div class="text-[11px] text-slate-400">'+(perUnitOn ? (unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set residential units in the <button type="button" id="uwUnitsMissingLink" class="underline hover:text-brand-600">property profile</button> to see $/unit') : '')+'</div>'+
+            '<button type="button" id="uwPerUnitToggle" class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold '+(perUnitOn?'border-brand-300 bg-brand-50 text-brand-700':'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')+'">'+(perUnitOn?'&#10003; Per unit':'Show $/unit')+'</button>'+
+          '</div>'+
+          '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th>'+(perUnitOn?'<th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>':'')+'<th class="pb-2 px-2 text-right">Underwritten</th>'+(perUnitOn?'<th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>':'')+'</tr></thead><tbody>'+rows+'</tbody></table>'+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
             '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
               '<div class="flex flex-wrap items-center gap-2"><span class="text-[11px] font-semibold text-slate-600">Underwriting basis</span>'+basisToggle+
@@ -3545,6 +3558,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(bb){ const nb = (bb.getAttribute("data-uwbasis") === "lender") ? "lender" : "borrower";
         if((uwState.input.bench.basis || "borrower") !== nb){ uwState.input.bench.basis = nb; saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey); }
         return; }
+      if(t.closest("#uwPerUnitToggle")){ opPerUnitSet(!opPerUnitOn()); renderUnderwriting(); return; }   // 2.9.2 — per-unit view toggle (per user)
+      if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey){ profileFocusKey = opFocusKey; openTab("profile"); } return; }
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
@@ -5113,7 +5128,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); }catch(e){}   // diagnostics: 2.9.2 GL mapping overrides
+    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit toggle + setup-html render
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsGlMap(); }catch(e){} } });
