@@ -47,6 +47,16 @@ const CSV=[
     ok(r.unitStats.length===2,'two residential unit-type stats rows');
   }
 
+  // the Unit Statistics panel renders on the property view (matched to this property)
+  const blk=await page.evaluate(async(k)=>{ const res=await window.LDS_rentRollBlock(k); return res&&res.block?{units:res.block.residentialUnits, types:res.block.unitStats.length}:null; }, key);
+  ok(blk && blk.units===4 && blk.types===2,'LDS_rentRollBlock matches this property to a rent-roll block (4 units, 2 types)');
+  await page.waitForFunction(()=>{ const h=document.getElementById('loanUnitStatsPanel'); return h && /Unit mix/i.test(h.innerText||''); },null,{timeout:8000}).catch(()=>{});
+  const panel=await page.evaluate(()=>(document.getElementById('loanUnitStatsPanel')||{}).innerText||'');
+  ok(/Unit mix/i.test(panel),'the Unit Statistics panel renders on the property view');
+  ok(/4 units/i.test(panel),'…showing the residential unit count (4 units)');
+  ok(/75%\s*occupied/i.test(panel),'…and occupancy (75%)');
+  ok(/1BR\/1BA/.test(panel) && /2BR\/2BA/.test(panel),'…and the unit mix by type');
+
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
   console.log(fails.n?fails.n+' FAILED':'all rent-roll e2e checks passed');

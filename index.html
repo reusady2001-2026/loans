@@ -853,6 +853,7 @@
         <!-- Property operating model entry (this property's NOI / DSCR / DY, opens its sheet) -->
         <div id="loanOpPanel"></div>
         <div id="loanProfilePanel"></div>
+        <div id="loanUnitStatsPanel"></div>
 
         <!-- Property documents (saved files for this property; used by the assistant) -->
         <div id="loanDocsPanel"></div>
@@ -2957,6 +2958,7 @@
         try{ renderDocsPanel(); }catch(e){}
         try{ renderLoanOpPanel(); }catch(e){}
         try{ renderLoanProfilePanel(); }catch(e){}
+        try{ renderLoanUnitStats(); }catch(e){}
         activeResult = result;
       } else if(state.mode==="edit" || state.mode==="add"){
         dom.formTitle.textContent = state.mode==="add" ? "Add Loan" : "Edit Loan — " + loanLabel(getLoan(state.activeId)||{});
@@ -5103,7 +5105,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll
+    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
@@ -5196,6 +5198,84 @@ tr.flagged:hover td{background:#fee2e2}
       if(rb){ const panel = rb.closest("[data-profilekey]"); if(panel) opReadAgreementStart(panel.getAttribute("data-profilekey")); return; }
       const ab = t.closest("#loanProfileArchive");
       if(ab){ const panel = ab.closest("[data-profilekey]"); if(panel){ const k = panel.getAttribute("data-profilekey"); e.preventDefault(); opArchiveProperty(k, !opIsArchived(k)); } return; }
+    });
+
+    /* ================================================================
+       8a-RR. Unit Statistics from the rent roll (2.9.3). The property's rent roll
+       (in its folder) is parsed by RentRoll; the block matching THIS property by
+       name gives the unit count, occupancy, average market & in-place rent, and
+       the unit mix by type — shown on the property view (and, compact, in the
+       underwriting tab). The rent roll never overwrites anything on its own.
+       ================================================================ */
+    var loanRRCache = {};   // propKey -> {block,file,roll[,choices]} | null | undefined(pending)
+    function rrMatchScore(a, b){
+      a = normLabel(a || ""); b = normLabel(b || ""); if(!a || !b) return 0;
+      if(a === b) return 1;
+      if(a.indexOf(b) >= 0 || b.indexOf(a) >= 0) return 0.85;
+      var at = a.split(" ").filter(function(t){ return t.length > 2; }), bt = b.split(" ").filter(function(t){ return t.length > 2; });
+      var common = at.filter(function(t){ return bt.indexOf(t) >= 0; }).length;
+      return common >= 2 ? 0.6 : (common === 1 ? 0.25 : 0);
+    }
+    // The rent-roll property block that best matches an app property (by name), read from the folder.
+    async function opRentRollBlockFor(key){
+      var res = await opReadPropRentRoll(key); if(!res || !res.roll || !res.roll.properties.length) return null;
+      var props = res.roll.properties;
+      var pl = opProp(key), sr = pl && pl.loans && pl.loans[0];
+      var pname = (sr && sr.propertyName) || (pl && pl.name) || key;
+      if(props.length === 1) return { block: props[0], file: res.file, roll: res.roll, matchedBy: "only" };
+      var best = null, score = 0;
+      props.forEach(function(b){ var s = rrMatchScore(b.name, pname); if(s > score){ score = s; best = b; } });
+      if(best && score >= 0.5) return { block: best, file: res.file, roll: res.roll, matchedBy: "name" };
+      return { block: null, file: res.file, roll: res.roll, choices: props.map(function(b){ return b.name; }) };
+    }
+    function rrPct(x){ return (x == null) ? "—" : Math.round(x * 100) + "%"; }
+    function rrMoney(x){ return (x == null) ? "—" : "$" + Math.round(x).toLocaleString(); }
+    // Unit-statistics HTML for a parsed rent-roll block. opts.compact → the tight underwriting version.
+    function rrUnitStatsHtml(block, opts){
+      opts = opts || {};
+      var b = block;
+      var head = b.residentialUnits + ' unit' + (b.residentialUnits === 1 ? '' : 's') + ' · ' + rrPct(b.occupancy) + ' occupied · avg market ' + rrMoney(b.avgMarketRent) + '/mo · avg in-place ' + rrMoney(b.avgActualRent) + '/mo';
+      var commLine = b.commercialUnits ? '<div class="text-[11px] text-violet-600 mt-0.5">+ ' + b.commercialUnits + ' commercial · ' + rrMoney(b.commercialAnnual) + '/yr income (out of the residential per-unit math)</div>' : '';
+      var rows = b.unitStats.map(function(s){
+        return '<tr class="border-t border-slate-100">'+
+          '<td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(s.type || "(unspecified)")+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+s.count+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-500">'+rrPct(s.occPct)+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-500">'+(s.avgSqft==null?'—':s.avgSqft.toLocaleString())+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+rrMoney(s.avgMarketRent)+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+rrMoney(s.avgOccupiedRent)+'</td>'+
+        '</tr>';
+      }).join('');
+      var table = '<div class="overflow-x-auto mt-2"><table class="w-full min-w-[440px]"><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400">'+
+        '<th class="py-1 pr-3 text-left">Unit type</th><th class="py-1 px-2 text-right">Units</th><th class="py-1 px-2 text-right">Occ</th><th class="py-1 px-2 text-right">Avg SqFt</th><th class="py-1 px-2 text-right">Avg market</th><th class="py-1 px-2 text-right">Avg in-place</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      if(opts.compact){
+        return '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1">Unit mix &middot; rent roll</div><div class="text-xs font-semibold text-slate-700">'+head+'</div>'+commLine+table+'</div>';
+      }
+      var gpr = b.gprAnnual != null ? '<span class="text-slate-400"> · GPR '+rrMoney(b.gprAnnual)+'/yr (grossed up)</span>' : '';
+      var warnBtn = (b.warnings && b.warnings.length) ? '<button type="button" id="rrWarnToggle" class="text-[11px] font-semibold text-amber-600 hover:underline">'+b.warnings.length+' to check</button>' : '';
+      var warnList = (b.warnings && b.warnings.length) ? '<div id="rrWarnList" hidden class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">'+b.warnings.slice(0,20).map(function(w){ return '&bull; '+escapeHtml(w); }).join('<br>')+(b.warnings.length>20?'<br>&hellip; and '+(b.warnings.length-20)+' more':'')+'</div>' : '';
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+
+        '<div class="border-b border-slate-100 px-5 py-4"><h2 class="text-base font-bold text-slate-900">Unit mix &amp; statistics</h2>'+
+          '<p class="text-xs text-slate-500">From the rent roll'+(opts.fileName?' ('+escapeHtml(opts.fileName)+')':'')+(opts.blockName?' &mdash; matched to '+escapeHtml(opts.blockName):'')+'</p></div>'+
+        '<div class="px-5 py-4"><div class="flex items-center justify-between gap-2"><div class="text-sm font-semibold text-slate-800">'+head+gpr+'</div>'+warnBtn+'</div>'+commLine+warnList+table+'</div>'+
+      '</div>';
+    }
+    function renderLoanUnitStats(){
+      var host = el("loanUnitStatsPanel"); if(!host) return;
+      var loan = getLoan(state.activeId); if(!loan){ host.innerHTML = ""; return; }
+      var key = propertyKey(loan);
+      if(!Object.prototype.hasOwnProperty.call(loanRRCache, key)){
+        loanRRCache[key] = undefined;
+        opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; var l = getLoan(state.activeId); if(l && propertyKey(l) === key) renderLoanUnitStats(); });
+        host.innerHTML = ""; return;
+      }
+      var r = loanRRCache[key];
+      if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
+      host.innerHTML = rrUnitStatsHtml(r.block, { fileName: r.file && r.file.name, blockName: (r.matchedBy === "name") ? r.block.name : "" });
+    }
+    // Toggle the "to check" anomaly list on the Unit Statistics panel.
+    document.addEventListener("click", function(e){ var t = e.target; if(!t || !t.closest) return;
+      if(t.closest("#rrWarnToggle")){ var w = el("rrWarnList"); if(w) w.hidden = !w.hidden; }
     });
 
     /* ================================================================
@@ -9046,7 +9126,7 @@ tr.flagged:hover td{background:#fee2e2}
           var b64=pair[0], ex=pair[1]||{}; if(!b64) return;
           return ldsShell.docSave({propKey:propKey, propName:propName, name:file.name, base64:b64, text:(ex.text||""), type:file.type||""});
         });
-      })).then(function(){ toast("Saved to "+propName,"check"); renderDocsPanel(); aiAsstUpdatePropDocs(); });
+      })).then(function(){ toast("Saved to "+propName,"check"); try{ delete loanRRCache[propKey]; }catch(e){} renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs(); });
     }
     // The Documents panel on a loan's detail view: the saved files for that property.
     function renderDocsPanel(){
