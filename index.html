@@ -1027,6 +1027,26 @@
     </div>
   </div>
 
+  <!-- ============ RENT ROLL IMPORT — portfolio-level (a file may hold many properties) ============ -->
+  <div id="rrImportModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
+      <div class="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+        <div><h3 class="text-base font-bold text-slate-900">Import rent roll</h3>
+          <p id="rrImportSub" class="text-xs text-slate-500">Drop a Yardi rent roll — the app reads every property in it and saves the file to each folder.</p></div>
+        <button type="button" id="rrImportX" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">✕</button>
+      </div>
+      <input id="rrImportFile" type="file" class="hidden" accept=".xlsx,.xls,.csv" />
+      <div id="rrImportBody" class="flex-1 overflow-y-auto p-5"></div>
+      <div class="flex items-center justify-between gap-2 border-t border-slate-100 p-4">
+        <p id="rrImportNote" class="text-[11px] text-slate-400"></p>
+        <div class="flex gap-2">
+          <button type="button" id="rrImportCancel" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="button" id="rrImportApply" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500 disabled:opacity-40 disabled:pointer-events-none">Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ IMPORT — gate 1: field checklist ============ -->
   <div id="importChecklist" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
     <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
@@ -3998,6 +4018,63 @@ tr.flagged:hover td{background:#fee2e2}
     // Open a property's own view focused on its profile panel (replaces the removed Profile tab): select
     // its senior loan so the property view renders, and flag the profile panel to expand once.
     function opOpenPropertyProfile(key){ if(!key) return null; var sr = propSeniorLoan(key); if(sr && sr._id){ profileFocusKey = key; loanProfileForceOpen = key; selectLoan(sr._id); return sr._id; } try{ toast("This property has no loan yet — add a loan or read its agreement to open it.", "info"); }catch(e){} return null; }
+    // 2.9.3 — Rent roll import (portfolio level). A Yardi export can hold many properties; this reads them all
+    // and lets you tick which to ADD (new) or UPDATE (existing), then saves the file into each folder. The
+    // per-unit data is never displayed — only the property's summary — and nothing is applied to underwriting.
+    var rrImportState = null;
+    function opRentRollImportPick(){ var f = el("rrImportFile"); if(f){ f.value = ""; f.click(); } }
+    function opRentRollImportClose(){ var m = el("rrImportModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } rrImportState = null; }
+    async function opRentRollImportRead(file){
+      if(!file) return;
+      if(!docsAvailable()){ try{ toast("Importing files needs the desktop app.", "info"); }catch(e){} return; }
+      var m = el("rrImportModal"); if(m){ m.classList.remove("hidden"); m.classList.add("flex"); }
+      el("rrImportBody").innerHTML = '<p class="text-sm text-slate-500">Reading '+escapeHtml(file.name)+'…</p>';
+      el("rrImportApply").disabled = true;
+      var pair = await Promise.all([fileToBase64(file), aiExtractFileText(file)]);
+      var b64 = pair[0], ex = pair[1] || {};
+      var grid = /\.(xlsx|xls|csv)$/i.test(file.name || "") ? opDetectGrid(opB64ToBytes(b64)) : null;
+      if(!grid || !window.RentRoll || RentRoll.findHeader(grid).headerRow < 0){ el("rrImportBody").innerHTML = '<p class="text-sm text-rose-600">That file doesn’t look like a rent roll — no unit / rent columns found.</p>'; return; }
+      var roll = RentRoll.parse(grid), props = opProperties();
+      var rows = roll.properties.map(function(b){
+        var best = null, sc = 0; props.forEach(function(p){ var s = rrMatchScore(b.name, p.name); if(s > sc){ sc = s; best = p; } });
+        var key = (best && sc >= 0.6) ? best.key : null;
+        return { block: b, key: key, existingName: key ? best.name : "", include: true };
+      });
+      rrImportState = { fileName: file.name, base64: b64, text: (ex.text || ""), rows: rows };
+      el("rrImportApply").disabled = !rows.length;
+      renderRentRollImport();
+    }
+    function renderRentRollImport(){
+      var st = rrImportState; if(!st) return;
+      el("rrImportSub").textContent = st.fileName + " — " + st.rows.length + " propert" + (st.rows.length === 1 ? "y" : "ies") + " in the file";
+      el("rrImportBody").innerHTML = st.rows.map(function(r, i){
+        var b = r.block;
+        var tag = r.key ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">update ' + escapeHtml(r.existingName) + '</span>' : '<span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">add new</span>';
+        var line = b.residentialUnits + ' units · ' + b.occupiedUnits + ' occ · ' + b.vacantUnits + ' vac · avg mkt ' + rrMoney(b.avgMarketRent) + ' · avg in-place ' + rrMoney(b.avgActualRent) + (b.residentialSqft != null ? ' · ' + Math.round(b.residentialSqft).toLocaleString() + ' sf' : '') + (b.commercialUnits ? ' · +' + b.commercialUnits + ' commercial' : '');
+        return '<label class="flex items-start gap-3 rounded-xl border border-slate-200 p-3 mb-2 cursor-pointer hover:bg-slate-50">'+
+          '<input type="checkbox" data-rrimp="' + i + '"' + (r.include ? ' checked' : '') + ' class="mt-1 accent-brand-600">'+
+          '<div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-bold text-slate-800">' + escapeHtml(b.name) + '</span>' + tag + '</div>'+
+            '<div class="text-[11px] text-slate-500 mt-0.5">' + line + '</div></div></label>';
+      }).join('');
+      var nAdd = st.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = st.rows.filter(function(r){ return r.include && r.key; }).length;
+      el("rrImportNote").textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder";
+    }
+    async function opRentRollImportApply(){
+      var st = rrImportState; if(!st) return;
+      var sel = st.rows.filter(function(r){ return r.include; });
+      if(!sel.length){ opRentRollImportClose(); return; }
+      var saved = 0;
+      for(var i = 0; i < sel.length; i++){
+        var r = sel[i], key = r.key;
+        if(!key){ try{ key = await opAddProperty(r.block.name); }catch(e){} }
+        if(!key) continue;
+        var p = opProp(key);
+        try{ await ldsShell.docSave({ propKey: key, propName: (p && p.name) || r.block.name, name: st.fileName, base64: st.base64, text: st.text, type: "", role: "rentroll" }); saved++; try{ delete loanRRCache[key]; }catch(e){} }catch(e){}
+      }
+      opRentRollImportClose();
+      try{ toast("Imported the rent roll into " + saved + " propert" + (saved === 1 ? "y" : "ies") + ".", "check"); }catch(e){}
+      try{ opRenderPortfolio(); }catch(e){} try{ renderPortfolio(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+    }
     // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
     // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
     async function opArchiveProperty(key, archived){
@@ -5116,6 +5193,15 @@ tr.flagged:hover td{background:#fee2e2}
     try{ var _apc = el("addPropCreate"); if(_apc && !_apc._bound){ _apc._bound = true; _apc.addEventListener("click", opAddPropertySubmit); } }catch(e){}
     try{ var _apx = el("addPropCancel"); if(_apx && !_apx._bound){ _apx._bound = true; _apx.addEventListener("click", opAddPropertyClose); } }catch(e){}
     try{ var _apn = el("addPropName"); if(_apn && !_apn._bound){ _apn._bound = true; _apn.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); opAddPropertySubmit(); } else if(e.key === "Escape"){ opAddPropertyClose(); } }); } }catch(e){}
+    // Rent roll import (portfolio level): a [data-rrimport] button opens the picker; the modal reads the file
+    // and lists its properties to add / update.
+    try{ if(!document._rrImportBound){ document._rrImportBound = true; document.addEventListener("click", function(e){ var t = e.target; if(t && t.closest && t.closest("[data-rrimport]")){ e.preventDefault(); opRentRollImportPick(); } }); } }catch(e){}
+    try{ var _rrf = el("rrImportFile"); if(_rrf && !_rrf._bound){ _rrf._bound = true; _rrf.addEventListener("change", function(e){ var f = e.target.files && e.target.files[0]; if(f) opRentRollImportRead(f); e.target.value = ""; }); } }catch(e){}
+    try{ var _rrx = el("rrImportX"); if(_rrx && !_rrx._bound){ _rrx._bound = true; _rrx.addEventListener("click", opRentRollImportClose); } }catch(e){}
+    try{ var _rrc = el("rrImportCancel"); if(_rrc && !_rrc._bound){ _rrc._bound = true; _rrc.addEventListener("click", opRentRollImportClose); } }catch(e){}
+    try{ var _rra = el("rrImportApply"); if(_rra && !_rra._bound){ _rra._bound = true; _rra.addEventListener("click", opRentRollImportApply); } }catch(e){}
+    try{ var _rrb = el("rrImportBody"); if(_rrb && !_rrb._bound){ _rrb._bound = true; _rrb.addEventListener("change", function(e){ var cb = e.target; if(cb && cb.getAttribute && cb.getAttribute("data-rrimp") != null && rrImportState){ var i = +cb.getAttribute("data-rrimp"); if(rrImportState.rows[i]){ rrImportState.rows[i].include = cb.checked; var nAdd = rrImportState.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = rrImportState.rows.filter(function(r){ return r.include && r.key; }).length; var note = el("rrImportNote"); if(note) note.textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder"; } } }); } }catch(e){}
+    try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
     try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
@@ -6171,6 +6257,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows,
           '<div class="flex items-center gap-2 shrink-0">'+
             '<button type="button" data-addprop class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100" title="Add a property — a name is enough; its loans, T12 and documents come later"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>Add Property</button>'+
+            '<button type="button" data-rrimport class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50" title="Import a Yardi rent roll — one file can hold many properties; add or update them all at once"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Import rent roll</button>'+
             lenderControl+
           '</div>', "relative z-40")+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
