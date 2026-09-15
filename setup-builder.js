@@ -140,7 +140,9 @@
     // Lender case prices them at the WORSE (max — the conservative floor a lender underwrites to:
     // vacancy = max(actual, 5%), management = max(actual, 2.5%)). Borrower-case numbers are therefore
     // byte-for-byte identical to before this parameter existed.
-    var basis = (input.basis === "lender") ? "lender" : "borrower";
+    // basis rides in the per-property assumptions (bm.basis) so it reaches every caller that already passes
+    // `benchmarks`, and an explicit input.basis still overrides (the tab's live toggle / tests).
+    var basis = ((input.basis || (bm && bm.basis)) === "lender") ? "lender" : "borrower";
     var pick = (basis === "lender")
       ? function (actual, assume){ return (actual != null) ? Math.max(actual, assume) : assume; }
       : function (actual, assume){ return (actual != null) ? Math.min(actual, assume) : assume; };
