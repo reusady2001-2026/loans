@@ -24,6 +24,7 @@
   <script src="./portfolio-rollup.js"></script>
   <script src="./general-data.js"></script>
   <script src="./profile.js"></script>
+  <script src="./rent-roll.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -3788,6 +3789,33 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){}
       return null;
     }
+    // 2.9.3 — the workbook sheet a RENT ROLL lives on: the first sheet whose header the RentRoll parser
+    // recognizes (a unit/type column plus a market/actual rent column). Distinct from the T12 sheet-picker.
+    function opRentRollGridFromWorkbook(bytes){
+      try{ const wb = XLSX.read(bytes, { type: "array" });
+        for(const nm of wb.SheetNames){ const g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null }); if(window.RentRoll && RentRoll.findHeader(g).headerRow >= 0) return g; }
+      }catch(e){}
+      return null;
+    }
+    // Read a property's rent roll straight from its on-disk folder and parse it LIVE (like opReadPropT12).
+    // A rent-roll file is a spreadsheet the RentRoll parser recognizes and that isn't the T12/housekeeping
+    // file — a file explicitly saved with role "rentroll" wins, otherwise it's detected by content. Nothing
+    // is cached to browser storage. Returns { file, grid, roll } or null when the folder holds no rent roll.
+    async function opReadPropRentRoll(key){
+      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead && window.XLSX && window.RentRoll)) return null;
+      try{
+        const list = await ldsShell.docList(key); if(!list || !list.ok) return null;
+        const files = (list.files || []).filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "") && ["t12","general","assumptions","profile"].indexOf(f.role || "") < 0);
+        const ranked = files.slice().sort((a, b) => (b.role === "rentroll" ? 1 : 0) - (a.role === "rentroll" ? 1 : 0) || b.savedAt - a.savedAt);
+        for(const f of ranked){
+          const rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) continue;
+          const grid = opRentRollGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) continue;
+          const roll = RentRoll.parse(grid);
+          if(roll && roll.headerRow >= 0 && roll.units.length) return { file: f, grid: grid, roll: roll };
+        }
+      }catch(e){}
+      return null;
+    }
     // Save an uploaded T12 into the property's on-disk folder (the ONLY place it is kept), with a CSV
     // text cache so the assistant can read it too, then drop the session cache so it re-reads from disk.
     async function opDiskSaveT12(key, file){
@@ -5075,7 +5103,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks
+    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
