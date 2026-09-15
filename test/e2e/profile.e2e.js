@@ -1,7 +1,7 @@
-/* e2e for v2.9.1: the Property Profile tab + persistence.
-   Opens a property's Profile tab, confirms the fields render, sets units / acquisition date / manager
-   (name + status come from the loan/derived), confirms provenance is stamped, completeness flips to
-   complete, profile.json lands in the property folder, and the values survive a reload (read from disk).
+/* e2e (cleanup): the property profile lives ON the property view (a collapsible panel under the metrics
+   panel) — there is NO separate Profile tab. LDS_openProfile opens the property's own view and expands the
+   panel. Confirms the fields render in the panel, values + provenance persist, profile.json lands in the
+   property folder, and the values survive a reload (read from disk).
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/profile.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs'),crypto=require('crypto');
 const APP=path.resolve(__dirname,'..','..');
@@ -14,16 +14,18 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
 
-  // open a known property's Profile tab
+  // open a known property's OWN view (no Profile tab) — the profile panel expands on the property page
   const key=await page.evaluate(()=>{ const ps=window.opProperties(); const p=ps.find(x=>/whitewater/i.test(x.name))||ps[0]; window.LDS_openProfile(p.key); return p.key; });
-  await page.waitForFunction(()=>{const v=document.getElementById('profileView');return v&&!v.hidden&&/Property Profile/.test(v.innerText||'');},null,{timeout:8000});
+  await page.waitForFunction(()=>{ const v=document.getElementById('loanView'); const p=document.getElementById('loanProfilePanel'); return v&&!v.hidden&&p&&/data-profilekey/.test(p.innerHTML||''); },null,{timeout:8000});
   await page.waitForTimeout(300);
-  const t=await page.evaluate(()=>document.getElementById('profileView').innerText||'');
-  ok(/Residential units/i.test(t)&&/Acquisition date/i.test(t)&&/Manager/i.test(t)&&/Year built/i.test(t)&&/Notes/i.test(t),'the Profile tab lists the fields');
-  ok(await page.evaluate(()=>!!document.getElementById('profilePropPick')),'a property picker is shown');
-  ok(/Incomplete/i.test(t),'a fresh profile shows Incomplete');
+  ok(await page.evaluate(()=>document.getElementById('profileView')===null),'there is NO separate Profile tab section (removed)');
+  const panel=await page.evaluate(()=>document.getElementById('loanProfilePanel').innerText||'');
+  ok(/Property profile/i.test(panel),'the property view shows a "Property profile" panel');
+  ok(/Residential units/i.test(panel)&&/Acquisition date/i.test(panel)&&/Manager/i.test(panel)&&/Year built/i.test(panel)&&/Notes/i.test(panel),'the panel lists the profile fields');
+  ok(await page.evaluate(()=>{ const d=document.querySelector('#loanProfilePanel details'); return !!(d&&d.open); }),'the panel is expanded when opened from the units link / navigation');
+  ok(/Needs|Profile complete/i.test(panel),'a completeness indicator is shown');
 
-  // set the three profile-only completeness fields
+  // set the three profile-only completeness fields (through the same store the panel writes to)
   await page.evaluate(async (k)=>{ await window.LDS_setProfileField(k,'residentialUnits',704); await window.LDS_setProfileField(k,'acquisitionDate','2021-06-01'); await window.LDS_setProfileField(k,'manager','Living'); }, key);
   await page.waitForTimeout(400);
   const after=await page.evaluate((k)=>({ units: window.LDS_profileEffective(k,'residentialUnits'), stored: window.LDS_profile(k).fields.residentialUnits, comp: window.LDS_profileComplete(k) }), key);
@@ -33,6 +35,13 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   // an untouched integer field is EMPTY, not 0
   ok(await page.evaluate((k)=>window.LDS_profile(k).fields.commercialUnits===undefined, key),'an untouched field (commercial units) is empty, not stored as 0');
+
+  // Archive/un-archive is on the property-view panel (property management lives on the property view)
+  ok(await page.evaluate(()=>!!document.getElementById('loanProfileArchive')),'the panel offers an Archive control');
+  const archived=await page.evaluate(async (k)=>{ document.getElementById('loanProfileArchive').click(); await new Promise(r=>setTimeout(r,350)); return { on: window.LDS_isArchived(k), label: (document.getElementById('loanProfileArchive')||{}).innerText||'' }; }, key);
+  ok(archived.on===true && /un-?archive/i.test(archived.label),'clicking Archive archives the property (button flips to Un-archive)');
+  await page.evaluate((k)=>window.LDS_archiveProperty(k,false), key); await page.waitForTimeout(200);
+  ok(await page.evaluate((k)=>window.LDS_isArchived(k)===false,key),'un-archiving restores it');
 
   // profile.json is on disk in the property folder
   const HASH=crypto.createHash('sha1').update(key).digest('hex').slice(0,16);

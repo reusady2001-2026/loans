@@ -803,7 +803,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Add Loan
             </button>
-            <button id="addPropBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Add a property — a name is enough; its loans, T12 and documents come later">
+            <button id="addPropBtn" data-addprop type="button" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Add a property — a name is enough; its loans, T12 and documents come later">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>
               Add Property
             </button>
@@ -851,6 +851,7 @@
 
         <!-- Property operating model entry (this property's NOI / DSCR / DY, opens its sheet) -->
         <div id="loanOpPanel"></div>
+        <div id="loanProfilePanel"></div>
 
         <!-- Property documents (saved files for this property; used by the assistant) -->
         <div id="loanDocsPanel"></div>
@@ -947,7 +948,6 @@
       <!-- Data Health: what the app knows per property, duplicate check, recompute-all -->
       <section id="healthView" class="space-y-6" hidden></section>
       <!-- 2.9.1 — Property Profile: the static facts of a property (units, sq ft, acquisition, manager, status, notes) -->
-      <section id="profileView" class="space-y-6" hidden></section>
       <!-- Maturity & Reset calendar (iframe host; same self-contained doc as the pop-out) -->
       <div id="calendarPanel" hidden><iframe id="calendarFrame" class="w-full rounded-2xl border border-slate-200 bg-white" style="height:calc(100vh - 180px);min-height:520px" title="Maturity &amp; Reset Calendar"></iframe></div>
     </main>
@@ -1006,6 +1006,21 @@
           <button id="noiCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
           <button id="noiSave" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Continue</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ADD PROPERTY — portfolio-level (a name is enough) ============ -->
+  <div id="addPropModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900">Add a property</h3>
+      <p class="mt-1 text-sm text-slate-500">A name is enough — its loans, T12 and documents come later. It joins the portfolio; open it to fill in its profile or read its agreement.</p>
+      <label for="addPropName" class="mb-1 mt-4 block text-sm font-semibold text-slate-700">Property name</label>
+      <input id="addPropName" type="text" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30" placeholder="e.g. Whitewater Apartments" />
+      <p id="addPropErr" class="mt-1 hidden text-[11px] font-medium text-rose-500">Enter a property name.</p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="addPropCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+        <button id="addPropCreate" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Create</button>
       </div>
     </div>
   </div>
@@ -2940,6 +2955,7 @@
         renderSchedule(loan, result);
         try{ renderDocsPanel(); }catch(e){}
         try{ renderLoanOpPanel(); }catch(e){}
+        try{ renderLoanProfilePanel(); }catch(e){}
         activeResult = result;
       } else if(state.mode==="edit" || state.mode==="add"){
         dom.formTitle.textContent = state.mode==="add" ? "Add Loan" : "Edit Loan — " + loanLabel(getLoan(state.activeId)||{});
@@ -3590,7 +3606,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); uwSyncGridInputs(); uwRerenderSetup(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // reset a pinned underwritten line
-      if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey){ profileFocusKey = opFocusKey; openTab("profile"); } return; }
+      if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey) opOpenPropertyProfile(opFocusKey); return; }
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
@@ -3940,10 +3956,18 @@ tr.flagged:hover td{background:#fee2e2}
       await opWriteProfile(key, prof);
       standaloneProps[key] = { key: key, name: name };
       try{ opRenderPortfolio(); }catch(e){}
-      profileFocusKey = key; openTab("profile");
-      try{ toast("Added “"+name+"”. Fill in its profile, add a loan, or read its agreement.", "success"); }catch(e){}
+      try{ renderPortfolio(); }catch(e){}
+      try{ toast("Added “"+name+"”. Add a loan or read its agreement to fill in its profile.", "success"); }catch(e){}
       return key;
     }
+    // Add Property modal (portfolio level). A name is enough — the property joins the portfolio and its
+    // profile is edited on its own property view (no separate Profile tab).
+    function opAddPropertyOpen(){ var m = el("addPropModal"); if(!m) return; var e = el("addPropErr"); if(e) e.classList.add("hidden"); var n = el("addPropName"); if(n) n.value = ""; m.classList.remove("hidden"); m.classList.add("flex"); if(n) setTimeout(function(){ try{ n.focus(); }catch(_e){} }, 30); }
+    function opAddPropertyClose(){ var m = el("addPropModal"); if(!m) return; m.classList.add("hidden"); m.classList.remove("flex"); }
+    function opAddPropertySubmit(){ var n = el("addPropName"), v = n ? String(n.value || "").trim() : ""; if(!v){ var e = el("addPropErr"); if(e) e.classList.remove("hidden"); if(n) n.focus(); return; } opAddPropertyClose(); opAddProperty(v); }
+    // Open a property's own view focused on its profile panel (replaces the removed Profile tab): select
+    // its senior loan so the property view renders, and flag the profile panel to expand once.
+    function opOpenPropertyProfile(key){ if(!key) return null; var sr = propSeniorLoan(key); if(sr && sr._id){ profileFocusKey = key; loanProfileForceOpen = key; selectLoan(sr._id); return sr._id; } try{ toast("This property has no loan yet — add a loan or read its agreement to open it.", "info"); }catch(e){} return null; }
     // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
     // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
     async function opArchiveProperty(key, archived){
@@ -3953,7 +3977,7 @@ tr.flagged:hover td{background:#fee2e2}
       profileCache[key] = prof;
       await opWriteProfile(key, prof);
       try{ opRenderPortfolio(); }catch(e){}
-      if(profileTabActive()) renderProfileTab();
+      try{ renderLoanProfilePanel(); }catch(e){}
     }
     // Archived properties (loan-backed or standalone) — shown only in the Profile picker so one can be
     // selected and un-archived.
@@ -3975,11 +3999,12 @@ tr.flagged:hover td{background:#fee2e2}
       Profile.setField(profile, field, val, { changedBy: opts.changedBy || opOperator(), source: opts.source, reason: opts.reason });
       profileCache[key] = profile;
       await opWriteProfile(key, profile);
-      if(profileTabActive()) renderProfileTab();
+      // Silent: the property-view profile panel edits on blur; a re-render here would collapse the
+      // open panel and steal focus. The completeness badge refreshes next time the panel renders.
     }
-    function profileTabActive(){ var at = ldsTabs.find(function(t){ return t.id === ldsActiveTab; }); return !!(at && at.kind === "profile"); }
     // ── 2.9.1 — Property Profile tab ──────────────────────────────────────────────
     var profileFocusKey = null;
+    var loanProfileForceOpen = null;   // property key whose property-view profile panel should render expanded once
     function pfInputVal(v){ return (v == null) ? "" : String(v); }
     function pfWhenWho(f){
       if(!f || !f.changedAt) return "";
@@ -4176,7 +4201,8 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){ opReadAgreementModal(key, null, "error:"+String((e && e.message) || e).slice(0,160)); }
     }
     // Save only the ticked rows: profile fields (with their citation) and, for the loan fields, fill a
-    // name-only loan for a property that has none, or fill blank fields on the existing senior loan.
+    // name-only loan for a property that has none, or OVERWRITE the existing senior loan's fields (Read
+    // agreement updates the property in place, not just its blanks).
     async function opReadAgreementApply(key){
       var host = el("readAgreementModal"); if(!host) return;
       var cbs = host.querySelectorAll("[data-ag-ok]"), loanFields = {}, sawLoan = false, savedProfile = 0;
@@ -4203,11 +4229,15 @@ tr.flagged:hover td{background:#fee2e2}
       opReadAgreementClose();
       try{ toast("Saved "+savedProfile+" profile field"+(savedProfile === 1 ? "" : "s")+(sawLoan ? " and the loan terms" : "")+".", "check"); }catch(e){}
       try{ opRenderPortfolio(); }catch(e){}
-      if(profileTabActive()) renderProfileTab();
+      try{ render(); }catch(e){}                 // loan terms changed → refresh KPIs / Loan Record
+      try{ renderLoanProfilePanel(); }catch(e){}
     }
     function opReadAgreementSaveLoan(key, fields){
       var sr = propSeniorLoan(key);
-      if(sr){ Object.keys(fields).forEach(function(k){ if(sr[k] == null || sr[k] === "") sr[k] = fields[k]; }); try{ migrateLoan(sr); }catch(e){} save(); return; }
+      // Update the existing property's senior loan: a ticked field OVERWRITES what's there (Read agreement
+      // updates the property, it doesn't only backfill blanks). An empty confirmed value is left alone so a
+      // blank proposal never wipes real data.
+      if(sr){ Object.keys(fields).forEach(function(k){ var v = fields[k]; if(v === "" || v == null) return; sr[k] = v; }); try{ migrateLoan(sr); }catch(e){} save(); return; }
       // No loan yet: create one keyed by NAME only (no address), so it merges with the standalone profile's
       // name-based key instead of splitting off a second property. The address lives in the profile.
       var name = (opProp(key) || {}).name || Profile.value(opProfileSync(key), "propertyName") || key;
@@ -4216,55 +4246,6 @@ tr.flagged:hover td{background:#fee2e2}
       try{ migrateLoan(loan); }catch(e){}
       loans.push(loan); save();
       delete standaloneProps[key];
-    }
-    var profileAddOpen = false;   // the inline "new property" form is showing
-    function renderProfileTab(){
-      var host = el("profileView"); if(!host) return;
-      var props = opProperties(), archived = opArchivedProps();
-      if(!props.length && !archived.length && !profileAddOpen){
-        host.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No properties yet. <button type="button" id="profileNewBtn" class="font-semibold text-brand-600 underline">Add one</button>.</div>';
-        return;
-      }
-      var allKeys = props.map(function(p){ return p.key; }).concat(archived.map(function(p){ return p.key; }));
-      if(!profileFocusKey || allKeys.indexOf(profileFocusKey) < 0){
-        profileFocusKey = (typeof opFocusKey !== "undefined" && opFocusKey && allKeys.indexOf(opFocusKey) >= 0) ? opFocusKey : (props[0] ? props[0].key : (archived[0] ? archived[0].key : null));
-      }
-      var key = profileFocusKey;
-      if(key && !Object.prototype.hasOwnProperty.call(profileCache, key)){
-        opEnsureProfile(key).then(function(){ if(profileTabActive() && profileFocusKey === key) renderProfileTab(); });
-      }
-      var profile = opProfileSync(key), comp = opProfileCompleteness(key), archivedNow = opIsArchived(key);
-      var pickerOpts = props.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+'</option>'; }).join('');
-      if(archived.length){ pickerOpts += '<optgroup label="Archived">'+archived.map(function(p){ return '<option value="'+escapeHtml(p.key)+'"'+(p.key===key?" selected":"")+'>'+escapeHtml(p.name)+' (archived)</option>'; }).join('')+'</optgroup>'; }
-      var picker = '<select id="profilePropPick" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-500">'+pickerOpts+'</select>';
-      var comphtml = comp.complete
-        ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
-        : '<span class="text-[11px] font-semibold text-amber-600">Incomplete — still needs '+escapeHtml(comp.missing.map(function(k){return String(Profile.labelFor(k)).toLowerCase();}).join(", "))+'</span>';
-      var archBtn = key ? '<button type="button" id="profileArchiveBtn" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archivedNow?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'">'+(archivedNow?'Un-archive':'Archive')+'</button>' : '';
-      var newBtn = '<button type="button" id="profileNewBtn" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">+ New property</button>';
-      var addForm = profileAddOpen ? '<div class="rounded-2xl border border-brand-200 bg-brand-50 p-3 flex flex-wrap items-end gap-2">'+
-          '<label class="flex-1 min-w-[220px]"><span class="text-[11px] font-semibold text-slate-600">New property name</span>'+
-            '<input id="profileNewName" type="text" placeholder="e.g. Test Property 2.9.1" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"></label>'+
-          '<button type="button" id="profileNewCreate" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-brand-500">Create</button>'+
-          '<button type="button" id="profileNewCancel" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>'+
-          '<p class="w-full text-[10px] text-slate-500">A name is enough — its loans, T12 and documents come later.</p>'+
-        '</div>' : '';
-      var archivedBanner = archivedNow ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the lists, the roll-up and the count. Un-archive to bring it back.</div>' : '';
-      var groups = {}, order = [];
-      Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
-      var body = key ? order.map(function(g){
-        var rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
-        return '<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">'+escapeHtml(g)+'</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
-      }).join('') : '';
-      var docsCard = key ? '<div id="profileDocs" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"></div>' : '';
-      host.innerHTML =
-        '<div class="flex flex-wrap items-center justify-between gap-3">'+
-          '<div><h2 class="text-lg font-extrabold text-slate-800">Property Profile</h2>'+
-            '<p class="text-xs text-slate-500">The facts that don’t change — set once, they persist. Empty fields stay blank, never zero.</p></div>'+
-          '<div class="flex flex-wrap items-center gap-2">'+(key?picker:'')+comphtml+archBtn+newBtn+'</div>'+
-        '</div>'+ addForm + archivedBanner + body + docsCard;
-      if(profileAddOpen){ var nm = el("profileNewName"); if(nm) nm.focus(); }
-      if(key) renderProfileDocs(key);
     }
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
@@ -5099,30 +5080,13 @@ tr.flagged:hover td{background:#fee2e2}
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
     } }catch(e){}
-    // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
-    // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
-    // never interrupts typing.
-    try{ var _prv = el("profileView"); if(_prv && !_prv._profBound){ _prv._profBound = true;
-      _prv.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
-        var fk = t.getAttribute("data-pf");
-        if(fk){ opProfileSetField(profileFocusKey, fk, t.value); return; }
-        if(t.id === "profilePropPick"){ profileFocusKey = t.value; renderProfileTab(); return; }
-        if(t.id === "profileDocFile"){ var role = (el("profileDocType") || {}).value || "other"; var files = Array.prototype.slice.call(t.files || []); files.forEach(function(f){ opProfileDocUpload(profileFocusKey, f, role); }); t.value = ""; return; }
-      });
-      _prv.addEventListener("click", function(e){ if(!e.target || !e.target.closest) return;
-        var del = e.target.closest("[data-docdel]"); if(del){ opProfileDocDelete(profileFocusKey, del.getAttribute("data-docdel")); return; }
-        var b = e.target.closest("button"); if(!b) return;
-        if(b.id === "profileNewBtn"){ profileAddOpen = true; renderProfileTab(); }
-        else if(b.id === "profileNewCancel"){ profileAddOpen = false; renderProfileTab(); }
-        else if(b.id === "profileNewCreate"){ var nm = el("profileNewName"); var v = nm ? nm.value : ""; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } else if(nm){ nm.focus(); } }
-        else if(b.id === "profileArchiveBtn" && profileFocusKey){ opArchiveProperty(profileFocusKey, !opIsArchived(profileFocusKey)); }
-        else if(b.id === "profileReadAgreement" && profileFocusKey){ opReadAgreementStart(profileFocusKey); }
-      });
-      _prv.addEventListener("keydown", function(e){ if(e.key === "Enter" && e.target && e.target.id === "profileNewName"){ e.preventDefault(); var v = e.target.value; if(String(v).trim()){ profileAddOpen = false; opAddProperty(v); } } });
-    } }catch(e){}
-    // Home toolbar → Add Property: open the Profile tab with the inline "new property" form ready.
-    try{ var _apb = el("addPropBtn"); if(_apb && !_apb._bound){ _apb._bound = true; _apb.addEventListener("click", function(){ profileAddOpen = true; openTab("profile"); }); } }catch(e){}
-    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>{ if(k) profileFocusKey=k; openTab("profile"); }; window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: 2.9.1 profile + Add Property + archive + Read agreement + Sizing units pre-fill
+    // Add Property (portfolio level): the "+ Add Property" button opens a small name-only modal; on
+    // Create the property joins the portfolio and its profile is then edited on its own property view.
+    try{ if(!document._addPropBound){ document._addPropBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-addprop]"); if(b){ e.preventDefault(); opAddPropertyOpen(); } }); } }catch(e){}
+    try{ var _apc = el("addPropCreate"); if(_apc && !_apc._bound){ _apc._bound = true; _apc.addEventListener("click", opAddPropertySubmit); } }catch(e){}
+    try{ var _apx = el("addPropCancel"); if(_apx && !_apx._bound){ _apx._bound = true; _apx.addEventListener("click", opAddPropertyClose); } }catch(e){}
+    try{ var _apn = el("addPropName"); if(_apn && !_apn._bound){ _apn._bound = true; _apn.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); opAddPropertySubmit(); } else if(e.key === "Escape"){ opAddPropertyClose(); } }); } }catch(e){}
+    try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
@@ -5155,6 +5119,56 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
     }
     document.addEventListener("click", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#loanOpOpen")) return; const loan = getLoan(state.activeId); if(loan) opOpenProperty(loan); });
+
+    // 2.9.3 — the property's PROFILE lives here, on the property's own detail view (no separate tab): the facts
+    // that don't change (units, sq ft, acquisition, manager, status, notes), editable, with the mismatch
+    // warnings and "Read agreement" auto-fill — keyed to the selected property. Collapsible, under the operating
+    // panel, collapsed by default. Field edits save silently (no re-render), so nothing collapses mid-type.
+    function renderLoanProfilePanel(){
+      const host = el("loanProfilePanel"); if(!host) return;
+      const loan = getLoan(state.activeId);
+      if(!loan){ host.innerHTML = ""; return; }
+      const key = propertyKey(loan);
+      if(key && !Object.prototype.hasOwnProperty.call(profileCache, key)){
+        opEnsureProfile(key).then(function(){ const l = getLoan(state.activeId); if(l && propertyKey(l) === key) renderLoanProfilePanel(); });
+      }
+      const forceOpen = (loanProfileForceOpen === key);
+      if(loanProfileForceOpen && loanProfileForceOpen !== key) loanProfileForceOpen = null;   // reset when we move to another property
+      const profile = opProfileSync(key), comp = opProfileCompleteness(key), archived = opIsArchived(key);
+      const groups = {}, order = [];
+      Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
+      const fields = order.map(function(g){
+        const rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
+        return '<div class="mb-3 last:mb-0"><h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">'+escapeHtml(g)+'</h4><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
+      }).join('');
+      const comphtml = comp.complete
+        ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
+        : '<span class="text-[11px] font-semibold text-amber-600">Needs '+escapeHtml(comp.missing.map(function(k){ return String(Profile.labelFor(k)).toLowerCase(); }).join(", "))+'</span>';
+      const readBtn = aiAvailable() ? '<button type="button" id="loanProfileReadAgreement" class="rounded-lg border border-brand-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and fill each field for you to confirm">✨ Read agreement</button>' : '';
+      const archBtn = '<button type="button" id="loanProfileArchive" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archived?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'" title="'+(archived?'Bring this property back into the lists, roll-up and count':'Hide this property from the lists, roll-up and count (its data stays on disk)')+'">'+(archived?'Un-archive':'Archive')+'</button>';
+      const archBanner = archived ? '<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the roll-up and the count. Un-archive to bring it back.</div>' : '';
+      host.innerHTML =
+        '<details class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm" data-profilekey="'+escapeHtml(key)+'"'+(forceOpen?' open':'')+'>'+
+          '<summary class="flex cursor-pointer items-center gap-2 p-4 text-sm"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Property profile</span>'+comphtml+(archived?' <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">archived</span>':'')+'</summary>'+
+          '<div class="border-t border-slate-100 p-4">'+
+            archBanner+
+            '<div class="mb-3 flex flex-wrap items-center justify-between gap-2"><p class="text-[11px] text-slate-400">The facts that don’t change — set once, they persist. Empty fields stay blank.</p><div class="flex items-center gap-2">'+readBtn+archBtn+'</div></div>'+
+            fields +
+          '</div>'+
+        '</details>';
+    }
+    // Profile edits from the property view's profile panel: save the field to its property (silently, no
+    // re-render), and "Read agreement" fills the fields from the loan agreement. Keyed to the panel's property.
+    document.addEventListener("change", function(e){ const t = e.target; if(!t || !t.closest) return;
+      const panel = t.closest("#loanProfilePanel [data-profilekey]"); if(!panel) return;
+      const fk = t.getAttribute && t.getAttribute("data-pf"); if(fk){ opProfileSetField(panel.getAttribute("data-profilekey"), fk, t.value); }
+    });
+    document.addEventListener("click", function(e){ const t = e.target; if(!t || !t.closest) return;
+      const rb = t.closest("#loanProfileReadAgreement");
+      if(rb){ const panel = rb.closest("[data-profilekey]"); if(panel) opReadAgreementStart(panel.getAttribute("data-profilekey")); return; }
+      const ab = t.closest("#loanProfileArchive");
+      if(ab){ const panel = ab.closest("[data-profilekey]"); if(panel){ const k = panel.getAttribute("data-profilekey"); e.preventDefault(); opArchiveProperty(k, !opIsArchived(k)); } return; }
+    });
 
     /* ================================================================
        8a-UW-AI. AI-assisted Setup — "Read T12 with Claude" (ALTERNATIVE to the
@@ -5416,7 +5430,6 @@ tr.flagged:hover td{background:#fee2e2}
         m.innerHTML =
           '<div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Open in a new tab</span></div>'+
           '<button type="button" data-tabopen="underwriting" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.underwriting+'Underwriting &amp; Sizing</button>'+
-          '<button type="button" data-tabopen="profile" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.profile+'Property Profile</button>'+
           '<button type="button" data-tabopen="calendar" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.calendar+'Maturity &amp; Reset Calendar</button>'+
           '<button type="button" data-tabopen="health" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">'+TAB_SVG.health+'Data Health</button>';
         document.body.appendChild(m);
@@ -5441,11 +5454,9 @@ tr.flagged:hover td{background:#fee2e2}
       el("uwView").hidden = (tab.kind !== "underwriting");
       el("calendarPanel").hidden = (tab.kind !== "calendar");
       { const h = el("healthView"); if(h) h.hidden = (tab.kind !== "health"); }
-      { const pv = el("profileView"); if(pv) pv.hidden = (tab.kind !== "profile"); }
       if(tab.kind === "underwriting") renderUnderwriting();
       if(tab.kind === "calendar") loadCalendarFrame();
       if(tab.kind === "health") renderDataHealth();
-      if(tab.kind === "profile") renderProfileTab();
       renderTabStrip();
       try{ window.scrollTo(0,0); }catch(e){}
     }
@@ -6052,7 +6063,11 @@ tr.flagged:hover td{background:#fee2e2}
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
         '<div class="pt-3 border-t border-slate-200"><h2 class="text-lg font-bold text-slate-900">Portfolio detail</h2><p class="text-sm text-slate-500">every loan, grouped by property — and where each stands against today’s market</p></div>'+
         tableCard("All Loans","grouped by property — click a property to expand its loans, then pick one to open",
-          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows, lenderControl, "relative z-40")+
+          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows,
+          '<div class="flex items-center gap-2 shrink-0">'+
+            '<button type="button" data-addprop class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100" title="Add a property — a name is enough; its loans, T12 and documents come later"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>Add Property</button>'+
+            lenderControl+
+          '</div>', "relative z-40")+
         tableCard("Refinance Opportunities","current rate vs today's market (live tenor-matched base + your recent-deal spread) — click a row to analyze",
           '<tr>'+th("Property")+thR("Current")+thR("Market")+thR("Gap")+th("")+'</tr>', scanRows);
 
