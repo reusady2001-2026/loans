@@ -592,6 +592,8 @@
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
             <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
             <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
+            <div id="settingsGlMap" class="mt-3 pt-3 border-t border-slate-100"></div>
+            <div id="settingsBench" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
             <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
               <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Cloud</span>
@@ -3228,7 +3230,7 @@ tr.flagged:hover td{background:#fee2e2}
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, avgRentUnit:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
-      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{},
+      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, badDebtPct:0.01, budget:{}, basis:"borrower", lineOverrides:{},   // 2.9.2 — four fixed assumptions + basis + per-line underwritten overrides
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
     // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
     // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
@@ -3397,14 +3399,52 @@ tr.flagged:hover td{background:#fee2e2}
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
     }
 
+    // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
+    // computed. Stored per property with who/when; buildSetup reads bench.lineOverrides so the NOI recomputes.
+    function uwSetLineOverride(key, rawVal, fromPer){
+      if(!key) return;
+      var b = uwState.input.bench; if(!b.lineOverrides) b.lineOverrides = {};
+      var v = uwNum(rawVal);
+      if(v == null){ delete b.lineOverrides[key]; }
+      else { var units = uwNum(uwState.input.units), total = (fromPer && units != null && units > 0) ? v * units : v;
+        b.lineOverrides[key] = { value: total, per: !!fromPer, by: opOperator(), at: new Date().toISOString() }; }
+      saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey);
+    }
+    function uwResetLineOverride(key){ var b = uwState.input.bench; if(b.lineOverrides) delete b.lineOverrides[key]; saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey); }
+    // 2.9.2 — the per-unit view is a per-USER preference (remembered across properties and restarts).
+    function opPerUnitOn(){ try{ return localStorage.getItem("lds.perUnit") === "1"; }catch(e){ return false; } }
+    function opPerUnitSet(on){ try{ localStorage.setItem("lds.perUnit", on ? "1" : "0"); }catch(e){} }
     function uwSetupOutputHtml(b){
       const r = b.result, s = b.sizing, sz = uwState.input.bench.sizing, bench = uwState.input.bench, hasNoi = r.underwritten.noi > 0;
-      const line = (ln)=> '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+'</td>'+
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+uwFmt(r.underwritten.lines[ln.key])+'</td></tr>';
+      // 2.9.2 — per-unit columns: $/unit beside in-place and beside underwritten, on residential units (the
+      // Sizing units, pre-filled from the profile). Off = today's two-column table; the toggle is per user.
+      const perUnitOn = opPerUnitOn();
+      const uUnits = uwNum(uwState.input.units), unitsOk = (uUnits != null && uUnits > 0);
+      const puVal = (v)=> (unitsOk && v != null) ? uwFmt(v / uUnits) : "&mdash;";
+      const puCell = (v, c)=> perUnitOn ? '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+(c||'')+'">'+puVal(v)+'</td>' : '';
+      // 2.9.2 — the underwritten side is EDITABLE: type a total (or, in the per-unit view, a $/unit) to pin
+      // that line; the NOI recomputes from it and the edit is stored with who/when. An "edited" tag + reset.
+      const ovMap = bench.lineOverrides || {};
+      const line = (ln)=>{
+        const uwv = r.underwritten.lines[ln.key], ovOn = (ovMap[ln.key] != null);
+        const isComm = (ln.key === "COM");   // 2.9.2 — commercial income: in NOI, but NOT a residential per-unit figure
+        const bs = isComm ? null : opBenchStatus(ln.key, uwv, uUnits);   // 2.9.2 — benchmark comparison on the underwritten $/unit
+        const rowCls = (bs && bs.off) ? 'border-t border-amber-200 bg-amber-50/40' : 'border-t border-slate-100';
+        const benchTag = bs ? ' <span class="text-[9px] '+(bs.off?'font-semibold text-amber-700':'text-slate-400')+'" title="Benchmark '+fmtMoney(bs.bench)+'/unit">vs '+fmtMoney(bs.bench)+'/u'+(bs.off?' &middot; '+(bs.gapTotal>=0?'+':'')+fmtMoney(bs.gapTotal):'')+'</span>' : '';
+        const commTag = isComm ? ' <span class="text-[9px] font-semibold uppercase tracking-wide text-violet-500">commercial</span>' : '';
+        // commercial has no residential $/unit — the denominator is residential units only
+        const commPer = perUnitOn ? '<td class="py-1 pr-2 text-right text-[10px] text-slate-300" title="Commercial — excluded from residential $/unit">&mdash;</td>' : '';
+        const totCls = 'w-24 rounded px-1 py-0.5 text-right text-sm tabular-nums '+(ovOn?'border border-brand-300 bg-brand-50 font-semibold text-brand-800':'border border-transparent text-slate-800 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
+        const totCell = '<td class="py-1 px-1 text-right whitespace-nowrap"><input class="'+totCls+'" inputmode="numeric" data-uwline="'+ln.key+'" value="'+(uwv==null?'':Math.round(uwv))+'">'+(ovOn?'<button type="button" class="ml-0.5 align-middle text-[11px] text-slate-400 hover:text-rose-500" data-uwlinereset="'+ln.key+'" title="Reset to computed">&times;</button>':'')+'</td>';
+        const perCls = 'w-16 rounded px-1 py-0.5 text-right text-[11px] tabular-nums '+(ovOn?'border border-brand-200 bg-brand-50 text-brand-700':'border border-transparent text-slate-400 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
+        const perCell = !perUnitOn ? '' : (isComm ? commPer : '<td class="py-1 pr-1 text-right"><input class="'+perCls+'" inputmode="numeric" data-uwlineper="'+ln.key+'" value="'+((unitsOk&&uwv!=null)?Math.round(uwv/uUnits):'')+'"></td>');
+        const ipPerCell = isComm ? commPer : puCell(ln.t12);
+        return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide">edited</span>':'')+benchTag+commTag+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ ipPerCell + totCell + perCell +'</tr>';
+      };
       const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
         return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td><td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td></tr>'; };
+          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puCell(ip, c) +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puCell(uw, c) +'</tr>'; };
       let rows = "", prev = null;
       b.worksheet.lines.forEach(ln => {
         if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri);
@@ -3427,7 +3467,14 @@ tr.flagged:hover td{background:#fee2e2}
       // assumption, the underwritten column already credits the statement's own rate — surface that so the
       // number is never a mystery.
       const eff = b.effective || {};
-      const creditNote = (eff.vacancyFromActual || eff.managementFromActual) ?
+      // 2.9.2 — underwriting basis: Borrower (better-of, default) / Lender (worse-of, the conservative floor).
+      const uwBasis = (eff.basis === "lender") ? "lender" : "borrower";
+      const uwBasisLabel = (uwBasis === "lender") ? "Lender case" : "Borrower case";
+      const basisToggle = '<div class="inline-flex overflow-hidden rounded-lg border border-slate-200 text-[11px] font-semibold">'+
+        '<button type="button" data-uwbasis="borrower" class="px-2.5 py-1 '+(uwBasis==="borrower"?"bg-brand-600 text-white":"bg-white text-slate-500 hover:bg-slate-50")+'">Borrower case</button>'+
+        '<button type="button" data-uwbasis="lender" class="px-2.5 py-1 '+(uwBasis==="lender"?"bg-brand-600 text-white":"bg-white text-slate-500 hover:bg-slate-50")+'">Lender case</button></div>';
+      // The credit note only makes sense in Borrower case ("using the BETTER"); Lender case is explained in the assumptions note.
+      const creditNote = (uwBasis === "borrower" && (eff.vacancyFromActual || eff.managementFromActual)) ?
         '<p class="mt-1 text-[11px] font-semibold text-emerald-700">Using the better of your assumption and what the statement proves: '+
           (eff.vacancyFromActual ? 'vacancy is credited at the statement’s '+fmtPct(eff.actualVacancy)+' (better than the '+fmtPct(eff.assumeVacancy)+' assumed)' : '')+
           (eff.vacancyFromActual && eff.managementFromActual ? '; ' : '')+
@@ -3445,22 +3492,31 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
             ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<0.005) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+   // to the cent, same tolerance the engine reconciles at
-          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwUwNoi">'+uwFmt(r.underwritten.noi)+'</div>'+
+          '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI &middot; <span id="uwBasisTag" class="font-semibold">'+uwBasisLabel+'</span></div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwUwNoi">'+uwFmt(r.underwritten.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-brand-600/70">'+escapeHtml(noiMethod)+'</div>' : '')+'</div>'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
-          '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 px-2 text-right">Underwritten</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          '<div class="mb-2 flex flex-wrap items-center justify-between gap-2">'+
+            '<div class="text-[11px] text-slate-400">'+(perUnitOn ? (unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set residential units in the <button type="button" id="uwUnitsMissingLink" class="underline hover:text-brand-600">property profile</button> to see $/unit') : '')+'</div>'+
+            '<button type="button" id="uwPerUnitToggle" class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold '+(perUnitOn?'border-brand-300 bg-brand-50 text-brand-700':'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')+'">'+(perUnitOn?'&#10003; Per unit':'Show $/unit')+'</button>'+
+          '</div>'+
+          '<table class="w-full min-w-[520px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th>'+(perUnitOn?'<th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>':'')+'<th class="pb-2 px-2 text-right">Underwritten</th>'+(perUnitOn?'<th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>':'')+'</tr></thead><tbody>'+rows+'</tbody></table>'+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
-            '<div class="mb-2 flex flex-wrap items-center justify-between gap-2"><div class="text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; change them to test scenarios, then Save</span></div>'+
+            '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
+              '<div class="flex flex-wrap items-center gap-2"><span class="text-[11px] font-semibold text-slate-600">Underwriting basis</span>'+basisToggle+
+                '<span class="text-[10px] text-slate-400">'+(uwBasis==="lender"?"lender floor — the WORSE of actual vs assumption":"borrower — the BETTER of actual vs assumption")+'</span></div>'+
               '<button type="button" id="uwSaveBtn" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-brand-400 hover:to-brand-500">Save to property record</button></div>'+
-            '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
-              benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+
+            '<div class="mb-2 text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; four fixed inputs; change them to test scenarios, then Save</span></div>'+
+            '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">'+
+              benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+benchIn("Bad debt & concessions","badDebtPct",uwPctStr(bench.badDebtPct),"%")+
             '</div>'+
-            '<p class="mt-2 text-[11px] text-slate-400">The underwritten column prices vacancy and the management fee at the BETTER of your assumption and what the statement actually runs (a property that runs tighter than assumed is credited its proven figure), reserves at your dollars per unit; every other line passes through the T12 actual.</p>'+ creditNote +'</div>'+
+            '<p class="mt-2 text-[11px] text-slate-400">'+(uwBasis==="lender"
+              ? 'Lender case: the underwritten column prices vacancy and the management fee at the WORSE of your assumption and what the statement actually runs (a lender holds the property to at least the assumption — vacancy no lower than '+fmtPct(eff.assumeVacancy)+', management no lower than '+fmtPct(eff.assumeManagementFee)+'), concessions &amp; bad debt no lower than '+fmtPct(eff.assumeBadDebt)+', reserves at your dollars per unit; every other line passes through the T12 actual.'
+              : 'Borrower case: the underwritten column prices vacancy and the management fee at the BETTER of your assumption and what the statement actually runs (a property that runs tighter than assumed is credited its proven figure), concessions &amp; bad debt at the statement’s proven figure, reserves at your dollars per unit; every other line passes through the T12 actual.')+'</p>'+ creditNote +'</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
-          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan</h3>'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Debt sizing &mdash; max supportable loan <span class="font-semibold normal-case text-brand-600/80">&middot; '+uwBasisLabel+'</span></h3>'+
           '<div class="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="space-y-2">'+
             szIn("Cap rate","capRate",uwPctStr(sz.capRate),"%")+szIn("Max LTV","ltvMax",uwPctStr(sz.ltvMax),"%")+szIn("Min DSCR","dscrMin",uwStr(sz.dscrMin),"×")+
             szIn("Min debt yield","dyMin",uwPctStr(sz.dyMin),"%")+szIn("Interest rate","intRate",uwPctStr(sz.intRate),"%")+szIn("Amortization","amortYears",uwStr(sz.amortYears),"yrs")+
@@ -3521,13 +3577,22 @@ tr.flagged:hover td{background:#fee2e2}
     // (not per keystroke, to keep focus). An average per unit fills the yearly rent; typing the yearly figure
     // directly clears the average so the two can never disagree.
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
-      if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
+      if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1, badDebtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
+      if(t.hasAttribute && t.hasAttribute("data-uwline")){ uwSetLineOverride(t.getAttribute("data-uwline"), t.value, false); return; }        // 2.9.2 — edit an underwritten total
+      if(t.hasAttribute && t.hasAttribute("data-uwlineper")){ uwSetLineOverride(t.getAttribute("data-uwlineper"), t.value, true); return; }   // 2.9.2 — edit an underwritten $/unit
       const k = t.getAttribute && t.getAttribute("data-uwf");
       if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); renderUnderwriting(); return; }
       if(k==="avgRentUnit"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
       if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); renderUnderwriting(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
+      const bb = t.closest("[data-uwbasis]");   // 2.9.2 — Borrower / Lender basis toggle
+      if(bb){ const nb = (bb.getAttribute("data-uwbasis") === "lender") ? "lender" : "borrower";
+        if((uwState.input.bench.basis || "borrower") !== nb){ uwState.input.bench.basis = nb; saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey); }
+        return; }
+      const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // 2.9.2 — reset a pinned underwritten line
+      if(t.closest("#uwPerUnitToggle")){ opPerUnitSet(!opPerUnitOn()); renderUnderwriting(); return; }   // 2.9.2 — per-unit view toggle (per user)
+      if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey){ profileFocusKey = opFocusKey; openTab("profile"); } return; }
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
@@ -3544,7 +3609,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ const existing = await opLoadGeneralData(key);
         if(existing) await opRefreshGeneralDataNOI(key); else await opUpdateGeneralData(key); }catch(e){}   // refresh both NOIs from the current inputs (preserves history + saved push)
       const bench = uwState.input.bench;
-      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, sizing: Object.assign({}, bench.sizing || {}) };
+      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, badDebtPct: (bench.badDebtPct != null ? bench.badDebtPct : 0.01), basis: bench.basis || "borrower", sizing: Object.assign({}, bench.sizing || {}) };
       const cur = opPushCache.get(key), push = (cur && Array.isArray(cur.moves)) ? cur : undefined;
       try{ await opPersistGeneralExtras(key, { assumptions: snap, push: push }); }catch(e){}
       let regen = false;
@@ -3567,9 +3632,75 @@ tr.flagged:hover td{background:#fee2e2}
     // computed under the new one" bug (100 Forge / Altos) — every update recomputes everything.
     let opAppVersion = null;
     async function opComputeVersion(){
-      if(opAppVersion) return opAppVersion;
-      try{ if(window.ldsShell && ldsShell.getVersion){ opAppVersion = await ldsShell.getVersion(); } }catch(e){}
-      return opAppVersion || "dev";
+      if(!opAppVersion){ try{ if(window.ldsShell && ldsShell.getVersion){ opAppVersion = await ldsShell.getVersion(); } }catch(e){} opAppVersion = opAppVersion || "dev"; }
+      return opAppVersion + (opGlSig ? "|gl:" + opGlSig : "");   // 2.9.2 — a changed GL mapping bumps the compute version so Recompute reclassifies; empty overrides = today's version exactly
+    }
+    // ── 2.9.2 — GL mapping: a global, opt-in map of account-line name -> category code, applied to the one
+    // classifier choke point (T12Classify.setOverrides). Empty by default, so the pure rules and every
+    // reference number are unchanged until an operator re-maps a line here. ──
+    var opGlSig = "";
+    function opGlMapLoad(){ try{ var raw = localStorage.getItem("lds.glMap"); if(raw){ var o = JSON.parse(raw); if(o && o.map && typeof o.map === "object") return o.map; } }catch(e){} return {}; }
+    function opGlMapSave(map){ try{ localStorage.setItem("lds.glMap", JSON.stringify({ v: 1, map: map || {} })); }catch(e){} }
+    function opGlSigOf(map){ var keys = Object.keys(map || {}).filter(function(k){ return map[k]; }).sort(); return keys.length ? (keys.length + ":" + keys.map(function(k){ return k + "=" + map[k]; }).join(",")) : ""; }
+    function opGlApply(map){ opGlSig = opGlSigOf(map); try{ if(window.T12Classify && T12Classify.setOverrides) T12Classify.setOverrides(map); }catch(e){} }
+    try{ opGlApply(opGlMapLoad()); }catch(e){}   // apply saved overrides before any classification runs
+    // The category codes an operator can re-map a line to (income + expense), with human labels.
+    function opGlCategories(){
+      var codes = {};
+      try{ ["INCOME","EXPENSE"].forEach(function(g){ var m = T12Classify[g] || {}; for(var c in m) if(Object.prototype.hasOwnProperty.call(m,c)) codes[c] = 1; }); }catch(e){}
+      // ensure the staples are offered even if a build trims the maps
+      ["GPR","VAC","CONC","BD","RUBS","PARK","OTH","COM","RET","INS","UTIL","PAY","RM","CS","TRSH","MKT","GA","MGMT","BDX"].forEach(function(c){ codes[c] = 1; });
+      var lbl = (window.SetupBuilder && SetupBuilder.LABEL) || {};
+      return Object.keys(codes).sort().map(function(c){ return { code: c, label: lbl[c] || c }; });
+    }
+    // ── 2.9.2 — per-line BENCHMARKS (Azriel's numbers, held in Settings): payroll two size bands + a unit
+    // threshold, R&M, contract services and turnover (blank by default). A line whose actual $/unit is beyond
+    // ±15% of its benchmark is highlighted, and the dollar gap is surfaced. Global; not market data. ──
+    var BENCH_TOL = 0.15;
+    function opBenchDefaults(){ return { payroll: { big: 1500, small: 1700, threshold: 200 }, RM: 600, CONTR: null, TURN: null }; }
+    function opBenchLoad(){ try{ var raw = localStorage.getItem("lds.benchmarks"); if(raw){ var o = JSON.parse(raw); if(o && typeof o === "object"){ var d = opBenchDefaults(); d.payroll = Object.assign({}, d.payroll, o.payroll || {}); ["RM","CONTR","TURN"].forEach(function(k){ if(k in o) d[k] = o[k]; }); return d; } } }catch(e){} return opBenchDefaults(); }
+    function opBenchSave(b){ try{ localStorage.setItem("lds.benchmarks", JSON.stringify(b || opBenchDefaults())); }catch(e){} }
+    // The $/unit benchmark for a category at this property's unit count (payroll picks its band). null = none.
+    function opBenchUnitFor(code, units){
+      var b = opBenchLoad();
+      if(code === "PAY"){ var t = b.payroll || {}; var big = (t.big != null ? t.big : null), small = (t.small != null ? t.small : null), th = (t.threshold != null ? t.threshold : 200);
+        return (units != null && units >= th) ? big : small; }
+      if(code === "RM") return (b.RM != null ? b.RM : null);
+      if(code === "CONTR") return (b.CONTR != null ? b.CONTR : null);
+      if(code === "TURN") return (b.TURN != null ? b.TURN : null);
+      return null;
+    }
+    // A line's benchmark status: { bench, actualPerUnit, gapPerUnit, gapTotal, off } — off = beyond ±15%.
+    function opBenchStatus(code, total, units){
+      var bench = opBenchUnitFor(code, units);
+      if(bench == null || !(units > 0) || total == null) return null;
+      var actual = Math.abs(total) / units, gapU = actual - bench;
+      return { bench: bench, actualPerUnit: actual, gapPerUnit: gapU, gapTotal: gapU * units, off: bench > 0 && Math.abs(gapU) / bench > BENCH_TOL };
+    }
+    var opGlLinesCache = null;
+    // Read every property's T12 once and collect the distinct account lines + how the classifier places each.
+    async function opCollectGlLines(){
+      if(opGlLinesCache) return opGlLinesCache;
+      var seen = {}, out = [];
+      try{
+        if(!(window.T12Parse && window.T12Classify)) return out;
+        var props = (typeof opProperties === "function") ? opProperties() : [];
+        for(var i=0;i<props.length;i++){
+          try{
+            var r = await opReadPropT12(props[i].key); if(!r || !r.grid) continue;
+            var parsed = T12Parse.parseGrid(r.grid, {}); var rows = (parsed && parsed.rows) || [];
+            rows.forEach(function(row){
+              var nm = row.name; if(!nm) return;
+              var norm = T12Classify.normName(nm); if(!norm || seen[norm]) return;
+              seen[norm] = 1;
+              var cc = T12Classify.classifyConfident(nm, row.section, row.sub);
+              out.push({ name: nm, norm: norm, section: row.section || "", code: (cc && cc.code) || "OTH" });
+            });
+          }catch(e){}
+        }
+      }catch(e){}
+      out.sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
+      opGlLinesCache = out; return out;
     }
     // A property's operating data is NEVER kept in browser storage. The durable source is the T12 file
     // in that property's on-disk folder (userData/documents/<hash(propKey)>, via ldsShell.doc*). The
@@ -3705,7 +3836,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Per-property underwriting assumptions live in the property's folder too (a small assumptions.json),
     // never in browser storage. They default to the app's constants; a property remembers its own.
-    function opMergeBench(def, ov){ var b = JSON.parse(JSON.stringify(def)); if(ov && typeof ov === "object"){ Object.keys(ov).forEach(function(k){ if(k === "sizing" && ov.sizing && typeof ov.sizing === "object") b.sizing = Object.assign({}, b.sizing, ov.sizing); else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
+    function opMergeBench(def, ov){ var b = JSON.parse(JSON.stringify(def)); if(ov && typeof ov === "object"){ Object.keys(ov).forEach(function(k){ if(k === "sizing" && ov.sizing && typeof ov.sizing === "object") b.sizing = Object.assign({}, b.sizing, ov.sizing); else if(k === "basis" && typeof ov.basis === "string") b.basis = (ov.basis === "lender" ? "lender" : "borrower"); else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
     async function opLoadAssumptions(key){
       if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
       try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
@@ -4671,6 +4802,88 @@ tr.flagged:hover td{background:#fee2e2}
       }
       host.innerHTML = html;
     }
+    // 2.9.2 — the Settings GL mapping table: every distinct T12 account line, how the classifier places it
+    // now, and a dropdown to re-map it. A change saves globally, re-applies to the classifier and triggers a
+    // Recompute so the line's dollars move to the new category everywhere. Empty by default (pure rules).
+    var _glMapBusy = false;
+    async function renderSettingsGlMap(){
+      var host = el("settingsGlMap"); if(!host) return;
+      if(_glMapBusy) return; _glMapBusy = true;
+      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">GL mapping</span><p class="mt-1 text-[10px] text-slate-400">Reading each T12…</p>';
+      var lines = [], cats = [], map = {};
+      try{ lines = await opCollectGlLines(); cats = opGlCategories(); map = opGlMapLoad(); }catch(e){}
+      var dd = el("settingsDD"); if(!el("settingsGlMap") || (dd && !dd.open)){ _glMapBusy = false; return; }   // menu closed mid-load
+      var lbl = (window.SetupBuilder && SetupBuilder.LABEL) || {};
+      var overridden = Object.keys(map).filter(function(k){ return map[k]; }).length;
+      var rows = lines.map(function(L){
+        var ov = map[L.norm];
+        return '<div class="flex items-center gap-1.5 py-0.5 border-b border-slate-50 last:border-0">'+
+          '<span class="flex-1 min-w-0"><span class="block truncate font-medium text-slate-700" title="'+escapeHtml(L.name)+'">'+escapeHtml(L.name)+'</span>'+
+            (ov?'<span class="text-[9px] font-semibold text-amber-600">re-mapped</span>':'')+'</span>'+
+          '<select class="rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px]" data-glset="'+escapeHtml(L.norm)+'">'+
+            '<option value=""'+(!ov?' selected':'')+'>Auto ('+escapeHtml(lbl[L.code]||L.code)+')</option>'+
+            cats.map(function(c){ return '<option value="'+c.code+'"'+(ov===c.code?' selected':'')+'>'+escapeHtml(c.label)+' ('+c.code+')</option>'; }).join('')+
+          '</select></div>';
+      }).join('');
+      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">GL mapping</span>'+
+        '<div class="mt-1.5 flex items-baseline justify-between"><span class="text-sm font-semibold text-slate-700">Account lines &rarr; category</span>'+
+          '<span class="text-[10px] tabular-nums text-slate-400">'+lines.length+' line'+(lines.length===1?'':'s')+(overridden?' &middot; '+overridden+' re-mapped':'')+'</span></div>'+
+        '<p class="text-[10px] text-slate-400">How each T12 line is classified. Re-map one and Recompute moves its dollars to the new category everywhere.</p>'+
+        (lines.length ? '<div class="mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 p-1.5 text-[11px]">'+rows+'</div>'
+                      : '<div class="mt-1.5 text-[11px] text-slate-400">No T12s loaded yet — open a property or the roll-up, then reopen Settings.</div>')+
+        (overridden ? '<button type="button" id="glMapReset" class="mt-1.5 text-[10px] font-semibold text-slate-500 hover:text-rose-600">Reset all to Auto</button>' : '');
+      _glMapBusy = false;
+    }
+    // Apply a GL re-map (or reset): persist, re-apply to the classifier, then reclassify every property.
+    async function opGlSetMapping(norm, code){
+      if(!norm) return;
+      norm = (window.T12Classify && T12Classify.normName) ? T12Classify.normName(norm) : String(norm).toLowerCase().replace(/\s+/g," ").trim();
+      if(!norm) return;
+      var map = opGlMapLoad();
+      if(code) map[norm] = code; else delete map[norm];
+      opGlMapSave(map); opGlApply(map); opGlLinesCache = null;
+      try{ await opRecomputeAll("gl-mapping"); }catch(e){}
+      try{ renderSettingsGlMap(); }catch(e){}
+    }
+    async function opGlResetMappings(){
+      opGlMapSave({}); opGlApply({}); opGlLinesCache = null;
+      try{ await opRecomputeAll("gl-mapping-reset"); }catch(e){}
+      try{ renderSettingsGlMap(); }catch(e){}
+    }
+    // 2.9.2 — the Settings Benchmarks editor: payroll (two size bands + threshold), R&M, contract services,
+    // turnover. Editing re-renders the Setup so the ±15% flags and the dollar gaps update everywhere.
+    function renderSettingsBench(){
+      var host = el("settingsBench"); if(!host) return;
+      var b = opBenchLoad();
+      var v = function(x){ return x == null ? "" : x; };
+      var row = function(label, attr, val, suf){ return '<label class="flex items-center justify-between gap-2 py-0.5 text-[11px] text-slate-600">'+label+
+        '<span class="flex items-center gap-1"><span class="text-slate-400">$</span><input class="w-16 rounded border border-slate-200 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums" inputmode="numeric" data-bench="'+attr+'" value="'+v(val)+'"><span class="text-[10px] text-slate-400 w-8">'+(suf||"/u")+'</span></span></label>'; };
+      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Benchmarks</span>'+
+        '<p class="mt-1 text-[10px] text-slate-400">Your $/unit targets. A line beyond &plusmn;15% of its benchmark is flagged in the Setup.</p>'+
+        '<div class="mt-1.5 space-y-0.5">'+
+          row("Payroll &mdash; "+b.payroll.threshold+"+ units", "payroll.big", b.payroll.big)+
+          row("Payroll &mdash; under "+b.payroll.threshold, "payroll.small", b.payroll.small)+
+          '<label class="flex items-center justify-between gap-2 py-0.5 text-[11px] text-slate-600">Payroll size threshold<span class="flex items-center gap-1"><input class="w-16 rounded border border-slate-200 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums" inputmode="numeric" data-bench="payroll.threshold" value="'+b.payroll.threshold+'"><span class="text-[10px] text-slate-400 w-8">units</span></span></label>'+
+          row("R&amp;M", "RM", b.RM)+
+          row("Contract services", "CONTR", b.CONTR)+
+          row("Turnover", "TURN", b.TURN)+
+        '</div>';
+    }
+    function opBenchSet(attr, rawVal){
+      var b = opBenchLoad();
+      var s = String(rawVal == null ? "" : rawVal).trim();
+      var num = (s === "") ? null : Number(s.replace(/[^0-9.]/g, ""));
+      if(num != null && !isFinite(num)) num = null;
+      if(attr === "payroll.big") b.payroll.big = num;
+      else if(attr === "payroll.small") b.payroll.small = num;
+      else if(attr === "payroll.threshold") b.payroll.threshold = (num == null ? 200 : num);
+      else if(attr === "RM") b.RM = num;
+      else if(attr === "CONTR") b.CONTR = num;
+      else if(attr === "TURN") b.TURN = num;
+      opBenchSave(b);
+      try{ if(typeof uwLastBuilt !== "undefined" && uwLastBuilt) renderUnderwriting(); }catch(e){}
+      try{ renderSettingsBench(); }catch(e){}
+    }
     function healthRowHtml(p){
       const key = p.key, sr = propSeniorLoan(key);
       const gd = gdFullCache[key], gnoi = gdNOICache[key], noi = gd && gd.noi;
@@ -4873,10 +5086,11 @@ tr.flagged:hover td{background:#fee2e2}
     // most. A move is not judged by whether it "beats" an assumption — it is judged by how much underwritten
     // NOI it adds.
     var AI_PUSH_INSTRUCTION = [
-      "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement and the underwriting assumptions, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%).",
+      "You are the asset manager for ONE multifamily property. You are given only its trailing-twelve-month operating statement, the underwriting assumptions, and the owner's per-unit benchmark targets, as JSON on stdin: { property, units, underwritingAssumptions:{ vacancy, managementFee, reservePerUnit, capRate }, benchmarksPerUnit:{ payroll, repairsMaintenance, contractServices, turnover }, t12:{ income:[{line, annual}], expense:[{line, annual}] } }. Every dollar in t12 is the statement's own actual annual figure; each assumption is a decimal (0.05 means 5%); each benchmark is a dollars-per-unit target (null means the owner set none).",
       "The loan is sized on the property's UNDERWRITTEN NOI — the statement re-priced with these assumptions: vacancy is charged at the BETTER of the vacancy assumption and the vacancy the statement actually runs (a property running TIGHTER than assumed is already credited its proven, lower vacancy; one running looser is held to the assumption), the management fee likewise at the better of the assumed share of effective gross income and what the statement actually pays, replacement reserves at the assumed dollars per unit, and every other line passes through at its actual amount from the statement.",
       "Read the statement against those assumptions and decide what the owner should PUSH to raise this property's underwritten NOI the most, then rank the moves by how much they raise it. A move does NOT have to 'beat' an assumption — weigh each one only by how much underwritten NOI it adds. Because vacancy and the management fee are ALREADY underwritten at the better of the assumption and the statement, there is no 'credit the proven figure' move to make on those — real upside there means pushing them EVEN BETTER than the statement already runs (usually hard when the property is already tight; say so), while for rents and each cost line the upside is operational, straight from the statement's own figures. Never tell the owner to move a figure the wrong way (for example toward a worse vacancy than the statement already runs). Work it out yourself; you are not given a list of moves.",
       "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect, in words, grounded in the statement's own figures (for example \"about $100,000 a year\"); impactInPlace — the SAME effect as a plain annual dollar NUMBER on the property's IN-PLACE NOI (the statement's own actual net operating income), positive when it RAISES NOI; impactUnderwritten — the annual dollar NUMBER effect on the UNDERWRITTEN NOI (the re-priced figure the loan is sized on). The two numbers are usually close, but differ where a line is already re-priced by an assumption (pushing vacancy or the management fee below what the statement runs moves in-place fully but underwritten only to the extent it beats the assumption). Use 0 for a number you genuinely cannot ground, and say so in the rationale rather than inventing one — never invent a market rent or comparable you were not given. effort — exactly one of \"light\", \"moderate\", or \"heavy\"; rationale — one or two plain sentences on why it matters for THIS property, citing its own numbers. A one-line `summary` gives the headline. Return the handful of moves that genuinely matter, best first.",
+      "Use the benchmark targets to find operational upside: for a line that has a benchmark (payroll and repairs & maintenance especially), work out the line's actual dollars per unit from the statement (its annual total divided by units) and compare it to the benchmark. When a line runs more than about 15% ABOVE its benchmark, that gap is real, so name it and STATE the annual dollar gap (the dollars-per-unit gap times the units) in the rationale — that is exactly the money on the table. Do not flag a line that has no benchmark or that already sits at or below it.",
       "Use FULL WORDS only. The ONLY abbreviation permitted is NOI (so \"underwritten NOI\" is fine). Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
       "Consider the property's LOCATION (its address, when given) in judging what is realistic to push and how to rank the moves — rent upside, tax and insurance pressure, and utility costs all vary by market.",
       "Return { summary, moves:[{ title, rank, impact, impactInPlace, impactUnderwritten, effort, rationale }] } via the structured-output tool, best first."
@@ -4888,10 +5102,17 @@ tr.flagged:hover td{background:#fee2e2}
       // prioritization). The assumptions are the user's own EDITABLE, per-property values (read live from
       // bench, never hardcoded) — change them in the underwriting tab and re-analyse, and Claude works from
       // the new numbers. Nothing else is pre-computed for Claude.
+      // 2.9.2 — Yuval's $/unit benchmark TARGETS for this property's size band (payroll picks its band by
+      // units), sent like the assumptions. Claude derives the actual $/unit from the T12 it already reads and
+      // states the gap itself — the app pre-computes nothing (no actuals, no NOI).
+      var units = uwLastBuilt.worksheet.units || null;
+      var benchmarksPerUnit = { payroll: opBenchUnitFor("PAY", units), repairsMaintenance: opBenchUnitFor("RM", units),
+        contractServices: opBenchUnitFor("CONTR", units), turnover: opBenchUnitFor("TURN", units) };
       return { property: (p && p.name) || key, address: (sr && sr.propertyAddress) || null,
-        units: uwLastBuilt.worksheet.units || null,
+        units: units,
         underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
           reservePerUnit: bench.reservePerUnit, capRate: (bench.sizing && bench.sizing.capRate) },
+        benchmarksPerUnit: benchmarksPerUnit,
         t12: { income: t.income, expense: t.expense } };
     }
     function opRunPush(key){
@@ -5006,8 +5227,15 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
+    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit,ov)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchLoad=()=>opBenchLoad(); window.LDS_benchSet=(a,v)=>opBenchSet(a,v); window.LDS_benchStatus=(c,t,u)=>opBenchStatus(c,t,u); window.LDS_benchUnitFor=(c,u)=>opBenchUnitFor(c,u); window.LDS_renderBench=()=>renderSettingsBench(); }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit + line overrides + benchmarks
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
-    try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true; _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } }); } }catch(e){}
+    try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
+      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsGlMap(); }catch(e){} try{ renderSettingsBench(); }catch(e){} } });
+      _sdd.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
+        if(t.getAttribute("data-glset") != null){ opGlSetMapping(t.getAttribute("data-glset"), t.value); }
+        else if(t.getAttribute("data-bench") != null){ opBenchSet(t.getAttribute("data-bench"), t.value); } });
+      _sdd.addEventListener("click", function(e){ if(e.target && e.target.id === "glMapReset"){ opGlResetMappings(); } });
+    } }catch(e){}
     // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
     // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
     // never interrupts typing.

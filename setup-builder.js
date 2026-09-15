@@ -134,14 +134,45 @@
     // engine prices the line on, so crediting the actual reproduces the statement's own figure exactly.
     // (Reserves and the cap rate have no statement actual, so they are untouched. A line the statement does
     // not report at all — no vacancy line, no management-fee line — keeps the assumption, never a phantom 0%.)
+    // 2.9.2 — underwriting BASIS. The better-of / worse-of choice is a PARAMETER of this one engine,
+    // never a second code path. Borrower case (default) prices vacancy and the management fee at the
+    // BETTER of the assumption and the statement's proven rate (min — lower is better; today's rule).
+    // Lender case prices them at the WORSE (max — the conservative floor a lender underwrites to:
+    // vacancy = max(actual, 5%), management = max(actual, 2.5%)). Borrower-case numbers are therefore
+    // byte-for-byte identical to before this parameter existed.
+    // basis rides in the per-property assumptions (bm.basis) so it reaches every caller that already passes
+    // `benchmarks`, and an explicit input.basis still overrides (the tab's live toggle / tests).
+    var basis = ((input.basis || (bm && bm.basis)) === "lender") ? "lender" : "borrower";
+    var pick = (basis === "lender")
+      ? function (actual, assume){ return (actual != null) ? Math.max(actual, assume) : assume; }
+      : function (actual, assume){ return (actual != null) ? Math.min(actual, assume) : assume; };
     var assumeVac = (bm.vacancyPct != null ? num(bm.vacancyPct) : 0.05);
     var vacBase = (sums.GPR || 0) + (sums.EMPL || 0) + (sums.MOD || 0);                     // the running rental subtotal VAC prices off
     var actualVac = (has("VAC") && vacBase > 0) ? Math.max(0, -(sums.VAC || 0)) / vacBase : null;
-    var effVac = (actualVac != null) ? Math.min(actualVac, assumeVac) : assumeVac;
+    var effVac = pick(actualVac, assumeVac);
     var assumeMgmt = (bm.mgmtPct != null ? num(bm.mgmtPct) : 0.025);
     var inPlaceEGI = 0; RENTAL.concat(OTHER).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
     var actualMgmt = (has("MGMT") && inPlaceEGI > 0) ? Math.max(0, sums.MGMT || 0) / inPlaceEGI : null;
-    var effMgmt = (actualMgmt != null) ? Math.min(actualMgmt, assumeMgmt) : assumeMgmt;
+    var effMgmt = pick(actualMgmt, assumeMgmt);
+    // 2.9.2 — bad debt & concessions (the 4th assumption, default 1%) priced at the BETTER/WORSE of the
+    // assumption vs the statement's own combined concessions + bad debt, on the underwritten gross rental
+    // base, then distributed back to the CONC / BD lines by their actual weights. Because the actual rate is
+    // measured on the same base it is applied to, Borrower reproduces each line's proven figure exactly
+    // whenever the statement runs at or below the assumption (reference numbers unchanged); the assumption
+    // binds only when the statement runs looser (Borrower caps it there) or under Lender (holds the floor).
+    var uwGPR = (input.rrGPR != null ? num(input.rrGPR) : (sums.GPR || 0));
+    var grossRentalUw = uwGPR + (sums.EMPL || 0) + (sums.MOD || 0);
+    var concActual = Math.max(0, -(sums.CONC || 0)), bdActual = Math.max(0, -(sums.BD || 0)), badActual = concActual + bdActual;
+    var assumeBad = (bm.badDebtPct != null ? num(bm.badDebtPct) : 0.01);
+    var actualBad = (grossRentalUw > 0 && (has("CONC") || has("BD"))) ? badActual / grossRentalUw : null;
+    // Borrower keeps the statement's proven concessions / bad debt (no artificial upside, so the reference
+    // numbers are unchanged); Lender floors them at the assumption (the conservative worse-of). Where the
+    // statement reports none, neither case invents a deduction (badTotalUw stays 0 below).
+    var effBad = (actualBad == null) ? assumeBad
+               : (basis === "lender" ? Math.max(actualBad, assumeBad) : actualBad);
+    var badTotalUw = (actualBad != null) ? -(effBad * grossRentalUw) : 0;                       // combined underwritten deduction (<= 0)
+    var concUw = (badActual > 0) ? badTotalUw * (concActual / badActual) : (has("CONC") ? 0 : null);
+    var bdUw   = (badActual > 0) ? badTotalUw * (bdActual   / badActual) : (has("BD")   ? 0 : null);
     var lines = [];
     var L = function (key, section, method, opts){
       opts = opts || {};
@@ -156,8 +187,8 @@
     if(has("EMPL")) L("EMPL", "rental", "value", { uw: sums.EMPL });
     if(has("MOD"))  L("MOD",  "rental", "value", { uw: sums.MOD });
     L("VAC", "rental", "pctBase", { param: effVac, t12: sums.VAC || 0 });
-    if(has("CONC")) L("CONC", "rental", "value", { uw: sums.CONC });
-    if(has("BD"))   L("BD",   "rental", "value", { uw: sums.BD });
+    if(has("CONC")) L("CONC", "rental", "value", { uw: concUw });
+    if(has("BD"))   L("BD",   "rental", "value", { uw: bdUw });
 
     // Other income — one line per category present, pass-through
     OTHER.forEach(function (c){ if(has(c)) L(c, "other", "value", { uw: sums[c] }); });
@@ -174,6 +205,17 @@
     });
     L("reserves", "reserve", "perUnit", { param: (bm.reservePerUnit != null ? bm.reservePerUnit : 200), t12: 0 });
     lines[lines.length-1].label = "Replacement Reserves";
+
+    // 2.9.2 — per-line underwritten OVERRIDES. An operator can pin any underwritten line to a fixed value
+    // (e.g. payroll at $1,700/unit → its total); the line becomes a plain value and the NOI recomputes from
+    // it. Overrides ride in the assumptions (bm.lineOverrides) so they reach every caller, or are passed
+    // explicitly. Each entry is a number or an { value, ... } record (the value is used). Empty = no change.
+    var lineOv = input.lineOverrides || (bm && bm.lineOverrides) || null;
+    if (lineOv) lines.forEach(function (l) {
+      if (!Object.prototype.hasOwnProperty.call(lineOv, l.key)) return;
+      var raw = lineOv[l.key], v = (raw && typeof raw === "object") ? num(raw.value) : num(raw);
+      if (v != null && isFinite(v)) { l.method = "value"; l.uw = v; l.uwOverride = true; }
+    });
 
     var ws = { units: units, lines: lines };
     var result = UW.computeNOI(ws);
@@ -193,10 +235,13 @@
              inPlaceNOIReported: inPlaceAuth, reconcile: fp ? fp.reconcile : null, expenseBadDebt: num(sums.BDX),
              // The rates the underwritten column actually used, and where each came from (the statement's own
              // actual, or the assumption) — so the UI can say when a property was credited its proven figure.
-             effective: { vacancy: effVac, managementFee: effMgmt, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt,
-                          actualVacancy: actualVac, actualManagementFee: actualMgmt,
-                          vacancyFromActual: (actualVac != null && actualVac < assumeVac),
-                          managementFromActual: (actualMgmt != null && actualMgmt < assumeMgmt) } };
+             effective: { basis: basis, vacancy: effVac, managementFee: effMgmt, badDebt: effBad, assumeVacancy: assumeVac, assumeManagementFee: assumeMgmt, assumeBadDebt: assumeBad,
+                          actualVacancy: actualVac, actualManagementFee: actualMgmt, actualBadDebt: actualBad,
+                          badDebtFromActual: (actualBad != null && effBad === actualBad && actualBad !== assumeBad),
+                          // "from actual" = the underwritten column used the statement's proven rate rather than the
+                          // assumption (in Borrower case that happens when the actual is BETTER; in Lender case, WORSE).
+                          vacancyFromActual: (actualVac != null && effVac === actualVac && actualVac !== assumeVac),
+                          managementFromActual: (actualMgmt != null && effMgmt === actualMgmt && actualMgmt !== assumeMgmt) } };
   }
 
   // Roll several built setups into a Debt-Sizing summary (per property + totals).
