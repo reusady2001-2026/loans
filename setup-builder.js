@@ -206,6 +206,17 @@
     L("reserves", "reserve", "perUnit", { param: (bm.reservePerUnit != null ? bm.reservePerUnit : 200), t12: 0 });
     lines[lines.length-1].label = "Replacement Reserves";
 
+    // 2.9.2 — per-line underwritten OVERRIDES. An operator can pin any underwritten line to a fixed value
+    // (e.g. payroll at $1,700/unit → its total); the line becomes a plain value and the NOI recomputes from
+    // it. Overrides ride in the assumptions (bm.lineOverrides) so they reach every caller, or are passed
+    // explicitly. Each entry is a number or an { value, ... } record (the value is used). Empty = no change.
+    var lineOv = input.lineOverrides || (bm && bm.lineOverrides) || null;
+    if (lineOv) lines.forEach(function (l) {
+      if (!Object.prototype.hasOwnProperty.call(lineOv, l.key)) return;
+      var raw = lineOv[l.key], v = (raw && typeof raw === "object") ? num(raw.value) : num(raw);
+      if (v != null && isFinite(v)) { l.method = "value"; l.uw = v; l.uwOverride = true; }
+    });
+
     var ws = { units: units, lines: lines };
     var result = UW.computeNOI(ws);
     // The statement's printed NET OPERATING INCOME is authoritative for in-place;

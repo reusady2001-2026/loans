@@ -3229,7 +3229,7 @@ tr.flagged:hover td{background:#fee2e2}
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, avgRentUnit:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
-      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, badDebtPct:0.01, budget:{}, basis:"borrower",   // 2.9.2 — four fixed assumptions + underwriting basis (borrower better-of / lender worse-of)
+      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, badDebtPct:0.01, budget:{}, basis:"borrower", lineOverrides:{},   // 2.9.2 — four fixed assumptions + basis + per-line underwritten overrides
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
     // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
     // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
@@ -3398,6 +3398,18 @@ tr.flagged:hover td{background:#fee2e2}
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
     }
 
+    // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
+    // computed. Stored per property with who/when; buildSetup reads bench.lineOverrides so the NOI recomputes.
+    function uwSetLineOverride(key, rawVal, fromPer){
+      if(!key) return;
+      var b = uwState.input.bench; if(!b.lineOverrides) b.lineOverrides = {};
+      var v = uwNum(rawVal);
+      if(v == null){ delete b.lineOverrides[key]; }
+      else { var units = uwNum(uwState.input.units), total = (fromPer && units != null && units > 0) ? v * units : v;
+        b.lineOverrides[key] = { value: total, per: !!fromPer, by: opOperator(), at: new Date().toISOString() }; }
+      saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey);
+    }
+    function uwResetLineOverride(key){ var b = uwState.input.bench; if(b.lineOverrides) delete b.lineOverrides[key]; saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey); }
     // 2.9.2 — the per-unit view is a per-USER preference (remembered across properties and restarts).
     function opPerUnitOn(){ try{ return localStorage.getItem("lds.perUnit") === "1"; }catch(e){ return false; } }
     function opPerUnitSet(on){ try{ localStorage.setItem("lds.perUnit", on ? "1" : "0"); }catch(e){} }
@@ -3409,9 +3421,18 @@ tr.flagged:hover td{background:#fee2e2}
       const uUnits = uwNum(uwState.input.units), unitsOk = (uUnits != null && uUnits > 0);
       const puVal = (v)=> (unitsOk && v != null) ? uwFmt(v / uUnits) : "&mdash;";
       const puCell = (v, c)=> perUnitOn ? '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+(c||'')+'">'+puVal(v)+'</td>' : '';
-      const line = (ln)=> '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+'</td>'+
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ puCell(ln.t12) +
-        '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-800">'+uwFmt(r.underwritten.lines[ln.key])+'</td>'+ puCell(r.underwritten.lines[ln.key]) +'</tr>';
+      // 2.9.2 — the underwritten side is EDITABLE: type a total (or, in the per-unit view, a $/unit) to pin
+      // that line; the NOI recomputes from it and the edit is stored with who/when. An "edited" tag + reset.
+      const ovMap = bench.lineOverrides || {};
+      const line = (ln)=>{
+        const uwv = r.underwritten.lines[ln.key], ovOn = (ovMap[ln.key] != null);
+        const totCls = 'w-24 rounded px-1 py-0.5 text-right text-sm tabular-nums '+(ovOn?'border border-brand-300 bg-brand-50 font-semibold text-brand-800':'border border-transparent text-slate-800 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
+        const totCell = '<td class="py-1 px-1 text-right whitespace-nowrap"><input class="'+totCls+'" inputmode="numeric" data-uwline="'+ln.key+'" value="'+(uwv==null?'':Math.round(uwv))+'">'+(ovOn?'<button type="button" class="ml-0.5 align-middle text-[11px] text-slate-400 hover:text-rose-500" data-uwlinereset="'+ln.key+'" title="Reset to computed">&times;</button>':'')+'</td>';
+        const perCls = 'w-16 rounded px-1 py-0.5 text-right text-[11px] tabular-nums '+(ovOn?'border border-brand-200 bg-brand-50 text-brand-700':'border border-transparent text-slate-400 hover:border-slate-200 focus:border-brand-400 focus:bg-white');
+        const perCell = perUnitOn ? '<td class="py-1 pr-1 text-right"><input class="'+perCls+'" inputmode="numeric" data-uwlineper="'+ln.key+'" value="'+((unitsOk&&uwv!=null)?Math.round(uwv/uUnits):'')+'"></td>' : '';
+        return '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide">edited</span>':'')+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ puCell(ln.t12) + totCell + perCell +'</tr>';
+      };
       const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
         return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
           '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puCell(ip, c) +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puCell(uw, c) +'</tr>'; };
@@ -3549,6 +3570,8 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
       if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1, badDebtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); renderUnderwriting(); return; }
+      if(t.hasAttribute && t.hasAttribute("data-uwline")){ uwSetLineOverride(t.getAttribute("data-uwline"), t.value, false); return; }        // 2.9.2 — edit an underwritten total
+      if(t.hasAttribute && t.hasAttribute("data-uwlineper")){ uwSetLineOverride(t.getAttribute("data-uwlineper"), t.value, true); return; }   // 2.9.2 — edit an underwritten $/unit
       const k = t.getAttribute && t.getAttribute("data-uwf");
       if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); renderUnderwriting(); return; }
       if(k==="avgRentUnit"){ uwFillRentFromAvg(); renderUnderwriting(); return; }
@@ -3558,6 +3581,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(bb){ const nb = (bb.getAttribute("data-uwbasis") === "lender") ? "lender" : "borrower";
         if((uwState.input.bench.basis || "borrower") !== nb){ uwState.input.bench.basis = nb; saveUW(); uwApplyParse(); opSaveAssumptions(opFocusKey); }
         return; }
+      const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // 2.9.2 — reset a pinned underwritten line
       if(t.closest("#uwPerUnitToggle")){ opPerUnitSet(!opPerUnitOn()); renderUnderwriting(); return; }   // 2.9.2 — per-unit view toggle (per user)
       if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey){ profileFocusKey = opFocusKey; openTab("profile"); } return; }
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
@@ -5128,7 +5152,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit toggle + setup-html render
+    try{ window.LDS_glMap=()=>opGlMapLoad(); window.LDS_glLines=()=>opCollectGlLines(); window.LDS_glSet=(n,c)=>opGlSetMapping(n,c); window.LDS_glReset=()=>opGlResetMappings(); window.LDS_glSig=()=>opGlSig; window.LDS_classify=(n,s,sub)=>window.T12Classify.classifyConfident(n,s,sub); window.LDS_glCategories=()=>opGlCategories(); window.LDS_renderGlMap=()=>renderSettingsGlMap(); window.LDS_perUnitOn=()=>opPerUnitOn(); window.LDS_perUnitSet=(v)=>opPerUnitSet(v); window.LDS_uwSetupHtml=(sums,units,perUnit,ov)=>{ try{ opPerUnitSet(!!perUnit); uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit + setup-html + line overrides
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsGlMap(); }catch(e){} } });
