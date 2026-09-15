@@ -1,7 +1,6 @@
-/* e2e for v2.9.2-F: benchmarks — payroll two size bands + a unit threshold, R&M, contract services and
-   turnover (editable in Settings); a line beyond ±15% of its $/unit benchmark is flagged with the dollar
-   gap; and the flagged gaps are handed to the "what to push" input. Driven through the LDS_bench* and
-   LDS_uwSetupHtml diagnostics.
+/* e2e (cleanup): benchmarks are PER PROPERTY, editable in the underwriting tab (payroll + R&M $/unit) — not in
+   Settings, no size bands/threshold. A line beyond ±15% of its benchmark is flagged with the dollar gap.
+   Driven through the LDS_bench* / LDS_uwSetupHtml diagnostics.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/benchmarks.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -14,43 +13,30 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
 
-  // ---- defaults + the payroll size bands ----
-  const d=await page.evaluate(()=>window.LDS_benchLoad());
-  ok(d.payroll.big===1500 && d.payroll.small===1700 && d.payroll.threshold===200,'default payroll bands: 1,500 (200+ units) / 1,700 (under) at a 200-unit threshold');
-  ok(d.RM===600,'default R&M benchmark is 600/unit');
-  ok(d.CONTR===null && d.TURN===null,'contract services and turnover are present but blank');
-  ok(await page.evaluate(()=>window.LDS_benchUnitFor('PAY',250))===1500,'a 250-unit property picks the 1,500 payroll band');
-  ok(await page.evaluate(()=>window.LDS_benchUnitFor('PAY',150))===1700,'a 150-unit property picks the 1,700 payroll band');
-  ok(await page.evaluate(()=>window.LDS_benchUnitFor('RM',100))===600,'R&M benchmark is 600/unit regardless of size');
+  // ---- defaults: payroll 1,700/unit and R&M 600/unit (the two Azriel named); no bands, no threshold ----
+  ok(await page.evaluate(()=>window.LDS_benchUnitFor('PAY',{}))===1700,'default payroll benchmark is 1,700/unit');
+  ok(await page.evaluate(()=>window.LDS_benchUnitFor('RM',{}))===600,'default R&M benchmark is 600/unit');
+  // ---- per property: a property's own benchmark overrides the default ----
+  ok(await page.evaluate(()=>window.LDS_benchUnitFor('PAY',{PAY:1600}))===1600,'a property-specific payroll benchmark overrides the default');
 
-  // ---- ±15%: 20% off is flagged, 10% off is not ----
-  const off20=await page.evaluate(()=>window.LDS_benchStatus('PAY',1800*250,250)); // 1,800/u vs 1,500 = +20%
-  ok(off20 && off20.off===true && Math.round(off20.gapTotal)===75000,'a line 20% above benchmark is flagged, gap +$75,000 (300/u × 250)');
-  const off10=await page.evaluate(()=>window.LDS_benchStatus('PAY',1650*250,250)); // 1,650/u vs 1,500 = +10%
-  ok(off10 && off10.off===false,'a line 10% above benchmark is NOT flagged');
+  // ---- ±15%: 17.6% off is flagged with the dollar gap; ~6% off is not ----
+  const off=await page.evaluate(()=>window.LDS_benchStatus('PAY',2000*250,250,{})); // 2,000/u vs 1,700 = +17.6%
+  ok(off && off.off===true && Math.round(off.gapTotal)===75000,'a payroll line 17.6% above benchmark is flagged, gap +$75,000 (300/u × 250)');
+  const near=await page.evaluate(()=>window.LDS_benchStatus('PAY',1800*250,250,{})); // 1,800/u vs 1,700 = +5.9%
+  ok(near && near.off===false,'a payroll line ~6% above benchmark is NOT flagged');
 
-  // ---- editing a benchmark updates it everywhere ----
-  await page.evaluate(()=>window.LDS_benchSet('RM',650));
-  ok(await page.evaluate(()=>window.LDS_benchLoad().RM)===650,'changing R&M to 650 persists');
-  ok(await page.evaluate(()=>window.LDS_benchUnitFor('RM',100))===650,'…and the benchmark lookup reflects 650 immediately');
-  await page.evaluate(()=>window.LDS_benchSet('RM',600)); // restore
+  // ---- the benchmark editor is IN the underwriting tab (not Settings), editable per property ----
+  const html=await page.evaluate(()=>window.LDS_uwSetupHtml({GPR:5000000, PAY:2000*250, RET:50000}, 250, {}));
+  ok(/data-uwbenchmark="PAY"/.test(html) && /data-uwbenchmark="RM"/.test(html),'the tab has editable per-property benchmark inputs (payroll + R&M)');
 
-  // ---- the Setup highlights the flagged line and states the dollar gap ----
-  const row=await page.evaluate(()=>{
-    var html=window.LDS_uwSetupHtml({GPR:5000000, PAY:1800*250, RET:50000}, 250, false, {});
-    var d=document.createElement('div'); d.innerHTML=html;
+  // ---- the flagged payroll line is highlighted and states the dollar gap ----
+  const row=await page.evaluate((h)=>{ var d=document.createElement('div'); d.innerHTML=h;
     var trs=Array.prototype.slice.call(d.querySelectorAll('tbody tr'));
     var pay=trs.find(function(r){ return /payroll/i.test((r.cells[0]||{}).innerText||''); });
     return pay ? { cls: pay.getAttribute('class')||'', txt: pay.cells[0].innerText } : null;
-  });
+  }, html);
   ok(row!=null,'the payroll line renders');
-  if(row){ ok(/amber/.test(row.cls),'the flagged payroll line is highlighted'); ok(/vs \$1,500/.test(row.txt) && /\+\$75,000/.test(row.txt),'the line states its benchmark and the +$75,000 gap'); }
-
-  // ---- the Settings Benchmarks editor renders ----
-  await page.evaluate(()=>{ var dd=document.getElementById('settingsDD'); if(dd) dd.open=true; window.LDS_renderBench(); });
-  await page.waitForTimeout(200);
-  const bh=await page.evaluate(()=>{const h=document.getElementById('settingsBench');return h?h.innerHTML:'';});
-  ok(/Benchmarks/i.test(bh) && /Payroll/i.test(bh) && /data-bench="RM"/.test(bh),'Settings shows the editable Benchmarks table (payroll bands, R&M, …)');
+  if(row){ ok(/amber/.test(row.cls),'the flagged payroll line is highlighted'); ok(/vs \$1,700/.test(row.txt) && /\+\$75,000/.test(row.txt),'the line states its benchmark and the +$75,000 gap'); }
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

@@ -592,7 +592,6 @@
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
             <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
             <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
-            <div id="settingsBench" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
             <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
               <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Cloud</span>
@@ -3229,7 +3228,7 @@ tr.flagged:hover td{background:#fee2e2}
     function uwDefaults(){ return { name:"", units:null, rrGPR:null, avgRentUnit:null, t12Text:"",
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
-      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, lineOverrides:{},   // three fixed assumptions + per-line underwritten overrides
+      bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, benchmarks:{ PAY:1700, RM:600 }, lineOverrides:{},   // three assumptions + per-property $/unit benchmarks + per-line overrides
         sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
     // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
     // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
@@ -3437,7 +3436,7 @@ tr.flagged:hover td{background:#fee2e2}
       const line = (ln)=>{
         const uwv = r.underwritten.lines[ln.key], ovOn = (ovMap[ln.key] != null);
         const isComm = (ln.key === "COM");   // commercial income: in the NOI, but never a residential $/unit
-        const bs = isComm ? null : opBenchStatus(ln.key, uwv, uUnits);   // benchmark flag on the underwritten $/unit
+        const bs = isComm ? null : opBenchStatus(ln.key, uwv, uUnits, bench.benchmarks);   // benchmark flag on the underwritten $/unit
         const rowCls = (bs && bs.off) ? 'border-t border-amber-200 bg-amber-50/40' : 'border-t border-slate-100';
         const benchTag = bs ? ' <span class="text-[9px] '+(bs.off?'font-semibold text-amber-700':'text-slate-400')+'" title="Benchmark '+fmtMoney(bs.bench)+'/unit">vs '+fmtMoney(bs.bench)+'/u'+(bs.off?' &middot; '+(bs.gapTotal>=0?'+':'')+fmtMoney(bs.gapTotal):'')+'</span>' : '';
         const commTag = isComm ? ' <span class="text-[9px] font-semibold uppercase tracking-wide text-violet-500">commercial</span>' : '';
@@ -3471,6 +3470,8 @@ tr.flagged:hover td{background:#fee2e2}
         '<span class="flex items-center gap-1"><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwsize="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-8">'+(suf||"")+'</span></span></label>';
       const benchIn = (label,key,val,suf)=> '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+label+
         '<span class="flex items-center gap-1">'+(suf==="$"?'<span class="text-[11px] text-slate-400">$</span>':'')+'<input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwbench="'+key+'" value="'+val+'"><span class="text-[11px] text-slate-400 w-4">'+(suf==="$"?"":suf||"")+'</span></span></label>';
+      const bmIn = (label,key,val)=> '<label class="flex items-center justify-between gap-2 text-sm text-slate-600">'+label+
+        '<span class="flex items-center gap-1"><span class="text-[11px] text-slate-400">$</span><input class="'+uwInputCls+' w-24" inputmode="decimal" data-uwbenchmark="'+key+'" value="'+val+'"></span></label>';
       // "Use the better": when the statement proves a tighter vacancy (or a lower management fee) than the
       // assumption, the underwritten column already credits the statement's own rate — surface that so the
       // number is never a mystery.
@@ -3509,6 +3510,10 @@ tr.flagged:hover td{background:#fee2e2}
             '<div class="mb-2 text-[11px] font-semibold text-slate-600">Underwriting assumptions <span class="font-normal text-slate-400">&mdash; change to test scenarios, then Save</span></div>'+
             '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
               benchIn("Vacancy","vacancyPct",uwPctStr(bench.vacancyPct),"%")+benchIn("Management fee","mgmtPct",uwPctStr(bench.mgmtPct),"%")+benchIn("Reserves / unit","reservePerUnit",uwStr(bench.reservePerUnit),"$")+
+            '</div>'+
+            '<div class="mt-3 mb-2 text-[11px] font-semibold text-slate-600">Benchmarks <span class="font-normal text-slate-400">&mdash; your $/unit targets for this property; a line beyond &plusmn;15% is flagged above with the dollar gap</span></div>'+
+            '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
+              bmIn("Payroll / unit","PAY",uwStr((bench.benchmarks||{}).PAY))+bmIn("R&amp;M / unit","RM",uwStr((bench.benchmarks||{}).RM))+
             '</div>'+
             '<p class="mt-2 text-[11px] text-slate-400">The underwritten column prices vacancy and the management fee at the better of your assumption and what the statement actually runs (a property that runs tighter than assumed is credited its proven figure); reserves at your dollars per unit; every other line passes through the T12 actual.</p>'+ creditNote +'</div>'+
         '</div>'+
@@ -3576,6 +3581,8 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("change", (e)=>{ const t = e.target; if(!t || !t.closest || !t.closest("#uwView")) return;
       if(t.hasAttribute && t.hasAttribute("data-uwbench")){ const bk = t.getAttribute("data-uwbench"), pctB = {vacancyPct:1, mgmtPct:1}, bv = uwNum(t.value);
         uwState.input.bench[bk] = (bv==null ? uwDefaults().bench[bk] : (pctB[bk] ? bv/100 : bv)); saveUW(); opSaveAssumptions(opFocusKey); uwRerenderSetup(); return; }
+      if(t.hasAttribute && t.hasAttribute("data-uwbenchmark")){ const bmk = t.getAttribute("data-uwbenchmark"), bmv = uwNum(t.value);   // per-property $/unit benchmark
+        if(!uwState.input.bench.benchmarks) uwState.input.bench.benchmarks = {}; uwState.input.bench.benchmarks[bmk] = (bmv==null ? null : bmv); saveUW(); opSaveAssumptions(opFocusKey); uwRerenderSetup(); return; }
       if(t.hasAttribute && t.hasAttribute("data-uwline")){ uwSetLineOverride(t.getAttribute("data-uwline"), t.value, false); return; }        // edit an underwritten total (its $/unit is derived)
       const k = t.getAttribute && t.getAttribute("data-uwf");
       if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); uwSyncGridInputs(); uwRerenderSetup(); return; }
@@ -3600,7 +3607,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ const existing = await opLoadGeneralData(key);
         if(existing) await opRefreshGeneralDataNOI(key); else await opUpdateGeneralData(key); }catch(e){}   // refresh both NOIs from the current inputs (preserves history + saved push)
       const bench = uwState.input.bench;
-      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, sizing: Object.assign({}, bench.sizing || {}) };
+      const snap = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct, reservePerUnit: bench.reservePerUnit, benchmarks: Object.assign({}, bench.benchmarks || {}), sizing: Object.assign({}, bench.sizing || {}) };
       const cur = opPushCache.get(key), push = (cur && Array.isArray(cur.moves)) ? cur : undefined;
       try{ await opPersistGeneralExtras(key, { assumptions: snap, push: push }); }catch(e){}
       let regen = false;
@@ -3626,26 +3633,21 @@ tr.flagged:hover td{background:#fee2e2}
       if(!opAppVersion){ try{ if(window.ldsShell && ldsShell.getVersion){ opAppVersion = await ldsShell.getVersion(); } }catch(e){} opAppVersion = opAppVersion || "dev"; }
       return opAppVersion;
     }
-    // ── per-line BENCHMARKS (Azriel's numbers, held in Settings): payroll two size bands + a unit
-    // threshold, R&M, contract services and turnover (blank by default). A line whose actual $/unit is beyond
-    // ±15% of its benchmark is highlighted, and the dollar gap is surfaced. Global; not market data. ──
+    // ── per-line BENCHMARKS: your $/unit targets, editable PER PROPERTY in the underwriting tab (they change
+    // per property). Payroll and R&M are the two Azriel named ($1,700 and $600/unit); a line beyond ±15% of
+    // its benchmark is flagged with the dollar gap. A property's values live in its assumptions (bench.benchmarks). ──
     var BENCH_TOL = 0.15;
-    function opBenchDefaults(){ return { payroll: { big: 1500, small: 1700, threshold: 200 }, RM: 600, CONTR: null, TURN: null }; }
-    function opBenchLoad(){ try{ var raw = localStorage.getItem("lds.benchmarks"); if(raw){ var o = JSON.parse(raw); if(o && typeof o === "object"){ var d = opBenchDefaults(); d.payroll = Object.assign({}, d.payroll, o.payroll || {}); ["RM","CONTR","TURN"].forEach(function(k){ if(k in o) d[k] = o[k]; }); return d; } } }catch(e){} return opBenchDefaults(); }
-    function opBenchSave(b){ try{ localStorage.setItem("lds.benchmarks", JSON.stringify(b || opBenchDefaults())); }catch(e){} }
-    // The $/unit benchmark for a category at this property's unit count (payroll picks its band). null = none.
-    function opBenchUnitFor(code, units){
-      var b = opBenchLoad();
-      if(code === "PAY"){ var t = b.payroll || {}; var big = (t.big != null ? t.big : null), small = (t.small != null ? t.small : null), th = (t.threshold != null ? t.threshold : 200);
-        return (units != null && units >= th) ? big : small; }
-      if(code === "RM") return (b.RM != null ? b.RM : null);
-      if(code === "CONTR") return (b.CONTR != null ? b.CONTR : null);
-      if(code === "TURN") return (b.TURN != null ? b.TURN : null);
+    function opBenchDefaults(){ return { PAY: 1700, RM: 600 }; }
+    // The $/unit benchmark for a line code, from this property's benchmarks (falling back to the default). null = none.
+    function opBenchUnitFor(code, benchmarks){
+      var b = (benchmarks && typeof benchmarks === "object") ? benchmarks : {}, d = opBenchDefaults();
+      if(code === "PAY") return (b.PAY != null ? b.PAY : d.PAY);
+      if(code === "RM")  return (b.RM  != null ? b.RM  : d.RM);
       return null;
     }
     // A line's benchmark status: { bench, actualPerUnit, gapPerUnit, gapTotal, off } — off = beyond ±15%.
-    function opBenchStatus(code, total, units){
-      var bench = opBenchUnitFor(code, units);
+    function opBenchStatus(code, total, units, benchmarks){
+      var bench = opBenchUnitFor(code, benchmarks);
       if(bench == null || !(units > 0) || total == null) return null;
       var actual = Math.abs(total) / units, gapU = actual - bench;
       return { bench: bench, actualPerUnit: actual, gapPerUnit: gapU, gapTotal: gapU * units, off: bench > 0 && Math.abs(gapU) / bench > BENCH_TOL };
@@ -4750,40 +4752,6 @@ tr.flagged:hover td{background:#fee2e2}
       }
       host.innerHTML = html;
     }
-    // The Settings Benchmarks editor: payroll (two size bands + threshold), R&M, contract services,
-    // turnover. Editing re-renders the Setup so the ±15% flags and the dollar gaps update everywhere.
-    function renderSettingsBench(){
-      var host = el("settingsBench"); if(!host) return;
-      var b = opBenchLoad();
-      var v = function(x){ return x == null ? "" : x; };
-      var row = function(label, attr, val, suf){ return '<label class="flex items-center justify-between gap-2 py-0.5 text-[11px] text-slate-600">'+label+
-        '<span class="flex items-center gap-1"><span class="text-slate-400">$</span><input class="w-16 rounded border border-slate-200 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums" inputmode="numeric" data-bench="'+attr+'" value="'+v(val)+'"><span class="text-[10px] text-slate-400 w-8">'+(suf||"/u")+'</span></span></label>'; };
-      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Benchmarks</span>'+
-        '<p class="mt-1 text-[10px] text-slate-400">Your $/unit targets. A line beyond &plusmn;15% of its benchmark is flagged in the Setup.</p>'+
-        '<div class="mt-1.5 space-y-0.5">'+
-          row("Payroll &mdash; "+b.payroll.threshold+"+ units", "payroll.big", b.payroll.big)+
-          row("Payroll &mdash; under "+b.payroll.threshold, "payroll.small", b.payroll.small)+
-          '<label class="flex items-center justify-between gap-2 py-0.5 text-[11px] text-slate-600">Payroll size threshold<span class="flex items-center gap-1"><input class="w-16 rounded border border-slate-200 bg-white px-1 py-0.5 text-right text-[11px] tabular-nums" inputmode="numeric" data-bench="payroll.threshold" value="'+b.payroll.threshold+'"><span class="text-[10px] text-slate-400 w-8">units</span></span></label>'+
-          row("R&amp;M", "RM", b.RM)+
-          row("Contract services", "CONTR", b.CONTR)+
-          row("Turnover", "TURN", b.TURN)+
-        '</div>';
-    }
-    function opBenchSet(attr, rawVal){
-      var b = opBenchLoad();
-      var s = String(rawVal == null ? "" : rawVal).trim();
-      var num = (s === "") ? null : Number(s.replace(/[^0-9.]/g, ""));
-      if(num != null && !isFinite(num)) num = null;
-      if(attr === "payroll.big") b.payroll.big = num;
-      else if(attr === "payroll.small") b.payroll.small = num;
-      else if(attr === "payroll.threshold") b.payroll.threshold = (num == null ? 200 : num);
-      else if(attr === "RM") b.RM = num;
-      else if(attr === "CONTR") b.CONTR = num;
-      else if(attr === "TURN") b.TURN = num;
-      opBenchSave(b);
-      try{ if(typeof uwLastBuilt !== "undefined" && uwLastBuilt) renderUnderwriting(); }catch(e){}
-      try{ renderSettingsBench(); }catch(e){}
-    }
     function healthRowHtml(p){
       const key = p.key, sr = propSeniorLoan(key);
       const gd = gdFullCache[key], gnoi = gdNOICache[key], noi = gd && gd.noi;
@@ -5006,8 +4974,7 @@ tr.flagged:hover td{background:#fee2e2}
       // units), sent like the assumptions. Claude derives the actual $/unit from the T12 it already reads and
       // states the gap itself — the app pre-computes nothing (no actuals, no NOI).
       var units = uwLastBuilt.worksheet.units || null;
-      var benchmarksPerUnit = { payroll: opBenchUnitFor("PAY", units), repairsMaintenance: opBenchUnitFor("RM", units),
-        contractServices: opBenchUnitFor("CONTR", units), turnover: opBenchUnitFor("TURN", units) };
+      var benchmarksPerUnit = { payroll: opBenchUnitFor("PAY", bench.benchmarks), repairsMaintenance: opBenchUnitFor("RM", bench.benchmarks) };
       return { property: (p && p.name) || key, address: (sr && sr.propertyAddress) || null,
         units: units,
         underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct,
@@ -5127,12 +5094,10 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchLoad=()=>opBenchLoad(); window.LDS_benchSet=(a,v)=>opBenchSet(a,v); window.LDS_benchStatus=(c,t,u)=>opBenchStatus(c,t,u); window.LDS_benchUnitFor=(c,u)=>opBenchUnitFor(c,u); window.LDS_renderBench=()=>renderSettingsBench(); }catch(e){}   // diagnostics: 2.9.2 GL mapping + per-unit + line overrides + benchmarks
+    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
-      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} try{ renderSettingsBench(); }catch(e){} } });
-      _sdd.addEventListener("change", function(e){ var t = e.target; if(!t || !t.getAttribute) return;
-        if(t.getAttribute("data-bench") != null){ opBenchSet(t.getAttribute("data-bench"), t.value); } });
+      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
     } }catch(e){}
     // 2.9.1 — Profile tab edits: the property picker switches the focused property; a [data-pf] field
     // writes through to profile.json with provenance. "change" fires on blur / selection, so a re-render
