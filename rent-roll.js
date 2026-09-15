@@ -117,13 +117,14 @@
       if (res.score > best.score && hasUnitish && hasRent){ best = { score: res.score, map: res.map, row: r }; }
     }
     if (best.row < 0) return { headerRow: -1, dataStart: -1, map: {}, twoRow: false };
-    // Two-row header: the next row is a sub-header when the rent columns there hold TEXT (e.g. "Rent"),
-    // not numbers. Merge it and map on the combined text so "Market"/"Rent" → "Market Rent", etc.
+    // Two-row header: the next row is a sub-header when the rent columns there hold TEXT (e.g. "Rent"), not
+    // numbers, AND it spreads that text across several columns ("Sq Ft", "Rent", "Rent"). A single-column
+    // text row is a SECTION label ("Current/Notice/Vacant"), not a sub-header — don't merge it.
     var next = grid[best.row + 1] || [];
     var mCol = best.map.market, aCol = best.map.actual;
     var rentCellNumeric = (mCol != null && toNum(next[mCol]) != null) || (aCol != null && toNum(next[aCol]) != null);
-    var nextHasText = next.some(function(x){ return /[a-z]/i.test(str(x)); });
-    if (!rentCellNumeric && nextHasText){
+    var textCols = next.filter(function(x){ return /[a-z]/i.test(str(x)); }).length;
+    if (!rentCellNumeric && textCols >= 2){
       var merged = mergeCells(grid[best.row], next);
       var res2 = scoreHeaderRow(merged);
       return { headerRow: best.row, dataStart: best.row + 2, map: res2.map, twoRow: true };

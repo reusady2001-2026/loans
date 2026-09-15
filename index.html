@@ -5105,7 +5105,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
-    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats
+    try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
       _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
@@ -9114,16 +9114,61 @@ tr.flagged:hover td{background:#fee2e2}
       }).catch(function(){});
     }
     function fmtBytes(n){ n=Number(n)||0; if(n<1024) return n+" B"; if(n<1048576) return Math.round(n/1024)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
-    // Save files (from any file input) under a property's folder, extracting text for the assistant.
-    function aiSaveFilesToProp(list, propKey, propName){
+    // 2.9.3 — content-based file routing. Wherever a file is dropped, the app inspects it and works out which
+    // property/properties it belongs to, then saves it into ALL of their folders (a multi-property rent roll
+    // is copied into each). A file always lands in at least one folder: if nothing in the content matches, it
+    // goes to the property you dropped it on. The first workbook sheet a rent roll or a T12 recognizes.
+    function opDetectGrid(bytes){
+      try{ var wb = XLSX.read(bytes, { type: "array" });
+        for(var i = 0; i < wb.SheetNames.length; i++){ var g = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true, defval: null });
+          if((window.RentRoll && RentRoll.findHeader(g).headerRow >= 0) || (window.T12Parse && T12Parse.findHeader(g).headerRow >= 0)) return g; }
+      }catch(e){}
+      return null;
+    }
+    // Which property folder(s) a file belongs to, from its content. Returns
+    // { keys:[…], detected, matched:[{name,key}], unmatched:[names], roleByKey:{} }.
+    function opFileTargets(name, text, grid, fallbackKey){
+      var props = opProperties();
+      var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {} };
+      function matchName(nm){ if(!nm || /^\(property\)$/i.test(nm)) return null; var best = null, sc = 0; props.forEach(function(p){ var s = rrMatchScore(nm, p.name); if(s > sc){ sc = s; best = p; } }); return (best && sc >= 0.6) ? best.key : null; }
+      function add(k, role, nm){ if(!k) return; if(out.keys.indexOf(k) < 0){ out.keys.push(k); out.matched.push({ name: nm, key: k }); } if(role && !out.roleByKey[k]) out.roleByKey[k] = role; }
+      if(grid && window.RentRoll && RentRoll.findHeader(grid).headerRow >= 0){
+        out.detected = "rentroll";
+        var roll = RentRoll.parse(grid);
+        roll.properties.forEach(function(b){ var k = matchName(b.name); if(k) add(k, "rentroll", b.name); else if(b.name && !/^\(property\)$/i.test(b.name)) out.unmatched.push(b.name); });
+      } else if(grid && window.T12Parse && T12Parse.findHeader(grid).headerRow >= 0){
+        out.detected = "t12";
+        var h = T12Parse.findHeader(grid), nm = "";
+        for(var r = 0; r < Math.min(grid.length, h.headerRow); r++){ var cell = grid[r] && grid[r][0]; var s = cell == null ? "" : String(cell).trim();
+          if(s && /[a-z]{3,}/i.test(s) && !/statement|income|expense|rent\s*roll|period|as\s*of|month|year|trailing|t-?12|cash\s*flow|operating|report/i.test(s)){ nm = s; break; } }
+        add(matchName(nm), "t12", nm);
+      }
+      if(!out.keys.length && name){ add(matchName(name.replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " ")), null, name); }
+      if(!out.keys.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
+      return out;
+    }
+    // Save files (from any file input), routing each to the property folder(s) its content names — copied to
+    // all when it covers several. `fallbackKey` is the property you dropped it on (the ≥1 guarantee).
+    function aiSaveFilesToProp(list, fallbackKey, fallbackName){
       var files=Array.prototype.slice.call(list||[]); if(!files.length || !docsAvailable()) return;
+      var touched={}, unmatchedAll=[];
       Promise.all(files.map(function(file){
         if(file.size > 25*1024*1024){ toast(file.name+" is too large (25 MB max)","info"); return Promise.resolve(); }
         return Promise.all([fileToBase64(file), aiExtractFileText(file)]).then(function(pair){
           var b64=pair[0], ex=pair[1]||{}; if(!b64) return;
-          return ldsShell.docSave({propKey:propKey, propName:propName, name:file.name, base64:b64, text:(ex.text||""), type:file.type||""});
+          var grid = /\.(xlsx|xls|csv)$/i.test(file.name||"") ? opDetectGrid(opB64ToBytes(b64)) : null;
+          var t = opFileTargets(file.name, ex.text||"", grid, fallbackKey);
+          var keys = t.keys.slice(); if(!keys.length && fallbackKey) keys=[fallbackKey];
+          (t.unmatched||[]).forEach(function(n){ if(unmatchedAll.indexOf(n)<0) unmatchedAll.push(n); });
+          return Promise.all(keys.map(function(k){ var p=opProp(k); touched[k]=1; return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(t.roleByKey[k]||"other")}); }));
         });
-      })).then(function(){ toast("Saved to "+propName,"check"); try{ delete loanRRCache[propKey]; }catch(e){} renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs(); });
+      })).then(function(){
+        var keys=Object.keys(touched); keys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
+        var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
+        if(names.length) toast("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""),"check");
+        if(unmatchedAll.length) toast(unmatchedAll.length+" propert"+(unmatchedAll.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(unmatchedAll.length>1?"them":"it")+" to file "+(unmatchedAll.length>1?"these":"this")+".","info");
+        renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
+      });
     }
     // The Documents panel on a loan's detail view: the saved files for that property.
     function renderDocsPanel(){
