@@ -9088,6 +9088,10 @@ tr.flagged:hover td{background:#fee2e2}
       "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
       "- propose_loan_change {name, changes}: propose ADDING, ALTERING, or REMOVING information on an existing loan. The operator sees a before→after preview in the chat and must click Approve before anything changes. changes maps field keys to new values — the propose_new_loan keys above PLUS the property financials noi (annual NOI, number), egi (annual effective gross income), opex (annual operating expenses), and capRate (decimal, e.g. 0.055). To REMOVE/clear a field, set it to null. Include only the fields you were actually asked to change.",
       "- create_property {name}: set up a brand-new property from its name (its loans, T12 and documents come later). The operator sees an Approve card first — nothing is created until they approve.",
+      "- open_data_health {}: open the Data Health page. open_settings {}: open the Settings menu. import_excel {}: open the Excel import checklist. fetch_live_rate {}: pull today's live market rates (Treasury curve + SOFR).",
+      "- run_push {name}: (re-)run Claude's \"what to push\" operational analysis for a property. import_rent_roll {name}: open the rent-roll importer for a property (or tell the operator they can just attach the file and you'll file it automatically — a multi-property file is filed to each property it covers).",
+      "- remove_loan {name}: delete a loan (opens the app's own confirmation dialog). set_loan_status {name, status}: set a loan's status — status must be exactly one of \"Active\", \"Matured\", \"Extended\", \"Extension undecided\", \"Paid off\". archive_property {name} / unarchive_property {name}: archive a property (its loans go with it) or bring an archived one back. edit_assumptions {name, changes}: change a property's underwriting assumptions — changes may include vacancy, managementFee, capRate (each a decimal, 0.05 = 5%), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars per unit). set_loan_status, archive/unarchive and edit_assumptions all show an Approve card first.",
+      "- set_refi_noi_basis {name, basis}: open a loan's refinance and set which NOI it's sized on — basis is \"in-place\", \"underwritten\" or \"entered\". add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title. set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
       "- propose_profile_change {name, changes}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
       "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted a loan or profile field: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change / propose_profile_change / create_property show a card the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
@@ -9301,6 +9305,117 @@ tr.flagged:hover td{background:#fee2e2}
             .then(function(){ try{ renderLoanProfilePanel(); }catch(e){} try{ render(); }catch(e){}
               return {ok:true, html:'✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+'’s profile'}; });
         });
+      },
+      // ── 2.9.4 Fix #3 — the assistant can take every action the operator can ──────────────
+      // Navigation / read-only (immediate):
+      open_data_health: function(){ if(typeof openTab==="function") openTab("health"); return {ok:true,close:true,msg:"Opened Data Health."}; },
+      open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
+      import_excel: function(){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; },
+      fetch_live_rate: function(){ try{ fetchAllLiveRates(); }catch(e){} return {ok:true,close:true,msg:"Fetching today’s live market rates…"}; },
+      run_push: function(a){
+        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
+        if(!aiAvailable()) return {ok:false,msg:"Analysing what to push needs Claude connected."};
+        var pn=(opProp(key)&&opProp(key).name)||key;
+        Promise.resolve().then(function(){ return opSelectProperty(key); }).then(function(){ try{ opPushCache.delete(key); }catch(e){} try{ opRunPush(key); }catch(e){} }).catch(function(){});
+        return {ok:true,close:true,msg:"Re-analysing what to push on "+pn+" — it appears in Underwriting → what to push."};
+      },
+      import_rent_roll: function(a){
+        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:"Tell me which property to import the rent roll for (or just attach the file here and I’ll file it automatically)."};
+        var pn=(opProp(key)&&opProp(key).name)||key;
+        try{ opRentRollImportPickFor(key); }catch(e){}
+        return {ok:true,close:true,msg:"Opened the rent-roll importer for "+pn+" — pick the file, then assign each block. (Or attach the file here and I’ll file it automatically.)"};
+      },
+      // Refinance what-ifs (open the refi and set a control):
+      set_refi_noi_basis: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered" }, b=map[basis];
+        if(!b) return {ok:false,msg:'Basis must be "in-place", "underwritten" or "entered".'};
+        state.activeId=l._id; try{ startRefi(); }catch(e){} refiBasisByKey[propertyKey(l)]=b; try{ renderRefi(l); }catch(e){}
+        return {ok:true,close:true,msg:"Set the refinance NOI basis to "+b+" for "+loanLabel(l)+"."};
+      },
+      add_refi_lever: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var amt=Number(a&&a.amount); if(!isFinite(amt)||amt===0) return {ok:false,msg:"Give me a yearly dollar amount for the lever (negative to remove income)."};
+        var label=(((a&&a.label)||"Manual lever").toString().trim())||"Manual lever", key=propertyKey(l);
+        state.activeId=l._id; try{ startRefi(); }catch(e){}
+        var man=refiManualLevers[key]||(refiManualLevers[key]=[]);
+        man.push({ id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label:label, amount:Math.round(amt), on:true });
+        try{ refiDraftsKey=""; renderRefi(l); }catch(e){}
+        return {ok:true,close:true,msg:'Added "'+label+'" ('+(amt>=0?"+":"−")+fmtMoney(Math.abs(amt))+"/yr) to "+loanLabel(l)+"’s refinance levers."};
+      },
+      // Writes that change or lose saved data (Approve card first):
+      remove_loan: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        state.activeId=l._id; try{ removeActive(); }catch(e){}   // removeActive shows the app’s own confirm dialog
+        return {ok:true,close:true,msg:"Opened the remove-loan confirmation for "+loanLabel(l)+" — confirm it to delete the loan."};
+      },
+      archive_property: function(a){
+        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
+        var pn=(opProp(key)&&opProp(key).name)||key;
+        return aiAsstApprovalCard('Archive <b>'+escapeHtml(pn)+'</b>? It leaves the lists, roll-up and count, and its loans are archived with it. Reversible from the Properties list.', "", function(){
+          return opArchiveProperty(key, true).then(function(){ try{ render(); }catch(e){} return {ok:true, html:'✓ Archived <b>'+escapeHtml(pn)+'</b> — un-archive it from the Properties list.', toast:'Archived '+pn}; });
+        });
+      },
+      unarchive_property: function(a){
+        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
+        if(!opIsArchived(key)) return {ok:false,msg:'"'+((opProp(key)&&opProp(key).name)||(a&&a.name)||"")+'" isn’t archived.'};
+        var pn=(opProp(key)&&opProp(key).name)||key;
+        return aiAsstApprovalCard('Bring <b>'+escapeHtml(pn)+'</b> back into the roll-up and count?', "", function(){
+          return opArchiveProperty(key, false).then(function(){ try{ render(); }catch(e){} return {ok:true, html:'✓ Restored <b>'+escapeHtml(pn)+'</b>.', toast:'Restored '+pn}; });
+        });
+      },
+      set_loan_status: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var st=(a&&a.status!=null)?String(a.status).trim():"", match=LOAN_STATUSES.find(function(s){ return s.toLowerCase()===st.toLowerCase(); });
+        if(!match) return {ok:false,msg:'Status must be one of: '+LOAN_STATUSES.join(", ")+'.'};
+        var cur=loanStatusOf(l); if(cur===match) return {ok:false,msg:loanLabel(l)+' is already "'+match+'".'};
+        return aiAsstApprovalCard('Set <b>'+escapeHtml(loanLabel(l))+'</b>’s status to <b>'+escapeHtml(match)+'</b> (from '+escapeHtml(cur)+')?', "", function(){
+          var loan=(loans.indexOf(l)>=0)?l:getLoan(l._id); if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing changed."};
+          loan.loanStatus=match; save(); try{ render(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
+          return {ok:true, html:'✓ Set status to <b>'+escapeHtml(match)+'</b>.', toast:loanLabel(loan)+' → '+match};
+        });
+      },
+      edit_assumptions: function(a){
+        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
+        var changes=(a&&a.changes)||{};
+        var META={ vacancy:{label:"Vacancy",path:"vacancyPct",type:"pct"}, managementFee:{label:"Management fee",path:"mgmtPct",type:"pct"}, reservePerUnit:{label:"Reserves / unit",path:"reservePerUnit",type:"money"}, capRate:{label:"Cap rate",path:"sizing.capRate",type:"pct"}, payrollPerUnit:{label:"Payroll / unit benchmark",path:"benchmarks.PAY",type:"money"}, repairsPerUnit:{label:"Repairs & maintenance / unit benchmark",path:"benchmarks.RM",type:"money"} };
+        var edits=[];
+        Object.keys(changes).forEach(function(k){ var m=META[k]; if(!m) return; var n=Number(changes[k]); if(!isFinite(n)) return; if(m.type==="pct" && n>1) n=n/100; edits.push({label:m.label, path:m.path, type:m.type, val:n}); });
+        if(!edits.length) return {ok:false,msg:"I couldn’t read a valid assumption. I can set: vacancy, managementFee, reservePerUnit, capRate, payrollPerUnit, repairsPerUnit."};
+        var pn=(opProp(key)&&opProp(key).name)||key, fmtv=function(t,v){ return t==="pct"?fmtPct(v):fmtMoney(v); };
+        var rows=edits.map(function(e){ return '<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0"><span class="text-[12px] font-medium text-slate-600">'+escapeHtml(e.label)+'</span><span class="text-[12px] font-bold text-emerald-700 tabular-nums">'+fmtv(e.type,e.val)+'</span></div>'; }).join('');
+        return aiAsstApprovalCard('Update <b>'+escapeHtml(pn)+'</b>’s underwriting assumptions?', rows, function(){
+          return Promise.resolve().then(function(){ return opSelectProperty(key); }).then(function(){
+            edits.forEach(function(e){ var b=uwState.input.bench; if(e.path.indexOf(".")>=0){ var p=e.path.split("."); if(!b[p[0]]) b[p[0]]={}; b[p[0]][p[1]]=e.val; } else b[e.path]=e.val; });
+            saveUW(); return opSaveAssumptions(key);
+          }).then(function(){ try{ uwRerenderSetup(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
+            return {ok:true, html:'✓ Updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+' assumptions'}; });
+        });
+      },
+      toggle_refi_move: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var q=normName((a&&a.move)||""); if(!q) return {ok:false,msg:"Tell me which “what to push” move to tick (by its title)."};
+        state.activeId=l._id; try{ startRefi(); }catch(e){}
+        var key=propertyKey(l), moves=refiPushMoves(l), idx=-1;
+        moves.forEach(function(m,i){ var t=normName(m.title||""); if(idx<0 && (t===q || t.indexOf(q)>=0 || q.indexOf(t)>=0)) idx=i; });
+        if(idx<0) return {ok:false,msg:'I couldn’t find a “what to push” move matching "'+((a&&a.move)||"")+'" here. Run the analysis first, or add your own lever with add_refi_lever.'};
+        var set=refiAppliedMoves[key]||(refiAppliedMoves[key]=new Set()), on=(a&&a.on===false)?false:true;
+        if(on) set.add(idx); else set.delete(idx);
+        try{ refiDraftsKey=""; renderRefi(l); }catch(e){}
+        return {ok:true,close:true,msg:(on?"Ticked":"Un-ticked")+' "'+(moves[idx].title||"move")+'" in '+loanLabel(l)+"’s refinance."};
+      },
+      set_refi_terms: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var c=(a&&a.changes)||{}; state.activeId=l._id; try{ startRefi(); }catch(e){}
+        var d=refiDrafts[1]; if(!d) return {ok:false,msg:"I couldn’t open the refinance for that loan."};
+        var did=[];
+        if(isFinite(Number(c.amount))){ d.originalAmount=Number(c.amount); did.push("loan amount "+fmtMoney(Number(c.amount))); }
+        if(isFinite(Number(c.termYears))){ d.loanTermMonths=Math.max(1,Math.round(Number(c.termYears)*12)); var tp=todayParts(),fp=addMonths(tp,1),nm=addMonths(fp,d.loanTermMonths-1); d.maturityDate=partsToISO(nm.y,nm.mo,1); did.push(c.termYears+"-year term"); }
+        if(isFinite(Number(c.amortYears))){ d.amortizationMonths=Math.max(12,Math.round(Number(c.amortYears)*12)); did.push(c.amortYears+"-year amortization"); }
+        if(isFinite(Number(c.ioMonths))){ d.ioMonths=Math.max(0,Math.round(Number(c.ioMonths))); did.push(d.ioMonths+" interest-only months"); }
+        if(!did.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears or ioMonths."};
+        try{ renderRefi(l); }catch(e){}
+        return {ok:true,close:true,msg:"Set "+did.join(", ")+" on "+loanLabel(l)+"’s proposed refinance."};
       }
     };
     function aiAsstParseAction(text){
