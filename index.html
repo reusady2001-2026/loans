@@ -812,14 +812,8 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M12 9v.01M12 13v4"/></svg>
               Add Property
             </button>
-            <button id="aiReadBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40" title="Read a loan agreement with Claude and pre-fill a loan">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
-              Read Agreement
-            </button>
-            <button id="aiExplainBtn" type="button" hidden class="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none" title="Have Claude explain this loan in plain English and sanity-check it for internal consistency">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="4" rx="1"/><path d="M9 4.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><path d="m9 13.5 2 2 4-4.5"/></svg>
-              Explain / Check
-            </button>
+            <!-- 2.9.4 — Read Agreement + Explain/Check retired: the AI assistant does both (read an agreement to
+                 fill a loan/profile; explain or sanity-check a loan) on request. -->
             <button id="editBtn" type="button" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:opacity-40 disabled:pointer-events-none">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
               Edit
@@ -1126,104 +1120,11 @@
     </div>
   </div>
 
-  <!-- ============ READ A LOAN AGREEMENT (AI) ============ -->
-  <div id="aiReadModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
-      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
-            Read a loan agreement
-          </h3>
-          <p class="text-xs text-slate-500 mt-0.5">Claude reads the executed agreement and pre-fills a loan for you to review. Nothing is saved until you confirm it.</p>
-        </div>
-        <button id="aiReadClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <div class="p-5 space-y-4 overflow-auto">
-        <div id="aiConnRow" class="text-sm"></div>
-        <div id="aiSettings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
-        <div id="aiDrop" class="rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition">
-          <input id="aiFile" type="file" accept=".md,.markdown,.txt,.text" class="hidden">
-          <svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
-          <p class="mt-2 text-sm font-semibold text-slate-700">Drop the agreement here, or <button type="button" id="aiFileBtn" class="text-brand-700 underline">choose a file</button></p>
-          <p class="mt-1 text-[11px] text-slate-400">A text or Markdown copy of the loan agreement (.md / .txt). Convert a PDF to Markdown first, then drop it here.</p>
-        </div>
-        <div id="aiReadStatus" class="hidden rounded-xl px-4 py-3 text-sm"></div>
-      </div>
-      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
-        <button id="aiSettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
-        <button id="aiReadCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================== AI: EXPLAIN / SANITY-CHECK MODAL ===================== -->
-  <div id="aiExplainModal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
-      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="4" rx="1"/><path d="M9 4.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2"/><path d="m9 13.5 2 2 4-4.5"/></svg>
-            Explain / Sanity-check this loan
-          </h3>
-          <p class="text-xs text-slate-500 mt-0.5 truncate">Claude summarizes <span id="aiExplainLoanName" class="font-semibold text-slate-600"></span> and checks it for internal consistency. Nothing about this loan is changed.</p>
-        </div>
-        <button id="aiExplainClose" type="button" class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <div id="aiExplainBody" class="p-5 space-y-4 overflow-auto"></div>
-      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
-        <button id="aiExplainRetry" type="button" hidden class="text-xs font-semibold text-brand-700 hover:text-brand-900">Check again</button>
-        <div class="flex-1"></div>
-        <button id="aiExplainCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- AI: read a T12 operating statement -> build a Setup (alternative to the
-       rules-based T12Classify/SetupBuilder file path in the Underwriting tab). -->
-  <div id="aiT12Modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-    <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92vh]">
-      <div class="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
-            <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
-            Read a T12 with Claude
-          </h3>
-          <p class="text-xs text-slate-500 mt-0.5">Claude reads the operating statement and builds a Setup for you to review &mdash; using the statement&rsquo;s own printed TOTAL INCOME / TOTAL EXPENSES / NET OPERATING INCOME footing when it prints one. Nothing is saved until you review it.</p>
-        </div>
-        <button id="aiT12Close" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <div class="p-5 space-y-4 overflow-auto">
-        <div id="aiT12ConnRow" class="text-sm"></div>
-        <div id="aiT12Settings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
-        <div id="aiT12Drop" class="rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center transition">
-          <input id="aiT12File" type="file" accept=".xlsx,.xls,.csv,.md,.markdown,.txt,.text" class="hidden">
-          <svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
-          <p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 here, or <button type="button" id="aiT12FileBtn" class="text-brand-700 underline">choose a file</button></p>
-          <p class="mt-1 text-[11px] text-slate-400">The T12 as an Excel/CSV file (.xlsx / .xls / .csv) &mdash; it is saved to the selected property&rsquo;s folder and read here. A text/Markdown copy (.md / .txt), or pasted text, is read by Claude instead.</p>
-        </div>
-        <div>
-          <label for="aiT12Paste" class="block text-[11px] font-semibold text-slate-500 mb-1">&hellip;or paste the T12 text</label>
-          <textarea id="aiT12Paste" rows="6" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30" placeholder="Paste the operating statement text here&hellip;"></textarea>
-          <div class="mt-2 flex justify-end">
-            <button id="aiT12PasteBtn" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Read pasted text</button>
-          </div>
-        </div>
-        <div id="aiT12Status" class="hidden rounded-xl px-4 py-3 text-sm"></div>
-      </div>
-      <div class="p-4 border-t border-slate-100 flex items-center justify-between gap-2">
-        <button id="aiT12SettingsToggle" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700">Connection settings</button>
-        <button id="aiT12Cancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
-      </div>
-    </div>
-  </div>
-
+  <!-- 2.9.4 — Retired: the "Read a loan agreement", "Explain / Sanity-check" and "Read a T12 with Claude"
+       modals are gone. The AI assistant reads agreements (→ loan + profile), explains/checks loans, and Claude
+       reads T12s automatically for "what to push"; the deterministic parser builds the Setup on drop. The
+       single Claude-connection dialog (openClaudeConn, opened from Settings and the assistant) is the one
+       connection surface. -->
   <!-- ===================== AI: ASSISTANT (chat + actions) ===================== -->
   <!-- A general in-app assistant (desktop shell only): answers questions about the -->
   <!-- portfolio (from a live JSON snapshot) or anything else, and can perform a set -->
@@ -1241,7 +1142,7 @@
             <svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>
             Assistant
           </h3>
-          <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, edit loan info, or draft a new loan. Attach a PDF, Word, Excel or text file and I’ll read it. I never save changes without your approval.</p>
+          <p class="text-xs text-slate-500 mt-0.5">Ask about your portfolio or anything else — or ask me to do things: open a loan, run a refinance, export, add a property, edit a loan or its profile, read an agreement to fill a loan, or explain and sanity-check a loan. Attach a PDF, Word, Excel or text file and I’ll read it and file it to the property (a rent roll goes to every property it covers). I never save changes without your approval.</p>
         </div>
         <div class="flex items-center gap-1 shrink-0">
           <button id="aiAsstCompact" type="button" title="Compact — summarize this chat so it keeps the key facts but uses far less context" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:opacity-40 disabled:pointer-events-none">
@@ -2966,7 +2867,6 @@
       dom.editBtn.disabled = !loan || state.mode!=="view";      // 2.9.4 — Edit edits the PROPERTY's info (works for a combined position too)
       dom.removeBtn.disabled = !loan || state.mode!=="view";    // 2.9.4 — Remove ARCHIVES the property (works for a combined position too)
       dom.refiBtn.disabled = !loan || state.mode!=="view";
-      if(el("aiExplainBtn")) el("aiExplainBtn").disabled = !loan || state.mode!=="view";
       // 2.9.4 — the single-loan per-loan Edit/Remove live in the Loan Record header; shown only for a real
       // single loan (a stack edits its loans from the Combined-Position rows instead).
       { const showLoanBtns = !!(loan && !loan._combined && state.mode==="view"); const le = el("loanRecEdit"), lr = el("loanRecRemove"); if(le) le.hidden = !showLoanBtns; if(lr) lr.hidden = !showLoanBtns; }
@@ -3427,7 +3327,8 @@ tr.flagged:hover td{background:#fee2e2}
           '<div><h2 class="text-lg font-bold text-slate-900">Underwriting &amp; Sizing</h2>'+
             '<p class="text-sm text-slate-500">Drop a property&rsquo;s T12 file &mdash; the app finds the columns, classifies every line, builds the in-place &amp; underwritten Setup, and sizes the loan.</p></div>'+
           '<div class="flex items-center gap-2">'+
-            (aiAvailable() ? '<button type="button" id="aiT12Btn" title="Read a T12 with Claude and build a Setup" class="inline-flex items-center gap-1.5 self-start rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4L12 3z"/><path d="M5 16l.9 2.1L8 19l-2.1.9L5 22l-.9-2.1L2 19l2.1-.9L5 16z"/></svg>Read T12 with Claude</button>' : '')+
+            // 2.9.4 — "Read T12 with Claude" retired: the deterministic parser builds the Setup on drop, and
+            // Claude already reads the T12 automatically for "what to push" when you focus the property.
             '<button type="button" id="uwResetBtn" class="self-start rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear</button>'+
           '</div>'+
         '</div>'+
@@ -3658,7 +3559,6 @@ tr.flagged:hover td{background:#fee2e2}
       const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // reset a pinned underwritten line
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
-      if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
       if(t.closest("#uwSaveBtn")){ opSaveGeneralData(); return; }
     });
     // The one Save point: commit this property's inputs, its two NOIs (recomputed from those inputs),
@@ -4221,8 +4121,7 @@ tr.flagged:hover td{background:#fee2e2}
       var uploader = '<div class="flex flex-wrap items-center gap-2">'+typeSel+
         '<label class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer">'+
           '<input id="profileDocFile" type="file" class="hidden" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md">Upload a document</label>'+
-        (aiAvailable() ? '<button type="button" id="profileReadAgreement" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and propose each field with its page citation for you to confirm">✨ Read agreement</button>' : '')+
-        '<span class="text-[11px] text-slate-400">PDF, Word, Excel, text — stored in this property’s folder.</span></div>';
+        '<span class="text-[11px] text-slate-400">PDF, Word, Excel, text — stored in this property’s folder. Ask the assistant to read an agreement.</span></div>';
       var listHtml = '<p class="mt-2 text-[11px] text-slate-400">Loading…</p>';
       host.innerHTML = '<h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Documents</h3>'+uploader+'<div id="profileDocList" class="mt-3">'+listHtml+'</div>';
       if(!docsAvailable()){ el("profileDocList").innerHTML = '<p class="text-[11px] text-slate-400">Document storage is only available in the desktop app.</p>'; return; }
@@ -5314,28 +5213,24 @@ tr.flagged:hover td{background:#fee2e2}
       const comphtml = comp.complete
         ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
         : '<span class="text-[11px] font-semibold text-amber-600">Needs '+escapeHtml(comp.missing.map(function(k){ return String(Profile.labelFor(k)).toLowerCase(); }).join(", "))+'</span>';
-      const readBtn = aiAvailable() ? '<button type="button" id="loanProfileReadAgreement" class="rounded-lg border border-brand-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and fill each field for you to confirm">✨ Read agreement</button>' : '';
-      const archBtn = '';   // 2.9.4 — the Archive action moved to the toolbar "Remove"; un-archive lives in the Properties list
+      // 2.9.4 — "Read agreement" retired here; ask the AI assistant to read an agreement and fill the profile.
+      // The Archive action moved to the toolbar "Remove"; un-archive lives in the Properties list.
       const archBanner = archived ? '<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the roll-up and the count. Un-archive it from the Properties list to bring it back.</div>' : '';
       host.innerHTML =
         '<details class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm" data-profilekey="'+escapeHtml(key)+'"'+(forceOpen?' open':'')+'>'+
           '<summary class="flex cursor-pointer items-center gap-2 p-4 text-sm"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Property profile</span>'+comphtml+(archived?' <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">archived</span>':'')+'</summary>'+
           '<div class="border-t border-slate-100 p-4">'+
             archBanner+
-            '<div class="mb-3 flex flex-wrap items-center justify-between gap-2"><p class="text-[11px] text-slate-400">The facts that don’t change — set once, they persist. Empty fields stay blank.</p><div class="flex items-center gap-2">'+readBtn+archBtn+'</div></div>'+
+            '<div class="mb-3 flex flex-wrap items-center justify-between gap-2"><p class="text-[11px] text-slate-400">The facts that don’t change — set once, they persist. Empty fields stay blank.</p></div>'+
             fields +
           '</div>'+
         '</details>';
     }
     // Profile edits from the property view's profile panel: save the field to its property (silently, no
-    // re-render), and "Read agreement" fills the fields from the loan agreement. Keyed to the panel's property.
+    // re-render). Keyed to the panel's property. (Reading an agreement to fill these is now the assistant's job.)
     document.addEventListener("change", function(e){ const t = e.target; if(!t || !t.closest) return;
       const panel = t.closest("#loanProfilePanel [data-profilekey]"); if(!panel) return;
       const fk = t.getAttribute && t.getAttribute("data-pf"); if(fk){ opProfileSetField(panel.getAttribute("data-profilekey"), fk, t.value); }
-    });
-    document.addEventListener("click", function(e){ const t = e.target; if(!t || !t.closest) return;
-      const rb = t.closest("#loanProfileReadAgreement");
-      if(rb){ const panel = rb.closest("[data-profilekey]"); if(panel) opReadAgreementStart(panel.getAttribute("data-profilekey")); return; }
     });
 
     /* ================================================================
@@ -9878,36 +9773,14 @@ tr.flagged:hover td{background:#fee2e2}
     dom.removeBtn.addEventListener("click", removeProperty); // 2.9.4 — archives the PROPERTY (+ its loans)
     dom.saveBtn.addEventListener("click", saveForm);
     (function(){ var le=el("loanRecEdit"), lr=el("loanRecRemove"); if(le) le.addEventListener("click", startEdit); if(lr) lr.addEventListener("click", removeActive); })();   // 2.9.4 — per-loan edit/remove for a single-loan property (Loan Record header)
-    // AI: read a loan agreement (desktop shell only)
-    if(aiAvailable() && el("aiReadBtn")){
-      el("aiReadBtn").hidden = false;
-      el("aiReadBtn").addEventListener("click", aiReadOpen);
-      el("aiReadClose").addEventListener("click", aiReadClose);
-      el("aiReadCancel").addEventListener("click", aiReadClose);
-      el("aiSettingsToggle").addEventListener("click", ()=>openClaudeConn());   // unified subscription sign-in dialog
-      el("aiFileBtn").addEventListener("click", ()=> el("aiFile").click());
-      el("aiFile").addEventListener("change", (e)=>{ const f=e.target.files&&e.target.files[0]; if(f) aiHandleFile(f); e.target.value=""; });
-      const drop = el("aiDrop");
-      drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.classList.add("border-brand-400","bg-brand-50"); });
-      drop.addEventListener("dragleave", ()=> drop.classList.remove("border-brand-400","bg-brand-50"));
-      drop.addEventListener("drop", (e)=>{ e.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) aiHandleFile(f); });
-      el("aiReadModal").addEventListener("click", (e)=>{ if(e.target===el("aiReadModal")) aiReadClose(); });
-    }
+    // 2.9.4 — Read Agreement modal retired (the AI assistant reads agreements on request).
     // Claude connection from the main Settings menu (desktop app only). Reveals the
     // menu entry and shows a live Connected / Not set badge.
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
     // Global "Fetch live rate" (title bar) — available on every tab.
     if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", fetchAllLiveRates);
-    // AI: explain / sanity-check the selected loan (desktop shell only)
-    if(aiAvailable() && el("aiExplainBtn")){
-      el("aiExplainBtn").hidden = false;
-      el("aiExplainBtn").addEventListener("click", aiExplainOpen);
-      el("aiExplainClose").addEventListener("click", aiExplainClose);
-      el("aiExplainCancel").addEventListener("click", aiExplainClose);
-      el("aiExplainRetry").addEventListener("click", ()=>{ const loan=getLoan(state.activeId); if(loan) aiExplainRun(loan); });
-      el("aiExplainModal").addEventListener("click", (e)=>{ if(e.target===el("aiExplainModal")) aiExplainClose(); });
-    }
+    // 2.9.4 — Explain/Check modal retired (the AI assistant explains and sanity-checks a loan on request).
     // AI: the in-app assistant (desktop shell only) — floating button opens a chat
     // that answers questions and performs safe actions on request.
     if(aiChatAvailable() && el("aiAsstFab")){
