@@ -36,10 +36,11 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   // an untouched integer field is EMPTY, not 0
   ok(await page.evaluate((k)=>window.LDS_profile(k).fields.commercialUnits===undefined, key),'an untouched field (commercial units) is empty, not stored as 0');
 
-  // Archive/un-archive is on the property-view panel (property management lives on the property view)
-  ok(await page.evaluate(()=>!!document.getElementById('loanProfileArchive')),'the panel offers an Archive control');
-  const archived=await page.evaluate(async (k)=>{ document.getElementById('loanProfileArchive').click(); await new Promise(r=>setTimeout(r,350)); return { on: window.LDS_isArchived(k), label: (document.getElementById('loanProfileArchive')||{}).innerText||'' }; }, key);
-  ok(archived.on===true && /un-?archive/i.test(archived.label),'clicking Archive archives the property (button flips to Un-archive)');
+  // 2.9.4 — archiving moved to the toolbar "Remove" (archive the property); un-archive lives in the
+  // Properties list. The profile panel no longer carries its own Archive button.
+  ok(await page.evaluate(()=>!document.getElementById('loanProfileArchive')),'the profile panel no longer has its own Archive button (moved to the toolbar Remove / Properties list)');
+  await page.evaluate((k)=>window.LDS_archiveProperty(k,true), key); await page.waitForTimeout(250);
+  ok(await page.evaluate((k)=>window.LDS_isArchived(k)===true,key),'archiving the property works (the toolbar Remove path)');
   await page.evaluate((k)=>window.LDS_archiveProperty(k,false), key); await page.waitForTimeout(200);
   ok(await page.evaluate((k)=>window.LDS_isArchived(k)===false,key),'un-archiving restores it');
 

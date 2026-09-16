@@ -39,7 +39,7 @@ const SUMS={ GPR:1000000, VAC:-50000, PAY:200000, RET:50000 };
   // ---- units missing: the $/unit cells fall back to a dash and the tab points to the property profile ----
   const missing=await page.evaluate((m)=>window.LDS_uwSetupHtml(m,null,{}),SUMS);
   ok(/units missing/i.test(missing),'with no units, the tab shows the "Units missing" state');
-  ok(/property profile/i.test(missing),'…with a link to set residential units in the property profile');
+  ok(/units field above/i.test(missing),'…pointing to the Units field above (2.9.4: the profile link was removed — units auto-load from the rent roll / are set here)');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
