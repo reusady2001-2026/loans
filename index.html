@@ -738,10 +738,8 @@
               Specific Property
             </button>
           </div>
-          <button id="calendarBtn" type="button" class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-glow press lift self-start sm:self-auto">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-            Maturity &amp; Reset Calendar
-          </button>
+          <!-- The prominent "Maturity & Reset Calendar" button was removed (2.9.4) — the calendar
+               is reached from the tab strip's "+" menu (data-tabopen="calendar"). -->
           <!-- Data menu (desktop app only): back up / restore / recent snapshots -->
           <details id="dataDD" class="relative self-start sm:self-auto" hidden>
             <summary class="list-none [&amp;::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-card press lift hover:bg-slate-50">
@@ -3284,12 +3282,15 @@ tr.flagged:hover td{background:#fee2e2}
         const r = await opDiskSaveT12(key, file);
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
         await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
-        try{ await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
+        var gd = null; try{ gd = await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
         try{ opPushCache.delete(key); if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // regenerate "what to push" ONCE against the fresh statement
         if(opFocusKey === key) renderUnderwriting();
         if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
-        const noi = (uwState.input.t12Meta && uwState.input.t12Meta.totals && uwState.input.t12Meta.totals.noi);
-        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — statement NOI "+uwFmt(noi) : "")+".","check");
+        // Report the app's RULE-BASED in-place NOI (annualized last-3-months × 4 when the rule fires) —
+        // never the raw printed footing, which would show the 12-month figure on a lease-up property.
+        const noi = (gd && gd.noi && gd.noi.inPlace != null) ? gd.noi.inPlace : null;
+        const annualized = !!(gd && gd.noi && gd.noi.inPlaceBasis === "annualized");
+        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — NOI "+uwFmt(noi)+(annualized ? " (annualized · last 3 mo × 4)" : "") : "")+".","check");
       }catch(err){ toast("Couldn’t read that file.","error"); }
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
@@ -3531,7 +3532,7 @@ tr.flagged:hover td{background:#fee2e2}
       const gdRec = gdFullCache[opFocusKey], annNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "annualized") ? gdRec.noi : null;
       const noiMethod = (gdRec && gdRec.noi) ? noiMethodLabel(gdRec.noi) : "";   // "T12 · Sep 2025 → Aug 2026" or "T3 × 4 · Oct → Dec 2026"
       const annualizedBanner = annNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
-        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the twelve-month total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+annNoi.annualizedMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the statement total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+annNoi.annualizedMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
       return review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
@@ -4373,14 +4374,14 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){}
     }
     // Build a property's Setup from its T12 grid, applying the partial-year
-    // annualization when the monthly columns show it. When the statement covers fewer than a
-    // full 12 dated months, or the property was still leasing up at the start, its printed
-    // total understates the annual run-rate — so each line is annualized to its last 3 dated
+    // annualization when the statement's start shows a lease-up. The rule (GeneralData.annualizedNOI):
+    // when the FIRST TWO dated months both have NOI <= 0, the printed total understates the annual
+    // run-rate — so each line is annualized to its last 3 dated
     // months × 4 (GeneralData.annualizedNOI) and the Setup is built from those category sums, so
     // the in-place AND underwritten NOI (and the sizing) all reflect the annualized run-rate;
     // reserves stay annual, vacancy/management ratios are preserved. Otherwise the statement
-    // build stands. Returns { setup, lu, parsedM, statementNOI } — statementNOI is the printed
-    // 12-month footing, kept for reference alongside the annualized figure.
+    // build stands. Returns { setup, lu, parsedM, statementNOI } — statementNOI is the raw statement
+    // footing, kept only as a reconciliation reference alongside the annualized figure.
     function uwBuildSetupFromGrid(grid, opt){
       opt = opt || {};
       var parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
@@ -4530,7 +4531,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>'+
         '<div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="font-bold tabular-nums text-slate-900">'+(noi.inPlace!=null?fmtMoney(noi.inPlace):"&mdash;")+'</div>'+
-            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="annualized"?' &middot; 12-mo statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
+            '<div class="text-[10px] text-slate-400">'+escapeHtml(noiMethodLabel(noi))+(noi.inPlaceBasis==="annualized"?' &middot; statement '+(noi.inPlaceStatement!=null?fmtMoney(noi.inPlaceStatement):"&mdash;"):'')+'</div></div>'+
           '<div class="rounded-lg border border-brand-200 bg-brand-50 p-2"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="font-bold tabular-nums text-brand-700">'+(noi.underwritten!=null?fmtMoney(noi.underwritten):"&mdash;")+'</div>'+
             '<div class="text-[10px] text-brand-600/70">'+escapeHtml(noiMethodLabel(noi))+'</div></div>'+
           '<div class="rounded-lg border border-slate-200 bg-slate-50 p-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">Saved to the folder</div><div class="font-semibold text-[12px] text-slate-600">general-data.json</div></div>'+
@@ -6883,8 +6884,9 @@ tr.flagged:hover td{background:#fee2e2}
     function hideFormError(){ dom.formError.classList.add("hidden"); dom.formError.classList.remove("flex"); }
 
     let confirmCb = null;
-    function confirmDialog(title, text, cb){
+    function confirmDialog(title, text, cb, okLabel){
       dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb;
+      if(dom.confirmOk) dom.confirmOk.textContent = okLabel || ((/^([A-Za-z]+)/.exec(title || "") || [])[1]) || "Confirm";   // the OK button names the ACTUAL action — the title's leading verb (Remove / Restore / Delete / Archive), never a hardcoded "Remove"
       dom.confirmModal.classList.remove("hidden"); dom.confirmModal.classList.add("flex");
     }
     function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; }
@@ -9667,7 +9669,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!getLoan(state.activeId)) state.activeId = loans[0]._id;
       setMode("view");
     });
-    el("calendarBtn").addEventListener("click", openMaturityCalendar);   // static in the scope row now
+    (function(){ var cb = el("calendarBtn"); if(cb) cb.addEventListener("click", openMaturityCalendar); })();   // button removed in 2.9.4 (calendar opens from the "+" tab menu); guard kept so nothing throws
     // Data menu (desktop only): backup / restore / recent snapshots.
     (function(){
       const dd = el("dataDD");
