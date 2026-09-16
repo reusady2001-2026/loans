@@ -5077,7 +5077,11 @@ tr.flagged:hover td{background:#fee2e2}
           title:{ type:"string" }, rank:{ type:"number" }, impact:{ type:"string" },
           impactInPlace:{ type:"number" }, impactUnderwritten:{ type:"number" },
           effort:{ type:"string" }, rationale:{ type:"string" }
-        }, required:["title","rank","impact","effort","rationale"] } }   // the two numeric impacts are requested in the instruction but kept optional in the schema, so a move Claude can't ground a number for still returns (it just won't get a refi checkbox)
+        }, required:["title","rank","impact","effort","rationale"] } },   // the two numeric impacts are requested in the instruction but kept optional in the schema, so a move Claude can't ground a number for still returns (it just won't get a refi checkbox)
+        overlaps:{ type:"array", items:{ type:"object", properties:{   // 2.9.4 (#4) — groups whose combined effect differs from the sum of their parts; the refi checkboxes honor these
+          titles:{ type:"array", items:{ type:"string" } },
+          combinedInPlace:{ type:"number" }, combinedUnderwritten:{ type:"number" }, note:{ type:"string" }
+        }, required:["titles"] } }
       }, required:["summary","moves"] };
     }
     // The prompt the embedded Claude gets. It is deliberately SHORT and gets ONLY the assumptions and the T12
@@ -5093,7 +5097,8 @@ tr.flagged:hover td{background:#fee2e2}
       "Use the benchmark targets to find operational upside: for a line that has a benchmark (payroll and repairs & maintenance especially), work out the line's actual dollars per unit from the statement (its annual total divided by units) and compare it to the benchmark. When a line runs more than about 15% ABOVE its benchmark, that gap is real, so name it and STATE the annual dollar gap (the dollars-per-unit gap times the units) in the rationale — that is exactly the money on the table. Do not flag a line that has no benchmark or that already sits at or below it.",
       "Use FULL WORDS only. The ONLY abbreviation permitted is NOI (so \"underwritten NOI\" is fine). Never write GPR, EGI, EGR, OpEx, G&A, R&M, CapEx, or bps — spell every term out (for example \"gross potential rent\", \"repairs and maintenance\", \"percentage point\").",
       "Consider the property's LOCATION (its address, when given) in judging what is realistic to push and how to rank the moves — rent upside, tax and insurance pressure, and utility costs all vary by market.",
-      "Return { summary, moves:[{ title, rank, impact, impactInPlace, impactUnderwritten, effort, rationale }] } via the structured-output tool, best first."
+      "Consider OVERLAP between the moves you propose: two moves can act on the same dollars, so doing them together does NOT add up to the sum of each done alone (for example, raising rents and cutting the vacancy loss both work on the same rent roll). When two or more of your moves overlap, add an entry to `overlaps` naming them by their EXACT `title` and giving `combinedInPlace` and `combinedUnderwritten` — the annual dollar effect of doing that whole group TOGETHER on each NOI basis (normally LESS than the sum of the members' individual figures). Only include a group whose combined effect genuinely differs from the plain sum; independent moves need no entry.",
+      "Return { summary, moves:[{ title, rank, impact, impactInPlace, impactUnderwritten, effort, rationale }], overlaps:[{ titles, combinedInPlace, combinedUnderwritten }] } via the structured-output tool, best first."
     ].join("\n");
     function opPushInput(key){
       const t = opT12Lines(key); if(!t) return null;
@@ -5123,7 +5128,7 @@ tr.flagged:hover td{background:#fee2e2}
         .then((r) => {
           if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude could not analyse this property." }); }
           else { const d = r.data || {};
-            const push = { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], at: at, address: (input.address || null), computedAt: new Date().toISOString() };
+            const push = { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], overlaps: Array.isArray(d.overlaps) ? d.overlaps : [], at: at, address: (input.address || null), computedAt: new Date().toISOString() };
             opPushCache.set(key, push);
             opPersistGeneralExtras(key, { push: push });   // durable: survives a restart, feeds the refi's push checkboxes
           }
@@ -7928,6 +7933,7 @@ tr.flagged:hover td{background:#fee2e2}
     // basis you're viewing, so the coverage, the tier and the two-stage verdict all re-compute as if
     // you'd executed them. State is per property, held for the session (a simulation, never saved).
     var refiAppliedMoves = {};   // propKey -> Set of applied move indices (into refiPushMoves order)
+    var refiManualLevers = {};   // propKey -> [{ id, label, amount, on }] — the user's own labeled $ levers (2.9.4 #4; session what-if)
     function refiPushMoves(loan){
       if(!loan) return [];
       var st = opPushCache.get(propertyKey(loan));
@@ -7935,30 +7941,71 @@ tr.flagged:hover td{background:#fee2e2}
       return st.moves.filter(function(m){ return m && (isFinite(m.impactInPlace) || isFinite(m.impactUnderwritten)); });   // only numeric-impact moves can drive the NOI
     }
     function refiMoveBoost(loan, basis){
-      var moves = refiPushMoves(loan); if(!moves.length) return 0;
-      var set = refiAppliedMoves[propertyKey(loan)]; if(!set || !set.size) return 0;
-      var sum = 0;
-      moves.forEach(function(m, i){ if(set.has(i)){ var v = (basis === "inplace") ? m.impactInPlace : m.impactUnderwritten; if(typeof v === "number" && isFinite(v)) sum += v; } });
+      var key = propertyKey(loan);
+      var moves = refiPushMoves(loan), set = refiAppliedMoves[key], sum = 0;
+      if(moves.length && set && set.size){
+        // 2.9.4 (#4) — honor Claude's overlap groups: when EVERY move in a group is ticked, apply its combined
+        // figure ONCE instead of naïvely summing the group's individual impacts (overlaps come from the
+        // "what to push" analysis; absent them this is a plain sum).
+        var st = opPushCache.get(key), overlaps = (st && Array.isArray(st.overlaps)) ? st.overlaps : [];
+        var titleIdx = {}; moves.forEach(function(m, i){ if(set.has(i) && m && m.title != null) titleIdx[m.title] = i; });
+        var handled = {};
+        overlaps.forEach(function(g){
+          if(!g || !Array.isArray(g.titles) || g.titles.length < 2) return;
+          var idxs = g.titles.map(function(t){ return titleIdx[t]; });
+          if(idxs.some(function(x){ return x == null; })) return;                        // applies only when ALL its moves are ticked
+          var v = (basis === "inplace") ? g.combinedInPlace : g.combinedUnderwritten;
+          if(typeof v === "number" && isFinite(v)){ sum += v; idxs.forEach(function(x){ handled[x] = true; }); }
+        });
+        moves.forEach(function(m, i){ if(set.has(i) && !handled[i]){ var v = (basis === "inplace") ? m.impactInPlace : m.impactUnderwritten; if(typeof v === "number" && isFinite(v)) sum += v; } });
+      }
+      // The user's own manual levers (a labeled $ applies equally on either basis).
+      var man = refiManualLevers[key];
+      if(Array.isArray(man)) man.forEach(function(lv){ if(lv && lv.on && typeof lv.amount === "number" && isFinite(lv.amount)) sum += lv.amount; });
       return sum;
     }
     function refiPushMovesHtml(loan){
-      var moves = refiPushMoves(loan); if(!moves.length) return "";
-      var key = propertyKey(loan), set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
+      var key = propertyKey(loan);
+      var moves = refiPushMoves(loan);
+      var set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
+      var man = refiManualLevers[key] || (refiManualLevers[key] = []);
       var basis = refiBasis(loan), boost = refiMoveBoost(loan, basis);
-      var rows = moves.map(function(m, i){
+      var sign = function(v){ return (v == null) ? "&mdash;" : (v >= 0 ? "+" : "&minus;") + fmtMoney(Math.abs(v)); };
+      var claudeRows = moves.map(function(m, i){
         var on = set.has(i), dIn = isFinite(m.impactInPlace) ? m.impactInPlace : null, dUw = isFinite(m.impactUnderwritten) ? m.impactUnderwritten : null;
-        var sign = function(v){ return (v == null) ? "&mdash;" : (v >= 0 ? "+" : "&minus;") + fmtMoney(Math.abs(v)); };
         return '<label class="flex items-start gap-3 rounded-lg border '+(on?"border-emerald-300 bg-emerald-50":"border-slate-200 bg-white")+' px-3 py-2 cursor-pointer">'+
           '<input type="checkbox" data-refimove="'+i+'"'+(on?" checked":"")+' class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30">'+
           '<span class="min-w-0 flex-1"><span class="block text-sm font-semibold text-slate-800">'+escapeHtml(m.title||"")+'</span>'+
             '<span class="block text-[11px] text-slate-500 tabular-nums">in&#8209;place '+sign(dIn)+' &middot; underwritten '+sign(dUw)+' a year</span></span>'+
         '</label>';
       }).join("");
+      // 2.9.4 (#4) — the user's own labeled $ levers as checkboxes alongside Claude's.
+      var manRows = man.map(function(lv){
+        return '<label class="flex items-center gap-3 rounded-lg border '+(lv.on?"border-emerald-300 bg-emerald-50":"border-slate-200 bg-white")+' px-3 py-2 cursor-pointer">'+
+          '<input type="checkbox" data-refimanual="'+escapeHtml(lv.id)+'"'+(lv.on?" checked":"")+' class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30">'+
+          '<span class="min-w-0 flex-1"><span class="block text-sm font-semibold text-slate-800">'+escapeHtml(lv.label||"Manual lever")+' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">yours</span></span>'+
+            '<span class="block text-[11px] text-slate-500 tabular-nums">'+sign(lv.amount)+' a year</span></span>'+
+          '<button type="button" data-refimanualdel="'+escapeHtml(lv.id)+'" class="shrink-0 grid h-5 w-5 place-items-center rounded text-slate-300 hover:bg-rose-50 hover:text-rose-500" title="Remove this lever">&times;</button>'+
+        '</label>';
+      }).join("");
+      var adder = '<div class="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-2.5">'+
+        '<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Add your own lever</div>'+
+        '<div class="flex flex-wrap items-center gap-2">'+
+          '<input id="refiManualLabel" type="text" placeholder="e.g. paid parking" class="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm">'+
+          '<div class="flex items-center gap-1"><span class="text-sm text-slate-400">$</span><input id="refiManualAmt" type="number" step="any" placeholder="50,000 /yr" class="w-32 rounded-md border border-slate-300 px-2 py-1 text-sm text-right tabular-nums"></div>'+
+          '<button type="button" id="refiManualAdd" class="rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100">Add</button>'+
+        '</div>'+
+        '<p class="mt-1 text-[10px] text-slate-400">A yearly dollar amount you expect to add (negative to remove). Tick it to fold it into the working NOI.</p>'+
+      '</div>';
+      var claudeBlock = moves.length
+        ? '<div class="space-y-2">'+claudeRows+'</div>'
+        : '<p class="text-[12px] text-slate-500">'+(aiAvailable()?"Claude hasn&rsquo;t surfaced a move for this property yet &mdash; add your own below to test it.":"Connect Claude for suggested moves, or just add your own lever below to test it.")+'</p>';
+      var manBlock = man.length ? '<div class="mt-2 space-y-2">'+manRows+'</div>' : '';
       return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
         '<div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">What to push &mdash; test it against this refinance</h3>'+
           (boost !== 0 ? '<span class="text-sm font-bold '+(boost>0?"text-emerald-700":"text-rose-700")+' tabular-nums">'+(boost>0?"+":"&minus;")+fmtMoney(Math.abs(boost))+'/yr applied to the working NOI</span>' : '')+'</div>'+
-        '<p class="mb-3 mt-1 text-[11px] leading-relaxed text-slate-500">Tick a move to add its estimated annual impact to the working '+(basis==="inplace"?"in&#8209;place":basis==="underwritten"?"underwritten":"")+' NOI &mdash; the coverage, the credit tier and the verdict above re&#8209;compute live. Claude&rsquo;s estimates from the statement; a what&#8209;if, not a commitment.</p>'+
-        '<div class="space-y-2">'+rows+'</div>'+
+        '<p class="mb-3 mt-1 text-[11px] leading-relaxed text-slate-500">Tick a move to add its estimated annual impact to the working '+(basis==="inplace"?"in&#8209;place":basis==="underwritten"?"underwritten":"")+' NOI &mdash; the coverage, the credit tier and the verdict above re&#8209;compute live. Claude&rsquo;s estimates from the statement, plus any lever you add yourself; a what&#8209;if, not a commitment.</p>'+
+        claudeBlock + manBlock + adder +
       '</div>';
     }
     function refiNOIBasisHtml(loan){
@@ -8178,8 +8225,18 @@ tr.flagged:hover td{background:#fee2e2}
       const payoff = compute(loan).derived.currentBalance || 0;
       const sized = (noi != null && isFinite(noi) && noi > 0 && s.maxLoan > 0);
       const can = sized && s.maxLoan >= payoff - 1;
+      // 2.9.4 (#3) — all three sizing caps, smallest first, so the refi can show every leg, mark the binding
+      // one, and quote the margin to the runner-up (how much room before the next constraint would bind).
+      const caps = [
+        { key:"DSCR",       label:"Debt coverage (1.25×)", amt: s.loanDSCR },
+        { key:"LTV",        label:"Loan-to-value (75%)",   amt: s.loanLTV },
+        { key:"Debt Yield", label:"Debt yield (7%)",       amt: s.loanDY }
+      ].filter(c => c.amt != null && isFinite(c.amt) && c.amt > 0).sort((a,b) => a.amt - b.amt);
+      const runnerUp = caps.length > 1 ? caps[1] : null;
+      const margin = runnerUp ? (runnerUp.amt - caps[0].amt) : null;
       return { can: can, sized: sized, maxLoan: s.maxLoan, payoff: payoff, binding: s.binding,
-               gap: s.maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears };
+               gap: s.maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears,
+               caps: caps, runnerUp: runnerUp, margin: margin };
     }
     // Stage 2 — cost of money. Rate-based, never payment-based.
     function refiShouldStage(loan, draft){
@@ -8202,6 +8259,25 @@ tr.flagged:hover td{background:#fee2e2}
       const can = refiCanStage(loan, draft);
       const should = can.can ? refiShouldStage(loan, draft) : null;
       return { can: can, should: should, refi: can.can && !!should && should.should };
+    }
+    // 2.9.4 (#3) — the three loan sizes (DSCR / LTV / debt-yield caps), the binding one marked, and the
+    // margin to the runner-up. A display of the sizing the app already computes; no new math.
+    function refiCapsBlock(can){
+      if(!can || !can.caps || can.caps.length < 2) return "";
+      const rows = can.caps.map(c => {
+        const isBind = (c.key === can.binding);
+        return '<div class="flex items-center justify-between gap-2 rounded-md px-2 py-1 '+(isBind?'bg-brand-50':'')+'">'+
+          '<span class="text-sm '+(isBind?'font-bold text-brand-800':'text-slate-600')+'">'+c.label+(isBind?' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>':'')+'</span>'+
+          '<span class="text-sm tabular-nums '+(isBind?'font-extrabold text-brand-800':'text-slate-700')+'">'+fmtMoney(c.amt)+'</span>'+
+        '</div>';
+      }).join('');
+      const margin = (can.margin != null && can.runnerUp)
+        ? '<p class="mt-1.5 text-[11px] text-slate-500">'+fmtMoney(can.margin)+' of headroom before '+escapeHtml(can.runnerUp.label)+' would bind instead.</p>'
+        : '';
+      return '<div class="mt-3 ml-9 border-t border-slate-200/70 pt-3">'+
+        '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Three loan sizes &mdash; the smallest caps the loan</p>'+
+        '<div class="space-y-1">'+rows+'</div>'+margin+
+      '</div>';
     }
     function refiVerdictHtml(loan, v){
       v = v || refiVerdict(loan, refiDrafts[1]);
@@ -8269,6 +8345,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div><p class="text-sm font-bold text-slate-800">Can you? '+(can.can?"Yes":"No")+'</p>'+
           '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
         '</div>'+
+        refiCapsBlock(can)+
         shouldBlock+
         '<p class="mt-4 text-sm font-semibold text-slate-900">'+bottom+'</p>'+
       '</div>';
@@ -8452,6 +8529,26 @@ tr.flagged:hover td{background:#fee2e2}
         if(cb.checked) set.add(idx); else set.delete(idx);
         refiDraftsKey = ""; renderRefi(loan);
       }));
+      // 2.9.4 (#4) — the user's own manual levers: toggle, remove, and add.
+      dom.refiView.querySelectorAll("[data-refimanual]").forEach(cb => cb.addEventListener("change", () => {
+        const key = propertyKey(loan), lv = (refiManualLevers[key] || []).find(x => x.id === cb.getAttribute("data-refimanual"));
+        if(lv){ lv.on = cb.checked; refiDraftsKey = ""; renderRefi(loan); }
+      }));
+      dom.refiView.querySelectorAll("[data-refimanualdel]").forEach(b => b.addEventListener("click", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const key = propertyKey(loan), id = b.getAttribute("data-refimanualdel");
+        refiManualLevers[key] = (refiManualLevers[key] || []).filter(x => x.id !== id);
+        refiDraftsKey = ""; renderRefi(loan);
+      }));
+      { const addBtn = el("refiManualAdd");
+        if(addBtn) addBtn.addEventListener("click", () => {
+          const key = propertyKey(loan), lbl = ((el("refiManualLabel")||{}).value || "").trim();
+          const amt = parseFloat(String((el("refiManualAmt")||{}).value || "").replace(/[^0-9.\-]/g, ""));
+          if(!isFinite(amt) || amt === 0){ try{ toast("Enter a yearly dollar amount for the lever.", "info"); }catch(e){} return; }
+          const man = refiManualLevers[key] || (refiManualLevers[key] = []);
+          man.push({ id: "m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label: lbl || "Manual lever", amount: Math.round(amt), on: true });
+          refiDraftsKey = ""; renderRefi(loan);
+        }); }
 
       // Pricing inputs (prepay type, rate cap, mezz stack) refresh the proposed rate live.
       {

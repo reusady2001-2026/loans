@@ -39,7 +39,9 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
     editOff:document.getElementById('editBtn').disabled, removeOff:document.getElementById('removeBtn').disabled,
     refiOn:!document.getElementById('refiBtn').disabled, selVal:document.getElementById('loanSelect').value }));
   ok(/Combined position/i.test(c.text), 'selecting the stack renders the combined position (whole property)');
-  ok(c.editOff && c.removeOff, 'Edit and Remove are off for the synthetic combined position');
+  // 2.9.4 — Edit/Remove are PROPERTY-level (edit the property, archive the property), so they are ON even for
+  // a combined position; the per-loan edit/remove live inside the Combined Position rows.
+  ok(!c.editOff && !c.removeOff, 'Edit and Remove are on for the property (property-level actions)');
   ok(c.refiOn, 'Refinance is on for the property');
   ok(c.selVal===meta.stackedCombo, 'the selector stays on the property');
 
