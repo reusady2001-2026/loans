@@ -58,16 +58,15 @@ const CSV=[
   ok(/3,600\s*sf/i.test(panel),'…total square footage (3,600 sf)');
   ok(!/1BR\/1BA/.test(panel),'…and NOT the per-unit-type detail (summary only — no noise)');
 
-  // the underwriting tab shows the compact rent-roll summary + a user-triggered "Use these"
+  // 2.9.4 — the underwriting tab shows the compact summary and AUTO-LOADS units + avg rent (no "Use these" button)
   await page.evaluate((k)=>window.LDS_openSizing(k), key);
   await page.waitForFunction(()=>{ const b=document.getElementById('uwRentRollBox'); return b && /units/i.test(b.innerText||''); },null,{timeout:8000}).catch(()=>{});
   const uwbox=await page.evaluate(()=>(document.getElementById('uwRentRollBox')||{}).innerText||'');
   ok(/from the rent roll/i.test(uwbox) && /4 units/i.test(uwbox),'the underwriting tab shows the compact rent-roll summary (4 units)');
-  ok(await page.evaluate(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return !u || !u.value || u.value===''; }),'the units input is not auto-filled (nothing applied on its own)');
-  await page.click('#uwRentRollUse');
-  await page.waitForTimeout(400);
-  ok(await page.evaluate(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return u && String(u.value)==='4'; }),'clicking "Use these" fills the units input (4) from the rent roll');
-  ok(await page.evaluate(()=>{ const a=document.querySelector('#uwView [data-uwf="avgRentUnit"]'); return a && String(a.value)==='1800'; }),'…and the average rent input ($1,800)');
+  ok(!/use these/i.test(uwbox),'the "Use these" button is gone (values auto-load instead)');
+  await page.waitForFunction(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return u && String(u.value)==='4'; },null,{timeout:6000}).catch(()=>{});
+  ok(await page.evaluate(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return u && String(u.value)==='4'; }),'the units input auto-filled (4) from the rent roll');
+  ok(await page.evaluate(()=>{ const a=document.querySelector('#uwView [data-uwf="avgRentUnit"]'); return a && String(a.value)==='1800'; }),'…and the average rent input auto-filled ($1,800)');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

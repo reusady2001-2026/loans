@@ -563,6 +563,12 @@
         <span class="truncate text-[11px] font-semibold text-ink-500">Living Residential — Loan Debt Service Hub</span>
       </div>
       <div class="flex items-center gap-0.5 pl-2" style="-webkit-app-region:no-drag">
+        <!-- Fetch live rate — global, on every tab (2.9.4). Pulls today's Treasury curve + SOFR into the
+             cache so the refinance market rate, coverage rate-gap and loan-form previews are current. -->
+        <button type="button" id="fetchRateBtn" class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition disabled:opacity-50" title="Fetch today's live market rates (US Treasury curve + SOFR) for the refinance analysis and rate previews">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          <span id="fetchRateLabel">Fetch live rate</span>
+        </button>
         <!-- Settings: display scale (moved into the title bar) -->
         <details id="settingsDD" class="relative">
           <summary class="list-none [&amp;::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition" title="Settings">
@@ -2818,21 +2824,17 @@
                          .catch(() => { delete INDEX_INFLIGHT[id]; });
     }
 
-    // "Fetch live rate" control beneath the Index Value field; pulls the index
-    // currently selected in the dropdown (shared by the loan + refi forms).
+    // Index-value status beneath the Index Value field. 2.9.4 — the manual "Fetch live rate" button moved to
+    // the title bar (global, every tab); the loan/refi form still AUTO-fetches the selected index on change so
+    // its value fills in, and shows the fetched figure here. No per-form button.
     function injectIndexFetch(container, prefix, btnId){
       const wrap = container.querySelector('[data-fieldwrap="armAssumedIndex"]');
-      if(!wrap || wrap.querySelector("#"+btnId)) return;
+      if(!wrap || wrap.querySelector("#"+btnId+"Status")) return;
       const statusId = btnId+"Status";
       const bar = document.createElement("div");
       bar.className = "mt-1.5 flex items-center gap-2 flex-wrap";
-      bar.innerHTML =
-        '<button type="button" id="'+btnId+'" class="inline-flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50">'+
-          '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
-          'Fetch live rate</button>'+
-        '<span id="'+statusId+'" class="text-[11px] text-slate-400">live for US indexes</span>';
+      bar.innerHTML = '<span id="'+statusId+'" class="text-[11px] text-slate-400">Live for US indexes — fetched automatically; refresh from the title bar’s <b>Fetch live rate</b>.</span>';
       wrap.appendChild(bar);
-      el(btnId).addEventListener("click", () => onFetchIndex(prefix, statusId, btnId));
       // Auto-fetch when the index changes, and once for the initial selection.
       const sel = el(prefix+"index");
       if(sel){
@@ -2842,22 +2844,35 @@
       }
     }
     async function onFetchIndex(prefix, statusId, btnId){
-      const btn = el(btnId), status = el(statusId), input = el(prefix+"armAssumedIndex");
+      const btn = btnId ? el(btnId) : null, status = el(statusId), input = el(prefix+"armAssumedIndex");
       const id = (el(prefix+"index")||{}).value, cat = INDEX_BY_ID[id];
-      if(!btn || !status) return;
+      if(!status) return;
       if(!cat || !cat.live){ status.className="text-[11px] text-amber-600"; status.textContent = (cat?cat.label:"This index")+" has no live US feed — enter the value manually."; return; }
-      btn.disabled = true; status.className="text-[11px] text-slate-400"; status.textContent = "Fetching "+cat.label+"…";
+      if(btn) btn.disabled = true;
+      status.className="text-[11px] text-slate-400"; status.textContent = "Fetching "+cat.label+"…";
       try {
         const r = await fetchIndexValue(id);
         if(!r) throw new Error("no data");
         INDEX_CACHE[id] = r;
         if(input){ input.value = r.value; input.dispatchEvent(new Event("input", { bubbles:true })); }
         status.className="text-[11px] text-emerald-600"; status.textContent = cat.label+": "+r.value+"% as of "+r.date;
-        toast("Fetched "+cat.label+": "+r.value+"%", "check");
       } catch(e){
         status.className="text-[11px] text-rose-600"; status.textContent = "Couldn't fetch — enter the value manually";
-        toast("Live fetch failed; enter the value manually", "info");
-      } finally { btn.disabled = false; }
+      } finally { if(btn) btn.disabled = false; }
+    }
+    // Global "Fetch live rate" (title bar): refresh today's Treasury curve + SOFR + the other live indices
+    // into the session cache, then re-render so the refi market rate, coverage rate-gap and previews update.
+    async function fetchAllLiveRates(){
+      const btn = el("fetchRateBtn"), label = el("fetchRateLabel");
+      const live = INDEX_CATALOG.filter(i => i.live);
+      if(btn) btn.disabled = true; if(label) label.textContent = "Fetching…";
+      let n = 0;
+      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ INDEX_CACHE[cat.id] = r; n++; } }catch(e){} }));
+      if(btn) btn.disabled = false; if(label) label.textContent = "Fetch live rate";
+      if(n){ try{ toast("Live rates updated — "+n+" refreshed from US feeds.", "check"); }catch(e){} }
+      else { try{ toast("Couldn’t fetch live rates (offline?). Existing values kept.", "info"); }catch(e){} }
+      try{ render(); }catch(e){}                                                   // home area: portfolio coverage gap / loan / refi
+      try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
     }
 
     // Show/hide conditional term fields within a container, then refresh the
@@ -3459,7 +3474,7 @@ tr.flagged:hover td{background:#fee2e2}
         drop.ondrop = (ev)=>{ ev.preventDefault(); drop.classList.remove("border-brand-400","bg-brand-50"); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if(f) uwHandleFile(f); };
       }
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
-      try{ uwRenderRentRollBox(); }catch(e){}   // 2.9.3 — the focused property's rent-roll summary + "Use these"
+      try{ uwRenderRentRollBox(); }catch(e){}   // 2.9.4 — the focused property's rent-roll summary; auto-loads units + avg rent
     }
 
     // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
@@ -3552,7 +3567,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
-          '<div class="mb-2 text-[11px] text-slate-400">'+(unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set residential units in the <button type="button" id="uwUnitsMissingLink" class="underline hover:text-brand-600">property profile</button> to see $/unit')+'</div>'+
+          '<div class="mb-2 text-[11px] text-slate-400">'+(unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set the Units field above to see $/unit')+'</div>'+
           '<table class="w-full min-w-[560px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th><th class="pb-2 px-2 text-right">Underwritten</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th></tr></thead><tbody>'+rows+'</tbody></table>'+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
             '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
@@ -3641,7 +3656,6 @@ tr.flagged:hover td{background:#fee2e2}
       if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); uwSyncGridInputs(); uwRerenderSetup(); return; } });
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // reset a pinned underwritten line
-      if(t.closest("#uwUnitsMissingLink")){ if(opFocusKey) opOpenPropertyProfile(opFocusKey); return; }
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#aiT12Btn")){ aiT12Open(); return; }   // #aiT12Btn is redrawn every renderUnderwriting(), so it's handled by delegation here rather than a direct listener
@@ -5421,8 +5435,9 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("click", function(e){ var t = e.target; if(!t || !t.closest) return;
       if(t.closest("#rrWarnToggle")){ var w = el("rrWarnList"); if(w) w.hidden = !w.hidden; }
     });
-    // The compact rent-roll summary in the underwriting tab, for the focused property, with a user-triggered
-    // "Use these" that fills the units + average-rent inputs (nothing is applied to underwriting on its own).
+    // The compact rent-roll summary in the underwriting tab, for the focused property. 2.9.4 — the units +
+    // average-rent inputs AUTO-LOAD from the rent roll (no "Use these" button); the boxes stay editable so the
+    // user can override, and an override is never clobbered because auto-load only fills an empty field.
     function uwRenderRentRollBox(){
       var host = el("uwRentRollBox"); if(!host) return;
       var key = opFocusKey; if(!key){ host.innerHTML = ""; return; }
@@ -5433,22 +5448,28 @@ tr.flagged:hover td{background:#fee2e2}
       }
       var r = loanRRCache[key]; if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
       var b = r.block;
+      if(uwAutoLoadRentRoll(b)) return;   // filled the empty inputs and re-rendered — the re-render draws the summary
       host.innerHTML = '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">'+
-        '<div class="flex items-center justify-between gap-2"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500">From the rent roll</div>'+
-          '<button type="button" id="uwRentRollUse" class="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Use these</button></div>'+
-        '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div></div>';
+        '<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500">From the rent roll</div>'+
+        '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div>'+
+        '<div class="mt-1 text-[11px] text-slate-400">Loaded into Units and average rent above — edit either box to override.</div></div>';
     }
-    // "Use these": fill the underwriting units + average rent from the rent roll (the user's action, not auto).
-    function uwUseRentRoll(){
-      var key = opFocusKey, r = key && loanRRCache[key], b = r && r.block; if(!b) return;
-      if(b.residentialUnits) uwState.input.units = b.residentialUnits;
-      if(b.avgActualRent != null) uwState.input.avgRentUnit = b.avgActualRent;
-      try{ uwFillRentFromAvg(); }catch(e){}
-      saveUW(); try{ opSaveAssumptions(key); }catch(e){}
+    // Auto-fill units + average rent from the rent roll into any EMPTY input. Returns true if it changed
+    // something (and re-rendered), so the caller stops and lets the re-render draw the filled state.
+    function uwAutoLoadRentRoll(b){
+      if(!b) return false;
+      var changed = false;
+      var curUnits = uwNum(uwState.input.units);
+      if((curUnits == null || curUnits === 0) && b.residentialUnits){ uwState.input.units = b.residentialUnits; changed = true; }
+      var curAvg = uwNum(uwState.input.avgRentUnit);
+      if((curAvg == null || curAvg === 0) && b.avgActualRent != null){ uwState.input.avgRentUnit = b.avgActualRent; changed = true; }
+      if(!changed) return false;
+      var curGPR = uwNum(uwState.input.rrGPR);
+      if(curGPR == null || curGPR === 0){ try{ uwFillRentFromAvg(); }catch(e){} }   // derive GPR only when the user hasn't set one
+      saveUW(); try{ opSaveAssumptions(opFocusKey); }catch(e){}
       try{ renderUnderwriting(); }catch(e){}
-      try{ toast("Filled "+b.residentialUnits+" units and avg rent "+rrMoney(b.avgActualRent)+" from the rent roll.","check"); }catch(e){}
+      return true;
     }
-    document.addEventListener("click", function(e){ var t = e.target; if(t && t.closest && t.closest("#uwRentRollUse")){ e.preventDefault(); uwUseRentRoll(); } });
 
     /* ================================================================
        8a-UW-AI. AI-assisted Setup — "Read T12 with Claude" (ALTERNATIVE to the
@@ -9695,6 +9716,8 @@ tr.flagged:hover td{background:#fee2e2}
     // menu entry and shows a live Connected / Not set badge.
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
+    // Global "Fetch live rate" (title bar) — available on every tab.
+    if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", fetchAllLiveRates);
     // AI: explain / sanity-check the selected loan (desktop shell only)
     if(aiAvailable() && el("aiExplainBtn")){
       el("aiExplainBtn").hidden = false;
