@@ -29,7 +29,10 @@ const CSV=[
 
   const n0=await page.evaluate(()=>window.opProperties().length);
   ok(n0===27,'baseline 27 properties (got '+n0+')');
-  ok(await page.evaluate(()=>!!document.querySelector('[data-rrimport]')),'the portfolio shows an "Import rent roll" button');
+  // 2.9.4 — import moved off the portfolio header to each property's rent-roll section (per-property button).
+  await page.evaluate(()=>{ var r=document.querySelector('#portfolioView tr[data-goto]'); if(r) r.click(); });
+  await page.waitForTimeout(600);
+  ok(await page.evaluate(()=>!!document.querySelector('[data-rrimportfor]')),'a property view shows a per-property "Import rent roll" button');
 
   // feed the file into the import modal (bypass the OS picker by setting the hidden input)
   await page.setInputFiles('#rrImportFile',FIX);

@@ -4034,8 +4034,11 @@ tr.flagged:hover td{background:#fee2e2}
     // and lets you tick which to ADD (new) or UPDATE (existing), then saves the file into each folder. The
     // per-unit data is never displayed — only the property's summary — and nothing is applied to underwriting.
     var rrImportState = null;
+    var rrImportPreferKey = null;   // when the importer is opened from a property's page, a single-block file defaults to that property
     function opRentRollImportPick(){ var f = el("rrImportFile"); if(f){ f.value = ""; f.click(); } }
-    function opRentRollImportClose(){ var m = el("rrImportModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } rrImportState = null; }
+    // Open the importer for a specific property (from its rent-roll section's Import/Update button).
+    function opRentRollImportPickFor(key){ rrImportPreferKey = key || null; opRentRollImportPick(); }
+    function opRentRollImportClose(){ var m = el("rrImportModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } rrImportState = null; rrImportPreferKey = null; }
     async function opRentRollImportRead(file){
       if(!file) return;
       if(!docsAvailable()){ try{ toast("Importing files needs the desktop app.", "info"); }catch(e){} return; }
@@ -4052,6 +4055,9 @@ tr.flagged:hover td{background:#fee2e2}
         var key = (best && sc >= 0.6) ? best.key : null;
         return { block: b, key: key, existingName: key ? best.name : "", include: true };
       });
+      // Opened from a property's page with a single-property file → default the assignment to THAT property
+      // (the user said "import for this one"). A multi-property file keeps the auto-match; the dropdowns correct it.
+      if(rrImportPreferKey && rows.length === 1){ var pk = opProp(rrImportPreferKey); if(pk){ rows[0].key = rrImportPreferKey; rows[0].existingName = pk.name || rrImportPreferKey; } }
       rrImportState = { fileName: file.name, base64: b64, text: (ex.text || ""), rows: rows };
       el("rrImportApply").disabled = !rows.length;
       renderRentRollImport();
@@ -4059,14 +4065,26 @@ tr.flagged:hover td{background:#fee2e2}
     function renderRentRollImport(){
       var st = rrImportState; if(!st) return;
       el("rrImportSub").textContent = st.fileName + " — " + st.rows.length + " propert" + (st.rows.length === 1 ? "y" : "ies") + " in the file";
+      // Fix #1 safety net: each block in the file gets a dropdown to assign it to an existing property or add it
+      // as new — so a multi-property file dropped on the wrong property page can be corrected, block by block.
+      var allProps = opProperties().slice().sort(function(a, b){ return String(a.name || a.key).localeCompare(String(b.name || b.key)); });
       el("rrImportBody").innerHTML = st.rows.map(function(r, i){
         var b = r.block;
-        var tag = r.key ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">update ' + escapeHtml(r.existingName) + '</span>' : '<span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">add new</span>';
+        var tag = r.key ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">update</span>' : '<span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">add new</span>';
         var line = b.residentialUnits + ' units · ' + b.occupiedUnits + ' occ · ' + b.vacantUnits + ' vac · avg mkt ' + rrMoney(b.avgMarketRent) + ' · avg in-place ' + rrMoney(b.avgActualRent) + (b.residentialSqft != null ? ' · ' + Math.round(b.residentialSqft).toLocaleString() + ' sf' : '') + (b.commercialUnits ? ' · +' + b.commercialUnits + ' commercial' : '');
-        return '<label class="flex items-start gap-3 rounded-xl border border-slate-200 p-3 mb-2 cursor-pointer hover:bg-slate-50">'+
-          '<input type="checkbox" data-rrimp="' + i + '"' + (r.include ? ' checked' : '') + ' class="mt-1 accent-brand-600">'+
-          '<div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-bold text-slate-800">' + escapeHtml(b.name) + '</span>' + tag + '</div>'+
-            '<div class="text-[11px] text-slate-500 mt-0.5">' + line + '</div></div></label>';
+        var opts = '<option value="">➕ Add as a new property</option>' + allProps.map(function(p){
+          return '<option value="' + escapeHtml(p.key) + '"' + (r.key === p.key ? ' selected' : '') + '>' + escapeHtml(p.name || p.key) + '</option>';
+        }).join('');
+        return '<div class="rounded-xl border border-slate-200 p-3 mb-2">'+
+          '<div class="flex items-start gap-3">'+
+            '<input type="checkbox" data-rrimp="' + i + '"' + (r.include ? ' checked' : '') + ' class="mt-1 accent-brand-600">'+
+            '<div class="min-w-0 flex-1">'+
+              '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-bold text-slate-800">' + escapeHtml(b.name) + '</span>' + tag + '</div>'+
+              '<div class="text-[11px] text-slate-500 mt-0.5">' + line + '</div>'+
+              '<div class="mt-2 flex items-center gap-2"><span class="text-[11px] font-medium text-slate-500 shrink-0">Assign to</span>'+
+                '<select data-rrimpsel="' + i + '" class="min-w-0 flex-1 max-w-[260px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">' + opts + '</select></div>'+
+            '</div>'+
+          '</div></div>';
       }).join('');
       var nAdd = st.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = st.rows.filter(function(r){ return r.include && r.key; }).length;
       el("rrImportNote").textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder";
@@ -5212,7 +5230,12 @@ tr.flagged:hover td{background:#fee2e2}
     try{ var _rrx = el("rrImportX"); if(_rrx && !_rrx._bound){ _rrx._bound = true; _rrx.addEventListener("click", opRentRollImportClose); } }catch(e){}
     try{ var _rrc = el("rrImportCancel"); if(_rrc && !_rrc._bound){ _rrc._bound = true; _rrc.addEventListener("click", opRentRollImportClose); } }catch(e){}
     try{ var _rra = el("rrImportApply"); if(_rra && !_rra._bound){ _rra._bound = true; _rra.addEventListener("click", opRentRollImportApply); } }catch(e){}
-    try{ var _rrb = el("rrImportBody"); if(_rrb && !_rrb._bound){ _rrb._bound = true; _rrb.addEventListener("change", function(e){ var cb = e.target; if(cb && cb.getAttribute && cb.getAttribute("data-rrimp") != null && rrImportState){ var i = +cb.getAttribute("data-rrimp"); if(rrImportState.rows[i]){ rrImportState.rows[i].include = cb.checked; var nAdd = rrImportState.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = rrImportState.rows.filter(function(r){ return r.include && r.key; }).length; var note = el("rrImportNote"); if(note) note.textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder"; } } }); } }catch(e){}
+    try{ var _rrb = el("rrImportBody"); if(_rrb && !_rrb._bound){ _rrb._bound = true; _rrb.addEventListener("change", function(e){ var cb = e.target; if(!cb || !cb.getAttribute || !rrImportState) return;
+      if(cb.getAttribute("data-rrimp") != null){ var i = +cb.getAttribute("data-rrimp"); if(rrImportState.rows[i]){ rrImportState.rows[i].include = cb.checked; var nAdd = rrImportState.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = rrImportState.rows.filter(function(r){ return r.include && r.key; }).length; var note = el("rrImportNote"); if(note) note.textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder"; } return; }
+      if(cb.getAttribute("data-rrimpsel") != null){ var j = +cb.getAttribute("data-rrimpsel"); if(rrImportState.rows[j]){ var v = cb.value || ""; rrImportState.rows[j].key = v || null; var pj = v ? opProp(v) : null; rrImportState.rows[j].existingName = pj ? (pj.name || v) : ""; renderRentRollImport(); } return; }
+    }); } }catch(e){}
+    // Per-property Import/Update rent-roll button (property view) — imports for that property (Fix #1 safety net).
+    try{ if(!document._rrImportForBound){ document._rrImportForBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-rrimportfor]"); if(b){ e.preventDefault(); opRentRollImportPickFor(b.getAttribute("data-rrimportfor")); } }); } }catch(e){}
     try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
     try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_agreementProposals=(d)=>agreementProposals(d); window.LDS_readAgreementPropose=(k,d)=>{ _agreementFile="agreement.pdf"; opReadAgreementModal(k, agreementProposals(d), "review"); }; window.LDS_readAgreementApply=(k)=>opReadAgreementApply(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
@@ -5329,9 +5352,8 @@ tr.flagged:hover td{background:#fee2e2}
     // Rent-roll SUMMARY HTML for a parsed block — the figures the app derives from the rent roll (never the
     // per-unit detail; a property can have hundreds of units). opts.compact → the tight underwriting version.
     function rrStatTile(label, val){ return '<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+val+'</div></div>'; }
-    function rrUnitStatsHtml(block, opts){
-      opts = opts || {};
-      var b = block;
+    // The six-tile figure grid (+ commercial note) the app derives from a parsed rent-roll block.
+    function rrStatsGrid(b){
       var sqft = (b.residentialSqft != null) ? Math.round(b.residentialSqft).toLocaleString() + ' sf' : '—';
       var grid = '<div class="grid grid-cols-3 sm:grid-cols-6 gap-2">'+
         rrStatTile('Units', b.residentialUnits)+
@@ -5342,17 +5364,33 @@ tr.flagged:hover td{background:#fee2e2}
         rrStatTile('Sq ft', sqft)+
       '</div>';
       var comm = b.commercialUnits ? '<div class="mt-2 text-[11px] text-violet-600">+ ' + b.commercialUnits + ' commercial unit' + (b.commercialUnits > 1 ? 's' : '') + ' · ' + rrMoney(b.commercialAnnual) + '/yr income (kept for the NOI, out of the per-unit math)</div>' : '';
+      return grid + comm;
+    }
+    // The "N to check" warnings toggle button + its hidden list, for a parsed block.
+    function rrStatsWarnHtml(b){
+      if(!(b.warnings && b.warnings.length)) return { btn:"", list:"" };
+      return {
+        btn: '<button type="button" id="rrWarnToggle" class="text-[11px] font-semibold text-amber-600 hover:underline shrink-0">'+b.warnings.length+' to check</button>',
+        list: '<div id="rrWarnList" hidden class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">'+b.warnings.slice(0,20).map(function(w){ return '&bull; '+escapeHtml(w); }).join('<br>')+(b.warnings.length>20?'<br>&hellip; and '+(b.warnings.length-20)+' more':'')+'</div>'
+      };
+    }
+    function rrUnitStatsHtml(block, opts){
+      opts = opts || {};
+      var b = block;
+      var body = rrStatsGrid(b);
       if(opts.compact){
-        return '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">From the rent roll</div>'+grid+comm+'</div>';
+        return '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3"><div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">From the rent roll</div>'+body+'</div>';
       }
-      var warnBtn = (b.warnings && b.warnings.length) ? '<button type="button" id="rrWarnToggle" class="text-[11px] font-semibold text-amber-600 hover:underline shrink-0">'+b.warnings.length+' to check</button>' : '';
-      var warnList = (b.warnings && b.warnings.length) ? '<div id="rrWarnList" hidden class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">'+b.warnings.slice(0,20).map(function(w){ return '&bull; '+escapeHtml(w); }).join('<br>')+(b.warnings.length>20?'<br>&hellip; and '+(b.warnings.length-20)+' more':'')+'</div>' : '';
+      var w = rrStatsWarnHtml(b);
       return '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+
         '<div class="border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-2"><div><h2 class="text-base font-bold text-slate-900">Rent roll summary</h2>'+
-          '<p class="text-xs text-slate-500">From '+(opts.fileName?escapeHtml(opts.fileName):'the rent roll')+(opts.blockName?' &mdash; '+escapeHtml(opts.blockName):'')+'</p></div>'+warnBtn+'</div>'+
-        '<div class="px-5 py-4">'+grid+comm+warnList+'</div>'+
+          '<p class="text-xs text-slate-500">From '+(opts.fileName?escapeHtml(opts.fileName):'the rent roll')+(opts.blockName?' &mdash; '+escapeHtml(opts.blockName):'')+'</p></div>'+w.btn+'</div>'+
+        '<div class="px-5 py-4">'+body+w.list+'</div>'+
       '</div>';
     }
+    // 2.9.4 — the property-view rent-roll section ALWAYS renders: the summary + an "Update" button when a
+    // rent roll is on file, or an empty state + an "Import rent roll" button when none is. The button imports
+    // for THIS property (a multi-property file still opens the per-block assignment — the Fix #1 safety net).
     function renderLoanUnitStats(){
       var host = el("loanUnitStatsPanel"); if(!host) return;
       var loan = getLoan(state.activeId); if(!loan){ host.innerHTML = ""; return; }
@@ -5360,11 +5398,24 @@ tr.flagged:hover td{background:#fee2e2}
       if(!Object.prototype.hasOwnProperty.call(loanRRCache, key)){
         loanRRCache[key] = undefined;
         opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; var l = getLoan(state.activeId); if(l && propertyKey(l) === key) renderLoanUnitStats(); });
-        host.innerHTML = ""; return;
       }
       var r = loanRRCache[key];
-      if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
-      host.innerHTML = rrUnitStatsHtml(r.block, { fileName: r.file && r.file.name, blockName: (r.matchedBy === "name") ? r.block.name : "" });
+      var loading = (r === undefined);
+      var hasBlock = !!(r && r.block);
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>';
+      var btn = '<button type="button" data-rrimportfor="'+escapeHtml(key)+'" class="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100" title="'+(hasBlock?'Replace this property’s rent roll with a newer file':'Import a rent roll for this property — a file with several properties lets you assign each block')+'">'+svg+(hasBlock?'Update':'Import rent roll')+'</button>';
+      var w = hasBlock ? rrStatsWarnHtml(r.block) : { btn:"", list:"" };
+      var sub = hasBlock
+        ? ('From '+((r.file && r.file.name)?escapeHtml(r.file.name):'the rent roll')+((r.matchedBy==='name')?' &mdash; '+escapeHtml(r.block.name):''))
+        : (loading ? 'Reading the rent roll…' : 'No rent roll on file for this property yet.');
+      var header = '<div class="border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-2">'+
+        '<div class="min-w-0"><h2 class="text-base font-bold text-slate-900">Rent roll summary</h2><p class="text-xs text-slate-500">'+sub+'</p></div>'+
+        '<div class="flex items-center gap-2 shrink-0">'+w.btn+btn+'</div></div>';
+      var body;
+      if(hasBlock){ body = '<div class="px-5 py-4">'+rrStatsGrid(r.block)+w.list+'</div>'; }
+      else if(loading){ body = '<div class="px-5 py-4 text-sm text-slate-400">Reading the rent roll…</div>'; }
+      else { body = '<div class="px-5 py-4 text-sm text-slate-500">Import a rent roll to see units, occupancy and average rents here — the app reads a Yardi export and files it to this property. A file that holds several properties lets you assign each block to the right one.</div>'; }
+      host.innerHTML = '<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+header+body+'</div>';
     }
     // Toggle the "to check" anomaly list on the Unit Statistics panel.
     document.addEventListener("click", function(e){ var t = e.target; if(!t || !t.closest) return;
