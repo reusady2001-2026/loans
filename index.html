@@ -863,9 +863,15 @@
               <h2 class="text-base font-bold text-slate-900">Loan Record</h2>
               <p class="text-xs text-slate-500">All fields for the selected loan. Computed values are derived live by the app.</p>
             </div>
-            <span class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Read-only
+            <span class="flex items-center gap-1.5">
+              <button id="loanRecEdit" type="button" hidden class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" title="Edit this loan’s fields">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Edit
+              </button>
+              <button id="loanRecRemove" type="button" hidden class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50" title="Remove this loan">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                Remove
+              </button>
             </span>
           </div>
           <div id="profileBody" class="p-5 [&>section:last-child]:mb-0"></div>
@@ -2942,10 +2948,13 @@
       const hasLoans = loans.length > 0;
       const loan = getLoan(state.activeId);
 
-      dom.editBtn.disabled = !loan || state.mode!=="view" || !!loan._combined;      // a combined position is synthetic — edit its loans from their cards
-      dom.removeBtn.disabled = !loan || state.mode!=="view" || !!loan._combined;
+      dom.editBtn.disabled = !loan || state.mode!=="view";      // 2.9.4 — Edit edits the PROPERTY's info (works for a combined position too)
+      dom.removeBtn.disabled = !loan || state.mode!=="view";    // 2.9.4 — Remove ARCHIVES the property (works for a combined position too)
       dom.refiBtn.disabled = !loan || state.mode!=="view";
       if(el("aiExplainBtn")) el("aiExplainBtn").disabled = !loan || state.mode!=="view";
+      // 2.9.4 — the single-loan per-loan Edit/Remove live in the Loan Record header; shown only for a real
+      // single loan (a stack edits its loans from the Combined-Position rows instead).
+      { const showLoanBtns = !!(loan && !loan._combined && state.mode==="view"); const le = el("loanRecEdit"), lr = el("loanRecRemove"); if(le) le.hidden = !showLoanBtns; if(lr) lr.hidden = !showLoanBtns; }
 
       // Scope: "Whole Portfolio" shows only the dashboard; "Specific Loan" reveals
       // the loan selector + single-loan views.
@@ -5264,8 +5273,8 @@ tr.flagged:hover td{background:#fee2e2}
         ? '<span class="text-[11px] font-semibold text-emerald-600">Profile complete</span>'
         : '<span class="text-[11px] font-semibold text-amber-600">Needs '+escapeHtml(comp.missing.map(function(k){ return String(Profile.labelFor(k)).toLowerCase(); }).join(", "))+'</span>';
       const readBtn = aiAvailable() ? '<button type="button" id="loanProfileReadAgreement" class="rounded-lg border border-brand-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50" title="Have Claude read this property’s loan agreement and fill each field for you to confirm">✨ Read agreement</button>' : '';
-      const archBtn = '<button type="button" id="loanProfileArchive" class="rounded-lg border px-2.5 py-1.5 text-xs font-semibold '+(archived?'border-emerald-300 text-emerald-700 hover:bg-emerald-50':'border-slate-300 text-slate-500 hover:bg-slate-50')+'" title="'+(archived?'Bring this property back into the lists, roll-up and count':'Hide this property from the lists, roll-up and count (its data stays on disk)')+'">'+(archived?'Un-archive':'Archive')+'</button>';
-      const archBanner = archived ? '<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the roll-up and the count. Un-archive to bring it back.</div>' : '';
+      const archBtn = '';   // 2.9.4 — the Archive action moved to the toolbar "Remove"; un-archive lives in the Properties list
+      const archBanner = archived ? '<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">This property is archived — hidden from the roll-up and the count. Un-archive it from the Properties list to bring it back.</div>' : '';
       host.innerHTML =
         '<details class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm" data-profilekey="'+escapeHtml(key)+'"'+(forceOpen?' open':'')+'>'+
           '<summary class="flex cursor-pointer items-center gap-2 p-4 text-sm"><span class="text-xs font-bold uppercase tracking-wider text-slate-500">Property profile</span>'+comphtml+(archived?' <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">archived</span>':'')+'</summary>'+
@@ -5285,8 +5294,6 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("click", function(e){ const t = e.target; if(!t || !t.closest) return;
       const rb = t.closest("#loanProfileReadAgreement");
       if(rb){ const panel = rb.closest("[data-profilekey]"); if(panel) opReadAgreementStart(panel.getAttribute("data-profilekey")); return; }
-      const ab = t.closest("#loanProfileArchive");
-      if(ab){ const panel = ab.closest("[data-profilekey]"); if(panel){ const k = panel.getAttribute("data-profilekey"); e.preventDefault(); opArchiveProperty(k, !opIsArchived(k)); } return; }
     });
 
     /* ================================================================
@@ -6403,6 +6410,26 @@ tr.flagged:hover td{background:#fee2e2}
         setMode(loans.length ? "view" : "empty");
       });
     }
+    // 2.9.4 — property-based toolbar. "Edit" edits the PROPERTY's info (opens its profile panel);
+    // "Remove" ARCHIVES the property (reversible; its loans are archived with it, since the whole
+    // property leaves opProperties()). Loan-level edit/remove live INSIDE the property (Loan Record
+    // header for a single loan; each Combined-Position row for a stack) and reuse startEdit/removeActive.
+    function editProperty(){
+      const loan = getLoan(state.activeId); if(!loan) return;
+      opOpenPropertyProfile(propertyKey(loan));
+    }
+    function removeProperty(){
+      const loan = getLoan(state.activeId); if(!loan) return;
+      const key = propertyKey(loan), nm = (loan.propertyName) || loanLabel(loan) || key;
+      confirmDialog("Archive “"+nm+"”?", "It leaves the lists, roll-up and count — its loans are archived with it. Reversible: un-archive it from the Properties list.", async () => {
+        try{ await opArchiveProperty(key, true); }catch(e){}
+        const rest = opProperties().filter(p => p.loans && p.loans.length);   // excludes the just-archived property
+        state.activeId = rest.length ? rest[0].loans[0]._id : null;
+        save();
+        toast("“"+nm+"” archived — its loans went with it.", "trash");
+        setMode(state.activeId ? "view" : "empty");
+      }, "Archive");
+    }
 
     function validateLoan(l){
       if(!l.originalAmount || l.originalAmount<=0) return "Original Loan Amount is required and must be greater than 0.";
@@ -7440,11 +7467,17 @@ tr.flagged:hover td{background:#fee2e2}
       const cp = combinedPosition(list), sr = list.find(l => !isMezz(l)) || list[0], srDscr = loanDSCR(sr);
       const loanRow = (l) => {
         const d = compute(l).derived, me = (l._id === loan._id);
-        return '<button type="button" data-loanjump="'+l._id+'" class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition '+(me ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:bg-slate-50")+'">'+
-          '<span class="min-w-0"><span class="block truncate text-sm font-semibold text-slate-800">'+escapeHtml(l.propertyName || loanLabel(l))+(me ? ' <span class="text-[10px] font-bold uppercase text-brand-600">this loan</span>' : '')+'</span>'+
-            '<span class="block text-[11px] text-slate-500">'+(isMezz(l) ? "Mezzanine" : "Senior")+' &middot; '+escapeHtml(l.lenderName || "")+'</span></span>'+
-          '<span class="shrink-0 text-right"><span class="block text-sm font-bold tabular-nums text-slate-900">'+fmtMoney(d.currentBalance)+'</span>'+
-            '<span class="block text-[11px] text-slate-500 tabular-nums">'+fmtPct(d.currentRate)+'</span></span></button>';
+        return '<div class="flex w-full items-center gap-2 rounded-lg border px-2 py-2 transition '+(me ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white")+'">'+
+          '<button type="button" data-loanjump="'+l._id+'" class="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">'+
+            '<span class="min-w-0"><span class="block truncate text-sm font-semibold text-slate-800">'+escapeHtml(l.propertyName || loanLabel(l))+(me ? ' <span class="text-[10px] font-bold uppercase text-brand-600">this loan</span>' : '')+'</span>'+
+              '<span class="block text-[11px] text-slate-500">'+(isMezz(l) ? "Mezzanine" : "Senior")+' &middot; '+escapeHtml(l.lenderName || "")+'</span></span>'+
+            '<span class="shrink-0 text-right"><span class="block text-sm font-bold tabular-nums text-slate-900">'+fmtMoney(d.currentBalance)+'</span>'+
+              '<span class="block text-[11px] text-slate-500 tabular-nums">'+fmtPct(d.currentRate)+'</span></span></button>'+
+          '<span class="flex shrink-0 items-center gap-1">'+
+            '<button type="button" data-loanedit="'+l._id+'" title="Edit this loan" class="grid h-7 w-7 place-items-center rounded-md border border-slate-300 bg-white text-slate-500 hover:bg-slate-50"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>'+
+            '<button type="button" data-loanremove="'+l._id+'" title="Remove this loan" class="grid h-7 w-7 place-items-center rounded-md border border-rose-300 bg-white text-rose-600 hover:bg-rose-50"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>'+
+          '</span>'+
+        '</div>';
       };
       const stat = (label, val, strong) => '<div class="flex items-baseline justify-between gap-3 py-1"><dt class="text-xs text-slate-500">'+label+'</dt><dd class="text-sm '+(strong ? "font-bold" : "font-semibold")+' text-slate-900 tabular-nums">'+val+'</dd></div>';
       return '<section class="mb-5 rounded-xl border-2 border-brand-200 bg-brand-50/40 px-4 py-3.5">'+
@@ -9585,9 +9618,10 @@ tr.flagged:hover td{background:#fee2e2}
        ================================================================ */
     dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
     dom.addBtn.addEventListener("click", startAdd);
-    dom.editBtn.addEventListener("click", startEdit);
-    dom.removeBtn.addEventListener("click", removeActive);
+    dom.editBtn.addEventListener("click", editProperty);     // 2.9.4 — edits the PROPERTY's info
+    dom.removeBtn.addEventListener("click", removeProperty); // 2.9.4 — archives the PROPERTY (+ its loans)
     dom.saveBtn.addEventListener("click", saveForm);
+    (function(){ var le=el("loanRecEdit"), lr=el("loanRecRemove"); if(le) le.addEventListener("click", startEdit); if(lr) lr.addEventListener("click", removeActive); })();   // 2.9.4 — per-loan edit/remove for a single-loan property (Loan Record header)
     // AI: read a loan agreement (desktop shell only)
     if(aiAvailable() && el("aiReadBtn")){
       el("aiReadBtn").hidden = false;
@@ -9649,6 +9683,8 @@ tr.flagged:hover td{background:#fee2e2}
     });
     // Jump to a sibling loan of the same property (from the combined-position panel).
     document.addEventListener("click", (e) => {
+      const ed = e.target.closest("[data-loanedit]"); if(ed){ state.activeId = ed.getAttribute("data-loanedit"); startEdit(); return; }        // 2.9.4 — edit that loan
+      const rm = e.target.closest("[data-loanremove]"); if(rm){ state.activeId = rm.getAttribute("data-loanremove"); removeActive(); return; }   // 2.9.4 — remove that loan
       const b = e.target.closest("[data-loanjump]"); if(!b) return;
       selectLoan(b.getAttribute("data-loanjump"));
     });
