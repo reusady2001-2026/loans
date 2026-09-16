@@ -20,8 +20,10 @@ const clickAddProp=(page)=>page.evaluate(()=>{ const bs=Array.prototype.slice.ca
   ok(n0===27,'baseline is 27 properties (got '+n0+')');
   ok(await page.evaluate(()=>document.getElementById('profileView')===null),'there is no Profile tab section');
 
-  // the portfolio view exposes an "Add Property" button (portfolio level, always visible)
-  ok(await page.evaluate(()=>{ const bs=Array.prototype.slice.call(document.querySelectorAll('[data-addprop]')); return bs.some(function(b){return b.offsetParent!==null;}); }),'the portfolio view shows an "Add Property" button');
+  // 2.9.4 — "Add Property" lives on the Specific-Property toolbar (removed from the portfolio/All-Loans header).
+  await page.evaluate(()=>{ const b=document.getElementById('scopeLoanBtn'); if(b) b.click(); });
+  await page.waitForTimeout(300);
+  ok(await page.evaluate(()=>{ const bs=Array.prototype.slice.call(document.querySelectorAll('[data-addprop]')); return bs.some(function(b){return b.offsetParent!==null;}); }),'the Specific-Property toolbar shows an "Add Property" button');
   // open the modal from that portfolio button
   await clickAddProp(page);
   await page.waitForTimeout(200);

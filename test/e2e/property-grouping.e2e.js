@@ -29,7 +29,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
         .map(tr=>{const td=tr.querySelector('td'); return td?(td.textContent||'').replace(/\s+/g,' ').trim():'';});
     };
     const props=window.opProperties?window.opProperties().length:null;
-    return { coverage:firstCol(/Coverage/i), refi:firstCol(/Refinance Opportunities/i), nProps:props };
+    return { coverage:firstCol(/Coverage/i), nProps:props };   // 2.9.4 — the Refinance Opportunities table folded into Coverage
   });
 
   const hasCombined=(rows)=> rows && rows.some(t=>/Avalon White Plains/i.test(t)&&/2 loans/i.test(t));
@@ -38,9 +38,8 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(hasCombined(PV.coverage),'coverage: Avalon is ONE combined row ("Avalon White Plains … 2 loans")');
   ok(!hasMezzRow(PV.coverage),'coverage: NO mezzanine is its own row (senior + mezz are combined)');
   ok(PV.coverage&&PV.nProps!=null&&PV.coverage.length===PV.nProps,'coverage has exactly one row PER PROPERTY ('+(PV.coverage&&PV.coverage.length)+' rows = '+PV.nProps+' properties), not per loan');
-  ok(hasCombined(PV.refi),'refinance opportunities: Avalon is ONE combined opportunity ("Avalon White Plains … 2 loans")');
-  ok(!hasMezzRow(PV.refi),'refinance opportunities: NO mezzanine is its own row');
-  ok(PV.refi&&PV.nProps!=null&&PV.refi.length===PV.nProps,'refinance opportunities has one row PER PROPERTY ('+(PV.refi&&PV.refi.length)+' = '+PV.nProps+'), not per loan');
+  // 2.9.4 — the standalone "Refinance Opportunities" table was folded into the Coverage table (its
+  // current-rate / market / gap columns now live there), so it is no longer a separate per-property table.
 
   await page.evaluate(()=>{const b=document.getElementById('tabNewBtn');if(b)b.click();const o=document.querySelector('[data-tabopen="underwriting"]');if(o)o.click();});
   await page.waitForFunction(()=>{const v=document.getElementById('uwView');return v&&!v.hidden&&document.getElementById('opPropPick');},null,{timeout:8000});
