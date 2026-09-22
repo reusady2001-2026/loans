@@ -8254,6 +8254,12 @@ tr.flagged:hover td{background:#fee2e2}
        ================================================================ */
     function aiAvailable(){ return !!(window.ldsShell && ldsShell.aiExtract); }
     function aiChatAvailable(){ return !!(window.ldsShell && ldsShell.aiChat); }   // free-form chat bridge (Assistant)
+    // Last aiStatus() snapshot, shared by every connection-status reader below
+    // (settings badge, connection dialog, the assistant's model/effort pickers).
+    // Must live in this always-present section: under "use strict" a bare
+    // assignment to it (e.g. aiAsstRefreshConn) would otherwise throw a
+    // ReferenceError that surfaces as a false "Could not reach the AI bridge".
+    var aiStatusCache = null;
     // ---- Claude connection, reachable from the main Settings menu -----------
     // Self-contained (its own element ids) so it never disturbs the loan-reader's
     // connection panel. Same Claude bridge: subscription (Claude Code CLI) or key.
