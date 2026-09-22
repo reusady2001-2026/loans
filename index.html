@@ -1153,6 +1153,10 @@
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v6M9 11h6"/></svg>
             New chat
           </button>
+          <button id="aiAsstHistoryBtn" type="button" title="History — your saved conversations (reopen and continue, search, rename, pin, delete)" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            History
+          </button>
           <button id="aiAsstClose" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
@@ -1163,6 +1167,7 @@
         <div id="aiAsstSettings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
       </div>
       <div id="aiAsstLog" class="flex-1 min-h-[240px] overflow-auto p-5 space-y-4"></div>
+      <div id="aiAsstHistoryPanel" class="hidden flex-1 min-h-[240px] overflow-auto p-4"></div>
       <div class="p-4 border-t border-slate-100 space-y-2">
         <div class="flex items-center gap-2">
           <span class="grid h-5 w-5 shrink-0 place-items-center text-slate-400"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span>
@@ -8863,6 +8868,7 @@ tr.flagged:hover td{background:#fee2e2}
       el("aiAsstModal").classList.remove("hidden"); el("aiAsstModal").classList.add("flex");
       el("aiAsstSettings").classList.add("hidden");
       if(!aiAsstHistory.length) aiAsstRenderWelcome();
+      aiAsstToggleHistory(false);
       // If opened from a loan, focus that loan's property by default.
       if((state.mode==="view"||state.mode==="edit"||state.mode==="refi") && state.activeId){ var al=getLoan(state.activeId); if(al) aiAsstFocusPropKey=propertyKey(al); }
       aiAsstFillProps();
@@ -8904,6 +8910,16 @@ tr.flagged:hover td{background:#fee2e2}
     // chat). When focused, files they attach are SAVED under that property (persist across
     // restarts) and the assistant reads that property's saved files first — no re-uploading.
     var aiAsstFocusPropKey = "";          // "" = general chat; else a property's propertyKey
+    // ---- Saved conversations (2.9.5): the running thread is persisted per scope so it survives
+    // restarts, can be reopened and continued (with its full memory), and is searchable. Scope =
+    // the focused property's key, or "portfolio" for a general chat.
+    var aiAsstConvId = "";                // id of the conversation being written (assigned on first save)
+    var aiAsstConvScope = "";             // the scope it's saved under (fixed once the first message is sent)
+    var aiAsstConvTitle = "";             // its title (auto from the first question, or renamed)
+    var aiAsstConvPinned = false;
+    var aiAsstConvFiles = [];             // [{name}] files attached during this conversation (also in the property's Documents)
+    var aiAsstHistoryOpen = false;
+    function chatsAvailable(){ return !!(window.ldsShell && ldsShell.chatSave); }
     function docsAvailable(){ return !!(window.ldsShell && ldsShell.docSave); }
     function aiAsstProperties(){
       var seen={}, out=[];
@@ -9114,6 +9130,7 @@ tr.flagged:hover td{background:#fee2e2}
       // Focus property: the picker, else a property whose name appears in the message.
       var focusKey = aiAsstFocusPropKey || aiAsstDetectProp(question);
       var focusName = focusKey ? aiAsstPropName(focusKey) : "";
+      if(!aiAsstConvScope) aiAsstConvScope = focusKey || "portfolio";   // fix the conversation's scope at its first message
       var chips = ready.length ? ('<div class="mt-1.5 flex flex-wrap gap-1">'+ready.map(function(f){ return '<span class="inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[11px]">📎 '+escapeHtml(f.name)+'</span>'; }).join("")+'</div>') : "";
       var propTag = focusName ? ('<div class="mt-1 text-[11px] opacity-80">🏢 '+escapeHtml(focusName)+'</div>') : "";
       aiAsstBubble("user", escapeHtml(question||"(sent the attached file"+(ready.length>1?"s":"")+")")+chips+propTag);
@@ -9121,6 +9138,7 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstHistory.push(userTurn); aiAsstPendingTurn=userTurn;
       var filesBlock = ready.length ? (ready.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")) : "";
       var toSave = ready.slice();                    // keep refs (with .fileObj) to persist under the property
+      toSave.forEach(function(f){ if(f&&f.name && !aiAsstConvFiles.some(function(x){return x.name===f.name;})) aiAsstConvFiles.push({name:f.name}); });   // record chat files (they also land in the property's Documents)
       aiAsstFiles = []; aiAsstRenderAttach();          // attachments are consumed by this message
       var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
       aiAsstSetBusy(true);
@@ -9176,6 +9194,7 @@ tr.flagged:hover td{background:#fee2e2}
               if(res&&res.msg) aiAsstBubble("assistant", '<span class="'+(res.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(res.ok?"✓ ":"")+escapeHtml(res.msg)+'</span>', {error:!res.ok});
               if(res&&res.ok&&res.close) setTimeout(function(){ aiAsstClose(); toast(res.msg,"check"); }, 400);
             }
+            aiAsstPersist();          // save the conversation after each completed turn
             aiAsstSetBusy(false);
           })
           .catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant", "The request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), {error:true}); aiAsstSetBusy(false); });
@@ -9216,12 +9235,147 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstBubble("assistant", '<span class="inline-flex items-center gap-1.5 text-[12px] text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>Stopped — send a new message when you’re ready.</span>');
       aiAsstSetBusy(false);
     }
+    // Persist the running thread. Called after each completed turn; disk mirrors the live thread,
+    // so reopening a conversation restores exactly what the assistant last had.
+    function aiAsstPersist(){
+      if(!chatsAvailable()) return;
+      var msgs=aiAsstHistory.filter(function(m){ return m && m.text; });
+      if(!msgs.length) return;
+      var scope=aiAsstConvScope || aiAsstFocusPropKey || "portfolio"; aiAsstConvScope=scope;
+      var scopeName = scope==="portfolio" ? "Portfolio" : (aiAsstPropName(scope)||"");
+      ldsShell.chatSave({ scope:scope, scopeName:scopeName, id:aiAsstConvId||"", title:aiAsstConvTitle||"", messages:msgs, files:aiAsstConvFiles||[], pinned:aiAsstConvPinned })
+        .then(function(r){ if(r&&r.ok&&r.conversation){ aiAsstConvId=r.conversation.id; aiAsstConvTitle=r.conversation.title; } })
+        .catch(function(){});
+    }
+    // Re-render the whole thread from aiAsstHistory (used when reopening a saved conversation).
+    function aiAsstRenderThread(){
+      var log=el("aiAsstLog"); if(!log) return; log.innerHTML="";
+      if(!aiAsstHistory.length){ aiAsstRenderWelcome(); return; }
+      aiAsstHistory.forEach(function(m){
+        if(!m||!m.text) return;
+        if(m.role==="user"){ aiAsstBubble("user", escapeHtml(String(m.text).replace(/\n\[(attached|property):[^\]]*\]/g,"").trim())); }
+        else { var p=aiAsstParseAction(m.text); var t=p.text||(p.action?"":m.text); if(t) aiAsstBubble("assistant", escapeHtml(t)); }
+      });
+    }
+    // Reopen a saved conversation and continue it — its full thread returns to context, so the
+    // assistant "remembers" everything that was said in it.
+    function aiAsstOpenConv(scope, id){
+      if(!chatsAvailable()) return;
+      ldsShell.chatRead({ scope:scope, id:id }).then(function(r){
+        if(!r||!r.ok||!r.conversation){ toast("Couldn’t open that conversation","info"); return; }
+        var c=r.conversation;
+        if(aiAsstBusy) aiAsstStop();
+        aiAsstHistory=(c.messages||[]).map(function(m){ return {role:m.role, text:m.text}; });
+        aiAsstConvId=c.id; aiAsstConvScope=c.scope||scope; aiAsstConvTitle=c.title||""; aiAsstConvFiles=c.files||[]; aiAsstConvPinned=!!c.pinned;
+        if(c.scope && c.scope!=="portfolio"){ aiAsstFocusPropKey=c.scope; aiAsstFillProps(); }
+        aiAsstRenderThread();
+        aiAsstToggleHistory(false);
+        toast("Reopened — the assistant has this conversation’s memory","check");
+      }).catch(function(){ toast("Couldn’t open that conversation","info"); });
+    }
+    function aiAsstWhen(ts){
+      if(!ts) return ""; var d=new Date(ts); if(isNaN(d.getTime())) return "";
+      var now=new Date(), day=86400000, diff=Date.now()-ts;
+      if(diff<day && d.toDateString()===now.toDateString()) return d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      if(diff<7*day) return d.toLocaleDateString([], {weekday:'short'})+" "+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      var o={month:'short',day:'numeric'}; if(d.getFullYear()!==now.getFullYear()) o.year='numeric';
+      return d.toLocaleDateString([], o);
+    }
+    function aiAsstHistQuery(){ var s=el("aiAsstHistSearch"); return s?s.value:""; }
+    function aiAsstHistScopes(){ var s=[]; if(aiAsstFocusPropKey) s.push(aiAsstFocusPropKey); s.push("portfolio"); return s; }
+    // Toggle the history panel over the message log.
+    function aiAsstToggleHistory(show){
+      if(show==null) show=!aiAsstHistoryOpen;
+      aiAsstHistoryOpen=!!show;
+      var log=el("aiAsstLog"), panel=el("aiAsstHistoryPanel");
+      if(panel) panel.classList.toggle("hidden", !show);
+      if(log) log.classList.toggle("hidden", show);
+      var btn=el("aiAsstHistoryBtn"); if(btn){ btn.classList.toggle("bg-brand-50", show); btn.classList.toggle("text-brand-700", show); }
+      if(show) aiAsstRenderHistory();
+    }
+    function aiAsstRenderHistory(){
+      var panel=el("aiAsstHistoryPanel"); if(!panel) return;
+      if(!chatsAvailable()){ panel.innerHTML='<div class="text-center text-sm text-slate-400 py-8">Saved conversations are available in the desktop app.</div>'; return; }
+      panel.innerHTML=
+        '<div class="mb-3 flex items-center gap-2">'+
+          '<input id="aiAsstHistSearch" type="text" placeholder="Search your conversations…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500">'+
+          '<button id="aiAsstHistBack" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">Back to chat</button>'+
+        '</div>'+
+        '<div id="aiAsstHistList" class="space-y-2"><div class="text-xs text-slate-400 py-6 text-center">Loading…</div></div>';
+      var srch=el("aiAsstHistSearch"); if(srch){ srch.addEventListener("input", function(){ aiAsstHistFilter(this.value); }); setTimeout(function(){ try{srch.focus();}catch(e){} },30); }
+      var bk=el("aiAsstHistBack"); if(bk) bk.addEventListener("click", function(){ aiAsstToggleHistory(false); });
+      aiAsstHistFilter("");
+    }
+    function aiAsstHistFilter(query){
+      var list=el("aiAsstHistList"); if(!list) return;
+      query=String(query||"").trim(); var scopes=aiAsstHistScopes();
+      if(query){
+        ldsShell.chatSearch({ query:query, scopes:scopes }).then(function(r){
+          var ms=(r&&r.matches)||[];
+          list.innerHTML = ms.length ? ms.map(function(m){ return aiAsstHistRow(m.scope, m.id, m.title, m.updatedAt, m.snippet||m.scopeName, false); }).join("") : '<div class="text-xs text-slate-400 py-6 text-center">No conversations match “'+escapeHtml(query)+'”.</div>';
+          aiAsstWireHistRows(list);
+        }).catch(function(){ list.innerHTML='<div class="text-xs text-rose-500 py-6 text-center">Search failed.</div>'; });
+        return;
+      }
+      Promise.all(scopes.map(function(s){ return ldsShell.chatList({scope:s}).then(function(r){ return {scope:s, r:r}; }).catch(function(){ return {scope:s, r:null}; }); })).then(function(results){
+        var rows=[];
+        results.forEach(function(x){ ((x.r&&x.r.conversations)||[]).forEach(function(c){ rows.push({scope:x.scope, c:c}); }); });
+        rows.sort(function(a,b){ return (b.c.pinned?1:0)-(a.c.pinned?1:0) || (b.c.updatedAt||0)-(a.c.updatedAt||0); });
+        list.innerHTML = rows.length
+          ? rows.map(function(x){ var sub=(x.c.scopeName||(x.scope==="portfolio"?"Portfolio":""))+(x.c.msgCount?(" · "+x.c.msgCount+" message"+(x.c.msgCount===1?"":"s")):""); return aiAsstHistRow(x.scope, x.c.id, x.c.title, x.c.updatedAt, sub, x.c.pinned); }).join("")
+          : '<div class="text-xs text-slate-400 py-8 text-center">No saved conversations yet.<br>Ask the assistant something and it’ll be saved here.</div>';
+        aiAsstWireHistRows(list);
+      });
+    }
+    function aiAsstHistRow(scope, id, title, updatedAt, sub, pinned){
+      var when=aiAsstWhen(updatedAt); var meta=(sub||"")+(when?((sub?" · ":"")+when):"");
+      var star='<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="'+(pinned?"currentColor":"none")+'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.9 7.1.6-5.4 4.7 1.6 7L12 17.8 5.8 21.2l1.6-7L2 9.5l7.1-.6z"/></svg>';
+      return '<div class="aiAsstHistItem group rounded-xl border '+(id===aiAsstConvId?"border-brand-300 bg-brand-50/50":"border-slate-200 bg-white")+' px-3 py-2 hover:border-brand-300 hover:bg-brand-50/40 transition" data-scope="'+escapeHtml(scope)+'" data-id="'+escapeHtml(id)+'">'+
+        '<div class="flex items-start gap-2">'+
+          '<button type="button" data-hopen="1" class="flex-1 min-w-0 text-left">'+
+            '<div class="flex items-center gap-1.5">'+(pinned?'<span class="shrink-0 text-brand-600">'+star+'</span>':'')+'<span class="httl truncate text-sm font-semibold text-slate-800">'+escapeHtml(title||"Conversation")+'</span></div>'+
+            '<div class="mt-0.5 truncate text-[11px] text-slate-400">'+escapeHtml(meta)+'</div>'+
+          '</button>'+
+          '<div class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">'+
+            '<button type="button" data-hpin="'+(pinned?"0":"1")+'" title="'+(pinned?"Unpin":"Pin")+'" class="grid h-6 w-6 place-items-center rounded '+(pinned?"text-brand-600":"text-slate-400")+' hover:bg-white hover:text-brand-600">'+star+'</button>'+
+            '<button type="button" data-hren="1" title="Rename" class="grid h-6 w-6 place-items-center rounded text-slate-400 hover:bg-white hover:text-slate-700"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'+
+            '<button type="button" data-hdel="1" title="Delete" class="grid h-6 w-6 place-items-center rounded text-slate-400 hover:bg-white hover:text-rose-600"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    }
+    function aiAsstInlineRename(it, scope, id){
+      var openBtn=it.querySelector("[data-hopen]"); if(!openBtn) return;
+      var titleEl=openBtn.querySelector(".httl"); var old=titleEl?titleEl.textContent:"";
+      var inp=document.createElement("input");
+      inp.type="text"; inp.value=old; inp.className="w-full rounded border border-brand-400 px-2 py-1 text-sm outline-none";
+      var slot=openBtn.parentNode; slot.replaceChild(inp, openBtn); inp.focus(); inp.select();
+      var closed=false;
+      var done=function(save){ if(closed) return; closed=true;
+        var name=inp.value.trim();
+        if(save && name && name!==old){ ldsShell.chatMeta({scope:scope,id:id,title:name}).then(function(){ if(id===aiAsstConvId) aiAsstConvTitle=name; aiAsstHistFilter(aiAsstHistQuery()); }); }
+        else { aiAsstHistFilter(aiAsstHistQuery()); }
+      };
+      inp.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); done(true); } else if(e.key==="Escape"){ e.preventDefault(); done(false); } });
+      inp.addEventListener("blur", function(){ done(true); });
+    }
+    function aiAsstWireHistRows(list){
+      list.querySelectorAll(".aiAsstHistItem").forEach(function(it){
+        var scope=it.getAttribute("data-scope"), id=it.getAttribute("data-id");
+        var op=it.querySelector("[data-hopen]"); if(op) op.addEventListener("click", function(){ aiAsstOpenConv(scope,id); });
+        var pin=it.querySelector("[data-hpin]"); if(pin) pin.addEventListener("click", function(ev){ ev.stopPropagation(); var np=pin.getAttribute("data-hpin")==="1"; ldsShell.chatMeta({scope:scope,id:id,pinned:np}).then(function(){ if(id===aiAsstConvId) aiAsstConvPinned=np; aiAsstHistFilter(aiAsstHistQuery()); }); });
+        var ren=it.querySelector("[data-hren]"); if(ren) ren.addEventListener("click", function(ev){ ev.stopPropagation(); aiAsstInlineRename(it, scope, id); });
+        var del=it.querySelector("[data-hdel]"); if(del) del.addEventListener("click", function(ev){ ev.stopPropagation(); confirmDialog("Delete conversation","Delete this saved conversation? This can’t be undone.", function(okd){ if(!okd) return; ldsShell.chatDelete({scope:scope,id:id}).then(function(){ if(id===aiAsstConvId) aiAsstConvId=""; aiAsstHistFilter(aiAsstHistQuery()); }); }, "Delete"); });
+      });
+    }
     // Start a new chat: clear the running thread + any staged attachments and show the
     // welcome. The loans themselves are untouched — this only frees the assistant's context.
     function aiAsstNewSession(){
       if(aiAsstBusy) aiAsstStop();
       aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach();
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
+      aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
+      aiAsstToggleHistory(false);
       aiAsstRenderWelcome();
       toast("Started a new chat","check");
     }
@@ -9251,6 +9405,7 @@ tr.flagged:hover td{background:#fee2e2}
           aiAsstHistory=[{role:"assistant", text:"[Summary of the earlier conversation]\n"+summary, compacted:true}];
           var log=el("aiAsstLog"); if(log) log.innerHTML="";
           aiAsstBubble("assistant", '<div class="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Conversation compacted</div><div class="text-[13px] text-slate-600 whitespace-pre-wrap">'+escapeHtml(summary)+'</div>');
+          aiAsstPersist();          // the saved conversation follows the live thread
           aiAsstSetBusy(false);
           toast("Compacted — freed up context","check");
         })
@@ -9333,6 +9488,7 @@ tr.flagged:hover td{background:#fee2e2}
       el("aiAsstInput").addEventListener("keydown", (e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); aiAsstAsk(el("aiAsstInput").value); } });
       if(el("aiAsstNew")) el("aiAsstNew").addEventListener("click", aiAsstNewSession);
       if(el("aiAsstCompact")) el("aiAsstCompact").addEventListener("click", aiAsstCompact);
+      if(el("aiAsstHistoryBtn")) el("aiAsstHistoryBtn").addEventListener("click", function(){ aiAsstToggleHistory(); });
       if(el("aiAsstProp")) el("aiAsstProp").addEventListener("change", function(){ aiAsstFocusPropKey=this.value||""; aiAsstUpdatePropDocs(); });
       if(el("aiAsstModelPick")) el("aiAsstModelPick").addEventListener("change", function(){ var v=(this.value||"").trim(); this.value=v; if(ldsShell.aiSetModel) ldsShell.aiSetModel(v).then(function(r){ if(aiStatusCache) aiStatusCache.model=(r&&typeof r.model==="string")?r.model:v; }); });
       if(el("aiAsstEffortPick")) el("aiAsstEffortPick").addEventListener("change", function(){ var v=this.value; if(ldsShell.aiSetEffort) ldsShell.aiSetEffort(v).then(function(){ if(aiStatusCache) aiStatusCache.effort=v; }); });

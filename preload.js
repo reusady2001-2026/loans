@@ -113,6 +113,13 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docMove: (fromKey, toKey, propName) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName }),
   // Reveal the documents folder in the OS file manager.
   openDocsFolder: () => ipcRenderer.invoke('lds:docs-open-folder'),
+  // Assistant chat history (per-property + portfolio), persisted on disk.
+  chatSave: (payload) => ipcRenderer.invoke('lds:chat-save', payload),       // {scope,scopeName,id?,title?,messages,files?,pinned?} → {ok,conversation}
+  chatList: ({ scope }) => ipcRenderer.invoke('lds:chat-list', { scope }),    // → {ok,scopeName,conversations:[meta]}
+  chatRead: ({ scope, id }) => ipcRenderer.invoke('lds:chat-read', { scope, id }), // → {ok,conversation}
+  chatDelete: ({ scope, id }) => ipcRenderer.invoke('lds:chat-delete', { scope, id }),
+  chatMeta: ({ scope, id, title, pinned }) => ipcRenderer.invoke('lds:chat-meta', { scope, id, title, pinned }), // rename/pin
+  chatSearch: ({ query, scopes }) => ipcRenderer.invoke('lds:chat-search', { query, scopes }), // → {ok,matches:[{scope,scopeName,id,title,updatedAt,score,snippet}]}
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
   // Free-form chat (no tools): {system, prompt, model?, timeoutMs?, cancelToken?} → {ok,text,via,error}.

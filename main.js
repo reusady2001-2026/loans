@@ -342,6 +342,117 @@ ipcMain.handle('lds:docs-open-folder', async () => {
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
+// ---- Assistant chat history (per-property + portfolio) -----------------------
+// Conversations persist under userData/chats/<hash(scope)>/ — same durable, update-safe
+// pattern as the documents store (so 2.9.6's shared DB migrates them like any other file).
+// scope is a property's propertyKey, or the literal "portfolio" for general chats. Each scope
+// folder holds an index.json { scope, scopeName, conversations:[meta] } and one <id>.json per
+// conversation with the full messages. Kept indefinitely; deleted only by hand.
+function chatsDir(){ return path.join(app.getPath('userData'), 'chats'); }
+function chatScopeDir(scope){ const h = crypto.createHash('sha1').update(String(scope || '')).digest('hex').slice(0, 16); return path.join(chatsDir(), h); }
+function readChatIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
+function writeChatIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
+function chatMeta(c){ return { id: c.id, title: c.title || '', createdAt: c.createdAt || 0, updatedAt: c.updatedAt || 0, pinned: !!c.pinned, msgCount: Array.isArray(c.messages) ? c.messages.length : (c.msgCount || 0), scope: c.scope || '', scopeName: c.scopeName || '', fileNames: Array.isArray(c.files) ? c.files.map(f => f && f.name).filter(Boolean) : (Array.isArray(c.fileNames) ? c.fileNames : []) }; }
+function chatSnippet(text, terms){
+  const s = String(text || ''); if(!s) return '';
+  const low = s.toLowerCase(); let pos = -1;
+  for(const t of terms){ const i = low.indexOf(t); if(i >= 0 && (pos < 0 || i < pos)) pos = i; }
+  if(pos < 0) return s.slice(0, 160).replace(/\s+/g, ' ').trim();
+  const start = Math.max(0, pos - 70), end = Math.min(s.length, pos + 120);
+  return (start > 0 ? '…' : '') + s.slice(start, end).replace(/\s+/g, ' ').trim() + (end < s.length ? '…' : '');
+}
+
+// Create or update one conversation (upsert by id). A blank title is auto-filled from the first
+// user message. Returns the conversation's metadata (with its assigned id).
+ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, files, pinned }) => {
+  try {
+    if(!scope) return { ok: false, error: 'missing scope' };
+    const dir = chatScopeDir(scope); fs.mkdirSync(dir, { recursive: true });
+    const idx = readChatIndex(dir); idx.scope = scope; idx.scopeName = scopeName || idx.scopeName || ''; idx.conversations = Array.isArray(idx.conversations) ? idx.conversations : [];
+    const msgs = Array.isArray(messages) ? messages.filter(m => m && m.text) : [];
+    const now = Date.now();
+    const existing = id ? idx.conversations.find(c => c.id === id) : null;
+    const cid = (id && existing) ? id : ('c' + now.toString(36) + Math.random().toString(36).slice(2, 6));
+    let ttl = String(title || '').trim();
+    if(!ttl){ const firstU = msgs.find(m => m.role === 'user' && m.text); ttl = firstU ? String(firstU.text).replace(/\s+/g, ' ').trim().slice(0, 64) : 'New conversation'; }
+    const conv = { id: cid, scope, scopeName: idx.scopeName, title: ttl,
+      createdAt: existing ? (existing.createdAt || now) : now, updatedAt: now,
+      pinned: (pinned != null ? !!pinned : (existing ? !!existing.pinned : false)),
+      messages: msgs, files: Array.isArray(files) ? files : [] };
+    fs.writeFileSync(path.join(dir, cid + '.json'), JSON.stringify(conv));
+    const meta = chatMeta(conv);
+    idx.conversations = idx.conversations.filter(c => c.id !== cid); idx.conversations.push(meta);
+    writeChatIndex(dir, idx);
+    return { ok: true, conversation: meta };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// List one scope's conversations (metadata only), pinned first then most-recent.
+ipcMain.handle('lds:chat-list', (e, { scope }) => {
+  try { const idx = readChatIndex(chatScopeDir(scope));
+    const cs = (idx.conversations || []).slice().sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
+    return { ok: true, scopeName: idx.scopeName || '', conversations: cs };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err), conversations: [] }; }
+});
+// Read one conversation back in full (messages + files) — to reopen and continue it.
+ipcMain.handle('lds:chat-read', (e, { scope, id }) => {
+  try { const c = JSON.parse(fs.readFileSync(path.join(chatScopeDir(scope), String(id) + '.json'), 'utf8')); return { ok: true, conversation: c }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Delete one conversation (file + index entry).
+ipcMain.handle('lds:chat-delete', (e, { scope, id }) => {
+  try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
+    try { fs.unlinkSync(path.join(dir, String(id) + '.json')); } catch (x) {}
+    idx.conversations = (idx.conversations || []).filter(c => c.id !== id); writeChatIndex(dir, idx);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Rename and/or pin one conversation (metadata only — does not bump updatedAt / reorder).
+ipcMain.handle('lds:chat-meta', (e, { scope, id, title, pinned }) => {
+  try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
+    const meta = (idx.conversations || []).find(c => c.id === id); if(!meta) return { ok: false, error: 'not found' };
+    let full = null; try { full = JSON.parse(fs.readFileSync(path.join(dir, String(id) + '.json'), 'utf8')); } catch (x) {}
+    if(title != null){ const t = String(title).trim(); if(t){ meta.title = t; if(full) full.title = t; } }
+    if(pinned != null){ meta.pinned = !!pinned; if(full) full.pinned = !!pinned; }
+    if(full){ try { fs.writeFileSync(path.join(dir, String(id) + '.json'), JSON.stringify(full)); } catch (x) {} }
+    writeChatIndex(dir, idx);
+    return { ok: true, conversation: meta };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Search stored conversations by term overlap (offline, deterministic). scopes = array of scope
+// keys to search; omitted → every scope. Returns ranked matches with a best-matching snippet —
+// used by both the history search box and the assistant's memory recall.
+ipcMain.handle('lds:chat-search', (e, { query, scopes }) => {
+  try {
+    const q = String(query || '').toLowerCase().trim();
+    const terms = Array.from(new Set(q.split(/\s+/).filter(t => t.length >= 2)));
+    if(!terms.length) return { ok: true, matches: [] };
+    const root = chatsDir(); if(!fs.existsSync(root)) return { ok: true, matches: [] };
+    let dirs;
+    if(Array.isArray(scopes) && scopes.length){ dirs = scopes.filter(Boolean).map(s => chatScopeDir(s)); }
+    else { dirs = fs.readdirSync(root).map(h => path.join(root, h)); }
+    const matches = [], seen = {};
+    dirs.forEach(dir => {
+      if(seen[dir]) return; seen[dir] = 1;
+      const idx = readChatIndex(dir);
+      (idx.conversations || []).forEach(meta => {
+        let full = null; try { full = JSON.parse(fs.readFileSync(path.join(dir, meta.id + '.json'), 'utf8')); } catch (x) { return; }
+        const msgs = Array.isArray(full.messages) ? full.messages : [];
+        const hay = (String(meta.title || '') + ' ' + msgs.map(m => (m && m.text) || '').join(' ')).toLowerCase();
+        let score = 0, hitTerms = 0;
+        terms.forEach(t => { let i = hay.indexOf(t), n = 0; while(i >= 0){ n++; i = hay.indexOf(t, i + t.length); } if(n){ hitTerms++; score += n; } });
+        if(score > 0){
+          score += hitTerms * 5;   // reward matching MORE of the distinct query terms, not just many hits of one
+          let best = '', bestHits = -1;
+          msgs.forEach(m => { const txt = String((m && m.text) || ''), low = txt.toLowerCase(); let h = 0; terms.forEach(t => { if(low.indexOf(t) >= 0) h++; }); if(h > bestHits){ bestHits = h; best = txt; } });
+          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, snippet: chatSnippet(best, terms) });
+        }
+      });
+    });
+    matches.sort((a, b) => b.score - a.score || (b.updatedAt || 0) - (a.updatedAt || 0));
+    return { ok: true, matches: matches.slice(0, 12) };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err), matches: [] }; }
+});
+
 // ---- Display scale (window zoom) --------------------------------------------
 // The Settings panel in the renderer drives the app scale. We use Chromium's
 // native zoom factor so the entire UI scales crisply and reflows at any size,
