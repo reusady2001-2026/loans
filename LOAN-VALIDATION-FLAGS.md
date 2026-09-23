@@ -1,0 +1,526 @@
+# Loan Record Validation — Flags for Azriel
+
+Each loan currently in the app is being validated **one at a time** against its
+**executed loan agreement**. Every change to a loan **term** is flagged below with:
+the field, what the app had, what the document actually says, and **exactly where**
+in the agreement the evidence is (page and section, with a quote).
+
+- **[CORRECTION]** = the app had a wrong value.
+- **[ADDED]** = the term was missing from the app record.
+- **$MATERIAL** = the change moves a dollar figure (payment, balance, or balloon).
+
+Page numbers are PDF pages of the executed agreement. Each corrected loan was then
+re-verified against a schedule derived **only** from the note — every stated payment
+and the full amortization schedule match the document **to the cent**.
+
+---
+
+## 1. Avalon Norwalk — Forethought Life Insurance Co. (KKR Loan No. 5300125), dated May 13, 2021
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Amortization structure** | Level annuity (~$359,484/mo P&I) | Interest **+ a fixed $361,684.80 principal** each month from 6/7/2029 | **PDF p.23**, definition of **"Required Amortization Payment"**: *"…commencing on June 7, 2029, and continuing through the Maturity Date, the monthly amount OF $361,684.80."* Supported by **"Monthly Debt Service Payment Amount"** (**PDF p.17**) = interest **+** Required Amortization Payment, and **§2.3 "Loan Payments"** (**PDF p.27**) — first payment 7/7/2021. | **$MATERIAL** |
+| 2 | **Interest-only term** | 96 months | 95 months (first amortizing payment 6/7/2029) | Same as #1: amortization commences 6/7/2029 (PDF p.23); first payment 7/7/2021 (§2.3, PDF p.27) → 95 IO payments. | |
+| 3 | **Prepayment** | *(blank)* | Yield Maintenance; YM Date 3/7/2031 | **PDF p.26**, definition *"'Yield Maintenance Date' shall mean March 7, 2031"*; **§2.4 Prepayments** (**PDF p.28**). | [ADDED] |
+| 4 | **Replacement reserve** | *(blank)* | $6,479.17/mo | **§6.4.1 Replacement Funds** (**PDF p.79**): monthly *"one-twelfth of the product of (x) $250, multiplied by (y) the total number of units."* Units = **311** and the reserve = **$250/unit = $77,750/yr** per **Schedule 6, Initial Approved Annual Budget (PDF p.135, clean scan)**. 311 × $250 ÷ 12 = $6,479.17/mo. *(Corrected from an earlier $6,458.33 read off the OCR'd capex page, which showed 310 units; the clean Schedule 6 header states 311.)* | [ADDED] |
+
+**Effect of #1:** balloon at 6/7/2031 corrected from **$76,682,634 → $70,879,564.80** (−$5.80M); 2029–2031 monthly debt service understated by ~$245k/mo before the fix.
+**Noted (not app fields):** borrower = RK Norwalk LLC / Living Norwalk LLC; non-recourse with bad-boy guaranty (Stanley Rieder); cash-management sweep springs if DSCR < 1.10× (§ definition "Cash Management Sweep Period").
+
+---
+
+## 2. The Lofts at Lafayette Square — Fannie Mae Form 6001.NR / Arbor Commercial Funding I, LLC, dated May 10, 2019
+
+*(Scanned document; the Summary of Loan Terms on PDF p.116 carries a real text layer — exact.)*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 4.31% | **4.305%** | **Schedule 2 (Form 6102.FR), PDF p.115**: *"Fixed Rate 4.305%."* Confirmed by the note's stated payments, **PDF p.116** (exact text): IO $55,686.13 / $57,674.92 / $59,663.71 / $61,652.50 (28/29/30/31-day prior month) and **P&I $82,350.90** — these reproduce only at 4.305%. | **$MATERIAL** |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 11/30/2030 | **PDF p.117, Section IV** "Yield Maintenance/Prepayment Premium Information": *"Yield Maintenance Period End Date: The last day of November, 2030"* (term 138 months). | [ADDED] |
+
+**Noted (not changed):** loan number **"Fannie 892172"** does **not appear** in this agreement (its identifier here is Arbor **Matter No. 16102.445**). It is plausibly the Fannie-assigned number — consecutive with Forest Park's 892174, the sister Arbor loan closed the same day — so it was left as-is but **flagged as unverifiable from this document**. Replacement reserve $2,270.83/mo already matched the note (PDF p.117). 109 residential units; non-recourse.
+
+---
+
+## 3. Villages of Florence — Fannie Mae Form 6001.NR / Prudential Multifamily Mortgage, LLC, dated Nov 12, 2020
+
+*(Scanned document; deal-terms pages 106–108 OCR'd on two passes and cross-checked.)*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 3.12% | **3.115%** | **Schedule 2 (Form 6102.FR), PDF p.107**: *"Fixed Rate 3.115%"* (both OCR passes agree). Confirmed by stated payments, **PDF p.108**: IO $73,591.88 / $76,220.16 / $78,848.44 / $81,476.72 and **P&I $129,953.83** — reproduce only at 3.115%. | **$MATERIAL** |
+| 2 | **Loan number** | "Fannie 891177 series" | **200393285** | Agreement's loan identifiers: **Loan #200393285** (also PMCC Tracking #82281, Property #81528). The prior value **"891177"** matches the executed number of **neither** this loan nor Villages of Burlington (whose real number, confirmed separately, is **200392849**) — it was a spurious identifier carried on the seed. | [CORRECTION] |
+| 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 5/31/2030 (114 mo) | **PDF p.108, Section IV**: *"Yield Maintenance Period End Date: The last day of May, 2030"*; *"Yield Maintenance Period Term: One Hundred Fourteen (114) months."* | [ADDED] |
+| 4 | **Replacement reserve** | *(blank)* | $2,783/mo | Summary of Loan Terms "Monthly Replacement Reserve Deposit" states a whole dollar (**$2,783**); $200/unit/yr × 167 units = $33,400/yr, entered by the lender as $2,783/mo. | [ADDED] |
+
+---
+
+## 4. Woodmont Forge at Hopewell — TIAA (Teachers Insurance and Annuity Association) / Nuveen, dated Feb 19, 2026
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest accrual basis** | Actual/360 (default) | **30/360** | **§2.2(b) (PDF p.6)**: *"Interest on the Principal shall accrue, for each Interest Period, based on a thirty (30) day month/360 day year."* Confirmed by the single fixed IO payment of $357,937.50 in **§2.2(a)(ii)**. | **$MATERIAL** (changes every payment) |
+| 2 | **Loan term** | 85 months | 84 months | **§2.2(a) + Exhibit A**: first Payment Date **4/10/2026**; **Maturity Date 3/10/2033** (Recital B); payments on the 10th → 84 monthly payments. | [CORRECTION] |
+| 3 | **Prepayment** | *(defaulted to YM)* | **flat 1% premium** (modeled as Step-down 1%) | **Exhibit A**: *"Prepayment premium: 1% of principal outstanding at prepayment."* **§2.3(a)**: no prepayment before 3/9/2028, then prepayable in full with the 1% premium. | [CORRECTION] |
+
+**Note:** the note states the payments explicitly — IO **$357,937.50** through 3/10/2031 (§2.2(a)(ii)) and **P&I $435,928.92** from 4/10/2031 (§2.2(a)(iii)); both reproduce to the cent only at 30/360.
+
+---
+
+## 5. 40 N Euclid Ave ("The Euclid") — Fannie Mae Form 6001.NR (Green Rewards) / Greystone Servicing Company LLC, dated Dec 22, 2020
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 6/30/2030 (114 mo) | **PDF p.120, Section IV** "Yield Maintenance/Prepayment Premium Information": *"Yield Maintenance Period End Date: The last day of June, 2030"*; term 114 months. | [ADDED] |
+
+**Verified correct — no change needed:** loan amount $25,296,800; **rate 3.08%** (Actual/360) — the note's stated payments reproduce exactly at 3.08%: IO $60,599.89 / $62,764.17 / $64,928.45 / $67,092.74 (28/29/30/31-day) and **P&I $107,746.88** (Summary of Loan Terms, **PDF p.118–119**); 120-mo term; 48-mo partial IO (first P&I 2/1/2025, last IO 1/1/2025); 360-mo amortization; maturity 1/1/2031; effective 12/22/2020; **replacement reserve $1,417.67/mo** (Summary, **PDF p.120**). No loan number appears in the agreement (Fannie assigns post-closing) — the app's blank is correct. 85 units; borrower Living Euclid LLC / SR LIRH St. Louis LLC (tenants-in-common); guarantors Gershon Kassirer & Stanley Rieder; non-recourse.
+
+*This was the first loan validated with no economic error — only the prepayment type was missing.*
+
+---
+
+## 6. Heritage Key Villas — Valley National Bank / Living Heritage LLC (+ HKMY entities), Promissory Note #95762090.2, made effective Jan 14, 2026
+
+*(Note.pdf is a scan; page 1 carries a real text layer — exact — and pages 2–13 were read from the rendered images. The Commitment Letter is native text.)*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | **Open / at par — prepayable in full or in part any time, no premium** | **Note §6 "Prepayment" (PDF p.2):** *"Borrower may prepay the Loan in part or in full prior to the Maturity Date."* Reinforced by the **Commitment Letter (p.1):** *"it is agreed that there will be no prepayment premium due if Borrower refinances the Loan at any time."* | [ADDED] |
+
+**Verified correct — no economic change needed.** Every rate/term/date field already matched the executed Note:
+- **Amount $61,000,000** — Note preamble (PDF p.1): *"the principal sum of up to SIXTY-ONE MILLION AND 00/100 ($61,000,000.00) DOLLARS."*
+- **Rate 5.70% fixed, then +2.00% margin over the 5-yr UST** — **Note §1 (PDF p.1):** fixed **5.70%** through **2/28/2031**; on **3/1/2031** (the "Interest Rate Change Date") the rate becomes the **5-year U.S. Treasury CMT + 2.00% margin**. Modeled as Hybrid ARM, `index = ust5y`, `spread = 2.00%`, `armInitialFixedMonths = 60`.
+- **12 months interest-only** — **Note §2(a)–(b) (PDF p.1):** interest-only monthly payments **3/1/2026 → 2/1/2027** (12 payments).
+- **P&I on a 30-year amortization from 3/1/2027** — **Note §2 (PDF p.2):** *"…continuing…thereafter, Borrower shall make monthly installments of principal and interest…based upon…a thirty (30) year amortization schedule."*
+- **Maturity 2/28/2036** — **Note §2(c) (PDF p.2):** *"the 'Maturity Date' shall mean February 28, 2036."*
+- **Effective 1/14/2026** — Note preamble (PDF p.1).
+- **Property address refined** to *"2089 Heritage Key Blvd, Kissimmee, FL 34744 (Osceola County)"* per the Commitment Letter (p.1); county confirmed by **Note §7 (PDF p.2)** ("City of Kissimmee and County of Osceola, State of Florida").
+
+**Independent check:** a clean-room schedule built only from the Note terms reproduces the app's rendered schedule **to the cent on all 121 rows** — IO payments $270,433.33 / $289,750.00 / $299,408.33 (28/30/31-day, 5.70% Actual/360), first P&I **$354,044.26** (2/28/2027), the 3/1/2031 reset, and the balloon **$52,777,708.31 → $0.00** at 2/28/2036.
+
+**Conventions noted for Azriel (not documented terms — modeling choices):**
+- **Day-count:** the Note is **silent** on the interest-calculation basis (payments are *"calculated by Lender"*). The app uses **Actual/360** — the standard commercial-bank convention for a lender like Valley National — but this is **not stated in the Note**; if the bank's amortization schedule uses 30/360, every payment would differ slightly.
+- **Rate floor:** the app carries a `rateFloor = 5.70%`, but the **Note states no floor and no cap** on the adjusted rate. It is a modeling guard only and **does not bind** (the projected reset rate is above it).
+- **Reset projection:** offline, the app projects the 3/1/2031 reset at the 5-yr UST catalog fallback (**4.16%**) + 2.00% = **6.16%**; the balloon figure above assumes that projection. The actual reset rate will be the then-current 5-yr UST + 2.00%.
+- **Not app fields:** borrower = Living Heritage LLC + HKMY/2HKMY/3HKMY/4HKMY LLC (joint & several); guarantor = ARBS Real Estate USA Holdings LLC, limited recourse to **25%** of the outstanding balance; DSCR covenant **1.25×** (§10(a)); manager = Living Residential Florida LLC (§10(g)); commitment fee 0.25% ($152,500).
+
+---
+
+## 7. Avalon White Plains — New York Life Insurance Company / Living White Plains LLC, Promissory Note #1628007744.8, dated Feb 10, 2026 (Loan No. 374-1613)
+
+*Two documents: the **Loan Agreement** (native-text .md, reading copy) defers every rate/payment term to the **Promissory Note** (§2.2). The Note (native text) supplies them. The reserve came from the Loan Agreement.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **First Payment Date** | 2029-02-10 (= maturity — impossible) | **March 10, 2026** | **Note, Definitions:** *"'First Payment Date' means March 10, 2026."* Payments are interest-only on the 10th of each month (Note §2(b)). *(Does not change the rendered schedule — the engine anchors off maturity − term — but the stored value was wrong.)* | [CORRECTION] |
+| 2 | **Prepayment** | *(blank)* | **Closed-Period lockout (2/10/2026–2/10/2027), then a Minimum-Interest make-whole** | **Note §4 + Definitions:** *"'Closed Period' means the period commencing on the date hereof and ending on February 10, 2027"*; *"Borrower may not prepay the Loan during the Closed Period"* then may repay in full with a **Prepayment Fee** = the amount by which the **"Minimum Interest Amount … equal to $6,217,253"** exceeds interest actually paid (plus a Breakage Fee if off a Payment Date). Modeled as **Yield Maintenance** — the closest app category for a make-whole/minimum-interest prepayment. | [ADDED] |
+
+**Verified correct — no economic change needed.** Every rate/term/date already matched the Note:
+- **Amount $96,000,000** — Note preamble.
+- **Floating; Interest Rate = greater of (Term SOFR + Spread) and the Floor** — Note Definitions: *"'Interest Rate' … the greater of (a) the sum of (i) the Benchmark …, (ii) the Spread … and (iii) the Benchmark Adjustment, and (b) the Floor Interest Rate."*
+- **Spread 1.75%** — Note: *"'Spread' shall mean 1.75%."*
+- **Rate floor 4.80%** — Note: *"'Floor Interest Rate' … equal to 4.80% plus the Benchmark Adjustment"* (Benchmark Adjustment for Term SOFR = 0%).
+- **Index = 1-Month CME Term SOFR** — Note: *"The Benchmark on the date hereof is Term SOFR"* / *"'Term SOFR' … '1 Month CME Term SOFR'."*
+- **Maturity 2/10/2029** — Note: *"'Maturity Date' shall mean the Payment Date in February, 2029"* (Payment Date = the 10th), with two 12-month extension options to 2/10/2031 (Schedule 1). App carries the initial maturity.
+- **36-month term, fully interest-only** — Note §2(b): interest-only every Payment Date through the Maturity Date; §2(c): entire principal due at maturity.
+- **Interest accrual Actual/360** — **Note §1 (explicit):** *"multiplying (a) the actual number of days elapsed … by (b) a daily rate equal to the Interest Rate … divided by three hundred sixty (360) by (c) the outstanding principal balance."* (App default Actual/360 — this time the Note states it outright.)
+- **CapEx reserve $8,480/mo** — **Loan Agreement §3.3(a):** *"an amount equal to $8,480 (the 'CapEx Reserve Amount')."*
+
+**Independent check:** a clean-room schedule from the Note reproduces the app's rendered **36 rows to the cent** — first interest-only payment **$401,706.67** (28 days, 3/10/2026) and the balloon **$96,444,746.67** (full $96,000,000 principal + final interest) at 2/10/2029. Floating rate is forward-unknowable; offline the app prices Term SOFR at its 3.63% catalog fallback → all-in **5.38%** (floor 4.80% doesn't bind), and the reference adopts that same rate.
+
+**Conventions / context noted for Azriel (not app-field changes):**
+- **Rate cap not added to the record.** The Loan Agreement (§9.1) requires Borrower to buy an interest-rate cap striking **Term SOFR at 4.00%** (all-in ≈ 5.75%), but that is a **separate hedge instrument**, not a cap on the Note's Interest Rate (which is uncapped). Left off the loan record deliberately; noted here.
+- **Full recourse** — Loan Agreement §11.1 (*"Borrower shall be personally liable for the entire Indebtedness"*) — unusual for CRE, but not a tracked field.
+- **Companion Mezzanine loan $24,000,000** (Loan No. 374-1614) confirmed — Loan Agreement §1.1 defines the $24,000,000 Mezzanine Note; validates the separate *Avalon WP (Mezz)* record's amount.
+- `annualRate` 5.36% in the record is a stored snapshot; for a floating loan the app computes the live rate from SOFR + spread, so the field is not used by the schedule and was left as-is.
+
+---
+
+## 8. Avalon WP — Mezzanine — New York Life Insurance Company, Mezzanine Promissory Note #1628007744.9-equiv, dated Feb 10, 2026 (Loan No. 374-1614)
+
+*The $24,000,000 mezzanine companion to loan #7. Its note mirrors the senior note; the only economic difference is the spread.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **First Payment Date** | 2029-02-10 (= maturity) | **March 10, 2026** | **Mezz Note, Definitions:** *"'First Payment Date' means March 10, 2026."* | [CORRECTION] |
+| 2 | **Prepayment** | *(blank)* | **Closed-Period lockout (to 2/10/2027), then a Minimum-Interest make-whole** | **Mezz Note §4 + Definitions:** *"'Closed Period' … ending on February 10, 2027"*; **Prepayment Fee** = shortfall of the **"Minimum Interest Amount … equal to $2,010,563"** vs interest paid. Modeled as **Yield Maintenance**. | [ADDED] |
+
+**Verified correct — no economic change needed:** amount **$24,000,000**; floating, **Term SOFR + 3.25% Spread**, **4.80% Floor**; fully interest-only; **Actual/360**; maturity **2/10/2029**; lien position **Mezzanine**. Independent clean-room schedule reproduces the app's **36 rows to the cent** (offline all-in rate SOFR 3.63% + 3.25% = **6.88%**): first interest-only payment **$128,426.67**, balloon **$24,142,186.67** (full $24,000,000 principal + interest) at 2/10/2029.
+
+---
+
+## 9. Villages of Burlington — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Feb 22, 2019 (Loan No. 200392849)
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 4.88% | **4.875%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms:** *"Fixed Rate 4.875%."* Confirmed by the document's stated **Monthly Debt Service Payment $85,334.83**, which reproduces to the cent only at 4.875%. | **$MATERIAL** |
+| 2 | **Loan number** | "Fannie 891177" | **200392849** | Summary of Loan Terms footer: *"PMCC Tracking #75119, Property #75497, Loan #200392849."* The prior "891177" is not on the executed document (and, per loan #3 above, is not Florence's either). | [CORRECTION] |
+| 3 | **Prepayment** | *(blank)* | Yield Maintenance, ends 8/31/2033 (174 mo) | **Summary of Loan Terms §IV:** *"Yield Maintenance Period End Date: The last day of August, 2033."* | [ADDED] |
+| 4 | **Replacement reserve** | $1,917/mo | **$1,917/mo — confirmed** | Summary of Loan Terms "Monthly Replacement Reserve Deposit" states a whole dollar (**$1,917**); $200/unit/yr × 115 units = $23,000/yr, which the lender enters as $1,917/mo. Seed's $1,917 was correct — **no change.** | ✓ |
+
+**Verified correct:** amount **$16,125,000**; Fixed; **Actual/360** (Summary of Loan Terms — Interest Accrual Method box marked Actual/360); **no interest-only** (Interest Only Term = 0 months); **360-mo amortization, 180-mo term**; first payment 4/1/2019; maturity 3/1/2034. Independent schedule reproduces the app's **180 rows to the cent** — level P&I **$85,334.83**, balloon **$11,150,842.27** at 3/1/2034. Borrower Gregel-GAM Burlington LLC; non-recourse; 115 residential units. This is the only portfolio loan with **no interest-only period** at all.
+
+---
+
+## 10. The Crest at Princeton Meadows — Berkadia Commercial Mortgage LLC (Fannie Mae Form 6001 / 6241 Green Rewards), dated Sep 10, 2019 (Loan No. 9999092121)
+
+*Validated in an earlier round (app v1.8.8–1.8.9) before this evidence log existed; re-verified here in full and to the cent. Source is an OCR reconstruction of a 121-page scan (mean word confidence 93.9%); the Summary of Loan Terms (Form 6102.FR, pages 106–109) came through cleanly and its **stated** payment amounts reproduce the core terms exactly.*
+
+**No record change needed — every field ties to the document:**
+- **Amount $118,000,000 · rate 3.35% Fixed · Actual/360** — proven to the cent by the document's **stated interest-only payments** (Summary of Loan Terms, p.108): *"$307,455.56 … 28-day month; $318,436.11 … 29-day; $329,416.67 … 30-day; $340,397.22 … 31-day."* These reproduce only at $118,000,000 × days × 3.35% ÷ 360.
+- **360-month amortization** — proven by the **stated level P&I $520,041.97** (p.108, *"for the First Principal and Interest Payment Date and each Payment Date thereafter"*), which is the 30/360 annuity of $118,000,000 at 3.35% over 360 months.
+- **72 months interest-only** — p.107: First Payment Date **November 1, 2019**; Last Interest Only Payment Date **October 1, 2025**; First Principal and Interest Payment Date **November 1, 2025**.
+- **144-month term; maturity October 1, 2031; effective September 10, 2019** — pp.106–107.
+- **Interest Accrual Method Actual/360** — p.107 (box marked Actual/360).
+- **Loan number 9999092121** — *"Collateral Reference Number: 9999092121."*
+- **Prepayment: Yield Maintenance** — Schedule 4, *"Standard Yield Maintenance — Fixed Rate"*; Yield Maintenance Period End Date **the last day of March, 2031** (138-month term), p.108.
+- **Replacement reserve $15,723.00/mo** — p.109 (Monthly Replacement Reserve Deposit; initial deposit $0).
+
+**Independent check:** a clean-room schedule reproduces the app's **144 rows to the cent** — first IO $340,397.22 (11/1/2019), first P&I $520,041.97 (11/1/2025), balloon **$103,408,003.54** at 10/1/2031.
+
+**Notes for Azriel (not app-field changes):**
+- **First Payment Date** now correctly reads **2019-11-01** after the cross-cutting model fix below — it previously held the first *P&I* date (2025-11-01). The document's stated *"First Payment Date November 1, 2019"* confirms the fix exactly.
+- The **borrower is two tenants-in-common** — Crest Owners LLC **and** Crest 4204 LLC; the app tracks it as a single record.
+- The Crest is what originally surfaced the interest-only **amortization engine bug** (principal was amortized over 288 months instead of 360, oversizing the P&I to $599,844.85). That was fixed in v1.8.7; the app now produces the documented **$520,041.97**, and this validation confirms it to the cent.
+- **Source caveat:** this is the only validated loan sourced from an **OCR** rather than a clean text layer or clean scan. The Summary-of-Loan-Terms pages reproduce to the cent, but for a closing-binder-grade record the original Schedule 2 scan (pp.106–108) is worth one eyeball.
+
+---
+
+## 11. 36 Washington Ave (Carteret) — Customers Bank / Living Carteret Urban Renewal LLC (et al.), First Mortgage Note, dated Nov 7, 2025 — **NEW LOAN (added to the app)**
+
+*Not previously in the app. Added from the executed closing set; all terms read directly from the native-text Note (#8697173.4) and First Mortgage.*
+
+**Terms (from the Note unless noted):**
+- **Lender: Customers Bank.** Borrower: Living Carteret Urban Renewal LLC, RK Carteret, TL K/L/S, and Villa Carteret Urban Renewal LLC (jointly & severally). Guarantors: Gershon Kassirer + ARBS Real Estate USA Holdings LLC.
+- **Amount $64,000,000** — *"'Principal Amount' shall mean SIXTY-FOUR MILLION AND 00/100 ($64,000,000.00) DOLLARS."*
+- **5.94% fixed, reset 12/1/2030** — *"'Interest Rate' shall mean … 5.94% … per annum"*; *"'Reset Interest Period' … from December 1, 2030 through … the Maturity Date"*; *"'Reset Interest Rate' … the greater of (i) … 5.94% … or (ii) the U.S. Treasury Note Yield plus 250 basis points"*; *"'U.S. Treasury Note Yield' … the five (5) year United States Treasury constant maturity."* → **Hybrid ARM**, index 5-yr UST, spread 2.50%, floor 5.94%, 60-mo initial fixed.
+- **12 months interest-only** — §2(B): interest-only monthly Jan 1, 2026 → Dec 1, 2026.
+- **P&I from 1/1/2027 on a 30-yr amortization; reset re-amortized over 26 yr** — §2(C)–(D).
+- **Maturity December 1, 2035** — *"'Maturity Date' shall mean December 1, 2035."* Balloon at maturity (§2(E)).
+- **Actual/360** — §2(F): *"calculated … based upon the actual number of days elapsed over a 360-day year."*
+- **Prepayment: step-down** — 4% before the 1st Anniversary (12/1/2026); 1% years 1–5; **4% year 5–6** (right after the reset); 1% years 6–maturity; **open** in the last 90 days of each interest period. Modeled as Step-down 1% (the predominant rate).
+- **No replacement/capital reserve** — the closing set holds a Rental Reserve (Escrow Deposit Agreement) and a DSCR reserve (Reserve Account Pledge), both debt-service reserves, not a capital reserve.
+
+**Added as:** Hybrid ARM (5+5), $64,000,000 @ 5.94%, 5-yr UST + 2.50% floored at 5.94%, 12-mo IO, 360-mo amort / 120-mo term, reset at month 60. The app's schedule is internally coherent and ties to the cent (12 IO; first P&I 1/1/2027; reset 1/1/2031; balloon 12/1/2035 → $0).
+
+**⚠️ FLAG — payment to be set as written in the agreement (next version):** the Note states the fixed-period **P&I is $384,807.04/mo** (§2(C)), which Customers Bank sized on a **true Actual/360** basis. The app currently computes a 30/360 annuity = **$381,247.02** (~$3,560/mo lower). Per Yuval, the app will get a **"fixed payment" option** in the next version to lock each loan's P&I to the figure written in its agreement; when that ships, set Carteret's fixed-period payment to **$384,807.04** (the reset-period payment recalculates at the reset rate over a 26-yr amortization). Recorded in `TODO.md`. The same likely applies to **1222 Commerce St** (the other Customers Bank Actual/360 Hybrid ARM).
+
+---
+
+## 12. Reatta Ranch — FS CREIT Originator LLC (Rialto) / Living Reatta Ranch LLC, Loan Agreement (Floating Rate), dated Dec 10, 2025 (Loan ID 20251209)
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Property address** | *(blank)* | 810 Tally Blvd, Justin, TX 76247 (300 units) | Loan Agreement property description / header. | [ADDED] |
+| 2 | **Prepayment** | *(blank)* | Minimum Interest Maintenance Premium + 0.25% Exit Fee | **§2.3 Prepayments + Definitions:** prepayment requires *"the applicable Minimum Interest Maintenance Premium, … the Exit Fee"* ("Exit Fee" = 0.25% of original principal). Modeled as Yield Maintenance (make-whole/minimum-interest). | [ADDED] |
+
+**Verified correct — no economic change needed:** amount **$47,000,000**; floating, **Interest Rate = greater of (1-mo Term SOFR + 2.50% Spread) and the 5.75% Floor** (§ "Applicable Interest Rate": *"6.3125% … for the [initial] period … thereafter … the greater of (A) the … Benchmark … and … the Spread, and (B) the Floor Rate"*); index Term SOFR; **fully interest-only**; **Actual/360** (*"the actual number of days elapsed"*); payments on the **9th**; first payment **1/9/2026**; initial stated maturity **12/9/2028** (two 1-yr extension options to 12/9/2030). Independent schedule reproduces the app's **36 rows to the cent** (offline SOFR 3.63% + 2.50% = 6.13%): first IO $248,094.72 (1/9/2026), balloon **$47,240,091.67** (full $47,000,000 + interest) at 12/9/2028.
+
+**Notes for Azriel (not app-field changes):** the opening **6.3125%** rate applied only closing→12/14/2025 (a stub), then floating. The Benchmark is *rounded up to the nearest 1/16%*, and a rate cap is required (Benchmark Cap Rate 5.00% on SOFR) — a separate hedge, left off the record. `annualRate` 6.11% is a floating snapshot (the app computes the live rate from SOFR + spread). Borrower Living Reatta Ranch LLC (managed by ARBS); property manager TLBP Management.
+
+---
+
+## 13. Villages of Whitewater — Bellwether Enterprise Mortgage Investments, LLC (Fannie Mae Form 6001.NR), dated July 31, 2017
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 1/31/2032 (174 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of January, 2032."* | [ADDED] |
+
+**Verified correct — rate already matched:** amount **$11,392,000**; **Fixed 4.700%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 9/1/2017; maturity 8/1/2032; **replacement reserve $1,522/mo** — *"Monthly Replacement Reserve Deposit $1,522"* (Summary of Loan Terms, Form 6102.FR, p.6; the document states a whole dollar). The document's stated **Monthly Debt Service $59,083.22** reproduces only at 4.700%; the app's schedule ties to the cent on all **180 rows** (balloon $7,797,931.42 at 8/1/2032). Borrower Gregel-GAM Harrison I, LLC; non-recourse; 83 units. *(Every figure here was verified against Yuval's clean scan of the Summary of Loan Terms pp.111–116 — no OCR caveat remains.)*
+
+---
+
+## 14. Villages of Whitewater II — Bellwether Enterprise Mortgage Investments, LLC (Fannie Mae Form 6001.NR), dated Feb 13, 2020
+
+*The supplemental sibling to §13 — adjacent property in Harrison OH, same lender/principals, coterminous maturity (8/1/2032). Tenant-in-common borrower.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | Yield Maintenance, ends 1/31/2032 (143 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of January, 2032."* | [ADDED] |
+
+**Verified correct — rate already matched:** amount **$10,695,000**; **Fixed 3.830%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, **149-mo term** (coterminous with the senior at 8/1/2032); first payment 4/1/2020; maturity 8/1/2032. The document's stated **Monthly Debt Service $50,016.96** reproduces only at 3.830% (the annuity ties exactly); the app's schedule ties to the cent on all **149 rows** (balloon $7,780,529.53 at 8/1/2032). Borrower **Gregel-GAM Harrison II, LLC (91.836%) + Richmark Harrison Investors, LLC (8.164%), as tenants-in-common**; non-recourse; 76 units. No loan number in the agreement (Fannie assigns post-closing).
+
+**Replacement reserve $1,267/mo — kept, with a source note:** the converter could not cleanly read the Monthly Replacement Reserve Deposit cell (76 units × $200/yr ÷ 12 = $1,266.67 → **$1,267**, with a partially-legible trailing 7). The seed's **$1,267** (whole dollar, consistent with the Fannie whole-dollar convention confirmed on the sister loan §13) is retained — **not** re-derived to cents. Worth one eyeball against the original scan to make fully airtight.
+
+---
+
+## 15. Weaver Mill (Villages of Florence at Weaver Mill) — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Nov 12, 2020
+
+*Sister loan to §3 (Villages of Florence) — same lender, same closing date, coterminous maturity (12/1/2030); consecutive PMCC tracking #s (this one **#82280**, Florence #82281). Combined ~$38.7M / 220 units, all maturing 12/1/2030.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 3.12% | **3.115%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms, p.107:** *"Fixed Rate 3.115%."* Confirmed by the document's **stated payments** (p.108): IO $20,203.54 / $20,925.10 / $21,646.65 / $22,368.21 (28/29/30/31-day) and P&I **$35,676.87** — all reproduce only at 3.115%. | **$MATERIAL** |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 5/31/2030 | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of May, 2030."* | [ADDED] |
+
+**Verified correct:** amount **$8,339,000**; **Actual/360**; **24 months interest-only** (first payment 1/1/2021, last IO 12/1/2022, first P&I 1/1/2023); 360-mo amortization, 120-mo term; maturity 12/1/2030; **replacement reserve $883.33/mo** — *"Monthly Replacement Reserve Deposit $883.33"* (p.109; the document states this **with cents**, so the seed's $883.33 is correct — **no change**). Independent schedule reproduces the app's **120 rows to the cent** — first P&I $35,676.87 (1/1/2023), balloon **$6,861,091.82** at 12/1/2030. Borrower Gregel-GAM Florence-Weaver, LLC; non-recourse; 53 units. No Fannie loan number in the agreement (only PMCC Tracking #82280).
+
+**Effect of #1:** at 3.12% the payments/schedule were slightly off; at the executed **3.115%** every row ties to the document. *(One of the two "cents reserves to re-check" is now resolved — Weaver Mill's $883.33 is the document's stated figure. Forest Park's $2,395.83 remains to be checked against its document.)*
+
+---
+
+## 16. Villages of Independence — Prudential Multifamily Mortgage, LLC (Fannie Mae Form 6001.NR), dated Dec 20, 2018 (Loan No. 200392816)
+
+*The oldest of the Prudential/Gregel-GAM loans (Dec 2018) — highest rate in the portfolio.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Loan number** | *(blank)* | **200392816** | Loan identifiers: *"PMCC Tracking #74578 · Property #74960 · Loan #200392816."* | [ADDED] |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 6/30/2033 (174 mo) | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of June, 2033."* | [ADDED] |
+
+**Verified correct — rate already matched:** amount **$14,175,000**; **Fixed 5.230%** (already in the app — no change); **Actual/360**; **no interest-only**; 360-mo amortization, 180-mo term; first payment 2/1/2019; maturity 1/1/2034; **replacement reserve $1,822/mo** (stated whole dollar; seed correct — no change). The document's stated **Monthly Debt Service $78,099.37** reproduces only at 5.230%; the app's schedule ties to the cent on all **180 rows** (balloon $9,978,263.92 at 1/1/2034). Borrower Gregel-GAM Independence LLC; non-recourse; 106 units.
+
+---
+
+## 17. The Residences at Forest Park — Arbor Commercial Funding I, LLC (Fannie Mae Form 6001.NR), dated May 10, 2019
+
+*Sister loan to §2 (The Lofts at Lafayette Square) — same lender, same closing date, same maturity (6/1/2031), overlapping tenant-in-common borrower entities; combined ~$40.4M / 224 units.*
+
+| # | Field | App had | Document says | Evidence | |
+|---|---|---|---|---|---|
+| 1 | **Interest rate** | 4.31% | **4.305%** | **Schedule 2 (Form 6102.FR), Summary of Loan Terms, p.115:** *"Fixed Rate 4.305%."* Confirmed by the document's **stated payments** (p.116): IO $79,650.15 / $82,494.80 / $85,339.45 / $88,184.10 (28/29/30/31-day) and P&I **$117,789.87** — all reproduce only at 4.305%. | **$MATERIAL** |
+| 2 | **Prepayment** | *(blank)* | Yield Maintenance, ends 11/30/2030 | **Summary of Loan Terms §IV:** Yield Maintenance Period End Date *"the last day of November, 2030."* | [ADDED] |
+
+**Verified correct:** amount **$23,788,000**; **Actual/360**; **84 months interest-only** (first payment 7/1/2019, first P&I 7/1/2026); 360-mo amortization, 144-mo term; maturity 6/1/2031. Independent schedule reproduces the app's **144 rows to the cent** — first P&I $117,789.87 (7/1/2026), balloon **$21,736,551.64** at 6/1/2031. Borrower is a four-entity **tenant-in-common** group (2709 Heath DE / HGWK Holdings DE / Deutsch 1124 DE / The Residences DE); non-recourse; 115 units.
+
+**Replacement reserve $2,395.83 — kept, with a source caveat:** the annual is confirmed (**$28,750** = 115 units × $250/yr), but the Summary of Loan Terms was OCR-emptied, so the *monthly* figure ($28,750 ÷ 12 = **$2,395.83**) could not be cleanly read from the stated cell. Retained as-is (not re-derived away); worth one eyeball against the original scan. **Loan number "Fannie 892174"** is not stated in the agreement (which carries Arbor Matter No. 16102.446) — plausibly the Fannie-assigned number, consecutive with the sister Lofts' 892172, but unverified from this document (same caveat as §2).
+
+**Effect of #1:** at 4.305% every row ties to the document; the 4.31% was a rounding. *(This resolves the second of the two "cents reserves to re-check" — Forest Park's annual is confirmed, monthly noted as OCR-uncertain.)*
+
+---
+
+## 18. K2 Sweetwater (FIU Residences) — **Senior Construction Loan**, dated Dec 20, 2021 — **NEW LOAN (added to the app)**
+
+> **This is one of two separate loans on the K2 Sweetwater property — the *senior*.** It is NOT the same loan as the mezzanine (§19). Different lender, different borrower, different rate, different collateral. Two loans, not one.
+
+*FIU student housing at 10726 SW 7th Street, Miami FL (developer AdamAmerica; GC Coastal Construction; total project budget ~$208M, ~70.7% loan-to-cost; substantial completion 5/31/2024). Not previously in the app — **the app's first construction loan**; see the modeling caveats.*
+
+**Senior — Construction Loan** (AIG / National Union Fire Insurance Co.; Borrower **K2 Sweetwater LLC**; collateral = the real estate / first mortgage):
+- **Up to $127,000,000** (aggregate maximum principal). **Rate = LIBOR + 3.75% spread, floored at 3.75%** (Benchmark Rate = greater of (Benchmark + Spread) and the 3.75% floor); interest-only; **Actual/360** (§2.2.2: *"…dividing the product by three hundred sixty (360), and multiplying that result by the actual number of days elapsed…"*); payments on the 1st (first 2/1/2022). **Initial maturity 1/1/2026; one 1-yr extension to 1/1/2027** (0.25% fee).
+
+**Added as:** Floating (SOFR proxy for LIBOR + 3.75%, floor 3.75%), $127,000,000, fully IO, 60-mo, maturity 1/1/2027. Renders a coherent 60-row IO schedule to the cent (first IO $807,085 @ 7.38% offline; balloon $127M at 1/1/2027).
+
+**⚠️ Modeling caveats — this is a construction loan; the app has no native construction type:**
+1. **Commitment vs. funded balance** — modeled at the full $127M *commitment*. A construction loan funds by draws (balance grew over the build); since completion (5/2024) it's ≈ fully drawn, so commitment is a fair current proxy, but the draw-up isn't modeled.
+2. **Interest reserve** — interest was funded from an Interest Reserve Account during construction, not paid current by the borrower. The accruing interest is right; who funds it isn't modeled.
+3. **Dead index (LIBOR → SOFR)** — the note was LIBOR + 3.75%; LIBOR ceased and the note's Benchmark-Replacement machinery moved it to Term SOFR + adjustment, floored at 3.75%. The app has no LIBOR index, so it's modeled as **SOFR + 3.75% floored at 3.75%** (the ~0.11% benchmark adjustment isn't modeled).
+4. **Maturity is an assumption** — the initial maturity **1/1/2026 has already passed**; modeled at the **extended 1/1/2027** assuming the one-year extension was exercised. See the open question below — **not derivable from the closing documents.**
+5. **Prepayment not set** — construction-loan prepayment terms not captured here; left blank pending confirmation.
+
+---
+
+## 19. K2 Sweetwater (Mezz) — **Mezzanine Loan**, dated Dec 20, 2021 — **NEW LOAN (added to the app)**
+
+> **This is the *second* of the two K2 Sweetwater loans — the *mezzanine*.** It is a **separate loan** from the senior construction loan (§18): a different lender (MSD, not AIG), a different borrower (K2 Sweetwater **Mezz** LLC, not K2 Sweetwater LLC), a different rate (13.50% fixed, not floating), and different collateral (an **equity pledge**, not the real estate). It sits behind the senior in the capital stack. Two loans, not one.
+
+**Mezzanine** (MSD Capital — MSD PCOF Partners LXI / MSD RCOF Credit REIT; Borrower **K2 Sweetwater Mezz LLC**; collateral = the **equity pledge**, not the real estate):
+- **Up to $20,000,000**. **Rate = 13.50% fixed** — §Def: *"'Interest Rate' means 13.50%"* (no benchmark, no floor); interest-only, Actual/360; payments on the 1st (first 2/1/2022); same 1/1/2026 → 1/1/2027 maturity structure as the senior. Guarantors Dvir Cohen-Hoshen & Omri Sachs.
+
+**Added as:** Fixed 13.50%, $20,000,000, fully IO, lien position **Mezzanine**, 60-mo, maturity 1/1/2027. Renders a coherent 60-row IO schedule to the cent (first IO $232,500 @ 13.50%; balloon $20M at 1/1/2027).
+
+**⚠️ Modeling caveats — construction-period mezzanine; same family of caveats as §18:**
+1. **Commitment vs. funded balance** — modeled at the full $20M *commitment*; the draw-up during construction isn't modeled (≈ fully drawn since completion).
+2. **Interest reserve** — mezz interest was likewise funded from reserve during construction, not paid current; not modeled.
+3. **Maturity is an assumption** — modeled at the extended **1/1/2027** (initial 1/1/2026 has passed); see the open question below.
+4. **Prepayment not set** — left blank pending confirmation.
+5. **Extension-fee drafting error** (not an app field) — the mezz extension clause reads *"one quarter of one percent (0.50%)"*; the words (0.25%) and the numeral (0.50%) disagree; the senior's parallel clause reads 0.25%. Flag to counsel before any extension fee is invoiced.
+
+---
+
+## 20. The Pepper Building — 1830 Lombard Street, Philadelphia, dated Aug 9, 2021 — **NEW LOAN (added to the app)**
+
+*A floating-rate, fully interest-only bridge loan on a 184-unit apartment condominium. Lender **FS CREIT Originator LLC (Rialto)** — the **same lender as Reatta Ranch**, and the same ultimate sponsor family (ARBS / Alon Blue Square / M. Ben Moshe) that also appears behind Reatta and in the Woodmont Forge litigation schedule. Not previously in the app.*
+
+**Added as:** Floating (SOFR proxy for LIBOR + 3.15% spread, floor 3.30%), **$53,160,000**, fully IO, 36-mo, Actual/360, origination 8/9/2021, first payment 9/9/2021, **Initial Stated Maturity 8/9/2024**. Renders a coherent 36-row IO schedule to the cent — first IO 09/09/2021, balloon **$53,160,000** at 08/09/2024, every non-balloon row interest-only ($0 principal). Independent strict verifier reproduces the app's model across all 36 rows to the cent.
+
+**Terms — verified against the executed Loan Agreement (Article I Definitions + §2.2):**
+| # | Term | Value | Evidence (exact quote) |
+|---|---|---|---|
+| 1 | **Loan amount** | $53,160,000 | *"'Loan Amount' shall mean an amount up to $53,160,000.00."* |
+| 2 | **Interest rate** | 3.30% → greater of (LIBOR + Spread) or Floor | *"'Applicable Interest Rate' shall mean (x) 3.30% per annum for the period commencing on the Closing Date through August 14, 2021 and (y) with respect to each Accrual Period thereafter, a rate per annum equal to the greater of (1)… the LIBOR Interest Rate plus the Spread… and (2) the Floor Rate."* |
+| 3 | **Spread** | 3.15% | *"'Spread' means 3.15% per annum."* |
+| 4 | **Floor Rate** | 3.30% | *"'Floor Rate' shall mean 3.30% per annum."* |
+| 5 | **Interest-only** (no amortization) | payment = accrued interest | *"'Monthly Debt Service Payment Amount' shall mean… an amount equal to all interest that is scheduled to accrue on the Outstanding Principal Balance during the Accrual Period…"* — the payment IS the interest, so the balance never amortizes; balloon at maturity (§2.2.4). |
+| 6 | **Accrual** | Actual/360 | §2.2.1: *"Interest… shall be calculated by multiplying (a) the actual number of days elapsed… by (b) a daily rate based on a three hundred sixty (360) day year by (c) the Outstanding Principal Balance."* |
+| 7 | **Payment date** | 9th of each month | *"'Payment Date' shall mean the ninth (9th) day of each calendar month… commencing on (i) the ninth (9th) day of the next succeeding calendar month after the date hereof if the Closing Date is on or prior to the fifteenth (15th)…"* → first payment **9/9/2021**. |
+| 8 | **Maturity** | 8/9/2024 initial → 8/9/2025 → 8/9/2026 | *"'Stated Maturity Date' shall mean (x) August 9, 2024 ('Initial Stated Maturity Date'), (y) if the Loan is extended… August 9, 2025…, or (z)… August 9, 2026."* Two 1-yr extension options, 0.25% fee each. |
+| 9 | **Prepayment** | Minimum-interest maintenance through 2/28/2023 | Minimum Interest Maintenance End Date = *"the last day of the eighteenth (18th) full calendar month after the Closing Date"* (2/28/2023); default premium = greater of the maintenance premium or *"five percent (5%) of the unpaid principal balance."* Left blank in the app (not a clean YM/step-down match). |
+
+**Also in the document (not loan-record fields):** origination fee 0.85% ($451,860); monthly capital-expenditure deposit $4,600; required-repairs reserve $27,187.50; interest-rate cap required and collaterally assigned; borrower 1830 Lombard Fee Owner LLC (Korman Residential + ARBS/Ben Moshe); guarantors the Korman family/trust.
+
+**⚠️ Modeling caveats — floating LIBOR bridge loan:**
+1. **The app renders 6.78%, not the loan's actual rate.** Because this is a Floating loan and LIBOR is dead, the app models it as SOFR + 3.15% floored at 3.30% and prices it at **today's** index — offline that is max(3.63% + 3.15%, 3.30%) = **6.78%**. But at origination (Aug 2021) one-month LIBOR was ~0.09%, so the **3.30% floor bound** and the loan actually bore **3.30%** — real first-month interest ≈ **$151,059**, versus the app's **$310,366** at 6.78%. This is the app's by-design behavior for floaters (same as Reatta Ranch and the K2 senior): a floating loan shows its *current-index* debt service, not its historical payments. The schedule ties to the app's own model to the cent; it does **not** claim to reproduce the 3.30% historical payments.
+2. **Dead index (LIBOR → SOFR).** Modeled as SOFR + 3.15% floored at 3.30%; the note's Benchmark-Replacement machinery (Exhibit A) would have moved it to Term SOFR + adjustment. The app has no LIBOR index; the ~0.11% benchmark adjustment isn't modeled.
+3. **Accrual-period convention.** The note accrues over a **15th-to-14th** period and pays on the 9th; the app models calendar-month Actual/360 anchored on the 9th (its uniform convention for every Actual/360 loan). Same simplification as every other floater in the book.
+4. **Maturity has passed — see the open question below.** Modeled at the **Initial Stated Maturity 8/9/2024** (the agreement's unconditional primary date; extensions apply only *"if the Loan is extended"*). That date, and both extension options (8/9/2025, 8/9/2026), have all now passed. Whether the loan was extended, refinanced, or paid off is an **open question for Azriel** — not derivable from the closing documents.
+
+---
+
+## 21. 1222 Commerce St / "Manor House" — Dallas, TX — validated vs the executed Note (Closing Binder) — **ALREADY IN THE APP**
+
+*Customers Bank Hybrid ARM on the Manor House property (borrower **LIVING MANOR LLC**; guarantors Gershon Kassirer + Extra Holdings Mint/Princeton USA; ARBS / Ben-Moshe sponsor family). The **sister loan to Carteret** — same lender, same Actual/360 Hybrid-ARM structure. This closing binder is the Note we'd been missing; it confirms the record and resolves the open stated-payment question from the TODO.*
+
+**Verified correct against the executed Note (Exhibit 1):** amount **$24,200,000** (*"'Principal Amount' shall mean… ($24,200,000.00)"*); rate **6.10%** (*"'Interest Rate' shall mean six and one-tenth (6.10%) percent per annum"*); **Actual/360** (¶2(F): *"calculated and applied based upon the actual number of days elapsed over a 360-day year"*); **12 months interest-only** (¶2(B), 5/1/2026 → 4/1/2027); dated **3/30/2026**; first payment **5/1/2026**, first P&I **5/1/2027**; reset **5/1/2031** to *"the greater of: (i) six and one-tenth (6.10%)… or (ii) the U.S. Treasury Note Yield plus 250 basis points"* re-amortized over a **26-year** schedule (¶2(D)); maturity **4/1/2036** (¶2(E) balloon). Independent strict verifier reproduces the app's **120 rows to the cent** — first IO $123,016.67, reset to ~6.66% (offline projection), balloon **$21,219,601.17**.
+
+| # | Term | Was | Now | Evidence |
+|---|---|---|---|---|
+| 1 | **Prepayment** | *(blank)* | **Step-down** (declining) | ¶7: 4% before the 1st anniversary (4/1/2027), 3% yr 1–2, 1% yr 2–5, **4% yr 5–6** (reset bump), 3% yr 6–7, 1% yr 7–maturity; **open** the last 90 days of both the Initial and the Reset Interest Periods. Modeled as `Step-down` / 1% (matching Carteret's treatment); the exact double-humped schedule is recorded here. |
+
+**⚠️ Flag — note-stated payment ≠ app-computed payment (the "fixed payment" next-version item, shared with Carteret):** ¶2(C) states a fixed-period constant P&I of **$148,062.35** (30-yr amortization basis, sized on Actual/360). The app computes a **30/360 annuity = $146,650.74** — **~$1,411.61/mo lower**. Same root cause as Carteret: the bank sized the payment on true Actual/360; the app uses a 30/360 annuity. Both are added to `TODO.md`'s stated-payment ("fixed payment") feature. The **reset** mechanic (26-yr re-amortization at the greater-of rate) the app **already reproduces to the cent** — only the fixed-period payment differs.
+
+**Minor / unverified:** the app's `loanNumber "D22-0002"` is **not** found in the binder (the Note carries no loan number; auto-debit account is 4279083) — retained but unconfirmed. The source filename said "Brooklyn, New York," but every operative document places the collateral in **Dallas, Texas** (the app is correct). Property carried as Mixed-Use (unchanged).
+
+---
+
+## 22. Legacy at Kissimmee — 1225 Utica Drive, Kissimmee, FL — **NOW VALIDATED & ADDED (the Note arrived — §22 was blocked, no longer)**
+
+*Bank Hapoalim construction loan on a to-be-built **256-unit** multifamily development (borrower **Legacy at Kissimmee, LLC**; 100% ARBS / Alon Blue Square / Moti Ben-Moshe chain, ARBS as entity guarantor; individual guarantors Dvir Cohen Hoshen, Omri Sachs, Ron Vaksin — the same two who guarantee K2 Sweetwater; dated **11/26/2024**). The missing Promissory Note (BHI 1225 Utica) has now been provided, so this loan is unblocked and added. (Correction to the earlier note: this is **not** the app's first Bank Hapoalim loan — The Mint and The Mews are also Hapoalim.)*
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.0%**, floor **6.85%**), **$41,000,000**, fully IO, 30-mo, Actual/360, origination 11/26/2024, first payment 12/26/2024, **Initial Maturity 5/26/2027**. Independent strict verifier reproduces the app's **30 rows to the cent** — first IO $260,691.67 @ 7.63% (offline), balloon **$41,000,000** at 5/26/2027.
+
+**Terms — verified against the executed Note (BHI 1225 Utica), Rider Exhibit A + ¶¶1–3:**
+| # | Term | Value | Evidence (exact quote) |
+|---|---|---|---|
+| 1 | **Interest rate** | Term SOFR + 4.0%, floor 6.85% | Rider: *"Margin: 4.0% per year"* · *"Benchmark: [X] Term SOFR"* · *"Minimum interest rate: 6.85% per annum."* |
+| 2 | **Accrual** | Actual/360, compounds monthly | ¶1(b): *"Interest shall be calculated based upon a three hundred sixty (360) day year and charged for the actual number of days elapsed and shall compound monthly."* |
+| 3 | **Interest-only** | payment = interest, balloon | ¶2(b): *"Borrower shall pay interest only, in arrears"* through the Maturity Date; ¶3: pay *"the entire Outstanding Principal Balance"* at maturity. |
+| 4 | **Maturity** | 5/26/2027 (init) → 5/26/2028 | ¶3: *"'Maturity Date' shall mean the earliest… of (i) May 26, 2027 (the 'Initial Maturity Date')…; provided… if the Extension Option is exercised… the Initial Maturity Date shall mean May 26, 2028."* One 12-mo extension. |
+| 5 | **Default rate** | 18% | ¶ (post-maturity): *"increased to a rate per annum equal to eighteen percent (18.0%)."* |
+
+**⚠️ Modeling caveats — construction loan, floating:**
+1. **App renders 7.63%, not the note's actual rate.** As a Floating loan the app prices at today's SOFR — offline max(3.63% + 4.0%, 6.85%) = **7.63%**. The note's actual rate is **Term SOFR + 4.0%** (≈8.6% at the Nov-2024 closing; the 6.85% floor was not binding). Same by-design floater behavior as Pepper / K2 senior — the schedule ties to the app's own model to the cent, not to the note's historical Term-SOFR payments.
+2. **Construction loan** — modeled at the full **$41M commitment** (funds by draws; interest was funded from the **Interest Reserve** of $3,311,732 during the build). Draw-up and reserve funding aren't modeled. **Current drawn balance** is an open question.
+3. **Payment-day / date artifacts.** The Note pays on the **1st Business Day** of each month (and carries stub-date language — "through September 30, 2024," first payment "November 1, 2024" — carried over from an **Original Note A/B** that predates the 11/26/2024 restatement). The app anchors on the maturity's day (26th). For a fully-IO loan on a constant balance the monthly interest is unchanged by the payment day; only the displayed dates differ (same convention caveat as several other loans).
+4. **Maturity is in the future** (5/26/2027) — no passed-maturity problem; modeled at the Initial Maturity Date, extension option noted.
+
+*The budget-contingency question from when this was blocked (hard ~3.0% / soft ~7.3% vs the agreement's 10% floor) still stands — see the Azriel questions.*
+
+---
+
+## 23. 1415 Washington (Building Loan) — 1415 Washington Avenue, Albany, NY — **NEW LOAN (added to the app)**
+
+> **One of the two 1415 Washington notes — the *Building Loan*.** Under **NY Lien Law** a building loan funds only **hard costs**; soft costs go in a separate **Project Loan** (§24). Same lender (Valley National Bank), same borrower, same rate, same maturity — **one financing split into two notes/mortgages**. Kept as two records to match the two executed notes (easy to combine on request).
+
+*Student-housing conversion, 1415 Washington Ave, Albany NY (borrower 1415 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as Legacy & 1395; City of Albany IDA on the fee/leasehold/subleasehold mortgages). Dated 11/21/2022.*
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$40,199,260**, fully IO, 42-mo, Actual/360, origination 11/21/2022, first payment 12/21/2022, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **42 rows to the cent** — first IO $263,975.14 @ 7.88% (offline), balloon **$40,199,260** at 5/21/2026.
+
+**Terms — verified against the executed Building Loan Note (¶2 + §12 definitions):**
+- **Rate** *"4.25% above Term SOFR… provided… in no event shall the interest rate… be less than 5.00% per annum"* (¶2(a)); **Actual/360** *"computed on the basis of a 360-day year for the actual number of days involved"*; **one-month** Interest Period; alternate rate **WSJ Prime + 1.00%** (same 5.00% floor).
+- **Interest-only bullet** — ¶1: *"pay the Principal Amount by making a payment equal to the entire unpaid Principal Amount on the Maturity Date"* (no amortization).
+- **Initial Maturity Date May 21, 2026**; **Extended Maturity Date May 21, 2027** (one 12-mo option; conditions incl. Improvements complete, ≥95% leased, DSCR ≥ 1.25). **Default rate 18%.** First Periodic Interest Date **12/1/2022**; payments on the **1st Business Day** of each month.
+
+**⚠️ Modeling caveats:**
+1. **App renders 7.88%, not the note's actual rate.** Floating → priced at today's SOFR (offline max(3.63% + 4.25%, 5.00%) = **7.88%**); the note floated at **Term SOFR + 4.25%** (≈8.5–9.5% over its life per the loan write-up; 5.00% floor never binding). Ties to the app's own model to the cent, not the note's historical payments.
+2. **Initial maturity 5/21/2026 has passed** (today is past it). Modeled at the Initial Maturity Date; the one 12-mo extension to **5/21/2027** may or may not have been exercised — **open question for Azriel** (§Q5).
+3. **Payment-day convention** — note pays on the 1st Business Day; app anchors on the maturity's day (21st). IO on a constant balance → interest unchanged, only displayed dates differ.
+
+---
+
+## 24. 1415 Washington (Project Loan) — 1415 Washington Avenue, Albany, NY — **NEW LOAN (added to the app)**
+
+> **The *second* of the two 1415 Washington notes — the *Project Loan* (soft costs).** A **separate note and mortgage** from the Building Loan (§23), but the **same** Valley National Bank financing, borrower, rate, and maturity — split under NY Lien Law. Two records to match the two notes.
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$16,998,373**, fully IO, 42-mo, Actual/360, origination 11/21/2022, first payment 12/21/2022, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **42 rows to the cent** — first IO $111,622.65 @ 7.88% (offline), balloon **$16,998,373** at 5/21/2026.
+
+**Terms:** *identical to the Building Loan Note* (§23) — the note states the terms are the same in both instruments (rate Term SOFR + 4.25% / floor 5.00%, Actual/360, IO bullet, Initial Maturity 5/21/2026 → 5/21/2027, default 18%). Same three modeling caveats as §23 (app floats at 7.88% vs the note's Term-SOFR economics; initial maturity 5/21/2026 has passed → §Q5; payment-day convention). **Combined 1415 debt = $57,197,633** across the two notes.
+
+---
+
+## 25. 1395 Washington (Project Loan) — 1395 Washington Avenue, Albany, NY — **NOW VALIDATED & ADDED (the 1395 Project Loan Note arrived — §25 was blocked, no longer)**
+
+*Valley National Bank financing on a **134-unit / 134-bed student-housing conversion** of a former hotel (borrower 1395 Washington Property LLC, Adam America; guarantors Sachs / Cohen Hoshen / Vaksin — same trio as 1415 & Legacy; City of Albany IDA). Dated **2/28/2024**. One financing split under NY Lien Law into a Building Loan $4,434,670 (§26) + this **Project Loan $6,943,894** = $11,378,564 total; LTC 66.0%.*
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$6,943,894**, fully IO, 26-mo, Actual/360, origination 2/28/2024, first payment 4/21/2024, **Initial Maturity 5/21/2026**. Independent strict verifier reproduces the app's **26 rows to the cent** — first IO $47,118.18 @ 7.88% (offline), balloon **$6,943,894** at 5/21/2026.
+
+**Terms — verified against the executed 1395 Project Loan Note (¶2 + §12 definitions):**
+- **Rate** *"4.25% above Term SOFR… in no event… less than 5.00% per annum"*; **Actual/360** *"computed on the basis of a 360-day year for the actual number of days involved"*; one-month Interest Period; alternate rate WSJ Prime + 1.00% (same 5.00% floor).
+- **Interest-only bullet** — ¶1: *"a payment equal to the entire unpaid Principal Amount on the Maturity Date."*
+- **Principal Amount** *"…($6,943,894.00)"*; dated *"As of February 28, 2024."*
+- **Initial Maturity Date May 21, 2026**; **Extended Maturity Date May 21, 2027** (one 12-mo option; completion / ≥95%-leased / DSCR ≥ 1.25 conditions). **Default rate 18%.** First Periodic Interest Date **4/1/2024**; payments on the **1st Business Day** of each month.
+
+**⚠️ Modeling caveats:** (1) **App renders 7.88%, not the note's actual rate** — floating, priced at today's SOFR (max(3.63% + 4.25%, 5.00%)); the note's rate is Term SOFR + 4.25%. (2) **Initial maturity 5/21/2026 has passed** — modeled at that date; extension to 5/21/2027 vs refi is an open question (§Q5, shared with 1415). (3) **Payment-day / stub** — note pays on the 1st Business Day (first periodic 4/1/2024, ~1-mo stub from the 2/28 closing); the app anchors on the maturity's day (21st). IO on a constant balance → interest unchanged, only displayed dates differ.
+
+---
+
+## 26. 1395 Washington (Building Loan) — 1395 Washington Avenue, Albany, NY — **NEW LOAN (added to the app) — terms from the co-terminous Project Note**
+
+> **The *Building Loan* half of the 1395 split** (hard costs; §25 is the Project Loan). A **separate note/mortgage**, same Valley National financing.
+
+**Added as:** Floating (SOFR proxy for **Term SOFR + 4.25%**, floor **5.00%**), **$4,434,670**, fully IO, 26-mo, Actual/360, origination 2/28/2024, first payment 4/21/2024, **Initial Maturity 5/21/2026**. Verifier reproduces the app's **26 rows to the cent** — first IO $30,091.70 @ 7.88% (offline), balloon **$4,434,670** at 5/21/2026.
+
+**⚠️ Evidentiary basis — read this.** Unlike §25, **the 1395 *Building* Loan Note itself was not provided** — only the Project Loan Note and Agreement. Its rate and maturity are taken from the **co-terminous Project Loan Note** (§25), which is a **very strong inference but not the building note read directly**: (a) it is the same Valley National financing, same borrower, same 2/28/2024 date, split only for NY Lien Law (hard vs soft costs); (b) the sister **1415** deal is proof of the pattern — there the Building and Project notes were **identical in every term**. The amount **$4,434,670** is confirmed (it equals the agreement's total hard costs exactly). If the actual 1395 Building Note is ever provided and differs, update this record. Same three modeling caveats as §25.
+
+---
+
+## 27. Creekside at Grand Prairie — 4115 S. Great Southwest Pkwy, Grand Prairie, TX — **NEW LOAN (added) — validated against BOTH the executed agreement AND live invoices**
+
+*Arbor Realty SR bridge loan on a **318-unit deep lease-up** (39% occupied at closing). Borrower South Central Development LLC; **Guarantor ARBS Real Estate USA Holdings LLC — of which Gershon Kassirer is CEO and Azriel Ostrow is CFO** (the agreement's org chart states this). Dated 5/15/2025. Surfaced first as a billing statement with no matching app loan (invoice reconciliation §D); the executed Loan Agreement was then provided, so it is now added and validated.*
+
+**Added as:** Floating (SOFR + 2.65%, **floor 6.97867%**), **$50,000,000**, fully IO, 36-mo, Actual/360, origination 5/15/2025, first payment 7/1/2025, maturity **5/14/2028**. Strict verifier reproduces the app's **36 rows to the cent** and — because the **floor binds** (SOFR 3.63% + 2.65% = 6.28% < 6.97867%) — the app renders **6.97867%, the exact rate the servicer bills**.
+
+**✅ Ties to Azriel's invoices to the cent** (Arbor, loan 946197): the app reproduces **$290,777.92** for a 30-day cycle (the 7/1/2026 statement, billing June) and **$300,470.51** for a 31-day cycle (the 8/1/2026 statement, billing July). This is the **first loan cross-validated against the executed document *and* the actual billing** — all three agree.
+
+**Terms — verified against the executed Loan Agreement:**
+- **Rate** *"'Applicable Interest Rate' means… the greater of (1)… (6.97867%) per annum, and (2) Term SOFR plus the Spread"*; **Spread 2.65%**; **Actual/360** (§2.02: *"a year of three hundred sixty (360) days for the actual number of days elapsed"*).
+- **Interest-only** — interest accrues on outstanding principal, paid monthly on the **1st** (§ "'Payment Date' means the first (1st) day of each calendar month and the Maturity Date"); no amortization; balloon at maturity. **First Payment Date 7/1/2025; Maturity Date 5/14/2028.**
+- **Rate cap** strike 4.33%; **exit fee 1.0%** of any principal repaid (incl. at maturity); **$2,600,000 interest reserve** + $725,000 operating reserve funded at closing (this is a lease-up deal — projected Year-1 DSCR ≈ 0.01x per the agreement's own proforma).
+
+**⚠️ Modeling caveats:**
+1. **Payment-day cosmetic** — the note pays on the **1st**, the app anchors on the maturity's day (14th), so schedule dates render on the 14th. The monthly interest is unaffected (Actual/360 on a constant balance) and ties to the invoices to the cent — only the displayed date differs (same convention note as Heritage / the Washington loans).
+2. **Floor binds, so no floating-gap** — unlike the other SOFR floaters, the 6.97867% floor is above SOFR + spread, so the app's rate equals the billed rate exactly (today). If SOFR ever rises enough that SOFR + 2.65% exceeds 6.97867%, the loan floats above the floor and the app would then track the live index.
+3. **Lease-up / interest reserve** — interest is funded from the $2.6M reserve during lease-up; the app models the current-pay interest correctly but does not track the reserve drawdown.
+
+*Sponsor note (not an app field): this agreement ties **seven** portfolio loans (~$371M) to the ARBS / Kassirer / Ben-Moshe platform — Creekside, Legacy, Pepper, Reatta, The Euclid, Avalon Norwalk, Woodmont Forge — and names Kassirer as CEO / Azriel Ostrow as CFO of ARBS Real Estate USA Holdings.*
+
+---
+
+## Open questions for Azriel
+
+*Real open items where the executed closing documents don't tell us the current state. Recorded here so we can ask Azriel — not guesses, not resolved.*
+
+**Q1 — K2 Sweetwater: did the construction finish, and what is the current maturity?** The senior (§18) and mezz (§19) both had an **initial maturity of 1/1/2026 that has already passed**, with a one-year extension option to **1/1/2027** (0.25% fee). The closing documents can't tell us what actually happened. **We modeled both at 1/1/2027 assuming the extension was exercised — this is an assumption, not a fact.** Ask Azriel:
+- Did construction reach substantial completion (targeted 5/31/2024)?
+- Was the one-year extension exercised, so the current maturity is **1/1/2027** — or was the loan **refinanced / paid off** at the original 1/1/2026 maturity (in which case it may no longer be outstanding at all)?
+- Is either loan still outstanding today, and if so at what maturity?
+
+**Q2 — K2 Sweetwater: current funded balance.** Both are modeled at their full **commitments** ($127M senior / $20M mezz). A construction loan funds by draws; since completion it should be ≈ fully drawn, but the actual current outstanding balance on each isn't in the closing documents. Ask Azriel for the current balance on the senior and on the mezz.
+
+**Q3 — K2 Sweetwater: prepayment terms.** Neither loan's prepayment terms were captured (left blank). If they're being tracked for refi/prepay analysis, ask Azriel for the prepayment/exit terms on each.
+
+**Q4 — The Pepper Building: still outstanding, and on what current terms? (OPEN — do NOT change the app; ask Azriel.)** A Trimont billing statement due **8/9/2026** shows Pepper **still live at $44,000,000 @ 6.36448%** (real Term SOFR + 3.15%, Actual/360) — it did **not** pay off in 2024. But **per Yuval, leave the Pepper record as-is (a question mark).** The invoice tells us it's outstanding, but the **current loan specifics are missing** — how it went from the $53.16M commitment to a $44M balance (a paydown? never fully drawn?), the current maturity, and the extension/modification terms are **not in the original loan agreement** we have. Those live in a loan modification / extension document Yuval does not yet have. **Action: ask Azriel for Pepper's current loan documents; do not un-mature or re-model it until we have them.** *(Statement also carries a past-due late charge of $16,213.81 — raise with Azriel.)* Original question retained below for context:
+
+**Q4 (context) — The Pepper Building maturity/balance.** This was a 3-year bridge loan (origination 8/9/2021, **Initial Stated Maturity 8/9/2024**) with two 1-year extension options (to 8/9/2025, then 8/9/2026). **All three dates have now passed** (today is past 8/9/2026). Modeled at the initial 8/9/2024 maturity. Ask Azriel:
+- Is the FS CREIT / Rialto loan on Pepper still outstanding, or was it **refinanced / paid off** (a stabilized multifamily bridge loan would typically roll into agency debt within this window)?
+- If still outstanding, what is the current maturity and the current rate (a floater — has it repriced off SOFR, and is the 3.30% floor still relevant)?
+- Current outstanding balance (modeled at the full $53,160,000 commitment).
+
+**~~Q5 (RESOLVED) — Legacy at Kissimmee: we need the Promissory Note.~~** ✅ **The Note (BHI 1225 Utica) has been provided** — rate Term SOFR + 4.0% / floor 6.85%, initial maturity 5/26/2027. Legacy is now validated and added (§22). The remaining Legacy items (current drawn balance; budget-contingency question) are folded into Q7 below.
+
+**Q5 — Albany (1415 *and* 1395 Washington): still outstanding, and at what maturity?** Same shape as the K2 / Pepper question, and it applies to **both** Albany student-housing deals — all four notes carry an **Initial Maturity of 5/21/2026 that has already passed**, each with one 12-month extension to **5/21/2027** (conditioned on completion, ≥95% leased, DSCR ≥ 1.25). All modeled at the initial 5/21/2026. Ask Azriel, for each project: was the extension exercised (current maturity 5/21/2027), or was the Valley National financing **refinanced / paid off**? Is it still outstanding, and what is the current balance on each note — 1415 ($40,199,260 building / $16,998,373 project) and 1395 ($4,434,670 building / $6,943,894 project)?
+
+**~~Q6 (RESOLVED) — 1395 Washington: we need its own notes.~~** ✅ **The 1395 Project Loan Note and Agreement have been provided** — Term SOFR + 4.25% / floor 5.00%, Initial Maturity 5/21/2026. 1395 is now validated and added (Project §25, Building §26). *One residual:* the 1395 **Building** Loan Note itself wasn't in the set — its terms are taken from the co-terminous Project Note (a very strong inference, per §26). If the actual Building Note surfaces, confirm it matches; not urgent.
+
+**Q6 — 1395 Washington: we need its own Building & Project notes.** The 1395 Building Loan Agreement (§25) defines the interest rate and maturity only by reference to notes that **were not included** — the notes in the package were the sister **1415's**, which don't govern 1395. Without the 1395 notes the loan can't be added. Ask Azriel for the **1395 Washington Building Loan Note and Project Loan Note** (or just: rate — index + spread + floor — and the initial/extended maturity dates for the $4,434,670 building and $6,943,894 project pieces).
+
+**Q7 — Legacy at Kissimmee: current draw & budget contingency.** Now that Legacy is modeled (§22): what is the **current drawn balance** against the $41,000,000 commitment (modeled at full commitment; it funds by draws)? ✅ **Draw answered by the invoices:** a BHI statement shows the current **drawn balance $37,688,268** (real rate ~7.646%) — see `INVOICE-RECONCILIATION.md` finding #4; the balance keeps rising as the project draws. Still open: the **budget-contingency** question — the attached Budget's hard (~3.0%) and soft (~7.3%) contingencies look short of the agreement's stated 10% floor; intentional (read per-line-item) or an OCR artifact?
+
+**Q8 — Dead-LIBOR rate history (K2 Sweetwater senior, Pepper Building).** The app now prices every floating loan's *already-paid* months at the index that was in effect that month (historical SOFR / Treasury) — so those floaters tie to their servicer statements. But **K2 senior and Pepper were real LIBOR loans**, and LIBOR is dead with no feed, so they're **excluded** from the rate-history engine (flagged `noRateHistory`) and still show a SOFR-proxy rate. Ask Azriel: do we (a) accept approximating their history with SOFR + the old LIBOR spread, or (b) get their actual historical rates / statements? (Ties into the Pepper Q4 and K2 Q1–Q3 items — the current specifics for those loans are still outstanding.)
+
+**Q9 — Living Lofts: ARM rider.** The reset is now modeled off the historical 5-yr Treasury (§ finding #5 — it lands at ~5.30%, matching the statements). Still worth confirming from the actual document: the exact **reset index, margin, and any periodic/lifetime rate cap**, and **whether the loan negative-amortizes** if the interest ever exceeds the fixed $151,604.11 payment (today the app floors principal at $0 and holds the balance flat).
+
+---
+
+## Cross-cutting model fix — "First Payment Date" now means the first payment of ANY kind
+
+Per Yuval's direction: *"the first payment date is the date that we pay, no matter if it's principal or interest or both."* The field was previously modeled as **"First P&I Date"** — the first principal-and-interest payment *after* any interest-only period. For a fully interest-only loan that has no principal payment until the balloon, this wrongly recorded the **maturity date** as the "first payment" (what surfaced on Avalon White Plains).
+
+**Fix (code):** the field is relabelled **"First Payment Date"**; its hint, the amortization-anchor fallback (`firstPaymentDate − 1` instead of `− (IO + 1)`), and the AI reading instruction now all treat an interest-only payment as a payment.
+
+**Fix (data):** every interest-only loan's stored First Payment Date was moved from the first-P&I date to the **actual first scheduled payment** (the first interest-only payment) — 19 records. This is a display/definitional correction only: **no amortization schedule changed** (every schedule is anchored on maturity − term, not this field), re-confirmed by re-running the strict cent-level checks for Avalon White Plains, Heritage, and Euclid (all still match to the cent). Examples: Avalon WP Mezz 2029-02-10 → 2026-03-10; 40 N Euclid 2025-02-01 → 2021-02-01; Avalon Norwalk 2029-06-07 → 2021-07-07.
+
+*(Observation for later, not changed here: a few loans whose payments fall on a day other than their maturity's day-of-month — e.g. Heritage Key Villas, maturity on the 28th but the note pays on the 1st — render their schedule dates on the maturity's day. That is a separate payment-day convention question, independent of this fix.)*
+
+---
+
+*Validation continues loan by loan. This file is updated as each agreement is reviewed.*
