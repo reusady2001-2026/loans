@@ -11,6 +11,7 @@
   <script src="./vendor/xlsx.full.min.js"></script>
   <script src="./vendor/pdf.min.js"></script>
   <script src="./vendor/mammoth.browser.min.js"></script>
+  <script src="./vendor/tesseract/tesseract.min.js"></script>
   <!-- Underwriting & debt-sizing engine, T12 classifier, and Setup builder (pure, data-free) -->
   <script src="./underwriting.js"></script>
   <script src="./t12-classify.js"></script>
@@ -25,6 +26,7 @@
   <script src="./general-data.js"></script>
   <script src="./profile.js"></script>
   <script src="./rent-roll.js"></script>
+  <script src="./ocr.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -9152,7 +9154,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(fld) fld.addEventListener('click', function(){ ldsShell.openDocsFolder(); });
       }).catch(function(){ host.innerHTML=''; });
     }
-    function aiExtractFileText(file){
+    function aiExtractFileText(file, opts){
+      opts = opts || {};
       return new Promise(function(resolve){
         var name=file.name||"file", ext=(name.split(".").pop()||"").toLowerCase();
         function done(text, note){ text=String(text||""); var trunc=false; if(text.length>AI_ATTACH_MAX){ text=text.slice(0,AI_ATTACH_MAX); trunc=true; } resolve({ text:text.trim(), note: note || (trunc?("truncated to first "+Math.round(AI_ATTACH_MAX/1000)+"K chars"):"") }); }
@@ -9172,10 +9175,39 @@ tr.flagged:hover td{background:#fee2e2}
           if(ext==="pdf"){
             if(!window.pdfjsLib){ resolve({text:"",note:"PDF reader not available"}); return; }
             try{ pdfjsLib.GlobalWorkerOptions.workerSrc="./vendor/pdf.worker.min.js"; }catch(e){}
+            // 2.9.6 (H3) — read the PDF PER PAGE: a page with a real text layer is used as-is; a
+            // scanned / image-only page is rendered and OCR'd (tesseract + PaddleOCR, reconciled)
+            // instead of being silently dropped. A mixed PDF (some text pages, some scans) is handled
+            // one page at a time, so nothing vanishes and the reader never fails on a scan.
+            var MIN_TEXT = 24, ocrOn = !!(window.LDS_OCR && LDS_OCR.available()), ocrAnnounced = false;
+            function ocrPdfPage(pg){
+              var vp0 = pg.getViewport({scale:1}), scale = Math.min(3, Math.max(1, 1700/(vp0.width||1)));
+              var vp = pg.getViewport({scale:scale}), cv = document.createElement("canvas");
+              cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+              return pg.render({ canvasContext: cv.getContext("2d",{willReadFrequently:true}), viewport: vp }).promise
+                .then(function(){ return window.LDS_OCR.recognizePage(cv); });
+            }
             file.arrayBuffer().then(function(buf){
               pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise.then(function(pdf){
-                var pages=[], n=pdf.numPages, i=0;
-                (function next(){ if(i>=n){ var t=pages.join("\n\n"); done(t, t.trim()?"":"no text found — a scanned/image-only PDF"); return; } pdf.getPage(i+1).then(function(pg){ return pg.getTextContent(); }).then(function(tc){ pages.push(tc.items.map(function(it){return it.str;}).join(" ")); i++; next(); }).catch(function(){ i++; next(); }); })();
+                var n=pdf.numPages, out=new Array(n), i=0, ocrCount=0;
+                (function next(){
+                  if(i>=n){
+                    var body = out.filter(function(p){return p!=null && p!=="";}).join("\n\n");
+                    if(ocrCount>0) body += "\n\n— Read by AI from a scanned document — may contain errors.";
+                    var note = ocrCount>0 ? ("OCR’d "+ocrCount+" scanned page"+(ocrCount===1?"":"s"))
+                             : (body.trim()?"":"no text found — this looks like a scan the reader couldn’t process");
+                    done(body, note); return;
+                  }
+                  pdf.getPage(i+1).then(function(pg){
+                    return pg.getTextContent().then(function(tc){
+                      var t = tc.items.map(function(it){return it.str;}).join(" ").replace(/\s+/g," ").trim();
+                      if(t.length >= MIN_TEXT || !ocrOn){ out[i]=t; return; }               // real text layer, or no OCR available
+                      if(!ocrAnnounced){ ocrAnnounced=true; try{ opts.onOcrStart && opts.onOcrStart(); }catch(e){} }
+                      return ocrPdfPage(pg).then(function(ot){ if(ot && ot.trim()){ out[i]=ot; ocrCount++; } else { out[i]=t; } })
+                                           .catch(function(){ out[i]=t; });
+                    });
+                  }).catch(function(){ out[i]=""; }).then(function(){ try{ opts.onProgress && opts.onProgress(i+1, n, ocrCount); }catch(e){} i++; next(); });
+                })();
               }).catch(function(){ resolve({text:"",note:"couldn’t read the PDF"}); });
             }).catch(function(){ resolve({text:"",note:"couldn’t read the file"}); }); return;
           }
@@ -9203,7 +9235,12 @@ tr.flagged:hover td{background:#fee2e2}
       files.forEach(function(file){
         if(file.size > 25*1024*1024){ aiAsstFiles.push({name:file.name,size:file.size,text:"",note:"too large (25 MB max)",status:"err"}); aiAsstRenderAttach(); return; }
         var entry={name:file.name,size:file.size,text:"",note:"reading…",status:"loading",fileObj:file}; aiAsstFiles.push(entry); aiAsstRenderAttach();
-        aiExtractFileText(file).then(function(res){ entry.text=res.text||""; entry.note=res.note||""; entry.status=entry.text?"ok":"err"; aiAsstRenderAttach(); });
+        aiExtractFileText(file, {
+          // 2.9.6 (H3) — tell the operator the moment a scanned PDF starts OCR, so a slow read never
+          // looks ignored; and show per-page progress on the chip while the engines work.
+          onOcrStart: function(){ try{ aiAsstBubble("assistant", '<span class="text-slate-600">Reading the file now — it’s a scanned document, so I’m running OCR. This will take a couple of minutes; please wait.</span>'); }catch(e){} },
+          onProgress: function(cur, total, ocrN){ if(ocrN>0){ entry.note = "reading scanned pages… "+cur+"/"+total; entry.status="loading"; aiAsstRenderAttach(); } }
+        }).then(function(res){ entry.text=res.text||""; entry.note=res.note||""; entry.status=entry.text?"ok":"err"; aiAsstRenderAttach(); });
       });
     }
 
