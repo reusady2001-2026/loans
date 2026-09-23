@@ -972,7 +972,7 @@
   </div>
 
   <!-- Confirm modal -->
-  <div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+  <div id="confirmModal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
     <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
       <h3 id="confirmTitle" class="text-base font-bold text-slate-900">Are you sure?</h3>
       <p id="confirmText" class="mt-2 text-sm text-slate-500">This action cannot be undone.</p>
@@ -2366,7 +2366,15 @@
       } else {
         const inputmode = (f.type==="money"||f.type==="int"||f.type==="pct") ? 'inputmode="decimal"' : '';
         const ph = f.hint ? 'placeholder="'+escapeHtml(f.hint)+'"' : '';
-        control = '<input id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" type="text" autocomplete="off" '+inputmode+' '+ph+' '+base+' />';
+        // 2.9.6 (D2) — the Property Name field offers every existing property as a datalist picker,
+        // so a new loan attaches to a property you already have instead of a mistyped orphan.
+        let listAttr = "", dl = "";
+        if(f.key === "propertyName"){
+          let _names = [];
+          try{ _names = Array.from(new Set(opProperties().map(p => p.name).filter(Boolean))).sort(); }catch(e){}
+          if(_names.length){ listAttr = ' list="'+id+'_dl"'; dl = '<datalist id="'+id+'_dl">'+_names.map(n => '<option value="'+escapeHtml(n)+'"></option>').join("")+'</datalist>'; }
+        }
+        control = '<input id="'+id+'" data-key="'+f.key+'" data-type="'+f.type+'" type="text" autocomplete="off" '+inputmode+' '+ph+listAttr+' '+base+' />'+dl;
       }
       const suffix = f.type==="pct" ? '<span class="ml-1 text-xs text-slate-400">%</span>' : '';
       const req = f.required ? ' <span class="text-rose-500">*</span>' : '';
@@ -5877,6 +5885,14 @@ tr.flagged:hover td{background:#fee2e2}
         const memberRows = g.members.map(({loan,comp}) => '<tr data-propmember="'+idx+'" data-goto="'+loan._id+'" data-lender="'+escapeHtml(loan.lenderName||'—')+'" hidden class="cursor-pointer bg-slate-50/50 hover:bg-slate-100/70">'+memberCells(loan,comp,true)+'</tr>').join('');
         return header + memberRows;
       }).join('');
+      // 2.9.6 — properties with NO loan still belong on the overview (Add Property with a name
+      // only, or a profile awaiting its loan). They sit at the bottom with a badge; clicking
+      // opens the property in Underwriting, where its profile and Add-loan flow live.
+      const loanlessRows = opProperties().filter(p => !propGroups[p.key]).map(p =>
+        '<tr data-openprop="'+escapeHtml(p.key)+'" class="cursor-pointer hover:bg-slate-50">'+
+          td('<span class="inline-flex items-center gap-1.5"><span class="font-medium text-slate-900">'+escapeHtml(p.name)+'</span> <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span></span>')+
+          td('&mdash;','text-slate-400')+ td('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+
+        '</tr>').join('');
 
       // ---- Refinance scan: current rate vs today's market, per loan ----
       const scan = rows.map(({loan,comp}) => { const d=comp.derived; const mp=refiMarketParts(loan, loan, { termMonths: loan.loanTermMonths||loan.amortizationMonths });
@@ -5921,13 +5937,15 @@ tr.flagged:hover td{background:#fee2e2}
         renderRateShockCard(rateShockImpact(rows, [-100,0,100,200]))+
         '<div class="pt-3 border-t border-slate-200"><h2 class="text-lg font-bold text-slate-900">Portfolio detail</h2><p class="text-sm text-slate-500">every loan, grouped by property — and where each stands against today’s market</p></div>'+
         tableCard("Properties","grouped by property — click a property to expand its loans, then pick one to open",
-          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows,
+          '<tr>'+th("Property")+th("Lender")+th("Type")+thR("Balance")+thR("Rate")+thR("Monthly P&amp;I")+thR("Matures")+'</tr>', ovRows + loanlessRows,
           '<div class="flex items-center gap-2 shrink-0">'+
             lenderControl+
           '</div>', "relative z-40")+
         archivedStrip;
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
+      // 2.9.6 — a loan-less property opens in Underwriting (its profile + Add-loan flow).
+      dom.portfolioView.querySelectorAll('[data-openprop]').forEach(tr => tr.addEventListener('click', () => { const k = tr.getAttribute('data-openprop'); try{ openTab('underwriting'); opSelectProperty(k); }catch(e){} }));
       // Coverage dashboard: "Add NOI" opens the NOI prompt then re-renders; "Refi path" opens the analysis.
       dom.portfolioView.querySelectorAll('[data-covnoi]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); const loan = getLoan(btn.getAttribute('data-covnoi')); if(loan){ state.activeId = loan._id; openNoiFlow(loan, () => render()); } }));
       dom.portfolioView.querySelectorAll('[data-covpath]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); state.activeId = btn.getAttribute('data-covpath'); startRefi(); }));
@@ -5973,8 +5991,19 @@ tr.flagged:hover td{background:#fee2e2}
        ================================================================ */
     function selectLoan(id){ state.activeId = id; if(loans.length) setMode("view"); else setMode("empty"); }
 
-    function startAdd(){
-      state.draft = Object.assign(emptyLoan(), { _id: uid() });
+    function startAdd(prefillName){
+      const draft = Object.assign(emptyLoan(), { _id: uid() });
+      // 2.9.6 (D2) — "Add loan" pre-fills the property you're on (the open loan's property, or the
+      // focused Underwriting property) so a new loan attaches to it; the Property Name field is also
+      // a datalist picker of every existing property. Both keep you from spawning an orphan property.
+      let pre = prefillName;
+      if(pre == null){
+        try{ const al = getLoan(state.activeId);
+             if(al && al.propertyName) pre = al.propertyName;
+             else if(opFocusKey){ const fp = opProp(opFocusKey); if(fp) pre = fp.name; } }catch(e){}
+      }
+      if(pre) draft.propertyName = pre;
+      state.draft = draft;
       state.mode = "add";
       render();
       window.scrollTo({ top:0, behavior:"smooth" });
@@ -7776,6 +7805,15 @@ tr.flagged:hover td{background:#fee2e2}
         { key:"LTV",        label:"Loan-to-value (75%)",   amt: s.loanLTV },
         { key:"Debt Yield", label:"Debt yield (7%)",       amt: s.loanDY }
       ].filter(c => c.amt != null && isFinite(c.amt) && c.amt > 0).sort((a,b) => a.amt - b.amt);
+      // 2.9.6 (G4) — each leg's IMPLIED metrics AT its own sized loan, so the panel is
+      // self-evident: the binding (smallest) leg sits at its limit while the others have
+      // room. Same math the Sizing tab shows, computed per leg instead of only for the max.
+      var _sv = s.value, _smc = s.mortgageConstant;
+      caps.forEach(function(c){
+        c.impDSCR = (_smc > 0 && c.amt > 0) ? noi / (c.amt * _smc) : null;
+        c.impLTV  = (_sv > 0)               ? c.amt / _sv          : null;
+        c.impDY   = (c.amt > 0)             ? noi / c.amt          : null;
+      });
       const runnerUp = caps.length > 1 ? caps[1] : null;
       const margin = runnerUp ? (runnerUp.amt - caps[0].amt) : null;
       return { can: can, sized: sized, maxLoan: s.maxLoan, payoff: payoff, binding: s.binding,
@@ -7808,11 +7846,17 @@ tr.flagged:hover td{background:#fee2e2}
     // margin to the runner-up. A display of the sizing the app already computes; no new math.
     function refiCapsBlock(can){
       if(!can || !can.caps || can.caps.length < 2) return "";
+      const fmtDscrX = (v)=> (v!=null && isFinite(v)) ? v.toFixed(2)+'×' : '&mdash;';
       const rows = can.caps.map(c => {
         const isBind = (c.key === can.binding);
-        return '<div class="flex items-center justify-between gap-2 rounded-md px-2 py-1 '+(isBind?'bg-brand-50':'')+'">'+
-          '<span class="text-sm '+(isBind?'font-bold text-brand-800':'text-slate-600')+'">'+c.label+(isBind?' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>':'')+'</span>'+
-          '<span class="text-sm tabular-nums '+(isBind?'font-extrabold text-brand-800':'text-slate-700')+'">'+fmtMoney(c.amt)+'</span>'+
+        const imp = (c.impDSCR!=null || c.impLTV!=null || c.impDY!=null)
+          ? '<div class="mt-0.5 text-[11px] tabular-nums '+(isBind?'text-brand-700':'text-slate-500')+'">at this loan: DSCR '+fmtDscrX(c.impDSCR)+' &middot; LTV '+(c.impLTV!=null?fmtPct(c.impLTV):'&mdash;')+' &middot; DY '+(c.impDY!=null?fmtPct(c.impDY):'&mdash;')+'</div>'
+          : '';
+        return '<div class="rounded-md px-2 py-1 '+(isBind?'bg-brand-50':'')+'">'+
+          '<div class="flex items-center justify-between gap-2">'+
+            '<span class="text-sm '+(isBind?'font-bold text-brand-800':'text-slate-600')+'">'+c.label+(isBind?' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>':'')+'</span>'+
+            '<span class="text-sm tabular-nums '+(isBind?'font-extrabold text-brand-800':'text-slate-700')+'">'+fmtMoney(c.amt)+'</span>'+
+          '</div>'+imp+
         '</div>';
       }).join('');
       const margin = (can.margin != null && can.runnerUp)
@@ -8521,6 +8565,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- open_data_health {}: open the Data Health page. open_settings {}: open the Settings menu. import_excel {}: open the Excel import checklist. fetch_live_rate {}: pull today's live market rates (Treasury curve + SOFR).",
       "- run_push {name}: (re-)run Claude's \"what to push\" operational analysis for a property. import_rent_roll {name}: open the rent-roll importer for a property (or tell the operator they can just attach the file and you'll file it automatically — a multi-property file is filed to each property it covers).",
       "- remove_loan {name}: delete a loan (opens the app's own confirmation dialog). set_loan_status {name, status}: set a loan's status — status must be exactly one of \"Active\", \"Matured\", \"Extended\", \"Extension undecided\", \"Paid off\". archive_property {name} / unarchive_property {name}: archive a property (its loans go with it) or bring an archived one back. edit_assumptions {name, changes}: change a property's underwriting assumptions — changes may include vacancy, managementFee, capRate (each a decimal, 0.05 = 5%), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars per unit). set_loan_status, archive/unarchive and edit_assumptions all show an Approve card first.",
+      "Two clarifications from testing: (a) cap rate is a PROPERTY underwriting assumption — set it with edit_assumptions {capRate}, which needs no loan; never tell the operator a loan must exist first. (b) A PROPERTY can only be archived (archive_property), not permanently deleted — do not describe a delete-from-settings path that does not exist; a loan, by contrast, is removed with remove_loan.",
       "- set_refi_noi_basis {name, basis}: open a loan's refinance and set which NOI it's sized on — basis is \"in-place\", \"underwritten\" or \"entered\". add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title. set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
       "- propose_profile_change {name, changes}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
@@ -8741,7 +8786,19 @@ tr.flagged:hover td{background:#fee2e2}
       open_data_health: function(){ if(typeof openTab==="function") openTab("health"); return {ok:true,close:true,msg:"Opened Data Health."}; },
       open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
       import_excel: function(){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; },
-      fetch_live_rate: function(){ try{ fetchAllLiveRates(); }catch(e){} return {ok:true,close:true,msg:"Fetching today’s live market rates…"}; },
+      fetch_live_rate: function(){
+        try{ fetchAllLiveRates(); }catch(e){}
+        // 2.9.6 (#3) — return the rates so the assistant can actually USE them and keep the
+        // chat open (it used to return only a status line and close). Reads the live cache
+        // the fetch fills; a tenor not yet fetched shows its catalog value, marked estimated.
+        var want = ["sofr","ust2y","ust3y","ust5y","ust7y","ust10y"], est=false;
+        var parts = want.map(function(id){
+          var cat = INDEX_BY_ID[id]; if(!cat) return null;
+          var c = INDEX_CACHE[id], v = c ? c.value : cat.fallback; if(!c) est=true;
+          return cat.label.replace(/\s*\((CMT|overnight)\)/,"") + " " + Number(v).toFixed(2) + "%";
+        }).filter(Boolean);
+        return { ok:true, msg:"Live market rates — " + parts.join(" · ") + (est ? " (some estimated; refreshing the feed — ask again to pick up the rest)." : ".") };
+      },
       run_push: function(a){
         var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
         if(!aiAvailable()) return {ok:false,msg:"Analysing what to push needs Claude connected."};
