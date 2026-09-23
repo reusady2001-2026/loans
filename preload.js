@@ -113,6 +113,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docMove: (fromKey, toKey, propName) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName }),
   // Reveal the documents folder in the OS file manager.
   openDocsFolder: () => ipcRenderer.invoke('lds:docs-open-folder'),
+  propPurge: (payload) => ipcRenderer.invoke('lds:prop-purge', payload),        // {propKey} → {ok,removed} — permanent delete of a property's files (2.9.6)
   // Assistant chat history (per-property + portfolio), persisted on disk.
   chatSave: (payload) => ipcRenderer.invoke('lds:chat-save', payload),       // {scope,scopeName,id?,title?,messages,files?,pinned?} → {ok,conversation}
   chatList: ({ scope }) => ipcRenderer.invoke('lds:chat-list', { scope }),    // → {ok,scopeName,conversations:[meta]}

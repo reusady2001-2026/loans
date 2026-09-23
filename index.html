@@ -4056,6 +4056,24 @@ tr.flagged:hover td{background:#fee2e2}
       try{ opRenderPortfolio(); }catch(e){}
       try{ renderLoanProfilePanel(); }catch(e){}
     }
+    // 2.9.6 (#9) — permanently delete an ARCHIVED property: its loan record(s), operating model,
+    // profile, chats and on-disk folder, all for good. Archived-only + a strong confirm gate it;
+    // there is no undo, so everything about the property is removed and the view re-renders clean.
+    async function opDeletePropertyPermanent(key){
+      if(!key) return { ok:false };
+      for(var i = loans.length - 1; i >= 0; i--){ if(propertyKey(loans[i]) === key) loans.splice(i, 1); }
+      try{ OperatingStore.remove(key); }catch(e){}
+      try{ delete profileCache[key]; }catch(e){}
+      try{ delete standaloneProps[key]; }catch(e){}
+      try{ delete gdNOICache[key]; delete gdFullCache[key]; }catch(e){}
+      try{ if(opDeskLoaded && opDeskLoaded.delete) opDeskLoaded.delete(key); }catch(e){}
+      if(opFocusKey === key) opFocusKey = "";
+      if(state.activeId && !getLoan(state.activeId)) state.activeId = null;
+      try{ save(); }catch(e){}
+      try{ if(window.ldsShell && ldsShell.propPurge) await ldsShell.propPurge({ propKey: key }); }catch(e){}
+      try{ render(); }catch(e){}
+      return { ok:true };
+    }
     // Archived properties (loan-backed or standalone) — shown only in the Profile picker so one can be
     // selected and un-archived.
     function opArchivedProps(){
@@ -5920,7 +5938,10 @@ tr.flagged:hover td{background:#fee2e2}
             '<div class="min-w-0 mr-1"><span class="text-xs font-bold uppercase tracking-wide text-amber-700">Archived ('+archivedList.length+')</span>'+
             '<p class="text-[11px] text-amber-600">Hidden from the roll-up and the count — click to bring one back.</p></div>'+
             '<div class="flex flex-wrap items-center gap-1.5">'+
-              archivedList.map(a => '<button type="button" data-unarchive="'+escapeHtml(a.key)+'" class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="Un-archive — bring it back to the lists, roll-up and count"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13h18V7"/><path d="M1 3h22v4H1z"/><path d="M10 12h4"/></svg>'+escapeHtml(a.name)+'</button>').join('')+
+              archivedList.map(a => '<span class="inline-flex items-center overflow-hidden rounded-lg border border-amber-300 bg-white">'+
+                '<button type="button" data-unarchive="'+escapeHtml(a.key)+'" class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="Un-archive — bring it back to the lists, roll-up and count"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13h18V7"/><path d="M1 3h22v4H1z"/><path d="M10 12h4"/></svg>'+escapeHtml(a.name)+'</button>'+
+                '<button type="button" data-harddelete="'+escapeHtml(a.key)+'" data-name="'+escapeHtml(a.name)+'" class="inline-flex items-center border-l border-amber-200 px-1.5 py-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700" title="Delete permanently — remove this property and its files for good"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>'+
+              '</span>').join('')+
             '</div>'+
           '</div>'
         : '';
@@ -5955,6 +5976,15 @@ tr.flagged:hover td{background:#fee2e2}
         const key = btn.getAttribute('data-unarchive'); if(!key) return;
         try{ await opArchiveProperty(key, false); }catch(err){}
         toast("Property restored — back in the roll-up and count.", "check");
+      }));
+      // 2.9.6 (#9) — permanent delete from the Archived strip (archived-only, strong confirm, no undo).
+      dom.portfolioView.querySelectorAll('[data-harddelete]').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.getAttribute('data-harddelete'), name = btn.getAttribute('data-name') || 'this property';
+        confirmDialog('Delete “'+name+'” permanently?',
+          'This removes the property and everything under it — its loan record, operating model, T12s, agreements, rent rolls, chats and profile — from disk, for good. This cannot be undone.',
+          () => { opDeletePropertyPermanent(key).then(() => toast('“'+name+'” permanently deleted', 'trash')); },
+          'Delete permanently');
       }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));

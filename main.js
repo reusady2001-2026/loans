@@ -341,6 +341,18 @@ ipcMain.handle('lds:docs-open-folder', async () => {
   try { const d = documentsDir(); fs.mkdirSync(d, { recursive: true }); await shell.openPath(d); return { ok: true, path: d }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// 2.9.6 — permanent property delete (archived-only, driven from the renderer with a strong
+// confirm). Removes the property's documents folder AND its chats folder from disk, for good.
+ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
+  try {
+    if (!propKey) return { ok: false, error: 'no key' };
+    let removed = 0;
+    for (const d of [propDir(propKey), chatScopeDir(propKey)]) {
+      try { if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); removed++; } } catch (x) {}
+    }
+    return { ok: true, removed: removed };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 
 // ---- Assistant chat history (per-property + portfolio) -----------------------
 // Conversations persist under userData/chats/<hash(scope)>/ — same durable, update-safe
