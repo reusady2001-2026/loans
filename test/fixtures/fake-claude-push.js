@@ -15,6 +15,10 @@ if (a[0] !== '-p') process.exit(0);
 let raw = '';
 process.stdin.on('data', (d) => { raw += d; });
 process.stdin.on('end', () => {
+  // 2.9.7 (#108) — the T12 double reading: answer with the app's own classification of every detail line
+  // ($LDS_FAKE_T12 = "agree"), or with two deliberate disagreements ("disagree": a reimbursement line read as a
+  // utility expense, and one repairs month read $600 higher).
+  if (/checking a property's trailing-twelve-month operating statement/i.test(a[1] || '')) { answerT12(raw); return; }
   let input = null; try { input = JSON.parse(raw); } catch (e) {}
   if (process.env.LDS_FAKE_INPUT_FILE) { try { fs.writeFileSync(process.env.LDS_FAKE_INPUT_FILE, JSON.stringify(input)); } catch (e) {} }
   if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' ' + ((input && input.property) || '?') + '\n'); } catch (e) {} }   // one line per call, so a test can count them
@@ -33,3 +37,37 @@ process.stdin.on('end', () => {
     { title: 'FAKE-MOVE trim utilities', rank: 1, impact: 'FAKE-IMPACT about $40,000 a year', impactInPlace: 40000, impactUnderwritten: 38000, effort: 'light', rationale: 'FAKE-RATIONALE utilities run above the benchmark.' } ] };
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
 });
+
+function answerT12(raw){
+  if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' T12-CHECK\n'); } catch (e) {} }
+  const K = require(path.join(__dirname, '..', '..', 't12-classify.js'));
+  const MON = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  const rows = String(raw).split('\n').map((l) => { const m = l.match(/^Row (\d+): (.*)$/); return m ? { n: +m[1], cells: m[2].split(' | ') } : null; }).filter(Boolean);
+  let monthCols = null, section = 'INCOME', done = false; const lines = [];
+  const num = (c) => { const t = String(c || '').replace(/[$,\s]/g, ''); if (!/^\(?-?[\d.]+\)?$/.test(t)) return null; const v = parseFloat(t.replace(/[()]/g, '')); return /^\(.*\)$/.test(t) ? -v : v; };
+  for (const r of rows){
+    if (!monthCols){
+      const cols = []; r.cells.forEach((c, i) => { const m = String(c).match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{4})$/); if (m && MON[m[1].toLowerCase()]) cols.push({ i, ym: m[2] + '-' + String(MON[m[1].toLowerCase()]).padStart(2, '0') }); });
+      if (cols.length) monthCols = cols;
+      continue;
+    }
+    if (done) continue;
+    const label = String(r.cells[0] || '').trim(), up = label.toUpperCase();
+    if (/^NET OPERATING INCOME/.test(up)) { done = true; continue; }
+    if (/^TOTAL INCOME/.test(up)) { section = 'EXPENSE'; continue; }
+    if (/^TOTAL/.test(up)) continue;
+    const nums = r.cells.slice(1).map(num);
+    if (!nums.some((v) => v != null)) { if (/EXPENSE/.test(up)) section = 'EXPENSE'; continue; }
+    const cc = K.classifyConfident(label, section, ''), code = (cc && cc.code) || (section === 'EXPENSE' ? 'GA' : 'OTH');
+    const role = section === 'EXPENSE' ? 'expense' : 'income';
+    const monthly = monthCols.map((mc) => ({ month: mc.ym, amount: num(r.cells[mc.i]) || 0 }));
+    const annual = num(r.cells[r.cells.length - 1]) || 0;
+    lines.push({ row: r.n, label, role, category: role === 'expense' ? (K.roleOf(code) === 'expense' ? code : 'GA') : (K.roleOf(code) === 'expense' ? 'OTH' : code), annual, monthly });
+  }
+  if ((process.env.LDS_FAKE_T12 || 'agree') === 'disagree'){
+    const re = lines.find((l) => /reimburs/i.test(l.label)); if (re){ re.role = 'expense'; re.category = 'UTIL'; }
+    const rm = lines.find((l) => /repair/i.test(l.label)); if (rm && rm.monthly[4]){ rm.monthly[4].amount += 600; rm.annual += 600; }
+  }
+  const data = { lines: lines, totals: {} };
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
+}

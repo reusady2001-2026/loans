@@ -26,6 +26,7 @@
   <script src="./general-data.js"></script>
   <script src="./profile.js"></script>
   <script src="./rent-roll.js"></script>
+  <script src="./t12-check.js"></script>
   <script src="./ocr.js"></script>
   <script src="./vendor/paddleocr/paddle-engine.js"></script>
   <script>
@@ -3299,6 +3300,7 @@ tr.flagged:hover td{background:#fee2e2}
         await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
         var gd = null; try{ gd = await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
         try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // 2.9.7 (#78) — re-run "what to push" only if the statement in use really changed (its checksum), never for a duplicate or an older year
+        try{ opT12Check(key); }catch(e){}   // 2.9.7 (#108) — the AI double-reads a NEW T12 in the background (once per file; skipped for a duplicate or an older year)
         if(opFocusKey === key) renderUnderwriting();
         if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
         // 2.9.7 (#14) — an older year's T12: the newer statement stays in use; this one joins the history.
@@ -3387,7 +3389,7 @@ tr.flagged:hover td{background:#fee2e2}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench }).setup;
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench, review: opT12ReviewFor(opFocusKey, i.fileSha) }).setup;   // 2.9.7 (#108) — with the user's T12 review decisions
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
@@ -3582,7 +3584,7 @@ tr.flagged:hover td{background:#fee2e2}
         : (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "last12") ? '<div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] text-sky-900">'+
           '<span class="font-bold uppercase tracking-wide">Last 12 months</span> &mdash; this file covers '+(gdRec.noi.monthsInFile||'more than 12')+' months; the NOI uses only the last 12 ('+escapeHtml(ymRange(gdRec.noi.months))+'): <strong>'+fmtMoney(gdRec.noi.inPlace)+'</strong>. The earlier months are kept in the history below.</div>'
         : '';
-      return review + annualizedBanner +
+      return opT12ReviewHtml(opFocusKey) + review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
@@ -3797,7 +3799,8 @@ tr.flagged:hover td{background:#fee2e2}
       opT12LastCache[f.id] = lm; return lm;
     }
     // An OLDER T12 goes into the property's history only: its months fill gaps, never overwrite newer ones.
-    async function opMergeT12History(key, grid){
+    function opMergeT12History(key, grid){ return gdSerial(key, () => opMergeT12HistoryNow(key, grid)); }
+    async function opMergeT12HistoryNow(key, grid){
       try{
         if(!window.GeneralData) return false;
         const parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
@@ -3844,6 +3847,7 @@ tr.flagged:hover td{background:#fee2e2}
       // The upload path passes skipAutoPush and runs it once itself AFTER rebuilding General Data (so the
       // stale push is dropped first) — otherwise the fresh statement would trigger two overlapping runs.
       if(key && !(opts && opts.skipAutoPush)){ try{ opMaybeAutoPush(key); }catch(e){} }
+      if(key && !(opts && opts.skipAutoPush)){ try{ const rv0 = opT12ReviewFor(key, uwState.input.fileSha); if(rv0 && rv0.status === "unavailable") opT12Check(key, { force: true }); }catch(e){} }   // 2.9.7 (#108)
     }
     // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
     // so it re-reads only after an upload), then refresh those two panels. Reading, not storing.
@@ -3973,10 +3977,10 @@ tr.flagged:hover td{background:#fee2e2}
     // app's own parse + classifier + Setup so the figures match the tab exactly.
     var gdNOICache = {};    // propKey -> { inPlace, underwritten, period } | null — synchronous read for the refi panel
     var gdFullCache = {};   // propKey -> the whole general-data record | null — synchronous read for the history card
-    function opClassifyLine(name, section, sub){
+    function opClassifyLine(name, section, sub, row){
       try{
         if(!(window.T12Classify && T12Classify.classifyConfident)) return null;
-        var cc = T12Classify.classifyConfident(name, section, sub); if(!cc || !cc.code) return null;
+        var cc = (row && row.forceCode) ? { code: row.forceCode } : T12Classify.classifyConfident(name, section, sub); if(!cc || !cc.code) return null;   // 2.9.7 (#108) — a decided line keeps its category
         var role = T12Classify.roleOf ? T12Classify.roleOf(cc.code) : null;
         var label = (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[cc.code]) || cc.code;
         return { code: cc.code, role: role, label: label };
@@ -4347,13 +4351,15 @@ tr.flagged:hover td{background:#fee2e2}
     // Persist Claude's "what to push" (and/or the saved assumptions snapshot) INTO the property's
     // general-data.json, so the moves — with their two NOI-impact figures — survive a restart and
     // are available to the refinance calculator's push checkboxes without re-running Claude.
-    async function opPersistGeneralExtras(key, extras){
+    function opPersistGeneralExtras(key, extras){ return gdSerial(key, () => opPersistGeneralExtrasNow(key, extras)); }
+    async function opPersistGeneralExtrasNow(key, extras){
       try{
         if(!key || !extras) return;
         var gd = gdFullCache[key] || await opLoadGeneralData(key);
-        if(!gd || !gd.noi){ gd = await opUpdateGeneralData(key) || gd; }   // make sure the record exists (built from the folder T12)
+        if(!gd || !gd.noi){ gd = await opUpdateGeneralDataNow(key) || gd; }   // make sure the record exists (built from the folder T12) — already inside this property's turn
         if(!gd) return;
         if(extras.push !== undefined) gd.push = extras.push;
+        if(extras.t12Review !== undefined) gd.t12Review = extras.t12Review;
         if(extras.assumptions !== undefined) gd.assumptions = extras.assumptions;
         gd.updatedAt = new Date().toISOString();
         await opWriteGeneralDataFile(key, gd);
@@ -4372,6 +4378,9 @@ tr.flagged:hover td{background:#fee2e2}
     function uwBuildSetupFromGrid(grid, opt){
       opt = opt || {};
       var parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
+      // 2.9.7 (#108) — the user's decisions from the T12 double reading re-book the decided lines (side,
+      // category, amounts) before anything is built, so every figure follows them.
+      if(opt.review && window.T12Check){ try{ parsedM = T12Check.applyDecisions(parsedM, opt.review); }catch(e){} }
       var statementNOI = null, fpReconcile = null;
       try{ var fp0 = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals, summaryMismatch: parsedM.summaryMismatch, summaryTotals: parsedM.summaryTotals }); statementNOI = fp0.inPlaceNOI; fpReconcile = fp0.reconcile; }catch(e){}
       // 2.9.7 — the T12 rule (#11, #257): last 3 months × 4 when the file covers fewer than 12 months or
@@ -4434,7 +4443,10 @@ tr.flagged:hover td{background:#fee2e2}
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : propUnits(key);   // 2.9.7 (#19) — the profile's units, the same number the tab shows
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
-      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
+      var rv = null;
+      try{ var gdr = gdFullCache[key] || await opLoadGeneralData(key); rv = gdr && gdr.t12Review; }catch(e){}
+      if(rv && rv.fileSha && r.sha && rv.fileSha !== r.sha) rv = null;   // decisions belong to the file they were made on
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench, review: rv });
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
@@ -4475,7 +4487,13 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // On a T12 upload: parse its month columns, roll them into general-data.json
     // (24-month window, newer months win), and refresh the two NOIs.
-    async function opUpdateGeneralData(key){
+    // 2.9.7 — one property's general-data.json is read-modified-written by several things at once (the push
+    // result, the T12 double reading, a rebuild after an upload). They take turns per property, so one write
+    // never drops another's part.
+    const gdQueue = {};
+    function gdSerial(key, fn){ const prev = gdQueue[key] || Promise.resolve(); const next = prev.catch(() => {}).then(fn); gdQueue[key] = next.catch(() => {}); return next; }
+    function opUpdateGeneralData(key){ return gdSerial(key, () => opUpdateGeneralDataNow(key)); }
+    async function opUpdateGeneralDataNow(key){
       try{
         if(!key || !window.GeneralData) return null;
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
@@ -4494,7 +4512,8 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){ return null; }
     }
     // On an assumptions change: recompute only the NOIs (history untouched) if a record already exists.
-    async function opRefreshGeneralDataNOI(key){
+    function opRefreshGeneralDataNOI(key){ return gdSerial(key, () => opRefreshGeneralDataNOINow(key)); }
+    async function opRefreshGeneralDataNOINow(key){
       try{
         if(!key || !window.GeneralData) return;
         var existing = await opLoadGeneralData(key); if(!existing) return;
@@ -4835,6 +4854,14 @@ tr.flagged:hover td{background:#fee2e2}
         try{ await opRecomputeAll('manual'); }catch(e){}
         renderDataHealth();
       });
+      const tc = view.querySelector('[data-health-t12check]');
+      if(tc) tc.addEventListener('click', async () => {
+        tc.disabled = true; tc.textContent = 'Checking…';
+        const note = el('healthT12CheckNote');
+        const res = await opT12CheckAll((d, n, ran) => { if(note) note.textContent = 'Checked ' + d + ' of ' + n + ' T12s…'; });
+        if(note && res) note.textContent = res.checked ? ('Checked ' + res.checked + ' T12' + (res.checked === 1 ? '' : 's') + ' with AI — open a property in Underwriting to see its result.') : 'Every T12 was already checked.';
+        tc.disabled = false; tc.textContent = 'Check all T12s with AI';
+      });
       view.querySelectorAll('[data-health-open]').forEach(b => b.addEventListener('click', () => {
         openTab('underwriting'); opSelectProperty(b.getAttribute('data-health-open'));
       }));
@@ -4953,7 +4980,8 @@ tr.flagged:hover td{background:#fee2e2}
           '<div><h2 class="text-lg font-bold text-slate-900">Data Health</h2>'+
             '<p class="text-sm text-slate-500">What the app knows about each property — and what’s missing. Running app v'+escapeHtml(ver)+'.</p></div>'+
           '<div class="text-right"><button type="button" data-health-recompute class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100">Recompute all figures</button>'+
-            '<div class="mt-1 text-[11px] text-slate-400">'+escapeHtml(lastLine)+'</div></div>'+
+            ' <button type="button" data-health-t12check class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100" title="Have the AI double-read every T12 that hasn’t been checked yet (one time, for T12s saved before 2.9.7)">Check all T12s with AI</button>'+   // 2.9.7 (#108)
+            '<div class="mt-1 text-[11px] text-slate-400">'+escapeHtml(lastLine)+'</div><div class="mt-0.5 text-[11px] text-slate-500" id="healthT12CheckNote"></div></div>'+
         '</div>';
       const kpis = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+
         kpiCard("Properties", String(props.length), { sub: activeLoans().length + " loans" })+
@@ -5130,6 +5158,215 @@ tr.flagged:hover td{background:#fee2e2}
         benchmarksPerUnit: benchmarksPerUnit,
         t12: { income: t.income, expense: t.expense } };
     }
+    // ── 2.9.7 (#108) — T12 DOUBLE READING ──────────────────────────────────────────────────────────────
+    // Every new T12: the regular reader's numbers show at once; the AI reads the same file in the background
+    // ("Checking with AI…"); the two readings are compared line by line (where each line belongs, its year
+    // and month amounts). All agree → "✓ checked by AI". Disagreements → one review card each; until the user
+    // decides, the regular reader's version is used. Decisions are saved with the property (general-data.json)
+    // and flow into every figure (Underwriting, Home, refinance, assistant). The AI only checks; it never sets
+    // a number. Runs once per new T12 (by checksum); without Claude the T12 is "not AI-checked yet".
+    const t12ReviewLive = {};   // propKey -> in-memory review while a check runs / before it is persisted
+    let claudeReadyCache = { at: 0, ok: false };
+    async function claudeReady(){
+      if(!aiAvailable() || !(window.ldsShell && ldsShell.aiStatus)) return false;
+      if(Date.now() - claudeReadyCache.at < 60000) return claudeReadyCache.ok;
+      let ok = false; try{ const st = await ldsShell.aiStatus(); ok = !!claudeConnState(st).ok; }catch(e){ ok = false; }
+      claudeReadyCache = { at: Date.now(), ok: ok }; return ok;
+    }
+    function opT12ReviewFor(key, sha){
+      if(!key) return null;
+      const live = t12ReviewLive[key], gd = gdFullCache[key], saved = gd && gd.t12Review;
+      const rv = live || saved || null;
+      if(rv && sha && rv.fileSha && rv.fileSha !== sha) return null;
+      return rv;
+    }
+    function t12CodeLabel(code){ if(code === "NONOP") return "Not operating (left out of NOI)"; return (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[code]) || code; }
+    function t12RoleWord(role){ return role === "expense" ? "an expense" : (role === "income" ? "income" : "not operating"); }
+    async function opT12Persist(key, review){
+      t12ReviewLive[key] = review;
+      try{ await opPersistGeneralExtras(key, { t12Review: review }); }catch(e){}
+    }
+    // Run the AI reading for the T12 in use (once per file; force re-runs it).
+    async function opT12Check(key, opts){
+      opts = opts || {};
+      if(!key || !window.T12Check) return null;
+      const r = await opReadPropT12(key); if(!r || !r.grid) return null;
+      const cur = opT12ReviewFor(key, r.sha);
+      if(cur && !opts.force && cur.status !== "unavailable" && cur.status !== "error") return cur;   // already checked for this file
+      if(!(await claudeReady())){
+        const rv = { fileSha: r.sha, fileName: r.name, status: "unavailable", cards: [], at: new Date().toISOString() };
+        await opT12Persist(key, rv); if(opFocusKey === key) renderUnderwriting(); return rv;
+      }
+      t12ReviewLive[key] = { fileSha: r.sha, fileName: r.name, status: "checking", cards: [] };
+      if(opFocusKey === key){ try{ renderUnderwriting(); }catch(e){} }
+      let res = null;
+      try{ res = await ldsShell.aiExtract({ instruction: T12Check.INSTRUCTION, schema: T12Check.schema(), input: T12Check.buildAiInput(r.grid, { fileName: r.name }), timeoutMs: 300000 }); }catch(e){ res = { ok:false, error: String((e && e.message) || e) }; }
+      let rv;
+      if(!res || !res.ok){
+        rv = { fileSha: r.sha, fileName: r.name, status: "error", error: (res && res.error) || "Claude could not read the file.", cards: [], at: new Date().toISOString() };
+      } else {
+        const parsedM = T12Parse.parseGrid(r.grid, { basis: "total", monthly: true });
+        const reg = T12Check.regularLines(parsedM, opClassifyLine);
+        const cmp = T12Check.compare(reg, res.data || {});
+        rv = { fileSha: r.sha, fileName: r.name, status: cmp.agree ? "agree" : "needs-review", cards: cmp.cards, compared: cmp.compared, aiTotals: cmp.totals.ai, at: new Date().toISOString() };
+      }
+      await opT12Persist(key, rv);
+      delete t12ReviewLive[key];
+      if(opFocusKey === key){ try{ renderUnderwriting(); }catch(e){} }
+      return rv;
+    }
+    // Check every property whose T12 has not been checked yet (Data Health, one-time button).
+    let t12CheckAllRunning = false;
+    async function opT12CheckAll(onProgress){
+      if(t12CheckAllRunning) return; t12CheckAllRunning = true;
+      const props = opProperties().filter(p => propertyHasT12(p.key)); let done = 0, ran = 0;
+      for(const p of props){
+        try{ const r = await opReadPropT12(p.key); const cur = r ? opT12ReviewFor(p.key, r.sha) : null;
+             if(r && (!cur || cur.status === "unavailable" || cur.status === "error")){ await opT12Check(p.key, { force: true }); ran++; } }catch(e){}
+        done++; try{ onProgress && onProgress(done, props.length, ran); }catch(e){}
+      }
+      t12CheckAllRunning = false;
+      return { checked: ran, properties: props.length };
+    }
+    // A saved decision → what the line IS (role, category, amounts).
+    function t12ChoiceText(card, d){
+      if(!d) return "";
+      if(card.type === "amount"){ return d.choice === "regular" ? "regular reader’s amount ("+fmtMoney(d.annual)+")" : d.choice === "ai" ? "AI’s amount ("+fmtMoney(d.annual)+")" : "another amount ("+fmtMoney(d.annual)+")"; }
+      return (d.role === "income" ? "Income" : d.role === "expense" ? "Expense" : "Something else") + " · " + t12CodeLabel(d.code) + " · " + fmtMoney(d.annual);
+    }
+    function opT12CardHtml(key, rv, card, idx){
+      const reg = card.regular || {}, ai = card.ai || {}, file = escapeHtml(rv.fileName || "the T12"), rowTxt = card.row != null ? "row " + card.row : "its row";
+      const done = card.decision, open = !done || t12EditOpen[key + "|" + card.id];
+      if(done && !open){
+        return '<div class="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[12px] text-emerald-800" data-t12card="'+idx+'">&#10003; <b>'+escapeHtml(card.label)+'</b>: '+escapeHtml(t12ChoiceText(card, done))+' · chosen by '+escapeHtml(done.by || "You")+' · '+escapeHtml(fmtWhenShort(done.at))+(done.note?' · <span class="italic">“'+escapeHtml(done.note)+'”</span>':'')+
+          ' <button type="button" data-t12change="'+idx+'" class="ml-1 font-semibold text-brand-700 underline">Change</button></div>';
+      }
+      const th = '<th class="px-2 py-1 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">';
+      const td = '<td class="px-2 py-1.5 align-top text-[12px] text-slate-700">';
+      let problem, why, how, choices;
+      if(card.type === "belongs"){
+        problem = card.extra ? 'The AI found “'+escapeHtml(card.label)+'” ('+fmtMoney(ai.annual)+'), which the regular reader didn’t count.'
+          : 'The regular reader counts “'+escapeHtml(card.label)+'” as '+t12RoleWord(reg.role)+' ('+escapeHtml(t12CodeLabel(reg.code))+'); the AI reads it as '+t12RoleWord(ai.role)+' ('+escapeHtml(t12CodeLabel(ai.code))+').';
+        why = (card.noiEffect === 0 ? 'NOI doesn’t change, but the line moves to another category (benchmarks and per-unit figures follow it).'
+          : 'If the AI is right, NOI is '+fmtMoney(Math.abs(card.noiEffect))+(card.noiEffect < 0 ? ' lower.' : ' higher.'));
+        how = 'File '+file+', '+rowTxt+(card.heading ? ', under '+escapeHtml(card.heading) : '')+'.';
+        const pre = done || { role: reg.role === "other" ? ai.role : reg.role, code: reg.role === "other" ? ai.code : reg.code, annual: reg.role === "other" ? ai.annual : reg.annual, monthly: reg.role === "other" ? ai.monthly : reg.monthly };
+        const opt = (codes, sel) => codes.map(c => '<option value="'+c+'"'+(c === sel ? ' selected' : '')+'>'+escapeHtml(t12CodeLabel(c))+'</option>').join('');
+        const rowC = (role, label, codes) => '<tr>'+td+'<label class="inline-flex items-center gap-1.5"><input type="radio" name="t12r'+idx+'" value="'+role+'"'+(pre.role === role ? ' checked' : '')+' data-t12role="'+idx+'"> '+label+'</label></td>'+
+          td+'<select data-t12code="'+idx+'" data-for="'+role+'" class="rounded border border-slate-300 px-1 py-0.5 text-[12px]">'+opt(codes, pre.role === role ? pre.code : codes[0])+'</select></td>'+
+          td+'<input data-t12amt="'+idx+'" data-for="'+role+'" inputmode="decimal" class="w-28 rounded border border-slate-300 px-1 py-0.5 text-right text-[12px] tabular-nums" value="'+(pre.role === role ? Math.round(pre.annual * 100) / 100 : Math.round((pre.annual || 0) * 100) / 100)+'"></td></tr>';
+        choices = '<table class="mt-2 w-full border-collapse"><thead><tr>'+th+'This line is…</th>'+th+'Category</th>'+th+'Amount (year)</th></tr></thead><tbody>'+
+          rowC("income", "Income", T12Check.INCOME_CODES)+ rowC("expense", "Expense", T12Check.EXPENSE_CODES)+ rowC("other", "Something else", [T12Check.OTHER])+'</tbody></table>';
+      } else {
+        const monthsTxt = (card.months && card.months.length) ? card.months.map(ymShort).join(', ') : "";
+        problem = card.missing ? 'The AI didn’t find “'+escapeHtml(card.label)+'”; the regular reader reads '+fmtMoney(reg.annual)+'.'
+          : '“'+escapeHtml(card.label)+'”'+(monthsTxt ? ', '+escapeHtml(monthsTxt) : '')+': the regular reader reads '+fmtMoney(reg.annual)+' for the year, the AI reads '+fmtMoney(ai.annual)+'.';
+        why = 'If the AI is right, NOI is '+fmtMoney(Math.abs(card.noiEffect))+(card.noiEffect < 0 ? ' lower.' : (card.noiEffect > 0 ? ' higher.' : ' unchanged.'));
+        how = 'File '+file+', '+rowTxt+(monthsTxt ? ', column '+escapeHtml(monthsTxt) : '')+'.';
+        const sel = done ? done.choice : "regular";
+        const rr = (v, label, amt) => '<tr>'+td+'<label class="inline-flex items-center gap-1.5"><input type="radio" name="t12a'+idx+'" value="'+v+'"'+(sel === v ? ' checked' : '')+' data-t12pick="'+idx+'"> '+label+'</label></td>'+td+amt+'</td></tr>';
+        choices = '<table class="mt-2 w-full border-collapse"><tbody>'+
+          rr("regular", "Regular reader’s amount", '<span class="tabular-nums">'+fmtMoney(reg.annual)+'</span>')+
+          (card.missing ? '' : rr("ai", "AI’s amount", '<span class="tabular-nums">'+fmtMoney(ai.annual)+'</span>'))+
+          rr("other", "Another amount", '<input data-t12other="'+idx+'" inputmode="decimal" class="w-28 rounded border border-slate-300 px-1 py-0.5 text-right text-[12px] tabular-nums" value="'+(done && done.choice === "other" ? done.annual : "")+'" placeholder="can be negative">')+
+          '</tbody></table>';
+      }
+      // the line's 12 monthly boxes (pre-filled); the year total is always their sum
+      const baseM = (done && done.monthly) || (card.type === "belongs" && reg.role === "other" ? ai.monthly : reg.monthly) || {};
+      const months = Object.keys(Object.assign({}, reg.monthly || {}, ai.monthly || {})).sort();
+      const monthBoxes = months.length ? '<div class="mt-2 hidden" data-t12months="'+idx+'"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Months — the year total is their sum</div><div class="mt-1 grid grid-cols-3 sm:grid-cols-6 gap-1">'+
+        months.map(ym => '<label class="text-[10px] text-slate-500">'+escapeHtml(ymShort(ym))+'<input data-t12m="'+idx+'" data-ym="'+ym+'" inputmode="decimal" class="mt-0.5 w-full rounded border border-slate-300 px-1 py-0.5 text-right text-[11px] tabular-nums" value="'+(baseM[ym] != null ? baseM[ym] : 0)+'"></label>').join('')+
+        '</div><div class="mt-1 text-[11px] text-slate-500">Year total: <b class="tabular-nums" data-t12sum="'+idx+'"></b></div></div>' : '';
+      return '<div class="rounded-xl border border-amber-200 bg-white p-3 shadow-sm" data-t12card="'+idx+'">'+
+        '<table class="w-full border-collapse"><thead><tr>'+th+'The problem</th>'+th+'Why it matters</th>'+th+'How to check</th></tr></thead><tbody><tr>'+td+problem+'</td>'+td+why+'</td>'+td+how+'</td></tr></tbody></table>'+
+        choices + monthBoxes +
+        '<div class="mt-2 flex flex-wrap items-center gap-2"><input data-t12note="'+idx+'" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-[12px]" placeholder="Note (optional)" value="'+escapeHtml((done && done.note) || "")+'">'+
+        '<button type="button" data-t12save="'+idx+'" class="rounded-lg bg-brand-600 px-3 py-1 text-xs font-bold text-white hover:bg-brand-500">Save</button></div>'+
+      '</div>';
+    }
+    const t12EditOpen = {};   // "key|cardId" -> true while a decided card is being changed
+    function opT12ReviewHtml(key){
+      if(!key || !window.T12Check) return "";
+      const rv = opT12ReviewFor(key, uwState.input.fileSha);
+      if(!rv) return uwState.input.fileSha ? '<div id="t12Review" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-600"><span class="font-semibold">Not AI-checked yet</span> — this T12 was saved before the double reading. <button type="button" data-t12retry class="ml-1 font-semibold text-brand-700 underline">Check it with AI now</button></div>' : "";
+      const st = T12Check.status(rv);
+      const wrap = (cls, inner) => '<div id="t12Review" class="rounded-xl border '+cls+' px-4 py-3 text-[12px]">'+inner+'</div>';
+      if(st === "checking") return wrap("border-slate-200 bg-slate-50 text-slate-600", '<span class="font-semibold">Checking with AI…</span> the regular reader’s figures are shown meanwhile.');
+      if(st === "unavailable") return wrap("border-slate-200 bg-slate-50 text-slate-600", '<span class="font-semibold">Not AI-checked yet</span> — it is checked automatically once Claude is connected.');
+      if(st === "error") return wrap("border-rose-200 bg-rose-50 text-rose-700", '<span class="font-semibold">Couldn’t check this T12 with AI</span> — '+escapeHtml(rv.error || "")+' <button type="button" data-t12retry class="ml-1 font-semibold underline">Try again</button>');
+      if(st === "agree") return wrap("border-emerald-200 bg-emerald-50 text-emerald-700", '<span class="font-semibold">&#10003; checked by AI</span> — both readings agree on every line ('+(rv.compared||0)+' lines).');
+      const cards = rv.cards || [], n = T12Check.pending(rv);
+      const head = st === "checked"
+        ? '<div class="font-semibold text-emerald-700">&#10003; This T12 is checked</div>'
+        : '<div class="font-semibold text-amber-800">&#9888; '+n+' line'+(n===1?'':'s')+' on this T12 need'+(n===1?'s':'')+' your review — until you decide, the app uses the regular reader’s version.</div>';
+      return wrap(st === "checked" ? "border-emerald-200 bg-emerald-50/50" : "border-amber-300 bg-amber-50", head + '<div class="mt-2 space-y-2">'+cards.map((c, i) => opT12CardHtml(key, rv, c, i)).join('')+'</div>');
+    }
+    // Read a card's form into a decision.
+    function opT12ReadDecision(view, rv, idx){
+      const card = rv.cards[idx]; if(!card) return null;
+      const q = (sel) => view.querySelector(sel);
+      const months = {}; let any = false;
+      view.querySelectorAll('[data-t12m="'+idx+'"]').forEach(inp => { const v = uwNum(inp.value); months[inp.getAttribute("data-ym")] = (v == null ? 0 : v); any = true; });
+      const boxesOpen = q('[data-t12months="'+idx+'"]') && !q('[data-t12months="'+idx+'"]').classList.contains("hidden");
+      const sumM = Object.keys(months).reduce((a, k) => a + months[k], 0);
+      const note = (q('[data-t12note="'+idx+'"]') || {}).value || "";
+      if(card.type === "belongs"){
+        const r = q('input[name="t12r'+idx+'"]:checked'); if(!r) return null;
+        const role = r.value, code = (q('[data-t12code="'+idx+'"][data-for="'+role+'"]') || {}).value;
+        let annual = uwNum((q('[data-t12amt="'+idx+'"][data-for="'+role+'"]') || {}).value);
+        let monthly = (card.regular.role === "other" ? card.ai.monthly : card.regular.monthly) || {};
+        if(boxesOpen && any){ monthly = months; annual = Math.round(sumM * 100) / 100; }
+        else if(annual != null && Math.abs(annual - (card.regular.role === "other" ? card.ai.annual : card.regular.annual)) >= 0.005 && any){ monthly = months; annual = Math.round(sumM * 100) / 100; }
+        if(annual == null) annual = 0;
+        return { choice: role, role: role, code: code || (role === "expense" ? "GA" : role === "income" ? "OTH" : T12Check.OTHER), annual: annual, monthly: monthly, note: note.trim(), by: "You", at: new Date().toISOString() };
+      }
+      const p = q('input[name="t12a'+idx+'"]:checked'); if(!p) return null;
+      const reg = card.regular, ai = card.ai || {};
+      if(p.value === "regular") return { choice: "regular", role: reg.role, code: reg.code, annual: reg.annual, monthly: reg.monthly, note: note.trim(), by: "You", at: new Date().toISOString() };
+      if(p.value === "ai") return { choice: "ai", role: reg.role, code: reg.code, annual: ai.annual, monthly: ai.monthly, note: note.trim(), by: "You", at: new Date().toISOString() };
+      let annual = uwNum((q('[data-t12other="'+idx+'"]') || {}).value), monthly = reg.monthly;
+      if(boxesOpen && any){ monthly = months; annual = Math.round(sumM * 100) / 100; }
+      if(annual == null) return null;
+      return { choice: "other", role: reg.role, code: reg.code, annual: annual, monthly: monthly, note: note.trim(), by: "You", at: new Date().toISOString() };
+    }
+    async function opT12SaveDecision(key, idx){
+      const view = el("uwView"), rv = opT12ReviewFor(key, uwState.input.fileSha); if(!view || !rv || !rv.cards[idx]) return;
+      const d = opT12ReadDecision(view, rv, idx);
+      if(!d){ toast("Pick one of the choices first.", "info"); return; }
+      const card = rv.cards[idx], before = card.decision ? t12ChoiceText(card, card.decision) : "regular reader’s version";
+      card.decision = d; delete t12EditOpen[key + "|" + card.id];
+      rv.status = T12Check.status(rv);
+      await opT12Persist(key, rv); delete t12ReviewLive[key];
+      try{ assumptionHistoryAdd && assumptionHistoryAdd(key, "T12 line: " + card.label, before, t12ChoiceText(card, d), d.note); }catch(e){}
+      // every figure follows: rebuild General Data (Home, refinance, assistant) and the tab
+      try{ delete gdNOICache[key]; await opUpdateGeneralData(key); }catch(e){}
+      try{ uwBuild(); }catch(e){}
+      renderUnderwriting();
+      try{ render(); }catch(e){}
+      toast(T12Check.status(rv) === "checked" ? "Saved — this T12 is checked." : "Saved.", "check");
+    }
+    // Delegated handlers for the review cards.
+    document.addEventListener("click", (e) => {
+      const t = e.target; if(!t || !t.closest || !t.closest("#t12Review")) return;
+      const sv = t.closest("[data-t12save]"); if(sv){ opT12SaveDecision(opFocusKey, +sv.getAttribute("data-t12save")); return; }
+      const ch = t.closest("[data-t12change]"); if(ch){ const rv = opT12ReviewFor(opFocusKey, uwState.input.fileSha); const c = rv && rv.cards[+ch.getAttribute("data-t12change")]; if(c){ t12EditOpen[opFocusKey + "|" + c.id] = true; renderUnderwriting(); } return; }
+      if(t.closest("[data-t12retry]")){ opT12Check(opFocusKey, { force: true }); return; }
+    });
+    // Changing an amount opens the line's 12 monthly boxes (pre-filled); the year total is their sum.
+    document.addEventListener("input", (e) => {
+      const t = e.target; if(!t || !t.closest || !t.closest("#t12Review")) return;
+      const idx = t.getAttribute("data-t12amt") || t.getAttribute("data-t12other") || t.getAttribute("data-t12m");
+      if(idx == null) return;
+      const box = document.querySelector('[data-t12months="'+idx+'"]');
+      if(box){ box.classList.remove("hidden");
+        if(!t.hasAttribute("data-t12m")){   // a typed year total spreads evenly over the months until the months are edited
+          const v = uwNum(t.value), ins = box.querySelectorAll('[data-t12m="'+idx+'"]');
+          if(v != null && ins.length){ const each = Math.round(v / ins.length * 100) / 100; let acc = 0; ins.forEach((m, k) => { const val = (k === ins.length - 1) ? Math.round((v - acc) * 100) / 100 : each; m.value = val; acc += val; }); }
+        }
+        let sum = 0; box.querySelectorAll('[data-t12m="'+idx+'"]').forEach(m => { const v = uwNum(m.value); sum += (v || 0); });
+        const sEl = document.querySelector('[data-t12sum="'+idx+'"]'); if(sEl) sEl.textContent = fmtMoney(Math.round(sum * 100) / 100);
+      }
+    });
     function opRunPush(key){
       if(!aiAvailable()){ toast("Analysing what to push needs the desktop app and a connected Claude.","error"); return; }
       const input = opPushInput(key); if(!input){ return; }

@@ -10,7 +10,7 @@ const FAKE=path.join(APP,'test','fixtures','fake-claude-push.js'), T12=path.join
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-push1-')), CALLS=path.join(UDATA,'calls.txt');
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
-const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').filter(Boolean).length; }catch(e){ return 0; } };
+const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').filter(l=>l&&!/T12-CHECK/.test(l)).length; }catch(e){ return 0; } };   // "what to push" calls only (the T12 double reading is counted separately)
 // an older year's T12 (Jul 2024 → Jun 2025)
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], ms=[]; for(let i=0;i<12;i++){ const y=2024+Math.floor((i+6)/12); ms.push(MON[(i+6)%12]+" "+y); }
 const g=Array(12).fill(50000), t=Array(12).fill(5000), sum=a=>a.reduce((x,y)=>x+y,0);
@@ -25,6 +25,7 @@ async function launch(){
   await page.evaluate(()=>{const s=document.getElementById('opPropPick');s.value='name:villages of whitewater';s.dispatchEvent(new Event('change',{bubbles:true}));}); await page.waitForTimeout(1500);
   return {app,page,errors};
 }
+const waitCalls=async(n,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(ms||15000)){ if(calls()>=n) break; await new Promise(r=>setTimeout(r,300)); } };
 const settle=(page)=>page.waitForFunction(()=>!/Claude is reading/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{}).then(()=>page.waitForTimeout(1200));
 (async()=>{
   let {app,page,errors}=await launch();
@@ -40,9 +41,9 @@ const settle=(page)=>page.waitForFunction(()=>!/Claude is reading/i.test((docume
   ok(/FAKE-MOVE/.test(await page.evaluate(()=>(document.getElementById('opScanMount')||{}).innerText||'')),'the saved moves are on screen');
   // change an assumption and save → it runs again
   await page.evaluate(()=>{const i=document.querySelector('#uwView [data-uwbench="vacancyPct"]'); i.value='7'; i.dispatchEvent(new Event('change',{bubbles:true}));}); await page.waitForTimeout(600);
-  await page.evaluate(()=>{const b=document.getElementById('uwSaveBtn'); if(b) b.click();}); await settle(page);
+  await page.evaluate(()=>{const b=document.getElementById('uwSaveBtn'); if(b) b.click();}); await waitCalls(2); await settle(page);
   ok(calls()===2,'changed assumptions run it again ('+calls()+')');
-  await page.evaluate(()=>{const b=document.getElementById('opPushRun'); if(b) b.click();}); await settle(page);
+  await page.evaluate(()=>{const b=document.getElementById('opPushRun'); if(b) b.click();}); await waitCalls(3); await settle(page);
   ok(calls()===3,'Re-analyse runs it on request ('+calls()+')');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

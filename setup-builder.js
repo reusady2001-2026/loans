@@ -72,7 +72,8 @@
     rows.forEach(function (r){
       if(!r) return;
       var isExp = String(r.section || "").toUpperCase().indexOf("EXP") >= 0;
-      var cc = T12.classifyConfident(r.name, r.section, r.sub), code = cc.code;
+      // 2.9.7 (#108) — a line the user decided in the T12 review carries its category (forceCode).
+      var cc = r.forceCode ? { code: r.forceCode, confident: true } : T12.classifyConfident(r.name, r.section, r.sub), code = cc.code;
       if(code == null) return;
       var amt = num(r.amount), expCode = (T12.roleOf(code) === "expense");
       // a $0 line (balance-sheet stub, zero plug) can never move a figure — not review noise

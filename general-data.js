@@ -50,7 +50,7 @@
     var rows = (parsed && Array.isArray(parsed.rows)) ? parsed.rows : [];
     rows.forEach(function (r){
       if (!r || !isObj(r.monthly)) return;
-      var c = classify(r.name, r.section, r.sub);
+      var c = classify(r.name, r.section, r.sub, r);   // the row rides along, so a decided line (forceCode) keeps its category
       if (!c || !c.code) return;
       var e = out.byCode[c.code] || (out.byCode[c.code] = { code: c.code, role: c.role || null, label: c.label || c.code, monthly: {} });
       if (c.role != null) e.role = c.role;
@@ -111,7 +111,7 @@
       var t = sumOver(m2, latest12), p = sumOver(m2, prior12);
       l.ttm = t.sum; l.ttmMonths = t.n; l.priorTtm = p.n ? p.sum : null; l.priorMonths = p.n;
     }
-    return {
+    var out = {
       schema: SCHEMA,
       propKey: meta.propKey != null ? meta.propKey : (gd.propKey != null ? gd.propKey : null),
       identity: isObj(meta.identity) ? meta.identity : (gd.identity || null),
@@ -120,6 +120,10 @@
       lines: lines,
       updatedAt: meta.now || gd.updatedAt || null
     };
+    // 2.9.7 — everything else the record carries (Claude's saved "what to push", the assumptions snapshot, the
+    // T12 review decisions, …) rides along untouched: a merge of new months never drops another part of the record.
+    for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !Object.prototype.hasOwnProperty.call(out, k)) out[k] = gd[k];
+    return out;
   }
   function assign(a, b){ for (var k in b) if (Object.prototype.hasOwnProperty.call(b, k)) a[k] = b[k]; return a; }
 
