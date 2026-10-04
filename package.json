@@ -8,6 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node test/run-unit.js",
+    "test:e2e": "node test/run-e2e.js",
     "build:win": "electron-builder --win portable --publish never",
     "build:win-installer": "electron-builder --win nsis --publish never",
     "build:linux": "electron-builder --linux AppImage"

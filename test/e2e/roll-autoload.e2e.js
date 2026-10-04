@@ -7,7 +7,7 @@
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
-const CREST=path.join(APP,'test','fixtures','crest-t12.xlsx');
+const CREST=path.join(APP,'test','fixtures','sample-t12.xlsx');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-autoload-'));
 const KEY='name:villages of whitewater';
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};

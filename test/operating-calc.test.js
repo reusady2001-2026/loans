@@ -26,9 +26,9 @@ function deepEq(got, want, msg){ var g = JSON.stringify(got), w = JSON.stringify
 function section(t){ console.log("\n" + t); }
 function line(annual, extra){ return Object.assign({ annual: annual, prevAnnual: null, controllable: true, source: "manual", updatedAt: "2026-09-07T00:00:00.000Z", note: null }, extra || {}); }
 
-// The app's global bench, copied from index.html uwDefaults() (line 3152).
-var BENCH = { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {},
-  sizing: { capRate: 0.055, ltvMax: 0.75, dscrMin: 1.20, dyMin: 0.07, intRate: 0.055, amortYears: 30 } };
+// The app's global bench, read straight out of index.html uwDefaults() — never a copy (#251).
+var AppValues = require("./app-values.js");
+var BENCH = AppValues.pick(AppValues.appBench(), ["vacancyPct", "mgmtPct", "reservePerUnit", "budget", "sizing"]);
 
 // ---------------------------------------------------------------------------
 section("module shape");

@@ -5,7 +5,7 @@
 const path = require('path'), os = require('os'), fs = require('fs'), crypto = require('crypto');
 const APP = path.resolve(__dirname, '..', '..');
 const { _electron: electron } = require((process.env.GN || '/opt/node22/lib/node_modules') + '/playwright');
-const CREST = path.join(APP, 'test', 'fixtures', 'crest-t12.xlsx');
+const CREST = path.join(APP, 'test', 'fixtures', 'sample-t12.xlsx');
 const UDATA = fs.mkdtempSync(path.join(os.tmpdir(), 'lds-t12disk-'));
 const KEY = 'name:villages of whitewater';                        // name-first key (v2.7.2)
 const HASH = crypto.createHash('sha1').update(KEY).digest('hex').slice(0, 16);
@@ -46,8 +46,8 @@ const bodyText = (page) => page.evaluate(() => document.getElementById('uwView')
   await page.waitForTimeout(800);
 
   const t1 = await bodyText(page);
-  ok(/9,483,604\.28/.test(t1), 'after upload: statement NOI reads $9,483,604.28 (the real NET OPERATING INCOME)');
-  ok(!/5,210,718\.69/.test(t1), 'after upload: the wrong below-the-line NET INCOME $5,210,718.69 is NOT shown');
+  ok(/671,287\.90/.test(t1), 'after upload: statement NOI reads $671,287.90 (the real NET OPERATING INCOME)');
+  ok(!/261,287\.90/.test(t1), 'after upload: the wrong below-the-line NET INCOME $261,287.90 is NOT shown');
 
   ok(fs.existsSync(PROPDIR), 'the property folder was created on disk (userData/documents/' + HASH + ')');
   const filesOnDisk = fs.existsSync(PROPDIR) ? fs.readdirSync(PROPDIR) : [];
@@ -81,14 +81,14 @@ const bodyText = (page) => page.evaluate(() => document.getElementById('uwView')
   // read, not a cache) and the wrong below-the-line figure never shows.
   await page.waitForTimeout(1000);
   const t2before = await bodyText(page);
-  ok(!/5,210,718\.69/.test(t2before), 'restart: the wrong below-the-line NET INCOME never appears');
+  ok(!/261,287\.90/.test(t2before), 'restart: the wrong below-the-line NET INCOME never appears');
   ok((await ls(page, 'ldsHub.operating.v1')) === null, 'restart: the roll-up auto-loads its figures from disk — browser storage stays empty (nothing cached)');
   await pick(page);
   await page.waitForFunction(() => /statement NOI/.test((document.getElementById('uwView') || {}).innerText || ''), null, { timeout: 12000 }).catch(() => {});
   await page.waitForTimeout(600);
   const t2 = await bodyText(page);
-  ok(/9,483,604\.28/.test(t2), 'restart: selecting the property re-reads its T12 from disk → $9,483,604.28');
-  ok(!/5,210,718\.69/.test(t2), 'restart: no stale $5,210,718.69 anywhere');
+  ok(/671,287\.90/.test(t2), 'restart: selecting the property re-reads its T12 from disk → $671,287.90');
+  ok(!/261,287\.90/.test(t2), 'restart: no stale $261,287.90 anywhere');
   ok((await ls(page, 'ldsHub.operating.v1')) === null, 'restart: reading the T12 wrote nothing to browser storage');
   ok(errors.length === 0, 'run 2: no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await app.close();

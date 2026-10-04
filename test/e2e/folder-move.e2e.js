@@ -6,7 +6,7 @@
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
-const CREST=path.join(APP,'test','fixtures','crest-t12.xlsx');
+const CREST=path.join(APP,'test','fixtures','sample-t12.xlsx');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-move-'));
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
 const KEY='name:villages of whitewater';

@@ -5,7 +5,7 @@
 const path=require('path'),os=require('os'),fs=require('fs'),crypto=require('crypto');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
-const CREST=path.join(APP,'test','fixtures','crest-t12.xlsx');
+const CREST=path.join(APP,'test','fixtures','sample-t12.xlsx');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-sha-'));
 const KEY='name:villages of whitewater';
 const HASH=crypto.createHash('sha1').update(KEY).digest('hex').slice(0,16);

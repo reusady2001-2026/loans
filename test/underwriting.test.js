@@ -483,7 +483,7 @@ try {
       // 2.5% management fee, $200/unit reserves, NO $/unit budget, no rent-roll
       // GPR — so the underwritten column re-prices exactly three things (VAC,
       // MGMT, reserves) and every other line passes through at its actual.
-      var APP = { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {}, sizing: SZ };
+      var APP = Object.assign(require("./app-values.js").pick(require("./app-values.js").appBench(), ["vacancyPct", "mgmtPct", "reservePerUnit"]), { budget: {}, sizing: SZ });   // read from the app, not a copy (#251)
       var parsed = { rows: d.rows, categories: d.categories, totals: d.totals };
       var c0 = SB.buildSetup({ parsed: parsed, units: 0, benchmarks: APP });
       var cs = c0.categorySums, L0 = c0.result.underwritten.lines, ip = c0.result.inPlace, uw0 = c0.result.underwritten;
