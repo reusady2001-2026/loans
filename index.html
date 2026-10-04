@@ -2122,7 +2122,7 @@
     }
     function getLoan(id){
       if(typeof id === "string" && id.slice(0,6) === "combo:"){
-        const members = loans.filter(l => propertyKey(l) === id.slice(6));
+        const members = loans.filter(l => propertyKey(l) === id.slice(6) && !loanIsInactiveSelf(l));   // 2.9.7 — active loans only
         return members.length > 1 ? combinedRefiLoan(members) : (members[0] || null);
       }
       return loans.find(l => l._id === id) || null;
@@ -3135,7 +3135,8 @@ tr.flagged:hover td{background:#fee2e2}
     // calendar tab's iframe (srcdoc) and, when torn off, a standalone window.
     function calendarDocHtml(){
       const now = todayParts();
-      const rows0 = loans.map(l => ({ loan:l, cur:compute(l) }));
+      const book = activeLoans();   // 2.9.7 (#2, #31, #72) — active loans only: no archived property, no removed / paid-off loan
+      const rows0 = book.map(l => ({ loan:l, cur:compute(l) }));
       const monthsAway = (iso)=>{ const p=isoToParts(iso); return p ? (p.y-now.y)*12+(p.mo-now.mo) : 9999; };
       const events=[], loanMeta={}; let totalDebt=0;
       rows0.forEach(({loan,cur}) => {
@@ -3161,7 +3162,7 @@ tr.flagged:hover td{background:#fee2e2}
       events.sort((a,b)=> a.iso<b.iso?-1:a.iso>b.iso?1:0);
       const loanList = Object.keys(loanMeta).map(k=>loanMeta[k]).sort((a,b)=>a.name.localeCompare(b.name));
       const lenders = Array.from(new Set(loanList.map(l=>l.lender))).sort();
-      const payload = { generated: fmtDateUS(partsToISO(now.y,now.mo,now.d)), nowY:now.y, nowM:now.mo, nowD:now.d, totalDebt, loanCount:loans.length, events, loans:loanList, lenders };
+      const payload = { generated: fmtDateUS(partsToISO(now.y,now.mo,now.d)), nowY:now.y, nowM:now.mo, nowD:now.d, totalDebt, loanCount:book.length, events, loans:loanList, lenders };
       const json = JSON.stringify(payload).replace(/</g,'\\u003c');
       const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
         '<title>Maturity & Reset Calendar — Living Residential</title><style>'+CAL_CSS+'</style></head><body>'+
@@ -3878,13 +3879,14 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){ return null; }
     }
     async function opWriteProfile(key, profile){
-      if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return { ok: true, skipped: true };
       try{ var json = JSON.stringify(profile), bytes = new TextEncoder().encode(json), str = "";
         for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
         var pr = opProp(key), nm = (pr && pr.name) || Profile.value(profile, "propertyName") || key;
-        await ldsShell.docSave({ propKey: key, propName: nm, name: "profile.json", base64: btoa(str), text: "", type: "application/json", role: "profile" });
+        var r = await ldsShell.docSave({ propKey: key, propName: nm, name: "profile.json", base64: btoa(str), text: "", type: "application/json", role: "profile" });
         profileCache[key] = profile;
-      }catch(e){}
+        return (r && r.ok === false) ? { ok: false, error: r.error } : { ok: true };   // 2.9.7 (#33) — callers know whether the save really happened
+      }catch(e){ return { ok: false, error: String((e && e.message) || e) }; }
     }
     // Load a property's profile into the synchronous cache (once per key). Returns a coerced profile,
     // never null — an unseeded property gets a fresh empty one.
@@ -4051,13 +4053,19 @@ tr.flagged:hover td{background:#fee2e2}
     // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
     // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
     async function opArchiveProperty(key, archived){
-      if(!key) return;
+      if(!key) return false;
       var prof = await opEnsureProfile(key);
+      var before = !!prof.archived;
       prof.archived = !!archived;
+      if(archived) prof.archivedAt = new Date().toISOString(); else delete prof.archivedAt;
       profileCache[key] = prof;
-      await opWriteProfile(key, prof);
-      try{ opRenderPortfolio(); }catch(e){}
-      try{ renderLoanProfilePanel(); }catch(e){}
+      var okWrite = true;
+      try{ var r = await opWriteProfile(key, prof); if(r && r.ok === false) okWrite = false; }catch(e){ okWrite = false; }
+      if(!okWrite){ prof.archived = before; profileCache[key] = prof; }
+      if(okWrite && !archived && !loans.some(l => propertyKey(l) === key)){ standaloneProps[key] = standaloneProps[key] || { key: key, name: Profile.value(prof, "propertyName") || key }; }
+      try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))) { const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
+      redrawAll();   // 2.9.7 (#7, #33) — counter, dropdown, Home, strips and the open tab all follow
+      return okWrite;
     }
     // 2.9.6 (#9) — permanently delete an ARCHIVED property: its loan record(s), operating model,
     // profile, chats and on-disk folder, all for good. Archived-only + a strong confirm gate it;
@@ -4390,9 +4398,12 @@ tr.flagged:hover td{background:#fee2e2}
     // One entry per property (keyed exactly like the rest of the app), named by its senior loan.
     function opProperties(){
       const seen = new Map(), clean = (s) => String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
-      loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[] }); seen.get(k).loans.push(l); });
+      // 2.9.7 (#2, #6) — a property's loans are its ACTIVE loans; removed / paid-off ones ride along in
+      // p.inactive (listed under the property with Restore). A property whose loans are all inactive stays
+      // a property (shown as "No loan yet"), it doesn't vanish.
+      loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[], inactive:[] }); if(loanIsInactiveSelf(l)) seen.get(k).inactive.push(l); else seen.get(k).loans.push(l); });
       // 2.9.1 — standalone properties: a profile with no loan (Add Property with a name only).
-      for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen.has(sk)) seen.set(sk, { key:sk, name: standaloneProps[sk].name || sk, loans:[] }); }
+      for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen.has(sk)) seen.set(sk, { key:sk, name: standaloneProps[sk].name || sk, loans:[], inactive:[] }); }
       let arr = Array.from(seen.values());
       arr.forEach(p => { if(p.loans.length){ p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); } });
       // 2.9.1 — archived properties leave every list, the roll-up and the count (profile stays on disk).
@@ -4580,17 +4591,35 @@ tr.flagged:hover td{background:#fee2e2}
       return "Active";
     }
     function loanNeedsMaturityDecision(loan){ const s = loanStatusOf(loan); return s === "Matured" || s === "Extension undecided"; }
+    // ── 2.9.7 (#2, #6, #72) — ACTIVE loans ─────────────────────────────────────────
+    // One rule for the whole app: a loan counts only while it is active — not removed (an archived
+    // loan, #6), not "Paid off" (#72, e.g. refinanced away, #24), and on a property that isn't archived
+    // (#2). Every total, tile, table, the Underwriting overview, the Calendar, the Excel export, Data
+    // Health and the assistant read activeLoans(); removed / paid-off loans are listed separately with
+    // Restore, and archived properties appear only in the Archived strip.
+    function loanIsInactiveSelf(l){ return !!l && (!!l.archived || l.loanStatus === "Paid off"); }
+    function loanIsActive(l){ return !!l && !loanIsInactiveSelf(l) && !opIsArchived(propertyKey(l)); }
+    function activeLoans(){ return loans.filter(loanIsActive); }
+    // Removed / paid-off loans whose property is still active — the "listed separately" set (#6, #72).
+    function inactiveLoans(){ return loans.filter(l => loanIsInactiveSelf(l) && !opIsArchived(propertyKey(l))); }
+    // 2.9.7 (#72) — a loan's status as a small tag (Home table, removed / paid-off list).
+    function loanStatusTagHtml(l){
+      const st = loanIsInactiveSelf(l) ? loanInactiveLabel(l) : loanStatusOf(l);
+      const tone = { "Active":"bg-emerald-50 text-emerald-700", "Matured":"bg-rose-100 text-rose-700", "Extension undecided":"bg-amber-100 text-amber-800", "Extended":"bg-sky-100 text-sky-700" }[st] || "bg-slate-100 text-slate-600";
+      return '<span data-loanstatus="'+escapeHtml(st)+'" class="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide '+tone+'">'+escapeHtml(st)+'</span>';
+    }
+    function loanInactiveLabel(l){ if(!l) return ""; if(l.loanStatus === "Paid off") return l.paidOffReason === "refinanced" ? "Paid off (refinanced)" : "Paid off"; return "Removed"; }
     // Property status is DERIVED from what data exists — there is NO manual override (the Status
     // dropdown was removed): a property with no loan reads "No loan data yet", one with a loan but no
     // T12 "No T12 yet", otherwise "Stabilized". It is a display label in Data Health; it never touches
     // the NOI, which always follows the automatic annualization rule.
-    function propSeniorLoan(propKey){ const ls = loans.filter(l => propertyKey(l) === propKey); if(!ls.length) return null; return ls.find(l => !isMezz(l)) || ls[0]; }
+    function propSeniorLoan(propKey){ const all = loans.filter(l => propertyKey(l) === propKey); if(!all.length) return null; const ls = all.filter(l => !loanIsInactiveSelf(l)).length ? all.filter(l => !loanIsInactiveSelf(l)) : all; return ls.find(l => !isMezz(l)) || ls[0]; }   // 2.9.7 — an active senior first; a removed one still names / describes a property left with no active loan
     function propertyHasT12(propKey){
       try{ if(window.OperatingStore && OperatingStore.get(propKey)) return true; }catch(e){}
       const gd = gdNOICache[propKey]; return !!(gd && gd.inPlace != null);   // General Data implies its T12 was read
     }
     function propertyStatusOf(propKey){
-      if(!loans.some(l => propertyKey(l) === propKey)) return "No loan data yet";
+      if(!loans.some(l => propertyKey(l) === propKey && !loanIsInactiveSelf(l))) return "No loan data yet";
       if(!propertyHasT12(propKey)) return "No T12 yet";
       return "Stabilized";
     }
@@ -4660,7 +4689,7 @@ tr.flagged:hover td{background:#fee2e2}
       var html = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Portfolio</span>'+
         '<div class="mt-1.5 flex items-baseline justify-between"><span class="text-sm font-semibold text-slate-700">Properties</span>'+
           '<span class="text-sm font-extrabold tabular-nums text-brand-700">'+props.length+'</span></div>'+
-        '<p class="text-[10px] text-slate-400">'+loans.length+' loans, grouped into '+props.length+' propert'+(props.length===1?'y':'ies')+'. Every one listed below.</p>'+
+        '<p class="text-[10px] text-slate-400">'+activeLoans().length+' loans, grouped into '+props.length+' propert'+(props.length===1?'y':'ies')+'. Every one listed below.</p>'+
         '<div class="mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 p-1.5 text-[11px]">'+list+'</div>';
       if(dups.length){
         html += '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">'+
@@ -4721,7 +4750,7 @@ tr.flagged:hover td{background:#fee2e2}
         const sr = propSeniorLoan(p.key); if(sr && sr.units) nUnits++;
         const g = gdNOICache[p.key]; if(g && g.inPlace != null) nNOI++;
       });
-      const decisions = loans.filter(loanNeedsMaturityDecision);
+      const decisions = activeLoans().filter(loanNeedsMaturityDecision);   // 2.9.7 (#82) — active loans only
       const dups = healthDuplicateCandidates(props);
       const last = opLastRecompute();
       const lastLine = last ? ("Last recompute " + healthWhen(last.at) + " · " + (last.recomputed || 0) + " of " + (last.properties || 0) + " properties · " + (last.reason || "manual"))
@@ -4734,7 +4763,7 @@ tr.flagged:hover td{background:#fee2e2}
             '<div class="mt-1 text-[11px] text-slate-400">'+escapeHtml(lastLine)+'</div></div>'+
         '</div>';
       const kpis = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+
-        kpiCard("Properties", String(props.length), { sub: loans.length + " loans" })+
+        kpiCard("Properties", String(props.length), { sub: activeLoans().length + " loans" })+
         kpiCard("With a T12", nT12 + " of " + props.length, { sub: (props.length - nT12) + " missing" })+
         kpiCard("Units known", nUnits + " of " + props.length, { sub: (props.length - nUnits) + " blank" })+
         kpiCard("Need a maturity decision", String(decisions.length), { sub: decisions.length ? "matured / undecided" : "all current" })+
@@ -4745,7 +4774,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<p class="text-xs text-amber-700 mb-2">These share an address, tracked as separate properties — review, they may be one building entered twice.</p>'+
           dups.map(g => '<div class="mb-1 text-sm text-slate-800">'+g.props.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+(g.reason?' <span class="text-[11px] text-amber-600">('+escapeHtml(g.reason)+')</span>':'')+'</div>').join('')+
         '</div>'
-        : '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">No duplicate properties detected — '+props.length+' distinct properties across '+loans.length+' loans.</div>';
+        : '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">No duplicate properties detected — '+props.length+' distinct properties across '+activeLoans().length+' loans.</div>';
       const decisionCard = decisions.length ?
         '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4">'+
           '<h3 class="text-sm font-bold text-rose-800">Loans needing a maturity decision ('+decisions.length+')</h3>'+
@@ -4993,7 +5022,7 @@ tr.flagged:hover td{background:#fee2e2}
       // 2.9.1 — include standalone (loan-less) properties so they show in the roll-up as an explained blank.
       opProperties().forEach(function(p){ if(!p.loans.length && !records[p.key]) records[p.key] = opRecordFor(p.key); });
       const open = (k) => { opSelectProperty(k); };
-      try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, loans, hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
+      try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, activeLoans(), hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
       // The roll-up covers the whole book. It shows the properties whose T12 has been read from disk;
       // the rest are loaded automatically below (no button), and any with no T12 uploaded stay out.
       const total = opProperties().length, loaded = opProperties().filter(pr => OperatingStore.get(pr.key)).length;
@@ -5019,7 +5048,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
-    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>loans.filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
+    try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
@@ -5333,11 +5362,23 @@ tr.flagged:hover td{background:#fee2e2}
       el("uwView").hidden = (tab.kind !== "underwriting");
       el("calendarPanel").hidden = (tab.kind !== "calendar");
       { const h = el("healthView"); if(h) h.hidden = (tab.kind !== "health"); }
+      if(tab.kind === "home") { try{ render(); }catch(e){} }   // 2.9.7 (#18) — Home is redrawn every time its tab is opened
       if(tab.kind === "underwriting") renderUnderwriting();
       if(tab.kind === "calendar") loadCalendarFrame();
       if(tab.kind === "health") renderDataHealth();
       renderTabStrip();
       try{ window.scrollTo(0,0); }catch(e){}
+    }
+    // 2.9.7 (#7) — after ANY add, archive, un-archive, delete or rename, redraw everything that shows
+    // properties: the counter and dropdown, Home (tables, tiles, strips), and whichever tool tab is open.
+    function redrawAll(){
+      try{ if(state.mode === "view" && state.activeId && !getLoan(state.activeId)) state.mode = "portfolio"; }catch(e){}
+      try{ render(); }catch(e){}
+      const tab = ldsTabs.find(t => t.id === ldsActiveTab) || {};
+      try{ if(tab.kind === "underwriting") renderUnderwriting(); else opRenderPortfolio(); }catch(e){}
+      try{ if(tab.kind === "health") renderDataHealth(); }catch(e){}
+      try{ if(tab.kind === "calendar") loadCalendarFrame(); }catch(e){}
+      try{ renderTabStrip(); }catch(e){}
     }
     function openTab(kind){
       let t = ldsTabs.find(x => x.kind === kind);
@@ -5692,7 +5733,7 @@ tr.flagged:hover td{background:#fee2e2}
       const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
-        kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: loans.length+" loans · "+moneyShort(totalOrig)+" originated"})+
+        kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: rows.length+" loans · "+moneyShort(totalOrig)+" originated"})+
         kpiCard("Weighted-Avg Rate", fmtPct(wAvg), {sub: fmtMoney(totalDS)+"/mo debt service"})+
         kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the 1.25× floor":"below the 1.25× floor"):(nCov+" of "+items.length+" covered")})+
         kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: wDy!=null?(wDy>=COV_DY_FLOOR?"clears the 8% floor":"below the 8% floor"):"awaiting NOI"})+
@@ -5805,7 +5846,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
 
     function renderPortfolio(){
-      const rows = loans.map(l => ({ loan:l, comp:compute(l) }));
+      const rows = activeLoans().map(l => ({ loan:l, comp:compute(l) }));   // 2.9.7 (#2, #72) — active loans only: no archived property, no removed / paid-off loan
       // Keep live bases + recent-deal history flowing so the scan sharpens itself.
       ensureCalibData(render);
       ["ust3y","ust5y","ust7y","ust10y","ust20y","sofr"].forEach(t => ensureIndexLive(t, render));
@@ -5875,8 +5916,8 @@ tr.flagged:hover td{background:#fee2e2}
       }).sort((a,b)=> (b.cp.balTot||0)-(a.cp.balTot||0));
       const memberCells = (loan, comp, indented) => { const d=comp.derived;
         const nameCell = indented
-          ? '<span class="inline-flex items-center gap-1.5 pl-6 text-slate-700"><span class="text-slate-300">&#9492;</span>'+escapeHtml(loanLabel(loan))+(isMezz(loan)?' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>':' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">senior</span>')+'</span>'
-          : escapeHtml(loanLabel(loan));
+          ? '<span class="inline-flex items-center gap-1.5 pl-6 text-slate-700"><span class="text-slate-300">&#9492;</span>'+escapeHtml(loanLabel(loan))+(isMezz(loan)?' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">mezz</span>':' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">senior</span>')+' '+loanStatusTagHtml(loan)+'</span>'
+          : escapeHtml(loanLabel(loan))+' '+loanStatusTagHtml(loan);   // 2.9.7 (#72) — each loan's status as a small tag
         return td(nameCell,'font-medium text-slate-900')+ td(escapeHtml(loan.lenderName||'—'),'text-slate-500')+
           td(loan.rateType||'—')+ tdR(fmtMoney(d.currentBalance))+ tdR(fmtPct(d.currentRate))+ tdR(fmtMoney(d.monthlyPI))+ tdR(fmtDateUS(d.maturityDate));
       };
@@ -5943,10 +5984,26 @@ tr.flagged:hover td{background:#fee2e2}
             '</div>'+
           '</div>'
         : '';
+      // 2.9.7 (#6, #72) — removed and paid-off loans: out of every total, tile and the calendar, listed
+      // here with Restore (and, behind it, Delete permanently — the only way a loan record is deleted).
+      const inactList = inactiveLoans();
+      const inactiveStrip = inactList.length
+        ? '<div id="inactiveLoansStrip" class="boxline rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-3 flex items-start gap-3 flex-wrap animate-fade-up">'+
+            '<div class="min-w-0 mr-1"><span class="text-xs font-bold uppercase tracking-wide text-slate-600">Removed &amp; paid-off loans ('+inactList.length+')</span>'+
+            '<p class="text-[11px] text-slate-500">Out of every total, tile and the calendar — restore one to bring it back.</p></div>'+
+            '<div class="flex flex-wrap items-center gap-1.5">'+
+              inactList.map(l => '<span class="inline-flex items-center overflow-hidden rounded-lg border border-slate-300 bg-white">'+
+                '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700">'+escapeHtml(loanLabel(l))+' '+loanStatusTagHtml(l)+(l.archivedAt?' <span class="font-normal text-slate-400">'+escapeHtml(fmtDateUS(String(l.archivedAt).slice(0,10)))+'</span>':'')+'</span>'+
+                '<button type="button" data-restoreloan="'+escapeHtml(l._id)+'" class="border-l border-slate-200 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50" title="Restore — back into every total, tile and the calendar">Restore</button>'+
+                '<button type="button" data-deleteloan="'+escapeHtml(l._id)+'" class="inline-flex items-center border-l border-slate-200 px-1.5 py-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700" title="Delete this loan record permanently"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>'+
+              '</span>').join('')+
+            '</div>'+
+          '</div>'
+        : '';
       dom.portfolioView.innerHTML =
         '<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">'+
           '<div><h2 class="text-lg font-bold text-slate-900">Portfolio</h2>'+
-            '<p class="text-sm text-slate-500">'+loans.length+' loans — where the whole book stands and your options</p></div>'+
+            '<p class="text-sm text-slate-500">'+rows.length+' loans — where the whole book stands and your options</p></div>'+
           '<div class="flex items-center gap-3">'+
             '<span class="hidden sm:inline text-sm text-slate-500">'+(candidates.length?('<span class="font-semibold text-emerald-700">'+candidates.length+'</span> priced above market'):'none priced above market')+'</span>'+
           '</div>'+
@@ -5960,6 +6017,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="flex items-center gap-2 shrink-0">'+
             lenderControl+
           '</div>', "relative z-40")+
+        inactiveStrip+
         archivedStrip;
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
@@ -5972,9 +6030,13 @@ tr.flagged:hover td{background:#fee2e2}
       dom.portfolioView.querySelectorAll('[data-unarchive]').forEach(btn => btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const key = btn.getAttribute('data-unarchive'); if(!key) return;
-        try{ await opArchiveProperty(key, false); }catch(err){}
-        toast("Property restored — back in the roll-up and count.", "check");
+        let ok = false; try{ ok = await opArchiveProperty(key, false); }catch(err){ ok = false; }
+        if(ok) toast("Property restored — back in the roll-up and count.", "check");   // 2.9.7 (#33) — only once the save succeeded
+        else toast("Couldn’t restore the property — its file couldn’t be saved. Try again.", "error");
       }));
+      // 2.9.7 (#6, #72) — restore a removed / paid-off loan, or delete its record for good.
+      dom.portfolioView.querySelectorAll('[data-restoreloan]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); restoreLoan(btn.getAttribute('data-restoreloan')); }));
+      dom.portfolioView.querySelectorAll('[data-deleteloan]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); deleteLoanPermanentAsk(btn.getAttribute('data-deleteloan')); }));
       // 2.9.6 (#9) — permanent delete from the Archived strip (archived-only, strong confirm, no undo).
       dom.portfolioView.querySelectorAll('[data-harddelete]').forEach(btn => btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -6073,23 +6135,46 @@ tr.flagged:hover td{background:#fee2e2}
       save();
       setMode("view");
     }
+    // 2.9.7 (#6) — Remove ARCHIVES the loan: it leaves every total, tile and the calendar and is listed
+    // under "Removed & paid-off loans" on Home with Restore. A loan record is deleted only from that list,
+    // behind "Delete permanently" — the same way a property is.
+    function archiveLoan(loan, opts){
+      if(!loan) return false;
+      opts = opts || {};
+      loan.archived = true; loan.archivedAt = new Date().toISOString();
+      if(opts.reason) loan.archivedReason = opts.reason;
+      try{ loanHistoryAdd && loanHistoryAdd(loan, "archived", false, true, opts.source || "typed"); }catch(e){}
+      save();
+      return true;
+    }
     function removeActive(){
-      const loan = getLoan(state.activeId); if(!loan) return;
-      confirmDialog("Remove “"+loanLabel(loan)+"”?", "This loan record will be permanently deleted from your browser.", () => {
-        const key = propertyKey(loan);
-        loans = loans.filter(l => l._id !== loan._id);
-        state.activeId = loans.length ? loans[0]._id : null;
+      const loan = getLoan(state.activeId); if(!loan || loan._combined) return;
+      confirmDialog("Remove “"+loanLabel(loan)+"”?", "It leaves every total, tile and the calendar and is listed under “Removed & paid-off loans” on Home, where you can restore it.", () => {
+        archiveLoan(loan);
+        const key = propertyKey(loan), rest = loansForProperty(loan);
+        state.activeId = rest.length ? (rest.length > 1 ? "combo:" + key : rest[0]._id) : null;
+        toast("“"+loanLabel(loan)+"” removed — restore it from Home any time.", "trash");
+        if(state.activeId) setMode("view"); else { state.mode = "portfolio"; redrawAll(); }
+      }, "Remove");
+    }
+    function restoreLoan(id){
+      const loan = loans.find(l => l._id === id); if(!loan) return;
+      loan.archived = false; delete loan.archivedAt; delete loan.archivedReason;
+      if(loan.loanStatus === "Paid off"){ loan.loanStatus = ""; delete loan.paidOffReason; delete loan.paidOffAt; }
+      try{ loanHistoryAdd && loanHistoryAdd(loan, "archived", true, false, "typed"); }catch(e){}
+      save();
+      toast("“"+loanLabel(loan)+"” restored — back in every total.", "check");
+      redrawAll();
+    }
+    function deleteLoanPermanentAsk(id){
+      const loan = loans.find(l => l._id === id); if(!loan) return;
+      confirmDialog("Delete “"+loanLabel(loan)+"” permanently?", "The loan record is removed for good. It can’t be undone here; the automatic backups keep a copy.", () => {
+        loans = loans.filter(l => l._id !== id);
+        if(state.activeId === id) state.activeId = null;
         save();
-        // The property's operating model outlives its last loan on purpose (a re-added loan gets it back);
-        // it is listed under Underwriting → "records no loan uses" with Move / Delete, and the toast says so.
-        let left = "";
-        try{
-          if(window.OperatingStore && !loans.some(l => propertyKey(l) === key)){ opInit(); const r = OperatingStore.get(key);
-            if(r) left = " · its operating model (“" + (r.propertyName || key) + "”) is kept — move or delete it under Underwriting"; }
-        }catch(e){}
-        toast("Loan removed" + left, "trash");
-        setMode(loans.length ? "view" : "empty");
-      });
+        toast("“"+loanLabel(loan)+"” permanently deleted", "trash");
+        redrawAll();
+      }, "Delete permanently");
     }
     // 2.9.4 — property-based toolbar. "Edit" edits the PROPERTY's info (opens its profile panel);
     // "Remove" ARCHIVES the property (reversible; its loans are archived with it, since the whole
@@ -6101,14 +6186,13 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function removeProperty(){
       const loan = getLoan(state.activeId); if(!loan) return;
-      const key = propertyKey(loan), nm = (loan.propertyName) || loanLabel(loan) || key;
-      confirmDialog("Archive “"+nm+"”?", "It leaves the lists, roll-up and count — its loans are archived with it. Reversible: un-archive it from the Properties list.", async () => {
-        try{ await opArchiveProperty(key, true); }catch(e){}
-        const rest = opProperties().filter(p => p.loans && p.loans.length);   // excludes the just-archived property
-        state.activeId = rest.length ? rest[0].loans[0]._id : null;
-        save();
-        toast("“"+nm+"” archived — its loans went with it.", "trash");
-        setMode(state.activeId ? "view" : "empty");
+      const key = propertyKey(loan), pr = opProp(key), nm = (pr && pr.name) || (loan.propertyName) || loanLabel(loan) || key, n = pr ? pr.loans.length : 1;
+      confirmDialog("Archive “"+nm+"”?", "It and its "+n+" loan"+(n===1?"":"s")+" leave Home, the totals, the loan table and the assistant. Un-archive it from the Archived strip on Home.", async () => {
+        let ok = false; try{ ok = await opArchiveProperty(key, true); }catch(e){ ok = false; }
+        if(!ok){ toast("Couldn’t archive “"+nm+"” — its file couldn’t be saved. Try again.", "error"); return; }
+        state.activeId = null; state.mode = "portfolio";
+        toast("“"+nm+"” archived — restore it from the Archived strip on Home.", "trash");
+        redrawAll();
       }, "Archive");
     }
 
@@ -6184,10 +6268,12 @@ tr.flagged:hover td{background:#fee2e2}
     function hideModal(id){ const m=el(id); if(!m) return; m.classList.add("hidden"); m.classList.remove("flex"); }
 
     // ---- Export: preview (pick loans) → Excel via native Save dialog on desktop ----
-    let exportState = null;   // { include: Set<_id> }
+    let exportState = null;   // { book: active loans, include: Set<_id> }
+    // 2.9.7 (#2, #32, #145) — the export covers ACTIVE loans only (no archived property, no removed / paid-off loan).
     function openExportPreview(){
-      if(!loans.length){ toast("No loans to export", "info"); return; }
-      exportState = { include: new Set(loans.map(l => l._id)) };
+      const book = activeLoans();
+      if(!book.length){ toast("No loans to export", "info"); return; }
+      exportState = { book: book, include: new Set(book.map(l => l._id)) };
       const all = el("exportAll"); if(all) all.checked = true;
       renderExportPreview();
       showModal("exportPreview");
@@ -6195,12 +6281,12 @@ tr.flagged:hover td{background:#fee2e2}
     function closeExportPreview(){ exportState = null; hideModal("exportPreview"); }
     function renderExportPreview(){
       const body = el("exportPreviewBody"); if(!body || !exportState) return;
-      const aoa = buildWorkbookAOA(loans);          // full grid for display; export uses the selection
+      const aoa = buildWorkbookAOA(exportState.book);          // full grid for display; export uses the selection
       const fieldRows = aoa.slice(3);               // skip title + blank + header rows
-      const colsN = loans.length + 1;
+      const colsN = exportState.book.length + 1;
       let thead = '<thead class="sticky top-0 z-20 bg-slate-100"><tr>'+
         '<th class="px-3 py-2 text-left text-[11px] font-semibold text-slate-600 sticky left-0 bg-slate-100 z-30 whitespace-nowrap">Field</th>';
-      loans.forEach((l,i)=>{ const on = exportState.include.has(l._id);
+      exportState.book.forEach((l,i)=>{ const on = exportState.include.has(l._id);
         thead += '<th data-loancol="'+i+'" class="px-2 py-2 text-left text-[11px] font-semibold text-slate-600 whitespace-nowrap'+(on?'':' opacity-40')+'">'+
           '<label class="flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" data-exloan="'+escapeHtml(l._id)+'"'+(on?' checked':'')+' class="accent-brand-600 shrink-0"><span>'+escapeHtml(loanLabel(l)||("Loan "+(i+1)))+'</span></label></th>';
       });
@@ -6210,7 +6296,7 @@ tr.flagged:hover td{background:#fee2e2}
         const f = FIELDS[k];   // fieldRows align 1:1 with FIELDS (money formats with commas)
         if(r[0]) tbody += '<tr><td colspan="'+colsN+'" class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-brand-700 bg-brand-50/70 sticky left-0">'+escapeHtml(r[0])+'</td></tr>';
         tbody += '<tr class="border-b border-slate-50"><td class="px-3 py-1 text-slate-600 sticky left-0 bg-white whitespace-nowrap">'+escapeHtml(r[1]||"")+'</td>';
-        loans.forEach((l,i)=>{ const on = exportState.include.has(l._id); const v = r[i+2];
+        exportState.book.forEach((l,i)=>{ const on = exportState.include.has(l._id); const v = r[i+2];
           const disp = (f && f.type==="money") ? commas(v) : (v==null?"":String(v));
           tbody += '<td data-loancol="'+i+'" class="px-2 py-1 text-slate-700 tabular-nums whitespace-nowrap'+(on?'':' opacity-40')+'">'+escapeHtml(disp)+'</td>';
         });
@@ -6221,27 +6307,27 @@ tr.flagged:hover td{background:#fee2e2}
       body.querySelectorAll('[data-exloan]').forEach(cb => cb.addEventListener('change', ()=>{
         const id = cb.getAttribute('data-exloan');
         if(cb.checked) exportState.include.add(id); else exportState.include.delete(id);
-        const i = loans.findIndex(l => l._id===id);
+        const i = exportState.book.findIndex(l => l._id===id);
         body.querySelectorAll('[data-loancol="'+i+'"]').forEach(c => c.classList.toggle('opacity-40', !cb.checked));
-        const all = el("exportAll"); if(all) all.checked = exportState.include.size === loans.length;
+        const all = el("exportAll"); if(all) all.checked = exportState.include.size === exportState.book.length;
         refreshExportSummary();
       }));
       refreshExportSummary();
     }
     function exportSelectAll(on){
       if(!exportState) return;
-      exportState.include = on ? new Set(loans.map(l=>l._id)) : new Set();
+      exportState.include = on ? new Set(exportState.book.map(l=>l._id)) : new Set();
       renderExportPreview();
     }
     function refreshExportSummary(){
       if(!exportState) return;
-      const n = exportState.include.size, m = loans.length;
+      const n = exportState.include.size, m = exportState.book.length;
       const s = el("exportSummary"); if(s) s.textContent = n+" of "+m+" loan"+(m>1?"s":"")+" selected";
       const btn = el("exportOkBtn"); if(btn){ btn.disabled = n===0; btn.textContent = n ? ("Export "+n+" loan"+(n>1?"s":"")+"…") : "Select loans to export"; }
     }
     function doExport(){
       if(!exportState) return;
-      const sel = loans.filter(l => exportState.include.has(l._id));
+      const sel = exportState.book.filter(l => exportState.include.has(l._id));
       if(!sel.length){ toast("Select at least one loan", "info"); return; }
       const name = "LoanDebtService-Portfolio-"+ymd()+".xlsx";
       const n = sel.length, done = () => { closeExportPreview(); toast(n+" loan"+(n>1?"s":"")+" exported to Excel", "download"); };
@@ -7076,7 +7162,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function loansForProperty(loan){
       const k = propertyKey(loan);
-      return loans.filter(l => propertyKey(l) === k).sort(loanRank);
+      return loans.filter(l => propertyKey(l) === k && !loanIsInactiveSelf(l)).sort(loanRank);   // 2.9.7 (#6, #72) — active loans only
     }
     // Has an NOI figure actually been ENTERED for this loan? Any sign counts — a property
     // still filling up can post a negative trailing NOI (expenses > income). This is distinct
@@ -7139,7 +7225,7 @@ tr.flagged:hover td{background:#fee2e2}
       return combo;
     }
     // Members of the property that a combined-refi id points at.
-    function comboMembers(id){ return (typeof id === "string" && id.slice(0,6) === "combo:") ? loans.filter(l => propertyKey(l) === id.slice(6)) : []; }
+    function comboMembers(id){ return (typeof id === "string" && id.slice(0,6) === "combo:") ? loans.filter(l => propertyKey(l) === id.slice(6) && !loanIsInactiveSelf(l)) : []; }
     // A panel shown on the loan record when the property carries more than one
     // loan: the stack, plus leverage read on the combined debt.
     function combinedPositionHtml(loan){
@@ -8527,7 +8613,7 @@ tr.flagged:hover td{background:#fee2e2}
     // One compact record per loan: stored terms + a few live computed fields.
     function aiAsstSnapshot(){
       var keep = function(v){ return (v==null || v==="") ? undefined : v; };
-      return loans.map(function(l){
+      return activeLoans().map(function(l){   // 2.9.7 (#2, #240) — the assistant sees the same active loans as every total
         var d = {}; try { d = (compute(l).derived) || {}; } catch(e){ d = {}; }
         var esc = {};
         ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt","servicingFee","trusteeFee"].forEach(function(k){ if(l[k]) esc[k] = l[k]; });
@@ -8607,9 +8693,10 @@ tr.flagged:hover td{background:#fee2e2}
       if(name==null) return null;
       var q = normName(name);
       if(!q) return null;
-      var exact = loans.find(function(l){ return normName(l.propertyName||loanLabel(l))===q; });
+      var book = activeLoans();   // 2.9.7 (#2) — active loans only
+      var exact = book.find(function(l){ return normName(l.propertyName||loanLabel(l))===q; });
       if(exact) return exact;
-      return loans.find(function(l){ var nm=normName(l.propertyName||loanLabel(l)); return nm.indexOf(q)>=0 || q.indexOf(nm)>=0; }) || null;
+      return book.find(function(l){ var nm=normName(l.propertyName||loanLabel(l)); return nm.indexOf(q)>=0 || q.indexOf(nm)>=0; }) || null;
     }
     // ---- Assistant edit-with-approval ------------------------------------
     // The assistant may propose adding/altering/removing loan data. It NEVER writes:
@@ -8978,7 +9065,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function aiAsstClose(){ var m=el("aiAsstModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } }
     function aiAsstRenderWelcome(){
-      var log=el("aiAsstLog"); if(!log) return; var n=loans.length;
+      var log=el("aiAsstLog"); if(!log) return; var n=activeLoans().length;
       var qs=["What is my total monthly debt service?","Which loans mature in the next 24 months?","What's the weighted-average interest rate?","Show me the portfolio overview"];
       var chips=qs.map(function(q){ return '<button type="button" class="aiAsstChip rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100" data-q="'+escapeHtml(q)+'">'+escapeHtml(q)+'</button>'; }).join("");
       log.innerHTML =
@@ -9021,13 +9108,17 @@ tr.flagged:hover td{background:#fee2e2}
     var aiAsstHistoryOpen = false;
     function chatsAvailable(){ return !!(window.ldsShell && ldsShell.chatSave); }
     function docsAvailable(){ return !!(window.ldsShell && ldsShell.docSave); }
+    // 2.9.7 (#2, #92) — the assistant's property list is the app's own: every active property, loan-less
+    // ones included; a name lookup also knows archived properties, so a card never shows an internal key.
     function aiAsstProperties(){
-      var seen={}, out=[];
-      loans.forEach(function(l){ var k=propertyKey(l); if(k && !seen[k]){ seen[k]=1; out.push({key:k, name:(l.propertyName||loanLabel(l))}); } });
-      out.sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
-      return out;
+      return opProperties().map(function(p){ return { key:p.key, name:p.name }; });
     }
-    function aiAsstPropName(key){ var p=aiAsstProperties().find(function(x){return x.key===key;}); return p?p.name:""; }
+    function aiAsstPropName(key){
+      var p=aiAsstProperties().find(function(x){return x.key===key;}); if(p) return p.name;
+      var a=opArchivedProps().find(function(x){return x.key===key;}); if(a) return a.name;
+      var pr=profileCache[key]; var nm=pr && Profile.value(pr,"propertyName"); if(nm) return nm;
+      var sr=propSeniorLoan(key); return sr ? String(sr.propertyName||loanLabel(sr)).replace(/\s*\(\s*mezz[^)]*\)/i,"").trim() : "";
+    }
     // Best-effort: which property (if any) does this message name? (used when nothing is picked)
     function aiAsstDetectProp(text){
       var q=normName(text); if(!q||q.length<4) return "";
