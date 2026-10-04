@@ -1295,7 +1295,7 @@
       { sec:"Loan Terms", key:"amortMethod",        label:"Interest Accrual / Day-Count", type:"select", kind:"input", options:["Actual/360","30/360"], hint:"per the loan docs: Actual/360 = interest varies with the days in each month; 30/360 = flat monthly. The level payment amortizes 30/360 over the amortization term, which starts AFTER any interest-only period.", aliases:["Interest Accrual Method","Day-Count","Accrual Method","Amortization Method"] },
       { sec:"Loan Terms", key:"amortType",          label:"Amortization Type",            type:"select", kind:"input", options:["Level","Fixed Principal","Fixed P&I"], hint:"Level = standard solved annuity (default). Fixed Principal = interest + a flat principal amount stated in the loan docs (declining total payment). Fixed P&I = a flat total payment stated in the docs.", aliases:["Amortization Structure","Amortization Method Type"] },
       { sec:"Loan Terms", key:"fixedAmortAmount",   label:"Fixed Amortization Payment ($/mo)", type:"money", kind:"input", cond:(l)=>l.amortType==="Fixed Principal"||l.amortType==="Fixed P&I", hint:"the lender-specified monthly amortization amount (principal for Fixed Principal, or total P&I for Fixed P&I) that applies after the IO period", aliases:["Required Amortization Payment","Fixed Principal Payment"] },
-      { sec:"Loan Terms", key:"interestOnly",       label:"Interest Only? (Y/N)",          type:"yn",    kind:"computed" },
+      { sec:"Loan Terms", key:"interestOnly",       label:"Interest-Only for Full Term? (Y/N)", type:"yn",    kind:"computed" },   // 2.9.7 (#66) — "Y" only when interest-only for the whole term
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
       { sec:"Loan Terms", key:"armAssumedIndex",       label:"Index Value (%)",            type:"pct", kind:"input", hint:"Floating/ARM use the live index automatically — set this only to override or for a custom (Other) index", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM"||(l.rateType==="Fixed"&&!l.isHistorical&&l.index&&INDEX_BY_ID[l.index]&&!INDEX_BY_ID[l.index].live), aliases:["Assumed Index at Reset"] },
@@ -1371,7 +1371,7 @@
       }
       if(!l.originationDate) need("originationDate");
       if(!l.firstPaymentDate) need("firstPaymentDate");
-      if(!l.amortizationMonths || l.amortizationMonths<=0) need("amortizationMonths");
+      if((!l.amortizationMonths || l.amortizationMonths<=0) && !((l.ioMonths||0) > 0 && (l.ioMonths||0) >= (l.loanTermMonths||Infinity))) need("amortizationMonths");   // 2.9.7 (#5) — not for a loan interest-only for its whole term
       if(!l.loanTermMonths || l.loanTermMonths<=0) need("loanTermMonths");
       return out;
     }
@@ -2255,7 +2255,7 @@
         kpiCard("Original Amount", fmtMoney(loan.originalAmount), { sub: "at "+fmtPct(d.currentRate) }) +
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
-        kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? "then amortizes" : "amortizing" }) +
+        kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? ((loan.ioMonths||0) >= (loan.loanTermMonths||Infinity) ? "the whole term" : "then amortizes") : "amortizing" }) +
         kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" });
     }
 
@@ -2302,6 +2302,96 @@
       box.hidden = false;
     }
 
+    // ── 2.9.7 (#85, #252, #253, #254) — CHANGE HISTORY ─────────────────────────────────────────────────
+    // One read-only view for every kind of change — a property's details, a loan's fields, a property's
+    // Underwriting assumptions and its T12 review decisions: when · old → new · who · where from (+ the note
+    // when there is one). Nothing is ever dropped. "Who" is "You" until sign-in arrives (2.9.8); a change the
+    // assistant made reads "Assistant, approved by You".
+    const HISTORY_WHO_ASSISTANT = "Assistant, approved by You";
+    function historyWhoFor(from){ return from === "assistant" ? HISTORY_WHO_ASSISTANT : "You"; }
+    function historyFromLabel(from, extra){
+      const base = { typed: "typed", assistant: "the assistant", "excel-import": "Excel import", refinance: "refinance “Save as a loan”", restore: "restore from a backup", document: "a document" }[from] || (from || "typed");
+      return base + (extra && extra.file ? " · " + extra.file + (extra.page ? " p." + extra.page : "") : "");
+    }
+    function historyModalEl(){
+      let m = el("historyModal");
+      if(!m){
+        m = document.createElement("div"); m.id = "historyModal";
+        m.className = "fixed inset-0 z-[80] hidden items-center justify-center bg-slate-900/50 p-4";
+        m.innerHTML = '<div class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl"><div class="flex items-center justify-between border-b border-slate-200 px-5 py-3"><h3 id="historyTitle" class="text-base font-bold text-slate-900"></h3>'+
+          '<button type="button" id="historyClose" class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">&times;</button></div><div id="historyBody" class="max-h-[60vh] overflow-auto px-5 py-3"></div></div>';
+        document.body.appendChild(m);
+        m.addEventListener("click", (e) => { if(e.target === m || (e.target.closest && e.target.closest("#historyClose"))){ m.classList.add("hidden"); m.classList.remove("flex"); } });
+      }
+      return m;
+    }
+    // entries: [{ at, label?, old, new, who, from, note }] (any order — shown newest first)
+    function openHistoryModal(title, entries){
+      const m = historyModalEl();
+      el("historyTitle").textContent = title;
+      const list = (entries || []).slice().sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+      el("historyBody").innerHTML = list.length ? '<table class="w-full text-[12px]"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="py-1 pr-2">When</th>'+(list.some(x => x.label) ? '<th class="py-1 pr-2">What</th>' : '')+'<th class="py-1 pr-2">Old → new</th><th class="py-1 pr-2">Who</th><th class="py-1">Where from</th></tr></thead><tbody>'+
+        list.map(x => '<tr class="border-t border-slate-100 align-top"><td class="py-1.5 pr-2 whitespace-nowrap text-slate-500">'+escapeHtml(fmtWhenShort(x.at) || "—")+'</td>'+
+          (list.some(y => y.label) ? '<td class="py-1.5 pr-2 font-semibold text-slate-700">'+escapeHtml(x.label || "")+'</td>' : '')+
+          '<td class="py-1.5 pr-2"><span class="text-slate-500">'+escapeHtml(x.old == null || x.old === "" ? "(none)" : String(x.old))+'</span> → <span class="font-semibold text-slate-800">'+escapeHtml(x.new == null || x.new === "" ? "(none)" : String(x.new))+'</span>'+(x.note ? '<div class="mt-0.5 italic text-slate-500">“'+escapeHtml(x.note)+'”</div>' : '')+'</td>'+
+          '<td class="py-1.5 pr-2 text-slate-600">'+escapeHtml(x.who || "You")+'</td><td class="py-1.5 text-slate-500">'+escapeHtml(x.from || "")+'</td></tr>').join('')+'</tbody></table>'
+        : '<p class="py-6 text-center text-sm text-slate-400">No changes recorded yet.</p>';
+      m.classList.remove("hidden"); m.classList.add("flex");
+    }
+    function historyLinkHtml(n, attrs){ return n ? ' <button type="button" '+attrs+' class="ml-1 text-[10px] font-semibold text-brand-700 underline decoration-dotted hover:text-brand-800">history ('+n+')</button>' : ''; }
+
+    // ---- Loans (#252): loan._history, kept inside the loan record (so the backup carries it) ----
+    function loanFieldMeta(key){
+      const f = FIELDS.find(x => x.key === key);
+      if(f) return { label: f.label, type: f.type };
+      return ({ noi:{label:"NOI (annual)",type:"money"}, egi:{label:"Effective Gross Income (annual)",type:"money"}, opex:{label:"Operating Expenses (annual)",type:"money"}, capRate:{label:"Cap Rate",type:"pct"}, archived:{label:"Removed (archived)",type:"text"}, loanStatus:{label:"Loan Status",type:"text"}, created:{label:"Loan",type:"text"} })[key] || { label: key, type: "text" };
+    }
+    function loanHistoryFmt(key, v){ if(v === true) return "yes"; if(v === false) return "no"; const m = loanFieldMeta(key); try{ const d = displayValue(m.type, v); return d === "—" ? "" : d; }catch(e){ return v == null ? "" : String(v); } }
+    function loanHistoryAdd(loan, field, oldV, newV, from, extra){
+      if(!loan || !field) return;
+      if(!Array.isArray(loan._history)) loan._history = [];
+      loan._history.push({ at: new Date().toISOString(), field: field, old: oldV === undefined ? null : oldV, new: newV === undefined ? null : newV, who: historyWhoFor(from), from: from || "typed", file: extra && extra.file || null, page: extra && extra.page || null, note: extra && extra.note || null });
+    }
+    // Record every input field that changed between two versions of a loan.
+    function loanHistoryDiff(before, after, from, extra){
+      if(!before || !after) return 0;
+      let n = 0;
+      INPUT_FIELDS.concat([{ key:"noi" }, { key:"egi" }, { key:"opex" }, { key:"capRate" }]).forEach(f => {
+        const a = before[f.key], b = after[f.key];
+        const same = (a == null || a === "") && (b == null || b === "") ? true : (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : String(a) === String(b));
+        if(!same){ loanHistoryAdd(after, f.key, a == null ? null : a, b == null ? null : b, from, extra); n++; }
+      });
+      return n;
+    }
+    function loanHistoryEntries(loan, field){
+      return (loan && Array.isArray(loan._history) ? loan._history : []).filter(h => !field || h.field === field).map(h => ({ at: h.at, label: field ? "" : loanFieldMeta(h.field).label, old: loanHistoryFmt(h.field, h.old), new: loanHistoryFmt(h.field, h.new), who: h.who, from: historyFromLabel(h.from, h), note: h.note }));
+    }
+    function loanHistoryCount(loan, field){ return (loan && Array.isArray(loan._history) ? loan._history : []).filter(h => h.field === field).length; }
+
+    // ---- A property's Underwriting assumptions + T12 decisions (#253): history.json in its folder ----
+    const propHistCache = {};   // key -> { entries: [] }
+    async function propHistoryLoad(key){
+      if(!key) return { entries: [] };
+      if(propHistCache[key]) return propHistCache[key];
+      let h = { entries: [] };
+      try{ if(window.ldsShell && ldsShell.docList && ldsShell.docRead){ const list = await ldsShell.docList(key); const f = list && list.ok && (list.files || []).filter(x => x.role === "history").sort((a, b) => b.savedAt - a.savedAt)[0];
+        if(f){ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const j = JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))); if(j && Array.isArray(j.entries)) h = j; } } } }catch(e){}
+      propHistCache[key] = h; return h;
+    }
+    const propHistQueue = {};
+    function assumptionHistoryAdd(key, label, oldV, newV, note, field, from){
+      if(!key) return;
+      const entry = { at: new Date().toISOString(), field: field || label, label: label, old: oldV == null ? null : String(oldV), new: newV == null ? null : String(newV), who: historyWhoFor(from), from: from || "typed", note: note || null };
+      propHistQueue[key] = (propHistQueue[key] || Promise.resolve()).catch(() => {}).then(async () => {
+        const h = await propHistoryLoad(key); h.entries.push(entry); h.schema = "lds.history.v1";
+        if(window.ldsShell && ldsShell.docSave){ try{ const json = JSON.stringify(h), bytes = new TextEncoder().encode(json); let str = ""; for(let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+          const pr = opProp(key); await ldsShell.docSave({ propKey: key, propName: (pr && pr.name) || key, name: "history.json", base64: btoa(str), text: "", type: "application/json", role: "history" }); }catch(e){} }
+        try{ if(opFocusKey === key) uwRefreshHistoryLinks(); }catch(e){}
+      });
+      return propHistQueue[key];
+    }
+    function propHistoryEntries(key, field){ const h = propHistCache[key]; return (h && h.entries || []).filter(x => !field || x.field === field).map(x => ({ at: x.at, label: field ? "" : x.label, old: x.old, new: x.new, who: x.who, from: historyFromLabel(x.from), note: x.note })); }
+    function propHistoryCount(key, field){ const h = propHistCache[key]; return (h && h.entries || []).filter(x => x.field === field).length; }
     function renderProfile(loan, result){
       const computedVals = result.derived;
       const rowHtml = (f, bordered) => {
@@ -2309,9 +2399,10 @@
         // Show the live/effective index level when no manual override is stored.
         if(f.key==="armAssumedIndex" && (v==null||v==="") && (loan.rateType==="Floating"||loan.rateType==="Hybrid ARM")) v = indexLevel(loan);
         const disp = displayValue(f.type, v), isComputed = f.kind === "computed";
+        const hist = (!isComputed && !loan._combined) ? historyLinkHtml(loanHistoryCount(loan, f.key), 'data-loanhist="'+escapeHtml(f.key)+'"') : '';   // 2.9.7 (#252)
         return '<div class="flex items-baseline justify-between gap-3 py-1.5'+(bordered?" border-b border-slate-200/60":"")+'">'+
           '<dt class="text-sm text-slate-500">'+escapeHtml(f.label)+
-            (isComputed ? ' <span class="ml-1 rounded bg-brand-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-700 align-middle">calc</span>' : '')+
+            (isComputed ? ' <span class="ml-1 rounded bg-brand-100 px-1 py-0.5 text-[9px] uppercase tracking-wide text-brand-700 align-middle">calc</span>' : '')+hist+
           '</dt>'+
           '<dd class="text-sm font-semibold '+(disp==="—"?"text-slate-300":"text-slate-900")+' text-right tabular-nums">'+escapeHtml(disp)+'</dd>'+
         '</div>';
@@ -2334,9 +2425,12 @@
           colHtml += panel(sec, '<dl class="divide-y divide-slate-200/70">'+fieldsInSec.map(f=>rowHtml(f,false)).join("")+'</dl>', false);
         }
       });
+      const allHist = (!loan._combined && Array.isArray(loan._history) && loan._history.length) ? '<div class="mb-2 text-right"><button type="button" data-loanhist="" class="text-[11px] font-semibold text-brand-700 underline decoration-dotted">Change history ('+loan._history.length+')</button></div>' : '';
       dom.profileBody.innerHTML =
-        combinedPositionHtml(loan)+
+        combinedPositionHtml(loan)+ allHist+
         '<div class="columns-1 xl:columns-2 xl:gap-x-6 [&>section:last-child]:mb-0">'+colHtml+'</div>'+ debtHtml;
+      dom.profileBody.querySelectorAll('[data-loanhist]').forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); const k = b.getAttribute('data-loanhist');
+        openHistoryModal((k ? loanFieldMeta(k).label : "Change history") + " — " + loanLabel(loan), loanHistoryEntries(loan, k || null)); }));
     }
 
     // Render schedule rows to <tr> HTML. nowIndex marks the current payment row
@@ -4665,8 +4759,11 @@ tr.flagged:hover td{background:#fee2e2}
       if(loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return;   // other loans still at the old key → folder stays with them
       try{
         const p = opProp(keyAfter);
+        try{ await (gdQueue[keyBefore] || Promise.resolve()); }catch(e){}   // 2.9.7 — let the old folder's pending writes land first
         const r = await ldsShell.docMove(keyBefore, keyAfter, p ? p.name : "");
         if(r && r.ok && r.moved){
+          opMovedKeys[keyBefore] = keyAfter; delete gdFullCache[keyBefore];   // a T12 check still running saves to the new folder
+          if(t12ReviewLive[keyBefore]){ t12ReviewLive[keyAfter] = t12ReviewLive[keyBefore]; delete t12ReviewLive[keyBefore]; }
           opDeskLoaded.delete(keyBefore); opDeskLoaded.delete(keyAfter);
           if(opFocusKey === keyBefore) opFocusKey = keyAfter;
           try{ const v = el("uwView"); if(v && !v.hidden) renderUnderwriting(); }catch(e){}
@@ -5182,7 +5279,12 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function t12CodeLabel(code){ if(code === "NONOP") return "Not operating (left out of NOI)"; return (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[code]) || code; }
     function t12RoleWord(role){ return role === "expense" ? "an expense" : (role === "income" ? "income" : "not operating"); }
+    // 2.9.7 — when a property's folder moved (an address edit) while its T12 check was running, the
+    // result follows the folder instead of re-creating the old one.
+    const opMovedKeys = {};
+    function opCurrentKey(key){ let n = 0; while(opMovedKeys[key] && n++ < 10) key = opMovedKeys[key]; return key; }
     async function opT12Persist(key, review){
+      key = opCurrentKey(key);
       t12ReviewLive[key] = review;
       try{ await opPersistGeneralExtras(key, { t12Review: review }); }catch(e){}
     }
@@ -5489,6 +5591,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
+    try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
@@ -6616,7 +6719,9 @@ tr.flagged:hover td{background:#fee2e2}
         // either follows the loan or is left where it is — opFollowRename decides, and whatever it
         // did is said in the toast so a record never moves, or stays behind, silently.
         const keyBefore = propertyKey(existing);
+        const beforeSnap = JSON.parse(JSON.stringify(existing));
         Object.assign(existing, data);
+        try{ existing._history = beforeSnap._history || existing._history; loanHistoryDiff(beforeSnap, existing, "typed"); }catch(e){}   // 2.9.7 (#252) — every edited field: old → new, when, who, where from
         const keyAfter = propertyKey(existing);
         let note = "";
         try{ note = opFollowRename(existing, keyBefore, keyAfter) || ""; }catch(e){ note = ""; }
@@ -6626,6 +6731,7 @@ tr.flagged:hover td{background:#fee2e2}
       else {
         const isNewProperty = !loans.some(l => propertyKey(l) === propertyKey(data)) && !opProfileKnown(propertyKey(data));
         loans.push(data); toast("Loan added", "check");
+        try{ loanHistoryAdd(data, "created", null, "added", "typed"); }catch(e){}   // 2.9.7 (#252)
         if(isNewProperty){ try{ opCreatePropertyFolder(propertyKey(data), data.propertyName || loanLabel(data)); }catch(e){} }   // 2.9.7 (#8) folder rule: a new property gets its folder at once
       }
       state.activeId = data._id;
@@ -6711,15 +6817,20 @@ tr.flagged:hover td{background:#fee2e2}
       }
       if(!l.originationDate) return "Origination Date is required.";
       if(!l.firstPaymentDate) return "First Payment Date is required.";
-      if(!l.amortizationMonths || l.amortizationMonths<=0) return "Amortization Period (months) is required.";
       if(!l.loanTermMonths || l.loanTermMonths<=0) return "Loan Term (months) is required.";
-      if(l.loanTermMonths > l.amortizationMonths) return "Loan Term cannot exceed the Amortization Period.";
+      // 2.9.7 (#5) — an amortization period is needed only when part of the loan amortizes; a loan that is
+      // interest-only for its whole term (Reatta, Avalon ×2, K2 ×2, Legacy, Creekside) may leave it blank.
+      const fullIO = (l.ioMonths || 0) >= l.loanTermMonths;
+      if(!fullIO){
+        if(!l.amortizationMonths || l.amortizationMonths<=0) return "Amortization Period (months) is required (only a loan that is interest-only for its whole term can leave it blank).";
+        if(l.loanTermMonths > l.amortizationMonths) return "Loan Term cannot exceed the Amortization Period.";
+      }
       if(l.ioMonths != null && l.ioMonths < 0) return "Interest-Only Period (months) cannot be negative.";
-      if((l.ioMonths||0) >= l.amortizationMonths) return "Interest-Only Period must be shorter than the Amortization Period.";
+      if(!fullIO && (l.ioMonths||0) >= l.amortizationMonths) return "Interest-Only Period must be shorter than the Amortization Period.";
       if(l.rateType==="Hybrid ARM"){
         if(!l.armInitialFixedMonths || l.armInitialFixedMonths<=0) return "Initial Fixed Period (months) is required for a Hybrid ARM.";
         if(!l.armAdjustFreqMonths || l.armAdjustFreqMonths<=0) return "Adjustment Frequency (months) is required for a Hybrid ARM.";
-        if(l.armInitialFixedMonths >= l.amortizationMonths) return "Initial Fixed Period must be shorter than the Amortization Period.";
+        if(l.amortizationMonths && l.armInitialFixedMonths >= l.amortizationMonths) return "Initial Fixed Period must be shorter than the Amortization Period.";
       }
       return null;
     }
@@ -6763,6 +6874,9 @@ tr.flagged:hover td{background:#fee2e2}
         });
         aoa.push(row);
       });
+      // 2.9.7 (#146) — the app's own id for each loan, so a re-imported sheet always updates the right loan
+      // whatever else was changed in it. Kept as the last row so the field rows stay aligned with FIELDS.
+      aoa.push(["", "Loan ID"].concat(list.map(l => l._id || "")));
       return aoa;
     }
     function ymd(){ const d=new Date(), p=n=>String(n).padStart(2,"0"); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
@@ -6834,6 +6948,17 @@ tr.flagged:hover td{background:#fee2e2}
       const name = "LoanDebtService-Portfolio-"+ymd()+".xlsx";
       const n = sel.length, done = () => { closeExportPreview(); toast(n+" loan"+(n>1?"s":"")+" exported to Excel", "download"); };
       if(typeof XLSX === "undefined"){ exportAllCsvFallback(sel); closeExportPreview(); return; }
+      const wb = exportWorkbook(sel);
+      if(desktop() && window.ldsShell.saveBinary){
+        const b64 = XLSX.write(wb, { type:"base64", bookType:"xlsx" });
+        window.ldsShell.saveBinary(b64, name, "xlsx", "Excel workbook").then(res => {
+          if(res && res.ok) done();
+          else if(res && res.canceled){ /* keep the preview open so they can retry */ }
+          else toast("Export failed"+(res&&res.error?": "+res.error:""), "info");
+        }).catch(()=> toast("Export failed", "info"));
+      } else { XLSX.writeFile(wb, name); done(); }
+    }
+    function exportWorkbook(sel){
       const ws = XLSX.utils.aoa_to_sheet(buildWorkbookAOA(sel));
       // Money columns: keep the cells numeric but display with thousands separators
       // in Excel (rows align 1:1 with FIELDS; loan columns start at col index 2).
@@ -6843,14 +6968,7 @@ tr.flagged:hover td{background:#fee2e2}
       ws["!cols"] = [{wch:26},{wch:34}].concat(sel.map(()=>({wch:24})));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Loan Debt Service");
-      if(desktop() && window.ldsShell.saveBinary){
-        const b64 = XLSX.write(wb, { type:"base64", bookType:"xlsx" });
-        window.ldsShell.saveBinary(b64, name, "xlsx", "Excel workbook").then(res => {
-          if(res && res.ok) done();
-          else if(res && res.canceled){ /* keep the preview open so they can retry */ }
-          else toast("Export failed"+(res&&res.error?": "+res.error:""), "info");
-        }).catch(()=> toast("Export failed", "info"));
-      } else { XLSX.writeFile(wb, name); done(); }
+      return wb;
     }
     function exportAllCsvFallback(list){
       const aoa = buildWorkbookAOA(list);
@@ -6879,19 +6997,22 @@ tr.flagged:hover td{background:#fee2e2}
       // index flags as missing instead of silently assuming one.
       const mk = () => { const d = emptyLoan(); d.index = ""; return Object.assign(d, { _id: uid(), _provided: new Set() }); };
       const rowsOrient = bRow.cols.length >= bCol.rows.length;
+      const isIdLabel = (v) => normLabel(v) === "loan id";
       if(rowsOrient){
         // loans-as-ROWS: header row = bRow.idx; each mapped column is a field; rows below are loans
-        const hdr = aoa[bRow.idx]||[]; const colField={};
-        for(let c=0;c<hdr.length;c++){ const f=asField(hdr[c]); if(f) colField[c]=f; else if(txt(hdr[c]).trim()) unrecognized.push(txt(hdr[c]).trim()); }
+        const hdr = aoa[bRow.idx]||[]; const colField={}; let idCol = -1;
+        for(let c=0;c<hdr.length;c++){ const f=asField(hdr[c]); if(f) colField[c]=f; else if(isIdLabel(hdr[c])) idCol=c; else if(txt(hdr[c]).trim()) unrecognized.push(txt(hdr[c]).trim()); }
         for(let r=bRow.idx+1;r<aoa.length;r++){ const row=aoa[r]||[]; if(!row.some(x=>txt(x).trim()!=="")) continue; const d=mk(); let any=false;
           Object.keys(colField).forEach(c=>{ const raw=row[c]; if(raw===""||raw==null) return; const f=colField[c]; d[f.key]=parseValue(f.type, raw); d._provided.add(f.key); any=true; });
+          if(idCol >= 0 && txt(row[idCol]).trim()) d._importId = txt(row[idCol]).trim();   // 2.9.7 (#146)
           if(any) drafts.push(d);
         }
       } else {
         // loans-as-COLUMNS: field labels down column bCol.idx; each column to the right is a loan
-        const rowField={}; for(let r=0;r<aoa.length;r++){ const f=asField((aoa[r]||[])[bCol.idx]); if(f) rowField[r]=f; }
+        const rowField={}; let idRow = -1; for(let r=0;r<aoa.length;r++){ const lab=(aoa[r]||[])[bCol.idx]; const f=asField(lab); if(f) rowField[r]=f; else if(isIdLabel(lab)) idRow=r; }
         for(let c=bCol.idx+1;c<width;c++){ const d=mk(); let any=false;
           Object.keys(rowField).forEach(r=>{ const raw=(aoa[r]||[])[c]; if(raw===""||raw==null) return; const f=rowField[r]; d[f.key]=parseValue(f.type, raw); d._provided.add(f.key); any=true; });
+          if(idRow >= 0 && txt((aoa[idRow]||[])[c]).trim()) d._importId = txt((aoa[idRow]||[])[c]).trim();   // 2.9.7 (#146)
           if(any) drafts.push(d);
         }
       }
@@ -6936,36 +7057,54 @@ tr.flagged:hover td{background:#fee2e2}
       if(!file) return;
       if(typeof XLSX === "undefined"){ toast("Excel library unavailable", "info"); return; }
       const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:"" });
-          const parsed = parseSheet(aoa);
-          if(!parsed.drafts.length){ toast("No loans found in that sheet — check the field names against the checklist", "info"); return; }
-          importState = { drafts: parsed.drafts, unrecognized: parsed.unrecognized };
-          renderImportPreview();
-          showModal("importPreview");
-        } catch(err){ console.error(err); toast("Couldn't read that file", "info"); }
-      };
+      reader.onload = (e) => importReadBytes(new Uint8Array(e.target.result));
       reader.readAsArrayBuffer(file);
+    }
+    function importReadBytes(bytes){
+      try {
+        const wb = XLSX.read(bytes, { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:"" });
+        const parsed = parseSheet(aoa);
+        if(!parsed.drafts.length){ toast("No loans found in that sheet — check the field names against the checklist", "info"); return; }
+        importState = { drafts: parsed.drafts, unrecognized: parsed.unrecognized };
+        renderImportPreview();
+        showModal("importPreview");
+      } catch(err){ console.error(err); toast("Couldn't read that file", "info"); }
     }
 
     const normVal = (v) => v==null ? "" : String(v);
+    // 2.9.7 (#146) — which existing loan a sheet row updates: the app's own Loan ID first, then the loan
+    // number, then name + address — so a loan is always updated, whatever else changed in the sheet.
+    function importMatch(d){
+      if(d && d._importId){ const byId = loans.find(l => l._id === d._importId); if(byId) return byId; }
+      const key = identityKey(d);
+      return key ? (loans.find(l => identityKey(l) === key) || null) : null;
+    }
+    // 2.9.7 (#71) — the sheet carries rounded figures (cents, rate decimals); a value that rounds to the same
+    // number is the same value, so an untouched loan reads "unchanged".
+    function importSameVal(key, a, b){
+      if((a == null || a === "") && (b == null || b === "")) return true;
+      const na = Number(a), nb = Number(b);
+      if(typeof a !== "boolean" && typeof b !== "boolean" && a !== "" && b !== "" && isFinite(na) && isFinite(nb)){
+        const f = FIELD_BY_KEY[key], tol = (f && f.type === "money") ? 0.005 : (f && (f.type === "pct" || f.type === "rate")) ? 5e-7 : 1e-6;
+        return Math.abs(na - nb) <= tol * Math.max(1, (f && f.type === "money") ? 1 : Math.abs(na));
+      }
+      return String(a).trim() === String(b).trim();
+    }
     function providedOf(d){ const o={}; (d._provided||new Set()).forEach(k => { o[k] = d[k]; }); return o; }
     // The loan we validate against: a NEW loan is the draft itself; an UPDATE is the
     // existing loan with only the sheet-provided fields applied on top — so required
     // data the existing loan already has is NOT flagged as missing.
     function evalImportRow(d){
-      const idMissing = !hasIdentity(d);
-      const key = identityKey(d);
-      const match = key ? loans.find(l => identityKey(l) === key) : null;
+      const idMissing = !hasIdentity(d) && !d._importId;
+      const match = importMatch(d);
       const eff = match ? Object.assign({}, match, providedOf(d)) : d;
       const missing = missingRequiredFields(eff);
       const baseReady = !idMissing && missing.length===0;
       const err = baseReady ? validateLoan(eff) : null;   // logical cross-checks once required present
       let changed = true;
-      if(match) changed = [...(d._provided||[])].some(k => normVal(d[k]) !== normVal(match[k]));
+      if(match) changed = [...(d._provided||[])].some(k => !importSameVal(k, d[k], match[k]));
       return { missing, idMissing, match, eff, status: match?"update":"new", ready: baseReady && !err, err, changed };
     }
     function importCounts(){
@@ -7079,20 +7218,25 @@ tr.flagged:hover td{background:#fee2e2}
       if(desktop() && loans.length){ try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-import"); } catch(e){} }
       // Merge: a matched loan gets ONLY the sheet-provided fields overwritten (so it
       // never loses data the sheet omitted); an unmatched loan is added in full.
-      let added=0, updated=0, firstId=null;
+      let added=0, updated=0, unchanged=0, firstId=null;
       drafts.forEach(d => {
-        const key = identityKey(d);
-        const match = key ? loans.find(l => identityKey(l) === key) : null;
-        if(match){ (d._provided||new Set()).forEach(k => { match[k] = d[k]; }); updated++; if(!firstId) firstId = match._id; }
-        else { d.isHistorical = true; delete d._provided; loans.push(d); added++; if(!firstId) firstId = d._id; }
+        const e = evalImportRow(d), match = e.match;
+        if(match){
+          if(!e.changed){ unchanged++; return; }   // 2.9.7 (#71) — an untouched loan stays exactly as it was
+          const before = JSON.parse(JSON.stringify(match));
+          (d._provided||new Set()).forEach(k => { if(!importSameVal(k, d[k], match[k])) match[k] = d[k]; });
+          try{ loanHistoryDiff(before, match, "excel-import"); }catch(err){}   // 2.9.7 (#252)
+          updated++; if(!firstId) firstId = match._id;
+        }
+        else { d.isHistorical = true; delete d._provided; delete d._importId; try{ loanHistoryAdd(d, "created", null, "added", "excel-import"); }catch(err){} loans.push(d); added++; if(!firstId) firstId = d._id; }
       });
-      const res = { added, updated, firstId };
+      const res = { added, updated, unchanged, firstId };
       state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
       importState = null;
       hideModal("importPreview");
       save();
       setMode(loans.length ? "portfolio" : "empty");
-      toast("Imported "+drafts.length+" loan"+(drafts.length>1?"s":"")+" — "+res.added+" new, "+res.updated+" updated", "check");
+      toast("Imported "+drafts.length+" loan"+(drafts.length>1?"s":"")+" — "+res.added+" new, "+res.updated+" updated, "+res.unchanged+" unchanged", "check");   // the same counts the preview showed (#71)
     }
     function closeImportPreview(){ importState = null; hideModal("importPreview"); }
     // Stable identity for merge-on-import: loan number first, else name+address.
@@ -7106,8 +7250,7 @@ tr.flagged:hover td{background:#fee2e2}
     function mergeImported(drafts){
       let added=0, updated=0, firstId=null;
       drafts.forEach(d => {
-        const key = identityKey(d);
-        const match = key ? loans.find(l => identityKey(l) === key) : null;
+        const match = importMatch(d);
         if(match){
           const id = match._id;
           Object.assign(match, d, { _id:id });
@@ -10248,7 +10391,7 @@ tr.flagged:hover td{background:#fee2e2}
        9. EVENT WIRING
        ================================================================ */
     dom.loanSelect.addEventListener("change", () => selectLoan(dom.loanSelect.value));
-    dom.addBtn.addEventListener("click", startAdd);
+    dom.addBtn.addEventListener("click", () => startAdd());   // 2.9.7 (#4) — pass nothing from the click, so Property Name fills in the property you're on
     dom.editBtn.addEventListener("click", editProperty);     // 2.9.4 — edits the PROPERTY's info
     dom.removeBtn.addEventListener("click", removeProperty); // 2.9.4 — archives the PROPERTY (+ its loans)
     dom.saveBtn.addEventListener("click", saveForm);

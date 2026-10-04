@@ -102,7 +102,7 @@
         changedBy: prev.changedBy || null, changedAt: prev.changedAt || null,
         reason: opts.reason || null
       });
-      if (entry.history.length > 20) entry.history = entry.history.slice(0, 20);
+      // 2.9.7 (#254) — every past change is kept (no 20-change limit; the files are tiny).
     }
     profile.fields[key] = entry;
     if (!profile.createdAt) profile.createdAt = at;

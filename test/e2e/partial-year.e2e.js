@@ -42,6 +42,8 @@ function readGD(){ try{ const idx=JSON.parse(fs.readFileSync(path.join(PROPDIR,'
   await page.setInputFiles('#uwFile',FIX);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
   await page.waitForTimeout(500);
+  // The app writes general-data.json in the background after the upload — wait for it (a busy machine is slower).
+  for(let t=0;t<50&&!((readGD()||{}).noi);t++) await page.waitForTimeout(300);
 
   // ---- general-data.json: the 7-month statement is annualized (last 3 months × 4) ----
   const gd=readGD();
