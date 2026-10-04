@@ -11,7 +11,7 @@ const num=s=>Number(String(s||'').replace(/[^0-9.\-]/g,''))||0;
 (async()=>{
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent'})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
-  await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:20000}).catch(()=>{}); await page.waitForTimeout(800);
+  await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{state:'attached',timeout:20000}).catch(()=>{}); await page.waitForTimeout(800);
   const st=()=>page.evaluate(()=>{ const v=document.getElementById('portfolioView'); const t=v.innerText;
     const tot=(t.match(/Total Debt Outstanding\s*\n?\s*(\$[\d,\.]+)/i)||[])[1]||'';
     return { counter:document.getElementById('loanCountLabel').textContent, total:tot, header:(t.match(/(\d+) loans — where the whole book/)||[])[1],

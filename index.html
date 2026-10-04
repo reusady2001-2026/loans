@@ -1923,8 +1923,44 @@
       return l.propertyName || l.loanNumber || (l.lenderName ? l.lenderName+" loan" : "Untitled loan");
     }
 
+    // 2.9.7 (#64) — where the loan records live. In the desktop app: a file on disk (userData/loans.json),
+    // next to the property folders. In a plain browser (no desktop shell) the browser's storage is all there is.
+    function loansOnDisk(){ return !!(window.ldsShell && ldsShell.loansReadSync && ldsShell.loansWriteSync); }
+    let loansSaveWarned = false, loansDiskReadFailed = false;
+    function persistLoans(arr){
+      const json = JSON.stringify(arr);
+      if(loansOnDisk()){
+        if(loansDiskReadFailed) return false;   // never clobber a file we couldn't read
+        let r = null; try { r = ldsShell.loansWriteSync(json); } catch(e){ r = { ok:false, error:String(e) }; }
+        if(r && r.ok) return true;
+        if(!loansSaveWarned){ loansSaveWarned = true; try{ toast("Couldn’t save the loans to disk"+(r && r.error ? " ("+r.error+")" : "")+". Your last change may not be kept.", "error"); }catch(e){} }
+        return false;
+      }
+      try { localStorage.setItem(STORAGE_KEY, json); return true; } catch(e){ return false; }
+    }
+    // The saved book as raw JSON (for checks that compare against what was really saved).
+    function readSavedLoansRaw(){
+      if(loansOnDisk()){ try { const r = ldsShell.loansReadSync(); return (r && r.ok && r.exists) ? r.json : null; } catch(e){ return null; } }
+      try { return localStorage.getItem(STORAGE_KEY); } catch(e){ return null; }
+    }
+    // First launch of 2.9.7: move the book from the browser's storage to disk — take a backup first, write
+    // the file, read it back and compare; only once it matches is the old copy retired (kept under a
+    // ".pre-2.9.7" name, never wiped). Returns the raw JSON to load, or null when there is nothing to move.
+    function moveLoansToDiskOnce(){
+      let old = null; try { old = localStorage.getItem(STORAGE_KEY); } catch(e){}
+      if(!old) return null;
+      let arr = null; try { arr = JSON.parse(old); } catch(e){ return old; }
+      if(!Array.isArray(arr) || !arr.length) return old;
+      try { if(ldsShell.autoBackupWrite) ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(arr)), "before-move-to-disk"); } catch(e){}
+      let w = null; try { w = ldsShell.loansWriteSync(old); } catch(e){ w = null; }
+      let back = null; try { const r = ldsShell.loansReadSync(); back = (r && r.ok && r.exists) ? r.json : null; } catch(e){}
+      if(w && w.ok && back === old){
+        try { localStorage.setItem(STORAGE_KEY + ".pre-2.9.7", old); localStorage.removeItem(STORAGE_KEY); localStorage.setItem("lds.loansMovedToDisk", new Date().toISOString()); } catch(e){}
+      }
+      return old;   // not verified → the browser copy stays where it was and is used as-is
+    }
     function save(){
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); } catch(e){ /* storage may be unavailable */ }
+      persistLoans(loans);
       scheduleAutoBackup();   // desktop app: debounced snapshot into the managed backups folder
     }
     // Normalize a loan's free-text index to a catalog id (older versions stored
@@ -2051,16 +2087,27 @@
     }
     function load(){
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        let raw = null;
+        if(loansOnDisk()){
+          let r = null; try { r = ldsShell.loansReadSync(); } catch(e){ r = { ok:false, error:String(e) }; }
+          if(r && r.ok) raw = r.exists ? r.json : moveLoansToDiskOnce();   // 2.9.7 (#64) — disk first; move the old browser copy once
+          else {
+            // The file couldn't be read: never overwrite it with an older copy. Show the last browser copy
+            // read-only and refuse disk writes this session, so nothing on disk is clobbered.
+            loansDiskReadFailed = true;
+            try { raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY + ".pre-2.9.7"); } catch(e){}
+            setTimeout(() => { try{ toast("Couldn’t read the saved loans from disk"+(r && r.error ? " ("+r.error+")" : "")+" — changes won’t be saved this session. Restart the app.", "error"); }catch(e){} }, 1500);
+          }
+        } else { raw = localStorage.getItem(STORAGE_KEY); }
         if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){
           const migrated = arr.map(migrateLoan);
           const res = syncPortfolio(migrated);
           const finalLoans = res.loans.map(migrateLoan);   // normalize synced-in seed loans too (Fixed-index cleanup etc.)
-          if(healLoanIds(finalLoans)){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(finalLoans)); } catch(e){} }   // repair id collisions once, up front
+          if(healLoanIds(finalLoans)){ persistLoans(finalLoans); }   // repair id collisions once, up front
           if(res.changed){
             // snapshot the book BEFORE persisting the sync, so it is fully reversible
             try { if(window.ldsShell && window.ldsShell.isDesktop && window.ldsShell.autoBackupWrite){ window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(migrated)), "before-portfolio-sync"); } } catch(e){}
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(finalLoans)); } catch(e){}
+            persistLoans(finalLoans);
             window.__LDS_SYNC_SUMMARY = res;               // surfaced as a one-time notice after first render
           }
           try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // don't re-check every load
@@ -2068,7 +2115,9 @@
         } }
       } catch(e){}
       try { localStorage.setItem(PORTFOLIO_REV_KEY, PORTFOLIO_REV); } catch(e){}   // fresh install already carries the full seed
-      return seed().map(migrateLoan);   // fresh install: normalize the seed (clears the cosmetic Fixed-loan index default)
+      const fresh = seed().map(migrateLoan);   // fresh install: normalize the seed (clears the cosmetic Fixed-loan index default)
+      if(!loansDiskReadFailed) persistLoans(fresh);   // 2.9.7 (#64) — saved at once, so the next launch reads the same loans
+      return fresh;
     }
 
     function seed(){
@@ -3949,6 +3998,17 @@ tr.flagged:hover td{background:#fee2e2}
       _allProfilesLoaded = true; _loadingAllProfiles = false;
       return changed;
     }
+    // 2.9.7 (#8) — the folder rule: creating a property always creates its files folder (a profile.json
+    // carrying its name), whichever way it was created; deleting the property is what deletes the folder.
+    function opProfileKnown(key){ return !!(profileCache[key] || standaloneProps[key]); }
+    async function opCreatePropertyFolder(key, name){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return false;
+      var prof = await opEnsureProfile(key);
+      if(name && !Profile.value(prof, "propertyName")) Profile.setField(prof, "propertyName", String(name).replace(/\s*\(\s*mezz[^)]*\)/i, "").trim(), { changedBy: opOperator() });
+      profileCache[key] = prof;
+      var r = await opWriteProfile(key, prof);
+      return !!(r && r.ok);
+    }
     // Create a property from a name alone (Add Property). "Add loan" never comes here — it adds a loan to
     // whatever property its name/address resolves to. Returns the new property key (or null).
     async function opAddProperty(name){
@@ -4608,6 +4668,7 @@ tr.flagged:hover td{background:#fee2e2}
       const tone = { "Active":"bg-emerald-50 text-emerald-700", "Matured":"bg-rose-100 text-rose-700", "Extension undecided":"bg-amber-100 text-amber-800", "Extended":"bg-sky-100 text-sky-700" }[st] || "bg-slate-100 text-slate-600";
       return '<span data-loanstatus="'+escapeHtml(st)+'" class="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide '+tone+'">'+escapeHtml(st)+'</span>';
     }
+    function opPropDisplayName(key){ const p = opProperties().find(x => x.key === key) || (opArchivedProps().find(x => x.key === key)); if(p) return p.name; const sr = propSeniorLoan(key); return sr ? String(sr.propertyName || loanLabel(sr)).replace(/\s*\(\s*mezz[^)]*\)/i, "").trim() : key; }
     function loanInactiveLabel(l){ if(!l) return ""; if(l.loanStatus === "Paid off") return l.paidOffReason === "refinanced" ? "Paid off (refinanced)" : "Paid off"; return "Removed"; }
     // Property status is DERIVED from what data exists — there is NO manual override (the Status
     // dropdown was removed): a property with no loan reads "No loan data yet", one with a loan but no
@@ -5845,7 +5906,13 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
     }
 
+    let appBooting = false;   // 2.9.7 (#8) — true while startup loads every property's saved data
     function renderPortfolio(){
+      if(appBooting){
+        dom.portfolioView.innerHTML = '<div id="portfolioLoading" class="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-card"><div class="text-sm font-semibold text-slate-700">Loading portfolio…</div><div class="mt-1 text-xs text-slate-400">Reading each property’s saved files — profiles, archive state and T12 figures.</div></div>';
+        if(dom.alertsRail) dom.alertsRail.innerHTML = '';
+        return;
+      }
       const rows = activeLoans().map(l => ({ loan:l, comp:compute(l) }));   // 2.9.7 (#2, #72) — active loans only: no archived property, no removed / paid-off loan
       // Keep live bases + recent-deal history flowing so the scan sharpens itself.
       ensureCalibData(render);
@@ -6129,7 +6196,11 @@ tr.flagged:hover td{background:#fee2e2}
         try{ opMoveDiskDocs(existing, keyBefore, keyAfter); }catch(e){}   // the on-disk T12 folder follows the loan when its key changes
         toast(note ? "Loan updated · " + note : "Loan updated", (!note || /moved with it/.test(note)) ? "check" : "info");
       }
-      else { loans.push(data); toast("Loan added", "check"); }
+      else {
+        const isNewProperty = !loans.some(l => propertyKey(l) === propertyKey(data)) && !opProfileKnown(propertyKey(data));
+        loans.push(data); toast("Loan added", "check");
+        if(isNewProperty){ try{ opCreatePropertyFolder(propertyKey(data), data.propertyName || loanLabel(data)); }catch(e){} }   // 2.9.7 (#8) folder rule: a new property gets its folder at once
+      }
       state.activeId = data._id;
       state.draft = null;
       save();
@@ -6169,7 +6240,11 @@ tr.flagged:hover td{background:#fee2e2}
     function deleteLoanPermanentAsk(id){
       const loan = loans.find(l => l._id === id); if(!loan) return;
       confirmDialog("Delete “"+loanLabel(loan)+"” permanently?", "The loan record is removed for good. It can’t be undone here; the automatic backups keep a copy.", () => {
+        const key = propertyKey(loan), nm = opPropDisplayName(key);
         loans = loans.filter(l => l._id !== id);
+        // The property itself stays (with its folder) even when this was its last loan — only deleting the
+        // property deletes its folder (#8 folder rule).
+        if(!loans.some(l => propertyKey(l) === key)){ standaloneProps[key] = { key: key, name: nm }; try{ opCreatePropertyFolder(key, nm); }catch(e){} }
         if(state.activeId === id) state.activeId = null;
         save();
         toast("“"+loanLabel(loan)+"” permanently deleted", "trash");
@@ -8741,7 +8816,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!mem) return false;
       try {
         var idx = loans.indexOf(loan);
-        var arr = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        var arr = JSON.parse(readSavedLoansRaw() || "[]");
         var saved = (idx>=0 && idx<arr.length) ? arr[idx] : null;
         if(!saved) return mem;   // couldn't locate the persisted row; trust the in-memory apply
         return edits.every(function(e){ return aiEditSameStored(saved[e.key], e.newVal); });
@@ -9875,7 +9950,21 @@ tr.flagged:hover td{background:#fee2e2}
     loans = load();
     state.activeId = loans.length ? loans[0]._id : null;
     state.mode = loans.length ? "portfolio" : "empty";   // open on the whole-portfolio dashboard
+    // 2.9.7 (#8, #20, #34, #35, #56) — load every property's saved data (profiles, archive state,
+    // loan-less properties, T12 NOIs) BEFORE Home is drawn, so nothing shows a stale number, a property
+    // that should be archived, or misses one that was added. Home says "Loading portfolio…" meanwhile.
+    appBooting = !!(window.ldsShell && ldsShell.docIndex);
     render();
+    if(appBooting){
+      (async function bootLoad(){
+        try{ await opLoadAllProfiles(); }catch(e){}
+        try{ await opRecomputeOnVersionChange(); }catch(e){}
+        try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
+        appBooting = false;
+        try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))){ const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
+        redrawAll();
+      })();
+    }
     renderTabStrip();        // Home tab + tool tabs (Calendar, Underwriting)
     initPanelMode();         // if launched as a torn-off panel (?panel=…), show only that tool
     if(window.__LDS_SYNC_SUMMARY){ try { notifyPortfolioSync(window.__LDS_SYNC_SUMMARY); } catch(e){} window.__LDS_SYNC_SUMMARY = null; }

@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // (and anything else) so the user sees it immediately.
   focusMain: () => { try { ipcRenderer.send('lds:focus-main'); } catch (e) {} },
 
+  // ---- 2.9.7 (#64) — loan records on disk (userData/loans.json), read/written synchronously ----
+  loansReadSync: () => ipcRenderer.sendSync('lds:loans-read-sync'),
+  loansWriteSync: (json) => ipcRenderer.sendSync('lds:loans-write-sync', json),
+
   // ---- Backup / Restore ----
   // Manual backup → native Save dialog. Resolves {ok,path,name} | {canceled} | {ok:false,error}.
   backupSave: (json, defaultName) => ipcRenderer.invoke('lds:backup-save', { json, defaultName }),

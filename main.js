@@ -163,6 +163,31 @@ ipcMain.handle('lds:backup-open', async (e) => {
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
+// 2.9.7 (#64) — the loan records live in a file on disk (userData/loans.json), next to the property
+// folders, not in the window's browser storage. Read and written SYNCHRONOUSLY so a change is on disk
+// before the app moves on (no lost edit on a quick close). Each write goes to a temp file first and the
+// previous version is kept as loans.prev.json, so a failed write can never leave a half-written book.
+function loansFile(){ return path.join(app.getPath('userData'), 'loans.json'); }
+ipcMain.on('lds:loans-read-sync', (e) => {
+  try {
+    const f = loansFile();
+    if (!fs.existsSync(f)) { e.returnValue = { ok: true, exists: false }; return; }
+    e.returnValue = { ok: true, exists: true, json: fs.readFileSync(f, 'utf8') };
+  } catch (err) { e.returnValue = { ok: false, error: String((err && err.message) || err) }; }
+});
+ipcMain.on('lds:loans-write-sync', (e, json) => {
+  try {
+    if (typeof json !== 'string') throw new Error('nothing to write');
+    JSON.parse(json);   // never write something that isn't valid JSON
+    const f = loansFile(), tmp = f + '.tmp';
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(tmp, json, 'utf8');
+    if (fs.existsSync(f)) { try { fs.copyFileSync(f, path.join(path.dirname(f), 'loans.prev.json')); } catch (x) {} }
+    fs.renameSync(tmp, f);
+    e.returnValue = { ok: true };
+  } catch (err) { e.returnValue = { ok: false, error: String((err && err.message) || err) }; }
+});
+
 // Silent snapshot into the managed backups folder. kind: 'auto' (routine, on change)
 // or 'before-restore' (the safety copy taken before a restore replaces the book).
 // The two kinds rotate separately, so a restore is always reversible.
