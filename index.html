@@ -3298,7 +3298,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
         await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
         var gd = null; try{ gd = await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
-        try{ opPushCache.delete(key); if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // regenerate "what to push" ONCE against the fresh statement
+        try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // 2.9.7 (#78) — re-run "what to push" only if the statement in use really changed (its checksum), never for a duplicate or an older year
         if(opFocusKey === key) renderUnderwriting();
         if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
         // 2.9.7 (#14) — an older year's T12: the newer statement stays in use; this one joins the history.
@@ -4484,6 +4484,9 @@ tr.flagged:hover td{background:#fee2e2}
         var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: propUnits(key) };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
+        if(existing && existing.push) gd.push = existing.push;                 // 2.9.7 (#78) — the saved "what to push" survives a rebuild;
+        if(existing && existing.assumptions) gd.assumptions = existing.assumptions;   // whether it is stale is decided by what it was run on
+        if(existing && existing.t12Review) gd.t12Review = existing.t12Review;
         await opWriteGeneralDataFile(key, gd);
         gdNOICache[key] = opGDCache(noi);
         gdFullCache[key] = gd;
@@ -5136,7 +5139,7 @@ tr.flagged:hover td{background:#fee2e2}
         .then((r) => {
           if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude could not analyse this property." }); }
           else { const d = r.data || {};
-            const push = { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], overlaps: Array.isArray(d.overlaps) ? d.overlaps : [], at: at, address: (input.address || null), computedAt: new Date().toISOString() };
+            const push = { summary: d.summary || "", moves: Array.isArray(d.moves) ? d.moves : [], overlaps: Array.isArray(d.overlaps) ? d.overlaps : [], at: at, address: (input.address || null), computedAt: new Date().toISOString(), sig: opPushSig(key) };   // 2.9.7 (#78) — what it was run on
             opPushCache.set(key, push);
             opPersistGeneralExtras(key, { push: push });   // durable: survives a restart, feeds the refi's push checkboxes
           }
@@ -5145,9 +5148,21 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Run Claude's read of the T12 once per property automatically, cached for the session. Called on
     // property select; a manual "Re-analyse" refreshes it.
+    // 2.9.7 (#78) — "what to push" runs only when something it reads has changed: the T12 in use (by its
+    // checksum) or the assumptions it was given — or when the user clicks Re-analyse. Otherwise the last result,
+    // saved with the property, is shown (it survives restarts).
+    function opPushSig(key){
+      const b = (opFocusKey === key) ? uwState.input.bench : null; if(!b) return null;
+      const bm = b.benchmarks || {};
+      return { t12: (opFocusKey === key) ? (uwState.input.fileSha || "") : "", vacancyPct: b.vacancyPct, mgmtPct: b.mgmtPct, reservePerUnit: b.reservePerUnit, pay: bm.PAY != null ? bm.PAY : null, rm: bm.RM != null ? bm.RM : null, capRate: (b.sizing && b.sizing.capRate) };
+    }
+    function opPushSigSame(a, b){ if(!a || !b) return true; return ["t12","vacancyPct","mgmtPct","reservePerUnit","pay","rm","capRate"].every(k => (a[k] == null && b[k] == null) || a[k] === b[k] || (k === "t12" && (!a[k] || !b[k]))); }
     function opMaybeAutoPush(key){
-      if(!key || !aiAvailable() || opPushCache.has(key)) return;
+      if(!key || !aiAvailable()) return;
       if(!opPushInput(key)) return;   // no T12 read yet
+      const cur = opPushCache.get(key);
+      if(cur && cur.loading) return;
+      if(cur && !cur.error && Array.isArray(cur.moves) && opPushSigSame(cur.sig, opPushSig(key))) return;   // nothing changed → keep the saved result
       opRunPush(key);
     }
     function opRenderPush(){
