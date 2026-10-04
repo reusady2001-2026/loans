@@ -74,7 +74,9 @@ contextBridge.exposeInMainWorld('ldsShell', {
 
   // ---- Tear-off tool panels (a tab popped into its own window) ----
   // Open a tool ('calendar' | 'underwriting') as its own window (index.html?panel=…).
-  openPanelWindow: (kind) => { try { ipcRenderer.send('lds:open-panel', kind); } catch (e) {} },
+  openPanelWindow: (kind) => { try { return ipcRenderer.invoke('lds:open-panel-invoke', kind); } catch (e) { return Promise.resolve({ ok: false, error: String(e) }); } },   // 2.9.7 (#43) → {ok} | {ok:false,error}
+  // 2.9.7 (#43) — a pop-out window failed to open or load: { kind, error }.
+  onPanelError: (cb) => { try { ipcRenderer.on('lds:panel-error', (_e, p) => { try { cb(p); } catch (x) {} }); } catch (e) {} },
   // Close a panel window (used when its tab is closed from the main strip).
   closePanelWindow: (kind) => { try { ipcRenderer.send('lds:close-panel', kind); } catch (e) {} },
   // Bring an already-open panel window to the front.
@@ -119,11 +121,15 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),
   // Delete one saved file. Resolves {ok}.
   docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),
+  // 2.9.7 (#37) — change a saved document's type. → {ok,file} | {ok:false,error}
+  docSetRole: (propKey, id, role) => ipcRenderer.invoke('lds:doc-set-role', { propKey, id, role }),
   // Move a property's whole document folder when its key changes (an address edit). Resolves {ok,moved,reason?}.
-  docMove: (fromKey, toKey, propName) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName }),
+  docMove: (fromKey, toKey, propName, opts) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName, merge: !!(opts && opts.merge) }),
+  // 2.9.7 (#40, #216) — a renamed property's chats move with it. {fromScope,toScope,scopeName} → {ok,moved,count}
+  chatMove: (payload) => ipcRenderer.invoke('lds:chat-move', payload),
   // Reveal the documents folder in the OS file manager.
   openDocsFolder: () => ipcRenderer.invoke('lds:docs-open-folder'),
-  propPurge: (payload) => ipcRenderer.invoke('lds:prop-purge', payload),        // {propKey} → {ok,removed} — permanent delete of a property's files (2.9.6)
+  propPurge: (payload) => ipcRenderer.invoke('lds:prop-purge', payload),        // {propKey} → {ok,removed} | {ok:false,notArchived|failed,error} — permanent delete of an ARCHIVED property's files
   // Assistant chat history (per-property + portfolio), persisted on disk.
   chatSave: (payload) => ipcRenderer.invoke('lds:chat-save', payload),       // {scope,scopeName,id?,title?,messages,files?,pinned?} → {ok,conversation}
   chatList: ({ scope }) => ipcRenderer.invoke('lds:chat-list', { scope }),    // → {ok,scopeName,conversations:[meta]}

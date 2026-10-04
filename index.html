@@ -1855,8 +1855,10 @@
       segments.push({ startMonth:0, rate:rateForMonth(loan,0), payment:currentPayment });
 
       for(let m=0; m<term; m++){
-        const isReset = isResetBoundary(loan, m) && !isFixedAmort;
-        if(isReset){
+        // 2.9.7 (#221) — every hybrid's reset month is marked (calendar, schedule tag, reset warning), whatever
+        // its payment type; a fixed payment from the documents stays as it is (only a level payment is re-solved).
+        const isReset = isResetBoundary(loan, m);
+        if(isReset && !isFixedAmort){
           // Re-amortize the carried balance over the remaining amortization
           // term at the new rate (the recalculation event).
           currentPayment = solveSegmentPayment(loan, balance, m, rateForMonth(loan, m));
@@ -4606,6 +4608,12 @@ tr.flagged:hover td{background:#fee2e2}
     // there is no undo, so everything about the property is removed and the view re-renders clean.
     async function opDeletePropertyPermanent(key){
       if(!key) return { ok:false };
+      if(!opIsArchived(key)) return { ok:false, error:"Archive the property before deleting it." };   // 2.9.7 (#206)
+      // 2.9.7 (#208, #209) — the files go FIRST. If any can't be removed (a file open in Excel), the property
+      // stays archived with its loans; it is reported deleted only once its folder is really gone.
+      let r = { ok:true };
+      try{ if(window.ldsShell && ldsShell.propPurge) r = await ldsShell.propPurge({ propKey: key }); }catch(e){ r = { ok:false, error:String(e && e.message || e) }; }
+      if(!r || !r.ok) return { ok:false, error: (r && r.error) || "Couldn’t delete its files", failed: r && r.failed, notArchived: r && r.notArchived };
       for(var i = loans.length - 1; i >= 0; i--){ if(propertyKey(loans[i]) === key) loans.splice(i, 1); }
       try{ OperatingStore.remove(key); }catch(e){}
       try{ delete profileCache[key]; }catch(e){}
@@ -4613,11 +4621,42 @@ tr.flagged:hover td{background:#fee2e2}
       try{ delete gdNOICache[key]; delete gdFullCache[key]; }catch(e){}
       try{ if(opDeskLoaded && opDeskLoaded.delete) opDeskLoaded.delete(key); }catch(e){}
       if(opFocusKey === key) opFocusKey = "";
-      if(state.activeId && !getLoan(state.activeId)) state.activeId = null;
+      if(state.activeId && !getLoan(state.activeId) && !propViewKey()) state.activeId = null;
       try{ save(); }catch(e){}
-      try{ if(window.ldsShell && ldsShell.propPurge) await ldsShell.propPurge({ propKey: key }); }catch(e){}
-      try{ render(); }catch(e){}
+      try{ redrawAll(); }catch(e){ try{ render(); }catch(x){} }
       return { ok:true };
+    }
+    // 2.9.7 (#207) — the confirm lists exactly what goes, with numbers. Portfolio conversations that mention the
+    // property are kept; only the property's own chats are deleted.
+    async function propDeleteSummary(key){
+      const ls = loans.filter(l => propertyKey(l) === key), bal = ls.reduce((a, l) => a + (Number(l.originalAmount) || 0), 0);
+      const parts = [];
+      if(ls.length) parts.push(ls.length + " loan" + (ls.length === 1 ? "" : "s") + " (" + (ls.length > 1 ? propStackLabel(ls) + ", " : "") + fmtMoney(bal) + ")");
+      let files = [], chats = 0;
+      try{ const l = await ldsShell.docList(key); files = (l && l.files) || []; }catch(e){}
+      try{ const c = ldsShell.chatList ? await ldsShell.chatList({ scope: key }) : null; chats = ((c && c.conversations) || []).length; }catch(e){}
+      const t12 = files.filter(f => f.role === "t12").length, docs = files.filter(f => !APP_DOC_ROLES[f.role || ""] && f.role !== "t12").length;
+      if(t12) parts.push(t12 === 1 ? "T12" : t12 + " T12s");
+      if(docs) parts.push(docs + " document" + (docs === 1 ? "" : "s"));
+      if(chats) parts.push(chats + " chat" + (chats === 1 ? "" : "s"));
+      if(files.some(f => f.role === "profile") || profileCache[key]) parts.push("profile");
+      if(files.some(f => f.role === "assumptions" || f.role === "general" || f.role === "history")) parts.push("its Underwriting figures and history");
+      return parts.join(" · ") || "its name";
+    }
+    async function propDeleteAsk(key, name, after){
+      const what = await propDeleteSummary(key);
+      confirmDialog("Delete “" + name + "” permanently?",
+        "This deletes " + what + ". It can’t be undone here; the automatic backups keep a copy. Portfolio conversations that mention it are kept.",
+        async () => {
+          const r = await opDeletePropertyPermanent(key);
+          if(!r.ok){
+            toast(r.notArchived || /archive/i.test(r.error || "") ? "Archive the property before deleting it." :
+              "Couldn’t delete " + (r.failed || 1) + " file" + ((r.failed || 1) === 1 ? "" : "s") + " of " + name + ". Close it (e.g. in Excel) and try again — the property is still archived with its loans.", "error");
+            return;
+          }
+          toast("“" + name + "” permanently deleted.", "trash");
+          if(after) after();
+        }, "Delete permanently");
     }
     // Archived properties (loan-backed or standalone) — shown only in the Profile picker so one can be
     // selected and un-archived.
@@ -4672,8 +4711,34 @@ tr.flagged:hover td{background:#fee2e2}
       var hint = fd.help ? '<p class="mt-0.5 text-[10px] leading-snug text-slate-400">'+escapeHtml(fd.help)+'</p>' : '';
       var stamp = f ? '<p class="mt-0.5 text-[10px] text-slate-400">'+escapeHtml(pfWhenWho(f))+'</p>'
                     : (ph ? '<p class="mt-0.5 text-[10px] text-slate-300">not set — the value shown is read from the loan</p>' : '');
-      return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+input+hint+stamp+'</label>';
+      var hist = historyLinkHtml(profileFieldHistory(f).length, 'data-pfhist="'+escapeHtml(fd.key)+'"');   // 2.9.7 (#85)
+      return '<label class="block"><span class="text-[11px] font-semibold text-slate-600">'+escapeHtml(fd.label)+unit+'</span>'+hist+input+hint+stamp+'</label>';
     }
+    // 2.9.7 (#85) — a property detail's changes, newest first: when · old → new · who · where from.
+    function profileSourceLabel(src){
+      if(!src || typeof src !== "object") return "typed";
+      const k = src.kind || "manual";
+      const base = k === "manual" ? "typed" : k === "assistant" ? "the assistant" : k === "unitStatistics" ? "unit statistics" : k === "agreement" ? "a loan agreement" : k === "rentRoll" ? "a rent roll" : k;
+      return base + (src.file ? " · " + src.file + (src.page ? " p." + src.page : "") : "");
+    }
+    function profileFieldHistory(f){
+      if(!f) return [];
+      const list = [f].concat(Array.isArray(f.history) ? f.history : []), out = [];
+      for(let i = 0; i < list.length; i++){
+        const cur = list[i], prev = list[i + 1] || null;
+        if(prev && String(prev.value == null ? "" : prev.value) === String(cur.value == null ? "" : cur.value) && !prev.reason) continue;
+        if(!prev && (cur.value == null || cur.value === "")) continue;
+        out.push({ at: cur.changedAt, old: prev ? prev.value : null, new: cur.value, who: (cur.source && cur.source.kind === "assistant") ? HISTORY_WHO_ASSISTANT : (cur.changedBy || "You"), from: profileSourceLabel(cur.source), note: prev && prev.reason ? prev.reason : "" });
+      }
+      return out;
+    }
+    document.addEventListener("click", function(e){
+      const b = e.target && e.target.closest && e.target.closest("[data-pfhist]"); if(!b) return;
+      e.preventDefault(); e.stopPropagation();
+      const panel = b.closest("[data-profilekey]"), key = panel && panel.getAttribute("data-profilekey"); if(!key) return;
+      const fk = b.getAttribute("data-pfhist");
+      openHistoryModal(Profile.labelFor(fk) + " — " + opPropDisplayName(key), profileFieldHistory(Profile.getField(opProfileSync(key), fk)));
+    }, true);
     // ── 2.9.1 — Documents from the property page (typed upload + list) ────────────
     var PROFILE_DOC_TYPES = [
       { role:"agreement", label:"Loan agreement" }, { role:"t12", label:"T12" },
@@ -5036,30 +5101,62 @@ tr.flagged:hover td{background:#fee2e2}
       if(opFocusKey === keyBefore) opFocusKey = keyAfter;
       return "its operating model moved with it to “" + nameOf(keyAfter) + "”";
     }
-    // The DURABLE data (the T12 and any other documents) lives in the property's on-disk folder, keyed by
-    // the property key. When an address edit changes that key, move the folder so the T12 follows the loan.
-    // The disk is the source of truth (the session OperatingStore may hold nothing), so this checks the disk
-    // directly: it stays put when other loans still sit at the old key, and is kept (never merged) when the
-    // new key already has its own documents. Async and quiet on success — the T12 simply follows the loan.
-    async function opMoveDiskDocs(loan, keyBefore, keyAfter){
-      if(!(window.ldsShell && ldsShell.docMove) || !keyBefore || !keyAfter || keyBefore === keyAfter) return;
-      if(loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return;   // other loans still at the old key → folder stays with them
-      try{
-        const p = opProp(keyAfter);
-        try{ await (gdQueue[keyBefore] || Promise.resolve()); }catch(e){}   // 2.9.7 — let the old folder's pending writes land first
-        const r = await ldsShell.docMove(keyBefore, keyAfter, p ? p.name : "");
-        if(r && r.ok && r.moved){
-          opMovedKeys[keyBefore] = keyAfter; delete gdFullCache[keyBefore];   // a T12 check still running saves to the new folder
-          if(t12ReviewLive[keyBefore]){ t12ReviewLive[keyAfter] = t12ReviewLive[keyBefore]; delete t12ReviewLive[keyBefore]; }
-          opDeskLoaded.delete(keyBefore); opDeskLoaded.delete(keyAfter);
-          if(opFocusKey === keyBefore) opFocusKey = keyAfter;
-          try{ const v = el("uwView"); if(v && !v.hidden) renderUnderwriting(); }catch(e){}
-          try{ render(); }catch(e){}
-        } else if(r && r.ok && r.reason === "target exists"){
-          toast("The T12 stayed with the old name — the new name already has its own documents (move or re-upload it).", "info");
-        }
-      }catch(e){}
+    // 2.9.7 (#36, #40, #211, #216) — ONE rename routine for every path (the loan form, the assistant, the
+    // property's profile): the property's folder (T12s, rent rolls, agreements, profile, assumptions, general
+    // data, history) and its chats move together to the new name. Files stay put while other loans still use
+    // the old name. When the new name already has files of its own the caller has asked first (merge: true
+    // puts them together); nothing is ever left behind silently.
+    async function propRenameFiles(loan, keyBefore, keyAfter, opts){
+      opts = opts || {};
+      if(!keyBefore || !keyAfter || keyBefore === keyAfter || !(window.ldsShell && ldsShell.docMove)) return { moved:false };
+      if(loan && loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return { moved:false, stays:true };   // other loans still at the old name → files stay with them
+      const p = opProp(keyAfter), name = (p && p.name) || opts.name || "";
+      try{ await (gdQueue[keyBefore] || Promise.resolve()); }catch(e){}   // let the old folder's pending writes land first
+      let r = null, c = null;
+      try{ r = await ldsShell.docMove(keyBefore, keyAfter, name, { merge: !!opts.merge }); }catch(e){ r = { ok:false, error:String(e) }; }
+      try{ if(ldsShell.chatMove) c = await ldsShell.chatMove({ fromScope: keyBefore, toScope: keyAfter, scopeName: name }); }catch(e){}
+      const moved = !!(r && r.ok && r.moved);
+      // Everything the app keeps by property follows the new name.
+      opMovedKeys[keyBefore] = keyAfter;   // a T12 check still running saves to the new folder
+      [gdFullCache, gdNOICache, propHistCache].forEach(m => { try{ delete m[keyBefore]; delete m[keyAfter]; }catch(e){} });
+      if(t12ReviewLive[keyBefore]){ t12ReviewLive[keyAfter] = t12ReviewLive[keyBefore]; delete t12ReviewLive[keyBefore]; }
+      if(assumptionBase[keyBefore] && !assumptionBase[keyAfter]){ assumptionBase[keyAfter] = assumptionBase[keyBefore]; } delete assumptionBase[keyBefore];
+      if(profileCache[keyBefore] && (!profileCache[keyAfter] || moved)){ const pr = profileCache[keyBefore]; if(!profileCache[keyAfter]){ pr.propKey = keyAfter; profileCache[keyAfter] = pr; } }
+      delete profileCache[keyBefore];
+      if(standaloneProps[keyBefore]){ standaloneProps[keyAfter] = { key: keyAfter, name: name || standaloneProps[keyBefore].name }; delete standaloneProps[keyBefore]; }
+      opDeskLoaded.delete(keyBefore); opDeskLoaded.delete(keyAfter);
+      if(opFocusKey === keyBefore) opFocusKey = keyAfter;
+      if(propViewKey() === keyBefore) state.activeId = "prop:" + keyAfter;
+      // The profile's own name follows the property's new name.
+      try{ await opEnsureProfile(keyAfter); const pr = profileCache[keyAfter];
+        if(pr){ pr.propKey = keyAfter; if(name && Profile.value(pr, "propertyName") !== undefined && Profile.value(pr, "propertyName") !== name) Profile.setField(pr, "propertyName", name, { changedBy: historyWhoFor(opts.from), source: { kind: opts.from === "assistant" ? "assistant" : "manual" }, reason: "renamed" });
+          await opWriteProfile(keyAfter, pr); } }catch(e){}
+      try{ const v = el("uwView"); if(v && !v.hidden) renderUnderwriting(); }catch(e){}
+      try{ redrawAll(); }catch(e){ try{ render(); }catch(x){} }
+      return { moved, docs: r, chats: c };
     }
+    // What already sits under a name: { docs, chats } (the app's own records are not counted as documents).
+    async function propFilesAt(key){
+      let docs = 0, chats = 0;
+      try{ const l = await ldsShell.docList(key); docs = ((l && l.files) || []).filter(f => !APP_DOC_ROLES[f.role || ""]).length; }catch(e){}
+      try{ const c = ldsShell.chatList ? await ldsShell.chatList({ scope: key }) : null; chats = ((c && c.conversations) || []).length; }catch(e){}
+      return { docs, chats };
+    }
+    // Before a rename: when the new name already has files, ask — put them together, or don't rename.
+    // Resolves { go: true, merge } or { go: false }.
+    async function propRenameAsk(loan, keyBefore, keyAfter, newName){
+      if(!keyBefore || !keyAfter || keyBefore === keyAfter || !(window.ldsShell && ldsShell.docList)) return { go: true, merge: false };
+      if(loan && loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return { go: true, merge: false };
+      const [at, from] = await Promise.all([propFilesAt(keyAfter), propFilesAt(keyBefore)]);
+      if(!(at.docs || at.chats) || !(from.docs || from.chats)) return { go: true, merge: (at.docs || at.chats) > 0 };
+      const n = (c, w) => c + " " + w + (c === 1 ? "" : "s");
+      return new Promise(res => confirmDialog("“" + newName + "” already has its own files",
+        "“" + newName + "” already has " + n(at.docs, "document") + " and " + n(at.chats, "chat") + ". This property has " + n(from.docs, "document") + " and " + n(from.chats, "chat") + ". Put them together under “" + newName + "”? (A file with the same name is kept as a copy, e.g. “Loan Agreement (2).pdf”.)",
+        () => res({ go: true, merge: true }), "Put them together", { cancelLabel: "Don’t rename", onCancel: () => res({ go: false }), focusOk: true }));
+    }
+    const APP_DOC_ROLES = { profile: 1, assumptions: 1, general: 1, history: 1 };
+    // Kept for older callers: move the folder (and now the chats) after a loan edit changed the key.
+    async function opMoveDiskDocs(loan, keyBefore, keyAfter, opts){ return propRenameFiles(loan, keyBefore, keyAfter, opts); }
     // Records that no loan in the book uses any more (an edit that could not carry the model, or a removed loan).
     function opOrphans(){
       opInit();
@@ -5230,8 +5327,10 @@ tr.flagged:hover td{background:#fee2e2}
       try{ await opComputeVersion(); }catch(e){}
       try{ await opLoadAllProfiles(); }catch(e){}   // 2.9.1 — profiles into the cache, for the completeness column
       try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); await opEnsureProfile(props[i].key); }catch(e){} } }catch(e){}
+      let orphans = []; try{ orphans = await healthOrphanFolders(); }catch(e){}   // 2.9.7 (#216)
       if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
       view.innerHTML = dataHealthHtml();
+      if(orphans.length){ const card = document.createElement("div"); card.innerHTML = healthOrphansHtml(orphans); const first = view.querySelector(".space-y-4"); if(first) first.insertBefore(card.firstChild, first.children[2] || null); }
       const rc = view.querySelector('[data-health-recompute]');
       if(rc) rc.addEventListener('click', async () => {
         rc.disabled = true; rc.textContent = 'Recomputing…';
@@ -5262,19 +5361,98 @@ tr.flagged:hover td{background:#fee2e2}
     // is the "same building entered twice" signal — flagged for HUMAN review, never merged. Returns
     // [{ props:[...], reason }]. It is deliberately narrow: near-neighbours on one street (e.g. 1107 vs
     // 1119 Mississippi Ave — two real, separate St. Louis lofts) are NOT flagged, so it never cries wolf.
+    // 2.9.7 (#216) — folders of files that no property uses any more (left behind by renames before 2.9.7):
+    // attach them to a property, or delete them.
+    async function healthOrphanFolders(){
+      if(!(window.ldsShell && ldsShell.docIndex)) return [];
+      const r = await ldsShell.docIndex(); const by = (r && r.byKey) || {};
+      const known = new Set(opProperties().map(p => p.key).concat(opArchivedProps().map(p => p.key)).concat(Object.keys(standaloneProps)).concat(loans.map(l => propertyKey(l))));
+      return Object.keys(by).filter(k => !known.has(k)).map(k => ({ key: k, name: by[k].propName || k.replace(/^name:/, ""), files: (by[k].files || []).filter(n => !/^(profile|general-data|assumptions|history)\.json$/i.test(n)) })).filter(o => o.files.length);
+    }
+    function healthOrphansHtml(list){
+      const opts = opProperties().map(p => '<option value="'+escapeHtml(p.key)+'">'+escapeHtml(p.name)+'</option>').join('');
+      return '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-orphans>'+
+        '<h3 class="text-sm font-bold text-amber-800">Files without a property ('+list.length+')</h3>'+
+        '<p class="text-xs text-amber-700 mb-2">Left behind by a rename before 2.9.7 — attach them to the property they belong to, or delete them.</p>'+
+        list.map(o => '<div class="mb-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-800" data-orphan="'+escapeHtml(o.key)+'">'+
+          '<span class="font-semibold">'+escapeHtml(o.name)+'</span><span class="text-[11px] text-slate-500">('+o.files.length+' file'+(o.files.length===1?'':'s')+': '+escapeHtml(o.files.slice(0,3).join(', '))+(o.files.length>3?'…':'')+')</span>'+
+          '<span class="text-[11px] text-slate-600">→ attach to</span><select data-orphanto class="rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]">'+opts+'</select>'+
+          '<button type="button" data-orphanattach class="rounded-md border border-brand-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-50">Attach</button>'+
+          '<button type="button" data-orphandel class="rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50">Delete</button></div>').join('')+
+      '</div>';
+    }
+    document.addEventListener("click", async (e) => {
+      const b = e.target && e.target.closest && e.target.closest("[data-orphanattach],[data-orphandel]"); if(!b) return;
+      const row = b.closest("[data-orphan]"); if(!row) return;
+      const from = row.getAttribute("data-orphan"), name = (row.querySelector(".font-semibold") || {}).textContent || from;
+      if(b.hasAttribute("data-orphanattach")){
+        const to = (row.querySelector("[data-orphanto]") || {}).value; if(!to) return;
+        const toName = opPropDisplayName(to);
+        confirmDialog("Attach these files to " + toName + "?", "The files from “" + name + "” move into " + toName + "’s folder (a file with the same name is kept as a copy).", async () => {
+          const r = await propRenameFiles(null, from, to, { merge: true, name: toName });
+          toast(r && r.moved ? "Attached to " + toName + "." : "Nothing was moved.", r && r.moved ? "check" : "info"); try{ renderDataHealth(); }catch(x){}
+        }, "Attach");
+      } else {
+        confirmDialog("Delete the files of “" + name + "”?", "They belong to no property. It can’t be undone here; the automatic backups keep a copy.", async () => {
+          try{ const pr = Profile.coerce(null, from); pr.archived = true; await opWriteProfile(from, pr); }catch(x){}   // the delete path only removes an archived folder
+          let r = null; try{ r = await ldsShell.propPurge({ propKey: from }); }catch(x){ r = { ok:false, error:String(x) }; }
+          try{ delete profileCache[from]; }catch(x){}
+          toast(r && r.ok ? "Deleted." : "Couldn’t delete them" + (r && r.error ? " (" + r.error + ")" : "") + ".", r && r.ok ? "trash" : "error"); try{ renderDataHealth(); }catch(x){}
+        }, "Delete");
+      }
+    }, true);
+    // 2.9.7 (#42, #219) — possible duplicate properties. Address first: the FULL street address (number and
+    // street) AND the city must match. Names are the fallback only when a property has no address: compared
+    // ignoring capitals, spaces, punctuation and common words (The, Apartments, Apts, LLC…), flagged when one
+    // contains the other. A pair marked "Not a duplicate" is remembered and not shown again.
+    const NOT_DUP_KEY = "lds.notDuplicate";
+    function notDupPairs(){ try{ const a = JSON.parse(localStorage.getItem(NOT_DUP_KEY) || "[]"); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+    function dupPairId(a, b){ return [a, b].sort().join("||"); }
+    function markNotDuplicate(keys){
+      const cur = notDupPairs(); for(let i = 0; i < keys.length; i++) for(let j = i + 1; j < keys.length; j++){ const id = dupPairId(keys[i], keys[j]); if(cur.indexOf(id) < 0) cur.push(id); }
+      try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify(cur)); }catch(e){}
+      try{ scheduleAutoBackup(true); }catch(e){}
+    }
+    function propAddressSig(p){
+      const sr = propSeniorLoan(p.key), raw = String((sr && sr.propertyAddress) || opProfileEffective(p.key, "address") || "");
+      const parts = raw.split(","), street = normPropAddr(parts[0] || ""), city = normPropAddr(parts[1] || "");
+      if(!/^\d+\s+\S+/.test(street)) return "";
+      return street + "|" + city;
+    }
+    const DUP_COMMON = { the:1, apartments:1, apartment:1, apts:1, apt:1, llc:1, inc:1, lp:1, residences:1, homes:1, at:1, of:1 };
+    function dupNameSig(name){ return String(name || "").toLowerCase().replace(/\(\s*mezz[^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").split(" ").filter(w => w && !DUP_COMMON[w]).join(""); }
     function healthDuplicateCandidates(props){
-      var bySig = {};
-      props.forEach(function(p){
-        var sr = propSeniorLoan(p.key), a = normPropAddr(sr && sr.propertyAddress);
-        var m = a.match(/^(\d+)\s+(\S+)/); if(!m) return;   // needs a street number + first word
-        var sig = m[1] + " " + m[2];
-        (bySig[sig] = bySig[sig] || []).push(p);
-      });
-      var out = [];
-      for(var sig in bySig) if(Object.prototype.hasOwnProperty.call(bySig, sig) && bySig[sig].length > 1)
-        out.push({ props: bySig[sig], reason: "same street address" });
+      const skip = new Set(notDupPairs()), out = [];
+      const bySig = {};
+      props.forEach(p => { const sig = propAddressSig(p); if(sig) (bySig[sig] = bySig[sig] || []).push(p); });
+      Object.keys(bySig).forEach(sig => { const g = bySig[sig]; if(g.length < 2) return;
+        const keys = g.map(p => p.key); let open = false; for(let i = 0; i < keys.length; i++) for(let j = i + 1; j < keys.length; j++) if(!skip.has(dupPairId(keys[i], keys[j]))) open = true;
+        if(open) out.push({ props: g, reason: "same street address and city" }); });
+      const noAddr = props.filter(p => !propAddressSig(p));
+      props.forEach((a, i) => props.slice(i + 1).forEach(b => {
+        if(noAddr.indexOf(a) < 0 && noAddr.indexOf(b) < 0) return;   // names only when one of them has no address
+        const na = dupNameSig(a.name), nb = dupNameSig(b.name); if(!na || !nb || na.length < 4 || nb.length < 4) return;
+        if(!(na === nb || na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0)) return;
+        if(skip.has(dupPairId(a.key, b.key))) return;
+        out.push({ props: [a, b], reason: "similar names, " + (noAddr.indexOf(a) >= 0 && noAddr.indexOf(b) >= 0 ? "neither has" : "one has no") + " address" });
+      }));
       return out;
     }
+    function dupRowHtml(g){
+      return '<div class="mb-1 flex flex-wrap items-center gap-2 text-sm text-slate-800" data-duprow>'+
+        '<span>Possible duplicate: '+g.props.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+'</span>'+
+        (g.reason ? '<span class="text-[11px] text-amber-600">('+escapeHtml(g.reason)+')</span>' : '')+
+        '<button type="button" data-notdup="'+escapeHtml(JSON.stringify(g.props.map(p => p.key)))+'" class="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100">Not a duplicate</button></div>';
+    }
+    document.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest && e.target.closest("[data-notdup]"); if(!b) return;
+      e.preventDefault(); e.stopPropagation();
+      let keys = []; try{ keys = JSON.parse(b.getAttribute("data-notdup")); }catch(x){}
+      if(keys.length < 2) return;
+      markNotDuplicate(keys);
+      toast("Remembered — not shown as a duplicate again.", "check");
+      try{ renderDataHealth(); }catch(x){} try{ renderSettingsPortfolio(); }catch(x){}
+    }, true);
     // The Settings dropdown's Portfolio section: the property count with every property named (so you can
     // compare it to your own list and catch anything that shouldn't be there) plus any duplicate-property
     // candidates. Filled when Settings opens.
@@ -5298,7 +5476,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(dups.length){
         html += '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">'+
           '<div class="text-[11px] font-bold text-amber-800">Possible duplicate propert'+(dups.length===1?'y':'ies')+' ('+dups.length+')</div>'+
-          dups.map(function(g){ return '<div class="mt-0.5 text-[11px] text-slate-700">'+g.props.map(function(p){ return escapeHtml(p.name); }).join(' &harr; ')+(g.reason?' <span class="text-amber-600">('+escapeHtml(g.reason)+')</span>':'')+'</div>'; }).join('')+
+          dups.map(dupRowHtml).join('')+
           '<div class="mt-1 text-[10px] leading-snug text-amber-700">Review — if two names are one building, rename one to match so they merge into a single property.</div>'+
         '</div>';
       } else {
@@ -5376,8 +5554,8 @@ tr.flagged:hover td{background:#fee2e2}
       const dupCard = dups.length ?
         '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">'+
           '<h3 class="text-sm font-bold text-amber-800">Possible duplicate properties ('+dups.length+')</h3>'+
-          '<p class="text-xs text-amber-700 mb-2">These share an address, tracked as separate properties — review, they may be one building entered twice.</p>'+
-          dups.map(g => '<div class="mb-1 text-sm text-slate-800">'+g.props.map(p => escapeHtml(p.name)).join(' <span class="text-amber-500">&harr;</span> ')+(g.reason?' <span class="text-[11px] text-amber-600">('+escapeHtml(g.reason)+')</span>':'')+'</div>').join('')+
+          '<p class="text-xs text-amber-700 mb-2">Same street address and city, or (when one has no address) nearly the same name — review: they may be one building entered twice. “Not a duplicate” is remembered.</p>'+
+          dups.map(dupRowHtml).join('')+
         '</div>'
         : '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">No duplicate properties detected — '+props.length+' distinct properties across '+activeLoans().length+' loans.</div>';
       const decisionCard = decisions.length ?
@@ -5878,7 +6056,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
-    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
+    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
@@ -6023,10 +6201,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(ok){ toast("Property restored — back in the roll-up and count.", "check"); render(); }
         else toast("Couldn’t restore the property — its file couldn’t be saved. Try again.", "error");
       });
-      on("[data-propdelete]", () => confirmDialog("Delete “"+name+"” permanently?",
-        "This removes the property and everything under it — its loan records, operating model, T12s, agreements, rent rolls, chats and profile — from disk, for good. This cannot be undone.",
-        () => { opDeletePropertyPermanent(key).then(() => { state.activeId = null; setMode(loans.length ? "portfolio" : "empty"); toast("“"+name+"” permanently deleted", "trash"); }); },
-        "Delete permanently"));
+      on("[data-propdelete]", () => propDeleteAsk(key, name, () => { state.activeId = null; setMode(loans.length ? "portfolio" : "empty"); }));   // 2.9.7 (#207, #208)
       try{ renderLoanProfilePanel(); }catch(e){}
       try{ renderDocsPanel(); }catch(e){}
     }
@@ -6034,8 +6209,66 @@ tr.flagged:hover td{background:#fee2e2}
     // re-render). Keyed to the panel's property. (Reading an agreement to fill these is now the assistant's job.)
     document.addEventListener("change", function(e){ const t = e.target; if(!t || !t.closest) return;
       const panel = t.closest("#loanProfilePanel [data-profilekey], #propProfilePanel [data-profilekey]"); if(!panel) return;
-      const fk = t.getAttribute && t.getAttribute("data-pf"); if(fk){ opProfileSetField(panel.getAttribute("data-profilekey"), fk, t.value); }
+      const fk = t.getAttribute && t.getAttribute("data-pf"); if(!fk) return;
+      const key = panel.getAttribute("data-profilekey");
+      // 2.9.7 (#211) — numbers are checked before they are saved.
+      const bad = profileFieldProblem(fk, t.value);
+      if(bad){ toast(bad, "info"); const prev = Profile.getValue(opProfileSync(key), fk); t.value = (prev == null) ? "" : String(prev); return; }
+      // 2.9.7 (#36, #211) — the property's name and address live in ONE place: they change on all its loans,
+      // and a new name moves its files and chats (the same rename the loan form does).
+      if(fk === "propertyName" || fk === "address"){ propRenameFromProfile(key, fk, String(t.value || "").trim()); return; }
+      opProfileSetField(key, fk, t.value).then(() => profilePanelRedraw());   // 2.9.7 (#84, #86) — "last changed by" and "Profile complete" show at once
     });
+    // Units and sq ft whole numbers ≥ 0; year built 1800 – this year. "" clears the field.
+    function profileFieldProblem(fk, raw){
+      const v = String(raw == null ? "" : raw).trim().replace(/,/g, ""); if(v === "") return "";
+      const n = Number(v), lab = Profile.labelFor(fk);
+      if(fk === "residentialUnits" || fk === "commercialUnits" || fk === "rentableSqFt"){ if(!/^\d+$/.test(v)) return lab + " must be a whole number, 0 or more — not saved."; }
+      if(fk === "yearBuilt"){ const y = new Date().getFullYear(); if(!/^\d{4}$/.test(v) || n < 1800 || n > y) return "Year built must be between 1800 and " + y + " — not saved."; }
+      return "";
+    }
+    // Redraw the open profile panel after a save, keeping it open and keeping the cursor where it was.
+    function profilePanelRedraw(){
+      const a = document.activeElement, fk = a && a.getAttribute && a.getAttribute("data-pf"), selS = a && a.selectionStart, selE = a && a.selectionEnd;
+      const det = document.querySelector("#loanProfilePanel details, #propProfilePanel details"), wasOpen = det ? det.open : false;
+      const key = det && det.getAttribute("data-profilekey");
+      if(wasOpen && key) loanProfileForceOpen = key;
+      try{ renderLoanProfilePanel(); }catch(e){}
+      if(fk){ const n = document.querySelector('#loanProfilePanel [data-pf="'+fk+'"], #propProfilePanel [data-pf="'+fk+'"]'); if(n){ try{ n.focus(); if(selS != null && n.setSelectionRange) n.setSelectionRange(selS, selE); }catch(e){} } }
+    }
+    // 2.9.7 (#36, #211) — a new property name or address typed in the profile.
+    async function propRenameFromProfile(key, fk, val, opts){
+      opts = opts || {};
+      const from = opts.from || "typed";
+      const all = loans.filter(l => propertyKey(l) === key);
+      if(fk === "propertyName" && !val){ toast("A property needs a name — not saved.", "info"); profilePanelRedraw(); return; }
+      if(!all.length){   // a property with no loan: its name is its key
+        if(fk === "address"){ await opProfileSetField(key, fk, val, opts.fieldOpts); profilePanelRedraw(); return; }
+        const ka = propertyKey({ propertyName: val, propertyAddress: "" });
+        if(ka !== key){ const a = await propRenameAsk(null, key, ka, val); if(!a.go){ profilePanelRedraw(); return; }
+          await opProfileSetField(key, fk, val, opts.fieldOpts); await propRenameFiles(null, key, ka, { merge: a.merge, from, name: val }); }
+        else await opProfileSetField(key, fk, val, opts.fieldOpts);
+        profilePanelRedraw(); toast("Renamed to “" + val + "”.", "check"); return;
+      }
+      const sr = propSeniorLoan(key) || all[0];
+      const change = {}; all.forEach(l => {
+        if(fk === "address") change[l._id] = { propertyAddress: val };
+        else change[l._id] = { propertyName: isMezz(l) ? (val + " (Mezz)") : val };
+      });
+      // The key with every loan changed (a shared address keeps them one property).
+      const snaps = all.map(l => [l, JSON.parse(JSON.stringify(l))]); let kAll = key;
+      try{ all.forEach(l => Object.assign(l, change[l._id])); kAll = propertyKey(sr); } finally { snaps.forEach(([l, sn]) => { Object.keys(l).forEach(k => { if(!(k in sn)) delete l[k]; }); Object.assign(l, sn); }); }
+      let ans = { go: true, merge: false };
+      if(kAll !== key) ans = await propRenameAsk(null, key, kAll, fk === "propertyName" ? val : (sr.propertyName || ""));
+      if(!ans.go){ profilePanelRedraw(); return; }
+      all.forEach(l => { Object.keys(change[l._id]).forEach(f => { const was = l[f]; if(was !== change[l._id][f]){ l[f] = change[l._id][f]; try{ loanHistoryAdd(l, f, was, l[f], from); }catch(e){} } }); });
+      save();
+      await opProfileSetField(key, fk, val, opts.fieldOpts);
+      if(kAll !== key){ try{ opFollowRename(sr, key, kAll); }catch(e){} await propRenameFiles(null, key, kAll, { merge: ans.merge, from, name: fk === "propertyName" ? val : "" }); }
+      else { try{ redrawAll(); }catch(e){} }
+      profilePanelRedraw();
+      toast(fk === "address" ? "Address changed on " + all.length + " loan" + (all.length === 1 ? "" : "s") + "." : "Renamed to “" + val + "” on " + all.length + " loan" + (all.length === 1 ? "" : "s") + ".", "check");
+    }
 
     /* ================================================================
        8a-RR. Unit Statistics from the rent roll (2.9.3). The property's rent roll
@@ -6340,8 +6573,12 @@ tr.flagged:hover td{background:#fee2e2}
       const t = ldsTabs.find(x => x.id === id); if(!t || t.fixed) return;
       if(t.poppedOut){ if(LDS_SHELL && LDS_SHELL.focusPanel) LDS_SHELL.focusPanel(t.kind); return; }
       if(LDS_SHELL && LDS_SHELL.openPanelWindow){
-        t.poppedOut = true; LDS_SHELL.openPanelWindow(t.kind);
-        if(ldsActiveTab === id) activateTab("home"); else renderTabStrip();
+        // 2.9.7 (#43, #228) — the tab leaves the strip only once the window really opened; otherwise say why.
+        Promise.resolve(LDS_SHELL.openPanelWindow(t.kind)).then(r => {
+          if(r && r.ok === false){ toast("Couldn’t open " + t.title + " in its own window" + (r.error ? " (" + r.error + ")" : "") + ". It stays here as a tab.", "error"); return; }
+          t.poppedOut = true;
+          if(ldsActiveTab === id) activateTab("home"); else renderTabStrip();
+        }).catch(err => toast("Couldn’t open " + t.title + " in its own window (" + String(err && err.message || err) + ").", "error"));
       } else if(t.kind === "calendar"){ popCalendarWindow(); }
       else { toast("Pop-out windows need the desktop app", "info"); }
     }
@@ -6357,6 +6594,11 @@ tr.flagged:hover td{background:#fee2e2}
       if(!t){ t = { id: kind+"-"+ldsTabs.length, title: tabTitle(kind), kind:kind, fixed:false, poppedOut:false }; ldsTabs.push(t); }
       t.poppedOut = false; activateTab(t.id);
     }); }
+    // A pop-out window failed to load → bring the tab back and say what happened.
+    if(LDS_SHELL && LDS_SHELL.onPanelError){ LDS_SHELL.onPanelError((p) => {
+      const t = ldsTabs.find(x => x.kind === (p && p.kind)); if(t){ t.poppedOut = false; renderTabStrip(); }
+      toast("The " + tabTitle((p && p.kind) || "") + " window couldn’t load" + (p && p.error ? " (" + p.error + ")" : "") + " — it is back as a tab.", "error");
+    }); }
     // A panel window was closed from its own controls → keep the tab, clear the flag.
     if(LDS_SHELL && LDS_SHELL.onPanelClosed){ LDS_SHELL.onPanelClosed((kind) => {
       const t = ldsTabs.find(x => x.kind === kind); if(t){ t.poppedOut = false; renderTabStrip(); }
@@ -6366,7 +6608,7 @@ tr.flagged:hover td{background:#fee2e2}
     // only that tool + a slim "dock back" bar, and skip the whole tabbed shell.
     function initPanelMode(){
       let kind = null; try{ kind = new URLSearchParams(location.search).get("panel"); }catch(e){}
-      if(kind !== "calendar" && kind !== "underwriting") return false;
+      if(kind !== "calendar" && kind !== "underwriting" && kind !== "health") return false;   // 2.9.7 (#43) — Data Health too
       document.body.setAttribute("data-panelwin", kind);
       const strip = el("tabStrip"); if(strip) strip.hidden = true;
       const home = el("homePanel"); if(home) home.hidden = true;
@@ -6374,12 +6616,13 @@ tr.flagged:hover td{background:#fee2e2}
       const main = document.querySelector("main");
       if(main){ const bar = document.createElement("div");
         bar.className = "mb-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2";
-        bar.innerHTML = '<span class="inline-flex items-center gap-2 text-sm font-bold text-slate-800">'+TAB_SVG[kind]+(kind==="calendar"?"Maturity &amp; Reset Calendar":"Underwriting &amp; Sizing")+'</span>'+
+        bar.innerHTML = '<span class="inline-flex items-center gap-2 text-sm font-bold text-slate-800">'+(TAB_SVG[kind]||"")+(kind==="calendar"?"Maturity &amp; Reset Calendar":kind==="health"?"Data Health":"Underwriting &amp; Sizing")+'</span>'+
           '<button type="button" id="panelDockBtn" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">'+TAB_SVG.pop+'Dock into main window</button>';
         main.insertBefore(bar, main.firstChild);
         bar.querySelector("#panelDockBtn").addEventListener("click", () => { if(LDS_SHELL && LDS_SHELL.dockPanel) LDS_SHELL.dockPanel(kind); });
       }
       if(kind === "underwriting"){ el("uwView").hidden = false; renderUnderwriting(); }
+      else if(kind === "health"){ const hv = el("healthView"); if(hv) hv.hidden = false; try{ renderDataHealth(); }catch(e){} }
       else { el("calendarPanel").hidden = false; loadCalendarFrame(); }
       return true;
     }
@@ -6979,10 +7222,7 @@ tr.flagged:hover td{background:#fee2e2}
       dom.portfolioView.querySelectorAll('[data-harddelete]').forEach(btn => btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const key = btn.getAttribute('data-harddelete'), name = btn.getAttribute('data-name') || 'this property';
-        confirmDialog('Delete “'+name+'” permanently?',
-          'This removes the property and everything under it — its loan record, operating model, T12s, agreements, rent rolls, chats and profile — from disk, for good. This cannot be undone.',
-          () => { opDeletePropertyPermanent(key).then(() => toast('“'+name+'” permanently deleted', 'trash')); },
-          'Delete permanently');
+        propDeleteAsk(key, name);   // 2.9.7 (#207, #208)
       }));
       dom.alertsRail.querySelectorAll('[data-alert-goto]').forEach(b => b.addEventListener('click', () => ldsGotoEvent(b.getAttribute('data-alert-goto'), b.getAttribute('data-alert-iso'))));
       dom.alertsRail.querySelectorAll('[data-alert-refi]').forEach(b => b.addEventListener('click', () => { state.activeId = b.getAttribute('data-alert-refi'); startRefi(); }));
@@ -7092,7 +7332,18 @@ tr.flagged:hover td{background:#fee2e2}
       }
       saveFormCommit(data, existing, []);
     }
-    function saveFormCommit(data, existing, alsoAddress){
+    // The property key a loan edit would produce, worked out without keeping the edit.
+    function predictKeyAfterEdit(existing, data, alsoAddress){
+      const snap = JSON.parse(JSON.stringify(existing)), sib = (alsoAddress || []).map(l => [l, l.propertyAddress]);
+      try{ (alsoAddress || []).forEach(l => { l.propertyAddress = data.propertyAddress; }); Object.assign(existing, data); return propertyKey(existing); }
+      finally{ Object.keys(existing).forEach(k => { if(!(k in snap)) delete existing[k]; }); Object.assign(existing, snap); sib.forEach(([l, a]) => { l.propertyAddress = a; }); }
+    }
+    async function saveFormCommit(data, existing, alsoAddress){
+      let renameOpt = { merge: false };
+      if(existing){   // 2.9.7 (#216) — a new name that already has files of its own: ask before anything changes
+        const kb = propertyKey(existing), ka = predictKeyAfterEdit(existing, data, alsoAddress);
+        if(kb !== ka){ const a = await propRenameAsk(existing, kb, ka, data.propertyName || loanLabel(data)); if(!a.go){ toast("Not renamed — nothing was changed.", "info"); return; } renameOpt.merge = !!a.merge; }
+      }
       if(existing){
         // An address (or name) edit changes the property key; the operating model is keyed by it and
         // either follows the loan or is left where it is — opFollowRename decides, and whatever it
@@ -7106,7 +7357,7 @@ tr.flagged:hover td{background:#fee2e2}
         const keyAfter = propertyKey(existing);
         let note = "";
         try{ note = opFollowRename(existing, keyBefore, keyAfter) || ""; }catch(e){ note = ""; }
-        try{ opMoveDiskDocs(existing, keyBefore, keyAfter); }catch(e){}   // the on-disk T12 folder follows the loan when its key changes
+        try{ propRenameFiles(existing, keyBefore, keyAfter, { merge: renameOpt.merge, from: "typed" }); }catch(e){}   // 2.9.7 (#216) — documents, T12, profile and chats follow the loan
         toast(note ? "Loan updated · " + note : "Loan updated", (!note || /moved with it/.test(note)) ? "check" : "info");
       }
       else {
@@ -9785,7 +10036,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- remove_loan {name}: delete a loan (opens the app's own confirmation dialog). set_loan_status {name, status}: set a loan's status — status must be exactly one of \"Active\", \"Matured\", \"Extended\", \"Extension undecided\", \"Paid off\". archive_property {name} / unarchive_property {name}: archive a property (its loans go with it) or bring an archived one back. edit_assumptions {name, changes}: change a property's underwriting assumptions — changes may include vacancy, managementFee, capRate (each a decimal, 0.05 = 5%), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars per unit). set_loan_status, archive/unarchive and edit_assumptions all show an Approve card first.",
       "Clarifications from testing: (a) cap rate is a PROPERTY underwriting assumption — set it with edit_assumptions {capRate}, which needs no loan; never tell the operator a loan must exist first. (b) A PROPERTY can only be archived (archive_property), not permanently deleted — do not describe a delete-from-settings path that does not exist; a loan, by contrast, is removed with remove_loan. (c) To SET a property's annual NOI, use set_property_noi {name, noi(number), capRate?}; it shows an Approve card — but if that property's NOI comes from an uploaded T12 it will say so, because the T12 is the source of truth and a hand-entered figure will not override it.",
       "- set_refi_noi_basis {name, basis}: open a loan's refinance and set which NOI it's sized on — basis is \"in-place\", \"underwritten\" or \"entered\". add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title. set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
-      "- propose_profile_change {name, changes}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
+      "- propose_profile_change {name, changes, source?}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When the values came from a document, add source {file, page} (the file name and the page you read them on) so the change history shows where they came from. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
       "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted a loan or profile field: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change / propose_profile_change / create_property show a card the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
       "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks the green Approve button on the preview card. You get no real-time signal of that click — BUT the loan snapshot in every message reflects the CURRENT saved values, so you CAN check. To verify a change, compare the snapshot's field (e.g. noi) to the value that was proposed: if it already matches, the change IS applied — say it's done and where to see it (open that loan, or the Coverage table on the dashboard). If it does NOT match, it was not applied — emit the propose_loan_change action again so a fresh Approve card appears and ask them to click it. Never claim a change is done merely because the operator says they approved — check the snapshot first. And if the operator says nothing changed, first read the snapshot: if the value is already set, reassure them it IS saved and tell them exactly where it shows.",
@@ -9969,7 +10220,15 @@ tr.flagged:hover td{background:#fee2e2}
           // somehow left the book.
           var loan = (loans.indexOf(l) >= 0) ? l : getLoan(l._id);
           if(!loan){ done("That loan is no longer in the book — nothing was changed.", false); return; }
+          if(ap) ap.disabled=true;   // one approval, even while a rename question is open
+          // 2.9.7 (#216) — a name or address change renames the property: its files and chats follow (asked first
+          // when the new name already has files of its own).
+          var kb=propertyKey(loan), chg={}; edits.forEach(function(e){ chg[e.key]=e.newVal; });
+          var ka=(chg.propertyName!==undefined||chg.propertyAddress!==undefined) ? predictKeyAfterEdit(loan, chg, []) : kb;
+          (kb!==ka ? propRenameAsk(loan, kb, ka, chg.propertyName||loan.propertyName||"") : Promise.resolve({go:true,merge:false})).then(function(ans){
+          if(!ans.go){ done("Not renamed — nothing was changed.", false); return; }
           edits.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant"); }catch(x){} });   // 2.9.7 (#252) — "Assistant, approved by You"
+          if(kb!==ka){ try{ opFollowRename(loan, kb, ka); }catch(x){} try{ propRenameFiles(loan, kb, ka, { merge: !!ans.merge, from: "assistant" }); }catch(x){} }
           save(); render();
           // Never claim success unless the change actually landed (in memory AND storage).
           if(aiVerifyEditsApplied(loan, edits)){
@@ -9978,6 +10237,7 @@ tr.flagged:hover td{background:#fee2e2}
           } else {
             done("I couldn’t save that change — nothing was updated. Please try again.", false);
           }
+          });
         });
         if(cn) cn.addEventListener("click", function(){ if(applied) return; done("Cancelled — nothing was changed.", false); });
         return {ok:true};   // the approval card IS the response — no extra bubble, don't close the chat
@@ -10010,7 +10270,12 @@ tr.flagged:hover td{background:#fee2e2}
             '<span class="text-[12px] tabular-nums text-right"><span class="text-rose-500 line-through">'+aiEditFmt(e.type,e.oldVal)+'</span> <span class="text-slate-400">→</span> <span class="font-bold text-emerald-700">'+aiEditFmt(e.type,e.newVal)+'</span></span></div>';
         }).join('');
         return aiAsstApprovalCard('Proposed profile update for <b>'+escapeHtml(pn)+'</b> — review before I apply it:', rows, function(){
-          return Promise.all(edits.map(function(e){ return opProfileSetField(key, e.field, e.newVal, {changedBy:opOperator(), source:"assistant"}); }))
+          // 2.9.7 (#85) — recorded as "Assistant, approved by You", with the document and page when it read one.
+          var src={ kind:"assistant" }; if(a&&a.source&&typeof a.source==="object"){ if(a.source.file) src.file=String(a.source.file).slice(0,200); if(a.source.page!=null) src.page=String(a.source.page).slice(0,20); }
+          var fo={ changedBy: HISTORY_WHO_ASSISTANT, source: src };
+          var named=edits.filter(function(e){ return e.field==="propertyName"||e.field==="address"; }), rest=edits.filter(function(e){ return named.indexOf(e)<0; });
+          return Promise.all(rest.map(function(e){ return opProfileSetField(key, e.field, e.newVal, fo); }))
+            .then(function(){ return named.reduce(function(pr, e){ return pr.then(function(){ return propRenameFromProfile(opMovedKeys[key]||key, e.field, String(e.newVal||""), { from:"assistant", fieldOpts: fo }); }); }, Promise.resolve()); })   // 2.9.7 (#36, #216) — name/address change everywhere
             .then(function(){ try{ renderLoanProfilePanel(); }catch(e){} try{ render(); }catch(e){}
               return {ok:true, html:'✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+'’s profile'}; });
         });
@@ -10282,50 +10547,134 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Which property folder(s) a file belongs to, from its content. Returns
     // { keys:[…], detected, matched:[{name,key}], unmatched:[names], roleByKey:{} }.
+    // Which property (or properties) a file belongs to: a rent roll's / T12's own property name, else the file
+    // name, else (2.9.7 #39) a property name or address found in the document's text. 2.9.7 (#214, #215) — a name
+    // that fits two properties equally well is never guessed: out.ambiguous lists the candidates to ask about.
     function opFileTargets(name, text, grid, fallbackKey){
       var props = opProperties();
-      var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {} };
-      function matchName(nm){ if(!nm || /^\(property\)$/i.test(nm)) return null; var best = null, sc = 0; props.forEach(function(p){ var s = rrMatchScore(nm, p.name); if(s > sc){ sc = s; best = p; } }); return (best && sc >= 0.6) ? best.key : null; }
+      var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {}, ambiguous: [], via: "" };
+      function scoreAll(nm){ return props.map(function(p){ return { key: p.key, name: p.name, s: rrMatchScore(nm, p.name) }; }).filter(function(x){ return x.s >= 0.6; }).sort(function(a, b){ return b.s - a.s; }); }
+      // → a key, or null; a tie at the top is recorded as ambiguous (asked about), never picked.
+      function matchName(nm, role){ if(!nm || /^\(property\)$/i.test(nm)) return null; var sc = scoreAll(nm); if(!sc.length) return null;
+        var top = sc.filter(function(x){ return x.s === sc[0].s; });
+        if(top.length > 1){ out.ambiguous.push({ name: nm, role: role || null, keys: top.map(function(x){ return x.key; }) }); return null; }
+        return sc[0].key; }
       function add(k, role, nm){ if(!k) return; if(out.keys.indexOf(k) < 0){ out.keys.push(k); out.matched.push({ name: nm, key: k }); } if(role && !out.roleByKey[k]) out.roleByKey[k] = role; }
       if(grid && window.RentRoll && RentRoll.findHeader(grid).headerRow >= 0){
         out.detected = "rentroll";
         var roll = RentRoll.parse(grid);
-        roll.properties.forEach(function(b){ var k = matchName(b.name); if(k) add(k, "rentroll", b.name); else if(b.name && !/^\(property\)$/i.test(b.name)) out.unmatched.push(b.name); });
+        roll.properties.forEach(function(b){ var k = matchName(b.name, "rentroll"); if(k) add(k, "rentroll", b.name); else if(b.name && !/^\(property\)$/i.test(b.name) && !out.ambiguous.some(function(a){ return a.name === b.name; })) out.unmatched.push(b.name); });
       } else if(grid && window.T12Parse && T12Parse.findHeader(grid).headerRow >= 0){
         out.detected = "t12";
         var h = T12Parse.findHeader(grid), nm = "";
         for(var r = 0; r < Math.min(grid.length, h.headerRow); r++){ var cell = grid[r] && grid[r][0]; var s = cell == null ? "" : String(cell).trim();
           if(s && /[a-z]{3,}/i.test(s) && !/statement|income|expense|rent\s*roll|period|as\s*of|month|year|trailing|t-?12|cash\s*flow|operating|report/i.test(s)){ nm = s; break; } }
-        add(matchName(nm), "t12", nm);
+        add(matchName(nm, "t12"), "t12", nm);
       }
-      if(!out.keys.length && name){ add(matchName(name.replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " ")), null, name); }
-      if(!out.keys.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
+      if(!out.keys.length && !out.ambiguous.length && name){ add(matchName(name.replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " "), out.detected === "other" ? null : out.detected), null, name); if(out.keys.length) out.via = "name"; }
+      if(!out.keys.length && !out.ambiguous.length && text){
+        var hits = opTextMentions(text);
+        if(hits.length === 1){ add(hits[0].key, null, hits[0].found); out.via = "text"; }
+        else if(hits.length > 1){
+          var mine = fallbackKey && hits.some(function(x){ return x.key === fallbackKey; }) && hits.length === 1;
+          if(mine) add(fallbackKey, null, "(where you dropped it)");
+          else out.ambiguous.push({ name: name || "this file", role: null, keys: hits.map(function(x){ return x.key; }), found: hits.map(function(x){ return x.found; }) });
+        }
+      }
+      if(!out.keys.length && !out.ambiguous.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
       return out;
+    }
+    // Properties whose name or street address appears in a document's text: [{ key, found }].
+    function opTextMentions(text){
+      var norm = function(v){ return " " + String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim() + " "; };
+      var T = norm(String(text).slice(0, 400000)), Ta = " " + normPropAddr(String(text).slice(0, 400000).replace(/[^A-Za-z0-9 ]+/g, " ")) + " ";
+      var GENERIC = { apartments:1, apts:1, the:1, residences:1, lofts:1, villas:1, homes:1 };
+      var out = [];
+      opProperties().forEach(function(p){
+        var names = [p.name].concat((p.loans || []).map(function(l){ return String(l.propertyName || "").replace(/\s*\(\s*mezz[^)]*\)/i, ""); }));
+        var found = null;
+        names.forEach(function(nm){ var n = norm(nm).trim(); if(found || n.length < 6 || GENERIC[n]) return; if(T.indexOf(" " + n + " ") >= 0) found = nm; });
+        if(!found) (p.loans || []).forEach(function(l){ var street = String(l.propertyAddress || "").split(",")[0]; var a = normPropAddr(street.replace(/[^A-Za-z0-9 ]+/g, " ")); if(found || !/^\d+\s+\S+/.test(a) || a.length < 8) return; if(Ta.indexOf(" " + a + " ") >= 0) found = street.trim(); });
+        if(found) out.push({ key: p.key, found: found });
+      });
+      return out;
+    }
+    // "Which property is this for?" — a small chooser; resolves the picked key, or null (not filed).
+    function askWhichProperty(fileName, keys, found){
+      return new Promise(function(res){
+        var m = document.createElement("div");
+        m.className = "fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4"; m.setAttribute("data-whichprop", "");
+        var all = opProperties(), first = keys.filter(function(k){ return all.some(function(p){ return p.key === k; }); });
+        m.innerHTML = '<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 class="text-base font-bold text-slate-900">Which property is this for?</h3>'+
+          '<p class="mt-1 text-sm text-slate-600">“'+escapeHtml(fileName)+'” fits more than one property'+(found && found.length ? ' (it mentions '+found.map(function(f){ return '“'+escapeHtml(f)+'”'; }).join(' and ')+')' : '')+'.</p>'+
+          '<select data-whichsel class="mt-3 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">'+
+            first.map(function(k){ var p = all.find(function(x){ return x.key === k; }); return '<option value="'+escapeHtml(k)+'">'+escapeHtml(p ? p.name : k)+'</option>'; }).join('')+
+            '<option disabled>──────────</option>'+all.filter(function(p){ return first.indexOf(p.key) < 0; }).map(function(p){ return '<option value="'+escapeHtml(p.key)+'">'+escapeHtml(p.name)+'</option>'; }).join('')+'</select>'+
+          '<div class="mt-4 flex justify-end gap-2"><button type="button" data-whichno class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Don’t save it</button>'+
+          '<button type="button" data-whichok class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white">Save it there</button></div></div>';
+        document.body.appendChild(m);
+        var done = function(v){ try{ m.remove(); }catch(e){} res(v); };
+        m.querySelector("[data-whichok]").addEventListener("click", function(){ done(m.querySelector("[data-whichsel]").value || null); });
+        m.querySelector("[data-whichno]").addEventListener("click", function(){ done(null); });
+      });
     }
     // Save files (from any file input), routing each to the property folder(s) its content names — copied to
     // all when it covers several. `fallbackKey` is the property you dropped it on (the ≥1 guarantee).
-    function aiSaveFilesToProp(list, fallbackKey, fallbackName){
+    // Save dropped / chosen files to the property they belong to (by their content, or to the property you are
+    // on). opts.role = a type the user picked (then the file goes to this property as that type).
+    // 2.9.7 (#212) — honest messages, one per outcome: "Already on file", "Couldn't save", "Saved, but its text
+    // can't be read", and a same-named file is kept as a copy ("… (2).pdf"), never replaced.
+    function aiSaveFilesToProp(list, fallbackKey, fallbackName, opts){
+      opts = opts || {};
       var files=Array.prototype.slice.call(list||[]); if(!files.length || !docsAvailable()) return;
-      var touched={}, unmatchedAll=[];
+      var touched={}, unmatchedAll=[], dup=[], failed=[], noText=[], renamed=[], textFiled=[], skipped=[];
       Promise.all(files.map(function(file){
         if(file.size > 25*1024*1024){ toast(file.name+" is too large (25 MB max)","info"); return Promise.resolve(); }
         return Promise.all([fileToBase64(file), aiExtractFileText(file)]).then(function(pair){
-          var b64=pair[0], ex=pair[1]||{}; if(!b64) return;
-          var grid = /\.(xlsx|xls|csv)$/i.test(file.name||"") ? opDetectGrid(opB64ToBytes(b64)) : null;
-          var t = opFileTargets(file.name, ex.text||"", grid, fallbackKey);
-          var keys = t.keys.slice(); if(!keys.length && fallbackKey) keys=[fallbackKey];
-          (t.unmatched||[]).forEach(function(n){ if(unmatchedAll.indexOf(n)<0) unmatchedAll.push(n); });
-          return Promise.all(keys.map(function(k){ var p=opProp(k); touched[k]=1; return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(t.roleByKey[k]||"other")}); }));
-        });
+          var b64=pair[0], ex=pair[1]||{}; if(!b64){ failed.push(file.name); return; }
+          var keys, roleByKey={};
+          if(opts.role && fallbackKey){ keys=[fallbackKey]; roleByKey[fallbackKey]=opts.role; }
+          else {
+            var grid = /\.(xlsx|xls|csv)$/i.test(file.name||"") ? opDetectGrid(opB64ToBytes(b64)) : null;
+            var t = opFileTargets(file.name, ex.text||"", grid, fallbackKey);
+            keys = t.keys.slice(); roleByKey=t.roleByKey||{};
+            (t.unmatched||[]).forEach(function(n){ if(unmatchedAll.indexOf(n)<0) unmatchedAll.push(n); });
+            if(t.via === "text" && keys[0] && keys[0] !== fallbackKey) textFiled.push({ name:file.name, key:keys[0], found:(t.matched[0]||{}).name });
+            if(t.ambiguous.length){   // 2.9.7 (#214) — ask, one question per unclear name, never pick the first
+              return t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name !== "this file" ? amb.name + " (" + file.name + ")" : file.name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role) roleByKey[k]=amb.role; } }); }); }, Promise.resolve())
+                .then(function(){ if(!keys.length){ skipped.push(file.name); return; } return saveTo(keys); });
+            }
+            if(!keys.length && fallbackKey) keys=[fallbackKey];
+          }
+          return saveTo(keys);
+          function saveTo(keys){
+          if(!String(ex.text||"").trim()) noText.push({ name:file.name, note:ex.note||"" });
+          return Promise.all(keys.map(function(k){ var p=opProp(k);
+            return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(roleByKey[k]||"other")})
+              .then(function(r){ if(!r||!r.ok){ failed.push(file.name); return; } if(r.duplicate){ dup.push(file.name); return; } touched[k]=1; if(r.renamed) renamed.push({ from:file.name, to:r.renamed }); })
+              .catch(function(){ failed.push(file.name); }); }));
+          }
+        }).catch(function(){ failed.push(file.name); });
       })).then(function(){
         var keys=Object.keys(touched); keys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
         var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
-        if(names.length) toast("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""),"check");
+        var msgs=[];
+        if(names.length) msgs.push("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""));
+        textFiled.forEach(function(x){ var p=opProp(x.key); msgs.push("“"+x.name+"” mentions “"+x.found+"”, so it was filed under "+((p&&p.name)||x.key)); });   // 2.9.7 (#39)
+        if(skipped.length) msgs.push("Not saved (no property chosen): "+skipped.join(", "));
+        renamed.forEach(function(x){ msgs.push("“"+x.from+"” was already there with different content — this one is kept as “"+x.to+"”"); });
+        if(dup.length) msgs.push("Already on file: "+dup.join(", "));
+        noText.forEach(function(x){ msgs.push("Saved “"+x.name+"”, but its text can't be read"+(/\.doc$/i.test(x.name)?" (.doc: save it as .docx or PDF)":(x.note?" ("+x.note+")":""))); });
+        if(failed.length) msgs.push("Couldn't save: "+failed.join(", "));
+        if(msgs.length) toast(msgs.join(" · "), failed.length ? "error" : (noText.length||dup.length ? "info" : "check"));
         if(unmatchedAll.length) toast(unmatchedAll.length+" propert"+(unmatchedAll.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(unmatchedAll.length>1?"them":"it")+" to file "+(unmatchedAll.length>1?"these":"this")+".","info");
         renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
       });
     }
-    // The Documents panel on a loan's detail view: the saved files for that property.
+    // The Documents panel on a loan's (or a loan-less property's) page: the property's saved files.
+    // 2.9.7 (#37) a type dropdown for uploads ("Detect automatically" files by content, as before) and a
+    // type on every file that can be changed; (#38) the app's own records (profile, assumptions, general
+    // data, history) are not listed, so they can't be removed from here; (#213) every removal is confirmed.
     function renderDocsPanel(){
       var pk = state.mode==="prop" ? propViewKey() : "";   // 2.9.7 (#3) — also the page of a property with no loan
       var host=el(pk ? "propDocsPanel" : "loanDocsPanel"); if(!host) return;
@@ -10333,34 +10682,79 @@ tr.flagged:hover td{background:#fee2e2}
       var loan=pk ? null : getLoan(state.activeId); if(!loan && !pk){ host.innerHTML=""; return; }
       var propKey=pk || propertyKey(loan), propName=pk ? opPropDisplayName(pk) : (loan.propertyName||loanLabel(loan));
       ldsShell.docList(propKey).then(function(r){
-        var files=(r&&r.files)||[];
+        var files=((r&&r.files)||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""]; });
+        var typeOpts=function(cur){ var known=PROFILE_DOC_TYPES.some(function(d){ return d.role===cur; });
+          return (known?'':'<option value="'+escapeHtml(cur||"other")+'" selected>'+escapeHtml(profileDocLabel(cur||"other"))+'</option>')+PROFILE_DOC_TYPES.map(function(d){ return '<option value="'+d.role+'"'+(d.role===cur?' selected':'')+'>'+escapeHtml(d.label)+'</option>'; }).join(''); };
         var rows = files.length ? files.map(function(f){
-          return '<div class="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 last:border-0">'+
+          return '<div class="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 last:border-0" data-docrow="'+escapeHtml(f.id)+'">'+
             '<svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'+
             '<div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold text-slate-800">'+escapeHtml(f.name)+'</div>'+
               '<div class="text-[11px] text-slate-400">'+fmtBytes(f.size)+' · saved '+escapeHtml(new Date(f.savedAt).toLocaleDateString())+(f.textLen?'':' · <span class="text-amber-600">no readable text</span>')+'</div></div>'+
+            '<select data-doctype="'+escapeHtml(f.id)+'" title="What this document is" class="shrink-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-600">'+typeOpts(f.role||"other")+'</select>'+
             '<button type="button" data-docsave="'+f.id+'" class="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Save copy</button>'+
             '<button type="button" data-docdel="'+f.id+'" class="shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50">Remove</button>'+
           '</div>';
         }).join('') : '<div class="px-5 py-4 text-sm text-slate-400">No documents saved for this property yet. Add a T12, rent roll, or agreement — the assistant will read it automatically when you focus this property, so you never re-upload.</div>';
         host.innerHTML='<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">'+
-          '<div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">'+
+          '<div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">'+
             '<div><h2 class="text-base font-bold text-slate-900 flex items-center gap-2">'+
               '<svg class="h-4 w-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>Documents</h2>'+
               '<p class="text-xs text-slate-500">Saved for '+escapeHtml(propName)+' — the assistant reads these when you focus this property.</p></div>'+
             '<div class="flex items-center gap-2 shrink-0">'+
+              '<select id="loanDocsType" title="What you are adding" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"><option value="">Detect automatically</option>'+PROFILE_DOC_TYPES.map(function(d){ return '<option value="'+d.role+'">'+escapeHtml(d.label)+'</option>'; }).join('')+'</select>'+
               '<input id="loanDocsFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown" class="hidden">'+
               '<button type="button" id="loanDocsAdd" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Add files</button>'+
               (files.length?'<button type="button" id="loanDocsFolder" title="Open the documents folder" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Folder</button>':'')+
             '</div>'+
           '</div>'+rows+'</div>';
-        host.querySelectorAll('[data-docdel]').forEach(function(b){ b.addEventListener('click', function(){ ldsShell.docDelete(propKey, b.getAttribute('data-docdel')).then(function(){ toast('Removed','check'); renderDocsPanel(); aiAsstUpdatePropDocs(); }); }); });
+        host.querySelectorAll('[data-docdel]').forEach(function(b){ b.addEventListener('click', function(){ var f=files.find(function(x){ return x.id===b.getAttribute('data-docdel'); }); if(f) docRemoveAsk(propKey, f); }); });
+        host.querySelectorAll('[data-doctype]').forEach(function(sel){ sel.addEventListener('change', function(){ var id=sel.getAttribute('data-doctype'), f=files.find(function(x){ return x.id===id; }), was=f&&f.role;
+          ldsShell.docSetRole(propKey, id, sel.value).then(function(rr){
+            if(!rr||!rr.ok){ toast("Couldn’t change its type"+(rr&&rr.error?" ("+rr.error+")":"")+".","error"); renderDocsPanel(); return; }
+            toast("“"+(f?f.name:"The file")+"” is now "+profileDocLabel(sel.value)+".","check");
+            if(was==="t12"||sel.value==="t12"){ opAfterT12Change(propKey); }   // a T12 added or taken away by its type
+            try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs(); renderDocsPanel();
+          }); }); });
         host.querySelectorAll('[data-docsave]').forEach(function(b){ b.addEventListener('click', function(){ ldsShell.docRead(propKey, b.getAttribute('data-docsave')).then(function(rr){ if(rr&&rr.ok){ var ext=(String(rr.name).split('.').pop()||'bin'); ldsShell.saveBinary(rr.base64, rr.name, ext, 'Document'); } }); }); });
         var add=el('loanDocsAdd'), fin=el('loanDocsFile'), fld=el('loanDocsFolder');
         if(add&&fin) add.addEventListener('click', function(){ fin.click(); });
-        if(fin) fin.addEventListener('change', function(e){ aiSaveFilesToProp(e.target.files, propKey, propName); e.target.value=''; });
+        if(fin) fin.addEventListener('change', function(e){ var role=(el('loanDocsType')||{}).value||""; aiSaveFilesToProp(e.target.files, propKey, propName, role ? { role: role } : null); e.target.value=''; });
         if(fld) fld.addEventListener('click', function(){ ldsShell.openDocsFolder(); });
       }).catch(function(){ host.innerHTML=''; });
+    }
+    // 2.9.7 (#213) — removing a document always asks; removing a T12 says what goes with it, and its numbers
+    // are then rebuilt from any other T12 on file (or "no NOI yet").
+    async function docRemoveAsk(propKey, f){
+      let extra = "";
+      if(f.role === "t12"){
+        let inUse = null; try{ inUse = await opReadPropT12(propKey); }catch(e){}
+        const g = gdNOICache[propKey], noi = g && (g.inPlace != null ? g.inPlace : null);
+        if(inUse && inUse.id === f.id) extra = " It is the T12 in use: its NOI" + (noi != null ? " (" + fmtMoney(noi) + ")" : "") + " will be removed from Home, DSCR and the refinance" + "; the numbers are rebuilt from any other T12 on file, otherwise the property has no NOI yet.";
+        else extra = " It is an older T12 — the one in use stays.";
+      }
+      confirmDialog("Remove “" + f.name + "”?", "It is deleted from " + opPropDisplayName(propKey) + "’s folder (the automatic backups keep a copy)." + extra, async () => {
+        let r = null; try{ r = await ldsShell.docDelete(propKey, f.id); }catch(e){ r = { ok:false, error:String(e) }; }
+        if(r && r.ok === false){ toast("Couldn’t remove “" + f.name + "”" + (r.error ? " (" + r.error + ")" : "") + ".", "error"); return; }
+        toast("Removed “" + f.name + "”.", "check");
+        if(f.role === "t12") await opAfterT12Change(propKey);
+        try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+        renderDocsPanel(); aiAsstUpdatePropDocs();
+      }, "Remove");
+    }
+    // A T12 was removed (or its type changed): rebuild the property's numbers from the T12 now in use, or clear
+    // them when none is left — so Home, DSCR, debt yield and the refinance never keep a removed statement's NOI.
+    async function opAfterT12Change(key){
+      if(!key) return;
+      opDeskLoaded.delete(key); delete gdNOICache[key]; delete gdFullCache[key];
+      let r = null; try{ r = await opReadPropT12(key); }catch(e){}
+      if(r){ try{ await opUpdateGeneralData(key); }catch(e){} try{ await opEnsureFromDisk(key); }catch(e){} }
+      else {
+        try{ opInit(); if(OperatingStore.get(key)) OperatingStore.remove(key); }catch(e){}
+        await gdSerial(key, async () => { const gd = await opLoadGeneralData(key); if(gd){ gd.noi = null; gd.t12Review = null; gd.push = null; gd.updatedAt = new Date().toISOString(); await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd; } gdNOICache[key] = null; });
+        try{ toast(opPropDisplayName(key) + " has no T12 now — no NOI yet.", "info"); }catch(e){}
+      }
+      try{ if(opFocusKey === key) await opSelectProperty(key, { skipAutoPush: true }); }catch(e){}
+      try{ redrawAll(); }catch(e){}
     }
     function aiExtractFileText(file, opts){
       opts = opts || {};
@@ -10539,8 +10933,11 @@ tr.flagged:hover td{background:#fee2e2}
         var focusBlock="";
         if(focusName){
           focusBlock="The operator is focused on the property \""+focusName+"\". ";
-          if(docTxt && docTxt.text){ focusBlock+="Its saved documents"+(docTxt.truncated?" (truncated)":"")+" are below — use them, no need to ask the operator to attach anything:\n"+docTxt.text+"\n\n"; }
-          else { focusBlock+="It has no saved documents yet; if the operator expects some, tell them to attach the file with this property selected so it is saved.\n\n"; }
+          if(docTxt && docTxt.text){ focusBlock+="Its saved documents, newest first"+(docTxt.truncated?" (the last one is cut at the size limit)":"")+", are below — use them, no need to ask the operator to attach anything:\n"+docTxt.text+"\n\n"; }
+          else { focusBlock+="It has no readable saved documents yet; if the operator expects some, tell them to attach the file with this property selected so it is saved.\n\n"; }
+          // 2.9.7 (#212) — say which saved documents could not be read, so the answer never pretends it saw them.
+          var notRead=[]; if(docTxt && docTxt.unreadable && docTxt.unreadable.length) notRead.push("no readable text: "+docTxt.unreadable.join(", ")); if(docTxt && docTxt.left && docTxt.left.length) notRead.push("not read (over the 300,000-character limit for one property): "+docTxt.left.join(", "));
+          if(notRead.length) focusBlock+="Saved documents you could NOT read — tell the operator when they matter to the question: "+notRead.join("; ")+".\n\n";
         }
         // Build the recall block from the strongest matches, excluding THIS conversation.
         var recallBlock="", recalledMeta=[];

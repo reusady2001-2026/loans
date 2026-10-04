@@ -40,7 +40,7 @@
     { key: "rentableSqFt",    label: "Rentable sq ft",      type: "int",      group: "Size", unit: "sq ft" },
     { key: "yearBuilt",       label: "Year built",          type: "int",      group: "Size" },
     { key: "acquisitionDate", label: "Acquisition date",    type: "date",     group: "Ownership",
-      help: "When Living acquired it. If it falls inside a T12's months, it also triggers the last-3-months annualization." },
+      help: "When Living acquired it." },   // 2.9.7 (#211) — the old "triggers annualization" note was not part of the T12 rule
     { key: "manager",         label: "Manager",             type: "text",     group: "Ownership",
       help: "Living, or the third-party manager's name." },
     { key: "dataSource",      label: "Data source",         type: "select",   group: "Ownership",

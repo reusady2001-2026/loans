@@ -53,7 +53,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(await page.evaluate((k)=>!window.LDS_isArchived(k)&&/No loan yet/i.test(document.getElementById('propHeader').innerText),key),'Un-archive brings it back');
   await page.evaluate(()=>document.querySelector('[data-proparchive]').click()); await page.waitForTimeout(300); await confirmOk(); await page.waitForTimeout(800);
   await page.evaluate(()=>document.querySelector('[data-propdelete]').click()); await page.waitForTimeout(300);
-  ok(/for good/.test(await modalText()),'Delete permanently asks first');
+  ok(/can’t be undone here/.test(await modalText()),'Delete permanently asks first, listing what goes');
   await confirmOk(); await page.waitForTimeout(1200);
   const D=await page.evaluate((k)=>({ gone:!window.opProperties().some(p=>p.key===k)&&!window.LDS_archivedProps().includes(k), propView:!document.getElementById('propView').hidden, portfolio:!document.getElementById('portfolioView').hidden }),key);
   ok(D.gone&&!D.propView&&D.portfolio,'after the delete the property is gone and Home shows (no blank page)');

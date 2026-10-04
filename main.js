@@ -110,26 +110,45 @@ ipcMain.handle('lds:win-is-maximized', (e) => { const w = BrowserWindow.fromWebC
 // localStorage keeps its data consistent with the main window). Docking sends the
 // tab back to the main strip and closes the panel window.
 const panelWindows = {};   // kind -> BrowserWindow
-function panelTitle(kind) { return kind === 'calendar' ? 'Maturity & Reset Calendar' : 'Underwriting & Sizing'; }
-ipcMain.on('lds:open-panel', (e, kind) => {
-  if (kind !== 'calendar' && kind !== 'underwriting') return;
+const PANEL_KINDS = { calendar: 'Maturity & Reset Calendar', underwriting: 'Underwriting & Sizing', health: 'Data Health' };   // 2.9.7 (#43) — Data Health too
+function panelTitle(kind) { return PANEL_KINDS[kind] || 'Loan Debt Service Hub'; }
+// 2.9.7 (#43, #228) — anything that stops a pop-out window from opening or loading is written to
+// userData/logs/main.log and told to the main window, never swallowed.
+function mainLog(line){ try { const d = path.join(app.getPath('userData'), 'logs'); fs.mkdirSync(d, { recursive: true }); fs.appendFileSync(path.join(d, 'main.log'), new Date().toISOString() + ' ' + line + '\n'); } catch (e) {} }
+function tellMain(channel, payload){ try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch (e) {} }
+function openPanel(kind){
+  if (!PANEL_KINDS[kind]) return { ok: false, error: 'unknown panel ' + kind };
   const existing = panelWindows[kind];
-  if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return; }
-  const win = new BrowserWindow({
-    width: kind === 'calendar' ? 1200 : 1100, height: 860, minWidth: 720, minHeight: 520,
-    backgroundColor: '#f6f8f2', title: panelTitle(kind), autoHideMenuBar: true, titleBarStyle: 'hidden',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
-  });
+  if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return { ok: true, existing: true }; }
+  let win;
+  try {
+    win = new BrowserWindow({
+      width: kind === 'calendar' ? 1200 : 1100, height: 860, minWidth: 720, minHeight: 520, show: false,
+      backgroundColor: '#f6f8f2', title: panelTitle(kind), autoHideMenuBar: true, titleBarStyle: 'hidden',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+    });
+  } catch (err) { mainLog('open-panel ' + kind + ' failed: ' + ((err && err.stack) || err)); return { ok: false, error: String((err && err.message) || err) }; }
   panelWindows[kind] = win;
-  win.loadFile(path.join(__dirname, 'index.html'), { query: { panel: kind } });
+  let shown = false;
+  const show = () => { if (shown || win.isDestroyed()) return; shown = true; try { win.show(); win.focus(); } catch (e) {} };
+  win.once('ready-to-show', show);
+  setTimeout(show, 3000);   // never stay invisible if ready-to-show is late
+  win.webContents.on('did-fail-load', (ev, code, desc, url) => { mainLog('panel ' + kind + ' did-fail-load ' + code + ' ' + desc + ' ' + url); tellMain('lds:panel-error', { kind, error: desc || ('load failed ' + code) }); });
+  win.webContents.on('render-process-gone', (ev, d) => { mainLog('panel ' + kind + ' render-process-gone ' + JSON.stringify(d)); tellMain('lds:panel-error', { kind, error: 'the window stopped (' + ((d && d.reason) || 'unknown') + ')' }); });
+  win.webContents.on('console-message', (ev, level, message) => { if (level >= 3) mainLog('panel ' + kind + ' console error: ' + String(message).slice(0, 500)); });
+  try { win.loadFile(path.join(__dirname, 'index.html'), { query: { panel: kind } }); }
+  catch (err) { mainLog('panel ' + kind + ' loadFile threw: ' + ((err && err.stack) || err)); }
   const sendState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e2) {} };
   win.on('maximize', sendState);
   win.on('unmaximize', sendState);
   win.on('closed', () => {
     delete panelWindows[kind];
-    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lds:panel-closed', kind); } catch (e2) {}
+    tellMain('lds:panel-closed', kind);
   });
-});
+  return { ok: true };
+}
+ipcMain.handle('lds:open-panel-invoke', (e, kind) => openPanel(kind));
+ipcMain.on('lds:open-panel', (e, kind) => { const r = openPanel(kind); if (!r.ok) tellMain('lds:panel-error', { kind, error: r.error }); });
 ipcMain.on('lds:close-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) w.close(); });
 ipcMain.on('lds:focus-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) { w.show(); w.focus(); } });
 ipcMain.on('lds:dock-panel', (e, kind) => {
@@ -433,10 +452,17 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
 // (what the assistant actually reads), and an index.json:
 //   { propKey, propName, files: [{ id, stored, name, size, type, savedAt, textLen }] }
 const DOC_TEXT_CAP = 300000;   // max extracted text handed to the assistant per property, per turn
+const APP_ROLES = new Set(['profile', 'assumptions', 'general', 'history']);   // the app's own records in a property folder
 function documentsDir(){ return path.join(app.getPath('userData'), 'documents'); }
 function propDir(propKey){ const h = crypto.createHash('sha1').update(String(propKey || '')).digest('hex').slice(0, 16); return path.join(documentsDir(), h); }
 function readDocIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
 function writeDocIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
+// "Loan Agreement.pdf" → "Loan Agreement (2).pdf" (the first number not already taken).
+function docUniqueName(name, taken){
+  const ext = path.extname(name), base = name.slice(0, name.length - ext.length);
+  for (let i = 2; i < 1000; i++) { const n = base + ' (' + i + ')' + ext; if (!taken.has(n)) return n; }
+  return base + ' (' + Date.now() + ')' + ext;
+}
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
 function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '' }; }
 
@@ -459,12 +485,31 @@ ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type
     const stored = id + docSafeExt(name);
     fs.writeFileSync(path.join(dir, stored), buf);
     const t = String(text || ''); if(t){ try { fs.writeFileSync(path.join(dir, id + '.txt'), t, 'utf8'); } catch (err) {} }
-    // Replace any existing file with the same original name.
-    idx.files.filter(f => f.name === String(name)).forEach(f => { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} });
-    idx.files = idx.files.filter(f => f.name !== String(name));
-    const entry = { id, stored, name: String(name), size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha };
+    // The app's own records (profile, assumptions, general data, history) replace their previous version.
+    // 2.9.7 (#212) — a DOCUMENT is never deleted because of its name: a second, different file with the same
+    // name is kept as "Loan Agreement (2).pdf".
+    let finalName = String(name), renamed = null;
+    if (APP_ROLES.has(role || '')) {
+      idx.files.filter(f => f.name === finalName).forEach(f => { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} });
+      idx.files = idx.files.filter(f => f.name !== finalName);
+    } else if (idx.files.some(f => f.name === finalName)) {
+      finalName = docUniqueName(finalName, new Set(idx.files.map(f => f.name))); renamed = finalName;
+    }
+    const entry = { id, stored, name: finalName, size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha };
     idx.files.push(entry); writeDocIndex(dir, idx);
-    return { ok: true, file: pubFile(entry) };
+    return { ok: true, file: pubFile(entry), renamed };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// 2.9.7 (#37) — change a saved document's type (Loan agreement, T12, Rent roll, Unit Statistics, Other).
+ipcMain.handle('lds:doc-set-role', (e, { propKey, id, role }) => {
+  dataChanged(e);
+  try {
+    if (!propKey || !id || APP_ROLES.has(role || '')) return { ok: false, error: 'bad request' };
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const f = (idx.files || []).find(x => x.id === id); if (!f) return { ok: false, error: 'not found' };
+    if (APP_ROLES.has(f.role || '')) return { ok: false, error: 'that is one of the app’s own records' };
+    f.role = String(role || 'other'); writeDocIndex(dir, idx);
+    return { ok: true, file: pubFile(f) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // List one property's saved files (metadata only, no text).
@@ -489,17 +534,18 @@ ipcMain.handle('lds:doc-index', () => {
 ipcMain.handle('lds:doc-text', (e, { propKey }) => {
   try {
     const dir = propDir(propKey), idx = readDocIndex(dir);
-    const files = Array.isArray(idx.files) ? idx.files : [];
-    let out = '', used = [], truncated = false;
+    // 2.9.7 (#212) — newest documents first; say which ones could not be read (no text) or did not fit.
+    const files = (Array.isArray(idx.files) ? idx.files : []).filter(f => !APP_ROLES.has(f.role || '')).slice().sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    let out = '', used = [], truncated = false; const unreadable = [], left = [];
     for(const f of files){
+      if(truncated){ left.push(f.name); continue; }
       let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
-      if(!t) continue;
+      if(!t){ unreadable.push(f.name); continue; }
       if(out.length + t.length > DOC_TEXT_CAP){ t = t.slice(0, Math.max(0, DOC_TEXT_CAP - out.length)); truncated = true; }
       out += '<file name="' + String(f.name).replace(/"/g, '') + '">\n' + t + '\n</file>\n\n';
       used.push(f.name);
-      if(truncated) break;
     }
-    return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated };
+    return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated, unreadable, left };
   } catch (err) { return { ok: false, error: String((err && err.message) || err), text: '', files: [] }; }
 });
 // Read one original file back (base64) — for opening/exporting from the Documents panel.
@@ -525,7 +571,7 @@ ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
 // the property). Guarded so a T12 is never lost or clobbered: refuses if the destination already has
 // its own files (kept at the old key), no-ops if the source has none, and carries the index's
 // propKey/propName across. Same parent directory, so a plain rename moves it atomically.
-ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName }) => {
+ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName, merge }) => {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!fromKey || !toKey || fromKey === toKey) return { ok: true, moved: false, reason: 'same key' };
@@ -533,7 +579,24 @@ ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName }) => {
     const srcIdx = readDocIndex(src);
     if(!fs.existsSync(src) || !(Array.isArray(srcIdx.files) && srcIdx.files.length)) return { ok: true, moved: false, reason: 'nothing to move' };
     const dstIdx = readDocIndex(dst);
-    if(fs.existsSync(dst) && Array.isArray(dstIdx.files) && dstIdx.files.length) return { ok: true, moved: false, reason: 'target exists' };
+    if(fs.existsSync(dst) && Array.isArray(dstIdx.files) && dstIdx.files.length){
+      if(!merge) return { ok: true, moved: false, reason: 'target exists' };
+      // 2.9.7 (#216) — the user chose to put the two together: every file moves in; a file whose name is
+      // already there keeps both ("Loan Agreement (2).pdf"); the app's own records of the moving property
+      // (profile, assumptions, general data, history) give way to the ones already there.
+      const names = new Set(dstIdx.files.map(f => f.name)), own = new Set(['profile', 'assumptions', 'general', 'history']);
+      let moved = 0;
+      srcIdx.files.forEach(f => {
+        if(own.has(f.role || '') && dstIdx.files.some(x => (x.role || '') === f.role)) return;
+        let name = f.name; if(names.has(name)) name = docUniqueName(name, names);
+        try { fs.renameSync(path.join(src, f.stored), path.join(dst, f.stored)); } catch (x) { return; }
+        try { if(fs.existsSync(path.join(src, f.id + '.txt'))) fs.renameSync(path.join(src, f.id + '.txt'), path.join(dst, f.id + '.txt')); } catch (x) {}
+        dstIdx.files.push(Object.assign({}, f, { name })); names.add(name); moved++;
+      });
+      dstIdx.propKey = toKey; if(propName) dstIdx.propName = propName; writeDocIndex(dst, dstIdx);
+      try { fs.rmSync(src, { recursive: true, force: true }); } catch (x) {}
+      return { ok: true, moved: true, merged: moved };
+    }
     if(fs.existsSync(dst)){ try { fs.rmSync(dst, { recursive: true, force: true }); } catch (x) {} }   // an empty stub at the destination
     fs.renameSync(src, dst);
     srcIdx.propKey = toKey; if(propName) srcIdx.propName = propName; writeDocIndex(dst, srcIdx);
@@ -547,15 +610,34 @@ ipcMain.handle('lds:docs-open-folder', async () => {
 });
 // 2.9.6 — permanent property delete (archived-only, driven from the renderer with a strong
 // confirm). Removes the property's documents folder AND its chats folder from disk, for good.
+// 2.9.7 (#206, #208) — refuses unless the property's profile says it is archived; deletes every file and
+// reports any it couldn't (a file open in Excel), so the page keeps the property until all of it is gone.
+function propIsArchivedOnDisk(propKey){
+  try {
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const f = (idx.files || []).filter(x => x.role === 'profile').sort((a, b) => b.savedAt - a.savedAt)[0];
+    if (!f) return false;
+    const j = JSON.parse(fs.readFileSync(path.join(dir, f.stored), 'utf8'));
+    return !!(j && j.archived);
+  } catch (e) { return false; }
+}
 ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if (!propKey) return { ok: false, error: 'no key' };
-    let removed = 0;
-    for (const d of [propDir(propKey), chatScopeDir(propKey)]) {
-      try { if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); removed++; } } catch (x) {}
+    const dirs = [propDir(propKey), chatScopeDir(propKey)];
+    const hasFiles = dirs.some(d => fs.existsSync(d));
+    if (hasFiles && !propIsArchivedOnDisk(propKey)) return { ok: false, notArchived: true, error: 'Archive the property before deleting it.' };
+    const failed = [];
+    for (const d of dirs) {
+      if (!fs.existsSync(d)) continue;
+      let ents = []; try { ents = fs.readdirSync(d); } catch (x) {}
+      for (const n of ents) { try { fs.rmSync(path.join(d, n), { recursive: true, force: true }); } catch (x) { failed.push(n); } }
+      try { if (!failed.length) fs.rmdirSync(d); } catch (x) { if (fs.existsSync(d)) failed.push(path.basename(d)); }
     }
-    return { ok: true, removed: removed };
+    const left = dirs.filter(d => fs.existsSync(d));
+    if (failed.length || left.length) return { ok: false, failed: failed.length || left.length, error: 'Couldn’t delete ' + (failed.length || left.length) + ' file' + ((failed.length || left.length) === 1 ? '' : 's') };
+    return { ok: true, removed: dirs.length };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
@@ -579,6 +661,27 @@ function chatSnippet(text, terms){
   return (start > 0 ? '…' : '') + s.slice(start, end).replace(/\s+/g, ' ').trim() + (end < s.length ? '…' : '');
 }
 
+// 2.9.7 (#40, #216) — a renamed property's chats move with it (merged into the new name's chats if it has some).
+ipcMain.handle('lds:chat-move', (e, { fromScope, toScope, scopeName }) => {
+  dataChanged(e);
+  try {
+    if (!fromScope || !toScope || fromScope === toScope) return { ok: true, moved: false };
+    const src = chatScopeDir(fromScope), dst = chatScopeDir(toScope);
+    const si = readChatIndex(src);
+    if (!fs.existsSync(src) || !(si.conversations || []).length) return { ok: true, moved: false, reason: 'nothing to move' };
+    const di = readChatIndex(dst); di.conversations = Array.isArray(di.conversations) ? di.conversations : [];
+    fs.mkdirSync(dst, { recursive: true });
+    let moved = 0;
+    (si.conversations || []).forEach(c => {
+      try { fs.renameSync(path.join(src, c.id + '.json'), path.join(dst, c.id + '.json')); } catch (x) { return; }
+      try { const f = path.join(dst, c.id + '.json'), conv = JSON.parse(fs.readFileSync(f, 'utf8')); conv.scope = toScope; if (scopeName) conv.scopeName = scopeName; fs.writeFileSync(f, JSON.stringify(conv)); } catch (x) {}
+      di.conversations = di.conversations.filter(x => x.id !== c.id); di.conversations.push(Object.assign({}, c, { scope: toScope, scopeName: scopeName || c.scopeName })); moved++;
+    });
+    di.scope = toScope; if (scopeName) di.scopeName = scopeName; writeChatIndex(dst, di);
+    try { fs.rmSync(src, { recursive: true, force: true }); } catch (x) {}
+    return { ok: true, moved: moved > 0, count: moved };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 // Create or update one conversation (upsert by id). A blank title is auto-filled from the first
 // user message. Returns the conversation's metadata (with its assigned id).
 ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, files, pinned }) => {
