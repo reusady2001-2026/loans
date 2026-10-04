@@ -1506,8 +1506,32 @@
       { id:"other",  label:"Other / Custom (enter value)", live:false, fallback:5.00 },
     ];
     const INDEX_BY_ID = {}; INDEX_CATALOG.forEach(i => INDEX_BY_ID[i.id] = i);
-    const INDEX_CACHE = {};            // id -> { value(%), date }
+    const INDEX_CACHE = {};            // id -> { value(%), date, fetchedAt, live | saved }
     const INDEX_INFLIGHT = {};
+    // 2.9.7 (#26) — every fetched rate is saved with its date on this computer and loaded at startup. Offline,
+    // a saved rate shows as "Last saved rate · Sep 22, 2026"; the rates built into the app are used only when
+    // nothing was ever fetched ("Built-in rate — fetch to update").
+    const LIVE_RATES_KEY = "ldsHub.liveRates.v1", INDEX_TRIED = {};
+    function loadSavedRates(){
+      try{ const all = JSON.parse(localStorage.getItem(LIVE_RATES_KEY) || "{}");
+        Object.keys(all).forEach(id => { const r = all[id]; if(INDEX_BY_ID[id] && r && isFinite(r.value) && !INDEX_CACHE[id]) INDEX_CACHE[id] = { value: Number(r.value), date: r.date || null, fetchedAt: r.fetchedAt || null, saved: true }; }); }catch(e){}
+    }
+    function setLiveRate(id, r){
+      if(!r || !isFinite(r.value)) return;
+      if(r.stale){ INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: null, saved: true }; return; }
+      INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: new Date().toISOString(), live: true };
+      try{ const all = JSON.parse(localStorage.getItem(LIVE_RATES_KEY) || "{}"); all[id] = { value: r.value, date: r.date || null, fetchedAt: INDEX_CACHE[id].fetchedAt }; localStorage.setItem(LIVE_RATES_KEY, JSON.stringify(all)); }catch(e){}
+    }
+    function fmtDateLong(iso){ try{ const d = new Date(String(iso).length <= 10 ? String(iso) + "T12:00:00" : iso); if(isNaN(d)) return String(iso || ""); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }catch(e){ return String(iso || ""); } }
+    // Where an index value comes from, in words.
+    function rateSourceText(id){
+      const c = INDEX_CACHE[id], cat = INDEX_BY_ID[id];
+      if(cat && !cat.live) return "your entered value";
+      if(c && !c.saved) return "live" + (c.date ? " · " + fmtDateLong(c.date) : "");
+      if(c && c.saved) return "Last saved rate · " + fmtDateLong(c.date || c.fetchedAt);
+      return "Built-in rate — fetch to update";
+    }
+    loadSavedRates();   // at startup, before anything is priced
 
     // ---- Multifamily loan-market benchmarks ----------------------------------
     // We finance multifamily only, and a "good" rate is relative to the LOCAL
@@ -1674,14 +1698,15 @@
         }
       }
       const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
+      const liveNow = !!(INDEX_CACHE[loan.index] && !INDEX_CACHE[loan.index].saved);   // 2.9.7 (#26) — a saved rate is used, but a fresh one replaces it
       let changed = false;
       if(loan.floatRepricedOn !== thisFirst){            // new month (or first ever): capture it
         loan.floatIndexValue = (live!=null) ? live : (cat ? cat.fallback/100 : 0);
-        loan.floatIndexLive  = (live!=null);
+        loan.floatIndexLive  = liveNow;
         loan.floatRepricedOn = thisFirst;
         changed = true;
-      } else if(!loan.floatIndexLive && live!=null){     // same month, live value just arrived: upgrade
-        loan.floatIndexValue = live; loan.floatIndexLive = true; changed = true;
+      } else if(!loan.floatIndexLive && live!=null && (liveNow || loan.floatIndexValue !== live)){     // same month, a live (or saved) value just arrived: upgrade
+        loan.floatIndexValue = live; loan.floatIndexLive = liveNow; changed = true;
       }
       if(changed) save();
     }
@@ -2348,7 +2373,7 @@
       const asOf = (loan.floatRepricedOn ? fmtDateUS(loan.floatRepricedOn) : fmtDateUS(firstOfThisMonthISO()));
       const t = todayParts();
       const nextISO = (t.mo===11) ? partsToISO(t.y+1,0,1) : partsToISO(t.y,t.mo+1,1);
-      const live = loan.floatIndexLive ? "live" : "offline estimate";
+      const live = rateSourceText(loan.index);   // 2.9.7 (#26) — live · date / Last saved rate · date / Built-in rate
       const floorTxt = loan.rateFloor ? (" · floor "+fmtPct(loan.rateFloor)) : "";
       const capTxt   = loan.rateCap   ? (" · cap "+fmtPct(loan.rateCap))   : "";
       // 2.9.7 (#256) — a reset-day index names its day; a value that could not be refreshed says when it was saved.
@@ -2357,7 +2382,7 @@
       const calc = escapeHtml(idxLabel)+" "+fmtPct(idx)+" ("+rdTxt+") + spread "+fmtPct(loan.spread||0)+floorTxt+capTxt;
       const latest = rdIdx ? latestDated(Object.assign({}, DAILY_BUILTIN[loan.index] || {}, RATE_HIST[loan.index] || {})) : null;
       const staleDays = latest ? daysSince(latest.date) : null;
-      const staleNote = (rdIdx && latest && ((cache && cache.stale) || staleDays > 4))
+      const staleNote = (rdIdx && latest && ((cache && (cache.stale || cache.saved)) || staleDays > 4))
         ? ' <span class="text-sky-700">Today’s '+escapeHtml(indexShort(loan.index))+': '+fmtPct(latest.value/100)+' — last saved '+fmtDateUS(latest.date)+'.</span>' : '';
       const sourceWarn = (rdIdx && staleDays != null && staleDays > 7)
         ? '<div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800" data-ratewarn>No fresh '+escapeHtml(indexShort(loan.index))+' for '+staleDays+' days — the source ('+(loan.index === "termsofr1m" ? "pensford.com" : "the NY Fed")+') may have changed. The last saved value ('+fmtDateUS(latest.date)+') is used.</div>' : '';
@@ -3141,9 +3166,11 @@
     // Populate the live cache for an index (once per session) and re-render.
     function ensureIndexLive(id, cb){
       const cat = INDEX_BY_ID[id];
-      if(!cat || !cat.live || INDEX_CACHE[id] || INDEX_INFLIGHT[id]) return;
-      INDEX_INFLIGHT[id] = true;
-      fetchIndexValue(id).then(r => { delete INDEX_INFLIGHT[id]; if(r){ INDEX_CACHE[id] = r; if(cb) cb(); } })
+      if(!cat || !cat.live || INDEX_INFLIGHT[id]) return;
+      if(INDEX_CACHE[id] && !INDEX_CACHE[id].saved) return;   // already live this session
+      if(INDEX_TRIED[id]) return;                              // tried once this session (offline) — keep the saved value
+      INDEX_INFLIGHT[id] = true; INDEX_TRIED[id] = true;
+      fetchIndexValue(id).then(r => { delete INDEX_INFLIGHT[id]; if(r){ setLiveRate(id, r); if(cb) cb(); } })
                          .catch(() => { delete INDEX_INFLIGHT[id]; });
     }
 
@@ -3190,7 +3217,7 @@
       const live = INDEX_CATALOG.filter(i => i.live);
       if(btn) btn.disabled = true; if(label) label.textContent = "Fetching…";
       let n = 0;
-      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ INDEX_CACHE[cat.id] = r; n++; } }catch(e){} }));
+      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ setLiveRate(cat.id, r); if(!r.stale) n++; } }catch(e){} }));
       if(btn) btn.disabled = false; if(label) label.textContent = "Fetch live rate";
       if(n){ try{ toast("Live rates updated — "+n+" refreshed from US feeds.", "check"); }catch(e){} }
       else { try{ toast("Couldn’t fetch live rates (offline?). Existing values kept.", "info"); }catch(e){} }
@@ -3261,8 +3288,7 @@
       let r = lv + (l.spread||0);
       if(l.rateFloor) r = Math.max(l.rateFloor, r);
       if(l.rateCap)   r = Math.min(l.rateCap, r);
-      const when = (cat && cat.live && INDEX_CACHE[l.index]) ? (" · live as of "+INDEX_CACHE[l.index].date)
-                 : (cat && cat.live) ? " · fetching live rate…" : "";
+      const when = (cat && cat.live) ? (" · " + rateSourceText(l.index)) : "";   // 2.9.7 (#26)
       box.innerHTML = "Locked rate = <strong>"+(cat?escapeHtml(cat.label):"index")+"</strong> "+fmtPct(lv)+
         " + spread "+fmtPct(l.spread||0)+" = <strong>"+fmtPct(r)+"</strong>"+when;
       box.hidden = false;
@@ -6051,6 +6077,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     try{ window.LDS_loanTier=(l)=>loanTier(l); window.LDS_loanDSCR=(l)=>loanDSCR(l); window.LDS_loanLTV=(l)=>loanLTV(l); window.LDS_loanDebtYield=(l)=>loanDebtYield(l); window.LDS_activeLoan=()=>getLoan(state.activeId); window.LDS_combinedRefiLoan=(members)=>combinedRefiLoan(members); window.LDS_computeBalance=(l)=>compute(l).derived.currentBalance; }catch(e){}   // diagnostics: the credit tier (3 metrics) + combined-stack refi
     try{ window.LDS_clearGDCache=()=>{ gdNOICache={}; gdFullCache={}; }; window.LDS_gdNOICache=()=>gdNOICache; window.LDS_opEnsureGeneralData=(k)=>opEnsureGeneralData(k); window.LDS_refiNOIOptionsFor=(l)=>refiNOIOptions(l); }catch(e){}   // diagnostics: exercise the cross-session disk read of general-data (the NOI-basis toggle)
+    try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
@@ -8919,7 +8946,7 @@ tr.flagged:hover td{background:#fee2e2}
         ? '<p class="mt-2 text-[11px] text-slate-400">This property carries more than one loan; leverage &amp; coverage are read on the whole stack, and it refinances as one package.</p>'
         : '<p class="mt-2 text-[11px] text-slate-400">Link a subordinate (mezz) or senior loan on the same property for combined leverage &amp; coverage. Agency seniors don&rsquo;t permit subordinate debt.</p>';
       if(c){
-        const sm = c.sm, r = stackRetireMezz(loan);
+        const sm = c.sm;
         body = '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("Senior", escapeHtml(loanLabel(sm.senior.loan))+" &middot; "+fmtMoney(sm.senior.bal)+" @ "+fmtPct(sm.senior.rate))+
           refiStat("Mezz", escapeHtml(sm.mezz._label || loanLabel(sm.mezz.loan))+" &middot; "+fmtMoney(sm.mezz.bal)+" @ "+fmtPct(sm.mezz.rate))+
@@ -8928,11 +8955,7 @@ tr.flagged:hover td{background:#fee2e2}
           refiStat("Senior-only DSCR", c.seniorDSCR!=null ? c.seniorDSCR.toFixed(2)+"&#215;" : "&mdash;")+
           refiStat("Combined DSCR", c.combDSCR!=null ? c.combDSCR.toFixed(2)+"&#215;" : "&mdash;")+
         '</dl>'+
-        (r ? '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">'+
-          '<span class="font-bold uppercase tracking-wide text-slate-400">Retire mezz into senior</span> &middot; '+
-          'senior proceeds at '+fmtPct(r.newRate)+' &middot; '+(r.saving>=0?'saves ':'costs ')+fmtMoney(Math.abs(r.saving))+'/yr vs the mezz'+
-          (c.combLTV!=null && c.combLTV>0.75 ? ' &middot; <span class="font-semibold text-amber-700">combined LTV '+fmtPct(c.combLTV)+' exceeds ~75%</span>' : '')+
-        '</div>' : '');
+        '';   // 2.9.7 (#79) — the "Retire mezz into senior" line is gone: the property refinance pays off all its loans with one new loan
       }
       return '<div class="mt-4 border-t border-slate-100 pt-4">'+
         '<div class="mb-2 flex flex-wrap items-center gap-2">'+
@@ -8954,8 +8977,11 @@ tr.flagged:hover td{background:#fee2e2}
       const underwritten = (g && g.underwritten != null && isFinite(g.underwritten)) ? g.underwritten : null;
       return { inPlace: inPlace, underwritten: underwritten, hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
     }
+    // 2.9.7 (#28) — the NOI typed on the property's loan (senior first), when there is one.
+    function refiEnteredNOI(loan){ const ms = refiMembers(loan).slice().sort(loanRank); for(const m of ms){ if(m && m.noi != null && m.noi !== "" && isFinite(Number(m.noi))) return Number(m.noi); } return null; }
     function refiBasis(loan){
       const o = refiNOIOptions(loan), b = loan ? refiBasisByKey[propertyKey(loan)] : null;
+      if(b === "entered" && refiEnteredNOI(loan) != null) return "entered";
       if(b === "inplace" && o.inPlace != null) return "inplace";
       if(b === "underwritten" && o.underwritten != null) return "underwritten";
       if(o.underwritten != null) return "underwritten";   // default: the sized-to figure
@@ -8964,7 +8990,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function refiNOI(loan){
       const o = refiNOIOptions(loan), b = refiBasis(loan);
-      var base = (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : loanNOI(loan);
+      var base = (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
       if(base == null) return null;
       return base + refiMoveBoost(loan, b);   // + any "what to push" moves ticked below (a live what-if)
     }
@@ -8973,7 +8999,7 @@ tr.flagged:hover td{background:#fee2e2}
     // dollar impact) can be ticked in the refinance to add their effect to the working NOI on the
     // basis you're viewing, so the coverage, the tier and the two-stage verdict all re-compute as if
     // you'd executed them. State is per property, held for the session (a simulation, never saved).
-    var refiAppliedMoves = {};   // propKey -> Set of applied move indices (into refiPushMoves order)
+    var refiAppliedMoves = {};   // propKey -> Set of applied move TITLES (2.9.7 #241 — a tick follows the move's name across re-runs)
     var refiManualLevers = {};   // propKey -> [{ id, label, amount, on }] — the user's own labeled $ levers (2.9.4 #4; session what-if)
     function refiPushMoves(loan){
       if(!loan) return [];
@@ -8989,7 +9015,7 @@ tr.flagged:hover td{background:#fee2e2}
         // figure ONCE instead of naïvely summing the group's individual impacts (overlaps come from the
         // "what to push" analysis; absent them this is a plain sum).
         var st = opPushCache.get(key), overlaps = (st && Array.isArray(st.overlaps)) ? st.overlaps : [];
-        var titleIdx = {}; moves.forEach(function(m, i){ if(set.has(i) && m && m.title != null) titleIdx[m.title] = i; });
+        var titleIdx = {}; moves.forEach(function(m, i){ if(set.has(m.title) && m && m.title != null) titleIdx[m.title] = i; });
         var handled = {};
         overlaps.forEach(function(g){
           if(!g || !Array.isArray(g.titles) || g.titles.length < 2) return;
@@ -8998,7 +9024,7 @@ tr.flagged:hover td{background:#fee2e2}
           var v = (basis === "inplace") ? g.combinedInPlace : g.combinedUnderwritten;
           if(typeof v === "number" && isFinite(v)){ sum += v; idxs.forEach(function(x){ handled[x] = true; }); }
         });
-        moves.forEach(function(m, i){ if(set.has(i) && !handled[i]){ var v = (basis === "inplace") ? m.impactInPlace : m.impactUnderwritten; if(typeof v === "number" && isFinite(v)) sum += v; } });
+        moves.forEach(function(m, i){ if(set.has(m.title) && !handled[i]){ var v = (basis === "inplace") ? m.impactInPlace : m.impactUnderwritten; if(typeof v === "number" && isFinite(v)) sum += v; } });
       }
       // The user's own manual levers (a labeled $ applies equally on either basis).
       var man = refiManualLevers[key];
@@ -9009,13 +9035,15 @@ tr.flagged:hover td{background:#fee2e2}
       var key = propertyKey(loan);
       var moves = refiPushMoves(loan);
       var set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
+      // 2.9.7 (#241) — a ticked move that is no longer in the analysis (after a re-run) is un-ticked, with a note.
+      var gone = []; Array.from(set).forEach(function(t){ if(!moves.some(function(m){ return m.title === t; })){ set.delete(t); gone.push(t); } });
       var man = refiManualLevers[key] || (refiManualLevers[key] = []);
       var basis = refiBasis(loan), boost = refiMoveBoost(loan, basis);
       var sign = function(v){ return (v == null) ? "&mdash;" : (v >= 0 ? "+" : "&minus;") + fmtMoney(Math.abs(v)); };
       var claudeRows = moves.map(function(m, i){
-        var on = set.has(i), dIn = isFinite(m.impactInPlace) ? m.impactInPlace : null, dUw = isFinite(m.impactUnderwritten) ? m.impactUnderwritten : null;
+        var on = set.has(m.title), dIn = isFinite(m.impactInPlace) ? m.impactInPlace : null, dUw = isFinite(m.impactUnderwritten) ? m.impactUnderwritten : null;
         return '<label class="flex items-start gap-3 rounded-lg border '+(on?"border-emerald-300 bg-emerald-50":"border-slate-200 bg-white")+' px-3 py-2 cursor-pointer">'+
-          '<input type="checkbox" data-refimove="'+i+'"'+(on?" checked":"")+' class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30">'+
+          '<input type="checkbox" data-refimove="'+i+'" data-refimovetitle="'+escapeHtml(m.title||"")+'"'+(on?" checked":"")+' class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30">'+
           '<span class="min-w-0 flex-1"><span class="block text-sm font-semibold text-slate-800">'+escapeHtml(m.title||"")+'</span>'+
             '<span class="block text-[11px] text-slate-500 tabular-nums">in&#8209;place '+sign(dIn)+' &middot; underwritten '+sign(dUw)+' a year</span></span>'+
         '</label>';
@@ -9046,6 +9074,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">What to push &mdash; test it against this refinance</h3>'+
           (boost !== 0 ? '<span class="text-sm font-bold '+(boost>0?"text-emerald-700":"text-rose-700")+' tabular-nums">'+(boost>0?"+":"&minus;")+fmtMoney(Math.abs(boost))+'/yr applied to the working NOI</span>' : '')+'</div>'+
         '<p class="mb-3 mt-1 text-[11px] leading-relaxed text-slate-500">Tick a move to add its estimated annual impact to the working '+(basis==="inplace"?"in&#8209;place":basis==="underwritten"?"underwritten":"")+' NOI &mdash; the coverage, the credit tier and the verdict above re&#8209;compute live. Claude&rsquo;s estimates from the statement, plus any lever you add yourself; a what&#8209;if, not a commitment.</p>'+
+        (gone.length ? '<p class="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800" data-refimovegone>'+gone.map(function(t){ return '“'+escapeHtml(t)+'” is no longer in the analysis — un-ticked'; }).join('<br>')+'</p>' : '')+
         claudeBlock + manBlock + adder +
       '</div>';
     }
@@ -9063,6 +9092,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex flex-wrap gap-2">'+
           opt("inplace", "In-place T12", o.inPlace, b==="inplace")+
           opt("underwritten", "Underwritten", o.underwritten, b==="underwritten")+
+          (refiEnteredNOI(loan) != null ? opt("entered", "Entered", refiEnteredNOI(loan), b==="entered") : '')+   // 2.9.7 (#28)
         '</div>'+
         '<p class="mt-2 text-[11px] leading-relaxed text-slate-500">'+(b==="underwritten"
           ? "Sizing on the grossed-up <strong>underwritten</strong> NOI &mdash; the figure a lender underwrites to. Switch to in-place to see coverage on the T12 as it runs today."
@@ -9191,9 +9221,14 @@ tr.flagged:hover td{background:#fee2e2}
         draft.floatIndexValue = idxVal; draft.floatIndexLive = true; draft.floatRepricedOn = firstOfThisMonthISO();
         if(draft.sofrCapPct == null) draft.sofrCapPct = 0;   // a cap costs nothing here until you actually buy one
         if(type === "Hybrid ARM"){
-          draft.annualRate = idxVal + eff;                   // fixed first-leg rate, locked at today's index + effective spread
+          // 2.9.7 (#80) — two periods: the fixed period over the Treasury matching it + its own spread (0 until you
+          // type the lender's quote); after it, draft.index (default 5-yr Treasury) + the margin.
           if(!draft.armInitialFixedMonths) draft.armInitialFixedMonths = loan.armInitialFixedMonths || 60;
           if(!draft.armAdjustFreqMonths)   draft.armAdjustFreqMonths   = loan.armAdjustFreqMonths   || 60;
+          if(!draft._fixedIndex) draft._fixedIndex = matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: draft.armInitialFixedMonths });
+          if(draft._fixedSpread == null) draft._fixedSpread = 0;
+          const fx = Math.max(0, (draft._fixedSpread || 0) + tierDelta);
+          draft.annualRate = (liveIndexVal(draft._fixedIndex) || 0) + fx;   // the fixed rate, locked at today's matching Treasury + spread
         } else {
           draft.annualRate = null; draft.armInitialFixedMonths = null; draft.armAdjustFreqMonths = null;
         }
@@ -9210,17 +9245,18 @@ tr.flagged:hover td{background:#fee2e2}
       // combined stack (the combo is forced Fixed to represent the current blended position).
       const subj = (loan._combined && loan._seniorId) ? (loans.find(l => l._id === loan._seniorId) || loan) : loan;
       const type = REFI_RATE_TYPES.indexOf(subj.rateType) >= 0 ? subj.rateType : "Fixed";
-      const idx  = (type === "Floating") ? "sofr" : matchedTenorId({ rateType:"Fixed", loanTermMonths: opt.term });
-      const baseSpread = (type === "Fixed") ? 0 : floatingBaseSpread(loan, opt.term);        // fixed → 0; floating/hybrid → comp-derived margin
+      const idx  = (type === "Floating") ? "sofr" : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: opt.term });
+      const baseSpread = (type === "Floating") ? floatingBaseSpread(loan, opt.term) : 0;        // fixed / hybrid → 0 until you type the lender's quote (#80); floating → comp-derived margin
       Object.assign(draft, {
         _id: "refiopt"+n, rateType: type, isHistorical:false, index: idx, _baseSpread: baseSpread, spread: 0,
         armInitialFixedMonths:null, armAdjustFreqMonths:null, rateFloor:null, rateCap:null, sofrCapPct:null,
         annualRate:null, floatIndexValue:null, floatRepricedOn:null, floatIndexLive:null, armAssumedIndex:null,
-        originalAmount: d.currentBalance, loanTermMonths: opt.term, amortizationMonths: amort, ioMonths: io,
+        originalAmount: refiPayoff(loan), loanTermMonths: opt.term, amortizationMonths: amort, ioMonths: io,   // 2.9.7 (#25) — the property's payoff
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1), maturityDate: partsToISO(newMat.y,newMat.mo,1),
         noi:null, capRate:null, refiIO:null, refiTermMonths:null, stackWith:null, prepayType:null, prepayConfirmed:null,
-        _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years,
+        _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years, _fixedIndex: null, _fixedSpread: null,
       });
+      if(type === "Hybrid ARM"){ draft.armInitialFixedMonths = subj.armInitialFixedMonths || 60; draft.armAdjustFreqMonths = subj.armAdjustFreqMonths || 60; }
       applyProposedPricing(loan, draft);
       return draft;
     }
@@ -9256,6 +9292,24 @@ tr.flagged:hover td{background:#fee2e2}
       const b = refiBasis(loan);
       return b === "underwritten" ? "underwritten" : b === "inplace" ? "in-place T12" : "entered";
     }
+    // 2.9.7 (#25) — what you owe on the property today: every loan at its own current balance, never
+    // re-amortized as one loan. A refinance is always of the property (all its loans together).
+    function refiMembers(loan){ if(loan && loan._combined){ const m = comboMembers(loan._id); return m.length ? m : [loan]; } return [loan]; }
+    function refiPayoff(loan){ return refiMembers(loan).reduce((a, m) => a + (compute(m).derived.currentBalance || 0), 0); }
+    function refiCurrentPI(loan){ return refiMembers(loan).reduce((a, m) => { const d = compute(m).derived; return a + (d.totalDebtService || d.monthlyPI || 0); }, 0); }
+    function refiPenalty(loan){ return refiMembers(loan).reduce((a, m) => a + (exitCost(m).cost || 0), 0); }
+    // When today's loan ends: the earliest maturity among the property's loans (the property has to act by then).
+    function refiEnds(loan){ let best = null; refiMembers(loan).forEach(m => { const d = compute(m).derived; if(d.maturityDate && (!best || d.monthsToMaturity < best.months)) best = { months: d.monthsToMaturity, date: d.maturityDate }; }); return best || { months: null, date: null }; }
+    // 2.9.7 (#183) — the interest saved on the money you owe, from now until today's loan ends: each remaining
+    // month of each loan at its own rate, minus the same balance at the proposed rate.
+    function refiInterestSaved(loan, newRate){
+      let saved = 0;
+      refiMembers(loan).forEach(m => {
+        const c = compute(m), rows = c.rows, pm = Math.max(0, c.derived.paymentsMade || 0);
+        for(let i = pm; i < rows.length; i++){ const r = rows[i], dc = (m.amortMethod === "30/360") ? 30 : r.days; saved += r.startingBalance * dc * ((r.rate - newRate) / 360); }
+      });
+      return saved;
+    }
     // Stage 1 — the most this property supports (all three limits), vs what you owe.
     function refiCanStage(loan, draft){
       const noi = refiNOI(loan);
@@ -9263,7 +9317,7 @@ tr.flagged:hover td{background:#fee2e2}
       const rate = nd ? (nd.currentRate || 0) : 0;
       const amortYears = Math.max(0, Math.round(((draft && draft.amortizationMonths) || 360) / 12));
       const s = Underwriting.sizeLoan(noi, { capRate: loanCapRate(loan), ltvMax: 0.75, dscrMin: 1.25, dyMin: 0.07, intRate: rate, amortYears: amortYears });
-      const payoff = compute(loan).derived.currentBalance || 0;
+      const payoff = refiPayoff(loan);   // 2.9.7 (#25)
       const sized = (noi != null && isFinite(noi) && noi > 0 && s.maxLoan > 0);
       const can = sized && s.maxLoan >= payoff - 1;
       // 2.9.4 (#3) — all three sizing caps, smallest first, so the refi can show every leg, mark the binding
@@ -9288,27 +9342,42 @@ tr.flagged:hover td{background:#fee2e2}
                gap: s.maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears,
                caps: caps, runnerUp: runnerUp, margin: margin };
     }
-    // Stage 2 — cost of money. Rate-based, never payment-based.
+    // Stage 2 — should you? 2.9.7 (#181–#185) YOUR RULE, checked in order:
+    //  (1) the property can't support what you owe → Don't refinance (stage 1);
+    //  (2) today's loan ends within 12 months → Refinance;
+    //  (3) the lower rate pays for the early-payoff penalty (interest saved on the money you owe until today's
+    //      loan ends ≥ the penalty; closing costs don't count — they come either way) → Refinance, even with cash out;
+    //  (4) the rate is lower but doesn't pay for the penalty, and the extra cash is more than 20% of what you
+    //      owe → your decision: "Refinance now — with $X cash" or "Wait until <maturity>";
+    //  (5) anything else → Don't refinance — including a higher new rate, whatever the cash.
+    const REFI_DECISION_CASH = 0.20;
     function refiShouldStage(loan, draft){
-      const cd = compute(loan).derived, nd = compute(draft).derived;
-      const payoff = cd.currentBalance || 0, newAmt = (draft.originalAmount != null ? draft.originalAmount : payoff), cashOut = newAmt - payoff;
-      const curRate = cd.currentRate || 0, newRate = nd.currentRate || 0;
+      const nd = compute(draft).derived;
+      const payoff = refiPayoff(loan), newAmt = (draft.originalAmount != null ? draft.originalAmount : payoff), cashOut = newAmt - payoff;
+      const curRate = compute(loan).derived.currentRate || 0, newRate = nd.currentRate || 0;   // a property's blended rate when it carries several loans
       const EPS_MONEY = 1, EPS_RATE = 0.00005;                 // $1 / half a basis point
-      const cheaper = newRate < curRate - EPS_RATE;            // same money, strictly lower rate
+      const cheaper = newRate < curRate - EPS_RATE;
       const pricier = newRate > curRate + EPS_RATE;
-      const cashOutYes = cashOut > EPS_MONEY;                  // the new loan is bigger — you're pulling money out
-      const monthsToMat = cd.monthsToMaturity;
+      const ends = refiEnds(loan), monthsToMat = ends.months;
       const maturityYes = (monthsToMat != null && isFinite(monthsToMat) && monthsToMat <= REFI_MATURITY_WINDOW_MO);
-      const should = cheaper || cashOutYes || maturityYes;
-      const exit = exitCost(loan).cost, closingPct = (draft._closingPct != null ? draft._closingPct : loanClosingPct(loan)), execCost = exit + closingPct * newAmt;
-      return { should: should, cheaper: cheaper, pricier: pricier, cashOut: cashOut, cashOutYes: cashOutYes,
-               maturityYes: maturityYes, monthsToMat: monthsToMat, curRate: curRate, newRate: newRate,
-               payoff: payoff, newAmt: newAmt, execCost: execCost };
+      const penalty = refiPenalty(loan), saved = cheaper ? refiInterestSaved(loan, newRate) : 0;
+      const closingPct = (draft._closingPct != null ? draft._closingPct : loanClosingPct(loan)), closing = closingPct * newAmt;
+      const cashPct = payoff > 0 ? cashOut / payoff : 0;
+      const cashAfterCosts = cashOut - penalty - closing;
+      let kind, why;
+      if(maturityYes){ kind = "yes"; why = "maturity"; }
+      else if(cheaper && saved >= penalty - EPS_MONEY){ kind = "yes"; why = "saves"; }
+      else if(cheaper && cashPct > REFI_DECISION_CASH){ kind = "decision"; why = "cash"; }
+      else { kind = "no"; why = !cheaper ? (pricier ? "pricier" : "same") : "penalty"; }
+      return { should: kind === "yes", kind: kind, why: why, cheaper: cheaper, pricier: pricier,
+               cashOut: cashOut, cashOutYes: cashOut > EPS_MONEY, cashPct: cashPct, cashAfterCosts: cashAfterCosts,
+               maturityYes: maturityYes, monthsToMat: monthsToMat, maturityDate: ends.date, curRate: curRate, newRate: newRate,
+               payoff: payoff, newAmt: newAmt, penalty: penalty, saved: saved, closing: closing, execCost: penalty + closing };
     }
     function refiVerdict(loan, draft){
       const can = refiCanStage(loan, draft);
       const should = can.can ? refiShouldStage(loan, draft) : null;
-      return { can: can, should: should, refi: can.can && !!should && should.should };
+      return { can: can, should: should, refi: can.can && !!should && should.kind === "yes", decision: can.can && !!should && should.kind === "decision" };
     }
     // 2.9.4 (#3) — the three loan sizes (DSCR / LTV / debt-yield caps), the binding one marked, and the
     // margin to the runner-up. A display of the sizing the app already computes; no new math.
@@ -9337,19 +9406,25 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function refiVerdictHtml(loan, v){
       v = v || refiVerdict(loan, refiDrafts[1]);
-      const can = v.can, should = v.should, yes = v.refi;
-      const cd = compute(loan).derived, curRate = cd.currentRate || 0;
+      const can = v.can, should = v.should, yes = v.refi, decision = v.decision;
+      const curRate = compute(loan).derived.currentRate || 0;
+      // 2.9.7 (#258) — the pricing row sits in the verdict card and is always shown, whatever the verdict.
+      // The proposed amount sits here too, always, with its own "at this loan" line (#22, #23).
+      const dft = refiDrafts[1];
+      const amountBox = dft ? '<div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 items-start"><div>'+refiNumField("o1_amount","Proposed loan amount ($) &mdash; up to what the property supports", dft.originalAmount!=null?Math.round(dft.originalAmount):"")+refiAtLoanLine(loan, dft)+'</div></div>' : '';
+      const pricing = '<div id="refiPricing" class="mt-4">'+refiPricingRowHtml(loan, 1, dft)+amountBox+'</div>';
 
       // No NOI at all → nothing to size. Ask for it instead of faking a verdict.
       if(!can.sized){
         return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">'+
           '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge this yet</p>'+
           '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>'+
+          pricing+
         '</div>';
       }
 
-      const banner = yes ? "border-emerald-400 bg-emerald-50" : "border-rose-300 bg-rose-50";
-      const bhead  = yes ? "text-emerald-800" : "text-rose-800";
+      const banner = yes ? "border-emerald-400 bg-emerald-50" : decision ? "border-amber-300 bg-amber-50" : "border-rose-300 bg-rose-50";
+      const bhead  = yes ? "text-emerald-800" : decision ? "text-amber-800" : "text-rose-800";
       const mark = (ok) => '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full '+(ok?"bg-emerald-100 text-emerald-700":"bg-rose-100 text-rose-700")+' text-sm font-black">'+(ok?"&#10003;":"&#10007;")+'</span>';
 
       // Stage 1 line.
@@ -9360,36 +9435,46 @@ tr.flagged:hover td{background:#fee2e2}
         : ("The most this property supports today is <strong>"+fmtMoney(can.maxLoan)+"</strong>, but you owe <strong>"+fmtMoney(can.payoff)+"</strong> &mdash; a <strong>"+fmtMoney(-can.gap)+"</strong> shortfall. "+
            "Its "+refiBindingWord(can.binding)+" is what caps it. You can&rsquo;t refinance the whole balance until NOI rises, the rate falls, or you pay that gap down.");
 
-      // Stage 2 line (only when Stage 1 clears).
+      // Stage 2 (only when Stage 1 clears) — your rule, in order.
       let shouldBlock = "";
       if(can.can){
         const s = should;
         const rateMove = "The rate "+(s.cheaper ? "drops" : s.pricier ? "rises" : "holds")+" from <strong>"+fmtPct(s.curRate)+"</strong> to <strong>"+fmtPct(s.newRate)+"</strong>";
+        const endsTxt = s.maturityDate ? " (until "+fmtDateLong(s.maturityDate)+")" : "";
         let sLine;
-        if(s.cashOutYes){
-          sLine = "You&rsquo;d draw <strong>"+fmtMoney(s.cashOut)+"</strong> out (the new loan is bigger than the "+fmtMoney(s.payoff)+" payoff). "+rateMove+". Pulling equity is a separate call from the rate &mdash; do it if you have a use for the cash.";
-        } else if(s.cheaper){
-          sLine = rateMove+" on the same money &mdash; a real saving on debt you already carry, so it&rsquo;s worth doing. Switching costs about <strong>"+fmtMoney(s.execCost)+"</strong> up front each time you roll.";
-        } else if(s.maturityYes){
-          sLine = "Your current loan matures in <strong>"+s.monthsToMat+" month"+(s.monthsToMat===1?"":"s")+"</strong>, so you&rsquo;ll refinance or pay it off regardless. "+rateMove+" &mdash; line up the new loan even though it&rsquo;s not cheaper.";
+        if(s.kind === "decision"){
+          // 2.9.7 (#181, #184) — your decision: two options and the full proposed loan, no explanation.
+          sLine = '<div class="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2" data-refidecision>'+
+            '<div class="rounded-lg border-2 border-emerald-300 bg-white px-3 py-2"><p class="text-sm font-bold text-emerald-800">Refinance now &mdash; with '+fmtMoney(Math.max(0, s.cashAfterCosts))+' cash</p><p class="text-[11px] text-slate-500">after the early-payoff penalty and closing &middot; Save the proposed loan below</p></div>'+
+            '<div class="rounded-lg border-2 border-slate-300 bg-white px-3 py-2"><p class="text-sm font-bold text-slate-800">Wait until '+(s.maturityDate ? fmtDateLong(s.maturityDate) : "today&rsquo;s loan ends")+'</p><p class="text-[11px] text-slate-500">nothing changes</p></div>'+
+          '</div>';
+        } else if(s.why === "maturity"){
+          sLine = "Your current loan ends in <strong>"+s.monthsToMat+" month"+(s.monthsToMat===1?"":"s")+"</strong>, so you&rsquo;ll refinance or pay it off regardless. "+rateMove+" &mdash; line up the new loan.";
+        } else if(s.why === "saves"){
+          sLine = rateMove+" on the money you owe &mdash; it saves <strong>"+fmtMoney(s.saved)+"</strong> of interest until today&rsquo;s loan ends"+endsTxt+", "+(s.penalty > 0 ? "more than the <strong>"+fmtMoney(s.penalty)+"</strong> early-payoff penalty" : "with no early-payoff penalty")+"."+
+            (s.cashOutYes ? " You&rsquo;d also take <strong>"+fmtMoney(s.cashOut)+"</strong> out." : "");
+        } else if(s.why === "penalty"){
+          sLine = rateMove+", but it saves only <strong>"+fmtMoney(s.saved)+"</strong> of interest until today&rsquo;s loan ends"+endsTxt+" &mdash; less than the <strong>"+fmtMoney(s.penalty)+"</strong> early-payoff penalty"+
+            (s.cashOutYes ? ", and the extra cash ("+fmtMoney(s.cashOut)+", "+Math.round(s.cashPct*100)+"% of what you owe) is not more than 20%" : "")+". Don&rsquo;t refinance.";
         } else {
-          sLine = rateMove+" on the same money, so refinancing just resets the clock at "+(s.pricier?"a higher":"no better")+" rate. A lower monthly payment from a longer schedule isn&rsquo;t a saving &mdash; it&rsquo;s more interest on the same money. Don&rsquo;t refinance.";
+          sLine = rateMove+" &mdash; refinancing would cost the same or more on the money you owe"+(s.cashOutYes ? "; extra cash alone isn&rsquo;t a reason" : "")+". Don&rsquo;t refinance.";
         }
-        shouldBlock = '<div class="mt-3 flex items-start gap-3 border-t border-slate-200/70 pt-3">'+mark(s.should)+
-          '<div><p class="text-sm font-bold text-slate-800">Should you? '+(s.should?"Yes":"No")+'</p>'+
-          '<p class="text-sm leading-relaxed text-slate-700">'+sLine+'</p></div>'+
+        shouldBlock = '<div class="mt-3 flex items-start gap-3 border-t border-slate-200/70 pt-3">'+(s.kind === "decision" ? '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700 text-sm font-black">?</span>' : mark(s.should))+
+          '<div class="flex-1"><p class="text-sm font-bold text-slate-800">Should you? '+(s.kind === "decision" ? "Your decision" : (s.should?"Yes":"No"))+'</p>'+
+          '<div class="text-sm leading-relaxed text-slate-700">'+sLine+'</div></div>'+
         '</div>';
       }
 
-      const bottom = yes ? "Refinance &mdash; you can, and on this money the numbers say you should."
+      const bottom = yes ? "Refinance."
+        : decision ? "Your decision."
         : (!can.can ? "Don&rsquo;t refinance &mdash; the property can&rsquo;t support a loan the size of the payoff yet."
-                    : "Don&rsquo;t refinance &mdash; you can, but on the same money it costs the same or more.");
+                    : "Don&rsquo;t refinance.");
 
-      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm">'+
+      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm" data-refiverdict="'+(yes?"refinance":decision?"decision":"no")+'">'+
         '<div class="flex items-center gap-3">'+
-          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":"&#10007;")+'</span>'+
-          '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">'+(loan._combined?"The whole property":"This loan")+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
+          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":"&#10007;")+'</span>'+
+          '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":"Don&rsquo;t refinance")+'</p>'+
+          '<p class="text-sm text-slate-600">'+(loan._combined?"The whole property":"This property")+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You owe (payoff)", fmtMoney(can.payoff))+
@@ -9397,6 +9482,7 @@ tr.flagged:hover td{background:#fee2e2}
           refiStat("Your rate today", fmtPct(curRate))+
           refiStat("Proposed rate", fmtPct(can.rate))+
         '</dl>'+
+        pricing+
         '<div class="mt-4 flex items-start gap-3">'+mark(can.can)+
           '<div><p class="text-sm font-bold text-slate-800">Can you? '+(can.can?"Yes":"No")+'</p>'+
           '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
@@ -9434,14 +9520,46 @@ tr.flagged:hover td{background:#fee2e2}
     // comp-derived margin on the floating side), and the resulting rate spelled out —
     // index + spread − tier discount. Floating adds a floor, a cap and a cap cost (default 0).
     function refiPricingRowHtml(loan, n, draft){
-      const floating = draft.rateType === "Floating" || draft.rateType === "Hybrid ARM";
-      const idxVal = refiIndexVal(draft), rate = compute(draft).derived.currentRate || 0;
+      if(!draft) return "";
+      const hybrid = draft.rateType === "Hybrid ARM", floating = draft.rateType === "Floating";
+      const rate = compute(draft).derived.currentRate || 0;
       const baseBps = Math.round((draft._baseSpread||0)*10000), tierBps = Math.round((draft._tierDelta||0)*10000);
       const tier = loanTier(loan), showTier = tierBps < 0 && baseBps > 0;
-      const idxOpts = REFI_INDEX_CHOICES.map(function(id){ return '<option value="'+id+'"'+(id===draft.index?' selected':'')+'>'+INDEX_BY_ID[id].label+'</option>'; }).join("");
+      const idxOpts = (sel) => REFI_INDEX_CHOICES.map(function(id){ return '<option value="'+id+'"'+(id===sel?' selected':'')+'>'+INDEX_BY_ID[id].label+'</option>'; }).join("");
+      const src = (id) => '<span class="text-[10px] text-slate-400">('+escapeHtml(rateSourceText(id))+')</span>';   // 2.9.7 (#26)
       const typeToggle = '<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
         REFI_RATE_TYPES.map(function(t,i){ var on=(draft.rateType===t), lbl=(t==="Hybrid ARM")?"Hybrid":t;
           return '<button data-rtype="'+t+'" type="button" class="px-4 py-2 '+(i>0?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">'+lbl+'</button>'; }).join("")+'</div>';
+      const head = '<div class="mb-3 flex flex-wrap items-center gap-3">'+
+          '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Proposed rate</span>'+typeToggle+
+          '<span class="text-[11px] text-slate-400">starts from your current loan&rsquo;s type; type your lender&rsquo;s quote in the spread &mdash; everything above and below updates at once</span>'+
+        '</div>';
+      if(hybrid){
+        // 2.9.7 (#80) — both periods: the fixed period over the Treasury matching it (spread 0 until you type the
+        // lender's quote), then today's index + margin "if the index stays at today's level" (no forecasting).
+        const fixM = draft.armInitialFixedMonths || 60, fxIdx = draft._fixedIndex || matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: fixM });
+        const fxBps = Math.round((draft._fixedSpread||0)*10000), fxRate = draft.annualRate || 0;
+        const rows = compute(draft).rows, p1 = rows[0] ? rows[0].payment : 0, rr = rows.find(r => r.isReset) || null;
+        const after = (refiIndexVal(draft) || 0) + (draft.spread || 0);
+        return '<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">'+head+
+          '<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">'+
+            '<div class="rounded-lg border border-slate-200 bg-white p-3"><p class="text-[11px] font-bold uppercase tracking-wide text-slate-500">Months 1&ndash;'+fixM+' &middot; fixed</p>'+
+              '<div class="mt-2 grid grid-cols-2 gap-2">'+
+                '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Index (matches the fixed period)</span><select id="o'+n+'_fxindex" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm">'+idxOpts(fxIdx)+'</select></label>'+
+                refiNumField("o"+n+"_fxspread","Spread (bps) &mdash; type the lender&rsquo;s quote", fxBps)+
+              '</div>'+
+              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refirate>'+fmtPct(fxRate)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(fxIdx)+' '+fmtPct(liveIndexVal(fxIdx)||0)+' '+src(fxIdx)+' + '+fxBps+' bps</span></p>'+
+              '<p class="text-[11px] text-slate-500">Monthly payment '+fmtMoney(p1)+' &middot; the verdict uses this rate</p></div>'+
+            '<div class="rounded-lg border border-slate-200 bg-white p-3"><p class="text-[11px] font-bold uppercase tracking-wide text-slate-500">After month '+fixM+' &middot; adjustable</p>'+
+              '<div class="mt-2 grid grid-cols-2 gap-2">'+
+                '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Index</span><select id="o'+n+'_index" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm">'+idxOpts(draft.index)+'</select></label>'+
+                refiNumField("o"+n+"_spread","Margin (bps) &mdash; type the lender&rsquo;s quote", baseBps)+
+              '</div>'+
+              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900">'+fmtPct(after)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(draft.index)+' '+fmtPct(refiIndexVal(draft)||0)+' '+src(draft.index)+' + '+baseBps+' bps &mdash; if the index stays at today&rsquo;s level</span></p>'+
+              '<p class="text-[11px] text-slate-500">Monthly payment '+(rr ? fmtMoney(rr.payment) : "&mdash;")+' &middot; shown for information</p></div>'+
+          '</div>'+
+        '</div>';
+      }
       let floatFields = '';
       if(floating){
         floatFields =
@@ -9449,23 +9567,28 @@ tr.flagged:hover td{background:#fee2e2}
           refiNumField("o"+n+"_cap","Rate cap (%)", draft.rateCap!=null?+(draft.rateCap*100).toFixed(3):"")+
           refiNumField("o"+n+"_capcost","Cap cost (bps/yr)", Math.round((draft.sofrCapPct||0)*10000));
       }
-      const build = '= '+tenorShort(draft.index)+' '+fmtPct(idxVal)+' + '+baseBps+' bps spread'+
+      const idxVal = refiIndexVal(draft);
+      const build = '= '+tenorShort(draft.index)+' '+fmtPct(idxVal)+' '+src(draft.index)+' + '+baseBps+' bps spread'+
         (showTier?(' &minus; '+Math.abs(tierBps)+' bps ('+(tier?tier.label:"tier")+')'):'')+
         (showTier && (baseBps+tierBps)<0?' (floored at 0)':'');
-      return '<div class="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">'+
-        '<div class="mb-3 flex flex-wrap items-center gap-3">'+
-          '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Loan type</span>'+typeToggle+
-          '<span class="text-[11px] text-slate-400">defaults to your current loan&rsquo;s type; floating adds a margin, a cap and a cap cost you set</span>'+
-        '</div>'+
+      return '<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">'+head+
         '<div class="grid grid-cols-2 sm:grid-cols-3 '+(floating?"lg:grid-cols-5":"lg:grid-cols-2")+' gap-3">'+
           '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Base index</span>'+
-            '<select id="o'+n+'_index" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+idxOpts+'</select></label>'+
-          refiNumField("o"+n+"_spread","Spread (bps)", baseBps)+
+            '<select id="o'+n+'_index" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30">'+idxOpts(draft.index)+'</select></label>'+
+          refiNumField("o"+n+"_spread","Spread (bps) &mdash; your lender&rsquo;s quote", baseBps)+
           floatFields+
         '</div>'+
-        '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900">'+fmtPct(rate)+'</span> '+
+        '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refirate>'+fmtPct(rate)+'</span> '+
           '<span class="text-[11px] text-slate-500">'+build+'</span></p>'+
       '</div>';
+    }
+    // 2.9.7 (#23) — the proposed amount's own coverage, like the grey "at this loan" lines above.
+    function refiAtLoanLine(loan, draft){
+      const amt = Number(draft && draft.originalAmount) || 0, noi = refiNOI(loan), cr = loanCapRate(loan);
+      if(!(amt > 0) || noi == null || !isFinite(noi)) return "";
+      const ads = annualDebtService(compute(draft).derived), value = (cr > 0) ? noi / cr : null;
+      const dscr = ads > 0 ? noi / ads : null, ltv = value > 0 ? amt / value : null, dy = noi / amt;
+      return '<p class="mt-1 text-[11px] tabular-nums text-slate-500" data-refiatloan>at this loan ('+fmtMoney(amt)+'): DSCR '+(dscr!=null?dscr.toFixed(2)+'&times;':'&mdash;')+' &middot; LTV '+(ltv!=null?fmtPct(ltv):'&mdash;')+' &middot; DY '+fmtPct(dy)+'</p>';
     }
     // The single, full-width detail card for the selected proposed option.
     function refiOptionCardHtml(loan, n){
@@ -9474,9 +9597,8 @@ tr.flagged:hover td{background:#fee2e2}
       const diff = curPay - newPay;
       const escRows = REFI_ESC_FEE.map(f=>refiEscRow(n,f,draft)).join(""), feeRows = REFI_FEES.map(f=>refiEscRow(n,f,draft)).join("");
       return '<div class="rounded-2xl border-2 border-brand-300 bg-white p-5 shadow-sm">'+
-        refiPricingRowHtml(loan, n, draft)+
         '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">'+
-          refiNumField("o"+n+"_amount","Loan amount ($)", draft.originalAmount!=null?Math.round(draft.originalAmount):"")+
+          '<div><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Loan amount</span><span class="block py-1 text-sm font-bold tabular-nums text-slate-900">'+fmtMoney(draft.originalAmount||0)+'</span><span class="block text-[10px] text-slate-400">set in the verdict card above</span></div>'+
           refiNumField("o"+n+"_termYrs","Term (yrs)", Math.round((draft.loanTermMonths||0)/12))+
           refiNumField("o"+n+"_amortYrs","Amortization (yrs)", Math.round((draft.amortizationMonths||360)/12))+
           refiNumField("o"+n+"_io","Interest-only (mo)", io)+
@@ -9506,7 +9628,8 @@ tr.flagged:hover td{background:#fee2e2}
       // The two-stage verdict drives what's shown: the proposed loan + its schedule (and the
       // "Save as a loan" button) appear ONLY when the answer is Refinance — you can, and you should.
       const verdict = refiVerdict(loan, refiDrafts[1]);
-      const showProposal = verdict.refi;
+      const showProposal = verdict.refi || verdict.decision;   // 2.9.7 (#184) — and in the "your decision" case
+      const ends = refiEnds(loan);
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
         for(let i=d.paymentsMade; i<cur.rows.length; i++){
@@ -9523,18 +9646,18 @@ tr.flagged:hover td{background:#fee2e2}
             '<p class="text-sm text-slate-500">'+escapeHtml(loan._combined?loan.propertyName:loanLabel(loan))+(loan._combined?' — refinance the whole property?':' — should you refinance?')+'</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
-            (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">Save as a loan</button>' : '')+
+            (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">'+(verdict.decision ? 'Save as a loan &mdash; Refinance now' : 'Save as a loan')+'</button>' : '')+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
           '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">'+(loan._combined?"Current debt &middot; whole property":"Current Loan")+'</h3>'+
           (loan._combined ? '<div class="mb-3 rounded-lg border border-brand-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-600">'+loan._members.length+' loans on this property, refinanced as one package (they depend on one another):<br>'+loan._members.map(function(m){return '<strong>'+escapeHtml(m.label)+'</strong> '+fmtMoney(m.bal)+' @ '+fmtPct(m.rate)+' <span class="text-slate-400">'+(m.mezz?'mezz':'senior')+'</span>';}).join(' &nbsp;+&nbsp; ')+'</div>' : '')+
           '<dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">'+
-            refiStat("Payoff balance", fmtMoney(d.currentBalance))+
+            refiStat("Payoff balance", fmtMoney(refiPayoff(loan)))+   // 2.9.7 (#25) — each loan at its own balance
             refiStat("Current rate", fmtPct(d.currentRate))+
-            refiStat("Monthly P&amp;I", fmtMoney(d.monthlyPI))+
-            refiStat("Remaining", (d.monthsToMaturity||0)+" mo")+
-            refiStat("Matures", fmtDateUS(d.maturityDate))+
+            refiStat(loan._combined ? "Monthly payments" : "Monthly P&amp;I", fmtMoney(loan._combined ? refiCurrentPI(loan) : d.monthlyPI))+
+            refiStat("Remaining", (ends.months != null ? ends.months : (d.monthsToMaturity||0))+" mo")+
+            refiStat("Matures", fmtDateUS(ends.date || d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
         refiAdvancedHtml(loan)+
@@ -9550,9 +9673,9 @@ tr.flagged:hover td{background:#fee2e2}
             '</div>'
           : '<div class="boxline rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">'+
               '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Proposed New Loan</h3>'+
-              '<p>The proposed loan and its amortization schedule show here only when the answer above is <strong class="text-slate-700">Refinance</strong>. '+
+              '<p>The proposed loan and its amortization schedule show here when the answer above is <strong class="text-slate-700">Refinance</strong> (or your decision). '+
               (verdict.can && verdict.can.can
-                ? 'Right now you can, but on the same money the rate isn&rsquo;t better &mdash; so there&rsquo;s nothing worth proposing.'
+                ? 'Right now you can, but by your rule it isn&rsquo;t worth doing &mdash; change the rate quote above to find your target.'
                 : 'Right now the property can&rsquo;t support a loan the size of the payoff, so there&rsquo;s no loan to propose.')+
               ' Change the NOI basis or your inputs above; close and reopen to reset the proposal.</p>'+
             '</div>');
@@ -9572,29 +9695,29 @@ tr.flagged:hover td{background:#fee2e2}
       dom.refiView.querySelectorAll("[data-noibasis]").forEach(b => b.addEventListener("click", () => {
         if(b.disabled) return;
         refiBasisByKey[propertyKey(loan)] = b.getAttribute("data-noibasis");
-        refiDraftsKey = ""; renderRefi(loan);
+        refiReprice(loan);
       }));
       const noiEditBtn = el("refiNoiEdit");
-      if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => { refiDraftsKey = ""; renderRefi(loan); }));
+      if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => refiReprice(loan)));
 
       // "What to push" checkboxes — tick a move to add its impact to the working NOI, then re-price
       // the proposed loan (tier moves with the NOI) and re-drive the two-stage verdict live.
       dom.refiView.querySelectorAll("[data-refimove]").forEach(cb => cb.addEventListener("change", () => {
         const key = propertyKey(loan), set = refiAppliedMoves[key] || (refiAppliedMoves[key] = new Set());
-        const idx = Number(cb.getAttribute("data-refimove"));
-        if(cb.checked) set.add(idx); else set.delete(idx);
-        refiDraftsKey = ""; renderRefi(loan);
+        const title = cb.getAttribute("data-refimovetitle");   // 2.9.7 (#241) — ticks follow the move's name
+        if(cb.checked) set.add(title); else set.delete(title);
+        refiReprice(loan);
       }));
       // 2.9.4 (#4) — the user's own manual levers: toggle, remove, and add.
       dom.refiView.querySelectorAll("[data-refimanual]").forEach(cb => cb.addEventListener("change", () => {
         const key = propertyKey(loan), lv = (refiManualLevers[key] || []).find(x => x.id === cb.getAttribute("data-refimanual"));
-        if(lv){ lv.on = cb.checked; refiDraftsKey = ""; renderRefi(loan); }
+        if(lv){ lv.on = cb.checked; refiReprice(loan); }
       }));
       dom.refiView.querySelectorAll("[data-refimanualdel]").forEach(b => b.addEventListener("click", (e) => {
         e.preventDefault(); e.stopPropagation();
         const key = propertyKey(loan), id = b.getAttribute("data-refimanualdel");
         refiManualLevers[key] = (refiManualLevers[key] || []).filter(x => x.id !== id);
-        refiDraftsKey = ""; renderRefi(loan);
+        refiReprice(loan);
       }));
       { const addBtn = el("refiManualAdd");
         if(addBtn) addBtn.addEventListener("click", () => {
@@ -9603,12 +9726,12 @@ tr.flagged:hover td{background:#fee2e2}
           if(!isFinite(amt) || amt === 0){ try{ toast("Enter a yearly dollar amount for the lever.", "info"); }catch(e){} return; }
           const man = refiManualLevers[key] || (refiManualLevers[key] = []);
           man.push({ id: "m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label: lbl || "Manual lever", amount: Math.round(amt), on: true });
-          refiDraftsKey = ""; renderRefi(loan);
+          refiReprice(loan);
         }); }
 
       // Pricing inputs (prepay type, rate cap, mezz stack) refresh the proposed rate live.
       {
-        const reprice = () => { refiDraftsKey = ""; renderRefi(loan); };   // pricing inputs → refresh proposed rate
+        const reprice = () => refiReprice(loan);   // pricing inputs → refresh the proposed rate, keeping everything typed (#241)
         const ptSel = el("refiPrepayType");
         if(ptSel) ptSel.addEventListener("change", () => { loan.prepayType = ptSel.value; loan.prepayConfirmed = true; save(); renderRefi(loan); });
         const stepIn = el("refiStepPct");
@@ -9623,30 +9746,39 @@ tr.flagged:hover td{background:#fee2e2}
         if(mzIn) mzIn.addEventListener("change", () => { const v = parseFloat(mzIn.value); if(!isNaN(v) && v >= 0) loan.mezzSpread = v/10000; save(); reprice(); });
       }
 
-      // The proposed loan's boxes — edit any field live.
-      const optWrap = el("refiOptions");
-      if(optWrap){
-        // Rate-type toggle → rebuild the draft's pricing at the new type's defaults
-        // (fixed → spread 0 over the matched Treasury; floating → comp margin over SOFR).
-        optWrap.addEventListener("click", (e) => {
+      // The proposed rate (in the verdict card) and the proposed loan's boxes — edit any field live.
+      [el("refiPricing"), el("refiOptions")].filter(Boolean).forEach(wrap => {
+        // Rate-type toggle → the new type's defaults (fixed → spread 0 over the matched Treasury; floating → comp
+        // margin over SOFR; hybrid → both periods at 0 over their Treasuries, #80).
+        wrap.addEventListener("click", (e) => {
           const b = e.target.closest && e.target.closest("[data-rtype]"); if(!b) return;
           const draft = refiDrafts[1]; if(!draft) return;
           const type = b.getAttribute("data-rtype"); if(draft.rateType === type) return;
           draft.rateType = type;
-          draft.index = (type === "Floating") ? "sofr" : matchedTenorId({ rateType:"Fixed", loanTermMonths: draft.loanTermMonths });
-          draft._baseSpread = (type === "Fixed") ? 0 : floatingBaseSpread(loan, draft.loanTermMonths);
+          draft.index = (type === "Floating") ? "sofr" : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: draft.loanTermMonths });
+          draft._baseSpread = (type === "Floating") ? floatingBaseSpread(loan, draft.loanTermMonths) : 0;
+          draft._fixedIndex = null; draft._fixedSpread = (type === "Hybrid ARM") ? 0 : null;
           draft.rateFloor = null; draft.rateCap = null; draft.sofrCapPct = (type === "Fixed") ? null : 0;
           applyProposedPricing(loan, draft);
           renderRefi(loan);
         });
-        optWrap.addEventListener("change", (e) => {
+        wrap.addEventListener("change", (e) => {
           const t = e.target, m = t && (t.id||"").match(/^o(1)_(.+)$/); if(!m) return;
           const n = Number(m[1]), field = m[2], draft = refiDrafts[n]; if(!draft) return;
           if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
+          if(field === "fxindex"){ draft._fixedIndex = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
           const blank = String(t.value||"").trim() === "";
           const raw = parseFloat((t.value||"").replace(/[^0-9.\-]/g,"")), v = isNaN(raw) ? 0 : raw;
-          if(field === "amount") draft.originalAmount = v;
+          if(field === "amount"){
+            const vd = refiVerdict(loan, draft), max = vd.can && vd.can.maxLoan;
+            // 2.9.7 (#22) — never more than the property supports.
+            if(max > 0 && v > max + 0.5){ draft.originalAmount = Math.floor(max); toast("The property supports up to " + fmtMoney(max) + " — the amount stops there.", "info"); renderRefi(loan); return; }
+            // 2.9.7 (#185) — in the "your decision" case, never so low that the extra cash drops to 20% or less.
+            if(vd.decision){ const payoff = vd.should.payoff; if(payoff > 0 && (v - payoff) / payoff <= REFI_DECISION_CASH){ refiNotice("You can’t do that", "You can’t do that — if you do, you won’t be able to refinance."); renderRefi(loan); return; } }
+            draft.originalAmount = v;
+          }
           else if(field === "spread"){ draft._baseSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }   // bps → decimal; tier re-applied
+          else if(field === "fxspread"){ draft._fixedSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }
           else if(field === "floor") draft.rateFloor = blank ? null : v/100;
           else if(field === "cap")   draft.rateCap   = blank ? null : v/100;
           else if(field === "capcost") draft.sofrCapPct = Math.max(0, v)/10000;   // bps/yr → decimal; a separate cost, default 0
@@ -9657,19 +9789,78 @@ tr.flagged:hover td{background:#fee2e2}
           else draft[field] = v;
           renderRefi(loan);
         });
-      }
+      });
+      { const amt = el("o1_amount"), vd = verdict; if(amt && vd.can && vd.can.maxLoan > 0) amt.setAttribute("max", String(Math.floor(vd.can.maxLoan))); }
     }
-    // Save the currently-analyzed proposed option as a real loan.
-    function saveActiveRefiOption(loan){
-      const draft = refiDrafts[1]; if(!draft){ toast("Nothing to save", "info"); return; }
+    // 2.9.7 (#241) — a NOI change (basis, a ticked move or lever, the NOI box) re-prices the proposed loan but
+    // keeps everything you typed on it (amount, term, amortization, closing, spread and rate).
+    function refiReprice(loan){ if(refiDrafts[1] && refiDraftsKey === loan._id) applyProposedPricing(loan, refiDrafts[1]); else refiDraftsKey = ""; renderRefi(loan); }
+    // A one-button message (the confirm window with a single OK).
+    function refiNotice(title, text){
+      confirmDialog(title, text, null, "OK");
+      try{ if(dom.confirmCancel) dom.confirmCancel.hidden = true; const restore = () => { if(dom.confirmCancel) dom.confirmCancel.hidden = false; dom.confirmOk.removeEventListener("click", restore); }; dom.confirmOk.addEventListener("click", restore); }catch(e){}
+    }
+    // Save the proposed loan. 2.9.7 (#24) — your refinance rule: it replaces ALL of the property's loans (senior +
+    // mezz). After you confirm, each old loan is marked "Paid off (refinanced)" with today's date and archived, and
+    // the new loan becomes the property's only loan (same name and address, so its files stay with it).
+    // 2.9.7 (#27) — the refinance the assistant works on: the PROPERTY's (all its active loans together),
+    // prepared in the background without opening the screen.
+    function refiTargetFor(l){
+      if(!l) return null; if(l._combined) return l;
+      const key = propertyKey(l), act = loans.filter(x => propertyKey(x) === key && !loanIsInactiveSelf(x));
+      return act.length > 1 ? getLoan("combo:" + key) : (act[0] || l);
+    }
+    function refiPrepare(l){ const t = refiTargetFor(l); if(!t) return null; ensureRefiDrafts(t); return t; }
+    function refiSummaryText(t, v){
+      v = v || refiVerdict(t, refiDrafts[1]);
+      const d = refiDrafts[1], name = t._combined ? t.propertyName : loanLabel(t), n = refiMembers(t).length;
+      if(!v.can.sized) return name + ": I can’t judge this yet — the property has no NOI (upload its T12 or enter the NOI).";
+      let s = name + " — you owe " + fmtMoney(v.can.payoff) + (n > 1 ? " on " + n + " loans together" : "") + ". Can you? " + (v.can.can ? "Yes — it supports up to " + fmtMoney(v.can.maxLoan) + "." : "No — it supports only " + fmtMoney(v.can.maxLoan) + ".");
+      if(v.can.can){ const w = v.should;
+        s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(Math.max(0, w.cashAfterCosts)) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
+          : w.kind === "yes" ? (w.why === "maturity" ? "Yes — today’s loan ends within 12 months." : "Yes — it saves " + fmtMoney(w.saved) + " of interest until today’s loan ends, against a " + fmtMoney(w.penalty) + " early-payoff penalty.")
+          : "No — " + (w.why === "penalty" ? "the interest saved (" + fmtMoney(w.saved) + ") doesn’t pay the " + fmtMoney(w.penalty) + " penalty." : "the new rate isn’t lower.")); }
+      if(d) s += " Proposed: " + fmtMoney(d.originalAmount) + " at " + fmtPct(compute(d).derived.currentRate) + " (" + (d.rateType === "Hybrid ARM" ? "hybrid" : String(d.rateType || "").toLowerCase()) + ", " + Math.round((d.loanTermMonths || 0) / 12) + "-year term).";
+      return s;
+    }
+    function refiSaveSummary(loan){
+      const olds = refiMembers(loan).filter(l => l && !l._combined), draft = refiDrafts[1];
+      return { olds, text: "This replaces " + olds.map(l => "“" + loanLabel(l) + "”").join(" and ") + " with one new " + fmtMoney(draft ? draft.originalAmount : 0) + " loan at " + fmtPct(draft ? compute(draft).derived.currentRate : 0) + ". " +
+        (olds.length === 1 ? "The old loan is" : "The old loans are") + " marked Paid off (refinanced) today and kept on Home under Removed & paid-off loans." };
+    }
+    function saveActiveRefiOption(loan, opts){
+      opts = opts || {};
+      const draft = refiDrafts[1]; if(!draft){ toast("Nothing to save", "info"); return { ok:false }; }
+      const sm = refiSaveSummary(loan);
+      const go = () => refiCommitSave(loan, opts.from || "typed");
+      if(opts.confirmed) return go();
+      confirmDialog("Save the refinance?", sm.text, go, "Save the refinance");
+      return { ok:true, asked:true };
+    }
+    function refiCommitSave(loan, from){
+      const draft = refiDrafts[1]; if(!draft) return { ok:false, error:"no proposal" };
+      const olds = refiMembers(loan).filter(l => l && !l._combined);
+      const sr = olds.slice().sort(loanRank)[0] || olds[0];
       const nl = JSON.parse(JSON.stringify(draft));
       nl._id = uid();
-      nl.propertyName = (loan.propertyName || loanLabel(loan)) + " (Refinanced)";
-      ["_closingPct","_tenor","_years","_combined","_members","_seniorId"].forEach(k => delete nl[k]);
+      nl.propertyName = (sr && sr.propertyName) || opPropDisplayName(propertyKey(loan));
+      nl.propertyAddress = (sr && sr.propertyAddress) || nl.propertyAddress || "";
+      nl.lienPosition = "Senior"; nl.loanStatus = ""; nl.lenderName = ""; nl.loanNumber = "";
+      ["_closingPct","_tenor","_years","_combined","_members","_seniorId","_rateTypeLabel","_rateTypeSub","_history","_fixedIndex","_fixedSpread","_baseSpread","_tierDelta","_effSpread","archived","archivedAt","paidOffReason","paidOffAt"].forEach(k => delete nl[k]);
       const err = validateLoan(nl);
-      if(err){ toast(err, "info"); return; }
-      loans.push(nl); state.activeId = nl._id; save();
-      toast("Saved refinanced loan", "check"); setMode("view");
+      if(err){ toast(err, "info"); return { ok:false, error: err }; }
+      lockFixedRate(nl);   // a refinance is a new origination: lock index + spread
+      const today = new Date().toISOString().slice(0,10);
+      olds.forEach(l => {
+        const was = l.loanStatus || "";
+        l.loanStatus = "Paid off"; l.paidOffReason = "refinanced"; l.paidOffAt = today; l.archived = true; l.archivedAt = new Date().toISOString(); l.archivedReason = "refinanced";
+        try{ loanHistoryAdd(l, "loanStatus", was, "Paid off (refinanced)", from === "assistant" ? "assistant" : "refinance", { note: "replaced by the new " + fmtMoney(nl.originalAmount) + " loan" }); }catch(e){}
+      });
+      try{ loanHistoryAdd(nl, "created", null, "added", from === "assistant" ? "assistant" : "refinance", { file: "refinanced " + olds.map(loanLabel).join(" + ") }); }catch(e){}
+      loans.push(nl); state.activeId = nl._id; refiDraftsKey = ""; save();
+      toast("Saved — " + olds.map(loanLabel).join(" and ") + (olds.length === 1 ? " is" : " are") + " now Paid off (refinanced).", "check");
+      setMode("view"); try{ redrawAll(); }catch(e){}
+      return { ok:true, id: nl._id, replaced: olds.map(l => l._id) };
     }
 
     function recomputeRefi(loan){
@@ -10026,16 +10217,16 @@ tr.flagged:hover td{background:#fee2e2}
       "- show_portfolio {}: show the whole-portfolio overview.",
       "- open_calendar {}: open the Maturity & Reset Calendar.",
       "- open_underwriting {}: open the Underwriting & Sizing tab.",
-      "- start_refinance {name}: open the refinance analysis for a loan.",
+      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property), in the background, and report the verdict; when it says Refinance (or the operator's decision) an Approve card offers to save it, which replaces all the property's loans. Pass open:true only when the operator asks to SEE the refinance screen.",
       "- open_export {}: open the Export-to-Excel dialog.",
       "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
       "- propose_loan_change {name, changes}: propose ADDING, ALTERING, or REMOVING information on an existing loan. The operator sees a before→after preview in the chat and must click Approve before anything changes. changes maps field keys to new values — the propose_new_loan keys above PLUS the property financials noi (annual NOI, number), egi (annual effective gross income), opex (annual operating expenses), and capRate (decimal, e.g. 0.055). To REMOVE/clear a field, set it to null. Include only the fields you were actually asked to change.",
       "- create_property {name}: set up a brand-new property from its name (its loans, T12 and documents come later). The operator sees an Approve card first — nothing is created until they approve.",
-      "- open_data_health {}: open the Data Health page. open_settings {}: open the Settings menu. import_excel {}: open the Excel import checklist. fetch_live_rate {}: pull today's live market rates (Treasury curve + SOFR).",
+      "- open_data_health {}: open the Data Health page. open_settings {}: open the Settings menu. import_excel {}: open the Excel import checklist. fetch_live_rate {}: pull today's market rates (Treasury curve, SOFR, 30-day Average SOFR, 1-month Term SOFR); the result says which are live (with the fetch time), which are the last saved (with their date) and which are built-in.",
       "- run_push {name}: (re-)run Claude's \"what to push\" operational analysis for a property. import_rent_roll {name}: open the rent-roll importer for a property (or tell the operator they can just attach the file and you'll file it automatically — a multi-property file is filed to each property it covers).",
       "- remove_loan {name}: delete a loan (opens the app's own confirmation dialog). set_loan_status {name, status}: set a loan's status — status must be exactly one of \"Active\", \"Matured\", \"Extended\", \"Extension undecided\", \"Paid off\". archive_property {name} / unarchive_property {name}: archive a property (its loans go with it) or bring an archived one back. edit_assumptions {name, changes}: change a property's underwriting assumptions — changes may include vacancy, managementFee, capRate (each a decimal, 0.05 = 5%), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars per unit). set_loan_status, archive/unarchive and edit_assumptions all show an Approve card first.",
       "Clarifications from testing: (a) cap rate is a PROPERTY underwriting assumption — set it with edit_assumptions {capRate}, which needs no loan; never tell the operator a loan must exist first. (b) A PROPERTY can only be archived (archive_property), not permanently deleted — do not describe a delete-from-settings path that does not exist; a loan, by contrast, is removed with remove_loan. (c) To SET a property's annual NOI, use set_property_noi {name, noi(number), capRate?}; it shows an Approve card — but if that property's NOI comes from an uploaded T12 it will say so, because the T12 is the source of truth and a hand-entered figure will not override it.",
-      "- set_refi_noi_basis {name, basis}: open a loan's refinance and set which NOI it's sized on — basis is \"in-place\", \"underwritten\" or \"entered\". add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title. set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
+      "- set_refi_noi_basis {name, basis}: set which NOI the property's refinance is sized on — basis is \"in-place\", \"underwritten\" or \"entered\" (only the ones the property has; the result lists them when one is missing). add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title (a title that fits two moves comes back asking which). set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
       "- propose_profile_change {name, changes, source?}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When the values came from a document, add source {file, page} (the file name and the page you read them on) so the change history shows where they came from. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
       "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted a loan or profile field: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change / propose_profile_change / create_property show a card the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
@@ -10172,7 +10363,21 @@ tr.flagged:hover td{background:#fee2e2}
       show_portfolio: function(){ setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
       open_calendar: function(){ if(typeof openTab==="function") openTab("calendar"); return {ok:true,close:true,msg:"Opened the Maturity & Reset Calendar."}; },
       open_underwriting: function(){ if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
-      start_refinance: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); startRefi(); return {ok:true,close:true,msg:"Opened the refinance analysis for "+loanLabel(l)+"."}; },
+      // 2.9.7 (#27) — the refinance is always of the PROPERTY (all its loans together). It is prepared in the
+      // background and offered for approval here; the screen opens only when you ask (open: true).
+      start_refinance: function(a){
+        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var t=refiPrepare(l); if(!t) return {ok:false,msg:"I couldn’t prepare that refinance."};
+        var v=refiVerdict(t, refiDrafts[1]), sum=refiSummaryText(t, v);
+        if(a && a.open){ state.activeId=t._id; try{ startRefi(); }catch(e){} }
+        if(!(v.refi || v.decision)) return {ok:true, msg: sum};
+        var sm=refiSaveSummary(t);
+        return aiAsstApprovalCard(escapeHtml(sum)+'<br><br>Save it? '+escapeHtml(sm.text), "", function(){
+          if(refiDraftsKey !== t._id) ensureRefiDrafts(t);
+          var r=refiCommitSave(t, "assistant");
+          return r.ok ? {ok:true, html:'✓ Saved the refinance — '+escapeHtml(sm.olds.map(loanLabel).join(" and "))+' marked Paid off (refinanced).', toast:'Refinance saved'} : {ok:false, html:"Not saved: "+escapeHtml(r.error||"")};
+        });
+      },
       open_export: function(){ if(typeof openExportPreview==="function") openExportPreview(); return {ok:true,close:true,msg:"Opened the Export-to-Excel dialog."}; },
       // 2.9.6 (#4) — like the manual "Add Loan", open the draft form even from a PARTIAL (or empty) set
       // of fields; the operator fills the rest and Saves. Never refuse to start the draft over sparseness.
@@ -10286,17 +10491,14 @@ tr.flagged:hover td{background:#fee2e2}
       open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
       import_excel: function(){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; },
       fetch_live_rate: function(){
-        try{ fetchAllLiveRates(); }catch(e){}
-        // 2.9.6 (#3) — return the rates so the assistant can actually USE them and keep the
-        // chat open (it used to return only a status line and close). Reads the live cache
-        // the fetch fills; a tenor not yet fetched shows its catalog value, marked estimated.
-        var want = ["sofr","ust2y","ust3y","ust5y","ust7y","ust10y"], est=false;
-        var parts = want.map(function(id){
-          var cat = INDEX_BY_ID[id]; if(!cat) return null;
-          var c = INDEX_CACHE[id], v = c ? c.value : cat.fallback; if(!c) est=true;
-          return cat.label.replace(/\s*\((CMT|overnight)\)/,"") + " " + Number(v).toFixed(2) + "%";
-        }).filter(Boolean);
-        return { ok:true, msg:"Live market rates — " + parts.join(" · ") + (est ? " (some estimated; refreshing the feed — ask again to pick up the rest)." : ".") };
+        // 2.9.7 (#81, #26) — fetch, then say which rates are live (with the fetch time), which are the last saved
+        // (with their date) and which are built-in (never fetched).
+        var want0 = ["sofr","sofr30","termsofr1m","ust2y","ust3y","ust5y","ust7y","ust10y"];
+        return Promise.resolve().then(function(){ return fetchAllLiveRates(); }).catch(function(){}).then(function(){
+          var parts = want0.map(function(id){ var cat=INDEX_BY_ID[id]; if(!cat) return null; var c=INDEX_CACHE[id], v=c?c.value:cat.fallback;
+            return cat.label.replace(/\s*\((CMT|overnight)\)/,"") + " " + Number(v).toFixed(3) + "% (" + (c && !c.saved ? "live, fetched " + fmtWhenShort(c.fetchedAt) : rateSourceText(id)) + ")"; }).filter(Boolean);
+          return { ok:true, msg:"Market rates — " + parts.join(" · ") + "." };
+        });
       },
       run_push: function(a){
         var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
@@ -10312,22 +10514,31 @@ tr.flagged:hover td{background:#fee2e2}
         return {ok:true,close:true,msg:"Opened the rent-roll importer for "+pn+" — pick the file, then assign each block. (Or attach the file here and I’ll file it automatically.)"};
       },
       // Refinance what-ifs (open the refi and set a control):
+      // 2.9.7 (#28) — only the NOI choices this property's refinance really has; success is reported only once
+      // the basis actually changed.
       set_refi_noi_basis: function(a){
         var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var t=refiPrepare(l), o=refiNOIOptions(t), avail={};
+        if(o.inPlace!=null) avail.inplace="in-place ("+fmtMoney(o.inPlace)+")"; if(o.underwritten!=null) avail.underwritten="underwritten ("+fmtMoney(o.underwritten)+")"; if(refiEnteredNOI(t)!=null) avail.entered="entered ("+fmtMoney(refiEnteredNOI(t))+")";
         var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered" }, b=map[basis];
-        if(!b) return {ok:false,msg:'Basis must be "in-place", "underwritten" or "entered".'};
-        state.activeId=l._id; try{ startRefi(); }catch(e){} refiBasisByKey[propertyKey(l)]=b; try{ renderRefi(l); }catch(e){}
-        return {ok:true,close:true,msg:"Set the refinance NOI basis to "+b+" for "+loanLabel(l)+"."};
+        var list=Object.keys(avail).map(function(k){ return avail[k]; }).join(", ")||"none (no T12 and no entered NOI yet)";
+        if(!b || !avail[b]) return {ok:false,msg:'This property’s refinance can use: '+list+'.'};
+        var key=propertyKey(t), before=refiBasis(t); refiBasisByKey[key]=b;
+        if(refiBasis(t)!==b){ refiBasisByKey[key]=before; return {ok:false,msg:"The NOI basis didn’t change — it is still "+before+"."}; }
+        if(refiDraftsKey===t._id && refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
+        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+        if(a && a.open){ state.activeId=t._id; try{ startRefi(); }catch(e){} }
+        return {ok:true,msg:"The refinance of "+(t._combined?t.propertyName:loanLabel(t))+" now uses the "+avail[b]+" NOI. "+refiSummaryText(t, refiVerdict(t, refiDrafts[1]))};
       },
       add_refi_lever: function(a){
         var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
         var amt=Number(a&&a.amount); if(!isFinite(amt)||amt===0) return {ok:false,msg:"Give me a yearly dollar amount for the lever (negative to remove income)."};
-        var label=(((a&&a.label)||"Manual lever").toString().trim())||"Manual lever", key=propertyKey(l);
-        state.activeId=l._id; try{ startRefi(); }catch(e){}
+        var label=(((a&&a.label)||"Manual lever").toString().trim())||"Manual lever", t=refiPrepare(l), key=propertyKey(t);
         var man=refiManualLevers[key]||(refiManualLevers[key]=[]);
         man.push({ id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label:label, amount:Math.round(amt), on:true });
-        try{ refiDraftsKey=""; renderRefi(l); }catch(e){}
-        return {ok:true,close:true,msg:'Added "'+label+'" ('+(amt>=0?"+":"−")+fmtMoney(Math.abs(amt))+"/yr) to "+loanLabel(l)+"’s refinance levers."};
+        if(refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
+        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+        return {ok:true,msg:'Added "'+label+'" ('+(amt>=0?"+":"−")+fmtMoney(Math.abs(amt))+"/yr) to the refinance of "+(t._combined?t.propertyName:loanLabel(t))+". "+refiSummaryText(t, refiVerdict(t, refiDrafts[1]))};
       },
       // Writes that change or lose saved data (Approve card first):
       remove_loan: function(a){
@@ -10382,27 +10593,35 @@ tr.flagged:hover td{background:#fee2e2}
       toggle_refi_move: function(a){
         var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
         var q=normName((a&&a.move)||""); if(!q) return {ok:false,msg:"Tell me which “what to push” move to tick (by its title)."};
-        state.activeId=l._id; try{ startRefi(); }catch(e){}
-        var key=propertyKey(l), moves=refiPushMoves(l), idx=-1;
-        moves.forEach(function(m,i){ var t=normName(m.title||""); if(idx<0 && (t===q || t.indexOf(q)>=0 || q.indexOf(t)>=0)) idx=i; });
-        if(idx<0) return {ok:false,msg:'I couldn’t find a “what to push” move matching "'+((a&&a.move)||"")+'" here. Run the analysis first, or add your own lever with add_refi_lever.'};
-        var set=refiAppliedMoves[key]||(refiAppliedMoves[key]=new Set()), on=(a&&a.on===false)?false:true;
-        if(on) set.add(idx); else set.delete(idx);
-        try{ refiDraftsKey=""; renderRefi(l); }catch(e){}
-        return {ok:true,close:true,msg:(on?"Ticked":"Un-ticked")+' "'+(moves[idx].title||"move")+'" in '+loanLabel(l)+"’s refinance."};
+        var tg=refiPrepare(l), key=propertyKey(tg), moves=refiPushMoves(tg);
+        // 2.9.7 (#241) — ticks follow the move's NAME; a name that fits two moves is asked about, never guessed.
+        var exact=moves.filter(function(m){ return normName(m.title||"")===q; });
+        var hits=exact.length ? exact : moves.filter(function(m){ var t=normName(m.title||""); return t && (t.indexOf(q)>=0 || q.indexOf(t)>=0); });
+        if(!hits.length) return {ok:false,msg:'I couldn’t find a “what to push” move matching "'+((a&&a.move)||"")+'" here. Run the analysis first, or add your own lever with add_refi_lever.'};
+        if(hits.length>1) return {ok:false,msg:'Which one? '+hits.map(function(m){ return '"'+m.title+'"'; }).join(" or ")+"."};
+        var mv=hits[0], set=refiAppliedMoves[key]||(refiAppliedMoves[key]=new Set()), on=(a&&a.on===false)?false:true;
+        if(on && set.has(mv.title)) return {ok:true,msg:'"'+mv.title+'" is already ticked.'};
+        if(!on && !set.has(mv.title)) return {ok:true,msg:'"'+mv.title+'" isn’t ticked.'};
+        if(on) set.add(mv.title); else set.delete(mv.title);
+        if(refiDrafts[1]) applyProposedPricing(tg, refiDrafts[1]);   // keeps everything typed (#241)
+        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||tg); }catch(e){} }
+        return {ok:true,msg:(on?"Ticked":"Un-ticked")+' "'+mv.title+'" in the refinance of '+(tg._combined?tg.propertyName:loanLabel(tg))+". "+refiSummaryText(tg, refiVerdict(tg, refiDrafts[1]))};
       },
       set_refi_terms: function(a){
         var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        var c=(a&&a.changes)||{}; state.activeId=l._id; try{ startRefi(); }catch(e){}
-        var d=refiDrafts[1]; if(!d) return {ok:false,msg:"I couldn’t open the refinance for that loan."};
+        var c=(a&&a.changes)||{}, t=refiPrepare(l);
+        var d=refiDrafts[1]; if(!d) return {ok:false,msg:"I couldn’t prepare the refinance for that loan."};
         var did=[];
-        if(isFinite(Number(c.amount))){ d.originalAmount=Number(c.amount); did.push("loan amount "+fmtMoney(Number(c.amount))); }
+        if(isFinite(Number(c.amount))){ var vd=refiVerdict(t,d), amt=Number(c.amount);   // 2.9.7 (#22, #185) — the same limits as the screen
+          if(vd.can && vd.can.maxLoan>0 && amt>vd.can.maxLoan+0.5) return {ok:false,msg:"The property supports up to "+fmtMoney(vd.can.maxLoan)+" — the amount can’t go above that."};
+          if(vd.decision && vd.should.payoff>0 && (amt-vd.should.payoff)/vd.should.payoff<=REFI_DECISION_CASH) return {ok:false,msg:"You can’t do that — if you do, you won’t be able to refinance."};
+          d.originalAmount=amt; did.push("loan amount "+fmtMoney(amt)); }
         if(isFinite(Number(c.termYears))){ d.loanTermMonths=Math.max(1,Math.round(Number(c.termYears)*12)); var tp=todayParts(),fp=addMonths(tp,1),nm=addMonths(fp,d.loanTermMonths-1); d.maturityDate=partsToISO(nm.y,nm.mo,1); did.push(c.termYears+"-year term"); }
         if(isFinite(Number(c.amortYears))){ d.amortizationMonths=Math.max(12,Math.round(Number(c.amortYears)*12)); did.push(c.amortYears+"-year amortization"); }
         if(isFinite(Number(c.ioMonths))){ d.ioMonths=Math.max(0,Math.round(Number(c.ioMonths))); did.push(d.ioMonths+" interest-only months"); }
         if(!did.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears or ioMonths."};
-        try{ renderRefi(l); }catch(e){}
-        return {ok:true,close:true,msg:"Set "+did.join(", ")+" on "+loanLabel(l)+"’s proposed refinance."};
+        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+        return {ok:true,msg:"Set "+did.join(", ")+" on the proposed refinance of "+(t._combined?t.propertyName:loanLabel(t))+". "+refiSummaryText(t, refiVerdict(t, d))};
       }
     };
     function aiAsstParseAction(text){
@@ -10974,9 +11193,10 @@ tr.flagged:hover td{background:#fee2e2}
             else if(!parsed.action) aiAsstBubble("assistant", "(no answer)");
             aiAsstHistory.push({role:"assistant", text:full});
             if(parsed.action){
-              var res=aiAsstRunAction(parsed.action);
+              Promise.resolve(aiAsstRunAction(parsed.action)).then(function(res){   // an action may finish later (e.g. a fetch)
               if(res&&res.msg) aiAsstBubble("assistant", '<span class="'+(res.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(res.ok?"✓ ":"")+escapeHtml(res.msg)+'</span>', {error:!res.ok});
               if(res&&res.ok&&res.close) setTimeout(function(){ aiAsstClose(); toast(res.msg,"check"); }, 400);
+              });
             }
             aiAsstPersist();          // save the conversation after each completed turn
             aiAsstSetBusy(false);
@@ -11412,6 +11632,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(m !== lastMonth){
           lastMonth = m;
           Object.keys(INDEX_CACHE).forEach(k => delete INDEX_CACHE[k]);   // force a fresh fetch for the new month
+          Object.keys(INDEX_TRIED).forEach(k => delete INDEX_TRIED[k]); loadSavedRates();   // 2.9.7 (#26) — offline, the saved rates stay
           if(state.mode==="view") render();
         }
       };

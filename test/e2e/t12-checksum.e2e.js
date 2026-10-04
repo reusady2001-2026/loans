@@ -56,7 +56,7 @@ const pick=(page)=>page.evaluate((k)=>{const s=document.getElementById('opPropPi
 
   // a genuinely different T12 DOES save (dedup is content-based, not a blanket block)
   await page.setInputFiles('#uwFile',OTHER);
-  await page.waitForTimeout(1000);
+  for(let t=0;t<50&&t12Files().length<2;t++) await page.waitForTimeout(300);   // the save lands in the background (slower on a busy machine)
   let fs3=t12Files();
   ok(fs3.length===2,'a different T12 (distinct bytes) is saved normally — now two on file ('+fs3.length+')');
   const shas=new Set(fs3.map(f=>f.sha));

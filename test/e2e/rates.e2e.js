@@ -65,7 +65,7 @@ async function launch(env){
   const jan24=await row(ids.ml,'Jan 2024');
   ok(jan24&&near(jan24.rate,(ts+2.05)/100)&&jan24.tag==='Actual'&&/on 12\/28\/2023/.test(jan24.text),'Jan 2024 = Term SOFR on its reset day Dec 28 2023 ('+ts+'%) + 2.05% ("'+(jan24&&jan24.text)+'")');
   const cache=await page.evaluate(()=>window.LDS_indexCache('termsofr1m'));
-  ok(cache&&near(cache.value,3.95,1e-9)&&cache.date==='2026-10-02'&&!cache.stale,'today\'s Term SOFR came from the main process with its date (3.95% on 2026-10-02)');
+  ok(cache&&near(cache.value,3.95,1e-9)&&cache.date==='2026-10-02'&&!cache.stale&&!cache.saved,'today\'s Term SOFR came from the main process with its date (3.95% on 2026-10-02)');
   const saved=await page.evaluate(()=>window.LDS_rateHist().termsofr1m||{});
   ok(saved['2026-10-02']===3.95,'the value is saved with its date');
   const fut=await page.evaluate((id)=>(window.LDS_scheduleRows(id)||[]).filter(r=>r.tag==='Projected'),ids.ml);
@@ -94,7 +94,7 @@ async function launch(env){
   await page.evaluate((id)=>{ const r=document.querySelector('tr[data-goto="'+id+'"]'); if(r) r.click(); },ids.ml);
   await page.waitForTimeout(2000);
   const c2=await page.evaluate(()=>window.LDS_indexCache('termsofr1m'));
-  ok(c2&&c2.stale&&near(c2.value,3.95,1e-9)&&c2.date==='2026-10-02','offline, Term SOFR is the last saved value (3.95% from 2026-10-02), marked as not fresh');
+  ok(c2&&(c2.stale||c2.saved)&&near(c2.value,3.95,1e-9)&&c2.date==='2026-10-02','offline, Term SOFR is the last saved value (3.95% from 2026-10-02), marked as not fresh');
   const b2=await page.evaluate(()=>(document.getElementById('floatBanner')||{}).innerText||'');
   ok(/last saved 10\/02\/2026/.test(b2),'the banner labels it "last saved 10/02/2026"');
 
