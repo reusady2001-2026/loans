@@ -1,6 +1,6 @@
 // Electron main process — wraps the offline Loan Debt Service Hub in a desktop
 // window. The whole UI/engine lives in index.html; this just hosts it.
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -370,6 +370,40 @@ ipcMain.handle('lds:fullbackup-restore', async (e, { token }) => {
     try { fs.rmSync(aside, { recursive: true, force: true }); } catch (x) {}
     return { ok: false, error: String((err && err.message) || err) };
   }
+});
+
+// ---- 2.9.7 (#256) — 1-month Term SOFR from Pensford's public rate data -------------------------
+// Pensford publishes CME 1-month Term SOFR every business day (the numbers behind
+// pensford.com/forward-curve). Their API only answers a request that comes from their own page, so the
+// main process asks with that page as the referrer. Returns today's value and every day since `since`
+// (percent, e.g. 3.91228). Any failure is reported, never invented — the page then uses its last saved,
+// dated value. Tests: LDS_RATES_FAKE=<json file> answers from a file; LDS_RATES_OFFLINE=1 fails.
+const PENSFORD = 'https://pensford.com';
+async function pensfordJson(p){
+  const r = await net.fetch(PENSFORD + p, { headers: { 'Referer': PENSFORD + '/forward-curve', 'Accept': 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+ipcMain.handle('lds:rates-termsofr', async (e, { since } = {}) => {
+  try {
+    if (process.env.LDS_RATES_OFFLINE) return { ok: false, error: 'offline' };
+    if (process.env.LDS_RATES_FAKE) return Object.assign({ ok: true }, JSON.parse(fs.readFileSync(process.env.LDS_RATES_FAKE, 'utf8')));
+    const out = { ok: true, live: null, history: {} };
+    try {
+      const j = await pensfordJson('/api/live-rates');
+      const q = j && j.termSofr1M, m = q && /^(\d\d)\/(\d\d)\/(\d{4})$/.exec(String(q.quoteDate || ''));
+      if (q && typeof q.quote === 'number' && m) out.live = { value: +(q.quote * 100).toFixed(5), date: m[3] + '-' + m[1] + '-' + m[2] };
+      else out.liveError = 'the live-rates format changed';
+    } catch (x) { out.liveError = String((x && x.message) || x); }
+    if (since && /^\d{4}-\d\d-\d\d$/.test(since)) {
+      try {
+        const j = await pensfordJson('/api/forward-curve/historical?table=historical_floating&since=' + since);
+        (j && j.rows || []).forEach(r => { if (r && r.rate_label === '1M Term SOFR' && /^\d{4}-\d\d-\d\d$/.test(String(r.reset_date)) && typeof r.rate_value === 'number') out.history[r.reset_date] = r.rate_value; });
+      } catch (x) { out.historyError = String((x && x.message) || x); }
+    }
+    if (!out.live && !Object.keys(out.history).length) return { ok: false, error: out.liveError || out.historyError || 'no data' };
+    return out;
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
 // Reveal the backups folder in the OS file manager.

@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('ldsShell', {
   fullBackupRestore: (token) => ipcRenderer.invoke('lds:fullbackup-restore', { token }),
   // 2.9.7 (#9) — called whenever a property file or a chat is saved, moved or removed (so a snapshot follows).
   onDataChanged: (cb) => { try { ipcRenderer.on('lds:data-changed', () => { try { cb(); } catch (e) {} }); } catch (e) {} },
+  // 2.9.7 (#256) — 1-month Term SOFR (today + every day since `since`) read by the main process. {ok,live:{value,date},history} | {ok:false,error}
+  ratesTermSofr: (opts) => ipcRenderer.invoke('lds:rates-termsofr', opts || {}),
   // Reveal the backups folder in File Explorer.
   openBackupsFolder: () => ipcRenderer.invoke('lds:backups-open-folder'),
   // Save binary data (base64) via a native Save dialog — used for the Excel export.

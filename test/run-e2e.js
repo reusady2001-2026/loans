@@ -9,6 +9,7 @@ const files = fs.readdirSync(dir).filter((f) => /\.e2e\.js$/.test(f) && !/^zz-/.
 const env = Object.assign({}, process.env);
 for (const k of Object.keys(env)) if (/^(CLAUDE|ANTHROPIC)/i.test(k) || k === 'CLAUDECODE') delete env[k];
 if (!env.LDS_CLAUDE_BIN) env.LDS_CLAUDE_BIN = '/nonexistent';
+if (!env.LDS_RATES_FAKE) env.LDS_RATES_OFFLINE = '1';   // 2.9.7 (#256) — no Term SOFR network call during tests
 const useXvfb = process.platform === 'linux' && !env.DISPLAY;
 const failed = [];
 for (const f of files) {

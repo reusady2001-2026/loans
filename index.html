@@ -27,6 +27,7 @@
   <script src="./profile.js"></script>
   <script src="./rent-roll.js"></script>
   <script src="./t12-check.js"></script>
+  <script src="./rate-history.js"></script>
   <script src="./ocr.js"></script>
   <script src="./vendor/paddleocr/paddle-engine.js"></script>
   <script>
@@ -1309,6 +1310,10 @@
       { sec:"Loan Terms", key:"spread",             label:"Spread / Margin Over Index",   type:"pct",    kind:"input", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Spread Over Index","Contractual Margin","Margin"] },
       { sec:"Loan Terms", key:"rateFloor",          label:"Interest Rate Floor",          type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
       { sec:"Loan Terms", key:"rateCap",            label:"Interest Rate Cap",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM" },
+      // 2.9.7 (#255) — a loan that started on LIBOR (K2): the months set on or before this day use the real 1-month
+      // LIBOR history (built into the app) + the spread over LIBOR; later months use the Index above.
+      { sec:"Loan Terms", key:"liborUntil",         label:"On 1-Month LIBOR Until",       type:"date",   kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", hint:"only for a loan that started on LIBOR: the last day LIBOR set its rate (from the loan documents). Earlier months use the real LIBOR history; later months use the Index above" },
+      { sec:"Loan Terms", key:"liborSpread",        label:"Spread Over LIBOR",            type:"pct",    kind:"input", cond:(l)=>l.rateType==="Floating"||l.rateType==="Hybrid ARM", hint:"blank = the same spread as above (the floor and cap apply to both)" },
       { sec:"Loan Terms", key:"armInitialFixedMonths", label:"Initial Fixed Period (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 for a 5/5" },
       { sec:"Loan Terms", key:"armAdjustFreqMonths",   label:"Adjustment Frequency (Months)", type:"int", kind:"input", cond:(l)=>l.rateType==="Hybrid ARM", hint:"e.g. 60 = every 5 yrs" },
 
@@ -1487,6 +1492,9 @@
     const INDEX_CATALOG = [
       { id:"prime",  label:"US Prime Rate",             live:true,  src:"prime",    fallback:6.63 },
       { id:"sofr",   label:"SOFR (overnight)",          live:true,  src:"nyfed",    path:"secured/sofr",   fallback:3.63 },
+      // 2.9.7 (#256) — the two other SOFRs loan documents name. Each month's rate is the value on its reset day.
+      { id:"sofr30",     label:"SOFR 30-day Average (NY Fed)", live:true, src:"nyfedavg", fallback:3.76, resetDay:true },
+      { id:"termsofr1m", label:"1-month Term SOFR (CME)",      live:true, src:"termsofr", fallback:3.91, resetDay:true },
       { id:"effr",   label:"Fed Funds (EFFR)",          live:true,  src:"nyfed",    path:"unsecured/effr", fallback:3.63 },
       { id:"ust1y",  label:"US Treasury 1-Year (CMT)",  live:true,  src:"treasury", field:"BC_1YEAR",      fallback:4.00 },
       { id:"ust2y",  label:"US Treasury 2-Year (CMT)",  live:true,  src:"treasury", field:"BC_2YEAR",      fallback:4.05 },
@@ -1655,6 +1663,16 @@
       if(loan.rateType !== "Floating" && loan.rateType !== "Hybrid ARM") return;
       const cat = INDEX_BY_ID[loan.index];
       const thisFirst = firstOfThisMonthISO();
+      // 2.9.7 (#256) — Term SOFR / 30-day Average SOFR: this month is fixed at the value on its reset day.
+      if(isResetDayIndex(loan.index)){
+        const t = todayParts(), r0 = indexOnResetDay(loan.index, { y: t.y, mo: t.mo });
+        if(r0){
+          if(loan.floatIndexValue !== r0.value || loan.floatRepricedOn !== thisFirst || !loan.floatIndexLive || loan.floatResetDate !== r0.date){
+            loan.floatIndexValue = r0.value; loan.floatIndexLive = true; loan.floatRepricedOn = thisFirst; loan.floatResetDate = r0.date; save();
+          }
+          return;
+        }
+      }
       const live = (cat && cat.live && INDEX_CACHE[loan.index]) ? INDEX_CACHE[loan.index].value/100 : null;
       let changed = false;
       if(loan.floatRepricedOn !== thisFirst){            // new month (or first ever): capture it
@@ -1724,17 +1742,57 @@
     // (projected flat), and any month with no recorded history falls back to it too — so
     // offline / before-fetch behavior is exactly the old single-rate schedule. Fixed
     // loans and dead-index loans (loan.noRateHistory, e.g. LIBOR) are untouched.
-    function effectiveRate(loan, m, accrualParts, resetParts){
-      if(loan.rateType === "Fixed") return fixedRate(loan);
+    function effectiveRate(loan, m, accrualParts, resetParts){ return effectiveRateInfo(loan, m, accrualParts, resetParts).rate; }
+    // 2.9.7 (#130, #255, #256) — the rate for one schedule row AND where it comes from, in words:
+    // { rate, src: { tag, text } }. tag is the short label on the on-screen row; text is the CSV column.
+    function isThisMonthParts(p){ const t = todayParts(); return !!p && p.y === t.y && p.mo === t.mo; }
+    function effectiveRateInfo(loan, m, accrualParts, resetParts){
+      const pct = (v) => fmtPct(v);
+      const marginTxt = (sp) => (sp >= 0 ? " + " : " − ") + pct(Math.abs(sp));
+      const clampNote = (raw, r) => (loan.rateFloor && r > raw + 1e-12) ? " → floor " + pct(loan.rateFloor) : (loan.rateCap && r < raw - 1e-12) ? " → cap " + pct(loan.rateCap) : "";
+      if(loan.rateType === "Fixed") return { rate: fixedRate(loan), src: { tag: "Fixed", text: "Fixed rate " + pct(fixedRate(loan)) } };
       const isARM = loan.rateType === "Hybrid ARM";
       const initFixed = loan.armInitialFixedMonths || 0;
-      if(isARM && m < initFixed) return (loan.annualRate||0);          // initial fixed period
+      if(isARM && m < initFixed) return { rate: (loan.annualRate||0), src: { tag: "Fixed", text: "Fixed period " + pct(loan.annualRate||0) } };
       const govParts = isARM ? resetParts : accrualParts;             // ARM locks at reset; floater reprices monthly
-      if(govParts && !loan.noRateHistory && isPastMonthParts(govParts)){
-        const idx = histIndexAt(loan.index, govParts.y, govParts.mo);
-        if(idx != null) return clampRate(loan, idx + (loan.spread||0));
+      const past = isPastMonthParts(govParts), now = isThisMonthParts(govParts);
+      const id = govParts ? loanIndexForMonth(loan, govParts) : loan.index;
+      const sp = loanSpreadForIndex(loan, id);
+      const mon = govParts ? MONTH_NAMES[govParts.mo] + " " + govParts.y : "";
+      // An index set on its reset day (Term SOFR, 30-day Average SOFR, LIBOR): past AND this month use that day's value.
+      if(govParts && isResetDayIndex(id) && (past || now)){
+        const r0 = indexOnResetDay(id, govParts);
+        if(r0){
+          const raw = r0.value + sp, r = clampRate(loan, raw);
+          const when = r0.how === "daily" ? "on " + fmtDateUS(r0.date) : "for " + mon;
+          return { rate: r, src: { tag: isARM ? "Reset" : "Actual", text: "Actual " + indexShort(id) + " " + when + " (" + pct(r0.value) + ")" + marginTxt(sp) + clampNote(raw, r) } };
+        }
+        if(id === "libor1m") return { rate: allInRate(loan), src: { tag: "No history", text: "Today's index: past rate not available (no LIBOR figure for " + mon + ")" } };
       }
-      return allInRate(loan);                                          // live now / projected / fallback
+      const hasHist = !loan.noRateHistory || !!loan.liborUntil;
+      if(govParts && past && hasHist && !isResetDayIndex(id)){
+        const idx = histIndexAt(id, govParts.y, govParts.mo);
+        if(idx != null){
+          const raw = idx + sp, r = clampRate(loan, raw);
+          return { rate: r, src: isARM
+            ? { tag: "Reset", text: indexShort(id) + " on the " + mon + " reset (" + pct(idx) + ")" + marginTxt(sp) + clampNote(raw, r) }
+            : { tag: "Actual", text: "Actual " + indexShort(id) + " for " + mon + " (" + pct(idx) + ")" + marginTxt(sp) + clampNote(raw, r) } };
+        }
+      }
+      // Today's index: this month (re-priced on the 1st), the projection, or a past month with no history.
+      let r = allInRate(loan), lvl = indexLevel(loan);
+      if(isResetDayIndex(loan.index) && !past && !now){   // a future month of a reset-day index → today's value
+        const c = INDEX_CACHE[loan.index]; if(c){ lvl = c.value/100; r = clampRate(loan, lvl + (loan.spread||0)); }
+      }
+      const raw = lvl + (loan.spread||0);
+      const base = "Today's " + indexShort(loan.index) + " (" + pct(lvl) + ")" + marginTxt(loan.spread||0) + clampNote(raw, r);
+      if(govParts && past){
+        const why = (loan.noRateHistory && !loan.liborUntil) ? "past rate not available (a loan that started on LIBOR needs its switch date — “On 1-Month LIBOR Until”)"
+                  : "past rate not downloaded yet";
+        return { rate: r, src: { tag: "No history", text: "Today's index: " + why } };
+      }
+      if(now) return { rate: r, src: { tag: isARM ? "Reset" : "Now", text: "This month: " + base } };
+      return { rate: r, src: { tag: "Projected", text: base + ": a projection" } };
     }
     // A rate reset occurs at the end of the initial fixed period and every
     // adjustment-frequency months thereafter (recurring N/N ARM).
@@ -1813,7 +1871,7 @@
           const initFx = loan.armInitialFixedMonths || 0, freq = loan.armAdjustFreqMonths || 0;
           if(m >= initFx){ const govM = freq>0 ? initFx + Math.floor((m-initFx)/freq)*freq : initFx; resetParts = monthPosition(start, govM); }
         }
-        const rate = effectiveRate(loan, m, { y, mo }, resetParts);
+        const rInfo = effectiveRateInfo(loan, m, { y, mo }, resetParts), rate = rInfo.rate;   // 2.9.7 (#130) — and where it comes from
         const startingBalance = balance;
         // Interest accrual basis is per-loan: Actual/360 (varies with the month's
         // days, the default) or 30/360 (a flat 30-day month, i.e. rate ÷ 12).
@@ -1846,7 +1904,7 @@
           balance = startingBalance - principalPaid; type = "amort";
         }
         totalInterest += interest; totalPaid += payment;
-        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset });
+        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src });
       }
       // Surface a representative amortizing payment (the first amortizing month's total)
       // so the "then $X/mo" display and the DSCR calc use the real figure, not 0, on a
@@ -2291,9 +2349,21 @@
       const live = loan.floatIndexLive ? "live" : "offline estimate";
       const floorTxt = loan.rateFloor ? (" · floor "+fmtPct(loan.rateFloor)) : "";
       const capTxt   = loan.rateCap   ? (" · cap "+fmtPct(loan.rateCap))   : "";
-      const calc = escapeHtml(idxLabel)+" "+fmtPct(idx)+" ("+live+") + spread "+fmtPct(loan.spread||0)+floorTxt+capTxt;
+      // 2.9.7 (#256) — a reset-day index names its day; a value that could not be refreshed says when it was saved.
+      const rdIdx = isResetDayIndex(loan.index), cache = INDEX_CACHE[loan.index];
+      const rdTxt = (rdIdx && loan.floatResetDate) ? "on its reset day "+fmtDateUS(loan.floatResetDate) : live;
+      const calc = escapeHtml(idxLabel)+" "+fmtPct(idx)+" ("+rdTxt+") + spread "+fmtPct(loan.spread||0)+floorTxt+capTxt;
+      const latest = rdIdx ? latestDated(Object.assign({}, DAILY_BUILTIN[loan.index] || {}, RATE_HIST[loan.index] || {})) : null;
+      const staleDays = latest ? daysSince(latest.date) : null;
+      const staleNote = (rdIdx && latest && ((cache && cache.stale) || staleDays > 4))
+        ? ' <span class="text-sky-700">Today’s '+escapeHtml(indexShort(loan.index))+': '+fmtPct(latest.value/100)+' — last saved '+fmtDateUS(latest.date)+'.</span>' : '';
+      const sourceWarn = (rdIdx && staleDays != null && staleDays > 7)
+        ? '<div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800" data-ratewarn>No fresh '+escapeHtml(indexShort(loan.index))+' for '+staleDays+' days — the source ('+(loan.index === "termsofr1m" ? "pensford.com" : "the NY Fed")+') may have changed. The last saved value ('+fmtDateUS(latest.date)+') is used.</div>' : '';
       let headline, body;
-      if(loan.rateType==="Floating"){
+      if(loan.rateType==="Floating" && rdIdx){
+        headline = "Floating rate — each month is set by "+escapeHtml(idxLabel)+" on its reset day (2 business days before the month starts) and fixed for that month.";
+        body = "This month: <span class=\"font-semibold\">"+fmtPct(adjRate)+"</span> = "+calc+". Future months use today’s value; next reset "+fmtDateUS(resetDayISO((t.mo===11) ? { y:t.y+1, mo:0 } : { y:t.y, mo:t.mo+1 }))+"."+staleNote;
+      } else if(loan.rateType==="Floating"){
         headline = "Floating rate — re-prices on the 1st of each month at "+escapeHtml(idxLabel)+".";
         body = "This month: <span class=\"font-semibold\">"+fmtPct(adjRate)+"</span> = "+calc+
                ". Held flat for the projection; next re-price "+fmtDateUS(nextISO)+".";
@@ -2314,7 +2384,7 @@
       box.innerHTML =
         '<div class="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-sm text-sky-900 flex items-start gap-3">'+
           '<svg class="h-5 w-5 shrink-0 mt-0.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
-          '<span><span class="font-bold">'+headline+'</span> '+body+' <span class="text-sky-600">(captured '+asOf+', automatic)</span></span>'+
+          '<span><span class="font-bold">'+headline+'</span> '+body+' <span class="text-sky-600">(captured '+asOf+', automatic)</span>'+sourceWarn+'</span>'+
         '</div>';
       box.hidden = false;
     }
@@ -2557,7 +2627,7 @@
           '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+resetBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.startingBalance)+'</td>'+
           '<td class="px-4 py-2.5 text-center text-slate-400">'+r.days+'</td>'+
-          '<td class="px-4 py-2.5 text-right text-slate-500">'+fmtPct(r.rate)+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">'+fmtPct(r.rate)+(r.rateSrc ? ' <span data-ratesrc class="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-slate-500 cursor-help" title="'+escapeHtml(r.rateSrc.text)+'">'+escapeHtml(r.rateSrc.tag)+'</span>' : '')+'</td>'+   // 2.9.7 (#130)
           '<td class="px-4 py-2.5 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.payment)+'</td>'+
           '<td class="px-4 py-2.5 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+'</td>'+
@@ -2842,11 +2912,56 @@
       if(id === "prime"){ const r = NYFED_HIST["effr"]; const v = r ? r[ymKey(y,mo)] : null; return v!=null ? (v+3.00)/100 : null; }   // Prime ≈ EFFR + 3.00
       return null;
     }
+    // ---- 2.9.7 (#255, #256) — indexes whose month is set on its RESET DAY ----------------------------
+    // 1-month Term SOFR and 30-day Average SOFR loans take each month's rate from the index value on the
+    // reset day (2 business days before the interest month starts), fixed for that month; 1-month LIBOR
+    // (K2, until its switch) works the same way. The history is built into the app (rate-history.js)
+    // and the app adds newer days itself; every value is saved with its date (RATE_HIST below).
+    const RATE_HIST_KEY = "ldsHub.rateHist.v2";
+    let RATE_HIST = {};   // { termsofr1m: {date: %}, sofr30: {date: %}, meta: { id: { value, date, fetchedAt } } }
+    try { RATE_HIST = JSON.parse(localStorage.getItem(RATE_HIST_KEY)) || {}; } catch(e){ RATE_HIST = {}; }
+    if(!RATE_HIST.meta) RATE_HIST.meta = {};
+    function saveRateHist(){ try { localStorage.setItem(RATE_HIST_KEY, JSON.stringify(RATE_HIST)); } catch(e){} }
+    const RH = (typeof window !== "undefined" && window.RateHistory) ? window.RateHistory : { LIBOR1M_MONTHLY:{}, LIBOR1M_DAILY:{}, TERMSOFR1M_DAILY:{}, SOFR30_DAILY:{} };
+    const DAILY_BUILTIN = { termsofr1m: RH.TERMSOFR1M_DAILY || {}, sofr30: RH.SOFR30_DAILY || {}, libor1m: RH.LIBOR1M_DAILY || {} };
+    const INDEX_SHORT = { sofr:"SOFR", sofr30:"30-day Average SOFR", termsofr1m:"1-month Term SOFR", libor1m:"1-month LIBOR", effr:"Fed Funds", prime:"Prime",
+      ust1y:"1-yr Treasury", ust2y:"2-yr Treasury", ust3y:"3-yr Treasury", ust5y:"5-yr Treasury", ust7y:"7-yr Treasury", ust10y:"10-yr Treasury", ust20y:"20-yr Treasury", other:"the index" };
+    function indexShort(id){ return INDEX_SHORT[id] || ((INDEX_BY_ID[id] && INDEX_BY_ID[id].label) || "the index"); }
+    function latestDated(tab){ let k = null; for(const d in tab) if(!k || d > k) k = d; return k ? { date: k, value: tab[k] } : null; }
+    // The built-in tables seed the "today" fallback, so a new install offline still has a dated value.
+    try{ ["termsofr1m","sofr30"].forEach(id => { const l = latestDated(DAILY_BUILTIN[id]); if(l && INDEX_BY_ID[id]) INDEX_BY_ID[id].fallback = l.value; }); }catch(e){}
+    function dailyValueOn(id, iso){
+      const saved = RATE_HIST[id] || {}, built = DAILY_BUILTIN[id] || {};
+      const d = new Date(iso + "T00:00:00Z");
+      for(let i = 0; i < 7; i++){ const k = d.toISOString().slice(0,10); const v = (saved[k] != null) ? saved[k] : built[k]; if(v != null) return { value: v, date: k }; d.setUTCDate(d.getUTCDate() - 1); }
+      return null;
+    }
+    // Reset day of an interest month: 2 business days before its 1st.
+    function resetDayISO(p){
+      const d = new Date(Date.UTC(p.y, p.mo, 1)); let n = 0;
+      while(n < 2){ d.setUTCDate(d.getUTCDate() - 1); const w = d.getUTCDay(); if(w !== 0 && w !== 6) n++; }
+      return d.toISOString().slice(0,10);
+    }
+    // { value (decimal), date, how: "daily" | "monthly" } — the index on month p's reset day, or null.
+    function indexOnResetDay(id, p){
+      const rd = resetDayISO(p);
+      const d = dailyValueOn(id, rd);
+      if(d) return { value: d.value/100, date: d.date, how: "daily" };
+      if(id === "libor1m"){ const m = (RH.LIBOR1M_MONTHLY || {})[ymKey(p.y, p.mo)]; if(m != null) return { value: m/100, date: ymKey(p.y, p.mo), how: "monthly" }; }
+      return null;
+    }
+    function isResetDayIndex(id){ return id === "libor1m" || !!(INDEX_BY_ID[id] && INDEX_BY_ID[id].resetDay); }
+    // Which index sets month p for this loan: LIBOR up to its switch (liborUntil), then the loan's own index.
+    function loanIndexForMonth(loan, p){
+      if(loan.liborUntil){ const lu = isoToParts(loan.liborUntil); if(lu){ const rd = resetDayISO(p); if(rd <= loan.liborUntil) return "libor1m"; } }
+      return loan.index;
+    }
+    function loanSpreadForIndex(loan, id){ return (id === "libor1m" && loan.liborSpread != null && loan.liborSpread !== "") ? Number(loan.liborSpread) : (loan.spread || 0); }
     // Fetch (once, cached forever) the past monthly index history a floating/ARM loan
     // needs to price its already-paid rows. Treasuries go month-by-month (reuses the
     // existing cache); NY Fed indexes come in a single date-range call.
     function ensureRateHistory(loan, cb){
-      if(!loan || loan.noRateHistory) return;
+      if(!loan || (loan.noRateHistory && !loan.liborUntil)) return;   // 2.9.7 (#255) — a LIBOR loan with its switch date set has history again
       if(loan.rateType !== "Floating" && loan.rateType !== "Hybrid ARM") return;
       const id = loan.index, cat = INDEX_BY_ID[id];
       if(!cat || !cat.live) return;
@@ -2978,8 +3093,49 @@
       if(cat.src==="treasury") return await fetchTreasuryField(cat.field);
       if(cat.src==="nyfed")    return await fetchNyFed(cat.path);
       if(cat.src==="prime"){ const e = await fetchNyFed("unsecured/effr"); return e ? { value: +(e.value+3.00).toFixed(2), date: e.date } : null; }  // Prime ≈ Fed Funds + 3.00
+      if(cat.src==="nyfedavg") return await fetchSofr30();
+      if(cat.src==="termsofr") return await fetchTermSofr();
       return null;
     }
+    // 2.9.7 (#256) — 30-day Average SOFR: the NY Fed's own SOFR Averages feed (latest + every day since the
+    // last one saved). Each value is kept with its date.
+    async function fetchSofr30(){
+      const known = Object.keys(RATE_HIST.sofr30 || {}).concat(Object.keys(DAILY_BUILTIN.sofr30 || {}));
+      let last = null; known.forEach(d => { if(!last || d > last) last = d; });
+      const t = todayParts(), today = partsToISO(t.y, t.mo, t.d);
+      try{
+        const res = await fetch("https://markets.newyorkfed.org/api/rates/secured/sofrai/search.json?startDate="+(last || "2020-03-02")+"&endDate="+today);
+        if(res.ok){ const j = await res.json(); (j.refRates || []).forEach(r => { if(r && r.average30day != null && /^\d{4}-\d\d-\d\d$/.test(String(r.effectiveDate))){ (RATE_HIST.sofr30 = RATE_HIST.sofr30 || {})[String(r.effectiveDate)] = Number(r.average30day); } }); }
+      }catch(e){}
+      const l = latestDated(Object.assign({}, DAILY_BUILTIN.sofr30, RATE_HIST.sofr30 || {}));
+      if(!l) return null;
+      RATE_HIST.meta.sofr30 = { value: l.value, date: l.date, fetchedAt: new Date().toISOString() }; saveRateHist();
+      return { value: l.value, date: l.date, stale: (daysSince(l.date) || 0) > 4 };   // older than a long weekend → "last saved <date>"
+    }
+    // 2.9.7 (#256) — 1-month Term SOFR: Pensford's public rate data, read by the main process (the site
+    // does not allow it from the page). Today's value plus every day since the last one saved. If the site
+    // is unreachable or changed, the last saved value is used and labelled with its date.
+    async function fetchTermSofr(){
+      const known = Object.assign({}, DAILY_BUILTIN.termsofr1m, RATE_HIST.termsofr1m || {});
+      const lastKnown = latestDated(known);
+      let r = null;
+      try{ if(window.ldsShell && ldsShell.ratesTermSofr) r = await ldsShell.ratesTermSofr({ since: lastKnown ? isoAddDays(lastKnown.date, 1) : "2021-12-01" }); }catch(e){ r = null; }
+      if(r && r.ok){
+        RATE_HIST.termsofr1m = RATE_HIST.termsofr1m || {};
+        Object.keys(r.history || {}).forEach(d => { const v = Number(r.history[d]); if(isFinite(v) && v > 0 && v < 25) RATE_HIST.termsofr1m[d] = v; });
+        if(r.live && r.live.date && isFinite(r.live.value) && r.live.value > 0 && r.live.value < 25) RATE_HIST.termsofr1m[r.live.date] = r.live.value;
+        RATE_HIST.meta.termsofr1m = Object.assign({}, RATE_HIST.meta.termsofr1m || {}, { fetchedAt: new Date().toISOString(), ok: true });
+      } else {
+        RATE_HIST.meta.termsofr1m = Object.assign({}, RATE_HIST.meta.termsofr1m || {}, { failedAt: new Date().toISOString(), error: (r && r.error) || "unreachable" });
+      }
+      const l = latestDated(Object.assign({}, DAILY_BUILTIN.termsofr1m, RATE_HIST.termsofr1m || {}));
+      if(!l) return null;
+      RATE_HIST.meta.termsofr1m.value = l.value; RATE_HIST.meta.termsofr1m.date = l.date; saveRateHist();
+      return { value: l.value, date: l.date, stale: !(r && r.ok && r.live) };
+    }
+    function isoAddDays(iso, n){ const d = new Date(String(iso).slice(0,10) + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+    // Days since a dated value (for the "may have changed" note after 7 days without a fresh one).
+    function daysSince(iso){ const t = todayParts(); const a = Date.UTC(t.y, t.mo, t.d), b = Date.parse(String(iso).slice(0,10) + "T00:00:00Z"); return isFinite(b) ? Math.floor((a - b) / 86400000) : null; }
     // Populate the live cache for an index (once per session) and re-render.
     function ensureIndexLive(id, cb){
       const cat = INDEX_BY_ID[id];
@@ -5722,6 +5878,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
+    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
@@ -7068,21 +7225,42 @@ tr.flagged:hover td{background:#fee2e2}
     /* ================================================================
        10. CSV (single schedule) + EXCEL (all loans) I/O
        ================================================================ */
+    // 2.9.7 (#130) — how a loan's rate works, in one line: "Fixed 5.75%" · "SOFR + 2.05%, changes monthly" ·
+    // "Fixed 3.10% until Jun 2026, then 5-yr Treasury + 2.63%, reset every 60 months".
+    function describeRate(loan){
+      const lim = (loan.rateFloor ? ", floor " + fmtPct(loan.rateFloor) : "") + (loan.rateCap ? ", cap " + fmtPct(loan.rateCap) : "");
+      const over = (id, sp) => indexShort(id) + " + " + fmtPct(sp || 0);
+      const how = (id) => isResetDayIndex(id) ? "set 2 business days before each month" : "changes monthly";
+      if(loan.rateType === "Fixed") return "Fixed " + fmtPct(fixedRate(loan));
+      if(loan.rateType === "Hybrid ARM"){
+        const st = accrualStartParts(loan), init = loan.armInitialFixedMonths || 0, p = st ? monthPosition(st, init) : null;
+        return "Fixed " + fmtPct(loan.annualRate || 0) + (p ? " until " + MONTH_NAMES[p.mo] + " " + p.y : "") + ", then " + over(loan.index, loan.spread) +
+          (loan.armAdjustFreqMonths ? ", reset every " + loan.armAdjustFreqMonths + " months" : "") + lim;
+      }
+      const lu = loan.liborUntil ? isoToParts(loan.liborUntil) : null;
+      return (lu ? over("libor1m", loanSpreadForIndex(loan, "libor1m")) + " until " + fmtDateUS(loan.liborUntil) + ", then " : "") + over(loan.index, loan.spread) + ", " + how(loan.index) + lim;
+    }
     function exportScheduleCsv(){
       const loan = getLoan(state.activeId); if(!loan || !activeResult) return;
-      const header = ["Month #","Accrual Month","Payment Date","Starting Balance","Days in Month","Rate","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
+      downloadBlob("\ufeff"+scheduleCsvText(loan, activeResult), "schedule-"+slug(loanLabel(loan))+".csv", "text/csv;charset=utf-8;");
+      toast("Schedule exported", "download");
+    }
+    function scheduleCsvText(loan, activeResult){
+      const header = ["Month #","Accrual Month","Payment Date","Starting Balance","Days in Month","Rate","Where the rate comes from","Interest Charged","Scheduled Payment","Principal Paid","Ending Balance"];
       const cell = (v) => { const s=String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+      const d = activeResult.derived, nowRow = activeResult.rows.find(r => r.index === d.paymentsMade) || null;
       const lines = [];
       lines.push(["Property", loanLabel(loan)].map(cell).join(","));
       lines.push(["Original Amount", (loan.originalAmount||0).toFixed(2)].map(cell).join(","));
-      lines.push(["Annual Rate", fmtPct(loan.annualRate)].map(cell).join(","));
-      lines.push(["Monthly P&I", activeResult.derived.monthlyPI.toFixed(2)].map(cell).join(","));
-      lines.push(["Total Monthly Debt Service", activeResult.derived.totalDebtService.toFixed(2)].map(cell).join(","));
+      lines.push(["How the rate works", describeRate(loan)].map(cell).join(","));
+      lines.push(["Rate this month", nowRow ? (nowRow.rate*100).toFixed(4)+"%" : fmtPct(d.currentRate)].map(cell).join(","));
+      lines.push(["Payment this month", nowRow ? nowRow.payment.toFixed(2) : ""].map(cell).join(","));
+      lines.push(["Monthly P&I", d.monthlyPI.toFixed(2)].map(cell).join(","));
+      lines.push(["Total Monthly Debt Service", d.totalDebtService.toFixed(2)].map(cell).join(","));
       lines.push("");
       lines.push(header.map(cell).join(","));
-      activeResult.rows.forEach(r => lines.push([r.index,r.label,fmtDateUS(r.paymentDate),r.startingBalance.toFixed(2),r.days,(r.rate*100).toFixed(4)+"%",r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
-      downloadBlob("﻿"+lines.join("\r\n"), "schedule-"+slug(loanLabel(loan))+".csv", "text/csv;charset=utf-8;");
-      toast("Schedule exported", "download");
+      activeResult.rows.forEach(r => lines.push([r.index,r.label,fmtDateUS(r.paymentDate),r.startingBalance.toFixed(2),r.days,(r.rate*100).toFixed(4)+"%",(r.rateSrc && r.rateSrc.text) || "",r.interest.toFixed(2),r.payment.toFixed(2),r.principalPaid.toFixed(2),r.endingBalance.toFixed(2)].map(cell).join(",")));
+      return lines.join("\r\n");
     }
 
     function buildWorkbookAOA(list){
