@@ -163,7 +163,7 @@ cents(dA3.sizing.value, 791500 / 0.055, "sizing.value uses the bench cap rate 5.
 section("mergeAssumptions — override beats global, null inherits, 0 overrides");
 var m1 = Calc.mergeAssumptions(BENCH, { vacancyPct: null, mgmtPct: 0.04, sizing: { capRate: null, dyMin: 0.09 } });
 deepEq(m1, { vacancyPct: 0.05, mgmtPct: 0.04, reservePerUnit: 200, budget: {},
-  sizing: { capRate: 0.055, ltvMax: 0.75, dscrMin: 1.20, dyMin: 0.09, intRate: 0.055, amortYears: 30 } }, "null fields inherit; set fields override; untouched sizing fields inherit");
+  sizing: { capRate: 0.055, ltvMax: 0.75, dscrMin: BENCH.sizing.dscrMin, dyMin: 0.09, intRate: 0.055, amortYears: 30 } }, "null fields inherit; set fields override; untouched sizing fields inherit");
 deepEq(Calc.mergeAssumptions(BENCH, { sizing: null }), BENCH, "sizing: null inherits the whole sizing block");
 deepEq(Calc.mergeAssumptions(BENCH, null), BENCH, "record assumptions null → bench");
 deepEq(Calc.mergeAssumptions(BENCH, undefined), BENCH, "record assumptions undefined → bench");

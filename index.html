@@ -600,6 +600,8 @@
             </div>
             <button type="button" id="scaleReset" class="mt-3 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition">Reset to 100%</button>
             <p class="mt-2 text-[10px] leading-snug text-slate-400">Scales the whole app. Resets to 100% each time you reopen it.</p>
+            <!-- 2.9.7 (#165) — Home's portfolio targets (DSCR / LTV / debt yield). Filled when Settings opens. -->
+            <div id="settingsTargets" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
             <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
@@ -3279,7 +3281,7 @@ tr.flagged:hover td{background:#fee2e2}
       t12Grid:null, t12Rows:[], t12Meta:null, basis:"total", fileName:"",
       aiParsed:null, aiT12:null,   // AI-read T12 path (alternative to t12Grid/t12Text above)
       bench:{ vacancyPct:0.05, mgmtPct:0.025, reservePerUnit:200, budget:{}, benchmarks:{ PAY:1700, RM:600 }, lineOverrides:{},   // three assumptions + per-property $/unit benchmarks + per-line overrides
-        sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.20, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }
+        sizing:{ capRate:0.055, ltvMax:0.75, dscrMin:1.25, dyMin:0.07, intRate:0.055, amortYears:30 } } }; }   // 2.9.7 (#165) — starts at the refinance's 1.25× / 75% / 7%
     // A dropped T12 belongs to the property you're looking at. Save the ORIGINAL file into that
     // property's on-disk folder (the only place it is kept), then re-read it from disk — so what you
     // see is always parsed from the saved file, never a number stashed in the browser.
@@ -3608,6 +3610,7 @@ tr.flagged:hover td{background:#fee2e2}
       const hasNoi = uwLastBuilt.result.underwritten.noi > 0, set = (id,v)=>{ const n = el(id); if(n) n.textContent = v; };
       set("uwSzValue", s.value>0?fmtMoney(s.value):"—"); set("uwSzLTV", s.loanLTV>0?fmtMoney(s.loanLTV):"—"); set("uwSzDSCR", s.loanDSCR>0?fmtMoney(s.loanDSCR):"—");
       set("uwSzDY", s.loanDY>0?fmtMoney(s.loanDY):"—"); set("uwSzMax",(hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"—"); set("uwSzBind",(hasNoi&&s.maxLoan>0)?s.binding:"—");
+      set("uwMaxLoanCard",(hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"—");   // 2.9.7 (#16) — the headline moves in the same step as the sizing card
       set("uwSzImpLTV", s.impliedLTV!=null?fmtPct(s.impliedLTV):"—"); set("uwSzImpDSCR", s.impliedDSCR!=null?s.impliedDSCR.toFixed(2)+"×":"—"); set("uwSzImpDY", s.impliedDebtYield!=null?fmtPct(s.impliedDebtYield):"—");
     }
     // Text/number inputs just persist (Build applies them); sizing inputs recompute live.
@@ -3617,7 +3620,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(k==="basis"){ i.basis = t.value; uwApplyParse(); return; }
         i[k] = (k==="name") ? t.value : uwNum(t.value); saveUW(); return; }
       if(t.hasAttribute("data-uwsize")){ const k = t.getAttribute("data-uwsize"); const pct = {capRate:1,ltvMax:1,dyMin:1,intRate:1}; const v = uwNum(t.value);
-        i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
+        i.bench.sizing[k] = (v==null ? null : (pct[k] ? v/100 : v)); i.bench.sizingEdited = Object.assign({}, i.bench.sizingEdited || {}, { [k]: v != null });   // 2.9.7 (#165) — remember which limits the user typed
+        saveUW(); opSaveAssumptions(opFocusKey); recomputeSizing(); return; }
     }
     document.addEventListener("input", (e)=>{ const t = e.target; if(t && t.closest && t.closest("#uwView")) uwOnInput(t); });
     // 2.9.1 — when the operator changes units in the Sizing tab away from the profile's value, offer to
@@ -3911,7 +3915,12 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Per-property underwriting assumptions live in the property's folder too (a small assumptions.json),
     // never in browser storage. They default to the app's constants; a property remembers its own.
-    function opMergeBench(def, ov){ var b = JSON.parse(JSON.stringify(def)); if(ov && typeof ov === "object"){ Object.keys(ov).forEach(function(k){ if(k === "sizing" && ov.sizing && typeof ov.sizing === "object") b.sizing = Object.assign({}, b.sizing, ov.sizing); else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
+    function opMergeBench(def, ov){ var b = JSON.parse(JSON.stringify(def)); if(ov && typeof ov === "object"){ Object.keys(ov).forEach(function(k){ if(k === "sizing" && ov.sizing && typeof ov.sizing === "object"){ var sz = Object.assign({}, ov.sizing);
+        // 2.9.7 (#165) — the sizing card now starts at the refinance's 1.25× (was 1.20×). A saved 1.20× that the user
+        // never typed is the OLD default riding along in the file, so it follows the new default; one they typed stays.
+        if(sz.dscrMin === 1.2 && !(ov.sizingEdited && ov.sizingEdited.dscrMin)) delete sz.dscrMin;
+        b.sizing = Object.assign({}, b.sizing, sz); }
+      else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
     async function opLoadAssumptions(key){
       if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
       try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
@@ -5206,7 +5215,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
     try{ var _sdd = el("settingsDD"); if(_sdd && !_sdd._pfBound){ _sdd._pfBound = true;
-      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsPortfolio(); }catch(e){} } });
+      _sdd.addEventListener("toggle", function(){ if(_sdd.open){ try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } });
     } }catch(e){}
     // Add Property (portfolio level): the "+ Add Property" button opens a small name-only modal; on
     // Create the property joins the portfolio and its profile is then edited on its own property view.
@@ -5822,7 +5831,40 @@ tr.flagged:hover td{background:#fee2e2}
     // COMBINED position (senior + any mezzanine), against the 1.25x DSCR and 8% debt-
     // yield floors. NOI is the property's own figure (loan.noi, from its T12 or a refi
     // analysis); a property without one is listed as "needs T12/NOI" — never estimated.
-    const COV_DSCR_FLOOR = 1.25, COV_DY_FLOOR = 0.08;
+    // 2.9.7 (#165) — Home's three PORTFOLIO TARGETS (not lending limits): minimum DSCR, maximum LTV and minimum
+    // debt yield, set by the user in Settings (later only a group's admins change them). The refinance's
+    // "Can you" limits stay fixed in code; the Underwriting sizing card has its own, per property.
+    const TARGETS_KEY = "lds.portfolioTargets", TARGET_DEFAULTS = { dscrMin: 1.25, ltvMax: 0.75, dyMin: 0.08 };
+    let COV_DSCR_FLOOR = TARGET_DEFAULTS.dscrMin, COV_DY_FLOOR = TARGET_DEFAULTS.dyMin, COV_LTV_MAX = TARGET_DEFAULTS.ltvMax;
+    function portfolioTargets(){ return { dscrMin: COV_DSCR_FLOOR, ltvMax: COV_LTV_MAX, dyMin: COV_DY_FLOOR }; }
+    function loadPortfolioTargets(){
+      let t = {}; try{ t = JSON.parse(localStorage.getItem(TARGETS_KEY) || "{}") || {}; }catch(e){ t = {}; }
+      const good = (v, lo, hi) => (typeof v === "number" && isFinite(v) && v > lo && v < hi);
+      COV_DSCR_FLOOR = good(t.dscrMin, 0, 10) ? t.dscrMin : TARGET_DEFAULTS.dscrMin;
+      COV_LTV_MAX = good(t.ltvMax, 0, 2) ? t.ltvMax : TARGET_DEFAULTS.ltvMax;
+      COV_DY_FLOOR = good(t.dyMin, 0, 1) ? t.dyMin : TARGET_DEFAULTS.dyMin;
+    }
+    function savePortfolioTargets(t){
+      const cur = portfolioTargets(), next = Object.assign({}, cur, t || {});
+      try{ localStorage.setItem(TARGETS_KEY, JSON.stringify(next)); }catch(e){}
+      loadPortfolioTargets();
+      try{ renderSettingsTargets(); }catch(e){}
+      try{ if(state.mode === "portfolio") render(); }catch(e){}
+    }
+    loadPortfolioTargets();
+    const fmtX = v => v.toFixed(2) + "×";
+    // The three target lines in Settings: "Minimum DSCR (target)", "Maximum LTV (target)", "Minimum debt yield (target)".
+    function renderSettingsTargets(){
+      const host = el("settingsTargets"); if(!host) return;
+      const t = portfolioTargets(), row = (id, label, val, suf, step) => '<label class="mt-1.5 flex items-center justify-between gap-2"><span class="text-xs font-semibold text-slate-700">'+label+'</span><span class="flex items-center gap-1"><input id="'+id+'" type="number" step="'+step+'" min="0" value="'+val+'" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-right text-xs tabular-nums outline-none focus:border-brand-500"><span class="w-4 text-[11px] text-slate-400">'+suf+'</span></span></label>';
+      host.innerHTML = '<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Portfolio targets (Home)</span>'+
+        row("tgtDscr", "Minimum DSCR (target)", t.dscrMin.toFixed(2), "×", "0.01")+
+        row("tgtLtv", "Maximum LTV (target)", +(t.ltvMax*100).toFixed(2), "%", "0.5")+
+        row("tgtDy", "Minimum debt yield (target)", +(t.dyMin*100).toFixed(2), "%", "0.25")+
+        '<p class="mt-1.5 text-[10px] leading-snug text-slate-400">Home measures the portfolio against these. The refinance’s “Can you?” limits are fixed; Underwriting’s sizing limits are set per property.</p>';
+      const bind = (id, conv) => { const i = el(id); if(i) i.addEventListener("change", () => { const v = parseFloat(i.value); if(!isFinite(v) || v <= 0){ renderSettingsTargets(); return; } savePortfolioTargets(conv(v)); }); };
+      bind("tgtDscr", v => ({ dscrMin: v })); bind("tgtLtv", v => ({ ltvMax: v / 100 })); bind("tgtDy", v => ({ dyMin: v / 100 }));
+    }
 
     // ---- Inline mini-charts for the dashboard (offline: pure SVG/CSS, no libraries) ----
     const DASH_C = { green:'#16a34a', amber:'#f59e0b', sky:'#0ea5e9', rose:'#ef4444', slate:'#94a3b8', indigo:'#6366f1' };
@@ -5853,7 +5895,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function dashGauge(val, floor, max, opts){ opts=opts||{};
       const clamp=v=>Math.max(0,Math.min(100,(v/max)*100));
-      const ok=val!=null&&val>=floor, near=val!=null&&val>=floor*0.92;
+      const ok=val!=null&&(opts.lowerIsBetter?val<=floor:val>=floor), near=val!=null&&(opts.lowerIsBetter?val<=floor*1.08:val>=floor*0.92);
       const color=val==null?'#cbd5e1': ok?DASH_C.green: near?DASH_C.amber:DASH_C.rose;
       return '<div class="space-y-1">'+
         '<div class="flex items-baseline justify-between"><span class="text-xs font-semibold text-slate-600">'+opts.label+'</span>'+
@@ -5862,7 +5904,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="absolute inset-y-0 left-0 rounded-full" style="width:'+(val==null?0:clamp(val))+'%;background:'+color+'"></div>'+
           '<div class="absolute top-[-3px] bottom-[-3px] w-[2px] bg-slate-600 rounded" style="left:'+clamp(floor)+'%"></div>'+
         '</div>'+
-        '<div class="text-[10px] text-slate-400">floor '+opts.fmt(floor)+(val!=null?(ok?' · <span class="text-emerald-600 font-semibold">clears</span>':' · <span class="text-rose-600 font-semibold">below</span>'):'')+'</div>'+
+        '<div class="text-[10px] text-slate-400"'+(opts.id?' id="'+opts.id+'"':'')+'>'+(opts.lowerIsBetter?'target ≤ ':'target ')+opts.fmt(floor)+(val!=null?(ok?' · <span class="text-emerald-600 font-semibold">'+(opts.lowerIsBetter?'within':'clears')+'</span>':' · <span class="text-rose-600 font-semibold">'+(opts.lowerIsBetter?'above':'below')+'</span>'):'')+'</div>'+
       '</div>';
     }
 
@@ -5880,17 +5922,20 @@ tr.flagged:hover td{background:#fee2e2}
         const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
       const wAvg=totalBal>0?rateWB/totalBal:0;
       const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
-      let covBal=0,dscrW=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0;
-      // Every property with a positive NOI is weighted into the portfolio coverage (by balance). A
-      // property with NOI ≤ 0 has no meaningful ratio and is simply not counted.
-      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; if(cp.dscr!=null){dscrW+=cp.dscr*(cp.balTot||0); if(cp.dscr<COV_DSCR_FLOOR)nBelowD++;} if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;}}});
-      const wDscr=covBal>0?dscrW/covBal:null, wDy=covBal>0?dyW/covBal:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
+      let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0;
+      // Every property with a positive NOI counts toward the portfolio coverage. A property with NOI ≤ 0 has no
+      // meaningful ratio and is simply not counted. 2.9.7 (#119) — Portfolio DSCR = total NOI ÷ total yearly loan
+      // payments over those properties (the Underwriting overview's formula, so both screens show one number);
+      // Portfolio LTV (#165) = their total balance ÷ total value.
+      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; sumNOI+=cp.noi; sumDS+=cp.annualDS||0; if(cp.dscr!=null&&cp.dscr<COV_DSCR_FLOOR)nBelowD++; if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;} if(cp.value>0){ sumValue+=cp.value; sumBalV+=cp.balTot||0; if(cp.ltv!=null&&cp.ltv>COV_LTV_MAX)nAboveL++; }}});
+      const wDscr=sumDS>0?sumNOI/sumDS:null, wDy=covBal>0?dyW/covBal:null, wLtv=sumValue>0?sumBalV/sumValue:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
+      try{ window.LDS_lastHomeCoverage = { wDscr: wDscr, wDy: wDy, wLtv: wLtv, sumNOI: sumNOI, sumDS: sumDS, nCov: nCov, targets: portfolioTargets() }; }catch(e){}   // diagnostics
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: rows.length+" loans · "+moneyShort(totalOrig)+" originated"})+
         kpiCard("Weighted-Avg Rate", fmtPct(wAvg), {sub: fmtMoney(totalDS)+"/mo debt service"})+
-        kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the 1.25× floor":"below the 1.25× floor"):(nCov+" of "+items.length+" covered")})+
-        kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: wDy!=null?(wDy>=COV_DY_FLOOR?"clears the 8% floor":"below the 8% floor"):"awaiting NOI"})+
+        kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the "+fmtX(COV_DSCR_FLOOR)+" target":"below the "+fmtX(COV_DSCR_FLOOR)+" target"):(nCov+" of "+items.length+" covered")})+
+        kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: wDy!=null?(wDy>=COV_DY_FLOOR?"clears the "+fmtPct(COV_DY_FLOOR)+" target":"below the "+fmtPct(COV_DY_FLOOR)+" target"):"awaiting NOI"})+
       '</div>';
 
       const donut=chartCard("Debt by rate type","current balance by structure",
@@ -5902,13 +5947,15 @@ tr.flagged:hover td{background:#fee2e2}
       const yrs=Object.keys(matByYear).map(Number).sort((a,b)=>a-b);
       const ladder=chartCard("Debt maturing by year","balloon / payoff by maturity — amber = next 2 years",
         dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
-      const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)))
+      const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)||(it.cp.ltv!=null&&it.cp.ltv>COV_LTV_MAX)))
         .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr.propertyName||loanLabel(it.sr))+'</span>').join(' ');
-      const coverageViz=chartCard("Coverage vs floors", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
+      const coverageViz=chartCard("Coverage vs targets", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
         dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
         '<div class="h-3"></div>'+
+        dashGauge(wLtv, COV_LTV_MAX, Math.max(1,(wLtv||0.6)*1.4), {label:"Portfolio LTV", fmt:v=>fmtPct(v), lowerIsBetter:true, id:"gaugeLtv"})+   // 2.9.7 (#165) — at or under the maximum is good
+        '<div class="h-3"></div>'+
         dashGauge(wDy, COV_DY_FLOOR, Math.max(0.14,(wDy||0.09)*1.5), {label:"Portfolio Debt Yield", fmt:v=>fmtPct(v)})+
-        (covChips?'<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Below a floor</div><div class="flex flex-wrap gap-1.5">'+covChips+'</div></div>':(nCov?'<p class="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-600">All valued properties clear both floors.</p>':'')));
+        (covChips?'<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Off a target</div><div class="flex flex-wrap gap-1.5">'+covChips+'</div></div>':(nCov?'<p class="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-600">All valued properties meet the three targets.</p>':'')));
       const charts='<div class="grid gap-4 lg:grid-cols-3">'+donut+ladder+coverageViz+'</div>';
 
       const dCls=v=>v==null?'text-slate-400':v>=COV_DSCR_FLOOR?'text-emerald-700':v>=1.10?'text-amber-600':'text-rose-600';
@@ -5922,7 +5969,7 @@ tr.flagged:hover td{background:#fee2e2}
         const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
         const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
           :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
-          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR)?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">below floor</span>'));
+          :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR&&(cp.ltv==null||cp.ltv<=COV_LTV_MAX))?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">off target</span>'));
         const action=!entered?'<button type="button" data-covnoi="'+it.sr._id+'" class="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add NOI</button>'
           :'<button type="button" data-covpath="'+(it.combo?('combo:'+propertyKey(it.sr)):it.sr._id)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Refi path</button>';
         const rr=propRate(it);
@@ -5931,7 +5978,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<td class="px-3 py-2 text-sm text-right tabular-nums '+(entered&&!covered?'text-rose-600 font-semibold':'text-slate-600')+'">'+(entered?fmtMoney(cp.noi):'—')+'</td>'+
           '<td class="px-3 py-2 text-sm text-right tabular-nums font-bold '+dCls(covered?cp.dscr:null)+'">'+(covered&&cp.dscr!=null?cp.dscr.toFixed(2)+'×':'—')+'</td>'+
           '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold '+yCls(covered?cp.debtYield:null)+'">'+(covered&&cp.debtYield!=null?fmtPct(cp.debtYield):'—')+'</td>'+
-          '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(covered&&cp.ltv!=null?fmtPct(cp.ltv):'—')+'</td>'+
+          '<td class="px-3 py-2 text-sm text-right tabular-nums font-semibold '+(covered&&cp.ltv!=null?(cp.ltv<=COV_LTV_MAX?'text-emerald-700':'text-rose-600'):'text-slate-400')+'">'+(covered&&cp.ltv!=null?fmtPct(cp.ltv):'—')+'</td>'+   // 2.9.7 (#165) — against the LTV target
           '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(rr.cur!=null?fmtPct(rr.cur):'—')+'</td>'+
           '<td class="px-3 py-2 text-sm text-right tabular-nums text-slate-600">'+(rr.mkt!=null?fmtPct(rr.mkt):'—')+'</td>'+
           '<td class="px-3 py-2 text-sm text-right tabular-nums '+gCls(rr.gap)+'">'+(rr.gap==null?'—':((rr.gap>=0?'+':'−')+fmtPct(Math.abs(rr.gap))))+'</td>'+
@@ -5939,7 +5986,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</tr>'; }).join('');
       const head='<tr>'+thc("Property")+thc("NOI",'text-right')+thc("DSCR",'text-right')+thc("Debt Yield",'text-right')+thc("LTV",'text-right')+thc("Current",'text-right')+thc("Market",'text-right')+thc("Gap",'text-right')+thc("")+'</tr>';
       const covTable='<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift">'+
-        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><p class="text-xs text-slate-500">per property, on the combined position, vs the 1.25× and 8% floors, with current rate vs today’s market — worst first</p></div>'+
+        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><p class="text-xs text-slate-500">per property, on the combined position, vs the '+fmtX(COV_DSCR_FLOOR)+' DSCR, '+fmtPct(COV_LTV_MAX)+' LTV and '+fmtPct(COV_DY_FLOOR)+' debt-yield targets, with current rate vs today’s market — worst first</p></div>'+
         '<div class="overflow-x-auto"><table class="w-full min-w-[860px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+tbody+'</tbody></table></div>'+
       '</div>';
 
@@ -9082,7 +9129,7 @@ tr.flagged:hover td{background:#fee2e2}
       // ── 2.9.4 Fix #3 — the assistant can take every action the operator can ──────────────
       // Navigation / read-only (immediate):
       open_data_health: function(){ if(typeof openTab==="function") openTab("health"); return {ok:true,close:true,msg:"Opened Data Health."}; },
-      open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
+      open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
       import_excel: function(){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; },
       fetch_live_rate: function(){
         try{ fetchAllLiveRates(); }catch(e){}
