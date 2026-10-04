@@ -19,16 +19,20 @@ contextBridge.exposeInMainWorld('ldsShell', {
   loansWriteSync: (json) => ipcRenderer.sendSync('lds:loans-write-sync', json),
 
   // ---- Backup / Restore ----
-  // Manual backup → native Save dialog. Resolves {ok,path,name} | {canceled} | {ok:false,error}.
+  // Manual backup → native Save dialog; main adds every property file and chat. Resolves {ok,path,name,fileCount} | {canceled} | {ok:false,error}.
   backupSave: (json, defaultName) => ipcRenderer.invoke('lds:backup-save', { json, defaultName }),
-  // Manual restore → native Open dialog. Resolves {ok,name,content} | {canceled} | {ok:false,error}.
+  // Manual restore → native Open dialog. Resolves {ok,name,content,full,token} | {canceled} | {ok:false,error}.
   backupOpen: () => ipcRenderer.invoke('lds:backup-open'),
-  // Silent snapshot into the managed backups folder. kind: 'auto' | 'before-restore'.
+  // Silent full snapshot into the managed backups folder. kind = why: 'autobackup' | 'before-restore' | 'before-import' | ….
   autoBackupWrite: (json, kind) => ipcRenderer.invoke('lds:autobackup-write', { json, kind }),
-  // List snapshots (newest first): [{name,kind,mtime,loanCount,exportedAt}].
+  // List snapshots (newest first): [{name,kind,reason,reasonLabel,mtime,loanCount,exportedAt,fileCount}].
   autoBackupList: () => ipcRenderer.invoke('lds:autobackup-list'),
   // Read one snapshot by name. Resolves {ok,content} | {ok:false,error}.
   autoBackupRead: (name) => ipcRenderer.invoke('lds:autobackup-read', { name }),
+  // 2.9.7 (#9) — put a full backup's files back (token from backupOpen / autoBackupRead). Resolves {ok,fileCount} | {ok:false,error}.
+  fullBackupRestore: (token) => ipcRenderer.invoke('lds:fullbackup-restore', { token }),
+  // 2.9.7 (#9) — called whenever a property file or a chat is saved, moved or removed (so a snapshot follows).
+  onDataChanged: (cb) => { try { ipcRenderer.on('lds:data-changed', () => { try { cb(); } catch (e) {} }); } catch (e) {} },
   // Reveal the backups folder in File Explorer.
   openBackupsFolder: () => ipcRenderer.invoke('lds:backups-open-folder'),
   // Save binary data (base64) via a native Save dialog — used for the Excel export.

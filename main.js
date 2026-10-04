@@ -146,7 +146,7 @@ ipcMain.handle('lds:backup-save', async (e, { json, defaultName }) => {
     filters: [{ name: 'Loan Debt Service Hub backup', extensions: ['json'] }],
   });
   if (res.canceled || !res.filePath) return { canceled: true };
-  try { fs.writeFileSync(res.filePath, json, 'utf8'); return { ok: true, path: res.filePath, name: path.basename(res.filePath) }; }
+  try { const r = writeFullBackupFile(res.filePath, json); return { ok: true, path: res.filePath, name: path.basename(res.filePath), fileCount: r.fileCount, bytes: r.bytes }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
@@ -159,7 +159,7 @@ ipcMain.handle('lds:backup-open', async (e) => {
     filters: [{ name: 'Loan Debt Service Hub backup', extensions: ['json'] }, { name: 'All files', extensions: ['*'] }],
   });
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true };
-  try { const p = res.filePaths[0]; return { ok: true, name: path.basename(p), content: fs.readFileSync(p, 'utf8') }; }
+  try { const p = res.filePaths[0]; return openBackupContent(fs.readFileSync(p, 'utf8'), path.basename(p), null); }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
@@ -188,35 +188,144 @@ ipcMain.on('lds:loans-write-sync', (e, json) => {
   } catch (err) { e.returnValue = { ok: false, error: String((err && err.message) || err) }; }
 });
 
-// Silent snapshot into the managed backups folder. kind: 'auto' (routine, on change)
-// or 'before-restore' (the safety copy taken before a restore replaces the book).
-// The two kinds rotate separately, so a restore is always reversible.
-ipcMain.handle('lds:autobackup-write', async (e, { json, kind }) => {
-  const prefix = kind === 'before-restore' ? 'before-restore'
-               : kind === 'before-import' ? 'before-import'
-               : 'autobackup';
+// ---- 2.9.7 (#9, #70, #142–#144) — ONE complete backup -----------------------------------------
+// A backup is the whole app: the loans, the app's own settings (targets, Underwriting, rate history)
+// and EVERY file under documents/ (each property folder: profile, assumptions, T12s, rent rolls,
+// agreements, general data, change history) and chats/. ai-config.json is left out on purpose — it
+// can hold the Claude API key, and a backup file can be copied anywhere.
+//  - The manual backup (Data › Back up) is one self-contained .json with each file inside it (base64).
+//  - The automatic snapshots list the files by checksum; each distinct file is stored once under
+//    backups/blobs/<sha1>, so twenty snapshots of a 100 MB book do not take 2 GB.
+// Restore puts all of it back: the files first (the current ones are kept aside until the new set is
+// fully written, and a "before a restore" snapshot is always taken first), then the loans and settings.
+const FULL_DIRS = ['documents', 'chats'];
+// Tell the page its files changed, so it schedules an automatic snapshot (debounced there).
+function dataChanged(e){ try { if (e && e.sender && !e.sender.isDestroyed()) e.sender.send('lds:data-changed'); } catch (x) {} }
+const BACKUP_KINDS = {
+  'autobackup':            'After a change',
+  'before-restore':        'Before a restore',
+  'before-import':         'Before Excel import',
+  'before-move-to-disk':   'Before moving the loans to disk',
+  'before-portfolio-sync': 'Before a portfolio sync',
+};
+function backupKind(kind){ return Object.prototype.hasOwnProperty.call(BACKUP_KINDS, kind) ? kind : 'autobackup'; }
+function blobsDir(){ return path.join(backupsDir(), 'blobs'); }
+const shaCache = {};   // abs path -> { size, mtimeMs, sha1 } — a file is hashed again only when it changes
+function fileSha1(abs, st){
+  const c = shaCache[abs];
+  if (c && c.size === st.size && c.mtimeMs === st.mtimeMs) return c.sha1;
+  const sha1 = crypto.createHash('sha1').update(fs.readFileSync(abs)).digest('hex');
+  shaCache[abs] = { size: st.size, mtimeMs: st.mtimeMs, sha1 };
+  return sha1;
+}
+// Every file of the full set: [{ path: "documents/<hash>/index.json", abs, size, sha1 }], sorted.
+function listFullFiles(){
+  const root = app.getPath('userData'), out = [];
+  const walk = (abs, rel) => {
+    let ents = []; try { ents = fs.readdirSync(abs, { withFileTypes: true }); } catch (e) { return; }
+    ents.forEach(en => {
+      const a = path.join(abs, en.name), r = rel + '/' + en.name;
+      if (en.isDirectory()) walk(a, r);
+      else if (en.isFile() && !/\.tmp$/.test(en.name)) { try { const st = fs.statSync(a); out.push({ path: r, abs: a, size: st.size, sha1: fileSha1(a, st) }); } catch (e) {} }
+    });
+  };
+  FULL_DIRS.forEach(d => walk(path.join(root, d), d));
+  return out.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+}
+function fullCounts(files){
+  const props = new Set(), chats = new Set();
+  files.forEach(f => { const m = f.path.split('/'); if (m[0] === 'documents' && m.length > 2) props.add(m[1]); if (m[0] === 'chats' && m.length > 2 && m[2] !== 'index.json') chats.add(m[1] + '/' + m[2]); });
+  return { propertyFolders: props.size, chatCount: chats.size };
+}
+// A backup's file path must stay inside documents/ or chats/ — never anywhere else on disk.
+function safeBackupPath(p){ return typeof p === 'string' && /^(documents|chats)\/[A-Za-z0-9._\- \/]+$/.test(p) && p.split('/').indexOf('..') < 0; }
+// The manual backup: the renderer's envelope (loans + settings) plus every file, inside one .json.
+function writeFullBackupFile(dest, json){
+  const env = JSON.parse(json);
+  const files = listFullFiles();
+  Object.assign(env, { format: 2, kind: 'full', fileCount: files.length }, fullCounts(files));
+  delete env.files;
+  const head = JSON.stringify(env);
+  const fd = fs.openSync(dest + '.tmp', 'w');
+  let bytes = 0;
+  const w = (str) => { bytes += fs.writeSync(fd, str, null, 'utf8'); };
   try {
-    const d = ensureBackupsDir();
-    const file = path.join(d, prefix + '-' + stamp() + '.json');
-    fs.writeFileSync(file, json, 'utf8');
-    rotate('autobackup', 20);
-    rotate('before-restore', 10);
-    rotate('before-import', 10);
-    return { ok: true, path: file };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+    w(head.slice(0, -1) + ',"files":[');
+    files.forEach((f, i) => {
+      const b64 = fs.readFileSync(f.abs).toString('base64');
+      w((i ? ',' : '') + JSON.stringify({ path: f.path, size: f.size, sha1: f.sha1, base64: b64 }));
+    });
+    w(']}');
+  } finally { fs.closeSync(fd); }
+  fs.renameSync(dest + '.tmp', dest);
+  return { fileCount: files.length, bytes };
+}
+// Restores waiting for the renderer's go-ahead: token -> { files: [{path, sha1, base64?}], fromBlobs }
+const pendingRestores = {};
+function openBackupContent(content, name, snapshotName){
+  let obj; try { obj = JSON.parse(content); } catch (e) { return { ok: false, error: "That file isn't valid JSON." }; }
+  if (obj && obj.format === 2 && Array.isArray(obj.files)) {
+    const bad = obj.files.find(f => !safeBackupPath(f && f.path));
+    if (bad) return { ok: false, error: 'This backup has a file outside the app’s folders (' + String(bad && bad.path).slice(0, 80) + ') — nothing was restored.' };
+    const token = crypto.randomBytes(8).toString('hex');
+    pendingRestores[token] = { files: obj.files, fromBlobs: !!snapshotName };
+    const lite = Object.assign({}, obj); delete lite.files;
+    return { ok: true, name, full: true, token, content: JSON.stringify(lite) };
+  }
+  return { ok: true, name, full: false, content };   // a pre-2.9.7 backup: the loans only
+}
+// Silent snapshot into the managed backups folder (kind = why it was taken, kept in the file and its name).
+function writeSnapshot(json, kind){
+  kind = backupKind(kind);
+  const env = JSON.parse(json);
+  const files = listFullFiles();
+  const sig = crypto.createHash('sha1').update(JSON.stringify({ loans: env.loans || [], settings: env.settings || {} }) + '|' + files.map(f => f.path + ':' + f.sha1).join('|')).digest('hex');
+  const d = ensureBackupsDir();
+  if (kind === 'autobackup') {   // nothing changed since the newest routine snapshot → don't write another
+    const last = fs.readdirSync(d).filter(f => f.startsWith('autobackup-') && f.endsWith('.json')).sort().pop();
+    if (last) { try { if (JSON.parse(fs.readFileSync(path.join(d, last), 'utf8')).sig === sig) return { ok: true, skipped: true }; } catch (e) {} }
+  }
+  const bd = blobsDir(); fs.mkdirSync(bd, { recursive: true });
+  files.forEach(f => { const b = path.join(bd, f.sha1); if (!fs.existsSync(b)) fs.copyFileSync(f.abs, b); });
+  Object.assign(env, { format: 2, kind: 'snapshot', reason: kind, reasonLabel: BACKUP_KINDS[kind], sig, fileCount: files.length,
+    files: files.map(f => ({ path: f.path, size: f.size, sha1: f.sha1 })) }, fullCounts(files));
+  const file = path.join(d, kind + '-' + stamp() + '.json');
+  fs.writeFileSync(file, JSON.stringify(env), 'utf8');
+  rotate('autobackup', 20);
+  Object.keys(BACKUP_KINDS).filter(k => k !== 'autobackup').forEach(k => rotate(k, 10));
+  gcBlobs();
+  return { ok: true, path: file };
+}
+// Remove stored files no snapshot points at any more.
+function gcBlobs(){
+  try {
+    const d = backupsDir(), bd = blobsDir(); if (!fs.existsSync(bd)) return;
+    const keep = new Set();
+    fs.readdirSync(d).filter(f => f.endsWith('.json')).forEach(f => {
+      try { const j = JSON.parse(fs.readFileSync(path.join(d, f), 'utf8')); (j.files || []).forEach(x => { if (x && x.sha1 && !x.base64) keep.add(x.sha1); }); } catch (e) {}
+    });
+    fs.readdirSync(bd).forEach(b => { if (!keep.has(b)) { try { fs.unlinkSync(path.join(bd, b)); } catch (e) {} } });
+  } catch (e) {}
+}
+ipcMain.handle('lds:autobackup-write', async (e, { json, kind }) => {
+  try { return writeSnapshot(json, kind); }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
-// List snapshots in the backups folder (newest first) with light header info.
+// List snapshots in the backups folder (newest first) with why and when each was taken.
 ipcMain.handle('lds:autobackup-list', async () => {
   try {
     const d = backupsDir();
     if (!fs.existsSync(d)) return [];
     return fs.readdirSync(d).filter(f => f.endsWith('.json')).map(f => {
-      const full = path.join(d, f); let loanCount = null, exportedAt = null;
-      try { const j = JSON.parse(fs.readFileSync(full, 'utf8')); loanCount = (j.loanCount != null) ? j.loanCount : (Array.isArray(j.loans) ? j.loans.length : null); exportedAt = j.exportedAt || null; } catch (e) {}
+      const full = path.join(d, f); let loanCount = null, exportedAt = null, reason = null, reasonLabel = null, fileCount = null, propertyFolders = null, chatCount = null;
+      try { const j = JSON.parse(fs.readFileSync(full, 'utf8')); loanCount = (j.loanCount != null) ? j.loanCount : (Array.isArray(j.loans) ? j.loans.length : null); exportedAt = j.exportedAt || null;
+            reason = j.reason || null; reasonLabel = j.reasonLabel || null; fileCount = (j.fileCount != null) ? j.fileCount : null; propertyFolders = j.propertyFolders != null ? j.propertyFolders : null; chatCount = j.chatCount != null ? j.chatCount : null; } catch (e) {}
       const st = fs.statSync(full);
-      const kind = f.startsWith('before-restore') ? 'before-restore' : f.startsWith('before-import') ? 'before-import' : 'auto';
-      return { name: f, kind, mtime: st.mtimeMs, loanCount, exportedAt };
+      const pre = Object.keys(BACKUP_KINDS).find(k => f.startsWith(k + '-')) || 'autobackup';
+      if (!reason) { reason = pre; reasonLabel = BACKUP_KINDS[pre]; }
+      const kind = pre === 'before-restore' ? 'before-restore' : pre === 'before-import' ? 'before-import' : pre === 'autobackup' ? 'auto' : pre;
+      return { name: f, kind, reason, reasonLabel, mtime: st.mtimeMs, loanCount, exportedAt, fileCount, propertyFolders, chatCount, full: fileCount != null };
     }).sort((a, b) => b.mtime - a.mtime);
   } catch (e) { return []; }
 });
@@ -226,8 +335,41 @@ ipcMain.handle('lds:autobackup-read', async (e, { name }) => {
   try {
     if (!name || name.indexOf('..') >= 0 || path.isAbsolute(name)) return { ok: false, error: 'bad name' };
     const full = path.join(backupsDir(), path.basename(name));
-    return { ok: true, content: fs.readFileSync(full, 'utf8') };
+    return openBackupContent(fs.readFileSync(full, 'utf8'), path.basename(name), path.basename(name));
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Put a full backup's files back (after the renderer took its "before a restore" snapshot). The current
+// documents/ and chats/ are moved aside, the backup's set is written and checked, and only then are the
+// old ones removed; on any failure the old ones go back exactly as they were.
+ipcMain.handle('lds:fullbackup-restore', async (e, { token }) => {
+  const job = pendingRestores[token]; delete pendingRestores[token];
+  if (!job) return { ok: false, error: 'That backup is no longer open — open it again.' };
+  const root = app.getPath('userData'), aside = path.join(root, '.restore-old-' + stamp());
+  const moved = [];
+  try {
+    fs.mkdirSync(aside, { recursive: true });
+    FULL_DIRS.forEach(d => { const a = path.join(root, d); if (fs.existsSync(a)) { fs.renameSync(a, path.join(aside, d)); moved.push(d); } });
+    let n = 0;
+    for (const f of job.files) {
+      if (!safeBackupPath(f.path)) throw new Error('bad path ' + f.path);
+      const dest = path.join(root, ...f.path.split('/'));
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      let buf;
+      if (f.base64 != null) buf = Buffer.from(f.base64, 'base64');
+      else { const b = path.join(blobsDir(), String(f.sha1 || '')); if (!/^[0-9a-f]{40}$/.test(String(f.sha1 || '')) || !fs.existsSync(b)) throw new Error('a stored copy of ' + f.path + ' is missing'); buf = fs.readFileSync(b); }
+      if (f.sha1 && crypto.createHash('sha1').update(buf).digest('hex') !== f.sha1) throw new Error(f.path + ' does not match its checksum');
+      fs.writeFileSync(dest, buf); n++;
+    }
+    try { fs.rmSync(aside, { recursive: true, force: true }); } catch (x) {}
+    Object.keys(shaCache).forEach(k => delete shaCache[k]);
+    return { ok: true, fileCount: n };
+  } catch (err) {
+    FULL_DIRS.forEach(d => { try { fs.rmSync(path.join(root, d), { recursive: true, force: true }); } catch (x) {} });
+    moved.forEach(d => { try { fs.renameSync(path.join(aside, d), path.join(root, d)); } catch (x) {} });
+    try { fs.rmSync(aside, { recursive: true, force: true }); } catch (x) {}
+    return { ok: false, error: String((err && err.message) || err) };
+  }
 });
 
 // Reveal the backups folder in the OS file manager.
@@ -268,6 +410,7 @@ function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type
 // existing file of the same name for that property. `role` tags what the file is
 // (e.g. "t12") so a consumer can find it again without guessing from the name.
 ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!propKey || !name || !base64) return { ok: false, error: 'missing fields' };
     const dir = propDir(propKey); fs.mkdirSync(dir, { recursive: true });
@@ -335,6 +478,7 @@ ipcMain.handle('lds:doc-read', (e, { propKey, id }) => {
 });
 // Delete one saved file (original + text + index entry).
 ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     const dir = propDir(propKey), idx = readDocIndex(dir);
     const f = (idx.files || []).find(x => x.id === id); if(!f) return { ok: true };
@@ -348,6 +492,7 @@ ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
 // its own files (kept at the old key), no-ops if the source has none, and carries the index's
 // propKey/propName across. Same parent directory, so a plain rename moves it atomically.
 ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!fromKey || !toKey || fromKey === toKey) return { ok: true, moved: false, reason: 'same key' };
     const src = propDir(fromKey), dst = propDir(toKey);
@@ -369,6 +514,7 @@ ipcMain.handle('lds:docs-open-folder', async () => {
 // 2.9.6 — permanent property delete (archived-only, driven from the renderer with a strong
 // confirm). Removes the property's documents folder AND its chats folder from disk, for good.
 ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if (!propKey) return { ok: false, error: 'no key' };
     let removed = 0;
@@ -402,6 +548,7 @@ function chatSnippet(text, terms){
 // Create or update one conversation (upsert by id). A blank title is auto-filled from the first
 // user message. Returns the conversation's metadata (with its assigned id).
 ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, files, pinned }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!scope) return { ok: false, error: 'missing scope' };
     const dir = chatScopeDir(scope); fs.mkdirSync(dir, { recursive: true });
@@ -437,6 +584,7 @@ ipcMain.handle('lds:chat-read', (e, { scope, id }) => {
 });
 // Delete one conversation (file + index entry).
 ipcMain.handle('lds:chat-delete', (e, { scope, id }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
     try { fs.unlinkSync(path.join(dir, String(id) + '.json')); } catch (x) {}
     idx.conversations = (idx.conversations || []).filter(c => c.id !== id); writeChatIndex(dir, idx);
@@ -445,6 +593,7 @@ ipcMain.handle('lds:chat-delete', (e, { scope, id }) => {
 });
 // Rename and/or pin one conversation (metadata only — does not bump updatedAt / reorder).
 ipcMain.handle('lds:chat-meta', (e, { scope, id, title, pinned }) => {
+  dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
     const meta = (idx.conversations || []).find(c => c.id === id); if(!meta) return { ok: false, error: 'not found' };
     let full = null; try { full = JSON.parse(fs.readFileSync(path.join(dir, String(id) + '.json'), 'utf8')); } catch (x) {}

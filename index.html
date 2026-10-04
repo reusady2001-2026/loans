@@ -760,7 +760,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </summary>
             <div class="absolute left-0 z-50 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-              <div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Backup &amp; Restore — all loans</span></div>
+              <div class="px-2 py-1 mb-1 border-b border-slate-100"><span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Backup &amp; Restore — all data</span></div>
               <button type="button" data-data="backup" class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm text-slate-700 hover:bg-slate-50">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-brand-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
                 <span>Back up to a file…</span>
@@ -922,6 +922,13 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <!-- 2.9.7 (#3, #83) — the page of a property with no loan: its profile, its documents, Add the first loan, Archive -->
+      <section id="propView" class="space-y-6" hidden>
+        <div id="propHeader"></div>
+        <div id="propProfilePanel"></div>
+        <div id="propDocsPanel"></div>
       </section>
 
       <!-- ===================== EDIT / ADD FORM ===================== -->
@@ -2189,7 +2196,7 @@
       addBtn:el("addBtn"), editBtn:el("editBtn"), removeBtn:el("removeBtn"),
       scopePortfolioBtn:el("scopePortfolioBtn"), scopeLoanBtn:el("scopeLoanBtn"), loanToolbar:el("loanToolbar"), alertsRail:el("alertsRail"),
       refiBtn:el("refiBtn"),
-      emptyState:el("emptyState"), loanView:el("loanView"), formView:el("formView"), refiView:el("refiView"), portfolioView:el("portfolioView"),
+      emptyState:el("emptyState"), loanView:el("loanView"), propView:el("propView"), formView:el("formView"), refiView:el("refiView"), portfolioView:el("portfolioView"),
       kpiGrid:el("kpiGrid"), profileBody:el("profileBody"),
       scheduleMeta:el("scheduleMeta"), scheduleBody:el("scheduleBody"), exportCsvBtn:el("exportCsvBtn"),
       formTitle:el("formTitle"), loanForm:el("loanForm"), formError:el("formError"),
@@ -2206,20 +2213,29 @@
     // a single-loan property, or a combo id for a senior+mezz stack — getLoan() resolves the
     // combo id to the combined position, so selecting a stack opens the whole property.
     function positionIdForProperty(p){
+      if(p && p.key && (!p.loans || !p.loans.length)) return "prop:" + p.key;   // 2.9.7 (#3) — a property with no loan opens its own page
       if(!p || !p.loans || !p.loans.length) return "";
       return p.loans.length > 1 ? ("combo:" + p.key) : p.loans[0]._id;
     }
     // The position id for whatever is active now — a bare member loan maps to its property.
     function activePositionId(){
       const id = state.activeId;
-      if(typeof id === "string" && id.slice(0,6) === "combo:") return id;
+      if(typeof id === "string" && (id.slice(0,6) === "combo:" || id.slice(0,5) === "prop:")) return id;
       const l = loans.find(x => x._id === id); if(!l) return id;
       return positionIdForProperty(opProperties().find(p => p.key === propertyKey(l))) || id;
+    }
+    // 2.9.7 (#134) — the dropdown names a property's stack from its real loans: "senior + mezz",
+    // "2 senior loans", "senior + 2 mezz", "2 mezz loans".
+    function propStackLabel(list){
+      const nm = (list || []).filter(isMezz).length, ns = (list || []).length - nm;
+      if(!nm) return ns + " senior loans";
+      if(!ns) return nm + " mezz loans";
+      return (ns === 1 ? "senior" : ns + " senior") + " + " + (nm === 1 ? "mezz" : nm + " mezz");
     }
     function renderSelect(){
       const props = opProperties();
       dom.loanSelect.innerHTML = props.map(p =>
-        '<option value="'+positionIdForProperty(p)+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  senior + mezz" : "")+'</option>'
+        '<option value="'+escapeHtml(positionIdForProperty(p))+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  "+propStackLabel(p.loans) : (!p.loans.length ? "  &middot;  no loan yet" : ""))+'</option>'
       ).join("");
       const av = activePositionId();
       if(av) dom.loanSelect.value = av;
@@ -2256,7 +2272,8 @@
         kpiCard("Amort / Loan Term", termTxt, { sub: sameTerm ? "Fully amortizing" : "Balloon at mo "+loan.loanTermMonths }) +
         kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "Matures "+fmtDateUS(d.maturityDate) : "—" }) +
         kpiCard("Interest-Only", (loan.ioMonths||0)>0 ? (loan.ioMonths||0)+" mo" : "None", { sub: (loan.ioMonths||0)>0 ? ((loan.ioMonths||0) >= (loan.loanTermMonths||Infinity) ? "the whole term" : "then amortizes") : "amortizing" }) +
-        kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" });
+        (loan._combined ? kpiCard("Rate Type", loan._rateTypeLabel || "—", { sub: (loan._rateTypeSub || "") + " · blended " + fmtPct(d.currentRate) }) :   // 2.9.7 (#67)
+        kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" }));
     }
 
     // Notice that a floating phase re-prices monthly at the live index. Shown for
@@ -2396,6 +2413,7 @@
       const computedVals = result.derived;
       const rowHtml = (f, bordered) => {
         let v = (f.kind === "computed") ? computedVals[f.key] : loan[f.key];
+        if(loan._combined && f.key === "rateType" && loan._rateTypeLabel) v = loan._rateTypeLabel;   // 2.9.7 (#67)
         // Show the live/effective index level when no manual override is stored.
         if(f.key==="armAssumedIndex" && (v==null||v==="") && (loan.rateType==="Floating"||loan.rateType==="Hybrid ARM")) v = indexLevel(loan);
         const disp = displayValue(f.type, v), isComputed = f.kind === "computed";
@@ -3043,14 +3061,20 @@
       dom.scopePortfolioBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition "+(portfolioScope?onCls:offCls);
       dom.scopeLoanBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold press transition "+(portfolioScope?offCls:onCls);
 
-      dom.emptyState.hidden = !((state.mode==="empty" || (!hasLoans && state.mode!=="add")) && state.mode!=="portfolio");
+      dom.emptyState.hidden = !((state.mode==="empty" || (!hasLoans && state.mode!=="add")) && state.mode!=="portfolio" && state.mode!=="prop");
       dom.loanView.hidden = !(state.mode==="view" && loan);
+      if(dom.propView) dom.propView.hidden = state.mode!=="prop";
       dom.formView.hidden = !(state.mode==="edit" || state.mode==="add");
       dom.refiView.hidden = !(state.mode==="refi" && loan);
       dom.portfolioView.hidden = !(state.mode==="portfolio");
 
+      // Only one page's panels exist at a time (the documents panel's buttons use fixed ids).
+      if(state.mode==="prop"){ ["loanProfilePanel","loanDocsPanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
+      else { ["propHeader","propProfilePanel","propDocsPanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
       if(state.mode==="portfolio"){
         renderPortfolio();
+      } else if(state.mode==="prop"){
+        renderPropPage();
       } else if(state.mode==="view" && loan){
         if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM"){ ensureIndexLive(loan.index, render); ensureRateHistory(loan, render); }
         repriceFloatingIndex(loan);   // re-price the live index for the current month (floating + ARM)
@@ -3443,7 +3467,7 @@ tr.flagged:hover td{background:#fee2e2}
     // the file on disk and are stripped before persisting, so no operating figure is ever frozen here.
     function saveUW(){ try{ const c = { input: Object.assign({}, uwState.input) };
       delete c.input.t12Grid; delete c.input.t12Rows; delete c.input.t12Meta; delete c.input.aiParsed; delete c.input.aiT12; delete c.input.fileName; delete c.input.fileSha;
-      localStorage.setItem(UW_KEY, JSON.stringify(c)); }catch(e){} }
+      localStorage.setItem(UW_KEY, JSON.stringify(c)); }catch(e){} try{ scheduleAutoBackup(true); }catch(e){} }
     function uwResetModel(){ uwState = { input: uwDefaults() }; uwLastBuilt = null; saveUW(); renderUnderwriting(); }
 
     const uwNum = (v)=>{ if(typeof v === "string") v = parseFloat(v.replace(/[^0-9.\-]/g,"")); return (typeof v === "number" && isFinite(v)) ? v : null; };
@@ -4204,6 +4228,16 @@ tr.flagged:hover td{background:#fee2e2}
       var key = propertyKey({ propertyName: name, propertyAddress: "" });
       var existing = opProperties().some(function(p){ return p.key === key; });
       if(existing){ try{ toast("A property named “"+name+"” already exists.", "info"); }catch(e){} return null; }
+      // 2.9.7 (#69) — the name may be one of an existing property's LOANS (a senior or a mezz name, or an
+      // address): offer to add a loan to that property instead of creating a duplicate.
+      var hit = opAddPropertyLoanMatch(name);
+      if(hit){
+        var pName = opPropDisplayName(hit.key), what = hit.byAddress ? "the address of" : (isMezz(hit.loan) ? "the mezz loan of" : "the senior loan of");
+        try{ confirmDialog("“"+name+"” is already in your book",
+          "“"+name+"” is "+what+" "+pName+(hit.byAddress ? " (" + (hit.loan.propertyName || loanLabel(hit.loan)) + ")" : "")+". Add a loan to that property instead?",
+          function(){ var sr = propSeniorLoan(hit.key); if(sr && loanIsActive(sr)) state.activeId = sr._id; try{ activateTab("home"); }catch(e){} startAdd(pName); }, "Add a loan to it"); }catch(e){}
+        return null;
+      }
       var prof = await opEnsureProfile(key);
       prof.archived = false;
       Profile.setField(prof, "propertyName", name, { changedBy: opOperator() });
@@ -4214,6 +4248,14 @@ tr.flagged:hover td{background:#fee2e2}
       try{ toast("Added “"+name+"”. Add a loan or read its agreement to fill in its profile.", "success"); }catch(e){}
       return key;
     }
+    function opAddPropertyLoanMatch(name){
+      var norm = function(v){ return String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); };
+      var n = norm(name); if(!n) return null;
+      var pool = activeLoans().concat(inactiveLoans());
+      for(var i = 0; i < pool.length; i++){ var l = pool[i]; if(norm(l.propertyName) === n || norm(loanLabel(l)) === n) return { loan: l, key: propertyKey(l), byAddress: false }; }
+      for(var j = 0; j < pool.length; j++){ var m = pool[j]; if(m.propertyAddress && norm(m.propertyAddress) === n) return { loan: m, key: propertyKey(m), byAddress: true }; }
+      return null;
+    }
     // Add Property modal (portfolio level). A name is enough — the property joins the portfolio and its
     // profile is edited on its own property view (no separate Profile tab).
     function opAddPropertyOpen(){ var m = el("addPropModal"); if(!m) return; var e = el("addPropErr"); if(e) e.classList.add("hidden"); var n = el("addPropName"); if(n) n.value = ""; m.classList.remove("hidden"); m.classList.add("flex"); if(n) setTimeout(function(){ try{ n.focus(); }catch(_e){} }, 30); }
@@ -4221,7 +4263,8 @@ tr.flagged:hover td{background:#fee2e2}
     function opAddPropertySubmit(){ var n = el("addPropName"), v = n ? String(n.value || "").trim() : ""; if(!v){ var e = el("addPropErr"); if(e) e.classList.remove("hidden"); if(n) n.focus(); return; } opAddPropertyClose(); opAddProperty(v); }
     // Open a property's own view focused on its profile panel (replaces the removed Profile tab): select
     // its senior loan so the property view renders, and flag the profile panel to expand once.
-    function opOpenPropertyProfile(key){ if(!key) return null; var sr = propSeniorLoan(key); if(sr && sr._id){ profileFocusKey = key; loanProfileForceOpen = key; selectLoan(sr._id); return sr._id; } try{ toast("This property has no loan yet — add a loan or read its agreement to open it.", "info"); }catch(e){} return null; }
+    function opOpenPropertyProfile(key){ if(!key) return null; var sr = propSeniorLoan(key); if(sr && sr._id && loanIsActive(sr)){ profileFocusKey = key; loanProfileForceOpen = key; selectLoan(sr._id); return sr._id; }
+      profileFocusKey = key; loanProfileForceOpen = key; selectLoan("prop:" + key); return "prop:" + key; }   // 2.9.7 (#3) — a property with no active loan opens its own page
     // 2.9.3 — Rent roll import (portfolio level). A Yardi export can hold many properties; this reads them all
     // and lets you tick which to ADD (new) or UPDATE (existing), then saves the file into each folder. The
     // per-unit data is never displayed — only the property's summary — and nothing is applied to underwriting.
@@ -4310,7 +4353,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ var r = await opWriteProfile(key, prof); if(r && r.ok === false) okWrite = false; }catch(e){ okWrite = false; }
       if(!okWrite){ prof.archived = before; profileCache[key] = prof; }
       if(okWrite && !archived && !loans.some(l => propertyKey(l) === key)){ standaloneProps[key] = standaloneProps[key] || { key: key, name: Profile.value(prof, "propertyName") || key }; }
-      try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))) { const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
+      try{ if(state.activeId && !propViewKey() && !loanIsActive(getLoan(state.activeId))) { const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
       redrawAll();   // 2.9.7 (#7, #33) — counter, dropdown, Home, strips and the open tab all follow
       return okWrite;
     }
@@ -5658,14 +5701,15 @@ tr.flagged:hover td{background:#fee2e2}
     // warnings and "Read agreement" auto-fill — keyed to the selected property. Collapsible, under the operating
     // panel, collapsed by default. Field edits save silently (no re-render), so nothing collapses mid-type.
     function renderLoanProfilePanel(){
-      const host = el("loanProfilePanel"); if(!host) return;
-      const loan = getLoan(state.activeId);
-      if(!loan){ host.innerHTML = ""; return; }
-      const key = propertyKey(loan);
+      const pk = state.mode === "prop" ? propViewKey() : "";   // 2.9.7 (#3) — also the page of a property with no loan
+      const host = el(pk ? "propProfilePanel" : "loanProfilePanel"); if(!host) return;
+      const loan = pk ? null : getLoan(state.activeId);
+      if(!loan && !pk){ host.innerHTML = ""; return; }
+      const key = pk || propertyKey(loan);
       if(key && !Object.prototype.hasOwnProperty.call(profileCache, key)){
-        opEnsureProfile(key).then(function(){ const l = getLoan(state.activeId); if(l && propertyKey(l) === key) renderLoanProfilePanel(); });
+        opEnsureProfile(key).then(function(){ const l = getLoan(state.activeId); if((l && propertyKey(l) === key) || propViewKey() === key) renderLoanProfilePanel(); });
       }
-      const forceOpen = (loanProfileForceOpen === key);
+      const forceOpen = (loanProfileForceOpen === key) || !!pk;
       if(loanProfileForceOpen && loanProfileForceOpen !== key) loanProfileForceOpen = null;   // reset when we move to another property
       const profile = opProfileSync(key), comp = opProfileCompleteness(key), archived = opIsArchived(key);
       const groups = {}, order = [];
@@ -5690,10 +5734,61 @@ tr.flagged:hover td{background:#fee2e2}
           '</div>'+
         '</details>';
     }
+    // 2.9.7 (#3, #83) — the page of a property with NO loan (Add Property with a name only, or every loan
+    // removed): its name, Add the first loan, Open in Underwriting, Archive (then Un-archive / Delete
+    // permanently), and below it the same profile and documents panels a loan's page shows. Never blank.
+    function renderPropPage(){
+      const host = el("propHeader"); if(!host) return;
+      const key = propViewKey();
+      const archived = key ? opIsArchived(key) : false;
+      const known = key && (opProperties().some(p => p.key === key) || opArchivedProps().some(p => p.key === key));
+      if(!known){ state.activeId = null; setMode(loans.length ? "portfolio" : "empty"); return; }   // it was deleted — back to Home
+      const name = opPropDisplayName(key);
+      const removed = loans.filter(l => propertyKey(l) === key && loanIsInactiveSelf(l)).length;
+      const btn = (attr, label, cls) => '<button type="button" '+attr+' class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold '+cls+'">'+label+'</button>';
+      host.innerHTML =
+        '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
+          '<div class="flex flex-wrap items-start justify-between gap-3">'+
+            '<div class="min-w-0"><h2 class="text-lg font-extrabold text-slate-900">'+escapeHtml(name)+' '+
+              (archived ? '<span class="ml-1 align-middle rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">archived</span>'
+                        : '<span class="ml-1 align-middle rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span>')+'</h2>'+
+              '<p class="mt-1 text-xs text-slate-500">'+(archived
+                ? 'Archived — out of Home, the totals and the assistant. Un-archive it to bring it back, or delete it permanently.'
+                : 'This property has no active loan'+(removed ? ' ('+removed+' removed or paid-off loan'+(removed>1?'s are':' is')+' listed on Home)' : '')+'. Its profile and documents are below.')+'</p></div>'+
+            '<div class="flex flex-wrap items-center gap-2 shrink-0" id="propPageActions">'+
+              (archived
+                ? btn('data-propunarchive', 'Un-archive', 'border border-amber-300 bg-white text-amber-700 hover:bg-amber-50')+
+                  btn('data-propdelete', 'Delete permanently', 'border border-rose-200 bg-white text-rose-600 hover:bg-rose-50')
+                : btn('data-propadd', '+ Add the first loan', 'bg-brand-600 text-white hover:bg-brand-500')+
+                  btn('data-propuw', 'Open in Underwriting', 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50')+
+                  btn('data-proparchive', 'Archive', 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'))+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      const on = (sel, fn) => { const b = host.querySelector(sel); if(b) b.addEventListener("click", fn); };
+      on("[data-propadd]", () => startAdd(name));
+      on("[data-propuw]", () => { try{ openTab("underwriting"); opSelectProperty(key); }catch(e){} });
+      on("[data-proparchive]", () => confirmDialog("Archive “"+name+"”?", "It leaves Home, the totals and the assistant. Un-archive it from this page or the Archived strip on Home.", async () => {
+        let ok = false; try{ ok = await opArchiveProperty(key, true); }catch(e){ ok = false; }
+        if(!ok){ toast("Couldn’t archive “"+name+"” — its file couldn’t be saved. Try again.", "error"); return; }
+        toast("“"+name+"” archived.", "trash"); render();
+      }, "Archive"));
+      on("[data-propunarchive]", async () => {
+        let ok = false; try{ ok = await opArchiveProperty(key, false); }catch(e){ ok = false; }
+        if(ok){ toast("Property restored — back in the roll-up and count.", "check"); render(); }
+        else toast("Couldn’t restore the property — its file couldn’t be saved. Try again.", "error");
+      });
+      on("[data-propdelete]", () => confirmDialog("Delete “"+name+"” permanently?",
+        "This removes the property and everything under it — its loan records, operating model, T12s, agreements, rent rolls, chats and profile — from disk, for good. This cannot be undone.",
+        () => { opDeletePropertyPermanent(key).then(() => { state.activeId = null; setMode(loans.length ? "portfolio" : "empty"); toast("“"+name+"” permanently deleted", "trash"); }); },
+        "Delete permanently"));
+      try{ renderLoanProfilePanel(); }catch(e){}
+      try{ renderDocsPanel(); }catch(e){}
+    }
     // Profile edits from the property view's profile panel: save the field to its property (silently, no
     // re-render). Keyed to the panel's property. (Reading an agreement to fill these is now the assistant's job.)
     document.addEventListener("change", function(e){ const t = e.target; if(!t || !t.closest) return;
-      const panel = t.closest("#loanProfilePanel [data-profilekey]"); if(!panel) return;
+      const panel = t.closest("#loanProfilePanel [data-profilekey], #propProfilePanel [data-profilekey]"); if(!panel) return;
       const fk = t.getAttribute && t.getAttribute("data-pf"); if(fk){ opProfileSetField(panel.getAttribute("data-profilekey"), fk, t.value); }
     });
 
@@ -6237,6 +6332,7 @@ tr.flagged:hover td{background:#fee2e2}
     function savePortfolioTargets(t){
       const cur = portfolioTargets(), next = Object.assign({}, cur, t || {});
       try{ localStorage.setItem(TARGETS_KEY, JSON.stringify(next)); }catch(e){}
+      try{ scheduleAutoBackup(true); }catch(e){}
       loadPortfolioTargets();
       try{ renderSettingsTargets(); }catch(e){}
       try{ if(state.mode === "portfolio") render(); }catch(e){}
@@ -6676,7 +6772,12 @@ tr.flagged:hover td{background:#fee2e2}
     /* ================================================================
        9. ACTIONS
        ================================================================ */
-    function selectLoan(id){ state.activeId = id; if(loans.length) setMode("view"); else setMode("empty"); }
+    function selectLoan(id){
+      state.activeId = id;
+      if(typeof id === "string" && id.slice(0,5) === "prop:"){ setMode("prop"); return; }   // 2.9.7 (#3)
+      if(loans.length) setMode("view"); else setMode("empty");
+    }
+    function propViewKey(){ const id = state.activeId; return (typeof id === "string" && id.slice(0,5) === "prop:") ? id.slice(5) : ""; }
 
     function startAdd(prefillName){
       const draft = Object.assign(emptyLoan(), { _id: uid() });
@@ -6703,6 +6804,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function cancelForm(){
       state.draft = null;
+      if(propViewKey()){ setMode("prop"); return; }   // 2.9.7 (#3) — back to the property's page
       setMode(loans.length ? (getLoan(state.activeId) ? "view":"empty") : "empty");
     }
     function saveForm(){
@@ -6790,6 +6892,11 @@ tr.flagged:hover td{background:#fee2e2}
     // header for a single loan; each Combined-Position row for a stack) and reuse startEdit/removeActive.
     function editProperty(){
       const loan = getLoan(state.activeId); if(!loan) return;
+      if(loan._combined){   // 2.9.7 (#68) — a senior + mezz property stays on its combined view; its profile opens in place
+        const key = propertyKey(loan); profileFocusKey = key; loanProfileForceOpen = key; render();
+        try{ const h = el("loanProfilePanel"); if(h) h.scrollIntoView({ behavior:"smooth", block:"start" }); }catch(e){}
+        return;
+      }
       opOpenPropertyProfile(propertyKey(loan));
     }
     function removeProperty(){
@@ -7342,19 +7449,29 @@ tr.flagged:hover td{background:#fee2e2}
     const BACKUP_APP = "LDS Hub";
     const BACKUP_SCHEMA = Number((String(STORAGE_KEY).match(/\.v(\d+)$/) || [,7])[1]);
 
-    // The file we write: a small envelope wrapping the full loans array.
+    // The file we write: the loans and the app's own settings. 2.9.7 (#9) — the desktop app adds every
+    // property folder and chat to it (main.js), so one file is the whole app.
+    // Settings kept in this window's storage that belong in a backup (the loans themselves go separately).
+    const BACKUP_SETTING_SKIP = [STORAGE_KEY, STORAGE_KEY + ".pre-2.9.7", "lds.loansMovedToDisk"];
+    function backupSettings(){
+      const out = {};
+      try{ for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i);
+        if(k && /^lds/i.test(k) && BACKUP_SETTING_SKIP.indexOf(k) < 0) out[k] = localStorage.getItem(k); } }catch(e){}
+      return out;
+    }
     function backupEnvelope(list){
-      return { app:BACKUP_APP, schema:BACKUP_SCHEMA, exportedAt:new Date().toISOString(), loanCount:list.length, loans:list };
+      return { app:BACKUP_APP, schema:BACKUP_SCHEMA, exportedAt:new Date().toISOString(), loanCount:list.length, loans:list, settings: backupSettings() };
     }
     function backupFileName(){
       const d = new Date(), p = n => String(n).padStart(2,"0");
       return "LDS-Hub-backup-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+".json";
     }
+    // "Sep 23, 14:02" (the year only when it isn't this year).
     function fmtBackupWhen(iso, mtime){
       const d = iso ? new Date(iso) : (mtime ? new Date(mtime) : null);
       if(!d || isNaN(d.getTime())) return "";
-      const p = n => String(n).padStart(2,"0");
-      return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"  "+p(d.getHours())+":"+p(d.getMinutes());
+      const p = n => String(n).padStart(2,"0"), M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      return M[d.getMonth()]+" "+d.getDate()+(d.getFullYear() !== new Date().getFullYear() ? " "+d.getFullYear() : "")+", "+p(d.getHours())+":"+p(d.getMinutes());
     }
     // Accept our envelope OR a bare array of loans, so any prior backup restores.
     function parseBackup(content){
@@ -7363,37 +7480,66 @@ tr.flagged:hover td{background:#fee2e2}
       const list = obj && Array.isArray(obj.loans) ? obj.loans : Array.isArray(obj) ? obj : null;
       if(!list) return { ok:false, err:"This file doesn't contain a loan list." };
       if(!list.every(x => x && typeof x === "object")) return { ok:false, err:"The backup's loan list is malformed." };
-      return { ok:true, loans:list, count:list.length, exportedAt:(obj && obj.exportedAt) || null };
+      return { ok:true, loans:list, count:list.length, exportedAt:(obj && obj.exportedAt) || null,
+        settings: (obj && obj.settings && typeof obj.settings === "object") ? obj.settings : null,
+        fileCount: (obj && obj.fileCount != null) ? obj.fileCount : null, propertyFolders: (obj && obj.propertyFolders) || 0, chatCount: (obj && obj.chatCount) || 0 };
     }
-    // Swap the whole book for a restored set (any count). Snapshots the current
-    // data first (so it's recoverable), then persists + re-renders. Reused by both
-    // file-restore and recent-backup restore.
-    function applyRestore(newLoans, sourceLabel){
-      if(desktop() && loans.length){
-        try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-restore"); } catch(e){}
+    // What a restore will put back, in words: "29 loans, 14 property folders and 6 chats".
+    function backupContentsText(parsed, full){
+      const n = (c, w) => c + " " + w + (c === 1 ? "" : "s");
+      return full ? n(parsed.count, "loan")+", "+n(parsed.propertyFolders||0, "property folder")+" and "+n(parsed.chatCount||0, "chat") : n(parsed.count, "loan");
+    }
+    // Swap the whole app for a restored set. 2.9.7 (#9, #143) — a full backup puts EVERYTHING back: the
+    // property folders and chats (main.js writes them and checks each against its checksum), then the
+    // loans and the settings; the window then reloads so every screen reads the restored data. A safety
+    // snapshot of the current data is taken first and the restore stops if that copy can't be saved.
+    // An older backup (before 2.9.7) holds only the loans — the files and chats stay as they are.
+    async function applyRestore(parsed, sourceLabel, res){
+      const full = !!(res && res.full && res.token);
+      if(desktop()){
+        let snap = null; try { snap = await window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-restore"); } catch(e){ snap = null; }
+        if(!snap || snap.ok === false){ toast("Couldn’t save a safety copy of your current data first — nothing was restored."+(snap && snap.error ? " ("+snap.error+")" : ""), "error"); return false; }
+      }
+      if(full){
+        let r = null; try { r = await window.ldsShell.fullBackupRestore(res.token); } catch(e){ r = { ok:false, error:String(e && e.message || e) }; }
+        if(!r || !r.ok){ toast("Restore stopped — the files couldn’t be put back"+(r && r.error ? ": "+r.error : "")+". Nothing was changed.", "error"); return false; }
       }
       const seen = new Set();
-      loans = newLoans.map(migrateLoan).map(l => {
+      loans = parsed.loans.map(migrateLoan).map(l => {
         if(!l._id || seen.has(l._id)) l._id = uid();   // ensure unique ids across the restored set
         seen.add(l._id);
         return l;
       });
+      if(parsed.settings){ try{ Object.keys(parsed.settings).forEach(k => { if(/^lds/i.test(k) && BACKUP_SETTING_SKIP.indexOf(k) < 0 && typeof parsed.settings[k] === "string") localStorage.setItem(k, parsed.settings[k]); }); }catch(e){} }
       state.activeId = loans.length ? loans[0]._id : null;
       state.mode = loans.length ? "portfolio" : "empty";
       save();
+      const msg = "Restored "+backupContentsText(parsed, full)+(sourceLabel?" · "+sourceLabel:"")+(full ? "" : " — this older backup holds only the loans; your property files and chats were kept as they are");
+      if(full){
+        try{ sessionStorage.setItem("lds.restoredMsg", msg); }catch(e){}
+        setTimeout(() => { try{ location.reload(); }catch(e){} }, 50);
+        return true;
+      }
       render();
-      toast("Restored "+loans.length+" loan"+(loans.length===1?"":"s")+(sourceLabel?" · "+sourceLabel:""), "success");
+      toast(msg, "success");
+      return true;
     }
 
     // ---- Menu actions ----
     function dataBackup(){
       if(!desktop()){ toast("Backups are available in the desktop app", "info"); return; }
-      const json = JSON.stringify(backupEnvelope(loans), null, 2);
+      const json = JSON.stringify(backupEnvelope(loans));
       window.ldsShell.backupSave(json, backupFileName()).then(res => {
-        if(res && res.ok) toast("Backed up "+loans.length+" loan"+(loans.length===1?"":"s"), "success");
+        if(res && res.ok) toast("Backed up everything — "+loans.length+" loan"+(loans.length===1?"":"s")+(res.fileCount != null ? ", "+res.fileCount+" property and chat file"+(res.fileCount===1?"":"s") : "")+" and your settings", "success");
         else if(res && res.canceled){ /* user closed the dialog */ }
         else toast("Backup failed"+(res && res.error?": "+res.error:""), "info");
       }).catch(()=> toast("Backup failed", "info"));
+    }
+    function restoreConfirmText(parsed, res, fromWhat){
+      const cur = loans.length, full = !!(res && res.full);
+      return full
+        ? "This replaces everything — your "+cur+" loan"+(cur===1?"":"s")+", every property folder (profile, assumptions, T12s, documents) and every chat — with "+backupContentsText(parsed, true)+" from "+fromWhat+(parsed.exportedAt ? " ("+fmtBackupWhen(parsed.exportedAt)+")" : "")+". Your current data is saved first as a “Before a restore” snapshot, so you can switch back."
+        : "This replaces the "+cur+" loan"+(cur===1?"":"s")+" currently loaded with "+parsed.count+" from "+fromWhat+". This older backup holds only the loans — your property files and chats stay as they are. Your current data is saved first.";
     }
     function dataRestoreFromFile(){
       if(!desktop()){ toast("Restore is available in the desktop app", "info"); return; }
@@ -7402,10 +7548,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(!res.ok){ toast("Couldn't open that file"+(res.error?": "+res.error:""), "info"); return; }
         const parsed = parseBackup(res.content);
         if(!parsed.ok){ toast(parsed.err, "info"); return; }
-        const cur = loans.length, next = parsed.count;
-        confirmDialog("Restore "+next+" loan"+(next===1?"":"s")+"?",
-          "This replaces the "+cur+" loan"+(cur===1?"":"s")+" currently loaded with "+next+" from "+(res.name||"the backup")+". Your current data is snapshotted first, so you can switch back to it.",
-          () => applyRestore(parsed.loans, res.name || "file"));
+        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmText(parsed, res, res.name || "the backup"),
+          () => applyRestore(parsed, res.name || "file", res));
       }).catch(()=> toast("Restore failed", "info"));
     }
     function dataOpenFolder(){ if(desktop()){ try { window.ldsShell.openBackupsFolder(); } catch(e){} } }
@@ -7415,10 +7559,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(!res || !res.ok){ toast("Couldn't read that backup"+(res && res.error?": "+res.error:""), "info"); return; }
         const parsed = parseBackup(res.content);
         if(!parsed.ok){ toast(parsed.err, "info"); return; }
-        const cur = loans.length, next = parsed.count;
-        confirmDialog("Restore "+next+" loan"+(next===1?"":"s")+"?",
-          "This replaces the "+cur+" loan"+(cur===1?"":"s")+" currently loaded with "+next+" from this automatic snapshot. Your current data is snapshotted first.",
-          () => { const dd = el("dataDD"); if(dd) dd.open = false; applyRestore(parsed.loans, "auto-backup"); });
+        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmText(parsed, res, "this automatic snapshot"),
+          () => { const dd = el("dataDD"); if(dd) dd.open = false; applyRestore(parsed, "automatic snapshot", res); });
       }).catch(()=> toast("Restore failed", "info"));
     }
     // Populate the "recent automatic backups" list when the menu opens.
@@ -7430,16 +7572,16 @@ tr.flagged:hover td{background:#fee2e2}
       window.ldsShell.autoBackupList().then(list => {
         if(!Array.isArray(list) || !list.length){ box.innerHTML = '<p class="px-2 py-2 text-xs text-slate-400">No automatic backups yet.</p>'; return; }
         box.innerHTML = list.map(b => {
-          const isPre = b.kind === "before-restore";
-          const badge = isPre
-            ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">pre-restore</span>'
-            : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">auto</span>';
+          // 2.9.7 (#70) — why and when each one was taken: "Before Excel import · Sep 23, 14:02"
+          const why = b.reasonLabel || (b.kind === "before-restore" ? "Before a restore" : b.kind === "before-import" ? "Before Excel import" : "After a change");
+          const isPre = b.reason && b.reason !== "autobackup";
           const when = fmtBackupWhen(b.exportedAt, b.mtime);
           const cnt = (typeof b.loanCount === "number") ? b.loanCount+" loan"+(b.loanCount===1?"":"s") : "—";
+          const what = cnt + (b.full ? " · " + (b.propertyFolders||0) + " propert" + ((b.propertyFolders||0) === 1 ? "y" : "ies") + " · " + (b.chatCount||0) + " chat" + ((b.chatCount||0) === 1 ? "" : "s") : " · loans only");
           return '<button type="button" data-recent="'+escapeHtml(b.name)+'" class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-slate-50">'+
             '<div class="flex-1 min-w-0">'+
-              '<div class="flex items-center gap-1.5">'+badge+'<span class="text-xs font-semibold text-slate-700 tabular-nums">'+cnt+'</span></div>'+
-              '<div class="text-[10px] text-slate-400 tabular-nums">'+escapeHtml(when)+'</div>'+
+              '<div class="text-xs font-semibold '+(isPre ? 'text-amber-700' : 'text-slate-700')+'" data-recentwhy>'+escapeHtml(why)+' · <span class="tabular-nums">'+escapeHtml(when)+'</span></div>'+
+              '<div class="text-[10px] text-slate-400 tabular-nums">'+escapeHtml(what)+'</div>'+
             '</div>'+
             '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-slate-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>'+
           '</button>';
@@ -7450,15 +7592,18 @@ tr.flagged:hover td{background:#fee2e2}
     // Debounced silent auto-backup on any data change (desktop only). Dedupes on
     // the loans' content — the envelope's timestamp is ignored so unchanged data
     // never writes a new file.
-    let autoBackupTimer = null, lastAutoSig = null;
-    function scheduleAutoBackup(){
+    // 2.9.7 (#9, #144) — a snapshot covers the whole app; files and settings changing (force) also
+    // schedule one, and main.js skips writing it when nothing at all changed since the last one.
+    let autoBackupTimer = null, lastAutoSig = null, autoBackupForced = false;
+    function scheduleAutoBackup(force){
       if(!desktop()) return;
+      if(force) autoBackupForced = true;
       clearTimeout(autoBackupTimer);
       autoBackupTimer = setTimeout(() => {
         if(!loans.length) return;                    // never snapshot an empty book
         let sig; try { sig = JSON.stringify(loans); } catch(e){ return; }
-        if(sig === lastAutoSig) return;              // nothing actually changed
-        lastAutoSig = sig;
+        if(sig === lastAutoSig && !autoBackupForced) return;   // nothing actually changed
+        lastAutoSig = sig; autoBackupForced = false;
         try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "autobackup"); } catch(e){}
       }, 4000);
     }
@@ -7867,6 +8012,11 @@ tr.flagged:hover td{background:#fee2e2}
       combo.originalAmount = cp.balTot;                   // the property's total current debt
       combo.annualRate = cp.blended;                      // balance-blended rate
       combo.rateType = "Fixed"; combo.isHistorical = true; combo.lienPosition = "Senior";
+      // 2.9.7 (#67) — the label shown for the stack comes from its real loans (the "Fixed" above only makes
+      // compute() reproduce the blended position): one type → that type, else "Mixed".
+      { const types = []; list.forEach(l => { const t = l.rateType || "Fixed"; if(types.indexOf(t) < 0) types.push(t); });
+        combo._rateTypeLabel = types.length === 1 ? types[0] : "Mixed";
+        combo._rateTypeSub = list.map(l => (isMezz(l) ? "mezz " : "senior ") + (l.rateType || "Fixed")).join(" · "); }
       combo.index = null; combo.spread = null; combo.stackWith = null;
       combo.noi = cp.noi; combo.capRate = loanCapRate(sr);
       return combo;
@@ -9869,10 +10019,11 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The Documents panel on a loan's detail view: the saved files for that property.
     function renderDocsPanel(){
-      var host=el("loanDocsPanel"); if(!host) return;
-      if(!docsAvailable() || state.mode!=="view"){ host.innerHTML=""; return; }
-      var loan=getLoan(state.activeId); if(!loan){ host.innerHTML=""; return; }
-      var propKey=propertyKey(loan), propName=loan.propertyName||loanLabel(loan);
+      var pk = state.mode==="prop" ? propViewKey() : "";   // 2.9.7 (#3) — also the page of a property with no loan
+      var host=el(pk ? "propDocsPanel" : "loanDocsPanel"); if(!host) return;
+      if(!docsAvailable() || (state.mode!=="view" && !pk)){ host.innerHTML=""; return; }
+      var loan=pk ? null : getLoan(state.activeId); if(!loan && !pk){ host.innerHTML=""; return; }
+      var propKey=pk || propertyKey(loan), propName=pk ? opPropDisplayName(pk) : (loan.propertyName||loanLabel(loan));
       ldsShell.docList(propKey).then(function(r){
         var files=(r&&r.files)||[];
         var rows = files.length ? files.map(function(f){
@@ -10456,8 +10607,9 @@ tr.flagged:hover td{background:#fee2e2}
     dom.refiBtn.addEventListener("click", startRefi);
     dom.scopePortfolioBtn.addEventListener("click", () => setMode("portfolio"));
     dom.scopeLoanBtn.addEventListener("click", () => {
+      if(propViewKey()){ setMode("prop"); return; }   // 2.9.7 (#3)
       if(!loans.length){ setMode("empty"); return; }
-      if(!getLoan(state.activeId)) state.activeId = loans[0]._id;
+      if(!getLoan(state.activeId)){ const p0 = opProperties()[0]; state.activeId = p0 ? positionIdForProperty(p0) : loans[0]._id; if(propViewKey()){ setMode("prop"); return; } }
       setMode("view");
     });
     (function(){ var cb = el("calendarBtn"); if(cb) cb.addEventListener("click", openMaturityCalendar); })();   // button removed in 2.9.4 (calendar opens from the "+" tab menu); guard kept so nothing throws
@@ -10483,6 +10635,10 @@ tr.flagged:hover td{background:#fee2e2}
       });
     })();
     initUpdater();   // desktop app: header version/update chip
+    // 2.9.7 (#9) — a property file or chat changed (saved, moved, removed) → an automatic snapshot follows.
+    try{ if(window.ldsShell && ldsShell.onDataChanged) ldsShell.onDataChanged(() => scheduleAutoBackup(true)); }catch(e){}
+    // 2.9.7 (#9) — after a full restore the window reloads; say what came back.
+    try{ const rm = sessionStorage.getItem("lds.restoredMsg"); if(rm){ sessionStorage.removeItem("lds.restoredMsg"); setTimeout(() => toast(rm, "success"), 600); } }catch(e){}
     dom.confirmCancel.addEventListener("click", closeConfirm);
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });

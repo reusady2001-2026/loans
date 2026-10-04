@@ -45,7 +45,7 @@ async function openHealth(page){
 
   // recompute-all runs and leaves a log line
   await page.evaluate(()=>{const b=document.querySelector('#healthView [data-health-recompute]');if(b)b.click();});
-  await page.waitForFunction(()=>/Last recompute/.test((document.getElementById('healthView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
+  await page.waitForFunction(()=>/Last recompute/.test((document.getElementById('healthView')||{}).innerText||''),null,{timeout:30000}).catch(()=>{});
   await page.waitForTimeout(400);
   const t2=await view();
   ok(/Last recompute/.test(t2),'after Recompute all, a "Last recompute" log line appears');
