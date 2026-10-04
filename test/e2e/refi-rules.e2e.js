@@ -107,10 +107,13 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(!A27.mode&&/Avalon White Plains/.test(t27)&&/on 2 loans together/.test(t27),'"refinance Avalon WP (Mezz)" works on the whole property, without opening the screen (#27)');
   // #28 — only the choices the property has
   const r28=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'in-place'}}));
-  ok(r28&&r28.ok===false&&/can use: entered \(\$14,000,000/.test(r28.msg),'asking for a basis the property doesn\'t have lists the ones it has ("'+(r28&&r28.msg)+'")');
+  ok(r28&&r28.ok===false&&/can use: Entered NOI \(\$14,000,000/.test(r28.msg),'asking for a basis the property doesn\'t have lists the ones it has ("'+(r28&&r28.msg)+'")');
   await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>x.propertyName==='Avalon White Plains'); l.noi=9000000; });   // (it had 14,000,000 typed above)
-  const r28b=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'entered'}}));
-  ok(r28b&&r28b.ok===true&&/entered \(\$9,000,000/.test(r28b.msg),'"entered" works when an NOI was typed, and says so after checking');
+  // 2.9.7 (#95) — a refinance change is behind an Approve card; the result comes back once approved
+  const r28b=await page.evaluate(()=>{ const r=window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'entered'}}); window.__p=r&&r.pending; const c=[...document.querySelectorAll('#aiAsstLog [data-asstcard]')].pop(); return { card:!!(r&&r.pending), msg:r&&r.msg, text:c?c.textContent:'' }; });
+  let r28c=null;
+  if(r28b.card){ await page.evaluate(()=>{ [...document.querySelectorAll('#aiAsstLog .aiAsstEditApprove:not(:disabled)')].pop().click(); }); r28c=await page.evaluate(()=>window.__p); }
+  ok(r28b.card&&/Entered NOI \(\$9,000,000/.test(r28b.text)&&r28c&&r28c.ok&&/Entered NOI \(\$9,000,000/.test(r28c.msg),'"entered" works when an NOI was typed — on a card, in plain names, and says so after checking ('+(r28c&&r28c.msg||r28b.msg||'').slice(0,90)+')');
 
   // ---- #24 Save replaces all the property's loans ----
   const MID=await page.evaluate(()=>window.LDS_loans().find(x=>x.propertyName==='M Lofts')._id);

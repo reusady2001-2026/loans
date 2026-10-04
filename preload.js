@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // The concatenated extracted text of a property's documents (bounded). Resolves {ok,text,files}.
   docText: (propKey) => ipcRenderer.invoke('lds:doc-text', { propKey }),
   // Read one original file back (base64) to open/export it. Resolves {ok,base64,name,type}.
+  docTextPart: (opts) => ipcRenderer.invoke('lds:doc-text-part', opts || {}),   // 2.9.7 — {propKey,name|id,part,partSize} → {ok,name,text,part,parts,chars,readable}
   docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),
   // Delete one saved file. Resolves {ok}.
   docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),

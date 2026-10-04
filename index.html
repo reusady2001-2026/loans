@@ -992,6 +992,7 @@
       <p id="confirmText" class="mt-2 text-sm text-slate-500">This action cannot be undone.</p>
       <div class="mt-5 flex justify-end gap-2">
         <button id="confirmCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+        <button id="confirmAlt" type="button" hidden class="rounded-lg border border-brand-300 bg-white px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"></button>
         <button id="confirmOk" type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Remove</button>
       </div>
     </div>
@@ -4356,6 +4357,21 @@ tr.flagged:hover td{background:#fee2e2}
       }catch(e){}
     }
 
+    // 2.9.7 (#238, #50) — save a property's assumptions without focusing it in Underwriting (the assistant's path): the
+    // change is recorded in its history ("Assistant, approved by You"), and the Underwriting tab follows only if it
+    // is already showing that property.
+    async function opSaveAssumptionsFor(key, before, after, from){
+      if(!key || !(window.ldsShell && ldsShell.docSave)) return false;
+      try{ await propHistoryLoad(key); }catch(e){}
+      if(opFocusKey === key){ uwState.input.bench = after; saveUW(); await opSaveAssumptions(key, { from: from }); try{ uwRerenderSetup(); }catch(e){} return true; }
+      try{ assumptionBaseline(key, before); assumptionHistoryQueue(key, after, from || "assistant"); }catch(e){}
+      var json = JSON.stringify(after), bytes = new TextEncoder().encode(json), str = "";
+      for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+      var pr = opProp(key);
+      await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "assumptions.json", base64: btoa(str), text: "", type: "application/json", role: "assumptions" });
+      try{ await opRefreshGeneralDataNOI(key); }catch(e){}
+      return true;
+    }
     // ---- General Data (general-data.json) --------------------------------------
     // The per-property "General Data" record lives in the folder beside the T12,
     // mirroring assumptions.json (role "general"). It carries the property's
@@ -4493,31 +4509,77 @@ tr.flagged:hover td{background:#fee2e2}
       var r = await opWriteProfile(key, prof);
       return !!(r && r.ok);
     }
-    // Create a property from a name alone (Add Property). "Add loan" never comes here — it adds a loan to
-    // whatever property its name/address resolves to. Returns the new property key (or null).
-    async function opAddProperty(name){
+    // 2.9.7 (#44, #232, #233) — what stands in the way of a new property with this name, checked the same way for
+    // the Add Property form and the assistant: an active property of that name, an ARCHIVED one (restore it or start
+    // fresh), a name that is one of an existing property's loans, or a name similar to an existing property's.
+    function propCreateCheck(name){
+      name = String(name || "").trim(); if(!name) return { kind:"empty" };
+      var key = propertyKey({ propertyName: name, propertyAddress: "" });
+      var act = opProperties(), arch = opArchivedProps();
+      var same = act.find(function(p){ return p.key === key || normName(p.name) === normName(name); });
+      if(same) return { kind:"exists", key: same.key, name: same.name };
+      var ar = arch.find(function(p){ return p.key === key || normName(p.name) === normName(name); });
+      if(ar){ var pr = profileCache[ar.key] || {}; return { kind:"archived", key: ar.key, name: ar.name, archivedAt: pr.archivedAt || null }; }
+      var hit = opAddPropertyLoanMatch(name);
+      if(hit) return { kind:"loan", key: hit.key, name: opPropDisplayName(hit.key), loan: hit.loan, what: hit.byAddress ? "the address of" : (isMezz(hit.loan) ? "the mezz loan of" : "the senior loan of") };
+      var sig = dupNameSig(name), sim = sig.length >= 4 ? act.concat(arch.map(function(p){ return Object.assign({ archived:true }, p); })).filter(function(p){ var o = dupNameSig(p.name); return o.length >= 4 && (o === sig || o.indexOf(sig) >= 0 || sig.indexOf(o) >= 0); }) : [];
+      if(sim.length) return { kind:"similar", key: key, props: sim.map(function(p){ return { key:p.key, name:p.name, archived: !!p.archived }; }) };
+      return { kind:"ok", key: key };
+    }
+    function propArchivedOnText(at){ return at ? " (archived on " + fmtDateLong(String(at).slice(0,10)) + ")" : " (archived)"; }
+    // The creation itself — no questions, no screen change.
+    async function opCreatePropertyNamed(name){
       name = String(name || "").trim(); if(!name) return null;
       var key = propertyKey({ propertyName: name, propertyAddress: "" });
-      var existing = opProperties().some(function(p){ return p.key === key; });
-      if(existing){ try{ toast("A property named “"+name+"” already exists.", "info"); }catch(e){} return null; }
-      // 2.9.7 (#69) — the name may be one of an existing property's LOANS (a senior or a mezz name, or an
-      // address): offer to add a loan to that property instead of creating a duplicate.
-      var hit = opAddPropertyLoanMatch(name);
-      if(hit){
-        var pName = opPropDisplayName(hit.key), what = hit.byAddress ? "the address of" : (isMezz(hit.loan) ? "the mezz loan of" : "the senior loan of");
-        try{ confirmDialog("“"+name+"” is already in your book",
-          "“"+name+"” is "+what+" "+pName+(hit.byAddress ? " (" + (hit.loan.propertyName || loanLabel(hit.loan)) + ")" : "")+". Add a loan to that property instead?",
-          function(){ var sr = propSeniorLoan(hit.key); if(sr && loanIsActive(sr)) state.activeId = sr._id; try{ activateTab("home"); }catch(e){} startAdd(pName); }, "Add a loan to it"); }catch(e){}
-        return null;
-      }
       var prof = await opEnsureProfile(key);
-      prof.archived = false;
+      prof.archived = false; delete prof.archivedAt;
       Profile.setField(prof, "propertyName", name, { changedBy: opOperator() });
       profileCache[key] = prof;
-      await opWriteProfile(key, prof);
+      var r = await opWriteProfile(key, prof); if(r && r.ok === false) return null;
       standaloneProps[key] = { key: key, name: name };
       redrawAll();   // 2.9.7 (#7) — counter, dropdown, Home and the open tab show it at once
-      try{ toast("Added “"+name+"”. Add a loan or read its agreement to fill in its profile.", "success"); }catch(e){}
+      return key;
+    }
+    // "Start fresh" on an archived name: the old property's data goes for good, then a new one is made.
+    async function opStartFreshProperty(oldKey, name){
+      var r = await opDeletePropertyPermanent(oldKey);
+      if(!r || !r.ok) return { ok:false, error: (r && r.error) || "Couldn’t delete the old property’s files" };
+      var key = await opCreatePropertyNamed(name);
+      return key ? { ok:true, key:key } : { ok:false, error:"Couldn’t create it" };
+    }
+    // Create a property from a name alone (Add Property). "Add loan" never comes here — it adds a loan to
+    // whatever property its name/address resolves to. Returns the new property key (or null).
+    async function opAddProperty(name, opts){
+      opts = opts || {};
+      name = String(name || "").trim(); if(!name) return null;
+      var c = propCreateCheck(name);
+      if(c.kind === "exists"){ try{ toast("A property named “"+c.name+"” already exists.", "info"); }catch(e){} return null; }
+      if(c.kind === "archived"){
+        confirmDialog("“"+c.name+"” already exists"+propArchivedOnText(c.archivedAt),
+          "Restore it with its data, or start fresh? Starting fresh deletes the archived property’s data for good.",
+          async function(){ await opArchiveProperty(c.key, false); toast("Restored “"+c.name+"” with its data.", "check"); }, "Restore it",
+          { altLabel:"Start fresh", onAlt: async function(){ var what = await propDeleteSummary(c.key);
+            confirmDialog("Start fresh as “"+name+"”?", "This deletes the archived property’s data for good: "+what+". It can’t be undone here; the automatic backups keep a copy.",
+              async function(){ var r = await opStartFreshProperty(c.key, name); toast(r.ok ? "Started fresh — “"+name+"” has no loans yet." : (r.error || "Couldn’t start fresh"), r.ok ? "success" : "error"); }, "Delete and start fresh"); } });
+        return null;
+      }
+      // 2.9.7 (#69) — the name may be one of an existing property's LOANS (a senior or a mezz name, or an
+      // address): offer to add a loan to that property instead of creating a duplicate.
+      if(c.kind === "loan"){
+        try{ confirmDialog("“"+name+"” is already in your book",
+          "“"+name+"” is "+c.what+" "+c.name+(c.what === "the address of" ? " (" + (c.loan.propertyName || loanLabel(c.loan)) + ")" : "")+". Add a loan to that property instead?",
+          function(){ var sr = propSeniorLoan(c.key); if(sr && loanIsActive(sr)) state.activeId = sr._id; try{ activateTab("home"); }catch(e){} startAdd(c.name); }, "Add a loan to it"); }catch(e){}
+        return null;
+      }
+      // 2.9.7 (#233) — a name like one you already have: open that one, or create this anyway.
+      if(c.kind === "similar" && !opts.anyway){
+        var first = c.props[0];
+        confirmDialog("Similar to “"+first.name+"”", "“"+name+"” looks like "+c.props.map(function(p){ return "“"+p.name+"”"+(p.archived?" (archived)":""); }).join(", ")+", which you already have. Open it, or create “"+name+"” anyway?",
+          function(){ opOpenPropertyProfile(first.key); }, "Open it", { altLabel:"Create anyway", onAlt: function(){ opAddProperty(name, { anyway:true }); } });
+        return null;
+      }
+      var key = await opCreatePropertyNamed(name);
+      if(key){ try{ toast("Added “"+name+"”. Add a loan or read its agreement to fill in its profile.", "success"); }catch(e){} }
       return key;
     }
     function opAddPropertyLoanMatch(name){
@@ -4603,7 +4665,8 @@ tr.flagged:hover td{background:#fee2e2}
       var saved = 0;
       for(var i = 0; i < sel.length; i++){
         var r = sel[i], key = r.key;
-        if(!key){ try{ key = await opAddProperty(r.block.name); }catch(e){} }
+        if(!key){ try{ var cc = propCreateCheck(r.block.name);   // 2.9.7 — you chose "Add as a new property": no questions, but never a second property of the same name
+          key = (cc.kind === "exists" || cc.kind === "loan") ? cc.key : (cc.kind === "archived" ? (await opArchiveProperty(cc.key, false), cc.key) : await opCreatePropertyNamed(r.block.name)); }catch(e){} }
         if(!key) continue;
         var p = opProp(key);
         try{ await ldsShell.docSave({ propKey: key, propName: (p && p.name) || r.block.name, name: st.fileName, base64: st.base64, text: st.text, type: "", role: "rentroll" }); saved++; try{ delete loanRRCache[key]; }catch(e){} }catch(e){}
@@ -4701,6 +4764,7 @@ tr.flagged:hover td{background:#fee2e2}
       var profile = await opEnsureProfile(key);
       var fd = Profile.fieldDef(field), val = rawVal;
       if(fd && fd.type === "int"){ val = (rawVal === "" || rawVal == null) ? "" : (isFinite(+rawVal) ? Math.round(+rawVal) : rawVal); }
+      if(fd && fd.type === "money"){ var mv = String(rawVal == null ? "" : rawVal).replace(/[$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"); val = (mv === "") ? "" : (isFinite(+mv) ? Math.round(+mv * 100) / 100 : rawVal); }   // 2.9.7 (#45)
       Profile.setField(profile, field, val, { changedBy: opts.changedBy || opOperator(), source: opts.source, reason: opts.reason });
       profileCache[key] = profile;
       await opWriteProfile(key, profile);
@@ -4731,7 +4795,8 @@ tr.flagged:hover td{background:#fee2e2}
         input = '<textarea data-pf="'+fd.key+'" rows="2" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">'+escapeHtml(pfInputVal(val))+'</textarea>';
       } else {
         var itype = fd.type === "int" ? "number" : fd.type === "date" ? "date" : "text";
-        input = '<input type="'+itype+'" data-pf="'+fd.key+'"'+(fd.type==="int"?' min="0" step="1"':'')+' value="'+escapeHtml(pfInputVal(val))+'" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">';
+        if(fd.type === "money" && val != null && val !== "" && isFinite(Number(val))) val = fmtMoney(Number(val));   // 2.9.7 (#45) — shown as dollars
+        input = '<input type="'+itype+'" data-pf="'+fd.key+'"'+(fd.type==="int"?' min="0" step="1"':'')+(fd.type==="money"?' inputmode="decimal"':'')+' value="'+escapeHtml(pfInputVal(val))+'" placeholder="'+escapeHtml(ph)+'" class="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500">';
       }
       var unit = fd.unit ? ' <span class="text-[10px] font-normal text-slate-400">('+escapeHtml(fd.unit)+')</span>' : '';
       var hint = fd.help ? '<p class="mt-0.5 text-[10px] leading-snug text-slate-400">'+escapeHtml(fd.help)+'</p>' : '';
@@ -5295,8 +5360,13 @@ tr.flagged:hover td{background:#fee2e2}
     // The property's in-place NOI, FOLDER-FIRST: general-data.json (the property's own saved figure,
     // which carries any annualization correction) wins; then the live operating model read from the T12;
     // then the loan's hand-entered NOI. Nothing is deleted — the in-app value is simply the fallback.
-    function folderNOI(loan){ if(!loan) return null; const g = gdNOICache[propertyKey(loan)]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
-    function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); return (o != null) ? o : (loan ? loan.noi : null); }
+    // 2.9.7 (#45, #46) — the property's own NOI from its profile: your override (beats the T12) and the entered NOI
+    // (used only when there is no T12 and no NOI on a loan).
+    function propProfileNOI(key, field){ try{ var pr = key && profileCache[key]; var v = pr ? Profile.value(pr, field) : undefined; var n = (v == null || v === "") ? null : Number(v); return (n != null && isFinite(n)) ? n : null; }catch(e){ return null; } }
+    function propNOIOverride(key){ return propProfileNOI(key, "noiOverride"); }
+    function propEnteredNOI(key){ return propProfileNOI(key, "noi"); }
+    function folderNOI(loan){ if(!loan) return null; const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov; const g = gdNOICache[k]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
+    function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); if(o != null) return o; if(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))) return loan.noi; const pe = loan ? propEnteredNOI(propertyKey(loan)) : null; return (pe != null) ? pe : (loan ? loan.noi : null); }
     // ── 2.9.0 — loan & property status ──────────────────────────────────────────
     // Loan status is manual (loan.loanStatus) when set, else derived: Matured once the maturity date
     // has passed, otherwise Active. Matured / Extension undecided need a decision, so they are flagged
@@ -5965,7 +6035,7 @@ tr.flagged:hover td{background:#fee2e2}
       const input = opPushInput(key); if(!input){ return; }
       const bench = uwState.input.bench, at = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct };
       opPushCache.set(key, { loading: true }); opRenderPush();
-      ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 300000 })
+      return ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 300000 })
         .then((r) => {
           if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude could not analyse this property." }); }
           else { const d = r.data || {};
@@ -6052,7 +6122,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ opRecomputeOnVersionChange(); }catch(e){}   // first roll-up after an app update → recompute every property's figures once, logged
       // Load every property's profile once per session (registers standalone/archived properties), then
       // re-render if that changed the property set.
-      if(!_allProfilesLoaded && !_loadingAllProfiles){ opLoadAllProfiles().then(function(ch){ if(ch) opRenderPortfolio(); }); }
+      if(!_allProfilesLoaded && !_loadingAllProfiles){ opLoadAllProfiles().then(function(ch){ if(Object.keys(profileCache).some(function(k){ return propNOIOverride(k) != null || propEnteredNOI(k) != null; })){ try{ redrawAll(); }catch(e){} } else if(ch) opRenderPortfolio(); }); }   // 2.9.7 (#45) — a property NOI moves every figure
       const hooks = opHooks(), gd = uwState.input.bench, records = Object.assign({}, OperatingStore.all());
       // 2.9.1 — include standalone (loan-less) properties so they show in the roll-up as an explained blank.
       opProperties().forEach(function(p){ if(!p.loans.length && !records[p.key]) records[p.key] = opRecordFor(p.key); });
@@ -6165,7 +6235,7 @@ tr.flagged:hover td{background:#fee2e2}
       const groups = {}, order = [];
       Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
       const fields = order.map(function(g){
-        const rows = groups[g].map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');
+        const rows = groups[g].filter(function(fd){ return !(fd.key === "noi" && propSeniorLoan(key)); }).map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');   // 2.9.7 (#46) — a property with loans keeps its entered NOI on the loan ("Add NOI")
         return '<div class="mb-3 last:mb-0"><h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">'+escapeHtml(g)+'</h4><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
       }).join('');
       const comphtml = comp.complete
@@ -6244,7 +6314,7 @@ tr.flagged:hover td{background:#fee2e2}
       // 2.9.7 (#36, #211) — the property's name and address live in ONE place: they change on all its loans,
       // and a new name moves its files and chats (the same rename the loan form does).
       if(fk === "propertyName" || fk === "address"){ propRenameFromProfile(key, fk, String(t.value || "").trim()); return; }
-      opProfileSetField(key, fk, t.value).then(() => profilePanelRedraw());   // 2.9.7 (#84, #86) — "last changed by" and "Profile complete" show at once
+      opProfileSetField(key, fk, t.value).then(() => { profilePanelRedraw(); if(fk === "noi" || fk === "noiOverride"){ try{ redrawAll(); }catch(x){} } });   // 2.9.7 (#84, #86) — "last changed by" and "Profile complete" show at once; an NOI moves every figure (#45)
     });
     // Units and sq ft whole numbers ≥ 0; year built 1800 – this year. "" clears the field.
     function profileFieldProblem(fk, raw){
@@ -6252,6 +6322,8 @@ tr.flagged:hover td{background:#fee2e2}
       const n = Number(v), lab = Profile.labelFor(fk);
       if(fk === "residentialUnits" || fk === "commercialUnits" || fk === "rentableSqFt"){ if(!/^\d+$/.test(v)) return lab + " must be a whole number, 0 or more — not saved."; }
       if(fk === "yearBuilt"){ const y = new Date().getFullYear(); if(!/^\d{4}$/.test(v) || n < 1800 || n > y) return "Year built must be between 1800 and " + y + " — not saved."; }
+      const fd = Profile.fieldDef(fk);
+      if(fd && fd.type === "money"){ const m = v.replace(/[$\s]/g, "").replace(/^\((.*)\)$/, "-$1"); if(!/^-?\d+(\.\d+)?$/.test(m)) return lab + " must be a dollar amount (negative allowed) — not saved."; }   // 2.9.7 (#45)
       return "";
     }
     // Redraw the open profile panel after a save, keeping it open and keeping the cursor where it was.
@@ -7902,8 +7974,17 @@ tr.flagged:hover td{background:#fee2e2}
       if(!drafts.length){ closeImportPreview(); return; }
       // safety snapshot of the current book before the bulk change (desktop app)
       if(desktop() && loans.length){ try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-import"); } catch(e){} }
-      // Merge: a matched loan gets ONLY the sheet-provided fields overwritten (so it
-      // never loses data the sheet omitted); an unmatched loan is added in full.
+      const res = importApplyDrafts(drafts, "excel-import");
+      state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
+      importState = null;
+      hideModal("importPreview");
+      save();
+      setMode(loans.length ? "portfolio" : "empty");
+      toast("Imported "+drafts.length+" loan"+(drafts.length>1?"s":"")+" — "+res.added+" new, "+res.updated+" updated, "+res.unchanged+" unchanged", "check");   // the same counts the preview showed (#71)
+    }
+    // Merge: a matched loan gets ONLY the sheet-provided fields overwritten (so it never loses data the sheet
+    // omitted); an unmatched loan is added in full. 2.9.7 (#231) — shared with the assistant's import (no screen change).
+    function importApplyDrafts(drafts, from){
       let added=0, updated=0, unchanged=0, firstId=null;
       drafts.forEach(d => {
         const e = evalImportRow(d), match = e.match;
@@ -7911,18 +7992,12 @@ tr.flagged:hover td{background:#fee2e2}
           if(!e.changed){ unchanged++; return; }   // 2.9.7 (#71) — an untouched loan stays exactly as it was
           const before = JSON.parse(JSON.stringify(match));
           (d._provided||new Set()).forEach(k => { if(!importSameVal(k, d[k], match[k])) match[k] = d[k]; });
-          try{ loanHistoryDiff(before, match, "excel-import"); }catch(err){}   // 2.9.7 (#252)
+          try{ loanHistoryDiff(before, match, from || "excel-import"); }catch(err){}   // 2.9.7 (#252)
           updated++; if(!firstId) firstId = match._id;
         }
-        else { d.isHistorical = true; delete d._provided; delete d._importId; try{ loanHistoryAdd(d, "created", null, "added", "excel-import"); }catch(err){} loans.push(d); added++; if(!firstId) firstId = d._id; }
+        else { d.isHistorical = true; delete d._provided; delete d._importId; try{ loanHistoryAdd(d, "created", null, "added", from || "excel-import"); }catch(err){} loans.push(d); added++; if(!firstId) firstId = d._id; }
       });
-      const res = { added, updated, unchanged, firstId };
-      state.activeId = res.firstId || (loans[0] && loans[0]._id) || null;
-      importState = null;
-      hideModal("importPreview");
-      save();
-      setMode(loans.length ? "portfolio" : "empty");
-      toast("Imported "+drafts.length+" loan"+(drafts.length>1?"s":"")+" — "+res.added+" new, "+res.updated+" updated, "+res.unchanged+" unchanged", "check");   // the same counts the preview showed (#71)
+      return { added, updated, unchanged, firstId };
     }
     function closeImportPreview(){ importState = null; hideModal("importPreview"); }
     // Stable identity for merge-on-import: loan number first, else name+address.
@@ -8014,12 +8089,14 @@ tr.flagged:hover td{background:#fee2e2}
     function confirmDialog(title, text, cb, okLabel, opts){
       opts = opts || {};
       dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb; confirmCancelCb = opts.onCancel || null;
+      confirmAltCb = opts.onAlt || null; const alt = el("confirmAlt"); if(alt){ alt.hidden = !opts.altLabel; alt.textContent = opts.altLabel || ""; }   // 2.9.7 (#44, #233) — a third choice (e.g. "Open it" / "Start fresh")
       if(dom.confirmOk) dom.confirmOk.textContent = okLabel || ((/^([A-Za-z]+)/.exec(title || "") || [])[1]) || "Confirm";   // the OK button names the ACTUAL action — the title's leading verb (Remove / Restore / Delete / Archive), never a hardcoded "Remove"
       if(dom.confirmCancel) dom.confirmCancel.textContent = opts.cancelLabel || "Cancel";
       dom.confirmModal.classList.remove("hidden"); dom.confirmModal.classList.add("flex");
       if(opts.focusOk){ try{ dom.confirmOk.focus(); }catch(e){} }
     }
-    function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; confirmCancelCb = null; }
+    let confirmAltCb = null;
+    function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; confirmCancelCb = null; confirmAltCb = null; const alt = el("confirmAlt"); if(alt) alt.hidden = true; }
 
     /* ================================================================
        11a. BACKUP / RESTORE  (desktop app — files live under userData)
@@ -8545,7 +8622,7 @@ tr.flagged:hover td{background:#fee2e2}
     // showing "Add NOI" for a property that already had one.
     // 2.9.7 (#21) — "has an NOI" follows the SAME source as the row's DSCR and debt yield: the T12's figure (its
     // saved General Data) when there is one, so a property with a T12 never reads "needs T12/NOI".
-    function noiEntered(loan){ return folderNOI(loan) != null || opNOI(loan) != null || !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
+    function noiEntered(loan){ return folderNOI(loan) != null || opNOI(loan) != null || !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))) || (!!loan && propEnteredNOI(propertyKey(loan)) != null); }
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
@@ -8553,9 +8630,10 @@ tr.flagged:hover td{background:#fee2e2}
       if(g != null) return g;
       const o = (list && list.length) ? opNOI(list[0]) : null;   // the property's operating model, when it has one
       if(o != null) return o;
-      for(const l of list){ if(noiEntered(l) && Number(l.noi) > 0) return Number(l.noi); }
-      for(const l of list){ if(noiEntered(l)) return Number(l.noi); }
-      return null;
+      for(const l of list){ if(l && l.noi != null && l.noi !== "" && Number(l.noi) > 0) return Number(l.noi); }
+      for(const l of list){ if(l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi))) return Number(l.noi); }
+      const pe = (list && list.length) ? propEnteredNOI(propertyKey(list[0])) : null;   // 2.9.7 (#46) — the property's own entered NOI
+      return pe;
     }
     function combinedPosition(list){
       let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0, dsAnnTot = 0;
@@ -8978,12 +9056,14 @@ tr.flagged:hover td{background:#fee2e2}
       return { inPlace: inPlace, underwritten: underwritten, hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
     }
     // 2.9.7 (#28) — the NOI typed on the property's loan (senior first), when there is one.
-    function refiEnteredNOI(loan){ const ms = refiMembers(loan).slice().sort(loanRank); for(const m of ms){ if(m && m.noi != null && m.noi !== "" && isFinite(Number(m.noi))) return Number(m.noi); } return null; }
+    function refiEnteredNOI(loan){ if(!loan) return null; const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov;   // 2.9.7 (#45) — your override first
+      const ms = refiMembers(loan).slice().sort(loanRank); for(const m of ms){ if(m && m.noi != null && m.noi !== "" && isFinite(Number(m.noi))) return Number(m.noi); } return propEnteredNOI(k); }
     function refiBasis(loan){
       const o = refiNOIOptions(loan), b = loan ? refiBasisByKey[propertyKey(loan)] : null;
       if(b === "entered" && refiEnteredNOI(loan) != null) return "entered";
       if(b === "inplace" && o.inPlace != null) return "inplace";
       if(b === "underwritten" && o.underwritten != null) return "underwritten";
+      if(loan && propNOIOverride(propertyKey(loan)) != null) return "entered";   // 2.9.7 (#45) — your override replaces the T12 unless you pick another basis
       if(o.underwritten != null) return "underwritten";   // default: the sized-to figure
       if(o.inPlace != null) return "inplace";
       return "manual";                                     // no General Data → today's hand-entered NOI
@@ -9811,9 +9891,10 @@ tr.flagged:hover td{background:#fee2e2}
       return act.length > 1 ? getLoan("combo:" + key) : (act[0] || l);
     }
     function refiPrepare(l){ const t = refiTargetFor(l); if(!t) return null; ensureRefiDrafts(t); return t; }
-    function refiSummaryText(t, v){
-      v = v || refiVerdict(t, refiDrafts[1]);
-      const d = refiDrafts[1], name = t._combined ? t.propertyName : loanLabel(t), n = refiMembers(t).length;
+    function refiSummaryText(t, v, draft){
+      const d = draft || refiDrafts[1];
+      v = v || refiVerdict(t, d);
+      const name = t._combined ? t.propertyName : loanLabel(t), n = refiMembers(t).length;
       if(!v.can.sized) return name + ": I can’t judge this yet — the property has no NOI (upload its T12 or enter the NOI).";
       let s = name + " — you owe " + fmtMoney(v.can.payoff) + (n > 1 ? " on " + n + " loans together" : "") + ". Can you? " + (v.can.can ? "Yes — it supports up to " + fmtMoney(v.can.maxLoan) + "." : "No — it supports only " + fmtMoney(v.can.maxLoan) + ".");
       if(v.can.can){ const w = v.should;
@@ -10186,7 +10267,7 @@ tr.flagged:hover td{background:#fee2e2}
           // annual dollars; noi may be 0 or negative while a property is still filling up. dscr/debtYield are computed and
           // appear only when NOI is positive. noi matches the app's own screens; noiBasis names its source
           // when a T12 drives it.
-          noi: keep(noiVal), noiBasis: hasGD ? noiMethodLabel(gnoi) : undefined,
+          noi: keep(noiVal), noiBasis: (propNOIOverride(pk) != null) ? ("the operator's own override (typed by them on the property page"+(hasGD?"; the T12 says "+fmtMoney(gnoi.inPlace):"")+")") : (hasGD ? noiMethodLabel(gnoi) : undefined),   // 2.9.7 (#45)
           egi: hasGD ? undefined : keep(l.egi), opex: hasGD ? undefined : keep(l.opex), capRate: keep(l.capRate),
           dscr: keep(loanDSCR(l)), debtYield: keep(loanDebtYield(l))
         };
@@ -10213,6 +10294,7 @@ tr.flagged:hover td{background:#fee2e2}
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app, reply with a short sentence saying what you are about to do, then one fenced code block tagged action per step, each holding one JSON object {\"action\":\"…\",\"args\":{…}} (several blocks run in the order written). Use only these actions and argument names:",
+      "READING ACTIONS — nothing changes and no card is shown; use them yourself whenever you need to look something up, and their DATA comes back to you in the next message: list_properties {} (every property — active, without a loan, archived — with its loans and their status); read_property {name} (one property in full: its loans and status, profile, NOI from the T12 and entered, underwriting assumptions, T12 lines with the change vs the prior year, rent roll, refinance verdict, documents); read_rates {} (the market rates the app holds and where each comes from); read_documents {name, file?, part?} (without file: the property's saved documents; with file: that document's text — a long one comes in parts, ask for part 2, 3 … to keep reading, never answer about a part you have not read); read_data_health {} (the Data Health page); read_settings {} (targets, default assumptions, Claude connection, backups).",
       "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
       "- show_portfolio {}: show the whole-portfolio overview.",
       "- open_calendar {}: open the Maturity & Reset Calendar.",
@@ -10267,8 +10349,10 @@ tr.flagged:hover td{background:#fee2e2}
     function aiEditCoerce(meta, raw){
       var numeric = (meta.type==="money"||meta.type==="pct"||meta.type==="int");
       if(raw==null || raw==="" || (typeof raw==="string" && /^\(?(remove|clear|none|null|blank)\)?$/i.test(raw.trim()))) return {v: numeric?null:""};
-      if(numeric){ var n=Number(raw); if(!isFinite(n)) return null; if(meta.type==="int") n=Math.round(n); return {v:n}; }
-      var s=String(raw).trim(); if(meta.options && meta.options.indexOf(s)<0) return null; return {v:s};
+      if(numeric){ var n=Number(String(raw).replace(/[$,%\s]/g,"")); if(!isFinite(n)) return null; if(meta.type==="int") n=Math.round(n); if(meta.type==="pct" && Math.abs(n)>=1) n=n/100; return {v:n}; }   // 2.9.7 (#236) — "5.5" for a rate means 5.5%
+      var s=String(raw).trim(); if(meta.options && meta.options.indexOf(s)<0) return null;
+      if(meta.type==="date"){ var dm=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if(!dm) return null; var dt=new Date(Date.UTC(+dm[1], +dm[2]-1, +dm[3])); if(dt.getUTCFullYear()!==+dm[1] || dt.getUTCMonth()!==+dm[2]-1 || dt.getUTCDate()!==+dm[3]) return null; }   // a real calendar date only
+      return {v:s};
     }
     // Do the stored value `a` and the proposed value `b` mean the same thing? (empty ~ empty,
     // numbers compared numerically, everything else by string.) Used to verify an applied edit.
@@ -10348,6 +10432,81 @@ tr.flagged:hover td{background:#fee2e2}
     function aiAsstCardBody(introHtml, rowsHtml){
       return '<div class="text-[13px]">'+introHtml+'</div>'+(rowsHtml ? '<div class="rounded-lg border border-slate-200 bg-white px-3 py-1.5">'+rowsHtml+'</div>' : '');
     }
+    // One before → after line on a card. With tick:true it gets a tick box (#111); src {file,page,quote} says where the
+    // figure came from; warn is a caution shown under it.
+    function aiAsstRow(id, label, oldTxt, newTxt, extra){
+      extra=extra||{};
+      var src=extra.src, srcTxt = src && (src.file||src.page||src.quote) ? [src.file?escapeHtml(String(src.file)):"", src.page!=null&&src.page!==""?("p."+escapeHtml(String(src.page))):"", src.quote?("“"+escapeHtml(String(src.quote).slice(0,160))+"”"):""].filter(Boolean).join(" · ") : "";
+      return '<div class="py-1.5 border-b border-slate-200/70 last:border-0" data-asstrow="'+escapeHtml(id)+'"><div class="flex items-center justify-between gap-3">'+
+        '<span class="flex items-center gap-1.5 text-[12px] font-medium text-slate-600 shrink-0">'+(extra.tick?'<input type="checkbox" class="aiAsstLine h-3.5 w-3.5 accent-emerald-600" data-asstline="'+escapeHtml(id)+'" checked>':'')+escapeHtml(label)+'</span>'+
+        '<span class="text-[12px] tabular-nums text-right">'+(oldTxt!=null?'<span class="text-rose-500 line-through">'+oldTxt+'</span> <span class="text-slate-400">→</span> ':'')+'<span class="font-bold text-emerald-700">'+newTxt+'</span></span></div>'+
+        (srcTxt?'<div class="mt-0.5 text-[10px] text-slate-400">from '+srcTxt+'</div>':'')+
+        (extra.warn?'<div class="mt-0.5 text-[11px] font-semibold text-amber-700">⚠ '+escapeHtml(extra.warn)+'</div>':'')+'</div>';
+    }
+    // The property has an NOI from a T12 (its saved General Data, or its operating model)?
+    function aiAsstT12NOI(key){
+      var g=gdNOICache[key]; if(g && g.inPlace!=null && isFinite(g.inPlace)) return g.inPlace;
+      try{ var sr=propSeniorLoan(key); var o=sr?opNOI(sr):null; if(o!=null) return o; }catch(e){}
+      return null;
+    }
+    function aiAsstNOIRefusal(name, key){
+      var t=aiAsstT12NOI(key), ov=propNOIOverride(key);
+      if(ov!=null) return name+"’s NOI is your own override ("+fmtMoney(ov)+" a year) — only you can change it, on the property page (Property profile → NOI override).";
+      if(t!=null) return name+"’s NOI comes from its T12 ("+fmtMoney(t)+" a year) — I can’t change it. You can override it yourself on the property page (Property profile → NOI override).";
+      return null;
+    }
+    function aiAsstMoneyTxt(v){ if(v==null||v==="") return "(none)"; var n=Number(v); return isFinite(n) ? (fmtMoney(n)+(n<0?" (negative)":"")) : escapeHtml(String(v)); }
+    // 2.9.7 (#235, #236, #111) — the loan-change card. The loan form's own checks run on the changed loan (a change
+    // that would break it is refused, in its words); a T12 property's NOI, income and expenses are left alone (your
+    // NOI rule); a maturity in the past and an unusual rate are flagged; a new address on the senior asks whether
+    // the property's other loans move with it (#136). Every line has a tick box and says where its figure came from.
+    var AI_NOI_FIELDS={ noi:1, egi:1, opex:1 };
+    function aiAsstLoanChange(l, changes, opts){
+      opts=opts||{};
+      var key=propertyKey(l), name=opPropDisplayName(key)||loanLabel(l), edits=aiAsstBuildEdit(l, changes||{}), held=[];
+      var refusal=aiAsstNOIRefusal(name, key);
+      if(refusal){ held=edits.filter(function(e){ return AI_NOI_FIELDS[e.key]; }); edits=edits.filter(function(e){ return !AI_NOI_FIELDS[e.key]; }); }
+      if(!edits.length) return {ok:false,msg: held.length ? refusal : "I didn’t have a valid change to propose — either the field isn’t editable, the value isn’t valid (a real date, a number), or it already matches."};
+      var after=Object.assign({}, l); edits.forEach(function(e){ after[e.key]=e.newVal; });
+      var e0=validateLoan(Object.assign({}, l)), e1=validateLoan(after);
+      if(e1 && e1!==e0) return {ok:false,msg:"That change would break the loan — the loan form says: “"+e1+"” Nothing was proposed."};
+      if(after.annualRate!=null && after.annualRate!=="" && Number(after.annualRate)<0) return {ok:false,msg:"A rate can’t be negative. Nothing was proposed."};
+      var warn={}, today=aiAsstTodayISO();
+      edits.forEach(function(e){
+        if(e.key==="maturityDate" && e.newVal && String(e.newVal)<today) warn[e.key]="This maturity is in the past — are you sure?";
+        if((e.key==="annualRate"||e.key==="spread") && e.newVal!=null && Number(e.newVal)>0.25) warn[e.key]=fmtPct(Number(e.newVal))+" is unusually high — are you sure?";
+        if(e.key==="noi" && e.newVal!=null && Number(e.newVal)<0) warn[e.key]="A negative NOI — the property loses money before debt service.";
+      });
+      var src=opts.sources||{}, tick=edits.length>1;
+      var rows=edits.map(function(e){ return aiAsstRow(e.key, e.label, e.type==="money"?aiAsstMoneyTxt(e.oldVal):aiEditFmt(e.type,e.oldVal), e.type==="money"?aiAsstMoneyTxt(e.newVal):aiEditFmt(e.type,e.newVal), { tick:tick, src:src[e.key], warn:warn[e.key] }); }).join('');
+      if(held.length) rows+='<div class="py-1.5 text-[11px] text-slate-500">Left alone: '+escapeHtml(held.map(function(e){ return e.label; }).join(", "))+' — '+escapeHtml(refusal)+'</div>';
+      // #136 — the senior's new address: the property's other loans move with it?
+      var addrE=edits.find(function(e){ return e.key==="propertyAddress"; }), sibs=[];
+      if(addrE){ var oldA=normPropAddr(l.propertyAddress), newA=normPropAddr(addrE.newVal); if(oldA && oldA!==newA) sibs=loans.filter(function(x){ return x!==l && !loanIsInactiveSelf(x) && normPropAddr(x.propertyAddress)===oldA; }); }
+      var apply=function(picked, moveSibs){
+        var loan=(loans.indexOf(l)>=0)?l:getLoan(l._id);
+        if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing was changed."};
+        var use=picked ? edits.filter(function(e){ return picked.indexOf(e.key)>=0; }) : edits, skip=edits.filter(function(e){ return use.indexOf(e)<0; });
+        if(!use.length) return {ok:false, cancelled:true, html:"Nothing was ticked — nothing was changed."};
+        if(refusal && use.some(function(e){ return AI_NOI_FIELDS[e.key]; })) return {ok:false, html:"Not applied — "+escapeHtml(refusal)};
+        var also=(moveSibs && use.indexOf(addrE)>=0) ? sibs : [];
+        var kb=propertyKey(loan), chg={}; use.forEach(function(e){ chg[e.key]=e.newVal; });
+        var ka=(chg.propertyName!==undefined||chg.propertyAddress!==undefined) ? predictKeyAfterEdit(loan, chg, also) : kb;
+        return (kb!==ka ? propRenameAsk(loan, kb, ka, chg.propertyName||loan.propertyName||"") : Promise.resolve({go:true,merge:false})).then(function(ans){
+          if(!ans.go) return {ok:false, cancelled:true, html:"Not renamed — nothing was changed."};
+          also.forEach(function(x){ var was=x.propertyAddress; x.propertyAddress=chg.propertyAddress; try{ loanHistoryAdd(x, "propertyAddress", was, chg.propertyAddress, "assistant"); }catch(err){} });
+          use.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; var sx=src[e.key]||{}; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant", { file: sx.file?String(sx.file).slice(0,200):null, page: sx.page!=null?String(sx.page).slice(0,20):null, note: sx.quote?("“"+String(sx.quote).slice(0,200)+"”"):null }); }catch(x){} });   // 2.9.7 (#252, #111) — "Assistant, approved by You", with where it came from
+          if(kb!==ka){ try{ opFollowRename(loan, kb, ka); }catch(x){} try{ propRenameFiles(loan, kb, ka, { merge: !!ans.merge, from: "assistant" }); }catch(x){} }
+          save(); try{ redrawAll(); }catch(x){ render(); }
+          if(!aiVerifyEditsApplied(loan, use)) return {ok:false, html:"I couldn’t save that change — nothing was updated. Please try again."};
+          return {ok:true, html:'✓ Applied — updated '+use.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+(also.length?' (and the address on '+escapeHtml(also.map(loanLabel).join(", "))+')':'')+'.'+(skip.length?' Not applied (unticked): '+escapeHtml(skip.map(function(e){ return e.label; }).join(", "))+'.':''), toast:"Updated "+loanLabel(loan)};
+        });
+      };
+      var intro=opts.title || ('Proposed change to <b>'+escapeHtml(loanLabel(l))+'</b> — review before I apply it:');
+      if(sibs.length) return aiAsstApprovalCard(intro+'<br><span class="text-[12px] text-slate-600">'+escapeHtml(sibs.map(loanLabel).join(", "))+' still '+(sibs.length===1?'has':'have')+' the old address. Move the whole property ('+(sibs.some(isMezz)?'mezz too':'all its loans')+')?</span>', rows,
+        function(picked){ return apply(picked, true); }, { approveLabel:"Apply — move "+(sibs.some(isMezz)?"the mezz":"them")+" too", altLabel:"Only this loan", altFn:function(picked){ return apply(picked, false); } });
+      return aiAsstApprovalCard(intro, rows, function(picked){ return apply(picked, false); });
+    }
     function aiAsstApprovalCard(introHtml, rowsHtml, applyFn, opts){
       opts=opts||{};
       var okLabel=opts.approveLabel||"Approve &amp; apply";
@@ -10365,12 +10524,19 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstOpenCards.push(handle);
       function finish(html, ok, cancelled, data){ done=true; [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; });
         aiAsstOpenCards=aiAsstOpenCards.filter(function(h){ return h!==handle; });
+        if(bub){ bub.querySelectorAll(".aiAsstLine").forEach(function(c){ c.disabled=true; if(c.checked) c.setAttribute("checked",""); else c.removeAttribute("checked"); });
+          var body=bub.querySelector("[data-asstcard]"); if(body){ var cl=body.cloneNode(true); var bt=cl.querySelector(".aiAsstEditApprove"); if(bt&&bt.parentNode) bt.parentNode.remove(); entry.html=cl.innerHTML; } }   // the saved card shows which lines were ticked
         if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; }
         var msg=aiAsstPlain(html).replace(/^✓\s*/,"");
         entry.outcome=html; entry.ok=!!ok; entry.text+="\n→ "+(ok?"approved: ":"")+msg; aiAsstPersist();
+        if(cancelled && /^Cancelled\b/.test(msg)) msg = "the operator clicked Cancel; nothing was changed.";
         settle({ ok: !!ok, msg: (cancelled ? "Not approved — " : (ok ? "Approved and done — " : "Approved, but it did not happen — "))+msg, data: data, cancelled: !!cancelled }); }
-      function run(fn){ if(done) return; [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; });
-        Promise.resolve().then(fn).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false, !!res.cancelled, res.data); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
+      function run(fn){ if(done) return;
+        // 2.9.7 (#111) — a tick box on each line: only the ticked lines are applied.
+        var boxes=bub?Array.prototype.slice.call(bub.querySelectorAll(".aiAsstLine")):[], picked=boxes.length ? boxes.filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute("data-asstline"); }) : null;
+        if(picked && !picked.length){ finish("Nothing was ticked — nothing was changed.", false, true); return; }
+        [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; }); boxes.forEach(function(c){ c.disabled=true; });
+        Promise.resolve().then(function(){ return fn(picked); }).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false, !!res.cancelled, res.data); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
           .catch(function(e){ finish("That couldn’t be completed: "+escapeHtml(String((e&&e.message)||e)), false); }); }
       if(ap) ap.addEventListener("click", function(){ run(applyFn); });
       if(al && opts.altFn) al.addEventListener("click", function(){ run(opts.altFn); });
@@ -10379,14 +10545,14 @@ tr.flagged:hover td{background:#fee2e2}
     }
 
     var aiAsstActions = {
-      open_loan: function(a){ var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'}; selectLoan(l._id); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+"."}; },
+      open_loan: function(a){ var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan; selectLoan(l._id); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+"."}; },
       show_portfolio: function(){ setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
       open_calendar: function(){ if(typeof openTab==="function") openTab("calendar"); return {ok:true,close:true,msg:"Opened the Maturity & Reset Calendar."}; },
       open_underwriting: function(){ if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
       // 2.9.7 (#27) — the refinance is always of the PROPERTY (all its loans together). It is prepared in the
       // background and offered for approval here; the screen opens only when you ask (open: true).
       start_refinance: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
         var t=refiPrepare(l); if(!t) return {ok:false,msg:"I couldn’t prepare that refinance."};
         var v=refiVerdict(t, refiDrafts[1]), sum=refiSummaryText(t, v);
         if(a && a.open){ state.activeId=t._id; try{ startRefi(); }catch(e){} }
@@ -10401,98 +10567,132 @@ tr.flagged:hover td{background:#fee2e2}
       open_export: function(){ if(typeof openExportPreview==="function") openExportPreview(); return {ok:true,close:true,msg:"Opened the Export-to-Excel dialog."}; },
       // 2.9.6 (#4) — like the manual "Add Loan", open the draft form even from a PARTIAL (or empty) set
       // of fields; the operator fills the rest and Saves. Never refuse to start the draft over sparseness.
-      propose_new_loan: function(a){ var clean=aiSanitize((a&&a.fields)||{}); state.draft=Object.assign(emptyLoan(), clean, {_id:uid(), isHistorical:true}); setMode("add"); var n=Object.keys(clean).length; return {ok:true,close:true,msg: n ? ("Opened a new-loan form pre-filled with "+n+" field(s) — review every field, then Save.") : "Opened a blank new-loan form — fill in the fields, then Save."}; },
-      // 2.9.6 (#1) — set a property's annual NOI as an assistant action (the "Add NOI" flow). NOI from an
-      // uploaded T12 is the source of truth, so this refuses to hand-override it and says why; otherwise it
-      // proposes the NOI (and optional cap rate) through the same Approve card as any other change.
-      set_property_noi: function(a){
-        var l=aiAsstFindLoan(a&&a.name);
-        if(!l) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        var v=Number(a&&a.noi);
-        if(!isFinite(v)||v<=0) return {ok:false,msg:"Give me a positive annual NOI (in dollars) to set."};
-        var t12=opNOI(l);
-        if(t12!=null) return {ok:false,msg:"That property’s NOI comes from its uploaded T12 ("+fmtMoney(t12)+"/yr), which the app uses as the source of truth — a hand-entered figure won’t override it. To change it, edit or replace the T12."};
-        var changes={ noi:v }; if(a&&a.capRate!=null&&isFinite(Number(a.capRate))&&Number(a.capRate)>0) changes.capRate=Number(a.capRate);
-        return aiAsstActions.propose_loan_change({ name:a.name, changes:changes });
+      // 2.9.7 (#91) — a new loan: an Approve card listing every field; anything required that is missing is asked for
+      // first; the loan form opens only when the operator asks for it (open: true).
+      propose_new_loan: function(a){
+        var clean=aiSanitize((a&&a.fields)||{});
+        if(a && a.open){ state.draft=Object.assign(emptyLoan(), clean, {_id:uid(), isHistorical:true}); try{ activateTab("home"); }catch(e){} setMode("add"); var n=Object.keys(clean).length; return {ok:true,close:true,msg: n ? ("Opened a new-loan form pre-filled with "+n+" field(s) — review every field, then Save.") : "Opened a blank new-loan form — fill in the fields, then Save."}; }
+        var d=Object.assign(emptyLoan(), clean, {_id:uid()});
+        d.isHistorical = (clean.annualRate!=null);   // a rate from the agreement is kept as typed; index + spread alone price at today's index
+        var miss=missingRequiredFields(d).map(function(f){ return f.label; }); if(!String(d.propertyName||"").trim()) miss.unshift("Property Name");
+        if(miss.length) return {ok:false,msg:"To add this loan I still need: "+miss.join(", ")+". Nothing was created — ask the operator for them (or open the form with open:true)."};
+        var err=validateLoan(Object.assign({}, d)); if(err) return {ok:false,msg:"That loan doesn’t add up — the loan form says: “"+err+"” Nothing was created."};
+        var key=propertyKey(d), exists=opProperties().some(function(p){ return p.key===key; }), pn=exists?opPropDisplayName(key):d.propertyName;
+        var src=(a&&a.sources)||{};
+        var rows=INPUT_FIELDS.filter(function(f){ return clean[f.key]!==undefined; }).map(function(f){ return aiAsstRow(f.key, f.label, null, f.type==="money"?aiAsstMoneyTxt(clean[f.key]):aiEditFmt(f.type,clean[f.key]), { src: src[f.key] }); }).join('');
+        return aiAsstApprovalCard('Add this new loan'+(exists?' to <b>'+escapeHtml(pn)+'</b> (an existing property)':' — <b>'+escapeHtml(pn)+'</b> is a new property')+'?', rows, function(){
+          if(!d.isHistorical && d.rateType==="Fixed"){ try{ lockFixedRate(d); }catch(e){} }
+          var isNew=!loans.some(function(l){ return propertyKey(l)===propertyKey(d); }) && !opProfileKnown(propertyKey(d));
+          loans.push(d); try{ loanHistoryAdd(d, "created", null, "added", "assistant"); }catch(e){}
+          if(isNew){ try{ opCreatePropertyFolder(propertyKey(d), d.propertyName||loanLabel(d)); }catch(e){} }
+          save(); try{ redrawAll(); }catch(e){ render(); }
+          return {ok:true, html:'✓ Added the loan '+escapeHtml(loanLabel(d))+' ('+aiAsstMoneyTxt(d.originalAmount)+').', toast:'Loan added — '+loanLabel(d)};
+        });
       },
-      // Propose a change to an existing loan: render a before -> after preview with
-      // Approve / Cancel in the chat, and apply ONLY when the operator approves.
-      propose_loan_change: function(a){
-        var l=aiAsstFindLoan(a&&a.name);
-        if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        var edits=aiAsstBuildEdit(l, (a&&a.changes)||{});
-        if(!edits.length) return {ok:false,msg:"I didn’t have a valid change to propose — either the field isn’t editable or the value already matches."};
-        var rows=edits.map(function(e){
-          return '<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0">'+
-            '<span class="text-[12px] font-medium text-slate-600 shrink-0">'+escapeHtml(e.label)+'</span>'+
-            '<span class="text-[12px] tabular-nums text-right"><span class="text-rose-500 line-through">'+aiEditFmt(e.type,e.oldVal)+'</span> <span class="text-slate-400">→</span> <span class="font-bold text-emerald-700">'+aiEditFmt(e.type,e.newVal)+'</span></span></div>';
-        }).join('');
-        return aiAsstApprovalCard('Proposed change to <b>'+escapeHtml(loanLabel(l))+'</b> — review before I apply it:', rows, function(){
-          // Apply to the EXACT loan the operator reviewed. `l` is a live element of `loans`
-          // (aiAsstFindLoan returns one), so mutate it directly — never re-resolve by _id,
-          // which can mis-hit and silently edit the WRONG loan when ids are missing or
-          // duplicated (imported/restored books). Fall back to an id lookup only if `l`
-          // somehow left the book.
-          var loan = (loans.indexOf(l) >= 0) ? l : getLoan(l._id);
-          if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing was changed."};
-          // 2.9.7 (#216) — a name or address change renames the property: its files and chats follow (asked first
-          // when the new name already has files of its own).
-          var kb=propertyKey(loan), chg={}; edits.forEach(function(e){ chg[e.key]=e.newVal; });
-          var ka=(chg.propertyName!==undefined||chg.propertyAddress!==undefined) ? predictKeyAfterEdit(loan, chg, []) : kb;
-          return (kb!==ka ? propRenameAsk(loan, kb, ka, chg.propertyName||loan.propertyName||"") : Promise.resolve({go:true,merge:false})).then(function(ans){
-            if(!ans.go) return {ok:false, cancelled:true, html:"Not renamed — nothing was changed."};
-            edits.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant"); }catch(x){} });   // 2.9.7 (#252) — "Assistant, approved by You"
-            if(kb!==ka){ try{ opFollowRename(loan, kb, ka); }catch(x){} try{ propRenameFiles(loan, kb, ka, { merge: !!ans.merge, from: "assistant" }); }catch(x){} }
-            save(); render();
-            // Never claim success unless the change actually landed (in memory AND storage).
-            if(aiVerifyEditsApplied(loan, edits)) return {ok:true, html:'✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', toast:"Updated "+loanLabel(loan)};
-            return {ok:false, html:"I couldn’t save that change — nothing was updated. Please try again."};
+      // 2.9.7 (#45, #46, #234, #235) — set a property's annual NOI. YOUR RULE: an NOI from a T12 (or your own override)
+      // is never changed by the assistant; with no T12 it may set it once you approve. Any property — with or
+      // without a loan; negative is allowed and shown as negative.
+      set_property_noi: function(a){
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var v=Number(String(a&&a.noi!=null?a.noi:"").replace(/[$,\s]/g,""));
+        if(a==null || a.noi==null || a.noi==="" || !isFinite(v)) return {ok:false,msg:"Give me the annual NOI in dollars (negative is allowed)."};
+        return opEnsureGeneralData(r.key).catch(function(){}).then(function(){
+          var no=aiAsstNOIRefusal(r.name, r.key); if(no) return {ok:false,msg:no};
+          var p=opProp(r.key), sr=p&&p.loans.length ? p.loans.slice().sort(loanRank)[0] : null;
+          var changes={ noi:v }; if(a.capRate!=null && isFinite(Number(a.capRate)) && Number(a.capRate)>0) changes.capRate=Number(a.capRate);
+          if(sr) return aiAsstLoanChange(sr, changes, { title:'Set the NOI of <b>'+escapeHtml(r.name)+'</b>'+(p.loans.length>1?' (kept on its senior loan, '+escapeHtml(loanLabel(sr))+')':'')+' — review before I apply it:', sources:a.sources });
+          var old=propEnteredNOI(r.key);
+          if(old!=null && Math.abs(old-v)<0.005) return {ok:false,msg:r.name+"’s NOI is already "+fmtMoney(v)+"."};
+          return aiAsstApprovalCard('Set the NOI of <b>'+escapeHtml(r.name)+'</b> (no loan yet) — saved on the property itself:', aiAsstRow("noi","NOI (annual, entered)", aiAsstMoneyTxt(old), aiAsstMoneyTxt(v), { src: a.sources&&a.sources.noi }), function(){
+            if(aiAsstT12NOI(r.key)!=null) return {ok:false, html:"Not set — a T12 arrived meanwhile and its NOI is used."};
+            var src={ kind:"assistant" }; var sx=a.sources&&a.sources.noi; if(sx&&sx.file) src.file=String(sx.file).slice(0,200); if(sx&&sx.page!=null) src.page=String(sx.page).slice(0,20);
+            return opProfileSetField(r.key, "noi", v, { changedBy: HISTORY_WHO_ASSISTANT, source: src }).then(function(){ try{ redrawAll(); }catch(e){}
+              return {ok:true, html:'✓ Set '+escapeHtml(r.name)+'’s NOI to '+aiAsstMoneyTxt(v)+' a year.', toast:'NOI set on '+r.name}; });
           });
         });
       },
-      // Create a new property from a name (Fix #3). Shows an Approve card first — nothing is created until
-      // the operator approves. Its loans, T12 and documents come later.
+      // Propose a change to an existing loan: a before → after card (a tick box per line) and nothing changes until
+      // the operator approves.
+      propose_loan_change: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl;
+        var l=rl.loan, key=propertyKey(l);
+        return opEnsureGeneralData(key).catch(function(){}).then(function(){ return aiAsstLoanChange(l, (a&&a.changes)||{}, { sources:a&&a.sources }); });
+      },
+      // 2.9.7 (#44, #232, #233) — create a property: the same checks as Add Property (an archived one of that name →
+      // Restore / Start fresh; one of your loans' names → which property it belongs to; a similar name → Open it /
+      // Create anyway). Nothing opens; the result says what happened.
       create_property: function(a){
         var name=(a&&a.name!=null)?String(a.name).trim():"";
         if(!name) return {ok:false,msg:"Tell me the property’s name and I’ll set it up for your approval."};
-        if(opProperties().some(function(p){ return normName(p.name)===normName(name); })) return {ok:false,msg:'A property named "'+name+'" already exists.'};
+        var c=propCreateCheck(name), done=function(key, nm){ return key ? {ok:true, html:'✓ Created <b>'+escapeHtml(nm)+'</b> (no loans yet).', toast:'Created '+nm} : {ok:false, html:"I couldn’t create that property."}; };
+        if(c.kind==="exists") return {ok:false,msg:'“'+c.name+'” already exists — nothing was created.'};
+        if(c.kind==="loan") return {ok:false,msg:'“'+name+'” is '+c.what+' '+c.name+' — nothing was created. To add a loan to '+c.name+', propose the new loan instead.'};
+        if(c.kind==="archived") return aiAsstApprovalCard('<b>'+escapeHtml(c.name)+'</b> already exists'+escapeHtml(propArchivedOnText(c.archivedAt))+'. Restore it with its data, or start fresh? <span class="text-rose-700">Starting fresh deletes the archived property’s data for good.</span>', "",
+          function(){ return opArchiveProperty(c.key, false).then(function(ok){ return ok ? {ok:true, html:'✓ Restored <b>'+escapeHtml(c.name)+'</b> with its data.', toast:'Restored '+c.name} : {ok:false, html:"Couldn’t restore it."}; }); },
+          { approveLabel:"Restore it", altLabel:"Start fresh (deletes the old data)", altFn:function(){ return opStartFreshProperty(c.key, name).then(function(r){ return r.ok ? {ok:true, html:'✓ Deleted the archived property’s data and created <b>'+escapeHtml(name)+'</b> (no loans yet).', toast:'Created '+name} : {ok:false, html:"Not done — "+escapeHtml(r.error||"")}; }); } });
+        if(c.kind==="similar"){ var first=c.props[0];
+          return aiAsstApprovalCard('“'+escapeHtml(name)+'” looks like '+c.props.map(function(p){ return '<b>'+escapeHtml(p.name)+'</b>'+(p.archived?" (archived)":""); }).join(", ")+', which you already have. Create <b>'+escapeHtml(name)+'</b> anyway?', "",
+            function(){ return opCreatePropertyNamed(name).then(function(k){ return done(k, name); }); },
+            { approveLabel:"Create anyway", altLabel:"Open "+escapeHtml(first.name), altFn:function(){ opOpenPropertyProfile(first.key); return {ok:false, cancelled:true, html:'Opened '+escapeHtml(first.name)+' — nothing was created.'}; } }); }
         return aiAsstApprovalCard('Create a new property <b>'+escapeHtml(name)+'</b>? Its loans, T12 and documents come later.', "", function(){
-          return opAddProperty(name).then(function(key){
-            if(!key) return {ok:false, html:"I couldn’t create that property — it may already exist."};
-            try{ opOpenPropertyProfile(key); }catch(e){}
-            return {ok:true, html:'✓ Created <b>'+escapeHtml(name)+'</b> — opened its profile.', toast:'Created '+name};
-          });
+          return opCreatePropertyNamed(name).then(function(k){ return done(k, name); });
         });
       },
-      // Propose a change to a PROPERTY's profile (Fix #3 — e.g. from reading an agreement). Before→after
-      // preview with Approve/Cancel; applies via the profile store (with who/when provenance) only on approve.
+      // Propose a change to a PROPERTY's profile (e.g. from reading an agreement). 2.9.7 (#237, #111) — the profile's own
+      // checks (no negative units, no year built in the future), your NOI rule, a tick box per line and where each
+      // figure came from (file · page · quote), saved into the field's history.
       propose_profile_change: function(a){
-        var key=aiAsstFindPropKey(a&&a.name);
-        if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        var edits=aiProfileBuildEdit(key, (a&&a.changes)||{});
-        if(!edits.length) return {ok:false,msg:"I didn’t have a valid profile change to propose — either the field isn’t a profile field or the value already matches."};
-        var pn=(opProp(key)&&opProp(key).name)||key;
-        var rows=edits.map(function(e){
-          return '<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0">'+
-            '<span class="text-[12px] font-medium text-slate-600 shrink-0">'+escapeHtml(e.label)+'</span>'+
-            '<span class="text-[12px] tabular-nums text-right"><span class="text-rose-500 line-through">'+aiEditFmt(e.type,e.oldVal)+'</span> <span class="text-slate-400">→</span> <span class="font-bold text-emerald-700">'+aiEditFmt(e.type,e.newVal)+'</span></span></div>';
-        }).join('');
-        return aiAsstApprovalCard('Proposed profile update for <b>'+escapeHtml(pn)+'</b> — review before I apply it:', rows, function(){
-          // 2.9.7 (#85) — recorded as "Assistant, approved by You", with the document and page when it read one.
-          var src={ kind:"assistant" }; if(a&&a.source&&typeof a.source==="object"){ if(a.source.file) src.file=String(a.source.file).slice(0,200); if(a.source.page!=null) src.page=String(a.source.page).slice(0,20); }
-          var fo={ changedBy: HISTORY_WHO_ASSISTANT, source: src };
-          var named=edits.filter(function(e){ return e.field==="propertyName"||e.field==="address"; }), rest=edits.filter(function(e){ return named.indexOf(e)<0; });
-          return Promise.all(rest.map(function(e){ return opProfileSetField(key, e.field, e.newVal, fo); }))
-            .then(function(){ return named.reduce(function(pr, e){ return pr.then(function(){ return propRenameFromProfile(opMovedKeys[key]||key, e.field, String(e.newVal||""), { from:"assistant", fieldOpts: fo }); }); }, Promise.resolve()); })   // 2.9.7 (#36, #216) — name/address change everywhere
-            .then(function(){ try{ renderLoanProfilePanel(); }catch(e){} try{ render(); }catch(e){}
-              return {ok:true, html:'✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+'’s profile'}; });
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var key=r.key, ch=Object.assign({}, (a&&a.changes)||{}), notes=[];
+        if(ch.noiOverride!==undefined){ delete ch.noiOverride; notes.push("The NOI override is yours to type on the property page — I can’t set it."); }
+        Object.keys(ch).forEach(function(fk){ var fd=Profile.fieldDef(fk); if(fd && fd.type==="int" && ch[fk]!=null && ch[fk]!==""){ var bad2=profileFieldProblem(fk, ch[fk]); if(bad2){ notes.push(bad2.replace(/ — not saved\.$/," — left out.")); delete ch[fk]; } }
+          if(fk==="yearBuilt" && ch[fk]!=null && ch[fk]!==""){ var bad3=profileFieldProblem(fk, ch[fk]); if(bad3){ notes.push(bad3.replace(/ — not saved\.$/," — left out.")); delete ch[fk]; } } });
+        return opEnsureGeneralData(key).catch(function(){}).then(function(){ return opEnsureProfile(key); }).then(function(){
+          if(ch.noi!==undefined){ var no=aiAsstNOIRefusal(r.name, key); if(no){ delete ch.noi; notes.push(no); } else if(propSeniorLoan(key)){ delete ch.noi; notes.push("This property has loans — its entered NOI is set with set_property_noi."); } }
+          var edits=aiProfileBuildEdit(key, ch);
+          if(!edits.length) return {ok:false,msg: notes.length ? notes.join(" ") : "I didn’t have a valid profile change to propose — either the field isn’t a profile field or the value already matches."};
+          var srcs=(a&&a.sources)||{}, one=(a&&a.source&&typeof a.source==="object")?a.source:null, tick=edits.length>1;
+          var fmtv=function(e,v){ var fd=Profile.fieldDef(e.field); return (fd&&fd.type==="money") ? aiAsstMoneyTxt(v) : aiEditFmt(e.type,v); };
+          var rows=edits.map(function(e){ return aiAsstRow(e.field, e.label, fmtv(e,e.oldVal), fmtv(e,e.newVal), { tick:tick, src: srcs[e.field]||one }); }).join('')+
+            (notes.length?'<div class="py-1.5 text-[11px] text-slate-500">'+escapeHtml(notes.join(" "))+'</div>':'');
+          return aiAsstApprovalCard('Proposed profile update for <b>'+escapeHtml(r.name)+'</b> — review before I apply it:', rows, function(picked){
+            var use=picked ? edits.filter(function(e){ return picked.indexOf(e.field)>=0; }) : edits, skip=edits.filter(function(e){ return use.indexOf(e)<0; });
+            var foFor=function(e){ var sx=srcs[e.field]||one||{}, src={ kind:"assistant" }; if(sx.file) src.file=String(sx.file).slice(0,200); if(sx.page!=null) src.page=String(sx.page).slice(0,20); if(sx.quote) src.quote=String(sx.quote).slice(0,200); return { changedBy: HISTORY_WHO_ASSISTANT, source: src }; };   // 2.9.7 (#85) — "Assistant, approved by You", with the document and page
+            var named=use.filter(function(e){ return e.field==="propertyName"||e.field==="address"; }), rest=use.filter(function(e){ return named.indexOf(e)<0; });
+            return Promise.all(rest.map(function(e){ return opProfileSetField(key, e.field, e.newVal, foFor(e)); }))
+              .then(function(){ return named.reduce(function(pr, e){ return pr.then(function(){ return propRenameFromProfile(opMovedKeys[key]||key, e.field, String(e.newVal||""), { from:"assistant", fieldOpts: foFor(e) }); }); }, Promise.resolve()); })   // 2.9.7 (#36, #216) — name/address change everywhere
+              .then(function(){ try{ renderLoanProfilePanel(); }catch(e){} try{ if(use.some(function(e){ return e.field==="noi"; })) redrawAll(); else render(); }catch(e){}
+                return {ok:true, html:'✓ Applied — updated '+use.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(r.name)+'.'+(skip.length?' Not applied (unticked): '+escapeHtml(skip.map(function(e){ return e.label; }).join(", "))+'.':''), toast:'Updated '+r.name+'’s profile'}; });
+          });
         });
       },
       // ── 2.9.4 Fix #3 — the assistant can take every action the operator can ──────────────
       // Navigation / read-only (immediate):
       open_data_health: function(){ if(typeof openTab==="function") openTab("health"); return {ok:true,close:true,msg:"Opened Data Health."}; },
       open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
-      import_excel: function(){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; },
+      // 2.9.7 (#231) — Excel import behind an Approve card ("N new, M updated"): the workbook attached in this chat
+      // (or saved in a property's documents). The checklist and file picker open only when asked (open: true).
+      import_excel: function(a){
+        if(a && a.open){ if(typeof openImportChecklist==="function") openImportChecklist(); return {ok:true,close:true,msg:"Opened the Excel import checklist."}; }
+        return aiAsstFindFile(a&&a.file, { ext:/\.(xlsx|xls|csv)$/i }).then(function(f){
+          if(!f) return {ok:false,msg:"Attach the Excel file here (or name a saved one) and I’ll read it — nothing was imported."};
+          var parsed; try{ var wb=XLSX.read(opB64ToBytes(f.base64), {type:"array"}); parsed=parseSheet(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:""})); }catch(e){ return {ok:false,msg:"I couldn’t read "+f.name+" as a loan sheet."}; }
+          if(!parsed.drafts.length) return {ok:false,msg:f.name+" has no loans the app recognizes — check its column names against the import checklist."};
+          var ev=parsed.drafts.map(function(d){ return { d:d, e:evalImportRow(d) }; });
+          var att=ev.filter(function(x){ return !x.e.ready; }), nw=ev.filter(function(x){ return x.e.ready && x.e.status==="new"; }), up=ev.filter(function(x){ return x.e.ready && x.e.status==="update" && x.e.changed; }), un=ev.filter(function(x){ return x.e.ready && x.e.status==="update" && !x.e.changed; });
+          var nm=function(x){ return loanLabel(x.e.match||x.d); };
+          if(!nw.length && !up.length) return {ok:false,msg:f.name+": nothing to import — "+un.length+" unchanged"+(att.length?", "+att.length+" need attention ("+att.map(function(x){ return nm(x)+": "+(x.e.err||("missing "+x.e.missing.map(function(m){ return m.label; }).join(", "))); }).join("; ")+")":"")+"."};
+          var rows=nw.map(function(x,i){ return aiAsstRow("n"+i, nm(x), null, "new", { tick:true }); }).concat(up.map(function(x,i){ return aiAsstRow("u"+i, nm(x), null, "update", { tick:true }); })).join('')+
+            (att.length?'<div class="py-1.5 text-[11px] text-amber-700">Skipped — need attention: '+escapeHtml(att.map(nm).join(", "))+'</div>':'');
+          return aiAsstApprovalCard('Import <b>'+escapeHtml(f.name)+'</b>: <b>'+nw.length+' new, '+up.length+' updated</b>'+(un.length?', '+un.length+' unchanged':'')+'? A backup is taken first.', rows, function(picked){
+            var use=nw.filter(function(x,i){ return !picked || picked.indexOf("n"+i)>=0; }).concat(up.filter(function(x,i){ return !picked || picked.indexOf("u"+i)>=0; }));
+            if(desktop() && loans.length){ try{ window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "before-import"); }catch(e){} }
+            var c=importApplyDrafts(use.map(function(x){ return x.d; }), "assistant");
+            save(); try{ redrawAll(); }catch(e){ render(); }
+            return {ok:true, html:'✓ Imported '+escapeHtml(f.name)+' — '+c.added+' new, '+c.updated+' updated.', toast:'Imported — '+c.added+' new, '+c.updated+' updated'};
+          });
+        });
+      },
       fetch_live_rate: function(){
         // 2.9.7 (#81, #26) — fetch, then say which rates are live (with the fetch time), which are the last saved
         // (with their date) and which are built-in (never fetched).
@@ -10503,69 +10703,127 @@ tr.flagged:hover td{background:#fee2e2}
           return { ok:true, msg:"Market rates — " + parts.join(" · ") + "." };
         });
       },
+      // 2.9.7 (#93) — "what to push": only with a T12; the real result (or why it failed) comes back. The Underwriting
+      // tab is put back on the property it was showing.
       run_push: function(a){
-        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        if(!aiAvailable()) return {ok:false,msg:"Analysing what to push needs Claude connected."};
-        var pn=(opProp(key)&&opProp(key).name)||key;
-        Promise.resolve().then(function(){ return opSelectProperty(key); }).then(function(){ try{ opPushCache.delete(key); }catch(e){} try{ opRunPush(key); }catch(e){} }).catch(function(){});
-        return {ok:true,close:true,msg:"Re-analysing what to push on "+pn+" — it appears in Underwriting → what to push."};
-      },
-      import_rent_roll: function(a){
-        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:"Tell me which property to import the rent roll for (or just attach the file here and I’ll file it automatically)."};
-        var pn=(opProp(key)&&opProp(key).name)||key;
-        try{ opRentRollImportPickFor(key); }catch(e){}
-        return {ok:true,close:true,msg:"Opened the rent-roll importer for "+pn+" — pick the file, then assign each block. (Or attach the file here and I’ll file it automatically.)"};
-      },
-      // Refinance what-ifs (open the refi and set a control):
-      // 2.9.7 (#28) — only the NOI choices this property's refinance really has; success is reported only once
-      // the basis actually changed.
-      set_refi_noi_basis: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        var t=refiPrepare(l), o=refiNOIOptions(t), avail={};
-        if(o.inPlace!=null) avail.inplace="in-place ("+fmtMoney(o.inPlace)+")"; if(o.underwritten!=null) avail.underwritten="underwritten ("+fmtMoney(o.underwritten)+")"; if(refiEnteredNOI(t)!=null) avail.entered="entered ("+fmtMoney(refiEnteredNOI(t))+")";
-        var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered" }, b=map[basis];
-        var list=Object.keys(avail).map(function(k){ return avail[k]; }).join(", ")||"none (no T12 and no entered NOI yet)";
-        if(!b || !avail[b]) return {ok:false,msg:'This property’s refinance can use: '+list+'.'};
-        var key=propertyKey(t), before=refiBasis(t); refiBasisByKey[key]=b;
-        if(refiBasis(t)!==b){ refiBasisByKey[key]=before; return {ok:false,msg:"The NOI basis didn’t change — it is still "+before+"."}; }
-        if(refiDraftsKey===t._id && refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
-        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
-        if(a && a.open){ state.activeId=t._id; try{ startRefi(); }catch(e){} }
-        return {ok:true,msg:"The refinance of "+(t._combined?t.propertyName:loanLabel(t))+" now uses the "+avail[b]+" NOI. "+refiSummaryText(t, refiVerdict(t, refiDrafts[1]))};
-      },
-      add_refi_lever: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        var amt=Number(a&&a.amount); if(!isFinite(amt)||amt===0) return {ok:false,msg:"Give me a yearly dollar amount for the lever (negative to remove income)."};
-        var label=(((a&&a.label)||"Manual lever").toString().trim())||"Manual lever", t=refiPrepare(l), key=propertyKey(t);
-        var man=refiManualLevers[key]||(refiManualLevers[key]=[]);
-        man.push({ id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label:label, amount:Math.round(amt), on:true });
-        if(refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
-        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
-        return {ok:true,msg:'Added "'+label+'" ('+(amt>=0?"+":"−")+fmtMoney(Math.abs(amt))+"/yr) to the refinance of "+(t._combined?t.propertyName:loanLabel(t))+". "+refiSummaryText(t, refiVerdict(t, refiDrafts[1]))};
-      },
-      // Writes that change or lose saved data (Approve card first):
-      remove_loan: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        state.activeId=l._id; try{ removeActive(); }catch(e){}   // removeActive shows the app’s own confirm dialog
-        return {ok:true,close:true,msg:"Opened the remove-loan confirmation for "+loanLabel(l)+" — confirm it to delete the loan."};
-      },
-      archive_property: function(a){
-        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        var pn=(opProp(key)&&opProp(key).name)||key;
-        return aiAsstApprovalCard('Archive <b>'+escapeHtml(pn)+'</b>? It leaves the lists, roll-up and count, and its loans are archived with it. Reversible from the Properties list.', "", function(){
-          return opArchiveProperty(key, true).then(function(){ try{ render(); }catch(e){} return {ok:true, html:'✓ Archived <b>'+escapeHtml(pn)+'</b> — un-archive it from the Properties list.', toast:'Archived '+pn}; });
+        var rp=aiAsstResolveProp(a&&a.name, {archived:false}), badp=aiAsstPropMiss(rp, a&&a.name); if(badp) return badp; var key=rp.key;
+        return opEnsureGeneralData(key).catch(function(){}).then(function(){
+          if(!propertyHasT12(key)) return {ok:false,msg:rp.name+" has no T12 yet. Upload one and I’ll run it."};
+          if(!aiAvailable()) return {ok:false,msg:"Analysing what to push needs Claude connected."};
+          return aiAsstWithFocus(key, function(){ try{ opPushCache.delete(key); }catch(e){} return opRunPush(key); }).then(function(){
+            var c=opPushCache.get(key);
+            if(!c || c.error || !Array.isArray(c.moves)) return {ok:false,msg:"The “what to push” analysis of "+rp.name+" didn’t finish: "+((c&&c.error)||"no result")+"."};
+            return {ok:true, msg:"Re-analysed what to push on "+rp.name+" — "+c.moves.length+" move"+(c.moves.length===1?"":"s")+" (in Underwriting → what to push).", data:{ summary:c.summary, moves:c.moves.map(function(m){ return { title:m.title, impact:m.impact, effort:m.effort }; }) } };
+          });
         });
       },
+      // 2.9.7 (#94) — a rent roll attached here or saved in the documents: what will be imported is on the card (a tick
+      // box per property in the file); the file picker opens only when asked (open: true).
+      import_rent_roll: function(a){
+        var rp=a&&a.name ? aiAsstResolveProp(a.name, {archived:false}) : null; if(rp && rp.ambiguous) return aiAsstPropMiss(rp, a.name);
+        if(a && a.open){ if(!rp) return {ok:false,msg:"Tell me which property to import the rent roll for."}; try{ opRentRollImportPickFor(rp.key); }catch(e){} return {ok:true,close:true,msg:"Opened the rent-roll importer for "+rp.name+"."}; }
+        return aiAsstFindFile(a&&a.file, { ext:/\.(xlsx|xls|csv)$/i, key: rp&&rp.key, role:"rentroll" }).then(function(f){
+          if(!f) return {ok:false,msg:"Attach the rent roll here (or name a saved one) and I’ll read it — nothing was imported."};
+          var grid=opDetectGrid(opB64ToBytes(f.base64));
+          if(!grid || !window.RentRoll || RentRoll.findHeader(grid).headerRow<0) return {ok:false,msg:f.name+" doesn’t look like a rent roll — no unit / rent columns found."};
+          var roll=RentRoll.parse(grid), props=opProperties();
+          var rows=roll.properties.map(function(b){ var best=null, sc=0; props.forEach(function(p){ var s2=rrMatchScore(b.name, p.name); if(s2>sc){ sc=s2; best=p; } });
+            var key=(best && sc>=0.6) ? best.key : null; if(rp && roll.properties.length===1) key=rp.key; return { block:b, key:key, name: key ? opPropDisplayName(key) : b.name }; });
+          var html=rows.map(function(r2,i){ var b2=r2.block; return aiAsstRow("b"+i, b2.name+(r2.key?" → "+r2.name:""), null, (r2.key?"update":"add as a new property")+" · "+b2.residentialUnits+" units, "+b2.occupiedUnits+" occupied, avg rent "+rrMoney(b2.avgActualRent), { tick: rows.length>1 }); }).join('');
+          return aiAsstApprovalCard('Import the rent roll <b>'+escapeHtml(f.name)+'</b> ('+rows.length+' propert'+(rows.length===1?'y':'ies')+')?', html, function(picked){
+            var use=rows.filter(function(r2,i){ return !picked || picked.indexOf("b"+i)>=0; }), done=[];
+            return use.reduce(function(pr, r2){ return pr.then(function(){
+              var k=r2.key; var mk=k ? Promise.resolve(k) : (function(){ var c=propCreateCheck(r2.block.name); return (c.kind==="exists"||c.kind==="loan") ? Promise.resolve(c.key) : (c.kind==="archived" ? Promise.resolve(null) : opCreatePropertyNamed(r2.block.name)); })();
+              return mk.then(function(key){ if(!key) return; var p2=opProp(key), nm2=(p2&&p2.name)||r2.block.name, okd=function(res){ if(res&&res.ok){ done.push(nm2); try{ delete loanRRCache[key]; }catch(e){} } };
+                // already in this property's documents (attached or saved earlier) → it becomes the rent roll; else it is saved there
+                return ldsShell.docList(key).then(function(dl){ var have=((dl&&dl.files)||[]).find(function(x){ return x.name===f.name; });
+                  if(have) return (have.role==="rentroll") ? okd({ok:true}) : ldsShell.docSetRole(key, have.id, "rentroll").then(okd);
+                  return ldsShell.docSave({ propKey:key, propName:nm2, name:f.name, base64:f.base64, text:f.text||"", type:"", role:"rentroll" }).then(okd); }); });
+            }); }, Promise.resolve()).then(function(){ try{ redrawAll(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+              return done.length ? {ok:true, html:'✓ Imported the rent roll into '+escapeHtml(done.join(", "))+'.', toast:'Rent roll imported'} : {ok:false, html:"Nothing was imported."}; });
+          });
+        });
+      },
+      // 2.9.7 (#95, #51) — every refinance change is behind an Approve card, in plain names; the result (with the new
+      // verdict) goes back to Claude. (#28) only the NOI choices this property's refinance really has.
+      set_refi_noi_basis: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        var t=refiPrepare(l), o=refiNOIOptions(t), avail={}, ent=refiEnteredNOI(t), ov=propNOIOverride(propertyKey(t))!=null;
+        if(o.inPlace!=null) avail.inplace="In-place T12 NOI ("+fmtMoney(o.inPlace)+")"; if(o.underwritten!=null) avail.underwritten="Underwritten NOI ("+fmtMoney(o.underwritten)+")"; if(ent!=null) avail.entered=(ov?"Your NOI override (":"Entered NOI (")+fmtMoney(ent)+")";
+        var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered", override:"entered" }, b=map[basis];
+        var list=Object.keys(avail).map(function(k){ return avail[k]; }).join(", ")||"none (no T12 and no entered NOI yet)";
+        if(!b || !avail[b]) return {ok:false,msg:'This property’s refinance can use: '+list+'.'};
+        var key=propertyKey(t), before=refiBasis(t), nm=t._combined?t.propertyName:loanLabel(t);
+        if(before===b) return {ok:false,msg:"The refinance of "+nm+" already uses the "+avail[b]+"."};
+        return aiAsstApprovalCard('Change the NOI the refinance of <b>'+escapeHtml(nm)+'</b> is sized on?', aiAsstRow("basis","NOI basis", escapeHtml(avail[before]||before), escapeHtml(avail[b])), function(){
+          refiBasisByKey[key]=b;
+          if(refiBasis(t)!==b){ refiBasisByKey[key]=before; return {ok:false, html:"The NOI basis didn’t change — it is still "+escapeHtml(avail[before]||before)+"."}; }
+          if(refiDraftsKey===t._id && refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
+          if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+          return {ok:true, html:'✓ The refinance now uses the '+escapeHtml(avail[b])+'. '+escapeHtml(refiSummaryText(t, refiVerdict(t, refiDrafts[1])))};
+        });
+      },
+      add_refi_lever: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        var amt=Number(a&&a.amount); if(!isFinite(amt)||amt===0) return {ok:false,msg:"Give me a yearly dollar amount for the lever (negative to remove income)."};
+        var label=(((a&&a.label)||"Manual lever").toString().trim())||"Manual lever", t=refiPrepare(l), key=propertyKey(t), nm=t._combined?t.propertyName:loanLabel(t);
+        return aiAsstApprovalCard('Add your own lever to the refinance of <b>'+escapeHtml(nm)+'</b>?', aiAsstRow("lever", label, null, (amt>=0?"+":"−")+fmtMoney(Math.abs(amt))+" a year of NOI"), function(){
+          var man=refiManualLevers[key]||(refiManualLevers[key]=[]);
+          man.push({ id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), label:label, amount:Math.round(amt), on:true });
+          if(refiDrafts[1]) applyProposedPricing(t, refiDrafts[1]);   // keeps everything typed (#241)
+          if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+          return {ok:true, html:'✓ Added “'+escapeHtml(label)+'”. '+escapeHtml(refiSummaryText(t, refiVerdict(t, refiDrafts[1])))};
+        });
+      },
+      // Writes that change or lose saved data (Approve card first):
+      // 2.9.7 (#48) — "remove" archives the loan (never deletes it): an Approve card in the chat, restorable later.
+      remove_loan: function(a){
+        var r=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), bad=aiAsstLoanMiss(r, a&&a.name); if(bad) return bad; var l=r.loan;
+        return aiAsstApprovalCard('Archive loan <b>'+escapeHtml(loanLabel(l))+'</b>? It leaves every total, tile and the calendar; you can restore it later from “Removed & paid-off loans” on Home.', "", function(){
+          var loan=(loans.indexOf(l)>=0)?l:getLoan(l._id); if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing changed."};
+          archiveLoan(loan, { source:"assistant" });
+          if(state.activeId===loan._id){ var rest=loansForProperty(loan), key=propertyKey(loan); state.activeId = rest.length ? (rest.length>1 ? "combo:"+key : rest[0]._id) : null; if(!state.activeId && state.mode!=="portfolio") state.mode="portfolio"; }
+          redrawAll();
+          return {ok:true, html:'✓ Archived <b>'+escapeHtml(loanLabel(loan))+'</b> — restore it from Home any time.', toast:'Archived '+loanLabel(loan)};
+        });
+      },
+      restore_loan: function(a){
+        var r=aiAsstResolveLoan(a&&a.name, {inactive:true, exactLoan:true}), bad=aiAsstLoanMiss(r, a&&a.name); if(bad) return bad; var l=r.loan;
+        if(!loanIsInactiveSelf(l)) return {ok:false,msg:loanLabel(l)+" isn’t archived or paid off."};
+        return aiAsstApprovalCard('Restore loan <b>'+escapeHtml(loanLabel(l))+'</b> into the totals, tiles and calendar?', "", function(){
+          restoreLoan(l._id); try{ redrawAll(); }catch(e){}
+          return {ok:true, html:'✓ Restored <b>'+escapeHtml(loanLabel(l))+'</b>.', toast:'Restored '+loanLabel(l)};
+        });
+      },
+      // 2.9.7 (#240) — archive a property: the real name, asks which one when a name fits two, refuses an archived one.
+      archive_property: function(a){
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        if(r.archived) return {ok:false,msg:r.name+" is already archived."};
+        var p=opProp(r.key), n=p?p.loans.length:0;
+        return aiAsstApprovalCard('Archive <b>'+escapeHtml(r.name)+'</b>? It'+(n?' and its '+n+' loan'+(n===1?'':'s'):'')+' leave Home, the totals, the loan table and the assistant. Un-archive it from the Archived strip on Home.', "", function(){
+          return opArchiveProperty(r.key, true).then(function(ok){ return ok ? {ok:true, html:'✓ Archived <b>'+escapeHtml(r.name)+'</b> — un-archive it from the Archived strip on Home.', toast:'Archived '+r.name} : {ok:false, html:"Couldn’t archive it — its profile couldn’t be saved."}; });
+        });
+      },
+      // 2.9.7 (#47, #92) — un-archive: archived properties (with or without loans) are found by name; the real name shows.
       unarchive_property: function(a){
-        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        if(!opIsArchived(key)) return {ok:false,msg:'"'+((opProp(key)&&opProp(key).name)||(a&&a.name)||"")+'" isn’t archived.'};
-        var pn=(opProp(key)&&opProp(key).name)||key;
-        return aiAsstApprovalCard('Bring <b>'+escapeHtml(pn)+'</b> back into the roll-up and count?', "", function(){
-          return opArchiveProperty(key, false).then(function(){ try{ render(); }catch(e){} return {ok:true, html:'✓ Restored <b>'+escapeHtml(pn)+'</b>.', toast:'Restored '+pn}; });
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        if(!r.archived) return {ok:false,msg:r.name+" isn’t archived."};
+        return aiAsstApprovalCard('Bring <b>'+escapeHtml(r.name)+'</b> back into Home, the totals and the roll-up?', "", function(){
+          return opArchiveProperty(r.key, false).then(function(ok){ return ok ? {ok:true, html:'✓ Restored <b>'+escapeHtml(r.name)+'</b>.', toast:'Restored '+r.name} : {ok:false, html:"Couldn’t restore it."}; });
+        });
+      },
+      // 2.9.7 (#52) — permanent delete, only of an archived property, saying plainly what goes for good.
+      delete_property_permanently: function(a){
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        if(!r.archived) return {ok:false,msg:r.name+" must be archived before it can be deleted permanently — archive it first (archive_property)."};
+        return propDeleteSummary(r.key).then(function(what){
+          return aiAsstApprovalCard('<b>Delete '+escapeHtml(r.name)+' permanently?</b> This removes '+escapeHtml(what)+' <b>for good</b>. It can’t be undone here; the automatic backups keep a copy.', "", function(){
+            return opDeletePropertyPermanent(r.key).then(function(res){ return res.ok ? {ok:true, html:'✓ Deleted <b>'+escapeHtml(r.name)+'</b> permanently.', toast:r.name+' deleted'} : {ok:false, html:"Not deleted — "+escapeHtml(res.error||"its files couldn’t be removed")+". It is still archived with its loans."}; });
+          }, { approveLabel:"Delete permanently", danger:true });
         });
       },
       set_loan_status: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var rl=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
         var st=(a&&a.status!=null)?String(a.status).trim():"", match=LOAN_STATUSES.find(function(s){ return s.toLowerCase()===st.toLowerCase(); });
         if(!match) return {ok:false,msg:'Status must be one of: '+LOAN_STATUSES.join(", ")+'.'};
         var cur=loanStatusOf(l); if(cur===match) return {ok:false,msg:loanLabel(l)+' is already "'+match+'".'};
@@ -10576,27 +10834,39 @@ tr.flagged:hover td{background:#fee2e2}
           return {ok:true, html:'✓ Set status to <b>'+escapeHtml(match)+'</b>.', toast:loanLabel(loan)+' → '+match};
         });
       },
+      // 2.9.7 (#238, #50) — before → after for every value; an unusual cap rate is flagged; saved straight to the
+      // property's assumptions (the Underwriting tab is not switched to it).
       edit_assumptions: function(a){
-        var key=aiAsstFindPropKey(a&&a.name); if(!key) return {ok:false,msg:'I couldn’t find a property named "'+((a&&a.name)||"")+'".'};
-        var changes=(a&&a.changes)||{};
-        var META={ vacancy:{label:"Vacancy",path:"vacancyPct",type:"pct"}, managementFee:{label:"Management fee",path:"mgmtPct",type:"pct"}, reservePerUnit:{label:"Reserves / unit",path:"reservePerUnit",type:"money"}, capRate:{label:"Cap rate",path:"sizing.capRate",type:"pct"}, payrollPerUnit:{label:"Payroll / unit benchmark",path:"benchmarks.PAY",type:"money"}, repairsPerUnit:{label:"Repairs & maintenance / unit benchmark",path:"benchmarks.RM",type:"money"} };
-        var edits=[];
-        Object.keys(changes).forEach(function(k){ var m=META[k]; if(!m) return; var n=Number(changes[k]); if(!isFinite(n)) return; if(m.type==="pct" && n>1) n=n/100; edits.push({label:m.label, path:m.path, type:m.type, val:n}); });
-        if(!edits.length) return {ok:false,msg:"I couldn’t read a valid assumption. I can set: vacancy, managementFee, reservePerUnit, capRate, payrollPerUnit, repairsPerUnit."};
-        var pn=(opProp(key)&&opProp(key).name)||key, fmtv=function(t,v){ return t==="pct"?fmtPct(v):fmtMoney(v); };
-        var rows=edits.map(function(e){ return '<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0"><span class="text-[12px] font-medium text-slate-600">'+escapeHtml(e.label)+'</span><span class="text-[12px] font-bold text-emerald-700 tabular-nums">'+fmtv(e.type,e.val)+'</span></div>'; }).join('');
-        return aiAsstApprovalCard('Update <b>'+escapeHtml(pn)+'</b>’s underwriting assumptions?', rows, function(){
-          return Promise.resolve().then(function(){ return opSelectProperty(key); }).then(function(){
-            edits.forEach(function(e){ var b=uwState.input.bench; if(e.path.indexOf(".")>=0){ var p=e.path.split("."); if(!b[p[0]]) b[p[0]]={}; b[p[0]][p[1]]=e.val; } else b[e.path]=e.val; });
-            saveUW(); return opSaveAssumptions(key, { from: "assistant" });
-          }).then(function(){ try{ uwRerenderSetup(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
-            return {ok:true, html:'✓ Updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+' assumptions'}; });
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var key=r.key, changes=(a&&a.changes)||{};
+        var META={ vacancy:{label:"Vacancy",path:"vacancyPct",type:"pct"}, managementFee:{label:"Management fee",path:"mgmtPct",type:"pct"}, reservePerUnit:{label:"Reserves / unit",path:"reservePerUnit",type:"money"}, capRate:{label:"Cap rate",path:"sizing.capRate",type:"pct"},
+          payrollPerUnit:{label:"Payroll / unit benchmark",path:"benchmarks.PAY",type:"money"}, repairsPerUnit:{label:"Repairs & maintenance / unit benchmark",path:"benchmarks.RM",type:"money"},
+          ltvMax:{label:"Sizing — max LTV",path:"sizing.ltvMax",type:"pct"}, dscrMin:{label:"Sizing — min DSCR",path:"sizing.dscrMin",type:"x"}, debtYieldMin:{label:"Sizing — min debt yield",path:"sizing.dyMin",type:"pct"}, sizingRate:{label:"Sizing — interest rate",path:"sizing.intRate",type:"pct"}, amortYears:{label:"Sizing — amortization (years)",path:"sizing.amortYears",type:"int"} };
+        var getP=function(b, path){ var p=path.split("."); return p.length>1 ? (b[p[0]]||{})[p[1]] : b[path]; };
+        var setP=function(b, path, v){ var p=path.split("."); if(p.length>1){ if(!b[p[0]]) b[p[0]]={}; b[p[0]][p[1]]=v; } else b[path]=v; };
+        var fmtv=function(t,v){ return v==null ? "(none)" : t==="pct" ? fmtPct(v) : t==="x" ? Number(v).toFixed(2)+"×" : t==="int" ? String(v) : fmtMoney(v); };
+        return opLoadAssumptions(key).catch(function(){ return null; }).then(function(saved){
+          var before=opMergeBench(uwDefaults().bench, saved), edits=[], unknown=[];
+          Object.keys(changes).forEach(function(k){ var m=META[k]; if(!m){ unknown.push(k); return; } var n=Number(String(changes[k]).replace(/[$,%\s]/g,"")); if(!isFinite(n)) return; if(m.type==="pct" && n>1) n=n/100;
+            var old=getP(before, m.path); if(old!=null && Math.abs(Number(old)-n)<1e-9) return; edits.push({ id:k, label:m.label, path:m.path, type:m.type, old:old, val:n }); });
+          if(!edits.length) return {ok:false,msg: unknown.length ? "I can set: "+Object.keys(META).join(", ")+" — not "+unknown.join(", ")+"." : "Those assumptions already have those values."};
+          var warn={}; edits.forEach(function(e){ if(e.id==="capRate" && (e.val<0.03 || e.val>0.12)) warn[e.id]="Cap rate "+fmtPct(e.val)+" is unusual — are you sure?"; if(e.type==="pct" && e.id!=="capRate" && (e.val<0 || e.val>1)) warn[e.id]=e.label+" "+fmtPct(e.val)+" looks wrong — are you sure?"; });
+          var tick=edits.length>1, rows=edits.map(function(e){ return aiAsstRow(e.id, e.label, fmtv(e.type,e.old), fmtv(e.type,e.val), { tick:tick, warn:warn[e.id] }); }).join('');
+          return aiAsstApprovalCard('Update <b>'+escapeHtml(r.name)+'</b>’s underwriting assumptions'+(saved?'':' (it uses the defaults today)')+'?', rows, function(picked){
+            var use=picked ? edits.filter(function(e){ return picked.indexOf(e.id)>=0; }) : edits;
+            return opLoadAssumptions(key).catch(function(){ return null; }).then(function(cur){
+              var b0=opMergeBench(uwDefaults().bench, cur), b1=JSON.parse(JSON.stringify(b0));
+              use.forEach(function(e){ setP(b1, e.path, e.val); });
+              return opSaveAssumptionsFor(key, b0, b1, "assistant");
+            }).then(function(){ try{ opRenderPortfolio(); }catch(e){}
+              return {ok:true, html:'✓ Updated '+use.map(function(e){return escapeHtml(e.label)+' → '+fmtv(e.type,e.val);}).join(", ")+' on '+escapeHtml(r.name)+'.', toast:'Updated '+r.name+' assumptions'}; });
+          });
         });
       },
       toggle_refi_move: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
         var q=normName((a&&a.move)||""); if(!q) return {ok:false,msg:"Tell me which “what to push” move to tick (by its title)."};
-        var tg=refiPrepare(l), key=propertyKey(tg), moves=refiPushMoves(tg);
+        var tg=refiPrepare(l), key=propertyKey(tg), moves=refiPushMoves(tg), nm=tg._combined?tg.propertyName:loanLabel(tg);
         // 2.9.7 (#241) — ticks follow the move's NAME; a name that fits two moves is asked about, never guessed.
         var exact=moves.filter(function(m){ return normName(m.title||"")===q; });
         var hits=exact.length ? exact : moves.filter(function(m){ var t=normName(m.title||""); return t && (t.indexOf(q)>=0 || q.indexOf(t)>=0); });
@@ -10605,28 +10875,195 @@ tr.flagged:hover td{background:#fee2e2}
         var mv=hits[0], set=refiAppliedMoves[key]||(refiAppliedMoves[key]=new Set()), on=(a&&a.on===false)?false:true;
         if(on && set.has(mv.title)) return {ok:true,msg:'"'+mv.title+'" is already ticked.'};
         if(!on && !set.has(mv.title)) return {ok:true,msg:'"'+mv.title+'" isn’t ticked.'};
-        if(on) set.add(mv.title); else set.delete(mv.title);
-        if(refiDrafts[1]) applyProposedPricing(tg, refiDrafts[1]);   // keeps everything typed (#241)
-        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||tg); }catch(e){} }
-        return {ok:true,msg:(on?"Ticked":"Un-ticked")+' "'+mv.title+'" in the refinance of '+(tg._combined?tg.propertyName:loanLabel(tg))+". "+refiSummaryText(tg, refiVerdict(tg, refiDrafts[1]))};
+        return aiAsstApprovalCard((on?'Tick':'Un-tick')+' a “what to push” move in the refinance of <b>'+escapeHtml(nm)+'</b>?', aiAsstRow("move", mv.title, null, on?"ticked — its NOI counts":"un-ticked"), function(){
+          var set2=refiAppliedMoves[key]||(refiAppliedMoves[key]=new Set()); if(on) set2.add(mv.title); else set2.delete(mv.title);
+          if(refiDrafts[1]) applyProposedPricing(tg, refiDrafts[1]);   // keeps everything typed (#241)
+          if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||tg); }catch(e){} }
+          return {ok:true, html:'✓ '+(on?"Ticked":"Un-ticked")+' “'+escapeHtml(mv.title)+'”. '+escapeHtml(refiSummaryText(tg, refiVerdict(tg, refiDrafts[1])))};
+        });
       },
+      // 2.9.7 (#95, #52) — the proposed loan's terms: amount, term, amortization, interest-only months, and its rate
+      // (type Fixed / Floating / Hybrid, index, spread) — the same limits as the refinance screen.
       set_refi_terms: function(a){
-        var l=aiAsstFindLoan(a&&a.name); if(!l) return {ok:false,msg:'I couldn’t find a loan named "'+((a&&a.name)||"")+'".'};
-        var c=(a&&a.changes)||{}, t=refiPrepare(l);
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        var c=(a&&a.changes)||{}, t=refiPrepare(l), nm=t._combined?t.propertyName:loanLabel(t);
         var d=refiDrafts[1]; if(!d) return {ok:false,msg:"I couldn’t prepare the refinance for that loan."};
-        var did=[];
-        if(isFinite(Number(c.amount))){ var vd=refiVerdict(t,d), amt=Number(c.amount);   // 2.9.7 (#22, #185) — the same limits as the screen
+        var rows=[], ops=[], vd=refiVerdict(t,d);
+        if(c.rateType!=null){ var rt=String(c.rateType).toLowerCase(), type=/hybrid/.test(rt)?"Hybrid ARM":/float/.test(rt)?"Floating":/fix/.test(rt)?"Fixed":null;
+          if(!type) return {ok:false,msg:"The rate type must be Fixed, Floating or Hybrid."};
+          if(type!==d.rateType){ rows.push(aiAsstRow("rateType","Rate type", escapeHtml(d.rateType==="Hybrid ARM"?"Hybrid":d.rateType), escapeHtml(type==="Hybrid ARM"?"Hybrid":type)));
+            ops.push(function(dd){ dd.rateType=type; dd.index=(type==="Floating")?"sofr":(type==="Hybrid ARM")?"ust5y":matchedTenorId({ rateType:"Fixed", loanTermMonths: dd.loanTermMonths }); dd._baseSpread=(type==="Floating")?floatingBaseSpread(t, dd.loanTermMonths):0; dd._fixedIndex=null; dd._fixedSpread=(type==="Hybrid ARM")?0:null; dd.rateFloor=null; dd.rateCap=null; dd.sofrCapPct=(type==="Fixed")?null:0; }); } }
+        if(c.index!=null){ var ix=String(c.index).toLowerCase().trim(), hit=REFI_INDEX_CHOICES.find(function(id){ return id===ix || normName(INDEX_BY_ID[id].label).indexOf(normName(c.index))>=0; });
+          if(!hit) return {ok:false,msg:"The index must be one of: "+REFI_INDEX_CHOICES.map(function(id){ return INDEX_BY_ID[id].label; }).join(", ")+"."};
+          rows.push(aiAsstRow("index","Index", escapeHtml(INDEX_BY_ID[d.index]?INDEX_BY_ID[d.index].label:String(d.index||"—")), escapeHtml(INDEX_BY_ID[hit].label))); ops.push(function(dd){ dd.index=hit; }); }
+        if(c.spread!=null && isFinite(Number(c.spread))){ var sp=Number(c.spread); if(sp<0) return {ok:false,msg:"The spread can’t be negative."}; if(sp>=20) sp=sp/10000; else if(sp>=0.2) sp=sp/100;   // a decimal (0.0225), a percent (2.25) or basis points (225)
+          rows.push(aiAsstRow("spread","Spread (your lender’s quote)", fmtPct(d._baseSpread||0), fmtPct(sp))); ops.push(function(dd){ dd._baseSpread=sp; }); }
+        if(c.amount!=null && isFinite(Number(c.amount))){ var amt=Number(c.amount);   // 2.9.7 (#22, #185) — the same limits as the screen
           if(vd.can && vd.can.maxLoan>0 && amt>vd.can.maxLoan+0.5) return {ok:false,msg:"The property supports up to "+fmtMoney(vd.can.maxLoan)+" — the amount can’t go above that."};
           if(vd.decision && vd.should.payoff>0 && (amt-vd.should.payoff)/vd.should.payoff<=REFI_DECISION_CASH) return {ok:false,msg:"You can’t do that — if you do, you won’t be able to refinance."};
-          d.originalAmount=amt; did.push("loan amount "+fmtMoney(amt)); }
-        if(isFinite(Number(c.termYears))){ d.loanTermMonths=Math.max(1,Math.round(Number(c.termYears)*12)); var tp=todayParts(),fp=addMonths(tp,1),nm=addMonths(fp,d.loanTermMonths-1); d.maturityDate=partsToISO(nm.y,nm.mo,1); did.push(c.termYears+"-year term"); }
-        if(isFinite(Number(c.amortYears))){ d.amortizationMonths=Math.max(12,Math.round(Number(c.amortYears)*12)); did.push(c.amortYears+"-year amortization"); }
-        if(isFinite(Number(c.ioMonths))){ d.ioMonths=Math.max(0,Math.round(Number(c.ioMonths))); did.push(d.ioMonths+" interest-only months"); }
-        if(!did.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears or ioMonths."};
-        if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
-        return {ok:true,msg:"Set "+did.join(", ")+" on the proposed refinance of "+(t._combined?t.propertyName:loanLabel(t))+". "+refiSummaryText(t, refiVerdict(t, d))};
+          rows.push(aiAsstRow("amount","Loan amount", fmtMoney(d.originalAmount), fmtMoney(amt))); ops.push(function(dd){ dd.originalAmount=amt; }); }
+        if(c.termYears!=null && isFinite(Number(c.termYears))){ var tm=Math.max(1,Math.round(Number(c.termYears)*12)); rows.push(aiAsstRow("term","Term", Math.round((d.loanTermMonths||0)/12)+" years", c.termYears+" years"));
+          ops.push(function(dd){ dd.loanTermMonths=tm; var tp=todayParts(),fp=addMonths(tp,1),nm2=addMonths(fp,tm-1); dd.maturityDate=partsToISO(nm2.y,nm2.mo,1); }); }
+        if(c.amortYears!=null && isFinite(Number(c.amortYears))){ var am=Math.max(12,Math.round(Number(c.amortYears)*12)); rows.push(aiAsstRow("amort","Amortization", Math.round((d.amortizationMonths||0)/12)+" years", c.amortYears+" years")); ops.push(function(dd){ dd.amortizationMonths=am; }); }
+        if(c.ioMonths!=null && isFinite(Number(c.ioMonths))){ var io=Math.max(0,Math.round(Number(c.ioMonths))); rows.push(aiAsstRow("io","Interest-only months", String(d.ioMonths||0), String(io))); ops.push(function(dd){ dd.ioMonths=io; }); }
+        if(!ops.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears, ioMonths, rateType, index or spread."};
+        return aiAsstApprovalCard('Change the proposed loan in the refinance of <b>'+escapeHtml(nm)+'</b>?', rows.join(''), function(){
+          var dd=refiDrafts[1]; if(!dd || refiDraftsKey!==t._id){ ensureRefiDrafts(t); dd=refiDrafts[1]; }
+          ops.forEach(function(op){ op(dd); }); applyProposedPricing(t, dd);
+          if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
+          return {ok:true, html:'✓ Changed the proposed loan. '+escapeHtml(refiSummaryText(t, refiVerdict(t, dd), dd))};
+        });
       }
     };
+    // ---- 2.9.7 (#53) — reading actions: Claude looks things up by itself. Nothing changes, so no card. ----
+    // A property by name — active, loan-less or archived. A name that fits two properties is asked about, never guessed.
+    function aiAsstResolveProp(name, opts){
+      opts=opts||{};
+      var q=normName(name||""); if(!q) return null;
+      var all=opProperties().map(function(p){ return { key:p.key, name:p.name, archived:false }; });
+      if(opts.archived!==false) all=all.concat(opArchivedProps().map(function(p){ return { key:p.key, name:p.name, archived:true }; }));
+      var label=function(x){ return x.name+(x.archived?" (archived)":""); };
+      var ex=all.filter(function(x){ return normName(x.name)===q; });
+      if(ex.length===1) return ex[0];
+      if(ex.length>1){ var live=ex.filter(function(x){ return !x.archived; }); if(live.length===1) return live[0]; return { ambiguous: ex.map(label) }; }
+      var l=loans.find(function(x){ return normName(x.propertyName||"")===q; });   // a loan's own name (e.g. "… (Mezz)") → its property
+      if(l){ var k=propertyKey(l), hit=all.find(function(x){ return x.key===k; }); if(hit) return hit; }
+      var part=all.filter(function(x){ var nm=normName(x.name); return nm && (nm.indexOf(q)>=0 || q.indexOf(nm)>=0); });
+      if(part.length===1) return part[0];
+      if(part.length>1) return { ambiguous: part.map(label) };
+      return null;
+    }
+    function aiAsstPropMiss(r, name){
+      if(!r) return {ok:false,msg:'I couldn’t find a property named "'+(name||"")+'" (active, without a loan, or archived).'};
+      if(r.ambiguous) return {ok:false,msg:"Which one? "+r.ambiguous.map(function(n){ return '"'+n+'"'; }).join(" or ")+"."};
+      return null;
+    }
+    // Run fn with the Underwriting tab focused on `key`, then put it back on the property it was showing (the
+    // assistant works in the background — it never leaves a screen changed).
+    function aiAsstWithFocus(key, fn){
+      var prev=opFocusKey||"";
+      if(prev===key) return Promise.resolve().then(fn);
+      return Promise.resolve(opSelectProperty(key, { skipAutoPush:true })).then(fn).then(function(v){ return Promise.resolve(opSelectProperty(prev, { skipAutoPush:true })).then(function(){ return v; }); },
+        function(e){ return Promise.resolve(opSelectProperty(prev, { skipAutoPush:true })).then(function(){ throw e; }); });
+    }
+    // A file the operator means: one attached in this chat (by name, else the newest of the right kind), else one saved in
+    // the property's documents (or any property's). → {name, base64, text} or null.
+    function aiAsstFindFile(name, opts){
+      opts=opts||{};
+      var want=String(name||"").toLowerCase().trim(), fits=function(n){ n=String(n||"").toLowerCase(); return want ? (n===want || n.indexOf(want)>=0) : (!opts.ext || opts.ext.test(n)); };
+      var conv=aiAsstConvFileTexts.slice().reverse().find(function(f){ return f.fileObj && fits(f.name); });
+      if(conv) return fileToBase64(conv.fileObj).then(function(b64){ return b64 ? { name:conv.name, base64:b64, text:conv.text||"" } : null; });
+      if(!docsAvailable()) return Promise.resolve(null);
+      var fromKey=function(k){ return ldsShell.docList(k).then(function(dl){ var fs2=((dl&&dl.files)||[]).filter(function(f){ return fits(f.name) && (!opts.ext || opts.ext.test(f.name)); });
+        fs2.sort(function(x,y){ return ((opts.role&&y.role===opts.role)?1:0)-((opts.role&&x.role===opts.role)?1:0) || (y.savedAt||0)-(x.savedAt||0); });
+        var f=fs2[0]; if(!f) return null; return ldsShell.docRead(k, f.id).then(function(rd){ return (rd&&rd.ok) ? { name:f.name, base64:rd.base64, text:"" } : null; }); }).catch(function(){ return null; }); };
+      if(opts.key) return fromKey(opts.key).then(function(r){ if(r || !want) return r; return null; }).then(function(r){ return r || (want ? aiAsstFindFileAnywhere(fromKey, want) : null); });
+      return want ? aiAsstFindFileAnywhere(fromKey, want) : Promise.resolve(null);
+    }
+    function aiAsstFindFileAnywhere(fromKey, want){
+      return ldsShell.docIndex().then(function(idx){ var keys=Object.keys((idx&&idx.byKey)||{}).filter(function(k){ return (idx.byKey[k].files||[]).some(function(n){ n=String(n).toLowerCase(); return n===want || n.indexOf(want)>=0; }); });
+        return keys.reduce(function(pr, k){ return pr.then(function(r){ return r || fromKey(k); }); }, Promise.resolve(null)); }).catch(function(){ return null; });
+    }
+    // A loan by name — active ones (or, with inactive:true, archived / paid-off ones too). A name that fits two is asked about.
+    function aiAsstResolveLoan(name, opts){
+      opts=opts||{};
+      var q=normName(name||""); if(!q) return null;
+      var pool=activeLoans(); if(opts.inactive) pool=pool.concat(inactiveLoans());
+      var nm=function(l){ return normName(l.propertyName||loanLabel(l)); };
+      var ex=pool.filter(function(l){ return nm(l)===q || normName(loanLabel(l))===q; });
+      if(ex.length===1) return { loan: ex[0] };
+      var part=ex.length ? ex : pool.filter(function(l){ var n=nm(l); return n && (n.indexOf(q)>=0 || q.indexOf(n)>=0); });
+      if(part.length===1) return { loan: part[0] };
+      if(part.length>1){ var keys={}; part.forEach(function(l){ keys[propertyKey(l)]=1; });
+        if(Object.keys(keys).length===1 && !opts.exactLoan){ var sr=part.slice().sort(loanRank)[0]; return { loan: sr, sameProperty: true }; }   // the senior + mezz of one property
+        return { ambiguous: part.map(function(l){ return loanLabel(l)+(loanIsInactiveSelf(l)?" ("+loanStatusOf(l)+")":""); }) }; }
+      return null;
+    }
+    function aiAsstLoanMiss(r, name){
+      if(!r) return {ok:false,msg:'I couldn’t find a loan named "'+(name||"")+'".'};
+      if(r.ambiguous) return {ok:false,msg:"Which one? "+r.ambiguous.map(function(n){ return '"'+n+'"'; }).join(" or ")+"."};
+      return null;
+    }
+    var aiR=function(x, d){ return (x==null||!isFinite(Number(x))) ? undefined : Math.round(Number(x)*Math.pow(10,d||0))/Math.pow(10,d||0); };
+    function aiAsstLoanFacts(l){
+      var d={}; try{ d=compute(l).derived||{}; }catch(e){}
+      return { name: loanLabel(l), lender: l.lenderName||undefined, lienPosition: l.lienPosition||undefined, status: loanStatusOf(l), active: !loanIsInactiveSelf(l),
+        archived: l.archived?true:undefined, paidOffReason: l.paidOffReason||undefined, rateType: l.rateType||undefined, index: l.index||undefined, spread: l.spread!=null&&l.spread!==""?l.spread:undefined,
+        originalAmount: aiR(l.originalAmount), currentBalance: aiR(d.currentBalance), currentRate: aiR(d.currentRate,6), monthlyDebtService: aiR(d.totalDebtService),
+        originationDate: l.originationDate||undefined, maturityDate: l.maturityDate||d.maturityDate||undefined, prepayment: l.prepayType||undefined };
+    }
+    // The refinance verdict for a property, without touching the refinance being worked on.
+    function aiAsstRefiRead(seniorLoan){
+      try{ var t=refiTargetFor(seniorLoan); if(!t) return undefined;
+        var d=(refiDraftsKey===t._id && refiDrafts[1]) ? refiDrafts[1] : buildRefiOption(t, 1);
+        return refiSummaryText(t, refiVerdict(t, d), d); }catch(e){ return undefined; }
+    }
+    Object.assign(aiAsstActions, {
+      list_properties: function(){
+        var ps=opProperties(), ar=opArchivedProps();
+        return Promise.all(ps.concat(ar).map(function(p){ return opEnsureProfile(p.key).catch(function(){}); })).then(function(){
+          var rows=ps.map(function(p){ var g=gdNOICache[p.key];
+            return { name:p.name, loans:p.loans.map(function(l){ return loanLabel(l)+" ("+loanStatusOf(l)+")"; }), inactiveLoans: p.inactive&&p.inactive.length ? p.inactive.map(function(l){ return loanLabel(l)+" ("+loanStatusOf(l)+")"; }) : undefined,
+              noLoanYet: p.loans.length?undefined:true, units: propUnits(p.key)||undefined, hasT12: propertyHasT12(p.key)||undefined, noi: g&&g.inPlace!=null?aiR(g.inPlace):undefined }; });
+          var arch=ar.map(function(p){ var pr=profileCache[p.key]||{}; return { name:p.name, archived:true, archivedOn: pr.archivedAt?String(pr.archivedAt).slice(0,10):undefined, loans: loans.filter(function(l){ return propertyKey(l)===p.key; }).map(function(l){ return loanLabel(l)+" ("+loanStatusOf(l)+")"; }) }; });
+          return { ok:true, msg:"Read the list of "+ps.length+" active and "+ar.length+" archived properties.", data:{ active: rows, archived: arch } };
+        });
+      },
+      read_property: function(a){
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var key=r.key, noop=function(){ return null; };
+        return Promise.all([ opEnsureProfile(key).catch(noop), opEnsureGeneralData(key).catch(noop), opLoadAssumptions(key).catch(noop), opRentRollBlockFor(key).catch(noop), docsAvailable()?ldsShell.docList(key).catch(noop):null ]).then(function(res){
+          var saved=res[2], rr=res[3], dl=res[4];
+          var prof={}; (Profile.FIELDS||[]).forEach(function(f){ var v=opProfileEffective(key, f.key); if(v!=null && v!=="") prof[f.key]=v; });
+          var all=loans.filter(function(l){ return propertyKey(l)===key; });
+          var p=r.archived?null:opProp(key), g=gdNOICache[key], gd=gdFullCache[key];
+          var t12; if(gd && gd.lines && gd.window && Array.isArray(gd.window.months) && gd.window.months.length && window.GeneralData){ var ms=gd.window.months;
+            t12={ months: ms[0]+" → "+ms[ms.length-1], lines: GeneralData.deltas(gd).map(function(ln){ return { line:ln.label, kind:ln.role, trailing12:aiR(ln.ttm), changeVsPriorYear: ln.changePct!=null?aiR(ln.changePct,4):undefined }; }) }; }
+          var b=opMergeBench(uwDefaults().bench, saved);
+          var rent; if(rr && rr.block){ var bk=rr.block; rent={ file: rr.file&&rr.file.name, units:bk.residentialUnits, occupied:bk.occupiedUnits, vacant:bk.vacantUnits, occupancy:bk.occupancy, avgMarketRent:aiR(bk.avgMarketRent), avgActualRent:aiR(bk.avgActualRent), grossPotentialRentAnnual:aiR(bk.gprAnnual), commercialUnits:bk.commercialUnits||undefined }; }
+          else if(rr && rr.choices) rent={ note:"The saved rent roll covers several properties and none matches this name: "+rr.choices.join(", ") };
+          var entered=null; try{ entered=p&&p.loans.length ? refiEnteredNOI(refiTargetFor(p.loans[0])) : null; }catch(e){}
+          var data={ name:r.name, archived:r.archived||undefined, archivedOn: r.archived&&profileCache[key]&&profileCache[key].archivedAt?String(profileCache[key].archivedAt).slice(0,10):undefined,
+            loans: all.map(aiAsstLoanFacts), profile: prof,
+            noi: { fromT12InPlace: g&&g.inPlace!=null?aiR(g.inPlace):undefined, fromT12Underwritten: g&&g.underwritten!=null?aiR(g.underwritten):undefined, basis: g?noiMethodLabel(g):undefined, entered: entered!=null?aiR(entered):(propEnteredNOI(key)!=null?aiR(propEnteredNOI(key)):undefined), operatorOverride: propNOIOverride(key)!=null?aiR(propNOIOverride(key)):undefined },
+            assumptions: { ownToThisProperty: !!saved, vacancy:b.vacancyPct, managementFee:b.mgmtPct, reservePerUnit:b.reservePerUnit, payrollPerUnit:b.benchmarks&&b.benchmarks.PAY, repairsPerUnit:b.benchmarks&&b.benchmarks.RM, sizing:b.sizing, lineOverrides: b.lineOverrides&&Object.keys(b.lineOverrides).length?b.lineOverrides:undefined },
+            t12: t12, rentRoll: rent, refinance: p&&p.loans.length ? aiAsstRefiRead(p.loans[0]) : undefined,
+            documents: dl&&dl.ok ? (dl.files||[]).map(function(f){ return f.name+(f.textLen?"":" (no readable text)"); }) : undefined };
+          return { ok:true, msg:"Read "+r.name+".", data:data };
+        });
+      },
+      read_rates: function(){
+        var out=INDEX_CATALOG.map(function(cat){ var c=INDEX_CACHE[cat.id], v=c?c.value:cat.fallback; return { id:cat.id, name:cat.label, percent:aiR(v,4), source: c && !c.saved ? "live, fetched "+fmtWhenShort(c.fetchedAt) : rateSourceText(cat.id) }; });
+        return { ok:true, msg:"Read the "+out.length+" market rates the app holds (not fetched again — use fetch_live_rate for today’s).", data:out };
+      },
+      read_documents: function(a){
+        if(!docsAvailable()) return {ok:false,msg:"Documents need the desktop app."};
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        if(!(a && a.file)) return ldsShell.docList(r.key).then(function(dl){ var fs2=(dl&&dl.files)||[];
+          return { ok:true, msg:r.name+" has "+fs2.length+" saved document"+(fs2.length===1?"":"s")+".", data: fs2.map(function(f){ return { file:f.name, kind:f.role||"other", saved: f.savedAt?new Date(f.savedAt).toISOString().slice(0,10):undefined, readableCharacters: f.textLen||0 }; }) }; });
+        return ldsShell.docTextPart({ propKey:r.key, name:String(a.file), part:a.part||1 }).then(function(t){
+          if(!t || !t.ok) return {ok:false,msg:'"'+a.file+'" isn’t among '+r.name+'’s documents'+(t&&t.files&&t.files.length?" ("+t.files.join(", ")+")":"")+"."};
+          if(!t.readable) return {ok:false,msg:'"'+t.name+'" has no readable text (a scan the app couldn’t read).'};
+          return { ok:true, msg:"Read "+t.name+(t.parts>1?" — part "+t.part+" of "+t.parts+(t.part<t.parts?" (ask for part "+(t.part+1)+" to keep reading)":""):"")+".", data:{ file:t.name, part:t.part, parts:t.parts, characters:t.chars, text:t.text } };
+        });
+      },
+      read_data_health: function(){
+        return Promise.resolve().then(function(){ return opComputeVersion(); }).catch(function(){}).then(function(){ return opLoadAllProfiles(); }).catch(function(){}).then(function(){
+          return opProperties().reduce(function(pr, p){ return pr.then(function(){ return Promise.all([opEnsureGeneralData(p.key).catch(function(){}), opEnsureProfile(p.key).catch(function(){})]); }); }, Promise.resolve());
+        }).then(function(){ var d=document.createElement("div"); d.innerHTML=dataHealthHtml(); d.querySelectorAll("button,script").forEach(function(x){ x.remove(); });
+          var txt=(d.innerText||d.textContent||"").replace(/[ \t]+/g," ").replace(/\n\s*\n+/g,"\n").trim();
+          return { ok:true, msg:"Read the Data Health page.", data: txt.slice(0, 40000) };
+        });
+      },
+      read_settings: function(){
+        var st=aiStatusCache||{}, bk={}; try{ Object.keys(localStorage).forEach(function(k){ if(/backup/i.test(k) && !/^lds\.restored/i.test(k)){ var v=localStorage.getItem(k); bk[k]=v&&v.length<300?v:"(stored)"; } }); }catch(e){}
+        var t=portfolioTargets(), dflt=uwDefaults().bench;
+        return { ok:true, msg:"Read the settings.", data:{ portfolioTargets:{ minimumDSCR:t.dscrMin, maximumLTV:t.ltvMax, minimumDebtYield:t.dyMin },
+          defaultAssumptions:{ vacancy:dflt.vacancyPct, managementFee:dflt.mgmtPct, reservePerUnit:dflt.reservePerUnit, payrollPerUnit:dflt.benchmarks.PAY, repairsPerUnit:dflt.benchmarks.RM, sizing:dflt.sizing },
+          claudeConnection:{ mode:st.mode, model:st.model||"default", effort:st.effort, signedIn: !!(st.subscription&&st.subscription.connected), apiKeySaved: !!(st.apiKey&&st.apiKey.configured) },
+          backup: bk, appVersion: opAppVersion||undefined } };
+      }
+    });
     function aiAsstParseAction(text){ var p=aiAsstParseActions(text); return { text:p.text, action:p.actions[0]||null }; }
     function aiAsstRunAction(obj){
       var fn = aiAsstActions[obj.action];
@@ -11124,7 +11561,7 @@ tr.flagged:hover td{background:#fee2e2}
       var userTurn={role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"") + (focusName?("\n[property: "+focusName+"]"):"")};
       if(!aiAsstConvTitle && question) aiAsstConvTitle = question.replace(/\s+/g," ").trim().slice(0,64);   // 2.9.7 (#58) — the question as typed, without the hidden tags
       aiAsstHistory.push(userTurn); aiAsstPendingTurn=userTurn;
-      ready.forEach(function(f){ aiAsstConvFileTexts = aiAsstConvFileTexts.filter(function(x){ return x.name!==f.name; }); aiAsstConvFileTexts.push({ name:f.name, text:f.text }); });
+      ready.forEach(function(f){ aiAsstConvFileTexts = aiAsstConvFileTexts.filter(function(x){ return x.name!==f.name; }); aiAsstConvFileTexts.push({ name:f.name, text:f.text, fileObj:f.fileObj||null }); });
       var toSave = ready.slice();                    // keep refs (with .fileObj) to persist under the property
       toSave.forEach(function(f){ if(f&&f.name && !aiAsstConvFiles.some(function(x){return x.name===f.name;})) aiAsstConvFiles.push({name:f.name}); });   // record chat files (they also land in the property's Documents)
       aiAsstFiles = []; aiAsstRenderAttach();          // attachments are consumed by this message
@@ -11685,6 +12122,7 @@ tr.flagged:hover td{background:#fee2e2}
     // 2.9.7 (#9) — after a full restore the window reloads; say what came back.
     try{ const rm = sessionStorage.getItem("lds.restoredMsg"); if(rm){ sessionStorage.removeItem("lds.restoredMsg"); setTimeout(() => toast(rm, "success"), 600); } }catch(e){}
     dom.confirmCancel.addEventListener("click", () => { const cb = confirmCancelCb; closeConfirm(); if(cb) cb(); });
+    if(el("confirmAlt")) el("confirmAlt").addEventListener("click", () => { const cb = confirmAltCb; closeConfirm(); if(cb) cb(); });
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
     document.addEventListener("keydown", (e) => {

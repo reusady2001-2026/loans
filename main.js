@@ -548,6 +548,21 @@ ipcMain.handle('lds:doc-text', (e, { propKey }) => {
     return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated, unreadable, left };
   } catch (err) { return { ok: false, error: String((err && err.message) || err), text: '', files: [] }; }
 });
+// 2.9.7 (#53, #250) — one saved document's text, in parts (the assistant reads a long file part by part instead
+// of having it cut). part is 1-based; partSize characters each (default 100,000).
+ipcMain.handle('lds:doc-text-part', (e, { propKey, name, id, part, partSize }) => {
+  try {
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const files = (Array.isArray(idx.files) ? idx.files : []).filter(f => !APP_ROLES.has(f.role || ''));
+    const want = String(name || '').toLowerCase().trim();
+    const f = id ? files.find(x => x.id === id) : (files.find(x => String(x.name).toLowerCase() === want) || files.filter(x => String(x.name).toLowerCase().indexOf(want) >= 0).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))[0]);
+    if (!f) return { ok: false, error: 'not found', files: files.map(x => x.name) };
+    let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
+    const size = Math.max(10000, Math.min(400000, Number(partSize) || 100000));
+    const parts = Math.max(1, Math.ceil(t.length / size)), p = Math.max(1, Math.min(parts, Math.round(Number(part) || 1)));
+    return { ok: true, name: f.name, role: f.role || '', savedAt: f.savedAt || 0, readable: t.length > 0, chars: t.length, part: p, parts, text: t.slice((p - 1) * size, p * size) };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 // Read one original file back (base64) — for opening/exporting from the Documents panel.
 ipcMain.handle('lds:doc-read', (e, { propKey, id }) => {
   try {
