@@ -2408,6 +2408,90 @@
       return propHistQueue[key];
     }
     function propHistoryEntries(key, field){ const h = propHistCache[key]; return (h && h.entries || []).filter(x => !field || x.field === field).map(x => ({ at: x.at, label: field ? "" : x.label, old: x.old, new: x.new, who: x.who, from: historyFromLabel(x.from), note: x.note })); }
+    // 2.9.7 (#253) — Underwriting assumptions: every change (vacancy, management, reserves, cap rate, sizing
+    // limits, benchmarks, pinned lines) is diffed against what was there and recorded. Typing is grouped:
+    // the entry is written 1.2 s after the last change, so "1" → "1.3" → "1.35" is ONE entry.
+    const ASSUMPTION_META = {
+      vacancyPct: { label: "Vacancy", type: "pct" }, mgmtPct: { label: "Management fee", type: "pct" }, reservePerUnit: { label: "Reserves / unit", type: "money" },
+      "sizing.capRate": { label: "Cap rate", type: "pct" }, "sizing.ltvMax": { label: "Max LTV", type: "pct" }, "sizing.dscrMin": { label: "Min DSCR", type: "x" },
+      "sizing.dyMin": { label: "Min debt yield", type: "pct" }, "sizing.intRate": { label: "Interest rate", type: "pct" }, "sizing.amortYears": { label: "Amortization (years)", type: "num" }
+    };
+    function assumptionLineName(code){ try{ return (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[code]) || code; }catch(e){ return code; } }
+    function assumptionLabel(path){
+      if(ASSUMPTION_META[path]) return ASSUMPTION_META[path].label;
+      let m = /^benchmarks\.(.+)$/.exec(path); if(m) return assumptionLineName(m[1]) + " / unit benchmark";
+      m = /^lineOverrides\.(.+)$/.exec(path); if(m) return assumptionLineName(m[1]) + " (pinned)";
+      return path;
+    }
+    function assumptionFmt(path, v){
+      if(v == null || v === "") return null;
+      const t = (ASSUMPTION_META[path] || {}).type || (/^(benchmarks|lineOverrides)\./.test(path) ? "money" : "num");
+      try{ if(t === "pct") return fmtPct(v); if(t === "money") return fmtMoney(v); if(t === "x") return Number(v).toFixed(2) + "×"; }catch(e){}
+      return String(v);
+    }
+    // { path: value } for every recorded assumption.
+    function assumptionFlat(b){
+      const out = {}; if(!b) return out;
+      ["vacancyPct","mgmtPct","reservePerUnit"].forEach(k => { if(b[k] != null) out[k] = b[k]; });
+      Object.keys(b.sizing || {}).forEach(k => { if(ASSUMPTION_META["sizing." + k] && b.sizing[k] != null) out["sizing." + k] = b.sizing[k]; });
+      Object.keys(b.benchmarks || {}).forEach(k => { if(b.benchmarks[k] != null) out["benchmarks." + k] = b.benchmarks[k]; });
+      Object.keys(b.lineOverrides || {}).forEach(k => { const o = b.lineOverrides[k]; if(o && o.value != null) out["lineOverrides." + k] = o.value; });
+      return out;
+    }
+    const assumptionBase = {}, assumptionPending = {};
+    function assumptionBaseline(key, bench){ if(key) assumptionBase[key] = assumptionFlat(bench); }
+    function assumptionHistoryQueue(key, bench, from){
+      if(!key) return;
+      const p = assumptionPending[key] || (assumptionPending[key] = { timer: null });
+      p.flat = assumptionFlat(bench); p.from = from || "typed";
+      clearTimeout(p.timer);
+      p.timer = setTimeout(() => assumptionHistoryFlush(key), 1200);
+    }
+    function assumptionHistoryFlush(key){
+      const p = assumptionPending[key]; if(!p || !p.flat) return; delete assumptionPending[key];
+      const base = assumptionBase[key];
+      if(!base){ assumptionBase[key] = p.flat; return; }   // nothing to compare with yet
+      const paths = {}; Object.keys(base).concat(Object.keys(p.flat)).forEach(k => { paths[k] = 1; });
+      Object.keys(paths).forEach(k => {
+        const a = base[k], b = p.flat[k];
+        const same = (a == null && b == null) || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-9) || a === b;
+        if(same) return;
+        const note = /^lineOverrides\./.test(k) ? (b == null ? "unpinned — back to the computed value" : (a == null ? "pinned" : "")) : "";
+        assumptionHistoryAdd(key, assumptionLabel(k), assumptionFmt(k, a), assumptionFmt(k, b), note, k, p.from);
+      });
+      assumptionBase[key] = p.flat;
+    }
+    // The "history (N)" links next to each assumption, and "Change history (N)" over the assumptions.
+    function uwInputHistPath(inp){
+      if(inp.hasAttribute("data-uwbench")) return inp.getAttribute("data-uwbench");
+      if(inp.hasAttribute("data-uwsize")) return "sizing." + inp.getAttribute("data-uwsize");
+      if(inp.hasAttribute("data-uwbenchmark")) return "benchmarks." + inp.getAttribute("data-uwbenchmark");
+      if(inp.hasAttribute("data-uwline")) return "lineOverrides." + inp.getAttribute("data-uwline");
+      return "";
+    }
+    function uwRefreshHistoryLinks(){
+      const view = el("uwView"), key = opFocusKey; if(!view || !key) return;
+      let first = null;
+      view.querySelectorAll("input[data-uwbench], input[data-uwsize], input[data-uwbenchmark], input[data-uwline]").forEach(inp => {
+        const path = uwInputHistPath(inp); if(!path) return;
+        const lab = inp.closest("label");
+        if(lab && !first) first = lab;
+        let slot = (lab || inp.parentElement).querySelector('[data-uwhistslot="' + path + '"]');
+        if(!slot){ slot = document.createElement("span"); slot.setAttribute("data-uwhistslot", path);
+          if(lab && lab.firstChild) lab.insertBefore(slot, lab.firstChild.nextSibling); else inp.parentElement.appendChild(slot); }
+        slot.innerHTML = historyLinkHtml(propHistoryCount(key, path), 'data-uwhist="' + escapeHtml(path) + '"');
+      });
+      const all = (propHistCache[key] && propHistCache[key].entries || []).length;
+      let box = view.querySelector("[data-uwhistall]");
+      if(!box && first && first.parentElement){ box = document.createElement("div"); box.setAttribute("data-uwhistall", ""); box.className = "text-right"; first.parentElement.insertBefore(box, first.parentElement.firstChild); }
+      if(box) box.innerHTML = all ? '<button type="button" data-uwhist="" class="text-[11px] font-semibold text-brand-700 underline decoration-dotted">Change history ('+all+')</button>' : '';
+    }
+    document.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest && e.target.closest("[data-uwhist]"); if(!b || !opFocusKey) return;
+      e.preventDefault(); e.stopPropagation();
+      const path = b.getAttribute("data-uwhist"), pn = (opProp(opFocusKey) || {}).name || opFocusKey;
+      openHistoryModal((path ? assumptionLabel(path) : "Underwriting changes") + " — " + pn, propHistoryEntries(opFocusKey, path || null));
+    }, true);
     function propHistoryCount(key, field){ const h = propHistCache[key]; return (h && h.entries || []).filter(x => x.field === field).length; }
     function renderProfile(loan, result){
       const computedVals = result.derived;
@@ -3525,6 +3609,7 @@ tr.flagged:hover td{background:#fee2e2}
       const out = el("uwSetupOut"); if(!out){ renderUnderwriting(); return; }
       uwBuild(); const b = uwLastBuilt;
       out.innerHTML = b ? uwSetupOutputHtml(b) : '';
+      try{ uwRefreshHistoryLinks(); }catch(e){}   // 2.9.7 (#253)
     }
     // Push the current units / GPR / avg-rent back into the top input grid (which is NOT re-rendered) so the
     // average↔yearly-rent sync shows, without stealing focus from a field being typed.
@@ -3593,6 +3678,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
       try{ uwRenderRentRollBox(); }catch(e){}   // 2.9.4 — the focused property's rent-roll summary; auto-loads units + avg rent
+      try{ uwRefreshHistoryLinks(); }catch(e){}   // 2.9.7 (#253)
     }
 
     // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
@@ -3953,6 +4039,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(key){
         opDeskLoaded.delete(key);
         i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
+        try{ assumptionBaseline(key, i.bench); propHistoryLoad(key).then(() => { if(opFocusKey === key) uwRefreshHistoryLinks(); }); }catch(e){}   // 2.9.7 (#253)
         const r = await opReadPropT12(key);
         if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
@@ -4074,8 +4161,9 @@ tr.flagged:hover td{background:#fee2e2}
         return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64)));
       }catch(e){ return null; }
     }
-    async function opSaveAssumptions(key){
+    async function opSaveAssumptions(key, opts){
       if(!key || !(window.ldsShell && ldsShell.docSave)) return;
+      try{ assumptionHistoryQueue(key, uwState.input.bench, (opts && opts.from) || "typed"); }catch(e){}   // 2.9.7 (#253)
       try{ var json = JSON.stringify(uwState.input.bench), bytes = new TextEncoder().encode(json), str = "";
         for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
         var pr = opProp(key);
@@ -6627,7 +6715,7 @@ tr.flagged:hover td{background:#fee2e2}
         const typeCell = types.length===1 ? escapeHtml(types[0]) : 'Mixed';
         const matCell  = mats.length===1  ? mats[0]             : 'Mixed';
         const chevron = '<svg class="prop-chevron h-4 w-4 shrink-0 text-brand-500 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
-        const header = '<tr data-proptoggle="'+idx+'" data-lender="'+escapeHtml(sr.lenderName||'—')+'" class="cursor-pointer select-none bg-brand-50/50 hover:bg-brand-100/50 border-t-2 border-brand-200">'+
+        const header = '<tr data-proptoggle="'+idx+'" class="cursor-pointer select-none bg-brand-50/50 hover:bg-brand-100/50 border-t-2 border-brand-200">'+
           td('<span class="inline-flex items-center gap-2">'+chevron+'<span class="font-bold text-slate-900">'+escapeHtml(sr.propertyName||loanLabel(sr))+'</span> <span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">'+g.members.length+' loans</span></span>')+
           td(lenders.length===1?escapeHtml(lenders[0]):'Multiple','text-slate-500')+ td(typeCell,'text-slate-500')+
           tdR(fmtMoney(g.cp.balTot),'font-bold text-slate-900')+ tdR(fmtPct(g.cp.blended))+ tdR(fmtMoney(g.cp.piMoTot))+ tdR(matCell,'text-slate-500')+
@@ -6745,7 +6833,22 @@ tr.flagged:hover td{background:#fee2e2}
         const sel = state.lenderSel || {};
         const active = lenderNames.filter(l => sel[l]);
         const set = new Set(active);
-        dom.portfolioView.querySelectorAll('tr[data-lender]').forEach(tr => { tr.style.display = (set.size===0 || set.has(tr.getAttribute('data-lender'))) ? '' : 'none'; });
+        dom.portfolioView.querySelectorAll('tr[data-lender]:not([data-propmember])').forEach(tr => { tr.style.display = (set.size===0 || set.has(tr.getAttribute('data-lender'))) ? '' : 'none'; });
+        // 2.9.7 (#124) — a senior + mezz group shows when ANY of its loans is from a picked lender, and opens
+        // so that lender's loan is in view; clearing the filter closes a group the filter opened.
+        dom.portfolioView.querySelectorAll('tr[data-proptoggle]').forEach(h => {
+          const members = [...dom.portfolioView.querySelectorAll('tr[data-propmember="'+h.getAttribute('data-proptoggle')+'"]')];
+          const hit = set.size === 0 || members.some(r => set.has(r.getAttribute('data-lender')));
+          h.style.display = hit ? '' : 'none';
+          if(set.size){
+            if(hit && !h.classList.contains('prop-open')){ h.classList.add('prop-open'); h.setAttribute('data-autoopen', '1'); }
+            members.forEach(r => { const on = hit && set.has(r.getAttribute('data-lender')); r.hidden = !on; r.style.display = on ? '' : 'none'; });
+          } else {
+            if(h.getAttribute('data-autoopen')){ h.classList.remove('prop-open'); h.removeAttribute('data-autoopen'); }
+            const open = h.classList.contains('prop-open');
+            members.forEach(r => { r.hidden = !open; r.style.display = ''; });
+          }
+        });
         const sm = el("lenderSum"); if(sm) sm.textContent = set.size ? (set.size+" lender"+(set.size>1?"s":"")) : "All lenders";
         const c = el("lenderConc");
         if(c){ if(set.size===0) c.textContent = concText("");
@@ -6816,12 +6919,31 @@ tr.flagged:hover td{background:#fee2e2}
       if(err){ showFormError(err); return; }
       lockFixedRate(data);   // freeze a new fixed loan's rate at index + spread
       const existing = getLoan(data._id);
+      // 2.9.7 (#136) — a new address on one loan while the property's other loans still carry the old one
+      // would split the property: ask, in the same step, whether to change it on them too (Yes is the default).
+      if(existing){
+        const oldA = normPropAddr(existing.propertyAddress), newA = normPropAddr(data.propertyAddress);
+        const sibs = (oldA && oldA !== newA) ? loans.filter(l => l !== existing && !loanIsInactiveSelf(l) && normPropAddr(l.propertyAddress) === oldA) : [];
+        if(sibs.length){
+          const names = sibs.map(l => loanLabel(l)).join(", ");
+          confirmDialog("Also change the address on "+names+"?",
+            names+" still "+(sibs.length === 1 ? "has" : "have")+" the old address (“"+(existing.propertyAddress || "")+"”). Change it there too, so the property stays one property?",
+            () => saveFormCommit(data, existing, sibs), "Yes, change "+(sibs.length === 1 ? "it" : "them")+" too",
+            { cancelLabel: "No, only this loan", onCancel: () => saveFormCommit(data, existing, []), focusOk: true });
+          return;
+        }
+      }
+      saveFormCommit(data, existing, []);
+    }
+    function saveFormCommit(data, existing, alsoAddress){
       if(existing){
         // An address (or name) edit changes the property key; the operating model is keyed by it and
         // either follows the loan or is left where it is — opFollowRename decides, and whatever it
         // did is said in the toast so a record never moves, or stays behind, silently.
         const keyBefore = propertyKey(existing);
         const beforeSnap = JSON.parse(JSON.stringify(existing));
+        (alsoAddress || []).forEach(l => { const was = l.propertyAddress; l.propertyAddress = data.propertyAddress;   // 2.9.7 (#136)
+          try{ loanHistoryAdd(l, "propertyAddress", was, data.propertyAddress, "typed"); }catch(e){} });
         Object.assign(existing, data);
         try{ existing._history = beforeSnap._history || existing._history; loanHistoryDiff(beforeSnap, existing, "typed"); }catch(e){}   // 2.9.7 (#252) — every edited field: old → new, when, who, where from
         const keyAfter = propertyKey(existing);
@@ -6866,8 +6988,9 @@ tr.flagged:hover td{background:#fee2e2}
     function restoreLoan(id){
       const loan = loans.find(l => l._id === id); if(!loan) return;
       loan.archived = false; delete loan.archivedAt; delete loan.archivedReason;
-      if(loan.loanStatus === "Paid off"){ loan.loanStatus = ""; delete loan.paidOffReason; delete loan.paidOffAt; }
-      try{ loanHistoryAdd && loanHistoryAdd(loan, "archived", true, false, "typed"); }catch(e){}
+      const wasPaid = loan.loanStatus === "Paid off";
+      if(wasPaid){ loan.loanStatus = ""; delete loan.paidOffReason; delete loan.paidOffAt; }
+      try{ if(wasPaid) loanHistoryAdd(loan, "loanStatus", "Paid off", "", "typed"); else loanHistoryAdd(loan, "archived", true, false, "typed"); }catch(e){}
       save();
       toast("“"+loanLabel(loan)+"” restored — back in every total.", "check");
       redrawAll();
@@ -7430,12 +7553,17 @@ tr.flagged:hover td{background:#fee2e2}
     function hideFormError(){ dom.formError.classList.add("hidden"); dom.formError.classList.remove("flex"); }
 
     let confirmCb = null;
-    function confirmDialog(title, text, cb, okLabel){
-      dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb;
+    // opts.cancelLabel / opts.onCancel turn it into a two-answer question (Yes / No — both do something).
+    let confirmCancelCb = null;
+    function confirmDialog(title, text, cb, okLabel, opts){
+      opts = opts || {};
+      dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb; confirmCancelCb = opts.onCancel || null;
       if(dom.confirmOk) dom.confirmOk.textContent = okLabel || ((/^([A-Za-z]+)/.exec(title || "") || [])[1]) || "Confirm";   // the OK button names the ACTUAL action — the title's leading verb (Remove / Restore / Delete / Archive), never a hardcoded "Remove"
+      if(dom.confirmCancel) dom.confirmCancel.textContent = opts.cancelLabel || "Cancel";
       dom.confirmModal.classList.remove("hidden"); dom.confirmModal.classList.add("flex");
+      if(opts.focusOk){ try{ dom.confirmOk.focus(); }catch(e){} }
     }
-    function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; }
+    function closeConfirm(){ dom.confirmModal.classList.add("hidden"); dom.confirmModal.classList.remove("flex"); confirmCb = null; confirmCancelCb = null; }
 
     /* ================================================================
        11a. BACKUP / RESTORE  (desktop app — files live under userData)
@@ -9220,6 +9348,7 @@ tr.flagged:hover td{background:#fee2e2}
       const err = validateLoan(nl);
       if(err){ toast(err, "info"); return; }
       lockFixedRate(nl);   // a refinance is a new origination: lock index + spread
+      try{ loanHistoryAdd(nl, "created", null, "added", "refinance", { file: "from " + loanLabel(loan) }); }catch(e){}   // 2.9.7 (#252) — where it came from
       loans.push(nl); state.activeId = nl._id; save();
       toast("Saved refinanced loan", "check"); setMode("view");
     }
@@ -9662,7 +9791,7 @@ tr.flagged:hover td{background:#fee2e2}
           // somehow left the book.
           var loan = (loans.indexOf(l) >= 0) ? l : getLoan(l._id);
           if(!loan){ done("That loan is no longer in the book — nothing was changed.", false); return; }
-          edits.forEach(function(e){ loan[e.key]=e.newVal; });
+          edits.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant"); }catch(x){} });   // 2.9.7 (#252) — "Assistant, approved by You"
           save(); render();
           // Never claim success unless the change actually landed (in memory AND storage).
           if(aiVerifyEditsApplied(loan, edits)){
@@ -9785,7 +9914,8 @@ tr.flagged:hover td{background:#fee2e2}
         var cur=loanStatusOf(l); if(cur===match) return {ok:false,msg:loanLabel(l)+' is already "'+match+'".'};
         return aiAsstApprovalCard('Set <b>'+escapeHtml(loanLabel(l))+'</b>’s status to <b>'+escapeHtml(match)+'</b> (from '+escapeHtml(cur)+')?', "", function(){
           var loan=(loans.indexOf(l)>=0)?l:getLoan(l._id); if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing changed."};
-          loan.loanStatus=match; save(); try{ render(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
+          var wasSt=loan.loanStatus||""; loan.loanStatus=match; try{ loanHistoryAdd(loan, "loanStatus", wasSt, match, "assistant"); }catch(e){}   // 2.9.7 (#252)
+          save(); try{ render(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
           return {ok:true, html:'✓ Set status to <b>'+escapeHtml(match)+'</b>.', toast:loanLabel(loan)+' → '+match};
         });
       },
@@ -9801,7 +9931,7 @@ tr.flagged:hover td{background:#fee2e2}
         return aiAsstApprovalCard('Update <b>'+escapeHtml(pn)+'</b>’s underwriting assumptions?', rows, function(){
           return Promise.resolve().then(function(){ return opSelectProperty(key); }).then(function(){
             edits.forEach(function(e){ var b=uwState.input.bench; if(e.path.indexOf(".")>=0){ var p=e.path.split("."); if(!b[p[0]]) b[p[0]]={}; b[p[0]][p[1]]=e.val; } else b[e.path]=e.val; });
-            saveUW(); return opSaveAssumptions(key);
+            saveUW(); return opSaveAssumptions(key, { from: "assistant" });
           }).then(function(){ try{ uwRerenderSetup(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
             return {ok:true, html:'✓ Updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(pn)+'.', toast:'Updated '+pn+' assumptions'}; });
         });
@@ -10597,7 +10727,7 @@ tr.flagged:hover td{background:#fee2e2}
     // Expand / collapse a property group in the overview (collapsed by default).
     document.addEventListener("click", (e) => {
       const h = e.target.closest("[data-proptoggle]"); if(!h) return;
-      const open = h.classList.toggle("prop-open");
+      const open = h.classList.toggle("prop-open"); h.removeAttribute("data-autoopen");   // opened by hand → stays open when a lender filter is cleared
       document.querySelectorAll('[data-propmember="'+h.getAttribute("data-proptoggle")+'"]').forEach(r => { r.hidden = !open; });
     });
     dom.cancelBtn.addEventListener("click", cancelForm);
@@ -10639,7 +10769,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ if(window.ldsShell && ldsShell.onDataChanged) ldsShell.onDataChanged(() => scheduleAutoBackup(true)); }catch(e){}
     // 2.9.7 (#9) — after a full restore the window reloads; say what came back.
     try{ const rm = sessionStorage.getItem("lds.restoredMsg"); if(rm){ sessionStorage.removeItem("lds.restoredMsg"); setTimeout(() => toast(rm, "success"), 600); } }catch(e){}
-    dom.confirmCancel.addEventListener("click", closeConfirm);
+    dom.confirmCancel.addEventListener("click", () => { const cb = confirmCancelCb; closeConfirm(); if(cb) cb(); });
     dom.confirmModal.addEventListener("click", (e) => { if(e.target===dom.confirmModal) closeConfirm(); });
     dom.confirmOk.addEventListener("click", () => { const cb=confirmCb; closeConfirm(); if(cb) cb(); });
     document.addEventListener("keydown", (e) => {
