@@ -19,6 +19,9 @@ process.stdin.on('end', () => {
   // ($LDS_FAKE_T12 = "agree"), or with two deliberate disagreements ("disagree": a reimbursement line read as a
   // utility expense, and one repairs month read $600 higher).
   if (/checking a property's trailing-twelve-month operating statement/i.test(a[1] || '')) { answerT12(raw); return; }
+  // 2.9.7 — the assistant chat: answers come, in order, from the JSON array in $LDS_FAKE_CHAT_FILE (a string,
+  // or {error:"…"}); every prompt it was sent is appended to $LDS_FAKE_CHAT_LOG (one JSON line each).
+  if (/Respond to the request provided on standard input/i.test(a[1] || '')) { answerChat(raw); return; }
   let input = null; try { input = JSON.parse(raw); } catch (e) {}
   if (process.env.LDS_FAKE_INPUT_FILE) { try { fs.writeFileSync(process.env.LDS_FAKE_INPUT_FILE, JSON.stringify(input)); } catch (e) {} }
   if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' ' + ((input && input.property) || '?') + '\n'); } catch (e) {} }   // one line per call, so a test can count them
@@ -70,4 +73,14 @@ function answerT12(raw){
   }
   const data = { lines: lines, totals: {} };
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
+}
+
+function answerChat(raw) {
+  const sysI = a.indexOf('--append-system-prompt'), sys = sysI >= 0 ? a[sysI + 1] : '';
+  if (process.env.LDS_FAKE_CHAT_LOG) { try { fs.appendFileSync(process.env.LDS_FAKE_CHAT_LOG, JSON.stringify({ prompt: raw, sysLen: sys.length }) + '\n'); } catch (e) {} }
+  let q = []; try { q = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_CHAT_FILE, 'utf8')); } catch (e) {}
+  const r = q.length ? q.shift() : '(no scripted reply)';
+  try { fs.writeFileSync(process.env.LDS_FAKE_CHAT_FILE, JSON.stringify(q)); } catch (e) {}
+  if (r && typeof r === 'object' && r.error) { console.log(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: r.error })); return; }
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: String(r), total_cost_usd: 0 }));
 }

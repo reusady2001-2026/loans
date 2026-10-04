@@ -695,7 +695,8 @@ ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, fil
     const existing = id ? idx.conversations.find(c => c.id === id) : null;
     const cid = (id && existing) ? id : ('c' + now.toString(36) + Math.random().toString(36).slice(2, 6));
     let ttl = String(title || '').trim();
-    if(!ttl){ const firstU = msgs.find(m => m.role === 'user' && m.text); ttl = firstU ? String(firstU.text).replace(/\s+/g, ' ').trim().slice(0, 64) : 'New conversation'; }
+    // 2.9.7 (#58) — the title is the question as typed, without the hidden "[attached: …]" / "[property: …]" tags
+    if(!ttl){ const firstU = msgs.find(m => m.role === 'user' && m.text); ttl = firstU ? String(firstU.text).replace(/\n\[(attached|property):[^\]]*\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64) : ''; if(!ttl) ttl = 'New conversation'; }
     const conv = { id: cid, scope, scopeName: idx.scopeName, title: ttl,
       createdAt: existing ? (existing.createdAt || now) : now, updatedAt: now,
       pinned: (pinned != null ? !!pinned : (existing ? !!existing.pinned : false)),
@@ -744,7 +745,7 @@ ipcMain.handle('lds:chat-meta', (e, { scope, id, title, pinned }) => {
 // Search stored conversations by term overlap (offline, deterministic). scopes = array of scope
 // keys to search; omitted → every scope. Returns ranked matches with a best-matching snippet —
 // used by both the history search box and the assistant's memory recall.
-ipcMain.handle('lds:chat-search', (e, { query, scopes }) => {
+ipcMain.handle('lds:chat-search', (e, { query, scopes, wholeWords }) => {
   try {
     const q = String(query || '').toLowerCase().trim();
     const terms = Array.from(new Set(q.split(/\s+/).filter(t => t.length >= 2)));
@@ -760,14 +761,18 @@ ipcMain.handle('lds:chat-search', (e, { query, scopes }) => {
       (idx.conversations || []).forEach(meta => {
         let full = null; try { full = JSON.parse(fs.readFileSync(path.join(dir, meta.id + '.json'), 'utf8')); } catch (x) { return; }
         const msgs = Array.isArray(full.messages) ? full.messages : [];
-        const hay = (String(meta.title || '') + ' ' + msgs.map(m => (m && m.text) || '').join(' ')).toLowerCase();
+        // 2.9.7 (#244) — memory recall matches WHOLE words only ("rate" never hits "separate"); the history
+        // search box keeps matching parts of words as you type. Only what the operator and Claude said is searched.
+        const said = msgs.filter(m => m && (m.role === 'user' || m.role === 'assistant' || m.role === 'compact') && !m.failed);
+        const hay = (String(meta.title || '') + ' ' + said.map(m => (m && m.text) || '').join(' ')).toLowerCase();
+        const count = (txt, t) => { if (wholeWords) { const re = new RegExp('(^|[^a-z0-9])' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^a-z0-9])', 'g'); return (txt.match(re) || []).length; } let i = txt.indexOf(t), n = 0; while(i >= 0){ n++; i = txt.indexOf(t, i + t.length); } return n; };
         let score = 0, hitTerms = 0;
-        terms.forEach(t => { let i = hay.indexOf(t), n = 0; while(i >= 0){ n++; i = hay.indexOf(t, i + t.length); } if(n){ hitTerms++; score += n; } });
+        terms.forEach(t => { const n = count(hay, t); if(n){ hitTerms++; score += n; } });
         if(score > 0){
           score += hitTerms * 5;   // reward matching MORE of the distinct query terms, not just many hits of one
-          let best = '', bestHits = -1;
-          msgs.forEach(m => { const txt = String((m && m.text) || ''), low = txt.toLowerCase(); let h = 0; terms.forEach(t => { if(low.indexOf(t) >= 0) h++; }); if(h > bestHits){ bestHits = h; best = txt; } });
-          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, snippet: chatSnippet(best, terms) });
+          let best = '', bestHits = -1, bestRole = '';
+          said.forEach(m => { const txt = String((m && m.text) || ''), low = txt.toLowerCase(); let h = 0; terms.forEach(t => { if(count(low, t) > 0) h++; }); if(h > bestHits){ bestHits = h; best = txt; bestRole = m.role === 'user' ? 'user' : 'assistant'; } });
+          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, role: bestRole, snippet: chatSnippet(best, terms) });
         }
       });
     });

@@ -313,6 +313,13 @@ function logout(){
   });
 }
 
+// 2.9.7 (#245) — in Automatic mode a saved API key is the fallback the settings promise: when the subscription
+// is signed out (or its sign-in expired) and a key is saved, the key is used — for the assistant and the T12 reader.
+async function apiInsteadOfCli(cfg){
+  if (!cfg || !cfg.apiKey) return false;
+  try { return !(await subscriptionConnected()); } catch (e) { return true; }
+}
+
 // Run a structured extraction. opts: { instruction, schema, input, model?, timeoutMs? }
 // Resolves { ok, data, via, cost?, error? }.
 async function extract(opts){
@@ -321,7 +328,7 @@ async function extract(opts){
   const cfg = readCfg();
   const mode = cfg.mode || 'auto';
   const cli = await detectCli();
-  const useCli = (mode === 'cli') || (mode === 'auto' && cli.available);
+  const useCli = (mode === 'cli') || (mode === 'auto' && cli.available && !(await apiInsteadOfCli(cfg)));
   if (useCli){
     if (!cli.available) return { ok: false, error: 'CLI mode is selected but the Claude Code CLI was not found on this machine.' };
     return runCli(opts);
@@ -370,7 +377,7 @@ async function chat(opts){
   const modelSel = opts.model || modelVal(cfg);             // "" = the subscription default
   const effort = opts.effort || effortVal(cfg);             // reasoning effort
   const cli = await detectCli();
-  const useCli = (mode === 'cli') || (mode === 'auto' && cli.available);
+  const useCli = (mode === 'cli') || (mode === 'auto' && cli.available && !(await apiInsteadOfCli(cfg)));
   if (useCli){
     if (!cli.available) return { ok: false, error: 'CLI mode is selected but the Claude Code CLI was not found on this machine.' };
     return runCliChat(Object.assign({}, opts, { model: modelSel || undefined, effort: effort }));   // "" → no --model (subscription default)

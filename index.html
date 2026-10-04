@@ -10212,7 +10212,7 @@ tr.flagged:hover td{background:#fee2e2}
       "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while a property is still filling up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized to the last 3 months × 4 when the statement's first two months have no NOI), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
-      "ACTIONS — when the operator asks you to DO something in the app matching one of the actions below, reply with a short sentence stating what you're doing, then EXACTLY ONE fenced code block tagged action containing a single JSON object {\"action\":\"…\",\"args\":{…}}. Use only these actions and argument names:",
+      "ACTIONS — when the operator asks you to DO something in the app, reply with a short sentence saying what you are about to do, then one fenced code block tagged action per step, each holding one JSON object {\"action\":\"…\",\"args\":{…}} (several blocks run in the order written). Use only these actions and argument names:",
       "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
       "- show_portfolio {}: show the whole-portfolio overview.",
       "- open_calendar {}: open the Maturity & Reset Calendar.",
@@ -10229,8 +10229,8 @@ tr.flagged:hover td{background:#fee2e2}
       "- set_refi_noi_basis {name, basis}: set which NOI the property's refinance is sized on — basis is \"in-place\", \"underwritten\" or \"entered\" (only the ones the property has; the result lists them when one is missing). add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title (a title that fits two moves comes back asking which). set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
       "- propose_profile_change {name, changes, source?}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When the values came from a document, add source {file, page} (the file name and the page you read them on) so the change history shows where they came from. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
-      "Action rules: emit AT MOST ONE action per reply, and only when the operator actually asked you to act — a plain question gets a plain answer with no action block. NEVER claim you already saved, added, edited, or deleted a loan or profile field: propose_new_loan opens a form the operator reviews and Saves; propose_loan_change / propose_profile_change / create_property show a card the operator must Approve. Phrase them as proposals, not done deals. If a requested action isn't in the list, say what the operator can do instead.",
-      "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks the green Approve button on the preview card. You get no real-time signal of that click — BUT the loan snapshot in every message reflects the CURRENT saved values, so you CAN check. To verify a change, compare the snapshot's field (e.g. noi) to the value that was proposed: if it already matches, the change IS applied — say it's done and where to see it (open that loan, or the Coverage table on the dashboard). If it does NOT match, it was not applied — emit the propose_loan_change action again so a fresh Approve card appears and ask them to click it. Never claim a change is done merely because the operator says they approved — check the snapshot first. And if the operator says nothing changed, first read the snapshot: if the value is already set, reassure them it IS saved and tell them exactly where it shows.",
+      "Action rules: (1) Act only when the operator asked you to do something — a plain question gets a plain answer, no action block (reading actions are the exception: use them whenever you need to look something up). (2) A reply may hold several actions; they run in order, a change waits for the operator's Approve card, and the results of every action (and every Approve / Cancel) come back to you in the next message under \"App (results of your actions)\". Keep going — more actions if needed — until the request is finished, then report plainly what was done and what was not. Never repeat an action that already succeeded, and never re-propose a card the operator cancelled: ask what they want instead. (3) When the request is not one action on the list, do it as a COMBINATION of listed actions (e.g. create a property, then add its loan): say the plan in one line, then run the steps, each change behind its own Approve card. If no combination does exactly what was asked, say so BEFORE doing anything and offer the closest option (e.g. \"I can't delete it permanently — I can archive it. Want that?\"); never swap in a different action silently. (4) Data changes happen in the background and never switch the operator's screen; open a screen (open_loan, open_calendar …) only when the operator asks to see it. (5) NEVER claim you already saved, added, edited or deleted anything until a result says it was approved and done; a cancelled or failed result means it did NOT happen — say so.",
+      "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks Approve on its card. What happened on each card (approved and done / cancelled / approved but it failed) comes back to you as a result — trust the result over anything else. The loan snapshot in every message also reflects the CURRENT saved values, so you can double-check a field. If the operator later says nothing changed, read the snapshot (or read_property): if the value is set, tell them it IS saved and where it shows; if not, propose it again so a fresh card appears.",
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
     ].join("\n");
 
@@ -10339,23 +10339,43 @@ tr.flagged:hover td{background:#fee2e2}
       });
       return out;
     }
-    // Shared approval card for assistant WRITES (create property, profile edits): intro + optional
-    // before→after rows + Approve/Cancel; runs applyFn (may return a Promise) only on Approve.
-    function aiAsstApprovalCard(introHtml, rowsHtml, applyFn){
-      var card='<div class="space-y-2"><div class="text-[13px]">'+introHtml+'</div>'+
-        (rowsHtml ? '<div class="rounded-lg border border-slate-200 bg-white px-3 py-1.5">'+rowsHtml+'</div>' : '')+
-        '<div class="flex flex-wrap items-center gap-2 pt-0.5"><button type="button" class="aiAsstEditApprove inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Approve &amp; apply</button>'+
+    // Shared approval card for every assistant WRITE: intro + optional before→after rows + Approve/Cancel; runs
+    // applyFn (may return a Promise) only on Approve. 2.9.7 (#49, #55, #98) — it returns {ok, pending}: the
+    // conversation waits on `pending`, which settles with what really happened ({ok, msg}) once the operator
+    // clicks, so the result goes back to Claude. The card and its outcome are saved in the chat.
+    var aiAsstOpenCards = [];   // cards still waiting on a click — Stop cancels them
+    function aiAsstPlain(html){ var d=document.createElement("div"); d.innerHTML=String(html||"").replace(/<br\s*\/?>/gi,"\n").replace(/<\/div>/gi,"\n"); return (d.textContent||"").replace(/[ \t]+\n/g,"\n").replace(/\n{2,}/g,"\n").trim(); }
+    function aiAsstCardBody(introHtml, rowsHtml){
+      return '<div class="text-[13px]">'+introHtml+'</div>'+(rowsHtml ? '<div class="rounded-lg border border-slate-200 bg-white px-3 py-1.5">'+rowsHtml+'</div>' : '');
+    }
+    function aiAsstApprovalCard(introHtml, rowsHtml, applyFn, opts){
+      opts=opts||{};
+      var okLabel=opts.approveLabel||"Approve &amp; apply";
+      var card='<div class="space-y-2" data-asstcard="1">'+aiAsstCardBody(introHtml, rowsHtml)+
+        '<div class="flex flex-wrap items-center gap-2 pt-0.5"><button type="button" class="aiAsstEditApprove inline-flex items-center gap-1.5 rounded-lg '+(opts.danger?'bg-rose-600 hover:bg-rose-500':'bg-emerald-600 hover:bg-emerald-500')+' px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50 disabled:pointer-events-none"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'+okLabel+'</button>'+
+        (opts.altLabel ? '<button type="button" class="aiAsstEditAlt rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50 disabled:pointer-events-none">'+opts.altLabel+'</button>' : '')+
         '<button type="button" class="aiAsstEditCancel rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none">Cancel</button>'+
         '<span class="text-[11px] text-slate-400">nothing changes until you approve</span></div></div>';
       var bub=aiAsstBubble("assistant", card);
-      var ap=bub?bub.querySelector(".aiAsstEditApprove"):null, cn=bub?bub.querySelector(".aiAsstEditCancel"):null, done=false;
-      function finish(html, ok){ done=true; if(ap) ap.disabled=true; if(cn) cn.disabled=true;
-        if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; } }
-      if(ap) ap.addEventListener("click", function(){ if(done) return; if(ap) ap.disabled=true; if(cn) cn.disabled=true;
-        Promise.resolve().then(applyFn).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
-          .catch(function(e){ finish("That couldn’t be completed: "+escapeHtml(String((e&&e.message)||e)), false); }); });
-      if(cn) cn.addEventListener("click", function(){ if(done) return; finish("Cancelled — nothing was changed.", false); });
-      return {ok:true};   // the approval card IS the response
+      var ap=bub?bub.querySelector(".aiAsstEditApprove"):null, al=bub?bub.querySelector(".aiAsstEditAlt"):null, cn=bub?bub.querySelector(".aiAsstEditCancel"):null, done=false;
+      var entry={ role:"card", html: aiAsstCardBody(introHtml, rowsHtml), text: "Card: "+aiAsstPlain(introHtml)+(rowsHtml?("\n"+aiAsstPlain(rowsHtml)):""), outcome:"", ok:null };
+      aiAsstHistory.push(entry); aiAsstPersist();
+      var settle; var pending=new Promise(function(r){ settle=r; });
+      var handle={ cancel:function(why){ if(!done) finish(why||"Cancelled — nothing was changed.", false, true); } };
+      aiAsstOpenCards.push(handle);
+      function finish(html, ok, cancelled, data){ done=true; [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; });
+        aiAsstOpenCards=aiAsstOpenCards.filter(function(h){ return h!==handle; });
+        if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; }
+        var msg=aiAsstPlain(html).replace(/^✓\s*/,"");
+        entry.outcome=html; entry.ok=!!ok; entry.text+="\n→ "+(ok?"approved: ":"")+msg; aiAsstPersist();
+        settle({ ok: !!ok, msg: (cancelled ? "Not approved — " : (ok ? "Approved and done — " : "Approved, but it did not happen — "))+msg, data: data, cancelled: !!cancelled }); }
+      function run(fn){ if(done) return; [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; });
+        Promise.resolve().then(fn).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false, !!res.cancelled, res.data); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
+          .catch(function(e){ finish("That couldn’t be completed: "+escapeHtml(String((e&&e.message)||e)), false); }); }
+      if(ap) ap.addEventListener("click", function(){ run(applyFn); });
+      if(al && opts.altFn) al.addEventListener("click", function(){ run(opts.altFn); });
+      if(cn) cn.addEventListener("click", function(){ if(done) return; finish("Cancelled — nothing was changed.", false, true); });
+      return {ok:true, pending:pending};   // the approval card IS the response; the conversation waits on it
     }
 
     var aiAsstActions = {
@@ -10407,45 +10427,28 @@ tr.flagged:hover td{background:#fee2e2}
             '<span class="text-[12px] font-medium text-slate-600 shrink-0">'+escapeHtml(e.label)+'</span>'+
             '<span class="text-[12px] tabular-nums text-right"><span class="text-rose-500 line-through">'+aiEditFmt(e.type,e.oldVal)+'</span> <span class="text-slate-400">→</span> <span class="font-bold text-emerald-700">'+aiEditFmt(e.type,e.newVal)+'</span></span></div>';
         }).join('');
-        var card='<div class="space-y-2"><div class="text-[13px]">Proposed change to <b>'+escapeHtml(loanLabel(l))+'</b> — review before I apply it:</div>'+
-          '<div class="rounded-lg border border-slate-200 bg-white px-3 py-1.5">'+rows+'</div>'+
-          '<div class="flex flex-wrap items-center gap-2 pt-0.5"><button type="button" class="aiAsstEditApprove inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Approve &amp; apply</button>'+
-          '<button type="button" class="aiAsstEditCancel rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none">Cancel</button>'+
-          '<span class="text-[11px] text-slate-400">nothing changes until you approve</span></div></div>';
-        var bub=aiAsstBubble("assistant", card);
-        var ap=bub?bub.querySelector(".aiAsstEditApprove"):null, cn=bub?bub.querySelector(".aiAsstEditCancel"):null, applied=false;
-        function done(html, ok){ applied=true; if(ap) ap.disabled=true; if(cn) cn.disabled=true;
-          if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; } }
-        if(ap) ap.addEventListener("click", function(){
-          if(applied) return;
+        return aiAsstApprovalCard('Proposed change to <b>'+escapeHtml(loanLabel(l))+'</b> — review before I apply it:', rows, function(){
           // Apply to the EXACT loan the operator reviewed. `l` is a live element of `loans`
           // (aiAsstFindLoan returns one), so mutate it directly — never re-resolve by _id,
           // which can mis-hit and silently edit the WRONG loan when ids are missing or
           // duplicated (imported/restored books). Fall back to an id lookup only if `l`
           // somehow left the book.
           var loan = (loans.indexOf(l) >= 0) ? l : getLoan(l._id);
-          if(!loan){ done("That loan is no longer in the book — nothing was changed.", false); return; }
-          if(ap) ap.disabled=true;   // one approval, even while a rename question is open
+          if(!loan) return {ok:false, html:"That loan is no longer in the book — nothing was changed."};
           // 2.9.7 (#216) — a name or address change renames the property: its files and chats follow (asked first
           // when the new name already has files of its own).
           var kb=propertyKey(loan), chg={}; edits.forEach(function(e){ chg[e.key]=e.newVal; });
           var ka=(chg.propertyName!==undefined||chg.propertyAddress!==undefined) ? predictKeyAfterEdit(loan, chg, []) : kb;
-          (kb!==ka ? propRenameAsk(loan, kb, ka, chg.propertyName||loan.propertyName||"") : Promise.resolve({go:true,merge:false})).then(function(ans){
-          if(!ans.go){ done("Not renamed — nothing was changed.", false); return; }
-          edits.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant"); }catch(x){} });   // 2.9.7 (#252) — "Assistant, approved by You"
-          if(kb!==ka){ try{ opFollowRename(loan, kb, ka); }catch(x){} try{ propRenameFiles(loan, kb, ka, { merge: !!ans.merge, from: "assistant" }); }catch(x){} }
-          save(); render();
-          // Never claim success unless the change actually landed (in memory AND storage).
-          if(aiVerifyEditsApplied(loan, edits)){
-            done('✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', true);
-            toast("Updated "+loanLabel(loan), "check");
-          } else {
-            done("I couldn’t save that change — nothing was updated. Please try again.", false);
-          }
+          return (kb!==ka ? propRenameAsk(loan, kb, ka, chg.propertyName||loan.propertyName||"") : Promise.resolve({go:true,merge:false})).then(function(ans){
+            if(!ans.go) return {ok:false, cancelled:true, html:"Not renamed — nothing was changed."};
+            edits.forEach(function(e){ var was=loan[e.key]; loan[e.key]=e.newVal; try{ loanHistoryAdd(loan, e.key, was, e.newVal, "assistant"); }catch(x){} });   // 2.9.7 (#252) — "Assistant, approved by You"
+            if(kb!==ka){ try{ opFollowRename(loan, kb, ka); }catch(x){} try{ propRenameFiles(loan, kb, ka, { merge: !!ans.merge, from: "assistant" }); }catch(x){} }
+            save(); render();
+            // Never claim success unless the change actually landed (in memory AND storage).
+            if(aiVerifyEditsApplied(loan, edits)) return {ok:true, html:'✓ Applied — updated '+edits.map(function(e){return escapeHtml(e.label);}).join(", ")+' on '+escapeHtml(loanLabel(loan))+'.', toast:"Updated "+loanLabel(loan)};
+            return {ok:false, html:"I couldn’t save that change — nothing was updated. Please try again."};
           });
         });
-        if(cn) cn.addEventListener("click", function(){ if(applied) return; done("Cancelled — nothing was changed.", false); });
-        return {ok:true};   // the approval card IS the response — no extra bubble, don't close the chat
       },
       // Create a new property from a name (Fix #3). Shows an Approve card first — nothing is created until
       // the operator approves. Its loans, T12 and documents come later.
@@ -10624,17 +10627,10 @@ tr.flagged:hover td{background:#fee2e2}
         return {ok:true,msg:"Set "+did.join(", ")+" on the proposed refinance of "+(t._combined?t.propertyName:loanLabel(t))+". "+refiSummaryText(t, refiVerdict(t, d))};
       }
     };
-    function aiAsstParseAction(text){
-      if(!text) return {text:text, action:null};
-      var m = text.match(/```(?:[a-zA-Z]+)?\s*(\{[\s\S]*\})\s*```/);
-      if(m){ var obj=null; try{ obj=JSON.parse(m[1]); }catch(e){} if(obj&&obj.action) return {text:text.replace(m[0],"").trim(), action:obj}; }
-      var m2 = text.match(/(\{\s*"action"\s*:[\s\S]*\})\s*$/);
-      if(m2){ try{ var o2=JSON.parse(m2[1]); if(o2&&o2.action) return {text:text.slice(0,m2.index).trim(), action:o2}; }catch(e){} }
-      return {text:text, action:null};
-    }
+    function aiAsstParseAction(text){ var p=aiAsstParseActions(text); return { text:p.text, action:p.actions[0]||null }; }
     function aiAsstRunAction(obj){
       var fn = aiAsstActions[obj.action];
-      if(!fn) return {ok:false,msg:"(unknown action: "+String(obj.action)+")"};
+      if(!fn) return {ok:false,msg:"Nothing was done — the assistant can’t "+String(obj.action||"do that").replace(/_/g," ")+"."};   // 2.9.7 (#242) — plain words
       try { return fn(obj.args||{}) || {ok:true}; }
       catch(e){ return {ok:false,msg:"That couldn’t be completed: "+String((e&&e.message)||e)}; }
     }
@@ -11097,13 +11093,20 @@ tr.flagged:hover td{background:#fee2e2}
       var scopes=[]; if(focusKey) scopes.push(focusKey); scopes.push("portfolio");
       var q=aiAsstRecallQuery(question, focusKey?aiAsstPropName(focusKey):"");
       if(!q) return Promise.resolve({query:"", picks:[]});
-      return ldsShell.chatSearch({query:q, scopes:scopes}).then(function(r){
+      return ldsShell.chatSearch({query:q, scopes:scopes, wholeWords:true}).then(function(r){
         var ms=(r&&r.matches)||[];
-        var picks=ms.filter(function(m){ return (m.score>=AI_RECALL_MIN || m.hitTerms>=2); }).slice(0, AI_RECALL_MAX);
-        return { query:q, total:ms.length, picks:picks.map(function(m){ return {title:m.title, scope:m.scope, score:m.score, hitTerms:m.hitTerms, snippet:m.snippet}; }) };
+        var picks=ms.filter(function(m){ return m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — the same rule as a real turn
+        return { query:q, total:ms.length, picks:picks.map(function(m){ return {title:m.title, scope:m.scope, score:m.score, hitTerms:m.hitTerms, role:m.role, snippet:m.snippet}; }) };
       });
     };
 
+    // 2.9.7 (#49, #55, #242, #243, #98) — the assistant loop. A reply may carry several actions; they run in
+    // order (a change waits for its Approve card), every result goes back to Claude, and Claude keeps working
+    // until the request is finished — then it reports what it did. Everything (the cards and their outcomes,
+    // the results) is saved in the conversation.
+    var AI_ASST_MAX_ROUNDS = 8;
+    var aiAsstConvFileTexts = [];          // [{name, text}] files attached in this conversation — sent with every later message (#243)
+    var AI_ASST_FILES_CAP = 400000;        // when they get very large the oldest is dropped first (and Claude is told which)
     function aiAsstAsk(question){
       question=String(question==null?"":question).trim();
       var ready = aiAsstFiles.filter(function(f){ return f.status==="ok" && f.text; });
@@ -11119,34 +11122,70 @@ tr.flagged:hover td{background:#fee2e2}
       var propTag = focusName ? ('<div class="mt-1 text-[11px] opacity-80">🏢 '+escapeHtml(focusName)+'</div>') : "";
       aiAsstBubble("user", escapeHtml(question||"(sent the attached file"+(ready.length>1?"s":"")+")")+chips+propTag);
       var userTurn={role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"") + (focusName?("\n[property: "+focusName+"]"):"")};
+      if(!aiAsstConvTitle && question) aiAsstConvTitle = question.replace(/\s+/g," ").trim().slice(0,64);   // 2.9.7 (#58) — the question as typed, without the hidden tags
       aiAsstHistory.push(userTurn); aiAsstPendingTurn=userTurn;
-      var filesBlock = ready.length ? (ready.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")) : "";
+      ready.forEach(function(f){ aiAsstConvFileTexts = aiAsstConvFileTexts.filter(function(x){ return x.name!==f.name; }); aiAsstConvFileTexts.push({ name:f.name, text:f.text }); });
       var toSave = ready.slice();                    // keep refs (with .fileObj) to persist under the property
       toSave.forEach(function(f){ if(f&&f.name && !aiAsstConvFiles.some(function(x){return x.name===f.name;})) aiAsstConvFiles.push({name:f.name}); });   // record chat files (they also land in the property's Documents)
       aiAsstFiles = []; aiAsstRenderAttach();          // attachments are consumed by this message
-      var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
       aiAsstSetBusy(true);
-      var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Thinking…</span>');
-      aiAsstThinkingEl=thinking;
-      // Persist attachments — routed by CONTENT to the property folder(s) they belong to (a multi-property
-      // rent roll to each), falling back to the focused property. So a file dropped in the assistant always
-      // lands in at least one folder, even with no property picked, as long as its content names one.
+      // Persist attachments — routed by CONTENT to the property folder(s) they belong to, falling back to the
+      // focused property, so a file dropped in the assistant always lands in at least one folder.
       if(toSave.length && docsAvailable()){
         var fobjs = toSave.map(function(f){ return f.fileObj; }).filter(Boolean);
         if(fobjs.length){ try{ aiSaveFilesToProp(fobjs, focusKey || "", focusName || ""); }catch(e){} }
       }
-      // Gather the saved-docs index + the focused property's saved-doc text, then send.
+      aiAsstTurn({ question: question, focusKey: focusKey, focusName: focusName, round: 0, fresh: !!ready.length });
+    }
+    // 2.9.7 (#53, #56) — every property, not only the ones with an active loan: loan-less and archived ones too,
+    // so Claude never says a property doesn't exist when it is just archived or has no loan yet.
+    function aiAsstPropertiesLine(){
+      var props=[], arch=[]; try{ props=opProperties(); arch=opArchivedProps(); }catch(e){}
+      if(!props.length && !arch.length) return "";
+      var act=props.map(function(p){ return p.name+(p.loans.length ? (p.loans.length>1 ? " ("+p.loans.length+" loans)" : "") : (p.inactive&&p.inactive.length ? " (no active loan — its loans are paid off or archived)" : " (no loan yet)")); });
+      var ar=arch.map(function(p){ var pr=profileCache[p.key]||{}; return p.name+(pr.archivedAt ? " (archived "+fmtDateUS(String(pr.archivedAt).slice(0,10))+")" : " (archived)"); });
+      return "Every property in the app ("+props.length+" active"+(arch.length?(", "+arch.length+" archived"):"")+"; the portfolio JSON above lists only active loans): "+act.join("; ")+"."+
+        (ar.length ? " Archived: "+ar.join("; ")+"." : "")+" Use the reading actions (list_properties, read_property …) to see any of them in full.\n\n";
+    }
+    // The files of this conversation, newest kept when they get too big (the dropped ones are named).
+    function aiAsstFilesBlock(){
+      var keep = [], total = 0, dropped = [];
+      for(var i = aiAsstConvFileTexts.length - 1; i >= 0; i--){ var f = aiAsstConvFileTexts[i], n = (f.text||"").length;
+        if(total + n > AI_ASST_FILES_CAP && keep.length){ dropped.unshift(f.name); continue; } keep.unshift(f); total += n; }
+      if(!keep.length) return "";
+      return "Files attached in this conversation — their extracted text"+(dropped.length ? " (left out because the conversation's files got too large, oldest first: "+dropped.join(", ")+" — ask the operator to attach them again if you need them)" : "")+":\n"+
+        keep.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
+    }
+    // How a thread entry reads for Claude.
+    function aiAsstThreadText(m){
+      if(!m || !m.text) return "";
+      if(m.role==="user") return "User: "+m.text;
+      if(m.role==="result") return "App (results of your actions — this is what really happened):\n"+m.text;
+      if(m.role==="card") return "";
+      if(m.role==="compact") return "Summary of the earlier conversation:\n"+m.text;
+      if(m.failed) return "";
+      return "Assistant: "+m.text;
+    }
+    // 2.9.7 (#246) — Compact only shrinks what is SENT: the saved chat keeps every message; Claude gets the last
+    // summary and what came after it.
+    function aiAsstSinceCompact(list){ var i=-1; list.forEach(function(m, j){ if(m && m.role==="compact") i=j; }); return i<0 ? list : list.slice(i); }
+    // One round: build the prompt from the CURRENT app state, ask Claude, then act on its reply.
+    function aiAsstTurn(t){
+      var focusKey=t.focusKey, focusName=t.focusName, question=t.question;
+      var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
+      var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> '+(t.round ? "Working on it…" : "Thinking…")+'</span>');
+      aiAsstThinkingEl=thinking;
       var idxP = docsAvailable() ? ldsShell.docIndex().catch(function(){return null;}) : Promise.resolve(null);
       var txtP = (focusKey && docsAvailable()) ? ldsShell.docText(focusKey).catch(function(){return null;}) : Promise.resolve(null);
-      // Memory recall: search the operator's OTHER saved conversations for this question.
       var recallScopes=[]; if(focusKey) recallScopes.push(focusKey); recallScopes.push("portfolio");
-      var recallQ = aiAsstRecallQuery(question, focusName);
-      var recallP = (chatsAvailable() && recallQ) ? ldsShell.chatSearch({query:recallQ, scopes:recallScopes}).catch(function(){return null;}) : Promise.resolve(null);
+      var recallQ = t.round ? "" : aiAsstRecallQuery(question, focusName);
+      var recallP = (chatsAvailable() && recallQ) ? ldsShell.chatSearch({query:recallQ, scopes:recallScopes, wholeWords:true}).catch(function(){return null;}) : Promise.resolve(null);
       Promise.all([idxP, txtP, recallP]).then(function(dres){
         if(aiAsstStopped){ aiAsstStopped=false; aiAsstThinkingEl=null; aiAsstPendingTurn=null; return; }   // Stop pressed during the doc lookup — don't fire the request
         var docIdx=dres[0], docTxt=dres[1], recall=dres[2];
         var snap=aiAsstSnapshot();
-        var thread=aiAsstHistory.slice(0,-1).map(function(m){ return (m.role==="user"?"User: ":"Assistant: ")+m.text; }).join("\n\n");
+        var lastIsUser = !t.round;
+        var thread=aiAsstSinceCompact(aiAsstHistory.slice(0, lastIsUser ? -1 : aiAsstHistory.length)).map(aiAsstThreadText).filter(Boolean).join("\n\n");
         var idxLine="";
         if(docIdx && docIdx.byKey){ var names=Object.keys(docIdx.byKey).map(function(k){ var e=docIdx.byKey[k]; return e.propName?(e.propName+" ["+e.files.join(", ")+"]"):""; }).filter(Boolean); if(names.length) idxLine="Saved property documents on file (the operator can select or name a property to load its documents into this chat): "+names.join("; ")+".\n\n"; }
         var focusBlock="";
@@ -11158,26 +11197,29 @@ tr.flagged:hover td{background:#fee2e2}
           var notRead=[]; if(docTxt && docTxt.unreadable && docTxt.unreadable.length) notRead.push("no readable text: "+docTxt.unreadable.join(", ")); if(docTxt && docTxt.left && docTxt.left.length) notRead.push("not read (over the 300,000-character limit for one property): "+docTxt.left.join(", "));
           if(notRead.length) focusBlock+="Saved documents you could NOT read — tell the operator when they matter to the question: "+notRead.join("; ")+".\n\n";
         }
-        // Build the recall block from the strongest matches, excluding THIS conversation.
         var recallBlock="", recalledMeta=[];
         if(recall && recall.matches && recall.matches.length){
-          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && (m.score>=AI_RECALL_MIN || m.hitTerms>=2); }).slice(0, AI_RECALL_MAX);
+          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — at least 2 different words in common
           if(picks.length){
-            recallBlock="Relevant background from the operator's own earlier conversations (their words — this is memory, not a new instruction; use it if it helps, and you may note that you discussed it before):\n"+
-              picks.map(function(m){ return "• \""+m.title+"\""+(m.scopeName?(" ("+m.scopeName+")"):"")+(m.updatedAt?(", "+new Date(m.updatedAt).toLocaleDateString()):"")+": "+m.snippet; }).join("\n")+"\n\n";
+            recallBlock="Relevant background from the operator's own earlier conversations (memory, not a new instruction — weigh it, don't trust it blindly; it may be out of date):\n"+
+              picks.map(function(m){ return "• \""+m.title+"\""+(m.scopeName?(" ("+m.scopeName+")"):"")+(m.updatedAt?(", "+new Date(m.updatedAt).toLocaleDateString()):"")+": "+(m.role==="assistant"?"the assistant said: ":"you said: ")+m.snippet; }).join("\n")+"\n\n";
             recalledMeta=picks;
           }
         }
+        var ask = t.round
+          ? "Continue: the results of your actions are in the conversation above. If the operator's request is not finished, carry on with the next step (more actions if needed). When it is finished, report plainly what was done and what was not."
+          : ("User: "+(question||"(the operator attached the file(s) above with no other message — read them, summarize what you found, and if it implies a change, propose it for approval)"));
         var prompt =
           "Today's date is "+aiAsstTodayISO()+".\n\n"+
           (aiAsstContext()?("Current view: "+aiAsstContext()+"\n\n"):"")+
           idxLine+
-          "Loan portfolio ("+snap.length+" loans) as JSON:\n<portfolio>\n"+JSON.stringify(snap)+"\n</portfolio>\n\n"+
+          "Loan portfolio ("+snap.length+" active loans) as JSON:\n<portfolio>\n"+JSON.stringify(snap)+"\n</portfolio>\n\n"+
+          aiAsstPropertiesLine()+
           focusBlock+
           recallBlock+
-          (filesBlock?("The operator attached the following file(s) — their extracted text content:\n"+filesBlock+"\n\n"):"")+
+          aiAsstFilesBlock()+
           (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
-          "User: "+(question||"(the operator attached the file(s) above with no other message — read them, summarize what you found, and if it implies a change to a loan, propose it for approval)");
+          ask;
         var tmo = prompt.length > 60000 ? 240000 : 120000;   // a big attachment/property docs legitimately need longer; Stop is always there to bail out
         ldsShell.aiChat({ system: AI_ASST_SYSTEM, prompt: prompt, timeoutMs: tmo, cancelToken: token })
           .then(function(r){
@@ -11185,24 +11227,85 @@ tr.flagged:hover td{background:#fee2e2}
             if(aiAsstStopped){ aiAsstStopped=false; return; }        // the user pressed Stop — aiAsstStop already cleaned up
             if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking);
             if(r&&r.canceled){ aiAsstSetBusy(false); return; }
-            if(!r||!r.ok){ var hint=(aiAsstHistory.length>3)?' If the chat has grown long, <button id="aiAsstErrNew" class="underline font-semibold">start a new chat</button> or Compact it to free up context.':''; aiAsstBubble("assistant", "Sorry — I couldn’t respond. "+escapeHtml((r&&r.error)||"Unknown error.")+' <button id="aiAsstConnFix" class="underline font-semibold">Connection settings</button>.'+hint, {error:true}); var b=el("aiAsstConnFix"); if(b) b.addEventListener("click", function(){ aiAsstToggleSettings(true); }); var nb=el("aiAsstErrNew"); if(nb) nb.addEventListener("click", aiAsstNewSession); aiAsstSetBusy(false); return; }
+            if(!r||!r.ok){ aiAsstShowError(r && r.error); return; }
             var full=String(r.text||"").trim();
-            var parsed=aiAsstParseAction(full);
             if(recalledMeta && recalledMeta.length){ aiAsstRecallNote(recalledMeta); }   // show what memory was used, above the answer
-            if(parsed.text) aiAsstBubble("assistant", escapeHtml(parsed.text));
-            else if(!parsed.action) aiAsstBubble("assistant", "(no answer)");
-            aiAsstHistory.push({role:"assistant", text:full});
-            if(parsed.action){
-              Promise.resolve(aiAsstRunAction(parsed.action)).then(function(res){   // an action may finish later (e.g. a fetch)
-              if(res&&res.msg) aiAsstBubble("assistant", '<span class="'+(res.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(res.ok?"✓ ":"")+escapeHtml(res.msg)+'</span>', {error:!res.ok});
-              if(res&&res.ok&&res.close) setTimeout(function(){ aiAsstClose(); toast(res.msg,"check"); }, 400);
-              });
-            }
-            aiAsstPersist();          // save the conversation after each completed turn
-            aiAsstSetBusy(false);
+            aiAsstHandleReply(full, t);
           })
-          .catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstBubble("assistant", "The request failed. "+escapeHtml(String((err&&err.message)||err)).slice(0,200), {error:true}); aiAsstSetBusy(false); });
+          .catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstShowError(String((err&&err.message)||err)); });
       });
+    }
+    // A failed call: saved in the chat (#246) and said in plain words with the next step (#245).
+    function aiAsstShowError(raw){
+      var e = aiAsstPlainError(raw);
+      var hint=(aiAsstHistory.length>3 && e.kind!=="connection")?' If the chat has grown long, <button id="aiAsstErrNew" class="underline font-semibold">start a new chat</button> or Compact it.':'';
+      aiAsstBubble("assistant", escapeHtml(e.text)+(e.kind==="connection" ? ' <button id="aiAsstConnFix" class="underline font-semibold">Connection settings</button>.' : '')+hint, {error:true});
+      var b=el("aiAsstConnFix"); if(b) b.addEventListener("click", function(){ aiAsstToggleSettings(true); }); var nb=el("aiAsstErrNew"); if(nb) nb.addEventListener("click", aiAsstNewSession);
+      aiAsstHistory.push({ role:"assistant", text:"✗ no answer — Claude couldn't respond ("+e.text+")", failed:true });
+      aiAsstPersist(); aiAsstSetBusy(false);
+    }
+    // 2.9.7 (#245) — errors in plain words; never the internal text.
+    function aiAsstPlainError(raw){
+      var s = String(raw||"").toLowerCase();
+      if(/not (logged|signed) in|login|sign in|unauthori[sz]ed|401|expired|oauth|auth/.test(s)) return { kind:"connection", text:"Your Claude sign-in has expired — click Connection settings → Sign in." };
+      if(/not installed|enoent|not found|spawn/.test(s)) return { kind:"connection", text:"Claude isn’t set up on this computer yet — click Connection settings to connect it." };
+      if(/too long|too large|context|token limit|prompt is too|413/.test(s)) return { kind:"size", text:"This message is too big for Claude (usually a large attached file). Start a new chat or attach a smaller file." };
+      if(/timed? ?out|timeout/.test(s)) return { kind:"timeout", text:"Claude took too long to answer — try again, or ask a shorter question." };
+      if(/network|econn|offline|dns|socket/.test(s)) return { kind:"network", text:"Claude can’t be reached — check the internet connection and try again." };
+      return { kind:"crash", text:"Claude stopped unexpectedly — try again." };
+    }
+    // Claude's reply: show its words, run its actions in order (waiting on each Approve card), save every
+    // outcome, then send the results back for the next round.
+    function aiAsstHandleReply(full, t){
+      var parsed=aiAsstParseActions(full);
+      var textBubble = parsed.text ? aiAsstBubble("assistant", escapeHtml(parsed.text)) : null;
+      if(!parsed.text && !parsed.actions.length) aiAsstBubble("assistant", "(no answer)");
+      aiAsstHistory.push({role:"assistant", text:full});
+      if(!parsed.actions.length){ aiAsstPersist(); aiAsstSetBusy(false); return; }
+      var outcomes=[];
+      parsed.actions.reduce(function(pr, obj){
+        return pr.then(function(){
+          if(aiAsstStopped) return;
+          return Promise.resolve(aiAsstRunAction(obj)).then(function(res){
+            res=res||{ok:true};
+            return Promise.resolve(res.pending || res).then(function(fin){
+              fin=fin||{};
+              var ok = (fin.ok!==false), msg = fin.msg || (fin.html ? aiAsstPlain(fin.html) : (ok ? "Done." : "Nothing was done."));
+              if(!res.pending && (fin.msg || !ok)) aiAsstBubble("assistant", '<span class="'+(ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(ok?"✓ ":"✗ ")+escapeHtml(msg)+'</span>', {error:!ok});
+              outcomes.push({ action: obj.action, ok: ok, msg: msg, data: fin.data, card: !!res.pending, close: !!res.close });
+            });
+          }).catch(function(e){ var m="That couldn’t be completed: "+String((e&&e.message)||e); aiAsstBubble("assistant", '<span class="text-rose-700">✗ '+escapeHtml(m)+'</span>', {error:true}); outcomes.push({ action: obj.action, ok:false, msg:m }); });
+        });
+      }, Promise.resolve()).then(function(){
+        // 2.9.7 (#242) — when Claude's own words say it is done but an action did not happen, say so beside them.
+        if(textBubble && outcomes.some(function(o){ return !o.ok; }) && /\b(done|i'?ve|i have|created|archived|saved|updated|added|removed|deleted|set|applied|changed)\b/i.test(parsed.text||"")){
+          var tag=document.createElement("span"); tag.className="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"; tag.setAttribute("data-didnothappen",""); tag.textContent="(this did not happen)"; textBubble.appendChild(tag);
+        }
+        var skipped = parsed.actions.length - outcomes.length;
+        var resultText = outcomes.map(function(o){ return (o.ok?"✓ ":"✗ ")+o.action+": "+o.msg+(o.data!==undefined ? "\nDATA: "+JSON.stringify(o.data).slice(0, 60000) : ""); }).join("\n")+
+          (skipped>0 ? "\n✗ "+skipped+" more action"+(skipped>1?"s were":" was")+" not run — the operator pressed Stop." : "");
+        aiAsstHistory.push({ role:"result", text: resultText, outcomes: outcomes.map(function(o){ return { action:o.action, ok:o.ok, msg:o.msg, card:o.card }; }) });
+        aiAsstPersist();
+        if(aiAsstStopped) return;
+        // A round that only opened screens, all of which opened, is finished — the screen is the answer.
+        if(outcomes.length && outcomes.every(function(o){ return o.ok && o.close; })){ aiAsstSetBusy(false); setTimeout(function(){ aiAsstClose(); }, 400); return; }
+        if((t.round||0) + 1 >= AI_ASST_MAX_ROUNDS){ aiAsstBubble("assistant", '<span class="text-[12px] text-slate-500">Stopped after '+AI_ASST_MAX_ROUNDS+' steps — ask again to continue.</span>'); aiAsstSetBusy(false); return; }
+        aiAsstTurn({ question: t.question, focusKey: t.focusKey, focusName: t.focusName, round: (t.round||0) + 1 });
+      });
+    }
+    // Every action block in a reply, in order: ```action {…}``` blocks (or a JSON array / {"actions":[…]}), and a
+    // trailing bare {"action":…} object.
+    function aiAsstParseActions(text){
+      var out=[], rest=String(text||"");
+      rest = rest.replace(/```[a-zA-Z]*\s*([\s\S]*?)```/g, function(all, body){
+        var obj=null; try{ obj=JSON.parse(String(body).trim()); }catch(e){ return all; }
+        var list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.actions)) ? obj.actions : [obj];
+        var got = list.filter(function(o){ return o && typeof o==="object" && o.action; });
+        if(!got.length) return all;
+        got.forEach(function(o){ out.push(o); }); return "";
+      });
+      if(!out.length){ var m2 = rest.match(/(\{\s*"action"\s*:[\s\S]*\})\s*$/); if(m2){ try{ var o2=JSON.parse(m2[1]); if(o2&&o2.action){ out.push(o2); rest=rest.slice(0,m2.index); } }catch(e){} } }
+      return { text: rest.replace(/\n{3,}/g,"\n\n").trim(), actions: out };
     }
     function aiAsstSetBusy(b){
       aiAsstBusy=b;
@@ -11230,6 +11333,7 @@ tr.flagged:hover td{background:#fee2e2}
     function aiAsstStop(){
       if(!aiAsstBusy) return;
       aiAsstStopped=true;
+      aiAsstOpenCards.slice().forEach(function(h){ h.cancel("Stopped — nothing was changed."); });   // 2.9.7 — a card still waiting is cancelled, never left live
       try{ if(aiAsstToken && ldsShell.aiChatCancel) ldsShell.aiChatCancel(aiAsstToken); }catch(e){}
       aiAsstToken=null;
       if(aiAsstThinkingEl && aiAsstThinkingEl.parentNode) aiAsstThinkingEl.parentNode.removeChild(aiAsstThinkingEl);
@@ -11258,8 +11362,23 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstHistory.forEach(function(m){
         if(!m||!m.text) return;
         if(m.role==="user"){ aiAsstBubble("user", escapeHtml(String(m.text).replace(/\n\[(attached|property):[^\]]*\]/g,"").trim())); }
-        else { var p=aiAsstParseAction(m.text); var t=p.text||(p.action?"":m.text); if(t) aiAsstBubble("assistant", escapeHtml(t)); }
+        else if(m.role==="card"){   // 2.9.7 (#98) — a card from before: read-only, with what happened
+          var b=aiAsstBubble("assistant", '<div class="space-y-2" data-asstcard-old="1">'+(m.html||escapeHtml(m.text))+'</div>');
+          if(b){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(m.ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=m.outcome||"Not decided — the card closed with the chat; nothing was changed."; b.appendChild(foot); }
+        }
+        else if(m.role==="result"){
+          (m.outcomes||[]).filter(function(o){ return !o.card; }).forEach(function(o){ aiAsstBubble("assistant", '<span class="'+(o.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(o.ok?"✓ ":"✗ ")+escapeHtml(o.msg||"")+'</span>', {error:!o.ok}); });
+        }
+        else if(m.role==="compact"){ aiAsstCompactMarker(m.text); }
+        else if(m.failed){ aiAsstBubble("assistant", escapeHtml(m.text), {error:true}); }
+        else { var p=aiAsstParseActions(m.text); var t=p.text||(p.actions.length?"":m.text); if(t) aiAsstBubble("assistant", escapeHtml(t)); }
       });
+    }
+    function aiAsstCompactMarker(summary){
+      var log=el("aiAsstLog"); if(!log) return;
+      var d=document.createElement("div"); d.className="my-1 flex items-center gap-2 text-[11px] font-semibold text-slate-400"; d.setAttribute("data-compacted","");
+      d.innerHTML='<span class="h-px flex-1 bg-slate-200"></span>— compacted here —<span class="h-px flex-1 bg-slate-200"></span>'; log.appendChild(d);
+      aiAsstBubble("assistant", '<div class="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Summary of the conversation above</div><div class="text-[13px] text-slate-600 whitespace-pre-wrap">'+escapeHtml(summary)+'</div>');
     }
     // Reopen a saved conversation and continue it — its full thread returns to context, so the
     // assistant "remembers" everything that was said in it.
@@ -11269,7 +11388,8 @@ tr.flagged:hover td{background:#fee2e2}
         if(!r||!r.ok||!r.conversation){ toast("Couldn’t open that conversation","info"); return; }
         var c=r.conversation;
         if(aiAsstBusy) aiAsstStop();
-        aiAsstHistory=(c.messages||[]).map(function(m){ return {role:m.role, text:m.text}; });
+        aiAsstHistory=(c.messages||[]).map(function(m){ return Object.assign({}, m); });   // 2.9.7 (#98) — cards, results and outcomes come back too
+        aiAsstConvFileTexts=[];
         aiAsstConvId=c.id; aiAsstConvScope=c.scope||scope; aiAsstConvTitle=c.title||""; aiAsstConvFiles=c.files||[]; aiAsstConvPinned=!!c.pinned;
         if(c.scope && c.scope!=="portfolio"){ aiAsstFocusPropKey=c.scope; aiAsstFillProps(); }
         aiAsstRenderThread();
@@ -11369,14 +11489,15 @@ tr.flagged:hover td{background:#fee2e2}
         var op=it.querySelector("[data-hopen]"); if(op) op.addEventListener("click", function(){ aiAsstOpenConv(scope,id); });
         var pin=it.querySelector("[data-hpin]"); if(pin) pin.addEventListener("click", function(ev){ ev.stopPropagation(); var np=pin.getAttribute("data-hpin")==="1"; ldsShell.chatMeta({scope:scope,id:id,pinned:np}).then(function(){ if(id===aiAsstConvId) aiAsstConvPinned=np; aiAsstHistFilter(aiAsstHistQuery()); }); });
         var ren=it.querySelector("[data-hren]"); if(ren) ren.addEventListener("click", function(ev){ ev.stopPropagation(); aiAsstInlineRename(it, scope, id); });
-        var del=it.querySelector("[data-hdel]"); if(del) del.addEventListener("click", function(ev){ ev.stopPropagation(); confirmDialog("Delete conversation","Delete this saved conversation? This can’t be undone.", function(okd){ if(!okd) return; ldsShell.chatDelete({scope:scope,id:id}).then(function(){ if(id===aiAsstConvId) aiAsstConvId=""; aiAsstHistFilter(aiAsstHistQuery()); }); }, "Delete"); });
+        var del=it.querySelector("[data-hdel]"); if(del) del.addEventListener("click", function(ev){ ev.stopPropagation(); confirmDialog("Delete conversation","Delete this saved conversation? This can’t be undone.", function(){   // 2.9.7 (#57) — OK is the yes (the callback gets no argument)
+          ldsShell.chatDelete({scope:scope,id:id}).then(function(r){ if(r&&r.ok===false){ toast("Couldn’t delete that conversation","info"); return; } if(id===aiAsstConvId){ aiAsstConvId=""; aiAsstConvTitle=""; } toast("Conversation deleted","check"); aiAsstHistFilter(aiAsstHistQuery()); }); }, "Delete"); });
       });
     }
     // Start a new chat: clear the running thread + any staged attachments and show the
     // welcome. The loans themselves are untouched — this only frees the assistant's context.
     function aiAsstNewSession(){
       if(aiAsstBusy) aiAsstStop();
-      aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach();
+      aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[];
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
       aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
       aiAsstToggleHistory(false);
@@ -11390,8 +11511,8 @@ tr.flagged:hover td{background:#fee2e2}
     function aiAsstCompact(){
       if(aiAsstBusy){ toast("Wait for the current reply, then compact","info"); return; }
       if(!aiAsstConnected){ toast("Connect to Claude first","info"); return; }
-      if(aiAsstHistory.length < 4){ toast("Not enough conversation to compact yet","info"); return; }
-      var thread=aiAsstHistory.map(function(m){ return (m.role==="user"?"User: ":"Assistant: ")+m.text; }).join("\n\n");
+      if(aiAsstSinceCompact(aiAsstHistory).length < 4){ toast("Not enough conversation to compact yet","info"); return; }
+      var thread=aiAsstSinceCompact(aiAsstHistory).map(aiAsstThreadText).filter(Boolean).join("\n\n");
       var token="k"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
       aiAsstSetBusy(true);
       var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Compacting the conversation…</span>');
@@ -11406,9 +11527,8 @@ tr.flagged:hover td{background:#fee2e2}
           if(!r||!r.ok){ if(r&&r.canceled){ aiAsstSetBusy(false); return; } aiAsstBubble("assistant","Couldn’t compact just now — "+escapeHtml((r&&r.error)||"unknown error")+". Your conversation is unchanged.", {error:true}); aiAsstSetBusy(false); return; }
           var summary=String(r.text||"").trim();
           if(!summary){ aiAsstBubble("assistant","Couldn’t compact — no summary came back. Your conversation is unchanged.", {error:true}); aiAsstSetBusy(false); return; }
-          aiAsstHistory=[{role:"assistant", text:"[Summary of the earlier conversation]\n"+summary, compacted:true}];
-          var log=el("aiAsstLog"); if(log) log.innerHTML="";
-          aiAsstBubble("assistant", '<div class="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Conversation compacted</div><div class="text-[13px] text-slate-600 whitespace-pre-wrap">'+escapeHtml(summary)+'</div>');
+          aiAsstHistory.push({role:"compact", text:summary});   // 2.9.7 (#246) — every message stays in the saved chat
+          aiAsstCompactMarker(summary);
           aiAsstPersist();          // the saved conversation follows the live thread
           aiAsstSetBusy(false);
           toast("Compacted — freed up context","check");

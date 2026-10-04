@@ -136,7 +136,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   chatRead: ({ scope, id }) => ipcRenderer.invoke('lds:chat-read', { scope, id }), // → {ok,conversation}
   chatDelete: ({ scope, id }) => ipcRenderer.invoke('lds:chat-delete', { scope, id }),
   chatMeta: ({ scope, id, title, pinned }) => ipcRenderer.invoke('lds:chat-meta', { scope, id, title, pinned }), // rename/pin
-  chatSearch: ({ query, scopes }) => ipcRenderer.invoke('lds:chat-search', { query, scopes }), // → {ok,matches:[{scope,scopeName,id,title,updatedAt,score,snippet}]}
+  chatSearch: ({ query, scopes, wholeWords }) => ipcRenderer.invoke('lds:chat-search', { query, scopes, wholeWords: !!wholeWords }), // → {ok,matches:[{scope,scopeName,id,title,updatedAt,score,hitTerms,role,snippet}]}
   // Run a structured extraction: {instruction, schema, input, model?, timeoutMs?} → {ok,data,via,error}.
   aiExtract: (opts) => ipcRenderer.invoke('lds:ai-extract', opts),
   // Free-form chat (no tools): {system, prompt, model?, timeoutMs?, cancelToken?} → {ok,text,via,error}.

@@ -31,8 +31,8 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   }, prop);
   await page.waitForTimeout(300);
 
-  // 1) a payroll question recalls the payroll conversations (topical match)
-  const r1=await page.evaluate(async(p)=>await window.LDS_asstRecall('Remind me the payroll figure we landed on', p.key), prop);
+  // 1) a payroll question recalls the payroll conversations (topical match: 2.9.7 #244 — at least 2 different words in common)
+  const r1=await page.evaluate(async(p)=>await window.LDS_asstRecall('Remind me the payroll per unit we landed on', p.key), prop);
   ok(r1.picks.length>=1,'a payroll question recalls prior payroll discussion ('+r1.picks.length+' pick(s))');
   ok(r1.picks.every(x=>/payroll/i.test(x.title+' '+x.snippet)),'every recalled pick is actually about payroll');
 
@@ -54,6 +54,14 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const leaked=nameWords.filter(w=>(' '+(r4.query||'')+' ').indexOf(' '+w+' ')>=0);
   ok(leaked.length===0,'the focused property’s own name is stripped from the recall query (query="'+(r4.query||'')+'")');
   ok(r4.picks.length===0,'…so naming the property alone recalls nothing (recall is topical, not "every chat about this property")');
+
+  // 6) 2.9.7 (#244) — one word in common is not enough; parts of words never count; the note says who said it
+  const r5=await page.evaluate(async(p)=>await window.LDS_asstRecall('Tell me about payroll', p.key), prop);
+  ok(r5.picks.length===0,'one word in common ("payroll") recalls nothing — at least 2 different words are needed');
+  await page.evaluate(async(p)=>{ await window.ldsShell.chatSave({scope:p.key, scopeName:p.name, title:'Separate escrow', messages:[{role:'user',text:'We keep a separate escrow account.'},{role:'assistant',text:'Noted.'}]}); }, prop);
+  const r6=await page.evaluate(async(p)=>await window.LDS_asstRecall('What rate on the escrow?', p.key), prop);
+  ok(!r6.picks.some(x=>/Separate escrow/.test(x.title)),'"rate" does not match inside "separate" — whole words only');
+  ok(r1.picks.every(x=>x.role==='user'||x.role==='assistant'),'each recalled excerpt says who said it ('+r1.picks.map(x=>x.role).join(', ')+')');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
