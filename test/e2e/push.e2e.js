@@ -66,7 +66,7 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   await page.evaluate(()=>{const i=[...document.querySelectorAll('#uwView [data-uwbench]')].find(x=>x.getAttribute('data-uwbench')==='vacancyPct');if(i){i.value='8';i.dispatchEvent(new Event('change',{bubbles:true}));}});
   await page.waitForTimeout(500);
   const uwText=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
-  ok(/credited at the statement.{0,6}5\.15%/i.test(uwText)&&/better than the 8\.00% assumed/i.test(uwText),'the underwriting tab shows vacancy CREDITED at the proven 5.15% (better than the 8% assumed) — the "use the better" rule, visible to the user');
+  ok(/credited at the statement.{0,6}5\.15\d?%/i.test(uwText)&&/better than the 8\.00% assumed/i.test(uwText),'the underwriting tab shows vacancy CREDITED at the proven 5.15% (better than the 8% assumed) — the "use the better" rule, visible to the user');
   await page.evaluate(()=>{const b=document.getElementById('opPushRun');if(b)b.click();});
   await page.waitForFunction(()=>/already credits the proven/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
   const panel2=await panelText(page), sent2=readInput();

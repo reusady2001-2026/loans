@@ -20,7 +20,9 @@ process.stdin.on('end', () => {
   const t12 = (input && input.t12) || { income: [], expense: [] };
   const find = (re) => (t12.income || []).find((r) => re.test(r.line || ''));
   const gpr = find(/gross potential rent/i), vac = find(/vacancy/i);
-  const actual = (gpr && vac && gpr.annual) ? Math.abs(vac.annual) / gpr.annual : null;
+  // The same base the app uses for vacancy: gross potential rent net of employee and model units.
+  const base = gpr ? gpr.annual + (t12.income || []).filter((r) => /employee|model/i.test(r.line || '')).reduce((a, r) => a + (r.annual || 0), 0) : 0;
+  const actual = (gpr && vac && base) ? Math.abs(vac.annual) / base : null;
   const assumed = input && input.underwritingAssumptions ? input.underwritingAssumptions.vacancy : null;
   const pct = (v) => (v * 100).toFixed(2) + '%';
   const summary = (actual != null && assumed != null && assumed > actual)
