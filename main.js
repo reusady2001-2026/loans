@@ -730,6 +730,17 @@ ipcMain.handle('lds:chat-list', (e, { scope }) => {
     return { ok: true, scopeName: idx.scopeName || '', conversations: cs };
   } catch (err) { return { ok: false, error: String((err && err.message) || err), conversations: [] }; }
 });
+// 2.9.7 (#97) — every saved conversation, of every property and the portfolio (metadata only), for the History list.
+ipcMain.handle('lds:chat-list-all', () => {
+  try {
+    const root = chatsDir(); if (!fs.existsSync(root)) return { ok: true, conversations: [] };
+    const out = [];
+    fs.readdirSync(root).forEach(h => { const idx = readChatIndex(path.join(root, h));
+      (idx.conversations || []).forEach(c => out.push(Object.assign({}, c, { scope: c.scope || idx.scope || '', scopeName: c.scopeName || idx.scopeName || '' }))); });
+    out.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
+    return { ok: true, conversations: out };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err), conversations: [] }; }
+});
 // Read one conversation back in full (messages + files) — to reopen and continue it.
 ipcMain.handle('lds:chat-read', (e, { scope, id }) => {
   try { const c = JSON.parse(fs.readFileSync(path.join(chatScopeDir(scope), String(id) + '.json'), 'utf8')); return { ok: true, conversation: c }; }

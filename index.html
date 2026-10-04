@@ -6155,7 +6155,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
-    try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
+    try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
@@ -10295,22 +10295,19 @@ tr.flagged:hover td{background:#fee2e2}
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app, reply with a short sentence saying what you are about to do, then one fenced code block tagged action per step, each holding one JSON object {\"action\":\"…\",\"args\":{…}} (several blocks run in the order written). Use only these actions and argument names:",
       "READING ACTIONS — nothing changes and no card is shown; use them yourself whenever you need to look something up, and their DATA comes back to you in the next message: list_properties {} (every property — active, without a loan, archived — with its loans and their status); read_property {name} (one property in full: its loans and status, profile, NOI from the T12 and entered, underwriting assumptions, T12 lines with the change vs the prior year, rent roll, refinance verdict, documents); read_rates {} (the market rates the app holds and where each comes from); read_documents {name, file?, part?} (without file: the property's saved documents; with file: that document's text — a long one comes in parts, ask for part 2, 3 … to keep reading, never answer about a part you have not read); read_data_health {} (the Data Health page); read_settings {} (targets, default assumptions, Claude connection, backups).",
-      "- open_loan {name}: open a loan's detail view (name = its property name from the snapshot).",
-      "- show_portfolio {}: show the whole-portfolio overview.",
-      "- open_calendar {}: open the Maturity & Reset Calendar.",
-      "- open_underwriting {}: open the Underwriting & Sizing tab.",
-      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property), in the background, and report the verdict; when it says Refinance (or the operator's decision) an Approve card offers to save it, which replaces all the property's loans. Pass open:true only when the operator asks to SEE the refinance screen.",
-      "- open_export {}: open the Export-to-Excel dialog.",
-      "- propose_new_loan {fields}: open a pre-filled NEW-loan form for the operator to review and save. fields uses the app's own keys: propertyName, lenderName, propertyType, originalAmount(number), annualRate(decimal), rateType(\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), index, spread(decimal), rateFloor, rateCap, originationDate, firstPaymentDate, maturityDate, loanTermMonths, amortizationMonths, ioMonths, amortMethod(\"Actual/360\"/\"30/360\"). Include only fields you were actually given.",
-      "- propose_loan_change {name, changes}: propose ADDING, ALTERING, or REMOVING information on an existing loan. The operator sees a before→after preview in the chat and must click Approve before anything changes. changes maps field keys to new values — the propose_new_loan keys above PLUS the property financials noi (annual NOI, number), egi (annual effective gross income), opex (annual operating expenses), and capRate (decimal, e.g. 0.055). To REMOVE/clear a field, set it to null. Include only the fields you were actually asked to change.",
-      "- create_property {name}: set up a brand-new property from its name (its loans, T12 and documents come later). The operator sees an Approve card first — nothing is created until they approve.",
-      "- open_data_health {}: open the Data Health page. open_settings {}: open the Settings menu. import_excel {}: open the Excel import checklist. fetch_live_rate {}: pull today's market rates (Treasury curve, SOFR, 30-day Average SOFR, 1-month Term SOFR); the result says which are live (with the fetch time), which are the last saved (with their date) and which are built-in.",
-      "- run_push {name}: (re-)run Claude's \"what to push\" operational analysis for a property. import_rent_roll {name}: open the rent-roll importer for a property (or tell the operator they can just attach the file and you'll file it automatically — a multi-property file is filed to each property it covers).",
-      "- remove_loan {name}: delete a loan (opens the app's own confirmation dialog). set_loan_status {name, status}: set a loan's status — status must be exactly one of \"Active\", \"Matured\", \"Extended\", \"Extension undecided\", \"Paid off\". archive_property {name} / unarchive_property {name}: archive a property (its loans go with it) or bring an archived one back. edit_assumptions {name, changes}: change a property's underwriting assumptions — changes may include vacancy, managementFee, capRate (each a decimal, 0.05 = 5%), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars per unit). set_loan_status, archive/unarchive and edit_assumptions all show an Approve card first.",
-      "Clarifications from testing: (a) cap rate is a PROPERTY underwriting assumption — set it with edit_assumptions {capRate}, which needs no loan; never tell the operator a loan must exist first. (b) A PROPERTY can only be archived (archive_property), not permanently deleted — do not describe a delete-from-settings path that does not exist; a loan, by contrast, is removed with remove_loan. (c) To SET a property's annual NOI, use set_property_noi {name, noi(number), capRate?}; it shows an Approve card — but if that property's NOI comes from an uploaded T12 it will say so, because the T12 is the source of truth and a hand-entered figure will not override it.",
-      "- set_refi_noi_basis {name, basis}: set which NOI the property's refinance is sized on — basis is \"in-place\", \"underwritten\" or \"entered\" (only the ones the property has; the result lists them when one is missing). add_refi_lever {name, label, amount}: add the operator's own labeled dollar-a-year lever (amount negative to remove income) to a loan's refinance what-if. toggle_refi_move {name, move, on}: tick (on:true) or un-tick (on:false) one of Claude's \"what to push\" moves in the refinance, matched by its title (a title that fits two moves comes back asking which). set_refi_terms {name, changes}: set the proposed refinance loan's structural terms — changes may include amount (dollars), termYears, amortYears, ioMonths.",
-      "- propose_profile_change {name, changes, source?}: propose changes to a PROPERTY's profile (the property record, separate from any loan). Use this when reading an agreement or other document tells you the property's own facts. The operator sees a before→after preview and must Approve. changes maps profile field keys to values: propertyName, address, residentialUnits(int), commercialUnits(int), rentableSqFt(int), yearBuilt(int), acquisitionDate(yyyy-mm-dd), manager, yardiCode, notes. Set a field to null to clear it. Include only the fields you were asked to change. When the values came from a document, add source {file, page} (the file name and the page you read them on) so the change history shows where they came from. When you read an agreement, split what you find: loan terms go through propose_loan_change, the property's own facts through propose_profile_change.",
-      "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet), the property's own facts with propose_profile_change. Quote the figures you took from the document, cite where each came from, and let the operator approve. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
+      "SCREENS — only when the operator asks to SEE something; each brings its tab to the front: open_loan {name} (a loan's page, or the senior + mezz view of a property name); open_property {name} (a property's page); show_portfolio {}; open_calendar {}; open_underwriting {name?}; open_data_health {}; open_settings {}; open_export {} (the Export-to-Excel dialog); open_documents_folder {}.",
+      "CHANGES — every one shows the operator an Approve card in the chat (a tick box on each line when there are several); nothing changes until they approve, and the outcome comes back to you. When the values come from a document, add sources {fieldKey: {file, page, quote}} so the card and the history say where each came from.",
+      "- propose_loan_change {name, changes, sources?}: add / alter / clear fields on an existing loan. changes uses the loan form's keys: propertyName, propertyAddress, propertyType, lenderName, loanNumber, originalAmount, annualRate (decimal), rateType (\"Fixed\"/\"Floating\"/\"Hybrid ARM\"), lienPosition, loanStatus, originationDate, firstPaymentDate, maturityDate (yyyy-mm-dd), loanTermMonths, amortizationMonths, ioMonths, amortMethod, index, spread (decimal), rateFloor, rateCap, armInitialFixedMonths, armAdjustFreqMonths, escrowTax, escrowInsurance, replacementReserve, servicingFee … plus noi, egi, opex (annual) and capRate. null clears a field. The loan form's own checks apply.",
+      "- propose_new_loan {fields, sources?, open?}: add a new loan (same keys). Give every required field (property name, amount, rate — or index + spread for a floating loan —, origination and first payment dates, term, amortization unless interest-only for the whole term); if one is missing you get back what is needed — ask the operator. open:true opens the pre-filled loan form instead (only when the operator asks for the form).",
+      "- propose_profile_change {name, changes, sources?}: a PROPERTY's own facts: propertyName, address, residentialUnits, commercialUnits, rentableSqFt, yearBuilt, acquisitionDate, manager, dataSource, yardiCode, notes, and noi (the entered NOI of a property with no loan). You can never set noiOverride — that is the operator's own.",
+      "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
+      "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
+      "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
+      "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, open?}: import a rent roll attached in this chat or saved in the documents (open:true opens the importer). import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
+      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
+      "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
+      "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
+      "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
       "Action rules: (1) Act only when the operator asked you to do something — a plain question gets a plain answer, no action block (reading actions are the exception: use them whenever you need to look something up). (2) A reply may hold several actions; they run in order, a change waits for the operator's Approve card, and the results of every action (and every Approve / Cancel) come back to you in the next message under \"App (results of your actions)\". Keep going — more actions if needed — until the request is finished, then report plainly what was done and what was not. Never repeat an action that already succeeded, and never re-propose a card the operator cancelled: ask what they want instead. (3) When the request is not one action on the list, do it as a COMBINATION of listed actions (e.g. create a property, then add its loan): say the plan in one line, then run the steps, each change behind its own Approve card. If no combination does exactly what was asked, say so BEFORE doing anything and offer the closest option (e.g. \"I can't delete it permanently — I can archive it. Want that?\"); never swap in a different action silently. (4) Data changes happen in the background and never switch the operator's screen; open a screen (open_loan, open_calendar …) only when the operator asks to see it. (5) NEVER claim you already saved, added, edited or deleted anything until a result says it was approved and done; a cancelled or failed result means it did NOT happen — say so.",
       "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks Approve on its card. What happened on each card (approved and done / cancelled / approved but it failed) comes back to you as a result — trust the result over anything else. The loan snapshot in every message also reflects the CURRENT saved values, so you can double-check a field. If the operator later says nothing changed, read the snapshot (or read_property): if the value is set, tell them it IS saved and where it shows; if not, propose it again so a fresh card appears.",
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
@@ -10545,17 +10542,21 @@ tr.flagged:hover td{background:#fee2e2}
     }
 
     var aiAsstActions = {
-      open_loan: function(a){ var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan; selectLoan(l._id); return {ok:true,close:true,msg:"Opened "+loanLabel(l)+"."}; },
-      show_portfolio: function(){ setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
+      // 2.9.7 (#50, #88, #89) — "open …" runs only when the operator asks, and brings that tab to the front.
+      open_loan: function(a){ var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan, k=propertyKey(l), p=opProp(k);
+        activateTab("home"); selectLoan((rl.sameProperty && p && p.loans.length>1) ? "combo:"+k : l._id); return {ok:true,close:true,msg:"Opened "+((rl.sameProperty&&p)?p.name:loanLabel(l))+"."}; },
+      open_property: function(a){ var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad; activateTab("home"); opOpenPropertyProfile(r.key); return {ok:true,close:true,msg:"Opened "+r.name+"’s page."}; },
+      show_portfolio: function(){ activateTab("home"); setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
       open_calendar: function(){ if(typeof openTab==="function") openTab("calendar"); return {ok:true,close:true,msg:"Opened the Maturity & Reset Calendar."}; },
-      open_underwriting: function(){ if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
+      open_underwriting: function(a){ if(a && a.name){ var r=aiAsstResolveProp(a.name, {archived:false}), bad=aiAsstPropMiss(r, a.name); if(bad) return bad; openTab("underwriting"); return Promise.resolve(opSelectProperty(r.key)).then(function(){ return {ok:true,close:true,msg:"Opened Underwriting & Sizing on "+r.name+"."}; }); }
+        if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
       // 2.9.7 (#27) — the refinance is always of the PROPERTY (all its loans together). It is prepared in the
       // background and offered for approval here; the screen opens only when you ask (open: true).
       start_refinance: function(a){
         var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
         var t=refiPrepare(l); if(!t) return {ok:false,msg:"I couldn’t prepare that refinance."};
         var v=refiVerdict(t, refiDrafts[1]), sum=refiSummaryText(t, v);
-        if(a && a.open){ state.activeId=t._id; try{ startRefi(); }catch(e){} }
+        if(a && a.open){ activateTab("home"); state.activeId=t._id; try{ startRefi(); }catch(e){} }   // 2.9.7 (#90) — only when asked, brought to the front
         if(!(v.refi || v.decision)) return {ok:true, msg: sum};
         var sm=refiSaveSummary(t);
         return aiAsstApprovalCard(escapeHtml(sum)+'<br><br>Save it? '+escapeHtml(sm.text), "", function(){
@@ -10669,7 +10670,7 @@ tr.flagged:hover td{background:#fee2e2}
       // ── 2.9.4 Fix #3 — the assistant can take every action the operator can ──────────────
       // Navigation / read-only (immediate):
       open_data_health: function(){ if(typeof openTab==="function") openTab("health"); return {ok:true,close:true,msg:"Opened Data Health."}; },
-      open_settings: function(){ var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
+      open_settings: function(){ activateTab("home"); var d=el("settingsDD"); if(d){ d.open=true; try{ renderSettingsTargets(); }catch(e){} try{ renderSettingsPortfolio(); }catch(e){} } return {ok:true,close:true,msg:"Opened Settings."}; },
       // 2.9.7 (#231) — Excel import behind an Approve card ("N new, M updated"): the workbook attached in this chat
       // (or saved in a property's documents). The checklist and file picker open only when asked (open: true).
       import_excel: function(a){
@@ -11064,6 +11065,118 @@ tr.flagged:hover td{background:#fee2e2}
           backup: bk, appVersion: opAppVersion||undefined } };
       }
     });
+    // ---- 2.9.7 (#52) — the rest of what a user can do, each change behind an Approve card ----
+    Object.assign(aiAsstActions, {
+      delete_loan_permanently: function(a){
+        var r=aiAsstResolveLoan(a&&a.name, {inactive:true, exactLoan:true}), bad=aiAsstLoanMiss(r, a&&a.name); if(bad) return bad; var l=r.loan;
+        if(!loanIsInactiveSelf(l)) return {ok:false,msg:loanLabel(l)+" is active — archive it first (remove_loan); only an archived or paid-off loan can be deleted permanently."};
+        return aiAsstApprovalCard('<b>Delete loan '+escapeHtml(loanLabel(l))+' permanently?</b> The loan record is removed <b>for good</b>. It can’t be undone here; the automatic backups keep a copy.', "", function(){
+          var key=propertyKey(l), nm=opPropDisplayName(key); loans=loans.filter(function(x){ return x._id!==l._id; });
+          if(!loans.some(function(x){ return propertyKey(x)===key; })){ standaloneProps[key]={ key:key, name:nm }; try{ opCreatePropertyFolder(key, nm); }catch(e){} }
+          if(state.activeId===l._id) state.activeId=null; save(); redrawAll();
+          return {ok:true, html:'✓ Deleted '+escapeHtml(loanLabel(l))+' permanently.', toast:loanLabel(l)+' deleted'};
+        }, { approveLabel:"Delete permanently", danger:true });
+      },
+      remove_document: function(a){
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        if(!(a&&a.file)) return {ok:false,msg:"Tell me which document to remove (its file name)."};
+        return ldsShell.docList(r.key).then(function(dl){ var want=String(a.file).toLowerCase(), fs2=((dl&&dl.files)||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""]; });
+          var hits=fs2.filter(function(f){ return f.name.toLowerCase()===want; }); if(!hits.length) hits=fs2.filter(function(f){ return f.name.toLowerCase().indexOf(want)>=0; });
+          if(!hits.length) return {ok:false,msg:'"'+a.file+'" isn’t among '+r.name+'’s documents.'};
+          if(hits.length>1) return {ok:false,msg:"Which one? "+hits.map(function(f){ return '"'+f.name+'"'; }).join(" or ")+"."};
+          var f=hits[0];
+          return docRemoveExtra(r.key, f).then(function(extra){
+            return aiAsstApprovalCard('Remove <b>'+escapeHtml(f.name)+'</b> from '+escapeHtml(r.name)+'’s documents? The automatic backups keep a copy.'+escapeHtml(extra), "", function(){
+              return docRemoveDo(r.key, f).then(function(res){ return res.ok ? {ok:true, html:'✓ Removed '+escapeHtml(f.name)+'.', toast:'Removed '+f.name} : {ok:false, html:"Couldn’t remove it"+(res.error?" ("+escapeHtml(res.error)+")":"")+"."}; });
+            }, { approveLabel:"Remove", danger:true });
+          });
+        });
+      },
+      set_document_type: function(a){
+        var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var want=String((a&&a.type)||"").toLowerCase(), t=PROFILE_DOC_TYPES.find(function(d){ return d.role===want || d.label.toLowerCase()===want || d.label.toLowerCase().indexOf(want)>=0; });
+        if(!t) return {ok:false,msg:"The type must be one of: "+PROFILE_DOC_TYPES.map(function(d){ return d.label; }).join(", ")+"."};
+        return ldsShell.docList(r.key).then(function(dl){ var fs2=((dl&&dl.files)||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""] && f.name.toLowerCase().indexOf(String((a&&a.file)||"").toLowerCase())>=0; });
+          if(!fs2.length) return {ok:false,msg:'"'+((a&&a.file)||"")+'" isn’t among '+r.name+'’s documents.'}; if(fs2.length>1) return {ok:false,msg:"Which one? "+fs2.map(function(f){ return '"'+f.name+'"'; }).join(" or ")+"."};
+          var f=fs2[0];
+          return aiAsstApprovalCard('Change what <b>'+escapeHtml(f.name)+'</b> is?', aiAsstRow("type","Type", escapeHtml(profileDocLabel(f.role||"other")), escapeHtml(t.label)), function(){
+            return ldsShell.docSetRole(r.key, f.id, t.role).then(function(res){ if(!res||res.ok===false) return {ok:false, html:"Not changed"+(res&&res.error?" — "+escapeHtml(res.error):"")+"."};
+              var after=(t.role==="t12"||f.role==="t12") ? opAfterT12Change(r.key) : null; return Promise.resolve(after).then(function(){ try{ delete loanRRCache[r.key]; }catch(e){} renderDocsPanel(); return {ok:true, html:'✓ '+escapeHtml(f.name)+' is now a '+escapeHtml(t.label)+'.'}; }); });
+          });
+        });
+      },
+      open_documents_folder: function(){ try{ ldsShell.openDocsFolder(); }catch(e){ return {ok:false,msg:"Couldn’t open the documents folder."}; } return {ok:true,msg:"Opened the documents folder."}; },
+      // Underwriting line pins: a fixed underwritten figure for one line (or back to the computed value).
+      pin_underwriting_line: function(a){
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var L=(window.SetupBuilder&&SetupBuilder.LABEL)||{}, q=String((a&&a.line)||"").trim(), code=Object.keys(L).find(function(k){ return k.toLowerCase()===q.toLowerCase() || L[k].toLowerCase()===q.toLowerCase(); }) || Object.keys(L).find(function(k){ return L[k].toLowerCase().indexOf(q.toLowerCase())>=0 && q.length>=3; });
+        if(!code) return {ok:false,msg:"I don’t know the line \""+q+"\". Lines: "+Object.keys(L).map(function(k){ return L[k]; }).join(", ")+"."};
+        var unpin=(a&&(a.value==null||a.value===""||a.unpin)); var v=Number(String(a&&a.value!=null?a.value:"").replace(/[$,\s]/g,""));
+        if(!unpin && !isFinite(v)) return {ok:false,msg:"Give me the annual dollar figure to pin (or unpin:true)."};
+        return opLoadAssumptions(r.key).catch(function(){ return null; }).then(function(saved){
+          var b0=opMergeBench(uwDefaults().bench, saved), cur=b0.lineOverrides&&b0.lineOverrides[code], units=propUnits(r.key), total=(!unpin && a.perUnit && units) ? v*units : v;
+          if(unpin && !cur) return {ok:false,msg:L[code]+" isn’t pinned on "+r.name+"."};
+          return aiAsstApprovalCard((unpin?'Unpin':'Pin')+' the underwritten <b>'+escapeHtml(L[code])+'</b> on <b>'+escapeHtml(r.name)+'</b>?', aiAsstRow(code, L[code], cur?fmtMoney(cur.value):"computed", unpin?"back to the computed value":fmtMoney(total)+" a year"+(a.perUnit&&units?" ("+fmtMoney(v)+" × "+units+" units)":"")), function(){
+            return opLoadAssumptions(r.key).catch(function(){ return null; }).then(function(sv){ var x0=opMergeBench(uwDefaults().bench, sv), x1=JSON.parse(JSON.stringify(x0)); if(!x1.lineOverrides) x1.lineOverrides={};
+              if(unpin) delete x1.lineOverrides[code]; else x1.lineOverrides[code]={ value:total, per:!!a.perUnit, by:HISTORY_WHO_ASSISTANT, at:new Date().toISOString() };
+              return opSaveAssumptionsFor(r.key, x0, x1, "assistant"); }).then(function(){ try{ opRenderPortfolio(); }catch(e){} return {ok:true, html:'✓ '+(unpin?'Unpinned ':'Pinned ')+escapeHtml(L[code])+' on '+escapeHtml(r.name)+'.'}; });
+          });
+        });
+      },
+      // The Underwriting tab's average-rent input (it lives on that tab, for the property it shows).
+      set_average_rent: function(a){
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var v=Number(String(a&&a.averageRent!=null?a.averageRent:"").replace(/[$,\s]/g,"")); if(!isFinite(v)||v<=0) return {ok:false,msg:"Give me the average monthly rent per unit in dollars."};
+        return aiAsstApprovalCard('Set the average rent per unit for <b>'+escapeHtml(r.name)+'</b> in Underwriting (gross potential rent = rent × units × 12)?', aiAsstRow("rent","Average rent / unit / month", uwState.input.avgRentUnit!=null&&opFocusKey===r.key?fmtMoney(uwState.input.avgRentUnit):"from the rent roll", fmtMoney(v)), function(){
+          return Promise.resolve(opFocusKey===r.key ? null : opSelectProperty(r.key, { skipAutoPush:true })).then(function(){ uwState.input.avgRentUnit=v; try{ uwFillRentFromAvg(); }catch(e){} saveUW(); try{ uwSyncGridInputs(); uwRerenderSetup(); }catch(e){}
+            return {ok:true, html:'✓ Underwriting now shows '+escapeHtml(r.name)+' with '+fmtMoney(v)+' average rent per unit (save it to the property record to keep its NOIs).'}; });
+        });
+      },
+      save_property_record: function(a){
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        return aiAsstApprovalCard('Save <b>'+escapeHtml(r.name)+'</b>’s Underwriting (its inputs and both NOIs) to its property record?', "", function(){
+          return aiAsstWithFocus(r.key, function(){ return opSaveGeneralData(); }).then(function(){ var g=gdNOICache[r.key]||{};
+            return {ok:true, html:'✓ Saved to the property record'+(g.inPlace!=null?' — in-place NOI '+fmtMoney(g.inPlace)+(g.underwritten!=null?', underwritten '+fmtMoney(g.underwritten):''):'')+'.'}; });
+        });
+      },
+      recompute_all: function(){
+        var n=opProperties().length;
+        return aiAsstApprovalCard('Recompute every property’s figures ('+n+' properties) from the files on disk, under this version of the app?', "", function(){
+          return Promise.resolve(opRecomputeAll("assistant")).then(function(res){ try{ redrawAll(); }catch(e){} var last=opLastRecompute()||{};
+            return {ok:true, html:'✓ Recomputed '+(last.recomputed!=null?last.recomputed:"")+' of '+(last.properties!=null?last.properties:n)+' properties.'}; });
+        });
+      },
+      export_schedule_csv: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        if(!(window.ldsShell && ldsShell.saveBinary)) return {ok:false,msg:"Saving files needs the desktop app."};
+        var csv=scheduleCsvText(l), b=new TextEncoder().encode(csv), str=""; for(var i=0;i<b.length;i++) str+=String.fromCharCode(b[i]);
+        return ldsShell.saveBinary(btoa(str), (loanLabel(l).replace(/[^\w\- ]+/g,"").trim()||"loan")+" schedule.csv", "csv", "CSV").then(function(res){
+          return (res&&res.ok) ? {ok:true,msg:"Saved the payment schedule of "+loanLabel(l)+"."} : (res&&res.canceled ? {ok:false,msg:"The operator closed the save window — nothing was saved."} : {ok:false,msg:"Couldn’t save the schedule"+(res&&res.error?": "+res.error:"")+"."}); });
+      },
+      backup_now: function(){
+        if(!desktop()) return {ok:false,msg:"Backups need the desktop app."};
+        return aiAsstApprovalCard('Take a backup snapshot of everything now (loans, property folders, chats, settings)? It appears in Data → recent backups.', "", function(){
+          return Promise.resolve(window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "autobackup")).then(function(res){ return (res&&res.ok!==false) ? {ok:true, html:'✓ Backed up '+loans.length+' loans and every property folder and chat.'} : {ok:false, html:"The backup failed"+(res&&res.error?" — "+escapeHtml(res.error):"")+"."}; });
+        });
+      },
+      list_backups: function(){
+        if(!desktop()) return {ok:false,msg:"Backups need the desktop app."};
+        return window.ldsShell.autoBackupList().then(function(list){ list=Array.isArray(list)?list:[];
+          return {ok:true, msg:list.length+" backup"+(list.length===1?"":"s")+" on file.", data:list.slice(0,30).map(function(b){ return { name:b.name, when:fmtBackupWhen(b.exportedAt, b.mtime), why:b.reasonLabel||b.kind, loans:b.loanCount }; }) }; });
+      },
+      restore_backup: function(a){
+        if(!desktop()) return {ok:false,msg:"Restoring needs the desktop app."};
+        return window.ldsShell.autoBackupList().then(function(list){ list=Array.isArray(list)?list:[]; var want=String((a&&a.backup)||"").toLowerCase();
+          var b=want ? list.find(function(x){ return String(x.name).toLowerCase()===want || String(x.name).toLowerCase().indexOf(want)>=0 || fmtBackupWhen(x.exportedAt, x.mtime).toLowerCase().indexOf(want)>=0; }) : null;
+          if(!b) return {ok:false,msg:"Tell me which backup (use list_backups to see them)."};
+          return window.ldsShell.autoBackupRead(b.name).then(function(res){ if(!res||!res.ok) return {ok:false,msg:"Couldn’t read that backup."}; var parsed=parseBackup(res.content); if(!parsed.ok) return {ok:false,msg:parsed.err};
+            return aiAsstApprovalCard('<b>Restore the backup from '+escapeHtml(fmtBackupWhen(b.exportedAt, b.mtime))+'?</b> '+escapeHtml(restoreConfirmText(parsed, res, "this backup"))+' <b>What is there now is replaced for good</b> (apart from that safety copy). The app restarts afterwards.', "", function(){
+              return applyRestore(parsed, "backup chosen in the assistant", res).then(function(okr){ return okr ? {ok:true, html:'✓ Restored — the app restarts with the backup.'} : {ok:false, html:"The restore stopped — nothing was changed."}; });
+            }, { approveLabel:"Restore", danger:true });
+          });
+        });
+      }
+    });
     function aiAsstParseAction(text){ var p=aiAsstParseActions(text); return { text:p.text, action:p.actions[0]||null }; }
     function aiAsstRunAction(obj){
       var fn = aiAsstActions[obj.action];
@@ -11376,21 +11489,28 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // 2.9.7 (#213) — removing a document always asks; removing a T12 says what goes with it, and its numbers
     // are then rebuilt from any other T12 on file (or "no NOI yet").
+    // 2.9.7 (#213, #52) — what removing a document means, in words (shared by the Remove button and the assistant).
+    async function docRemoveExtra(propKey, f){
+      if(f.role !== "t12") return "";
+      let inUse = null; try{ inUse = await opReadPropT12(propKey); }catch(e){}
+      const g = gdNOICache[propKey], noi = g && (g.inPlace != null ? g.inPlace : null);
+      if(inUse && inUse.id === f.id) return " It is the T12 in use: its NOI" + (noi != null ? " (" + fmtMoney(noi) + ")" : "") + " will be removed from Home, DSCR and the refinance" + "; the numbers are rebuilt from any other T12 on file, otherwise the property has no NOI yet.";
+      return " It is an older T12 — the one in use stays.";
+    }
+    async function docRemoveDo(propKey, f){
+      let r = null; try{ r = await ldsShell.docDelete(propKey, f.id); }catch(e){ r = { ok:false, error:String(e) }; }
+      if(r && r.ok === false) return { ok:false, error: r.error || "" };
+      if(f.role === "t12") await opAfterT12Change(propKey);
+      try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+      renderDocsPanel(); aiAsstUpdatePropDocs();
+      return { ok:true };
+    }
     async function docRemoveAsk(propKey, f){
-      let extra = "";
-      if(f.role === "t12"){
-        let inUse = null; try{ inUse = await opReadPropT12(propKey); }catch(e){}
-        const g = gdNOICache[propKey], noi = g && (g.inPlace != null ? g.inPlace : null);
-        if(inUse && inUse.id === f.id) extra = " It is the T12 in use: its NOI" + (noi != null ? " (" + fmtMoney(noi) + ")" : "") + " will be removed from Home, DSCR and the refinance" + "; the numbers are rebuilt from any other T12 on file, otherwise the property has no NOI yet.";
-        else extra = " It is an older T12 — the one in use stays.";
-      }
+      const extra = await docRemoveExtra(propKey, f);
       confirmDialog("Remove “" + f.name + "”?", "It is deleted from " + opPropDisplayName(propKey) + "’s folder (the automatic backups keep a copy)." + extra, async () => {
-        let r = null; try{ r = await ldsShell.docDelete(propKey, f.id); }catch(e){ r = { ok:false, error:String(e) }; }
-        if(r && r.ok === false){ toast("Couldn’t remove “" + f.name + "”" + (r.error ? " (" + r.error + ")" : "") + ".", "error"); return; }
+        const r = await docRemoveDo(propKey, f);
+        if(!r.ok){ toast("Couldn’t remove “" + f.name + "”" + (r.error ? " (" + r.error + ")" : "") + ".", "error"); return; }
         toast("Removed “" + f.name + "”.", "check");
-        if(f.role === "t12") await opAfterT12Change(propKey);
-        try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
-        renderDocsPanel(); aiAsstUpdatePropDocs();
       }, "Remove");
     }
     // A T12 was removed (or its type changed): rebuild the property's numbers from the T12 now in use, or clear
@@ -11854,39 +11974,54 @@ tr.flagged:hover td{background:#fee2e2}
       var btn=el("aiAsstHistoryBtn"); if(btn){ btn.classList.toggle("bg-brand-50", show); btn.classList.toggle("text-brand-700", show); }
       if(show) aiAsstRenderHistory();
     }
+    // 2.9.7 (#97) — the History list shows ALL chats, grouped by property (the current property first, then the
+    // portfolio, then the rest), with a "This property / All" filter; search covers everything.
+    var aiAsstHistMode = "all";
     function aiAsstRenderHistory(){
       var panel=el("aiAsstHistoryPanel"); if(!panel) return;
       if(!chatsAvailable()){ panel.innerHTML='<div class="text-center text-sm text-slate-400 py-8">Saved conversations are available in the desktop app.</div>'; return; }
+      var cur=aiAsstFocusPropKey, seg=function(m, lbl){ return '<button type="button" data-histmode="'+m+'" class="px-3 py-1.5 text-xs font-semibold '+(aiAsstHistMode===m?'bg-brand-600 text-white':'bg-white text-slate-600 hover:bg-slate-50')+'">'+lbl+'</button>'; };
       panel.innerHTML=
-        '<div class="mb-3 flex items-center gap-2">'+
-          '<input id="aiAsstHistSearch" type="text" placeholder="Search your conversations…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500">'+
+        '<div class="mb-3 flex flex-wrap items-center gap-2">'+
+          '<input id="aiAsstHistSearch" type="text" placeholder="Search all your conversations…" class="flex-1 min-w-[160px] rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500">'+
+          (cur ? '<div class="inline-flex overflow-hidden rounded-lg border border-slate-200" data-histmodes>'+seg("this","This property")+seg("all","All")+'</div>' : '')+
           '<button id="aiAsstHistBack" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">Back to chat</button>'+
         '</div>'+
         '<div id="aiAsstHistList" class="space-y-2"><div class="text-xs text-slate-400 py-6 text-center">Loading…</div></div>';
       var srch=el("aiAsstHistSearch"); if(srch){ srch.addEventListener("input", function(){ aiAsstHistFilter(this.value); }); setTimeout(function(){ try{srch.focus();}catch(e){} },30); }
       var bk=el("aiAsstHistBack"); if(bk) bk.addEventListener("click", function(){ aiAsstToggleHistory(false); });
+      panel.querySelectorAll("[data-histmode]").forEach(function(b){ b.addEventListener("click", function(){ aiAsstHistMode=b.getAttribute("data-histmode"); aiAsstRenderHistory(); }); });
       aiAsstHistFilter("");
+    }
+    function aiAsstHistGroupName(scope, scopeName){ if(scope==="portfolio") return "Portfolio"; var p=opProp(scope); if(p) return p.name; var ar=opArchivedProps().find(function(x){ return x.key===scope; }); return ar ? ar.name+" (archived)" : (scopeName||"A property no longer in the app"); }
+    // rows: [{scope, scopeName, id, title, updatedAt, sub, pinned}] → grouped HTML
+    function aiAsstHistGrouped(rows){
+      var cur=aiAsstFocusPropKey, groups={}, order=[];
+      rows.forEach(function(r){ if(!groups[r.scope]){ groups[r.scope]=[]; order.push(r.scope); } groups[r.scope].push(r); });
+      var rank=function(sc){ return sc===cur ? 0 : sc==="portfolio" ? 1 : 2; };
+      order.sort(function(a,b){ return rank(a)-rank(b) || aiAsstHistGroupName(a, groups[a][0].scopeName).localeCompare(aiAsstHistGroupName(b, groups[b][0].scopeName)); });
+      return order.map(function(sc){ return '<div data-histgroup="'+escapeHtml(sc)+'"><div class="mt-3 mb-1 text-[10px] font-bold uppercase tracking-wider '+(sc===cur?'text-brand-600':'text-slate-400')+'">'+escapeHtml(aiAsstHistGroupName(sc, groups[sc][0].scopeName))+(sc===cur?' · this property':'')+'</div><div class="space-y-2">'+
+        groups[sc].map(function(r){ return aiAsstHistRow(r.scope, r.id, r.title, r.updatedAt, r.sub, r.pinned); }).join("")+'</div></div>'; }).join("");
     }
     function aiAsstHistFilter(query){
       var list=el("aiAsstHistList"); if(!list) return;
-      query=String(query||"").trim(); var scopes=aiAsstHistScopes();
+      query=String(query||"").trim();
       if(query){
-        ldsShell.chatSearch({ query:query, scopes:scopes }).then(function(r){
+        ldsShell.chatSearch({ query:query }).then(function(r){   // search covers everything
           var ms=(r&&r.matches)||[];
-          list.innerHTML = ms.length ? ms.map(function(m){ return aiAsstHistRow(m.scope, m.id, m.title, m.updatedAt, m.snippet||m.scopeName, false); }).join("") : '<div class="text-xs text-slate-400 py-6 text-center">No conversations match “'+escapeHtml(query)+'”.</div>';
+          list.innerHTML = ms.length ? aiAsstHistGrouped(ms.map(function(m){ return { scope:m.scope, scopeName:m.scopeName, id:m.id, title:m.title, updatedAt:m.updatedAt, sub:m.snippet||"", pinned:false }; })) : '<div class="text-xs text-slate-400 py-6 text-center">No conversations match “'+escapeHtml(query)+'”.</div>';
           aiAsstWireHistRows(list);
         }).catch(function(){ list.innerHTML='<div class="text-xs text-rose-500 py-6 text-center">Search failed.</div>'; });
         return;
       }
-      Promise.all(scopes.map(function(s){ return ldsShell.chatList({scope:s}).then(function(r){ return {scope:s, r:r}; }).catch(function(){ return {scope:s, r:null}; }); })).then(function(results){
-        var rows=[];
-        results.forEach(function(x){ ((x.r&&x.r.conversations)||[]).forEach(function(c){ rows.push({scope:x.scope, c:c}); }); });
-        rows.sort(function(a,b){ return (b.c.pinned?1:0)-(a.c.pinned?1:0) || (b.c.updatedAt||0)-(a.c.updatedAt||0); });
-        list.innerHTML = rows.length
-          ? rows.map(function(x){ var sub=(x.c.scopeName||(x.scope==="portfolio"?"Portfolio":""))+(x.c.msgCount?(" · "+x.c.msgCount+" message"+(x.c.msgCount===1?"":"s")):""); return aiAsstHistRow(x.scope, x.c.id, x.c.title, x.c.updatedAt, sub, x.c.pinned); }).join("")
-          : '<div class="text-xs text-slate-400 py-8 text-center">No saved conversations yet.<br>Ask the assistant something and it’ll be saved here.</div>';
+      var lister = ldsShell.chatListAll ? ldsShell.chatListAll() : Promise.all(aiAsstHistScopes().map(function(s){ return ldsShell.chatList({scope:s}).then(function(r){ return ((r&&r.conversations)||[]).map(function(c){ return Object.assign({ scope:s }, c); }); }); })).then(function(a){ return { conversations:[].concat.apply([], a) }; });
+      lister.then(function(r){
+        var cs=((r&&r.conversations)||[]).filter(function(c){ return !(aiAsstHistMode==="this" && aiAsstFocusPropKey) || c.scope===aiAsstFocusPropKey; });
+        list.innerHTML = cs.length
+          ? aiAsstHistGrouped(cs.map(function(c){ return { scope:c.scope, scopeName:c.scopeName, id:c.id, title:c.title, updatedAt:c.updatedAt, pinned:c.pinned, sub:(c.msgCount?(c.msgCount+" message"+(c.msgCount===1?"":"s")):"") }; }))
+          : '<div class="text-xs text-slate-400 py-8 text-center">'+(aiAsstHistMode==="this"&&aiAsstFocusPropKey ? 'No saved conversations about this property yet.' : 'No saved conversations yet.<br>Ask the assistant something and it’ll be saved here.')+'</div>';
         aiAsstWireHistRows(list);
-      });
+      }).catch(function(){ list.innerHTML='<div class="text-xs text-rose-500 py-6 text-center">Couldn’t load the conversations.</div>'; });
     }
     function aiAsstHistRow(scope, id, title, updatedAt, sub, pinned){
       var when=aiAsstWhen(updatedAt); var meta=(sub||"")+(when?((sub?" · ":"")+when):"");
@@ -11975,6 +12110,7 @@ tr.flagged:hover td{background:#fee2e2}
     function aiAsstRefreshConn(){
       var row=el("aiAsstConnRow"); if(!row) return;
       row.innerHTML='<span class="text-slate-400">Checking connection…</span>';
+      { var sb=el("aiAsstSend"); if(sb && !aiAsstBusy) sb.disabled=!aiAsstConnected; }   // 2.9.7 — Send waits for the connection check (a message is never silently dropped)
       ldsShell.aiStatus().then(function(st){
         aiStatusCache=st;
         var cs=claudeConnState(st); var ok=cs.ok, msg=cs.msg;

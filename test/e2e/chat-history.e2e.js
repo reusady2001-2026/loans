@@ -78,6 +78,23 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(opened.back,'opening a conversation returns to the chat view');
   ok(/debt service/i.test(opened.text),'the reopened conversation restores its full exchange into the log (the assistant has its memory)');
 
+  // 2.9.7 (#97) — ALL chats, grouped by property (the current one first, then the portfolio), with a "This property / All" filter
+  const G=await page.evaluate(async()=>{ const ps=window.opProperties(); const A=ps[0], B=ps[1];
+    await window.ldsShell.chatSave({scope:A.key, scopeName:A.name, title:'About A', messages:[{role:'user',text:'a question about A'}]});
+    await window.ldsShell.chatSave({scope:B.key, scopeName:B.name, title:'About B', messages:[{role:'user',text:'a question about B'}]});
+    return { a:A.key, an:A.name, b:B.key }; });
+  await page.evaluate((a)=>{ const s=document.getElementById('aiAsstProp'); if(![...s.options].some(o=>o.value===a)){ const o=document.createElement('option'); o.value=a; o.textContent=a; s.appendChild(o); } s.value=a; s.dispatchEvent(new Event('change',{bubbles:true})); },G.a);
+  await page.evaluate(()=>{ if(document.getElementById('aiAsstHistoryPanel').classList.contains('hidden')) document.getElementById('aiAsstHistoryBtn').click(); }); await page.waitForTimeout(700);
+  const groups=await page.evaluate(()=>[...document.querySelectorAll('#aiAsstHistList [data-histgroup]')].map(g=>g.getAttribute('data-histgroup')));
+  ok(groups[0]===G.a&&groups[1]==='portfolio'&&groups.includes(G.b),'the list shows every property’s chats, grouped — this property first, then the portfolio ('+groups.length+' groups)');
+  await page.evaluate(()=>{ const b=document.querySelector('[data-histmode="this"]'); if(b) b.click(); }); await page.waitForTimeout(600);
+  const only=await page.evaluate(()=>[...document.querySelectorAll('#aiAsstHistList [data-histgroup]')].map(g=>g.getAttribute('data-histgroup')));
+  ok(only.length===1&&only[0]===G.a,'"This property" shows only this property’s chats');
+  await page.fill('#aiAsstHistSearch','question about B'); await page.waitForTimeout(600);
+  const sb=await page.evaluate(()=>[...document.querySelectorAll('#aiAsstHistList .httl')].map(t=>t.textContent));
+  ok(sb.includes('About B'),'search covers everything (finds another property’s chat)');
+  await page.evaluate(()=>{ const b=document.querySelector('[data-histmode="all"]'); if(b) b.click(); }); await page.waitForTimeout(300);
+
   // delete removes it
   const del=await page.evaluate(async()=>{ const S=window.ldsShell;
     const before=(await S.chatList({scope:'portfolio'})).conversations.length;

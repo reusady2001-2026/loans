@@ -32,7 +32,7 @@ const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').f
   await page.route(/^https?:\/\//,r=>r.abort());
   await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(800);
   await page.evaluate(()=>document.getElementById('aiAsstFab').click());
-  await page.waitForFunction(()=>{ const b=document.getElementById('aiAsstSend'); return b&&!b.disabled; },null,{timeout:15000}).catch(()=>{});
+  await page.waitForFunction(()=>{ const b=document.getElementById('aiAsstSend'), r=document.getElementById('aiAsstConnRow'); return b&&!b.disabled&&r&&!/Checking/.test(r.textContent); },null,{timeout:20000}).catch(()=>{});
   const idle=()=>page.waitForFunction(()=>/Send/.test(document.getElementById('aiAsstSend').textContent),null,{timeout:20000}).catch(()=>{});
   const send=async(q)=>{ await page.evaluate((q)=>{ document.getElementById('aiAsstInput').value=q; document.getElementById('aiAsstSend').click(); },q); };
   const logText=()=>page.evaluate(()=>document.getElementById('aiAsstLog').textContent);

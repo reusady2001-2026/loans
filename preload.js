@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Assistant chat history (per-property + portfolio), persisted on disk.
   chatSave: (payload) => ipcRenderer.invoke('lds:chat-save', payload),       // {scope,scopeName,id?,title?,messages,files?,pinned?} → {ok,conversation}
   chatList: ({ scope }) => ipcRenderer.invoke('lds:chat-list', { scope }),    // → {ok,scopeName,conversations:[meta]}
+  chatListAll: () => ipcRenderer.invoke('lds:chat-list-all'),   // 2.9.7 (#97) → {ok,conversations:[meta + scope, scopeName]}
   chatRead: ({ scope, id }) => ipcRenderer.invoke('lds:chat-read', { scope, id }), // → {ok,conversation}
   chatDelete: ({ scope, id }) => ipcRenderer.invoke('lds:chat-delete', { scope, id }),
   chatMeta: ({ scope, id, title, pinned }) => ipcRenderer.invoke('lds:chat-meta', { scope, id, title, pinned }), // rename/pin
