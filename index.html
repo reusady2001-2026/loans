@@ -3299,11 +3299,26 @@ tr.flagged:hover td{background:#fee2e2}
         try{ opPushCache.delete(key); if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // regenerate "what to push" ONCE against the fresh statement
         if(opFocusKey === key) renderUnderwriting();
         if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
+        // 2.9.7 (#14) — an older year's T12: the newer statement stays in use; this one joins the history.
+        try{
+          const cur = await opReadPropT12(key), savedId = r.file && r.file.id;
+          if(cur && savedId && cur.id !== savedId){
+            const upGrid = opGridFromWorkbook(new Uint8Array(await file.arrayBuffer()));
+            if(upGrid) await opMergeT12History(key, upGrid);
+            const ms = opGridMonths(cur.grid), rng = ms.length ? (ymShort(ms[Math.max(0, ms.length - 12)]) + " – " + ymShort(ms[ms.length - 1])) : cur.name;
+            if(opFocusKey === key) renderUnderwriting();
+            toast("Using " + rng + " (newest). The older file was added to history.", "info");
+            return;
+          }
+        }catch(e){}
         // Report the app's RULE-BASED in-place NOI (annualized last-3-months × 4 when the rule fires) —
         // never the raw printed footing, which would show the 12-month figure on a lease-up property.
         const noi = (gd && gd.noi && gd.noi.inPlace != null) ? gd.noi.inPlace : null;
         const annualized = !!(gd && gd.noi && gd.noi.inPlaceBasis === "annualized");
-        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — NOI "+uwFmt(noi)+(annualized ? " (annualized · last 3 mo × 4)" : "") : "")+".","check");
+        const tie = gd && gd.noi && gd.noi.tie, lastN = gd && gd.noi && gd.noi.inPlaceBasis === "last12" ? gd.noi.monthsInFile : null;
+        const tieBad = !!(tie && tie.printed != null && !tie.ok);
+        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — NOI "+uwFmt(noi)+(annualized ? " (annualized · last 3 mo × 4)" : "")+(lastN ? " (last 12 of "+lastN+" months)" : "") : "")+
+              (tieBad ? " — but it doesn’t tie: statement says "+fmtMoney(tie.printed)+", lines add to "+fmtMoney(tie.built)+" (gap "+fmtMoney(Math.abs(tie.gap))+")" : "")+".", tieBad ? "error" : "check");   // 2.9.7 (#10, #257)
       }catch(err){ toast("Couldn’t read that file.","error"); }
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
@@ -3536,12 +3551,18 @@ tr.flagged:hover td{background:#fee2e2}
       const gdRec = gdFullCache[opFocusKey], annNoi = (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "annualized") ? gdRec.noi : null;
       const noiMethod = (gdRec && gdRec.noi) ? noiMethodLabel(gdRec.noi) : "";   // "T12 · Sep 2025 → Aug 2026" or "T3 × 4 · Oct → Dec 2026"
       const annualizedBanner = annNoi ? '<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">'+
-        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; the statement&rsquo;s first two months had no NOI, so the statement total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate. The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+annNoi.annualizedMonths.join(', ')+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>' : '';
+        '<span class="font-bold uppercase tracking-wide">Annualized — last 3 months × 4</span> &mdash; '+
+          (annNoi.ruleWhy === "short" ? 'the statement covers '+((annNoi.months&&annNoi.months.length)||'fewer than 12')+' months — fewer than 12 — so its total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') is not a year.'
+                                      : 'the statement&rsquo;s first two months had NOI of $0 or less (lease-up), so the statement total ('+(annNoi.inPlaceStatement!=null?fmtMoney(annNoi.inPlaceStatement):"&mdash;")+') understates the run-rate.')+
+          ' The working in-place NOI is the last 3 months &times; 4: <strong>'+fmtMoney(annNoi.inPlace)+'</strong>'+((annNoi.annualizedMonths&&annNoi.annualizedMonths.length)?' ('+escapeHtml(ymRange(annNoi.annualizedMonths))+')':'')+'. That is the figure the coverage, debt yield and refinance use.</div>'
+        : (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "last12") ? '<div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] text-sky-900">'+
+          '<span class="font-bold uppercase tracking-wide">Last 12 months</span> &mdash; this file covers '+(gdRec.noi.monthsInFile||'more than 12')+' months; the NOI uses only the last 12 ('+escapeHtml(ymRange(gdRec.noi.months))+'): <strong>'+fmtMoney(gdRec.noi.inPlace)+'</strong>. The earlier months are kept in the history below.</div>'
+        : '';
       return review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
-            ((b.inPlaceNOIReported!=null && Math.abs(r.inPlace.noi-b.inPlaceNOIReported)<0.005) ? '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI</div>' : '')+'</div>'+   // to the cent, same tolerance the engine reconciles at
+            uwTieHtml(b.tie)+'</div>'+   // 2.9.7 (#10, #74, #257) — green only when the gap is under $1; otherwise the numbers, the gap and what absorbed it
           '<div class="rounded-xl border border-brand-200 bg-brand-50 p-3"><div class="text-[10px] uppercase tracking-wide text-brand-600">Underwritten NOI</div><div class="text-lg font-extrabold text-brand-700 tabular-nums" id="uwUwNoi">'+uwFmt(r.underwritten.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-brand-600/70">'+escapeHtml(noiMethod)+'</div>' : '')+'</div>'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
@@ -3719,13 +3740,46 @@ tr.flagged:hover td{background:#fee2e2}
       try{
         const list = await ldsShell.docList(key); if(!list || !list.ok) return null;
         const files = (list.files || []);
-        const t12 = files.filter(f => f.role === "t12").sort((a, b) => b.savedAt - a.savedAt)[0]
-                 || files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "")).sort((a, b) => b.savedAt - a.savedAt)[0];
-        if(!t12) return null;
+        // 2.9.7 (#14) — the property's T12 is the one whose statement ENDS latest (its last dated month), not
+        // the one uploaded last: uploading an older year's T12 adds it to the history but never replaces the
+        // newer statement. Same last month → the newer upload.
+        let t12s = files.filter(f => f.role === "t12");
+        if(!t12s.length) t12s = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "") && !/^(profile|general-data|assumptions)/i.test(f.name || ""));
+        if(!t12s.length) return null;
+        let t12 = t12s.slice().sort((a, b) => b.savedAt - a.savedAt)[0];
+        if(t12s.length > 1){
+          const scored = [];
+          for(const f of t12s){ scored.push({ f: f, lm: await opT12LastMonth(key, f) }); }
+          scored.sort((a, b) => String(b.lm || "").localeCompare(String(a.lm || "")) || (b.f.savedAt - a.f.savedAt));
+          t12 = scored[0].f;
+        }
         const rd = await ldsShell.docRead(key, t12.id); if(!rd || !rd.ok || !rd.base64) return null;
         const grid = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) return null;
-        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name };
+        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name, id: t12.id, lastMonth: opGridLastMonth(grid) };
       }catch(e){ return null; }
+    }
+    // 2.9.7 (#14) — the last dated month a T12 grid covers ("YYYY-MM", or "" when it has no dated months).
+    function opGridLastMonth(grid){ try{ const d = T12Parse.parseGrid(grid, { basis: "total", monthly: true }); const ms = (d.monthCols || []).map(m => m && m.ym).filter(Boolean).sort(); return ms.length ? ms[ms.length - 1] : ""; }catch(e){ return ""; } }
+    function opGridMonths(grid){ try{ const d = T12Parse.parseGrid(grid, { basis: "total", monthly: true }); return (d.monthCols || []).map(m => m && m.ym).filter(Boolean).sort(); }catch(e){ return []; } }
+    const opT12LastCache = {};   // file id → last month (a stored file never changes)
+    async function opT12LastMonth(key, f){
+      if(!f || !f.id) return "";
+      if(Object.prototype.hasOwnProperty.call(opT12LastCache, f.id)) return opT12LastCache[f.id];
+      let lm = "";
+      try{ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const g = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(g) lm = opGridLastMonth(g); } }catch(e){}
+      opT12LastCache[f.id] = lm; return lm;
+    }
+    // An OLDER T12 goes into the property's history only: its months fill gaps, never overwrite newer ones.
+    async function opMergeT12History(key, grid){
+      try{
+        if(!window.GeneralData) return false;
+        const parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
+        const series = GeneralData.monthlySeries(parsedM, opClassifyLine);
+        const existing = await opLoadGeneralData(key); if(!existing) return false;
+        const gd = GeneralData.merge(existing, series, { propKey: key, identity: existing.identity, noi: existing.noi, now: new Date().toISOString(), keepExisting: true });
+        await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd;
+        return true;
+      }catch(e){ return false; }
     }
     // Refill the session operating store for a property from its on-disk T12 (once per session,
     // until an upload invalidates it), so the operating card / roll-up show figures recomputed
@@ -4022,8 +4076,7 @@ tr.flagged:hover td{background:#fee2e2}
       profileCache[key] = prof;
       await opWriteProfile(key, prof);
       standaloneProps[key] = { key: key, name: name };
-      try{ opRenderPortfolio(); }catch(e){}
-      try{ renderPortfolio(); }catch(e){}
+      redrawAll();   // 2.9.7 (#7) — counter, dropdown, Home and the open tab show it at once
       try{ toast("Added “"+name+"”. Add a loan or read its agreement to fill in its profile.", "success"); }catch(e){}
       return key;
     }
@@ -4108,7 +4161,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
       opRentRollImportClose();
       try{ toast("Imported the rent roll into " + saved + " propert" + (saved === 1 ? "y" : "ies") + ".", "check"); }catch(e){}
-      try{ opRenderPortfolio(); }catch(e){} try{ renderPortfolio(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+      redrawAll(); try{ renderLoanUnitStats(); }catch(e){}   // 2.9.7 (#7)
     }
     // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
     // count, but its profile and documents stay on disk. There is no hard delete before the audit log (2.9.6).
@@ -4283,20 +4336,56 @@ tr.flagged:hover td{background:#fee2e2}
     function uwBuildSetupFromGrid(grid, opt){
       opt = opt || {};
       var parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
-      var statementNOI = null;
-      try{ statementNOI = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }).inPlaceNOI; }catch(e){}
+      var statementNOI = null, fpReconcile = null;
+      try{ var fp0 = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals, summaryMismatch: parsedM.summaryMismatch, summaryTotals: parsedM.summaryTotals }); statementNOI = fp0.inPlaceNOI; fpReconcile = fp0.reconcile; }catch(e){}
+      // 2.9.7 — the T12 rule (#11, #257): last 3 months × 4 when the file covers fewer than 12 months or
+      // starts in lease-up; only the last 12 months of a longer file; otherwise the 12-month total.
       var lu = { applied: false }, months = [];
-      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.annualizedNOI(series) || { applied: false }; } }catch(e){}
-      // A partial-year statement is annualized (last 3 months × 4) automatically — there is
-      // no manual override (the Status dropdown was removed): the annualization always follows the rule.
+      try{ if(window.GeneralData){ var series = GeneralData.monthlySeries(parsedM, opClassifyLine); months = (series && series.months) || []; lu = GeneralData.noiRule(series) || { applied: false }; } }catch(e){}
       var annualized = !!(lu && lu.applied && lu.codeSums);
+      var trimmed = !annualized && !!(lu && lu.trimmed && lu.codeSums);
       var setup;
-      if(annualized){
+      if(annualized || trimmed){
         setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
       } else {
         setup = SetupBuilder.buildSetup({ parsed: { rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
       }
-      return { setup: setup, lu: lu, parsedM: parsedM, statementNOI: statementNOI, months: months, annualized: annualized };
+      var tie = uwTieInfo(parsedM, lu, fpReconcile);
+      try{ setup.tie = tie; setup.noiRule = lu; }catch(e){}
+      return { setup: setup, lu: lu, parsedM: parsedM, statementNOI: statementNOI, months: months, annualized: annualized, trimmed: trimmed, tie: tie };
+    }
+    // 2.9.7 (#10, #74, #257) — does the statement tie? Its printed NOI against what its own detail lines add
+    // up to. Green only when the gap is under $1; otherwise the numbers, the gap, and the lines that absorbed
+    // it. A file longer than 12 months is checked over the same last 12 months the NOI is taken from.
+    function uwTieInfo(parsedM, lu, rec){
+      var out = { ok: false, printed: null, built: null, gap: null, absorbed: [], note: "", window: null };
+      try{
+        if(lu && lu.trimmed && parsedM && parsedM.totalsMonthly && parsedM.totalsMonthly.noi){
+          var win = lu.window || [], pm = parsedM.totalsMonthly.noi, p = 0, n = 0;
+          win.forEach(function(ym){ var v = pm[ym]; if(typeof v === "number" && isFinite(v)){ p += v; n++; } });
+          out.window = win;
+          out.note = "This file covers " + lu.monthsInFile + " months; using the last 12 (" + ymRange(win) + ").";
+          if(n){ out.printed = Math.round(p * 100) / 100; out.built = lu.windowNOI; out.gap = Math.round((out.printed - out.built) * 100) / 100; out.ok = Math.abs(out.gap) < 1; }
+          return out;
+        }
+        if(!rec) return out;
+        out.printed = rec.noiPrinted;
+        var raw = (rec.incomeRaw != null && rec.expenseRaw != null) ? Math.round((rec.incomeRaw - rec.expenseRaw) * 100) / 100 : rec.noiBuilt;
+        out.built = raw;
+        if(out.printed != null && raw != null){ out.gap = Math.round((out.printed - raw) * 100) / 100; out.ok = Math.abs(out.gap) < 1 && !rec.summaryMismatch; }
+        if(rec.incomeResidual) out.absorbed.push({ label: "Other income", amount: rec.incomeResidual, why: "the income lines didn’t add up to the printed total income" });
+        if(rec.expenseResidual) out.absorbed.push({ label: "General & administrative", amount: rec.expenseResidual, why: "the expense lines didn’t add up to the printed total expenses" });
+        if(rec.summaryMismatch) out.note = "The statement’s summary block disagrees with its own detail footing; the detail is used.";
+      }catch(e){}
+      return out;
+    }
+    function uwTieHtml(tie){
+      if(!tie) return "";
+      var note = tie.note ? '<div class="text-[10px] text-slate-500">' + escapeHtml(tie.note) + '</div>' : '';
+      if(tie.printed == null) return note + '<div class="text-[10px] text-slate-400" id="uwNoiTie">the statement prints no NOI line to check against</div>';
+      if(tie.ok) return note + '<div class="text-[10px] font-semibold text-emerald-600" id="uwNoiTie">&#10003; ties to statement NOI' + (tie.window ? ' (last 12 months)' : '') + '</div>';
+      var abs = tie.absorbed.length ? '<div class="mt-0.5 text-[10px] text-rose-700">Absorbed the gap: ' + tie.absorbed.map(function(a){ return escapeHtml(a.label) + ' ' + (a.amount >= 0 ? '+' : '−') + fmtMoney(Math.abs(a.amount)) + ' <span class="text-rose-500">(' + escapeHtml(a.why) + ')</span>'; }).join('; ') + '</div>' : '';
+      return note + '<div class="mt-0.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700" id="uwNoiTie">&#10007; Doesn’t tie: statement says ' + fmtMoney(tie.printed) + ', lines add to ' + fmtMoney(tie.built) + ' (gap ' + fmtMoney(Math.abs(tie.gap)) + ')' + abs + '</div>';
     }
     // Read the property's saved T12 grid + its assumptions and build the Setup — the
     // authoritative in-place + underwritten NOI, the SAME inputs the tab uses when the
@@ -4310,7 +4399,7 @@ tr.flagged:hover td{background:#fee2e2}
       var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
       var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
-      return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized };
+      return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
     // annualization rule: when the statement's gross rent doesn't begin in the first or second month, the
@@ -4323,16 +4412,18 @@ tr.flagged:hover td{background:#fee2e2}
       // alongside for reference. ctx.annualized is the single truth of whether that happened — false
       // for a full-year statement, true when the rule fired. There is no manual override.
       var lu = ctx.lu || { applied: false };
-      var annualized = !!ctx.annualized;
-      var inPlace = (annualized && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
+      var annualized = !!ctx.annualized, trimmed = !!ctx.trimmed;
+      var inPlace = ((annualized || trimmed) && lu.noi != null) ? lu.noi : ctx.setup.result.inPlace.noi;
       var statementNOI = (ctx.statementNOI != null) ? ctx.statementNOI : ctx.setup.result.inPlace.noi;
       return { inPlace: inPlace, inPlaceStatement: statementNOI,
-               inPlaceBasis: annualized ? "annualized" : "statement", annualizedMonths: annualized ? lu.monthsUsed : null,
-               months: (ctx.months && ctx.months.length) ? ctx.months : null,   // the T12's dated months, for the NOI method label
+               inPlaceBasis: annualized ? "annualized" : (trimmed ? "last12" : "statement"), annualizedMonths: annualized ? lu.monthsUsed : null,
+               ruleWhy: lu.why || "total", monthsInFile: lu.monthsInFile || null,   // 2.9.7 — which part of the T12 rule fired (short / leaseup / last12 / total)
+               months: (lu.window && lu.window.length) ? lu.window : ((ctx.months && ctx.months.length) ? ctx.months : null),   // the months judged (the last 12 of a longer file), for the NOI method label
+               tie: ctx.tie ? { ok: ctx.tie.ok, printed: ctx.tie.printed, built: ctx.tie.built, gap: ctx.tie.gap } : null,
                underwritten: ctx.setup.result.underwritten.noi,
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
-    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period }; }
+    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period, ruleWhy: noi.ruleWhy || null, monthsInFile: noi.monthsInFile || null, tie: noi.tie || null }; }
     // 2.9.0 — the annualization-method label shown wherever an NOI appears: "T12 · Sep 2025 → Aug 2026"
     // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year statement annualized
     // from its last three months. Reads only what the cache already stores; adds no computation.
@@ -4342,7 +4433,9 @@ tr.flagged:hover td{background:#fee2e2}
     function noiMethodLabel(noi){
       if(!noi) return "";
       if(noi.inPlaceBasis === "annualized"){ var r = ymRange(noi.annualizedMonths); return "T3 × 4" + (r ? " · " + r : ""); }
-      var w = ymRange(noi.months); return "T12" + (w ? " · " + w : "");
+      var w = ymRange(noi.months);
+      if(noi.inPlaceBasis === "last12") return "T12" + (w ? " · " + w : "") + (noi.monthsInFile ? " (last 12 of " + noi.monthsInFile + " months)" : "");   // 2.9.7 (#257)
+      return "T12" + (w ? " · " + w : "");
     }
     // On a T12 upload: parse its month columns, roll them into general-data.json
     // (24-month window, newer months win), and refresh the two NOIs.

@@ -126,12 +126,24 @@ group("annualizedNOI — last 3 months × 4 when the first two months' NOI are �
   var sl = G.annualizedNOI(shortLease);
   ok(sl.applied === true, "a 6-month statement with the first two months <= 0 IS annualized (length doesn't matter)");
   near(sl.noi, 10800, "its NOI = last 3 (Apr/May/Jun) × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
-  // A short statement whose first two months are POSITIVE is NOT annualized — summed as-is. (This is
-  // the old 2.8.8 "fewer-than-12-months" trigger, now removed: only the first-two-months rule counts.)
+  // 2.9.7 — the T12 rule (per Azriel, #11): a statement covering FEWER than 12 months is annualized
+  // from its last 3 months × 4 even when its first two months are positive.
   var partialPositive = G.monthlySeries({ rows: [
     { name:"GPR", section:"INCOME",  monthly:{ "2026-01":1000,"2026-02":1000,"2026-03":1000,"2026-04":1000,"2026-05":1000,"2026-06":1000 } },
     { name:"RET", section:"EXPENSE", monthly:{ "2026-01":100,"2026-02":100,"2026-03":100,"2026-04":100,"2026-05":100,"2026-06":100 } } ] }, classify);
-  ok(G.annualizedNOI(partialPositive).applied === false, "a 6-month statement whose first two months are POSITIVE is NOT annualized (12-month rule removed)");
+  var pp = G.noiRule(partialPositive);
+  ok(pp.applied === true && pp.why === "short", "a 6-month statement is annualized even when its first two months are positive (fewer than 12 months, #11)");
+  near(pp.noi, 10800, "its NOI = last 3 months × 4 → (1000−100)×3 = 2700, ×4 = 10,800");
+  // 2.9.7 (#257) — a file covering MORE than 12 months uses its last 12 only; the lease-up test looks at the
+  // first two of those 12.
+  var m18 = function (gpr, ret){ var g = {}, r = {}; for (var i = 0; i < 18; i++){ var y = 2025 + Math.floor(i / 12), mo = (i % 12) + 1, ym = y + "-" + (mo < 10 ? "0" : "") + mo; g[ym] = gpr(i); r[ym] = ret(i); } return G.monthlySeries({ rows: [ { name:"GPR", section:"INCOME", monthly:g }, { name:"RET", section:"EXPENSE", monthly:r } ] }, classify); };
+  var long18 = G.noiRule(m18(function (i){ return 1000; }, function (i){ return 100; }));
+  ok(long18.applied === false && long18.trimmed === true && long18.why === "last12", "an 18-month file uses its last 12 months (not annualized)");
+  near(long18.noi, 10800, "its NOI = the last 12 months only: (1000−100)×12 = 10,800, not the 18-month 16,200");
+  ok(long18.monthsUsed.length === 12 && long18.monthsUsed[0] === "2025-07" && long18.monthsUsed[11] === "2026-06", "the 12 months used are Jul 2025 → Jun 2026");
+  var lu18 = G.noiRule(m18(function (i){ return i < 8 ? 0 : 1000; }, function (i){ return 100; }));   // rent starts in month 9 → months 7–8 of the file are the first two of the last 12
+  ok(lu18.applied === true && lu18.why === "leaseup", "the lease-up test looks at the first two of the last 12 months (both ≤ 0 → annualized)");
+  near(lu18.noi, 10800, "lease-up NOI = last 3 months × 4 = 900 × 3 × 4");
 
   var full12 = G.monthlySeries({ rows: [
     { name:"GPR", section:"INCOME",  monthly:(function(){var m={};for(var i=1;i<=12;i++)m["2026-"+(i<10?"0":"")+i]=1000;return m;})() },
