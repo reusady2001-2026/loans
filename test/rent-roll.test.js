@@ -107,6 +107,21 @@ group("a single-property sheet (one-row header, no Total row) still parses", fun
   eq(r.properties[0].avgActualRent, 1500, "actual-rent average excludes the vacant zero");
 });
 
+group("2.9.7 (#17) — gross potential rent = average MARKET rent of the OCCUPIED units × all units × 12", function(){
+  // Your example: 5 units, 1 vacant → average the market rent of the 4 occupied units, × 5 × 12.
+  var g = [
+    ["Unit", "Unit Type", "Market Rent", "Actual Rent", "Status"],
+    ["1", "1BR", 1000, 1000, "Occupied"],
+    ["2", "1BR", 1100, 1050, "Occupied"],
+    ["3", "2BR", 1300, 1300, "Occupied"],
+    ["4", "2BR", 1400, 1350, "Occupied"],
+    ["5", "3BR", 2500, 0, "Vacant"]       // the vacant unit's market rent stays out of the average
+  ];
+  var p = RR.parse(g).properties[0];
+  eq(p.avgMarketRentOccupied, 1200, "average market rent of the 4 occupied units = (1000+1100+1300+1400)/4 = 1,200");
+  eq(p.gprFromOccupiedMarket, 72000, "GPR = 1,200 × 5 units × 12 = 72,000");
+});
+
 group("anomalies are listed per property, not dropped or thresholded", function(){
   var g = [
     ["Unit", "Unit Type", "Market Rent", "Actual Rent"],

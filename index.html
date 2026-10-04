@@ -3346,7 +3346,7 @@ tr.flagged:hover td{background:#fee2e2}
     // only the benchmarks / units / sizing prefs; the T12 grid + parsed meta are transient mirrors of
     // the file on disk and are stripped before persisting, so no operating figure is ever frozen here.
     function saveUW(){ try{ const c = { input: Object.assign({}, uwState.input) };
-      delete c.input.t12Grid; delete c.input.t12Rows; delete c.input.t12Meta; delete c.input.aiParsed; delete c.input.aiT12; delete c.input.fileName;
+      delete c.input.t12Grid; delete c.input.t12Rows; delete c.input.t12Meta; delete c.input.aiParsed; delete c.input.aiT12; delete c.input.fileName; delete c.input.fileSha;
       localStorage.setItem(UW_KEY, JSON.stringify(c)); }catch(e){} }
     function uwResetModel(){ uwState = { input: uwDefaults() }; uwLastBuilt = null; saveUW(); renderUnderwriting(); }
 
@@ -3435,7 +3435,8 @@ tr.flagged:hover td{background:#fee2e2}
             '<svg class="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>'+
             '<p class="mt-2 text-sm font-semibold text-slate-700">Drop the T12 file here, or <button type="button" id="uwFileBtn" class="text-brand-700 underline">choose a file</button></p>'+
             '<p class="mt-1 text-[11px] text-slate-400">Excel or CSV export &mdash; the T12 sheet is detected and every line classified automatically.</p>'+
-            (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; Setup built':'')+'</p>' : '')+
+            (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; Setup built':'')+'</p>'+
+              (i.fileSha ? ' <span id="uwFileVerified" class="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" title="This is the exact file saved in the property’s folder (its checksum is on record), so the same statement can never be saved twice.">&#10003; file verified</span>' : '') : '')+   // 2.9.7 (#73)
           '</div>'+
           (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
             '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
@@ -3476,6 +3477,8 @@ tr.flagged:hover td{background:#fee2e2}
 
     // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
     // computed. Stored per property with who/when; buildSetup reads bench.lineOverrides so the NOI recomputes.
+    // "Sep 23, 14:02" — a short local date + time for "edited · …" style stamps.
+    function fmtWhenShort(iso){ try{ const d = new Date(iso); if(isNaN(d)) return ""; const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; const p2 = n => (n < 10 ? "0" : "") + n; return MON[d.getMonth()] + " " + d.getDate() + ", " + p2(d.getHours()) + ":" + p2(d.getMinutes()); }catch(e){ return ""; } }
     function uwSetLineOverride(key, rawVal, fromPer){
       if(!key) return;
       var b = uwState.input.bench; if(!b.lineOverrides) b.lineOverrides = {};
@@ -3509,21 +3512,40 @@ tr.flagged:hover td{background:#fee2e2}
         const totCell = '<td class="py-1 px-1 text-right whitespace-nowrap"><input class="'+totCls+'" inputmode="numeric" data-uwline="'+ln.key+'" value="'+(uwv==null?'':Math.round(uwv))+'">'+(ovOn?'<button type="button" class="ml-0.5 align-middle text-[11px] text-slate-400 hover:text-rose-500" data-uwlinereset="'+ln.key+'" title="Reset to computed">&times;</button>':'')+'</td>';
         const ipPerCell = isComm ? commDash : puCell(ln.t12);
         const uwPerCell = isComm ? commDash : puCell(uwv);
-        return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide">edited</span>':'')+benchTag+commTag+'</td>'+
+        const ovRec = ovOn ? ovMap[ln.key] : null, ovWhen = (ovRec && ovRec.at) ? fmtWhenShort(ovRec.at) : "";
+        return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide cursor-help" data-uwedited="'+ln.key+'" title="edited'+(ovWhen?' · '+escapeHtml(ovWhen):'')+'">edited</span>':'')+benchTag+commTag+'</td>'+   // 2.9.7 (#76) — hover shows when; who comes with sign-in (2.9.8)
           '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ ipPerCell + totCell + uwPerCell +'</tr>';
       };
-      const sub = (label,ip,uw,strong)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
-        return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puCell(ip, c) +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puCell(uw, c) +'</tr>'; };
+      // pu: optional per-unit override { ip, uw } (values already per unit), or "dash" for no per-unit figure.
+      const sub = (label,ip,uw,strong,pu,id)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
+        const puC = (v, which) => pu === "dash" ? '<td class="py-1 pr-2 text-right text-[11px] text-slate-300">&mdash;</td>'
+          : (pu && pu[which] !== undefined) ? '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+c+'">'+(pu[which]==null?'&mdash;':uwFmt(pu[which]))+'</td>' : puCell(v, c);
+        return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"'+(id?' id="'+id+'"':'')+'><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
+          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puC(ip, "ip") +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puC(uw, "uw") +'</tr>'; };
+      // 2.9.7 (#77) — commercial income (ground-floor retail / restaurants) carries none of the shared expenses
+      // and is never a residential $/unit: EGI $/unit shows apartments only, and the NOI splits into apartments
+      // (carries all shared expenses, ÷ apartment units), commercial (its rent, ÷ commercial units) and total
+      // (unchanged — the figure DSCR, max loan and the refinance use).
+      const comLn = b.worksheet.lines.find(ln => ln.key === "COM");
+      const comIP = comLn && comLn.t12 != null ? comLn.t12 : 0, comUW = (r.underwritten.lines && r.underwritten.lines.COM != null) ? r.underwritten.lines.COM : comIP;
+      const hasCom = !!comLn && (Math.abs(comIP) > 0.005 || Math.abs(comUW) > 0.005);
+      const cUnits = hasCom ? propCommercialUnits(opFocusKey) : null;
+      const perA = v => (unitsOk && v != null) ? v / uUnits : null, perC = v => (cUnits && v != null) ? v / cUnits : null;
       let rows = "", prev = null;
       b.worksheet.lines.forEach(ln => {
         if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri);
-        if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true);
+        if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true, hasCom ? { ip: perA(r.inPlace.egi - comIP), uw: perA(r.underwritten.egi - comUW) } : null);
         if(prev==="expense" && ln.section!=="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
         rows += line(ln); prev = ln.section;
       });
       if(prev==="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
-      rows += sub("Net Operating Income", r.inPlace.noi, r.underwritten.noi, true);
+      if(hasCom){
+        rows += sub('NOI — apartments <span class="text-[10px] font-normal text-slate-400">carries shared expenses</span>', r.inPlace.noi - comIP, r.underwritten.noi - comUW, false, { ip: perA(r.inPlace.noi - comIP), uw: perA(r.underwritten.noi - comUW) }, "uwNoiApts");
+        rows += sub('NOI — commercial <span class="text-[10px] font-normal text-slate-400">rent, no shared expenses'+(cUnits?' · '+cUnits+' unit'+(cUnits===1?'':'s'):' · commercial units not set')+'</span>', comIP, comUW, false, { ip: perC(comIP), uw: perC(comUW) }, "uwNoiComm");
+        rows += sub("NOI — total", r.inPlace.noi, r.underwritten.noi, true, "dash", "uwNoiTotal");
+      } else {
+        rows += sub("Net Operating Income", r.inPlace.noi, r.underwritten.noi, true);
+      }
       const review = b.review.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
         '<span class="font-bold uppercase tracking-wide">Review &mdash; '+b.review.length+' low-confidence line'+(b.review.length>1?'s':'')+'</span>'+
         '<div class="mt-1 space-y-0.5">'+b.review.slice(0,10).map(x=>'&bull; '+escapeHtml(x.name)+' <span class="text-amber-600">&rarr; '+x.code+'</span>').join('<br>')+(b.review.length>10?'<br>&hellip; and '+(b.review.length-10)+' more':'')+'</div></div>' : '';
@@ -3570,7 +3592,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">Max supportable loan</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwMaxLoanCard">'+((hasNoi&&s.maxLoan>0)?fmtMoney(s.maxLoan):"&mdash;")+'</div></div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
-          '<div class="mb-2 text-[11px] text-slate-400">'+(unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set the Units field above to see $/unit')+'</div>'+
+          '<div class="mb-2 text-[11px] text-slate-400">'+(unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set the Units field above to see $/unit <button type="button" data-uwopenprofile class="font-semibold text-brand-700 underline">or set it in the property profile</button>')+'</div>'+   // 2.9.7 (#75)
           '<table class="w-full min-w-[560px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th><th class="pb-2 px-2 text-right">Underwritten</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th></tr></thead><tbody>'+rows+'</tbody></table>'+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
             '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
@@ -3662,6 +3684,7 @@ tr.flagged:hover td{background:#fee2e2}
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // reset a pinned underwritten line
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
+      if(t.closest("[data-uwopenprofile]")){ if(opFocusKey){ activateTab("home"); opOpenPropertyProfile(opFocusKey); } return; }   // 2.9.7 (#75) — the property's profile, where units live
       if(t.closest("#uwResetBtn")){ if(confirm("Clear this Setup? Removes the loaded T12 and inputs.")) uwResetModel(); return; }
       if(t.closest("#uwSaveBtn")){ opSaveGeneralData(); return; }
     });
@@ -3759,7 +3782,7 @@ tr.flagged:hover td{background:#fee2e2}
         }
         const rd = await ldsShell.docRead(key, t12.id); if(!rd || !rd.ok || !rd.base64) return null;
         const grid = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) return null;
-        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name, id: t12.id, lastMonth: opGridLastMonth(grid) };
+        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name, id: t12.id, sha: t12.sha || "", lastMonth: opGridLastMonth(grid) };
       }catch(e){ return null; }
     }
     // 2.9.7 (#14) — the last dated month a T12 grid covers ("YYYY-MM", or "" when it has no dated months).
@@ -3795,7 +3818,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!window.OperatingUpload) return;
       const r = await opReadPropT12(key); if(!r) return;
       try{ const p = opProp(key);
-        OperatingUpload.apply(OperatingStore, key, r.parsed, { fileName: r.name, period: "12-mo Total · " + r.name, propertyName: p ? p.name : key, units: (p && p.loans[0] && p.loans[0].units) || null });
+        OperatingUpload.apply(OperatingStore, key, r.parsed, { fileName: r.name, period: "12-mo Total · " + r.name, propertyName: p ? p.name : key, units: propUnits(key) });   // 2.9.7 (#19)
       }catch(e){}
       try{ await opEnsureGeneralData(key); }catch(e){}   // warm the folder NOI cache too, so coverage/DSCR/debt yield can read it folder-first
     }
@@ -3805,12 +3828,12 @@ tr.flagged:hover td{background:#fee2e2}
     async function opSelectProperty(key, opts){
       opFocusKey = key || ""; opBasis = "annual";
       const i = uwState.input;
-      i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = "";
+      i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = ""; i.fileSha = "";
       if(key){
         opDeskLoaded.delete(key);
         i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
         const r = await opReadPropT12(key);
-        if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.basis = "total"; uwApplyParse({ noRender: true }); }
+        if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
         // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
@@ -4024,6 +4047,10 @@ tr.flagged:hover td{background:#fee2e2}
       return null;
     }
     // The effective value the rest of the app should use: the profile value if set, else the default.
+    // 2.9.7 (#19, #41) — ONE units number per property: the profile's residential units (falling back to the
+    // senior loan's own field only when the profile has none). Every calculation reads it — the Underwriting tab,
+    // Recompute all, the stored General Data, the operating record and Data Health.
+    function propUnits(key){ if(!key) return null; try{ var v = opProfileEffective(key, "residentialUnits"); var n = (v === "" || v == null) ? null : Number(v); return (n != null && isFinite(n) && n > 0) ? n : null; }catch(e){ return null; } }
     function opProfileEffective(key, field){
       var v = Profile.value(opProfileSync(key), field);
       return (v !== undefined) ? v : opProfileDefault(key, field);
@@ -4405,7 +4432,7 @@ tr.flagged:hover td{background:#fee2e2}
       var focused = (opFocusKey === key);
       var bench = focused ? uwState.input.bench : opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));
       var p = opProp(key), sr = p && p.loans && p.loans[0];
-      var units = focused ? uwNum(uwState.input.units) : ((sr && sr.units) || null);
+      var units = focused ? uwNum(uwState.input.units) : propUnits(key);   // 2.9.7 (#19) — the profile's units, the same number the tab shows
       var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
       var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench });
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
@@ -4454,7 +4481,7 @@ tr.flagged:hover td{background:#fee2e2}
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
         var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
         var noi = opGDNoi(ctx); noi.computedWith = await opComputeVersion();
-        var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: (ctx.sr && ctx.sr.units) || null };
+        var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: propUnits(key) };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
         await opWriteGeneralDataFile(key, gd);
@@ -4574,8 +4601,8 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function opProp(key){ return opProperties().find(p => p.key === key) || null; }
     // A transient record for DISPLAY when nothing is saved yet — focusing a property never litters the store.
-    function opRecordFor(key){ opInit(); const r = OperatingStore.get(key); if(r) return r; const p = opProp(key), sr = p && p.loans[0]; return { propKey:key, propertyName: p ? p.name : key, units: (sr && sr.units) || null, period:null, lines:{}, assumptions:null, meta:{} }; }
-    function opEnsure(key){ opInit(); const p = opProp(key), sr = p && p.loans[0]; return OperatingStore.ensure(key, { propertyName: p ? p.name : key, units: (sr && sr.units) || null }); }
+    function opRecordFor(key){ opInit(); const r = OperatingStore.get(key); if(r) return r; const p = opProp(key), sr = p && p.loans[0]; return { propKey:key, propertyName: p ? p.name : key, units: propUnits(key), period:null, lines:{}, assumptions:null, meta:{} }; }
+    function opEnsure(key){ opInit(); const p = opProp(key), sr = p && p.loans[0]; return OperatingStore.ensure(key, { propertyName: p ? p.name : key, units: propUnits(key) }); }
     // The NOI a loan's ratios use: its property's operating NOI when that property has lines, else the hand-entered loan.noi.
     function opNOI(loan){ try{ if(!window.OperatingCalc || !window.OperatingStore || !loan) return null; opInit(); const r = OperatingStore.get(propertyKey(loan)); return r ? OperatingCalc.effectiveNOI(r) : null; }catch(e){ return null; } }
     function opLineCount(r){ const L = r && r.lines; return (L && typeof L === "object" && !Array.isArray(L)) ? Object.keys(L).filter(c => L[c]).length : 0; }
@@ -4910,7 +4937,7 @@ tr.flagged:hover td{background:#fee2e2}
       let nT12 = 0, nUnits = 0, nNOI = 0;
       props.forEach(p => {
         if(propertyHasT12(p.key)) nT12++;
-        const sr = propSeniorLoan(p.key); if(sr && sr.units) nUnits++;
+        if(propUnits(p.key) != null) nUnits++;   // 2.9.7 (#41) — counted the same way the table shows it: the profile's units
         const g = gdNOICache[p.key]; if(g && g.inPlace != null) nNOI++;
       });
       const decisions = activeLoans().filter(loanNeedsMaturityDecision);   // 2.9.7 (#82) — active loans only
@@ -4944,7 +4971,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="mt-2 flex flex-wrap gap-1.5">'+decisions.map(l => '<span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-800">'+escapeHtml(l.propertyName || loanLabel(l))+' <span class="text-rose-400">·</span> '+escapeHtml(loanStatusOf(l))+'</span>').join('')+'</div>'+
         '</div>' : '';
       const sorted = props.slice().sort((a, b) => {
-        const rank = p => { let r = 0; if(!propertyHasT12(p.key)) r -= 4; const sr = propSeniorLoan(p.key); if(!(sr && sr.units)) r -= 1; return r; };
+        const rank = p => { let r = 0; if(!propertyHasT12(p.key)) r -= 4; if(propUnits(p.key) == null) r -= 1; return r; };
         return (rank(a) - rank(b)) || a.name.localeCompare(b.name);
       });
       const table = '<div class="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">'+
@@ -5332,6 +5359,12 @@ tr.flagged:hover td{background:#fee2e2}
       return common >= 2 ? 0.6 : (common === 1 ? 0.25 : 0);
     }
     // The rent-roll property block that best matches an app property (by name), read from the folder.
+    // 2.9.7 (#77) — commercial units: the profile's field, else the rent roll's count of commercial spaces.
+    function propCommercialUnits(key){
+      try{ const v = Number(opProfileEffective(key, "commercialUnits")); if(isFinite(v) && v > 0) return v; }catch(e){}
+      try{ const rr = loanRRCache[key]; const b = rr && (rr.block || rr); if(b && b.commercialUnits > 0) return b.commercialUnits; }catch(e){}
+      return null;
+    }
     async function opRentRollBlockFor(key){
       var res = await opReadPropRentRoll(key); if(!res || !res.roll || !res.roll.properties.length) return null;
       var props = res.roll.properties;
@@ -5434,7 +5467,7 @@ tr.flagged:hover td{background:#fee2e2}
       host.innerHTML = '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">'+
         '<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500">From the rent roll</div>'+
         '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div>'+
-        '<div class="mt-1 text-[11px] text-slate-400">Loaded into Units and average rent above — edit either box to override.</div></div>';
+        '<div class="mt-1 text-[11px] text-slate-400">Loaded into Units and average rent above — the average is the market rent of the '+b.occupiedUnits+' occupied units'+(b.avgMarketRentOccupied!=null?' ('+rrMoney(b.avgMarketRentOccupied)+'/mo)':'')+', × all '+b.residentialUnits+' units × 12 = gross potential rent. Edit either box to override.</div></div>';
     }
     // Auto-fill units + average rent from the rent roll into any EMPTY input. Returns true if it changed
     // something (and re-rendered), so the caller stops and lets the re-render draw the filled state.
@@ -5444,7 +5477,9 @@ tr.flagged:hover td{background:#fee2e2}
       var curUnits = uwNum(uwState.input.units);
       if((curUnits == null || curUnits === 0) && b.residentialUnits){ uwState.input.units = b.residentialUnits; changed = true; }
       var curAvg = uwNum(uwState.input.avgRentUnit);
-      if((curAvg == null || curAvg === 0) && b.avgActualRent != null){ uwState.input.avgRentUnit = b.avgActualRent; changed = true; }
+      // 2.9.7 (#17) — your formula: the average MARKET rent of the OCCUPIED units × all units × 12 (vacant units left out of the average).
+      var avgBasis = (b.avgMarketRentOccupied != null) ? b.avgMarketRentOccupied : null;
+      if((curAvg == null || curAvg === 0) && avgBasis != null){ uwState.input.avgRentUnit = avgBasis; changed = true; }
       if(!changed) return false;
       var curGPR = uwNum(uwState.input.rrGPR);
       if(curGPR == null || curGPR === 0){ try{ uwFillRentFromAvg(); }catch(e){} }   // derive GPR only when the user hasn't set one
@@ -7384,7 +7419,9 @@ tr.flagged:hover td{background:#fee2e2}
     // from "positive enough to value" (noi > 0), which the DSCR/debt-yield/value/LTV math
     // still requires. Conflating the two is what hid an entered-but-negative NOI and kept
     // showing "Add NOI" for a property that already had one.
-    function noiEntered(loan){ return opNOI(loan) != null || !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
+    // 2.9.7 (#21) — "has an NOI" follows the SAME source as the row's DSCR and debt yield: the T12's figure (its
+    // saved General Data) when there is one, so a property with a T12 never reads "needs T12/NOI".
+    function noiEntered(loan){ return folderNOI(loan) != null || opNOI(loan) != null || !!(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))); }
     // The property's NOI for DISPLAY: prefer a positive figure (usually the senior's), else
     // the entered value even when zero or negative — so an entered NOI is never hidden.
     function propertyNOI(list){
