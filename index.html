@@ -1198,7 +1198,7 @@
         </div>
         <div id="aiAsstAttachRow" class="hidden flex flex-wrap gap-2"></div>
         <div class="flex items-end gap-2">
-          <input id="aiAsstFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown" class="hidden">
+          <input id="aiAsstFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown,.jpg,.jpeg,.png,.webp,.gif,.bmp" class="hidden">
           <button id="aiAsstAttachBtn" type="button" title="Attach files — PDF, Word, Excel, text, Markdown" class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-300 text-slate-500 transition hover:bg-slate-50 hover:text-brand-600">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
@@ -4841,12 +4841,11 @@ tr.flagged:hover td{background:#fee2e2}
     // loan agreement can later be read by "Read agreement". Then refresh the Documents list.
     async function opProfileDocUpload(key, file, role){
       if(!key || !file || !docsAvailable()) return;
-      if(file.size > 25*1024*1024){ try{ toast(file.name+" is too large (25 MB max)", "info"); }catch(e){} return; }
       try{
         var pair = await Promise.all([fileToBase64(file), aiExtractFileText(file)]);
         var b64 = pair[0], ex = pair[1] || {}; if(!b64) return;
         var pr = opProp(key), nm = (pr && pr.name) || key;
-        await ldsShell.docSave({ propKey: key, propName: nm, name: file.name, base64: b64, text: (ex.text || ""), type: file.type || "", role: role || "other" });
+        await ldsShell.docSave({ propKey: key, propName: nm, name: file.name, base64: b64, text: (ex.text || ""), type: file.type || "", role: role || "other", label: ex.label || "" });
         try{ toast("Saved “"+file.name+"” as "+profileDocLabel(role), "check"); }catch(e){}
       }catch(e){}
       renderProfileDocs(key);
@@ -6155,7 +6154,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
-    try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
+    try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; window.LDS_readFileBytes=(name,b64,stopAfterPage)=>{ const c={stopped:false}; return fileTextFromBytes(name, opB64ToBytes(b64), { cancel:c, onProgress:(o)=>{ if(stopAfterPage && o.page>=stopAfterPage && !o.pct) c.stopped=true; } }); }; window.LDS_resumeReadingQueue=()=>resumeReadingQueue(); window.LDS_asstSplitCount=(text)=>aiAsstSplitParts([{name:'x',label:'',text:text}]).length; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
     // Fill the Settings → Portfolio section (count + duplicate report) each time the Settings menu opens.
@@ -6380,7 +6379,7 @@ tr.flagged:hover td{background:#fee2e2}
     function rrMatchScore(a, b){
       a = normLabel(a || ""); b = normLabel(b || ""); if(!a || !b) return 0;
       if(a === b) return 1;
-      if(a.indexOf(b) >= 0 || b.indexOf(a) >= 0) return 0.85;
+      if(Math.min(a.length, b.length) >= 4 && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0)) return 0.85;   // 2.9.7 — a name of 1–3 letters ("a.pdf", "x") never matches every property containing it
       var at = a.split(" ").filter(function(t){ return t.length > 2; }), bt = b.split(" ").filter(function(t){ return t.length > 2; });
       var common = at.filter(function(t){ return bt.indexOf(t) >= 0; }).length;
       return common >= 2 ? 0.6 : (common === 1 ? 0.25 : 0);
@@ -10291,7 +10290,8 @@ tr.flagged:hover td{background:#fee2e2}
       "You are the built-in assistant for the Loan Debt Service Hub, a desktop app a commercial/residential real-estate lender's team uses to track their loan portfolio. You help the operator by answering questions and by performing actions in the app when asked.",
       "The user's message gives you: today's date, a one-line note on the current view, and a JSON snapshot of every loan. Treat the snapshot as the source of truth about THEIR loans — never invent loans, numbers, or dates; if the data doesn't support an answer, say so plainly. You may also answer general questions (finance, real estate, how to use the app, or anything else) from your own knowledge.",
       "Data conventions: dollars are US dollars; rates (noteRate, currentRate, spread) are DECIMALS (0.0475 = 4.75%); currentRate is the rate in effect this month and is populated for every loan including floating ones; currentBalance is outstanding today, originalAmount is the balance at closing; dates are ISO yyyy-mm-dd; monthsToMaturity counts whole months from today; 'balance'/'debt' means currentBalance unless stated; a weighted-average rate is currentBalance-weighted. Property financials: noi, egi and opex are the property's annual net operating income, effective gross income and operating expenses in dollars — noi can be 0 or NEGATIVE while a property is still filling up; capRate, dscr and debtYield are decimals and appear only when noi is positive (DSCR and debt yield are undefined on a non-positive NOI). The noi in the snapshot is the SAME figure the app's own screens (underwriting, refinance, roll-up, Data Health) show for that property — when a T12 has been uploaded it is that statement's operating NOI (annualized to the last 3 months × 4 when the statement's first two months have no NOI), and a noiBasis label then says how it was derived (e.g. 'T12 · Sep 2025 → Aug 2026' or 'T3 × 4 · Oct → Dec 2026'); egi/opex are omitted in that case because they belong to the loan record, not the T12. To state what a loan's NOI, DSCR or debt yield IS right now, read it from the snapshot.",
-      "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown). When they do, the message carries each file's extracted text inside <file name=\"…\"> tags — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
+      "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown, and pictures — JPG/PNG, read by OCR). When they do, the message carries each file's extracted text inside <file name=\"…\" read=\"…\"> tags (read= says how it was read: pages, pages read by OCR, pages that couldn't be read). Files attached earlier in the conversation are sent again with every message. When the files are too long for one message you get NOTES taken while reading them in parts instead of the text — answer from the notes — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
+      "SCANNED AND MISSING PAGES: file text is marked page by page. A page marked \"[page N · read by OCR — may contain errors]\" was read from a scan: whenever your answer uses something from such a page, add \"(from page N, read from a scan — may contain errors; please check against the original)\". A page marked \"could not be read\" (or a read=\"…\" label saying pages couldn't be read, or that reading was stopped) is MISSING — never answer as if you read it; say which pages are missing when they matter.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
       "ACTIONS — when the operator asks you to DO something in the app, reply with a short sentence saying what you are about to do, then one fenced code block tagged action per step, each holding one JSON object {\"action\":\"…\",\"args\":{…}} (several blocks run in the order written). Use only these actions and argument names:",
       "READING ACTIONS — nothing changes and no card is shown; use them yourself whenever you need to look something up, and their DATA comes back to you in the next message: list_properties {} (every property — active, without a loan, archived — with its loans and their status); read_property {name} (one property in full: its loans and status, profile, NOI from the T12 and entered, underwriting assumptions, T12 lines with the change vs the prior year, rent roll, refinance verdict, documents); read_rates {} (the market rates the app holds and where each comes from); read_documents {name, file?, part?} (without file: the property's saved documents; with file: that document's text — a long one comes in parts, ask for part 2, 3 … to keep reading, never answer about a part you have not read); read_data_health {} (the Data Health page); read_settings {} (targets, default assumptions, Claude connection, backups).",
@@ -11389,52 +11389,105 @@ tr.flagged:hover td{background:#fee2e2}
     // on). opts.role = a type the user picked (then the file goes to this property as that type).
     // 2.9.7 (#212) — honest messages, one per outcome: "Already on file", "Couldn't save", "Saved, but its text
     // can't be read", and a same-named file is kept as a copy ("… (2).pdf"), never replaced.
+    // 2.9.7 (#102, #250) — reading a file added to a property shows its progress in a small panel (with Stop), and
+    // the file is kept in the reading queue until it is filed, so a reading interrupted by closing the app continues
+    // at the next start. No size limit: a big file is copied straight from disk.
+    var READ_KINDS = /\.(pdf|docx|jpe?g|png|webp|gif|bmp)$/i;
+    function fileReadPanelRow(id, name){
+      var box=el("fileReadStatus");
+      if(!box){ box=document.createElement("div"); box.id="fileReadStatus"; box.className="fixed bottom-4 left-4 z-[80] w-[360px] max-w-[90vw] space-y-1.5"; document.body.appendChild(box); }
+      var row=document.createElement("div"); row.className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-[12px] text-slate-700 shadow-lg"; row.setAttribute("data-readrow", id);
+      row.innerHTML='<svg class="h-4 w-4 shrink-0 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg><div class="min-w-0 flex-1"><div class="truncate font-semibold">'+escapeHtml(name)+'</div><div class="truncate text-[11px] text-slate-500" data-readnote>reading…</div></div><button type="button" data-readstop class="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Stop</button>';
+      box.appendChild(row);
+      return { set:function(t){ var n=row.querySelector("[data-readnote]"); if(n) n.textContent=t; }, stop:row.querySelector("[data-readstop]"), done:function(){ try{ row.remove(); }catch(e){} if(box && !box.children.length) box.remove(); } };
+    }
+    function newSaveAcc(){ return { touched:{}, unmatched:[], dup:[], failed:[], noText:[], renamed:[], textFiled:[], skipped:[], read:[], stopped:[] }; }
+    function saveAccSummary(acc){
+      var keys=Object.keys(acc.touched); keys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
+      var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
+      var msgs=[];
+      if(names.length) msgs.push("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""));
+      acc.read.forEach(function(x){ msgs.push("“"+x.name+"”: "+x.label); });   // 2.9.7 (#59, #100, #102) — what was read, by OCR, and what couldn't be
+      acc.textFiled.forEach(function(x){ var p=opProp(x.key); msgs.push("“"+x.name+"” mentions “"+x.found+"”, so it was filed under "+((p&&p.name)||x.key)); });   // 2.9.7 (#39)
+      if(acc.skipped.length) msgs.push("Not saved (no property chosen): "+acc.skipped.join(", "));
+      acc.stopped.forEach(function(n){ msgs.push("Stopped reading “"+n+"” — nothing was saved; add it again to continue where it stopped (the pages already read are kept)"); });
+      acc.renamed.forEach(function(x){ msgs.push("“"+x.from+"” was already there with different content — this one is kept as “"+x.to+"”"); });
+      if(acc.dup.length) msgs.push("Already on file: "+acc.dup.join(", "));
+      acc.noText.forEach(function(x){ msgs.push("Saved “"+x.name+"”, but its text can't be read"+(/\.doc$/i.test(x.name)?" (.doc: save it as .docx or PDF)":(x.note?" ("+x.note+")":""))); });
+      if(acc.failed.length) msgs.push("Couldn't save: "+acc.failed.join(", "));
+      if(msgs.length) toast(msgs.join(" · "), acc.failed.length ? "error" : ((acc.noText.length||acc.dup.length||acc.read.length||acc.stopped.length) ? "info" : "check"));
+      if(acc.unmatched.length) toast(acc.unmatched.length+" propert"+(acc.unmatched.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(acc.unmatched.length>1?"them":"it")+" to file "+(acc.unmatched.length>1?"these":"this")+".","info");
+      renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
+    }
+    // Where a file goes (by its content), asking when a name fits two properties. → Promise<[keys], roleByKey>
+    function fileRouteKeys(name, text, grid, fallbackKey, role, acc){
+      if(role && fallbackKey){ var rb={}; rb[fallbackKey]=role; return Promise.resolve({ keys:[fallbackKey], roleByKey:rb }); }
+      var t=opFileTargets(name, text||"", grid, fallbackKey), keys=t.keys.slice(), roleByKey=t.roleByKey||{};
+      (t.unmatched||[]).forEach(function(n){ if(acc.unmatched.indexOf(n)<0) acc.unmatched.push(n); });
+      if(t.via==="text" && keys[0] && keys[0]!==fallbackKey) acc.textFiled.push({ name:name, key:keys[0], found:(t.matched[0]||{}).name });
+      var ask = t.ambiguous.length ? t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name!=="this file" ? amb.name+" ("+name+")" : name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role) roleByKey[k]=amb.role; } }); }); }, Promise.resolve()) : Promise.resolve();   // 2.9.7 (#214)
+      return ask.then(function(){ if(!keys.length && !t.ambiguous.length && fallbackKey) keys=[fallbackKey]; return { keys:keys, roleByKey:roleByKey }; });
+    }
+    // One queued file: read it (progress + Stop), file it where its content says, then take it off the queue.
+    function readQueuedJob(job, file, acc){
+      var cancel={ stopped:false }, ui=fileReadPanelRow(job.id, job.name);
+      if(ui.stop) ui.stop.addEventListener("click", function(){ cancel.stopped=true; ui.set("stopping after this page…"); });
+      var bytesP = file ? file.arrayBuffer().then(function(b){ return new Uint8Array(b); }) : ldsShell.readqBytes(job.id).then(function(r){ return (r&&r.ok) ? opB64ToBytes(r.base64) : null; });
+      return bytesP.then(function(bytes){
+        if(!bytes){ acc.failed.push(job.name); return; }
+        return fileTextFromBytes(job.name, bytes, { cancel:cancel, onProgress:function(o){ ui.set((o.picture?"reading picture ":(o.scanned?"reading scanned page ":"reading page "))+o.page+" of "+o.pages); } }).then(function(res){
+          if(res.stopped){ acc.stopped.push(job.name); return ldsShell.readqDone(job.id); }
+          if(fileReadMemo && file) fileReadMemo.set(file, Promise.resolve(res));
+          if((res.ocrPages&&res.ocrPages.length) || res.ocrPictures || (res.failedPages&&res.failedPages.length)) acc.read.push({ name:job.name, label:res.label });
+          if(!res.text) acc.noText.push({ name:job.name, note:res.note||"" });
+          return fileRouteKeys(job.name, res.text, null, job.fallbackKey, job.role, acc).then(function(rt){
+            if(!rt.keys.length){ acc.skipped.push(job.name); return ldsShell.readqDone(job.id); }
+            return Promise.all(rt.keys.map(function(k){ var p=opProp(k);
+              return ldsShell.docSaveQueued({ id:job.id, propKey:k, propName:(p&&p.name)||job.fallbackName||k, name:job.name, text:res.text||"", type:job.type||"", role:(rt.roleByKey[k]||"other"), label:res.label||"" })
+                .then(function(r){ if(!r||!r.ok){ acc.failed.push(job.name); return; } if(r.duplicate){ acc.dup.push(job.name); return; } acc.touched[k]=1; if(r.renamed) acc.renamed.push({ from:job.name, to:r.renamed }); }).catch(function(){ acc.failed.push(job.name); }); }))
+              .then(function(){ return ldsShell.readqDone(job.id); });
+          });
+        });
+      }).catch(function(){ acc.failed.push(job.name); }).then(function(){ ui.done(); });
+    }
+    // Save dropped / chosen files to the property they belong to (by their content, or to the property you are on).
+    // opts.role = a type the user picked (then the file goes to this property as that type). A file already read in
+    // the assistant is not read again (#61).
     function aiSaveFilesToProp(list, fallbackKey, fallbackName, opts){
       opts = opts || {};
-      var files=Array.prototype.slice.call(list||[]); if(!files.length || !docsAvailable()) return;
-      var touched={}, unmatchedAll=[], dup=[], failed=[], noText=[], renamed=[], textFiled=[], skipped=[];
-      Promise.all(files.map(function(file){
-        if(file.size > 25*1024*1024){ toast(file.name+" is too large (25 MB max)","info"); return Promise.resolve(); }
+      var files=Array.prototype.slice.call(list||[]); if(!files.length || !docsAvailable()) return Promise.resolve();
+      var acc=newSaveAcc();
+      return Promise.all(files.map(function(file){
+        var memo = fileReadMemo && fileReadMemo.has(file);
+        if(!memo && READ_KINDS.test(file.name||"") && ldsShell.readqAdd){
+          var fp = ldsShell.filePath ? ldsShell.filePath(file) : "";
+          var add = fp ? ldsShell.readqAdd({ name:file.name, type:file.type||"", filePath:fp, fallbackKey:fallbackKey||"", fallbackName:fallbackName||"", role:opts.role||"" })
+                       : fileToBase64(file).then(function(b64){ return ldsShell.readqAdd({ name:file.name, type:file.type||"", base64:b64, fallbackKey:fallbackKey||"", fallbackName:fallbackName||"", role:opts.role||"" }); });
+          return add.then(function(q){ if(!q||!q.ok){ acc.failed.push(file.name); return; } return readQueuedJob({ id:q.id, name:file.name, type:file.type||"", fallbackKey:fallbackKey||"", fallbackName:fallbackName||"", role:opts.role||"" }, file, acc); });
+        }
         return Promise.all([fileToBase64(file), aiExtractFileText(file)]).then(function(pair){
-          var b64=pair[0], ex=pair[1]||{}; if(!b64){ failed.push(file.name); return; }
-          var keys, roleByKey={};
-          if(opts.role && fallbackKey){ keys=[fallbackKey]; roleByKey[fallbackKey]=opts.role; }
-          else {
-            var grid = /\.(xlsx|xls|csv)$/i.test(file.name||"") ? opDetectGrid(opB64ToBytes(b64)) : null;
-            var t = opFileTargets(file.name, ex.text||"", grid, fallbackKey);
-            keys = t.keys.slice(); roleByKey=t.roleByKey||{};
-            (t.unmatched||[]).forEach(function(n){ if(unmatchedAll.indexOf(n)<0) unmatchedAll.push(n); });
-            if(t.via === "text" && keys[0] && keys[0] !== fallbackKey) textFiled.push({ name:file.name, key:keys[0], found:(t.matched[0]||{}).name });
-            if(t.ambiguous.length){   // 2.9.7 (#214) — ask, one question per unclear name, never pick the first
-              return t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name !== "this file" ? amb.name + " (" + file.name + ")" : file.name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role) roleByKey[k]=amb.role; } }); }); }, Promise.resolve())
-                .then(function(){ if(!keys.length){ skipped.push(file.name); return; } return saveTo(keys); });
-            }
-            if(!keys.length && fallbackKey) keys=[fallbackKey];
-          }
-          return saveTo(keys);
-          function saveTo(keys){
-          if(!String(ex.text||"").trim()) noText.push({ name:file.name, note:ex.note||"" });
-          return Promise.all(keys.map(function(k){ var p=opProp(k);
-            return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(roleByKey[k]||"other")})
-              .then(function(r){ if(!r||!r.ok){ failed.push(file.name); return; } if(r.duplicate){ dup.push(file.name); return; } touched[k]=1; if(r.renamed) renamed.push({ from:file.name, to:r.renamed }); })
-              .catch(function(){ failed.push(file.name); }); }));
-          }
-        }).catch(function(){ failed.push(file.name); });
-      })).then(function(){
-        var keys=Object.keys(touched); keys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
-        var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
-        var msgs=[];
-        if(names.length) msgs.push("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""));
-        textFiled.forEach(function(x){ var p=opProp(x.key); msgs.push("“"+x.name+"” mentions “"+x.found+"”, so it was filed under "+((p&&p.name)||x.key)); });   // 2.9.7 (#39)
-        if(skipped.length) msgs.push("Not saved (no property chosen): "+skipped.join(", "));
-        renamed.forEach(function(x){ msgs.push("“"+x.from+"” was already there with different content — this one is kept as “"+x.to+"”"); });
-        if(dup.length) msgs.push("Already on file: "+dup.join(", "));
-        noText.forEach(function(x){ msgs.push("Saved “"+x.name+"”, but its text can't be read"+(/\.doc$/i.test(x.name)?" (.doc: save it as .docx or PDF)":(x.note?" ("+x.note+")":""))); });
-        if(failed.length) msgs.push("Couldn't save: "+failed.join(", "));
-        if(msgs.length) toast(msgs.join(" · "), failed.length ? "error" : (noText.length||dup.length ? "info" : "check"));
-        if(unmatchedAll.length) toast(unmatchedAll.length+" propert"+(unmatchedAll.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(unmatchedAll.length>1?"them":"it")+" to file "+(unmatchedAll.length>1?"these":"this")+".","info");
-        renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
-      });
+          var b64=pair[0], ex=pair[1]||{}; if(!b64){ acc.failed.push(file.name); return; }
+          var grid = /\.(xlsx|xls|csv)$/i.test(file.name||"") ? opDetectGrid(opB64ToBytes(b64)) : null;
+          if((ex.ocrPages&&ex.ocrPages.length) || ex.ocrPictures || (ex.failedPages&&ex.failedPages.length)) acc.read.push({ name:file.name, label:ex.label });
+          return fileRouteKeys(file.name, ex.text, grid, fallbackKey, opts.role, acc).then(function(rt){
+            if(!rt.keys.length){ acc.skipped.push(file.name); return; }
+            if(!String(ex.text||"").trim()) acc.noText.push({ name:file.name, note:ex.note||"" });
+            return Promise.all(rt.keys.map(function(k){ var p=opProp(k);
+              return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(rt.roleByKey[k]||"other"), label:ex.label||""})
+                .then(function(r){ if(!r||!r.ok){ acc.failed.push(file.name); return; } if(r.duplicate){ acc.dup.push(file.name); return; } acc.touched[k]=1; if(r.renamed) acc.renamed.push({ from:file.name, to:r.renamed }); })
+                .catch(function(){ acc.failed.push(file.name); }); }));
+          });
+        }).catch(function(){ acc.failed.push(file.name); });
+      })).then(function(){ saveAccSummary(acc); });
+    }
+    // At start: a file that was still being read when the app closed is read on, from where it stopped.
+    function resumeReadingQueue(){
+      if(!(window.ldsShell && ldsShell.readqList)) return;
+      ldsShell.readqList().then(function(r){ var jobs=(r&&r.jobs)||[]; if(!jobs.length) return;
+        toast("Continuing to read "+jobs.map(function(j){ return "“"+j.name+"”"; }).join(", ")+" — "+(jobs.length===1?"it was":"they were")+" being read when the app closed.", "info");
+        var acc=newSaveAcc();
+        return jobs.reduce(function(pr, j){ return pr.then(function(){ return readQueuedJob(j, null, acc); }); }, Promise.resolve()).then(function(){ saveAccSummary(acc); });
+      }).catch(function(){});
     }
     // The Documents panel on a loan's (or a loan-less property's) page: the property's saved files.
     // 2.9.7 (#37) a type dropdown for uploads ("Detect automatically" files by content, as before) and a
@@ -11467,7 +11520,7 @@ tr.flagged:hover td{background:#fee2e2}
               '<p class="text-xs text-slate-500">Saved for '+escapeHtml(propName)+' — the assistant reads these when you focus this property.</p></div>'+
             '<div class="flex items-center gap-2 shrink-0">'+
               '<select id="loanDocsType" title="What you are adding" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"><option value="">Detect automatically</option>'+PROFILE_DOC_TYPES.map(function(d){ return '<option value="'+d.role+'">'+escapeHtml(d.label)+'</option>'; }).join('')+'</select>'+
-              '<input id="loanDocsFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown" class="hidden">'+
+              '<input id="loanDocsFile" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.text,.md,.markdown,.jpg,.jpeg,.png,.webp,.gif,.bmp" class="hidden">'+
               '<button type="button" id="loanDocsAdd" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-500">Add files</button>'+
               (files.length?'<button type="button" id="loanDocsFolder" title="Open the documents folder" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Folder</button>':'')+
             '</div>'+
@@ -11484,6 +11537,13 @@ tr.flagged:hover td{background:#fee2e2}
         var add=el('loanDocsAdd'), fin=el('loanDocsFile'), fld=el('loanDocsFolder');
         if(add&&fin) add.addEventListener('click', function(){ fin.click(); });
         if(fin) fin.addEventListener('change', function(e){ var role=(el('loanDocsType')||{}).value||""; aiSaveFilesToProp(e.target.files, propKey, propName, role ? { role: role } : null); e.target.value=''; });
+        // 2.9.7 (#102) — files can also be dropped onto the Documents panel (same progress and notes as Add files); wired
+        // once per panel, for the property it shows now
+        host._dropKey=propKey; host._dropName=propName;
+        if(!host._dropWired){ host._dropWired=true;
+          host.addEventListener('dragover', function(e){ if(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types||[], 'Files')>=0){ e.preventDefault(); if(host.firstChild) host.firstChild.classList.add('ring-2','ring-brand-400'); } });
+          host.addEventListener('dragleave', function(){ if(host.firstChild) host.firstChild.classList.remove('ring-2','ring-brand-400'); });
+          host.addEventListener('drop', function(e){ if(!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) || !host._dropKey) return; e.preventDefault(); if(host.firstChild) host.firstChild.classList.remove('ring-2','ring-brand-400'); var role=(el('loanDocsType')||{}).value||""; aiSaveFilesToProp(e.dataTransfer.files, host._dropKey, host._dropName, role ? { role: role } : null); }); }
         if(fld) fld.addEventListener('click', function(){ ldsShell.openDocsFolder(); });
       }).catch(function(){ host.innerHTML=''; });
     }
@@ -11528,93 +11588,170 @@ tr.flagged:hover td{background:#fee2e2}
       try{ if(opFocusKey === key) await opSelectProperty(key, { skipAutoPush: true }); }catch(e){}
       try{ redrawAll(); }catch(e){}
     }
+    // ── 2.9.7 (#59, #61, #62, #100, #101, #248, #250) — reading a file's text ───────────────────────────────────
+    // Nothing is ever cut. A PDF is read page by page: a page with real text keeps its line breaks (table rows stay
+    // rows); a page that is mostly a picture (a scan — even one carrying a short real line such as an e-signature
+    // stamp or a fax header) is read by OCR, keeping both. Every page is marked ("[page 3 · read by OCR — may contain
+    // errors]"), a page that couldn't be read is said, pictures (JPG / PNG, and the pictures inside a Word file) are
+    // read by OCR too. Progress is reported page by page; opts.cancel = {stopped:true} stops between pages. Pages
+    // already read by OCR are kept on disk (by the file's checksum), so reading the same file again — after Stop or
+    // after the app was closed halfway — continues where it stopped.
+    var OCR_IMG_MIN = { w: 200, h: 60 };   // smaller pictures (logos, signatures) are not read
+    function fileSha256(bytes){ try{ return crypto.subtle.digest("SHA-256", bytes).then(function(h){ return Array.prototype.map.call(new Uint8Array(h), function(x){ return ("0"+x.toString(16)).slice(-2); }).join(""); }).catch(function(){ return ""; }); }catch(e){ return Promise.resolve(""); } }
+    function pageRanges(nums){ var out=[], s0=null, prev=null; nums.slice().sort(function(a,b){ return a-b; }).forEach(function(n){ if(s0==null){ s0=prev=n; return; } if(n===prev+1){ prev=n; return; } out.push(s0===prev?String(s0):(s0+"–"+prev)); s0=prev=n; }); if(s0!=null) out.push(s0===prev?String(s0):(s0+"–"+prev)); return out.join(", "); }
+    // The short label for a read file ("40 pages · read by OCR — may contain errors · 2 pages couldn't be read (pages 7, 12)").
+    function fileReadLabel(r){
+      if(!r) return "";
+      var parts=[];
+      if(r.pages) parts.push(r.pages+" page"+(r.pages===1?"":"s"));
+      else if(r.text) parts.push(Math.max(1,Math.round(r.text.length/1000))+"K characters");
+      if(r.ocrPages && r.ocrPages.length){ parts.push((r.pages && r.ocrPages.length===r.pages) ? "read by OCR — may contain errors" : (r.pages ? ("page"+(r.ocrPages.length===1?" ":"s ")+pageRanges(r.ocrPages)+" read by OCR — may contain errors") : "read by OCR — may contain errors")); }
+      if(r.ocrPictures) parts.push(r.ocrPictures+" picture"+(r.ocrPictures===1?"":"s")+" read by OCR — may contain errors");
+      if(r.failedPages && r.failedPages.length) parts.push(r.failedPages.length+" page"+(r.failedPages.length===1?"":"s")+" couldn’t be read (page"+(r.failedPages.length===1?" ":"s ")+pageRanges(r.failedPages)+")");
+      if(r.stopped) parts.push("stopped at page "+r.stoppedAt+" — read it again to continue");
+      return parts.join(" · ");
+    }
+    // OCR one picture (canvas or image) → its text, or "" when nothing could be read.
+    function ocrCanvas(cv, onPct){ if(!(window.LDS_OCR && LDS_OCR.available())) return Promise.resolve(""); return window.LDS_OCR.recognizePage(cv, { onProgress: onPct }).then(function(t){ return String(t||"").trim(); }).catch(function(){ return ""; }); }
+    function imageToCanvas(src){ return new Promise(function(res){ var im=new Image(); im.onload=function(){ var cv=document.createElement("canvas"); cv.width=im.naturalWidth||im.width; cv.height=im.naturalHeight||im.height; cv.getContext("2d",{willReadFrequently:true}).drawImage(im,0,0); res(cv); }; im.onerror=function(){ res(null); }; im.src=src; }); }
+    // A page's own text, line by line (pdf.js gives words with positions; a new line starts where the line moves).
+    function pdfPageLines(tc){
+      var out="", lastY=null;
+      (tc.items||[]).forEach(function(it){ var str=it.str||"", y=it.transform?it.transform[5]:null;
+        if(lastY!=null && y!=null && Math.abs(y-lastY)>2 && out && !/\n$/.test(out)) out+="\n";
+        else if(out && !/[\s\n]$/.test(out) && str && !/^\s/.test(str)) out+=" ";
+        out+=str; if(it.hasEOL) out+="\n"; if(y!=null) lastY=y; });
+      return out.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+    }
+    // How much of the page its pictures cover (0 – 1), from the page's drawing instructions.
+    function pdfImageCoverage(pg){
+      var O=pdfjsLib.OPS||{}, vp=pg.getViewport({scale:1}), pageArea=Math.abs(vp.width*vp.height)||1;
+      var IMG={}; [O.paintImageXObject,O.paintInlineImageXObject,O.paintImageXObjectRepeat,O.paintJpegXObject,O.paintImageMaskXObject].forEach(function(x){ if(x!=null) IMG[x]=1; });
+      return pg.getOperatorList().then(function(ol){ var ctm=[1,0,0,1,0,0], stack=[], area=0;
+        var mul=function(m,n){ return [m[0]*n[0]+m[2]*n[1], m[1]*n[0]+m[3]*n[1], m[0]*n[2]+m[2]*n[3], m[1]*n[2]+m[3]*n[3], m[0]*n[4]+m[2]*n[5]+m[4], m[1]*n[4]+m[3]*n[5]+m[5]]; };
+        for(var i=0;i<ol.fnArray.length;i++){ var fn=ol.fnArray[i];
+          if(fn===O.save) stack.push(ctm.slice()); else if(fn===O.restore) ctm=stack.pop()||[1,0,0,1,0,0];
+          else if(fn===O.transform){ var a=ol.argsArray[i]; if(a && a.length>=6) ctm=mul(ctm,a); }
+          else if(IMG[fn]) area+=Math.abs(ctm[0]*ctm[3]-ctm[1]*ctm[2]); }
+        return Math.min(1, area/pageArea); }).catch(function(){ return 0; });
+    }
+    function fileTextFromBytes(name, bytes, opts){
+      opts = opts || {};
+      var ext=(String(name||"").split(".").pop()||"").toLowerCase(), cancel=opts.cancel||{}, prog=function(o){ try{ opts.onProgress && opts.onProgress(o); }catch(e){} };
+      var finish=function(r){ r=r||{}; r.text=String(r.text||"").trim(); r.label=fileReadLabel(r); if(!r.note) r.note=r.text ? "" : (r.empty||"no readable text"); return r; };
+      var dec=function(){ try{ return new TextDecoder("utf-8").decode(bytes); }catch(e){ return ""; } };
+      try{
+        if(/^(txt|text|md|markdown|csv|tsv|json)$/.test(ext)) return Promise.resolve(finish({ text: dec() }));
+        if(ext==="xlsx"||ext==="xls"||ext==="xlsm"){
+          if(!window.XLSX) return Promise.resolve(finish({ note:"spreadsheet reader not available" }));
+          var wb=XLSX.read(bytes,{type:"array"}), out=[]; wb.SheetNames.forEach(function(nm){ var csv=XLSX.utils.sheet_to_csv(wb.Sheets[nm],{blankrows:false}); if(csv&&csv.trim()) out.push("# Sheet: "+nm+"\n"+csv); });
+          return Promise.resolve(finish({ text: out.join("\n\n"), empty:"no readable cells" }));
+        }
+        if(/^(jpe?g|png|webp|gif|bmp)$/.test(ext)){   // 2.9.7 (#250) — a picture is read by OCR
+          var blob=new Blob([bytes], { type: "image/"+(ext==="jpg"?"jpeg":ext) }), url=URL.createObjectURL(blob);
+          prog({ page:1, pages:1, scanned:true });
+          return imageToCanvas(url).then(function(cv){ URL.revokeObjectURL(url); if(!cv) return finish({ note:"couldn’t open the picture" });
+            return ocrCanvas(cv).then(function(t){ return finish(t ? { text:"[picture · read by OCR — may contain errors]\n"+t, ocrPictures:1 } : { failedPages:[1], pages:1, note:"the picture couldn’t be read" }); }); });
+        }
+        if(ext==="docx"){
+          if(!window.mammoth) return Promise.resolve(finish({ note:"Word reader not available" }));
+          // 2.9.7 (#250) — the pictures inside a Word file are read by OCR, in their place in the text
+          return window.mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset+bytes.byteLength) }, { convertImage: window.mammoth.images.imgElement(function(im){ return im.read("base64").then(function(b){ return { src:"data:"+im.contentType+";base64,"+b }; }); }) }).then(function(res){
+            var box=document.createElement("div"); box.style.cssText="position:fixed;left:-99999px;top:0;width:800px;white-space:normal"; box.innerHTML=(res&&res.value)||""; document.body.appendChild(box);
+            var imgs=Array.prototype.slice.call(box.querySelectorAll("img")), nOcr=0, k=0;
+            return imgs.reduce(function(pr, im){ return pr.then(function(){ if(cancel.stopped) return; k++;
+              return imageToCanvas(im.src).then(function(cv){ if(!cv || cv.width<OCR_IMG_MIN.w || cv.height<OCR_IMG_MIN.h){ im.remove(); return; } prog({ page:k, pages:imgs.length, scanned:true, picture:true });
+                return ocrCanvas(cv).then(function(t){ var pre=document.createElement("pre"); pre.textContent=t ? ("\n[picture "+k+" in the document · read by OCR — may contain errors]\n"+t+"\n") : ("\n[picture "+k+" in the document · could not be read]\n"); if(t) nOcr++; im.replaceWith(pre); }); }); }); }, Promise.resolve()).then(function(){
+              var txt=box.innerText||box.textContent||""; box.remove(); return finish({ text: txt, ocrPictures: nOcr }); });
+          }).catch(function(){ return finish({ note:"couldn’t read the Word file" }); });
+        }
+        if(ext==="doc") return Promise.resolve(finish({ note:"legacy .doc isn’t supported — save as .docx or PDF" }));
+        if(ext==="pdf"){
+          if(!window.pdfjsLib) return Promise.resolve(finish({ note:"PDF reader not available" }));
+          try{ pdfjsLib.GlobalWorkerOptions.workerSrc="./vendor/pdf.worker.min.js"; }catch(e){}
+          var ocrOn=!!(window.LDS_OCR && LDS_OCR.available());
+          return Promise.all([fileSha256(bytes), pdfjsLib.getDocument({ data: bytes.slice ? bytes.slice() : bytes }).promise]).then(function(pair){
+            var sha=pair[0], pdf=pair[1], n=pdf.numPages, out=new Array(n), ocrPages=[], failed=[], announced=false;
+            var cacheP = (sha && window.ldsShell && ldsShell.ocrCacheGet) ? ldsShell.ocrCacheGet(sha).catch(function(){ return null; }) : Promise.resolve(null);
+            return cacheP.then(function(cache){ var cached=(cache && cache.pages) || {};
+              var i=0;
+              function next(){
+                if(i>=n || cancel.stopped){
+                  var stopped=(i<n), body=[];
+                  for(var p=0;p<i;p++) body.push(out[p]);
+                  return finish({ text: body.join("\n\n"), pages:n, ocrPages:ocrPages, failedPages:failed, stopped:stopped, stoppedAt:i, sha:sha, empty:"no text found — the reader couldn’t process this PDF" });
+                }
+                var num=i+1;
+                return pdf.getPage(num).then(function(pg){
+                  return pg.getTextContent().then(function(tc){ var t=pdfPageLines(tc);
+                    var fewText=t.replace(/\s+/g," ").trim().length < 24;
+                    return (fewText ? Promise.resolve(1) : (t.replace(/\s+/g," ").length < 200 ? pdfImageCoverage(pg) : Promise.resolve(0))).then(function(cov){
+                      var scanned = ocrOn && (fewText || cov >= 0.5);
+                      if(!scanned){ out[i]="[page "+num+"]\n"+t; prog({ page:num, pages:n, scanned:false }); return; }
+                      if(!announced){ announced=true; try{ opts.onOcrStart && opts.onOcrStart(); }catch(e){} }
+                      prog({ page:num, pages:n, scanned:true });
+                      var real=fewText ? "" : t;   // a real line on a scanned page (a stamp, a header) is kept too
+                      var hit=cached[String(num)];
+                      var ocrP = (hit && hit.text) ? Promise.resolve(hit.text) : (function(){
+                        var vp0=pg.getViewport({scale:1}), scale=Math.min(3, Math.max(1, 1700/(vp0.width||1))), vp=pg.getViewport({scale:scale}), cv=document.createElement("canvas");
+                        cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+                        return pg.render({ canvasContext: cv.getContext("2d",{willReadFrequently:true}), viewport: vp }).promise.then(function(){ return ocrCanvas(cv, function(pct){ prog({ page:num, pages:n, scanned:true, pct:pct }); }); })
+                          .then(function(ot){ if(ot && sha && ldsShell.ocrCachePut) ldsShell.ocrCachePut({ sha:sha, page:num, text:ot, pages:n }).catch(function(){}); return ot; }); })();
+                      return ocrP.then(function(ot){
+                        if(ot){ ocrPages.push(num); out[i]="[page "+num+" · read by OCR — may contain errors]\n"+(real?real+"\n":"")+ot; }
+                        else { if(!real) failed.push(num); out[i]="[page "+num+(real?"":" · could not be read")+"]"+(real?"\n"+real:""); }
+                      }, function(){ if(!real) failed.push(num); out[i]="[page "+num+(real?"":" · could not be read")+"]"+(real?"\n"+real:""); });
+                    });
+                  });
+                }).catch(function(){ failed.push(num); out[i]="[page "+num+" · could not be read]"; }).then(function(){ i++; return next(); });
+              }
+              return next();
+            });
+          }).catch(function(){ return finish({ note:"couldn’t read the PDF" }); });
+        }
+        return Promise.resolve(finish({ note:"unsupported file type (."+ext+")" }));
+      }catch(e){ return Promise.resolve(finish({ note:"couldn’t read the file" })); }
+    }
+    // A File (from the picker / drag-and-drop) → its text. 2.9.7 (#61) — the result is remembered for that file, so
+    // saving it into the property's folder reuses what was read (no second OCR).
+    var fileReadMemo = (typeof WeakMap === "function") ? new WeakMap() : null;
     function aiExtractFileText(file, opts){
       opts = opts || {};
-      return new Promise(function(resolve){
-        var name=file.name||"file", ext=(name.split(".").pop()||"").toLowerCase();
-        function done(text, note){ text=String(text||""); var trunc=false; if(text.length>AI_ATTACH_MAX){ text=text.slice(0,AI_ATTACH_MAX); trunc=true; } resolve({ text:text.trim(), note: note || (trunc?("truncated to first "+Math.round(AI_ATTACH_MAX/1000)+"K chars"):"") }); }
-        try{
-          if(ext==="txt"||ext==="text"||ext==="md"||ext==="markdown"||ext==="csv"){
-            var r=new FileReader(); r.onload=function(e){ done(String(e.target.result||"")); }; r.onerror=function(){ resolve({text:"",note:"couldn’t read the file"}); }; r.readAsText(file); return;
-          }
-          if(ext==="xlsx"||ext==="xls"){
-            if(!window.XLSX){ resolve({text:"",note:"spreadsheet reader not available"}); return; }
-            var r2=new FileReader(); r2.onload=function(e){ try{ var wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"}); var out=[]; wb.SheetNames.forEach(function(nm){ var csv=XLSX.utils.sheet_to_csv(wb.Sheets[nm],{blankrows:false}); if(csv&&csv.trim()) out.push("# Sheet: "+nm+"\n"+csv); }); done(out.join("\n\n"), out.length?"":"no readable cells"); }catch(err){ resolve({text:"",note:"couldn’t parse the spreadsheet"}); } }; r2.onerror=function(){ resolve({text:"",note:"couldn’t read the file"}); }; r2.readAsArrayBuffer(file); return;
-          }
-          if(ext==="docx"){
-            if(!window.mammoth){ resolve({text:"",note:"Word reader not available"}); return; }
-            file.arrayBuffer().then(function(buf){ window.mammoth.extractRawText({arrayBuffer:buf}).then(function(res){ done(res&&res.value, (res&&res.value&&res.value.trim())?"":"no readable text"); }).catch(function(){ resolve({text:"",note:"couldn’t read the Word file"}); }); }).catch(function(){ resolve({text:"",note:"couldn’t read the file"}); }); return;
-          }
-          if(ext==="doc"){ resolve({text:"",note:"legacy .doc isn’t supported — save as .docx or PDF"}); return; }
-          if(ext==="pdf"){
-            if(!window.pdfjsLib){ resolve({text:"",note:"PDF reader not available"}); return; }
-            try{ pdfjsLib.GlobalWorkerOptions.workerSrc="./vendor/pdf.worker.min.js"; }catch(e){}
-            // 2.9.6 (H3) — read the PDF PER PAGE: a page with a real text layer is used as-is; a
-            // scanned / image-only page is rendered and OCR'd (tesseract + PaddleOCR, reconciled)
-            // instead of being silently dropped. A mixed PDF (some text pages, some scans) is handled
-            // one page at a time, so nothing vanishes and the reader never fails on a scan.
-            var MIN_TEXT = 24, ocrOn = !!(window.LDS_OCR && LDS_OCR.available()), ocrAnnounced = false;
-            function ocrPdfPage(pg){
-              var vp0 = pg.getViewport({scale:1}), scale = Math.min(3, Math.max(1, 1700/(vp0.width||1)));
-              var vp = pg.getViewport({scale:scale}), cv = document.createElement("canvas");
-              cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
-              return pg.render({ canvasContext: cv.getContext("2d",{willReadFrequently:true}), viewport: vp }).promise
-                .then(function(){ return window.LDS_OCR.recognizePage(cv); });
-            }
-            file.arrayBuffer().then(function(buf){
-              pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise.then(function(pdf){
-                var n=pdf.numPages, out=new Array(n), i=0, ocrCount=0;
-                (function next(){
-                  if(i>=n){
-                    var body = out.filter(function(p){return p!=null && p!=="";}).join("\n\n");
-                    if(ocrCount>0) body += "\n\n— Read by AI from a scanned document — may contain errors.";
-                    var note = ocrCount>0 ? ("OCR’d "+ocrCount+" scanned page"+(ocrCount===1?"":"s"))
-                             : (body.trim()?"":"no text found — this looks like a scan the reader couldn’t process");
-                    done(body, note); return;
-                  }
-                  pdf.getPage(i+1).then(function(pg){
-                    return pg.getTextContent().then(function(tc){
-                      var t = tc.items.map(function(it){return it.str;}).join(" ").replace(/\s+/g," ").trim();
-                      if(t.length >= MIN_TEXT || !ocrOn){ out[i]=t; return; }               // real text layer, or no OCR available
-                      if(!ocrAnnounced){ ocrAnnounced=true; try{ opts.onOcrStart && opts.onOcrStart(); }catch(e){} }
-                      return ocrPdfPage(pg).then(function(ot){ if(ot && ot.trim()){ out[i]=ot; ocrCount++; } else { out[i]=t; } })
-                                           .catch(function(){ out[i]=t; });
-                    });
-                  }).catch(function(){ out[i]=""; }).then(function(){ try{ opts.onProgress && opts.onProgress(i+1, n, ocrCount); }catch(e){} i++; next(); });
-                })();
-              }).catch(function(){ resolve({text:"",note:"couldn’t read the PDF"}); });
-            }).catch(function(){ resolve({text:"",note:"couldn’t read the file"}); }); return;
-          }
-          resolve({text:"",note:"unsupported file type (."+ext+")"});
-        }catch(e){ resolve({text:"",note:"couldn’t read the file"}); }
-      });
+      if(fileReadMemo && fileReadMemo.has(file)) return fileReadMemo.get(file);
+      var p = file.arrayBuffer().then(function(buf){ return fileTextFromBytes(file.name||"file", new Uint8Array(buf), opts); }).catch(function(){ return { text:"", note:"couldn’t read the file", label:"" }; });
+      if(fileReadMemo) fileReadMemo.set(file, p.then(function(r){ if(r && r.stopped) fileReadMemo.delete(file); return r; }));
+      return p;
     }
     function aiAsstRenderAttach(){
       var row=el("aiAsstAttachRow"); if(!row) return;
       if(!aiAsstFiles.length){ row.classList.add("hidden"); row.innerHTML=""; return; }
       row.classList.remove("hidden");
       row.innerHTML = aiAsstFiles.map(function(f,idx){
-        var loading=f.status==="loading", ok=f.status==="ok";
-        var tone = loading?"border-slate-200 bg-slate-50 text-slate-500": ok?"border-brand-200 bg-brand-50 text-brand-800":"border-amber-200 bg-amber-50 text-amber-800";
-        var sub = loading?"reading…": ok?(Math.max(1,Math.round((f.text||"").length/1000))+"K chars"):(f.note||"unreadable");
-        return '<span class="inline-flex items-center gap-1.5 rounded-lg border '+tone+' px-2 py-1 text-[11px] max-w-[240px]">'+
+        var loading=f.status==="loading", ok=f.status==="ok", warn=ok && f.read && ((f.read.ocrPages&&f.read.ocrPages.length)||f.read.ocrPictures||(f.read.failedPages&&f.read.failedPages.length)||f.read.stopped);
+        var tone = loading?"border-slate-200 bg-slate-50 text-slate-500": warn?"border-amber-200 bg-amber-50 text-amber-800": ok?"border-brand-200 bg-brand-50 text-brand-800":"border-amber-200 bg-amber-50 text-amber-800";
+        var sub = loading ? (f.note||"reading…") : ok ? (f.label||(Math.max(1,Math.round((f.text||"").length/1000))+"K characters")) : (f.note||"unreadable");
+        return '<span class="inline-flex items-center gap-1.5 rounded-lg border '+tone+' px-2 py-1 text-[11px] max-w-[520px]" data-attachchip="'+idx+'">'+
           '<svg class="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'+
-          '<span class="truncate font-semibold">'+escapeHtml(f.name)+'</span><span class="opacity-70 shrink-0">'+escapeHtml(sub)+'</span>'+
+          '<span class="truncate font-semibold max-w-[180px]">'+escapeHtml(f.name)+'</span><span class="opacity-80" data-attachnote>'+escapeHtml(sub)+'</span>'+
+          (loading?'<button type="button" data-attachstop="'+idx+'" class="ml-0.5 shrink-0 rounded border border-slate-300 bg-white px-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100" title="Stop reading this file">Stop</button>':'')+
           '<button type="button" data-attachrm="'+idx+'" class="ml-0.5 shrink-0 opacity-60 hover:opacity-100 hover:text-rose-600" title="remove">&times;</button></span>';
       }).join("");
-      row.querySelectorAll("[data-attachrm]").forEach(function(b){ b.addEventListener("click", function(){ aiAsstFiles.splice(+b.getAttribute("data-attachrm"),1); aiAsstRenderAttach(); }); });
+      row.querySelectorAll("[data-attachrm]").forEach(function(b){ b.addEventListener("click", function(){ var f=aiAsstFiles[+b.getAttribute("data-attachrm")]; if(f&&f.cancel) f.cancel.stopped=true; aiAsstFiles.splice(+b.getAttribute("data-attachrm"),1); aiAsstRenderAttach(); }); });
+      row.querySelectorAll("[data-attachstop]").forEach(function(b){ b.addEventListener("click", function(){ var f=aiAsstFiles[+b.getAttribute("data-attachstop")]; if(f&&f.cancel){ f.cancel.stopped=true; f.note="stopping after this page…"; aiAsstRenderAttach(); } }); });
     }
+    // 2.9.7 (#59, #250) — the file chip shows page-by-page progress ("reading scanned page 3 of 40"), a Stop, and when
+    // done what was read ("40 pages · read by OCR — may contain errors · 2 pages couldn't be read (pages 7, 12)"). No size limit.
     function aiAsstAddFiles(list){
       var files=Array.prototype.slice.call(list||[]); if(!files.length) return;
       files.forEach(function(file){
-        if(file.size > 25*1024*1024){ aiAsstFiles.push({name:file.name,size:file.size,text:"",note:"too large (25 MB max)",status:"err"}); aiAsstRenderAttach(); return; }
-        var entry={name:file.name,size:file.size,text:"",note:"reading…",status:"loading",fileObj:file}; aiAsstFiles.push(entry); aiAsstRenderAttach();
+        var cancel={ stopped:false };
+        var entry={name:file.name,size:file.size,text:"",note:"reading…",status:"loading",fileObj:file,cancel:cancel,label:""}; aiAsstFiles.push(entry); aiAsstRenderAttach();
+        var said=false;
         aiExtractFileText(file, {
-          // 2.9.6 (H3) — tell the operator the moment a scanned PDF starts OCR, so a slow read never
-          // looks ignored; and show per-page progress on the chip while the engines work.
-          onOcrStart: function(){ try{ aiAsstBubble("assistant", '<span class="text-slate-600">Reading the file now — it’s a scanned document, so I’m running OCR. This will take a couple of minutes; please wait.</span>'); }catch(e){} },
-          onProgress: function(cur, total, ocrN){ if(ocrN>0){ entry.note = "reading scanned pages… "+cur+"/"+total; entry.status="loading"; aiAsstRenderAttach(); } }
-        }).then(function(res){ entry.text=res.text||""; entry.note=res.note||""; entry.status=entry.text?"ok":"err"; aiAsstRenderAttach(); });
+          cancel: cancel,
+          onOcrStart: function(){ if(said) return; said=true; try{ aiAsstBubble("assistant", '<span class="text-slate-600">Reading the file now — it’s a scanned document, so I’m running OCR. This will take a couple of minutes; please wait.</span>'); }catch(e){} },   // 2.9.7 (#99) — your wording, kept
+          onProgress: function(o){ if(cancel.stopped) return; entry.note = (o.picture ? "reading picture " : (o.scanned ? "reading scanned page " : "reading page "))+o.page+" of "+o.pages; var n=document.querySelector('#aiAsstAttachRow [data-attachchip="'+aiAsstFiles.indexOf(entry)+'"] [data-attachnote]'); if(n) n.textContent=entry.note; else aiAsstRenderAttach(); }
+        }).then(function(res){ entry.text=res.text||""; entry.read=res; entry.label=res.label||""; entry.note=res.label||res.note||""; entry.status=entry.text?"ok":"err"; aiAsstRenderAttach(); });
       });
     }
 
@@ -11681,7 +11818,7 @@ tr.flagged:hover td{background:#fee2e2}
       var userTurn={role:"user", text: question + (ready.length?("\n[attached: "+ready.map(function(f){return f.name;}).join(", ")+"]"):"") + (focusName?("\n[property: "+focusName+"]"):"")};
       if(!aiAsstConvTitle && question) aiAsstConvTitle = question.replace(/\s+/g," ").trim().slice(0,64);   // 2.9.7 (#58) — the question as typed, without the hidden tags
       aiAsstHistory.push(userTurn); aiAsstPendingTurn=userTurn;
-      ready.forEach(function(f){ aiAsstConvFileTexts = aiAsstConvFileTexts.filter(function(x){ return x.name!==f.name; }); aiAsstConvFileTexts.push({ name:f.name, text:f.text, fileObj:f.fileObj||null }); });
+      ready.forEach(function(f){ aiAsstConvFileTexts = aiAsstConvFileTexts.filter(function(x){ return x.name!==f.name; }); aiAsstConvFileTexts.push({ name:f.name, text:f.text, fileObj:f.fileObj||null, label:f.label||"" }); });
       var toSave = ready.slice();                    // keep refs (with .fileObj) to persist under the property
       toSave.forEach(function(f){ if(f&&f.name && !aiAsstConvFiles.some(function(x){return x.name===f.name;})) aiAsstConvFiles.push({name:f.name}); });   // record chat files (they also land in the property's Documents)
       aiAsstFiles = []; aiAsstRenderAttach();          // attachments are consumed by this message
@@ -11704,14 +11841,47 @@ tr.flagged:hover td{background:#fee2e2}
       return "Every property in the app ("+props.length+" active"+(arch.length?(", "+arch.length+" archived"):"")+"; the portfolio JSON above lists only active loans): "+act.join("; ")+"."+
         (ar.length ? " Archived: "+ar.join("; ")+"." : "")+" Use the reading actions (list_properties, read_property …) to see any of them in full.\n\n";
     }
-    // The files of this conversation, newest kept when they get too big (the dropped ones are named).
+    // The files of this conversation, sent whole with every message (#243); when everything is more than one message
+    // can hold, they are read in parts instead (#250).
     function aiAsstFilesBlock(){
-      var keep = [], total = 0, dropped = [];
-      for(var i = aiAsstConvFileTexts.length - 1; i >= 0; i--){ var f = aiAsstConvFileTexts[i], n = (f.text||"").length;
-        if(total + n > AI_ASST_FILES_CAP && keep.length){ dropped.unshift(f.name); continue; } keep.unshift(f); total += n; }
-      if(!keep.length) return "";
-      return "Files attached in this conversation — their extracted text"+(dropped.length ? " (left out because the conversation's files got too large, oldest first: "+dropped.join(", ")+" — ask the operator to attach them again if you need them)" : "")+":\n"+
-        keep.map(function(f){ return '<file name="'+escapeHtml(f.name)+'">\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
+      if(!aiAsstConvFileTexts.length) return "";
+      return "Files attached in this conversation — their extracted text (each page is marked; \"read by OCR — may contain errors\" marks a page read from a scan, \"could not be read\" a page that is missing):\n"+
+        aiAsstConvFileTexts.map(function(f){ return '<file name="'+escapeHtml(f.name)+'"'+(f.label?' read="'+escapeHtml(f.label)+'"':'')+'>\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
+    }
+    // ── 2.9.7 (#250, choice 1a) — reading in parts. When the files (attached + the focused property's saved documents)
+    // are more than Claude can read in one message, Claude reads them part by part, keeping notes — exact figures with
+    // their page numbers — and then answers from the notes. Only the notes and the answer stay in the chat; the files'
+    // text stays with the files, so a follow-up question reads them in parts again.
+    var AI_ONE_MESSAGE_CHARS = 400000, AI_PART_CHARS = 300000;
+    try{ var _pc=Number(localStorage.getItem("lds.asstPartChars")); if(_pc>=1000){ AI_PART_CHARS=_pc; AI_ONE_MESSAGE_CHARS=Math.round(_pc*4/3); } }catch(e){}   // (tests)
+    var AI_PARTS_SYSTEM = "You read long documents for the Loan Debt Service Hub's assistant, one part at a time, so it can answer the operator's question. Keep NOTES: copy every fact that bears on the question exactly as written — figures, dates, names, rates, terms — each with its file name and page number (the text marks pages as [page N]); say when a page was \"read by OCR — may contain errors\" and list pages that \"could not be read\". Add to the notes you are given; never drop earlier notes. Reply with the complete updated notes only — no preamble.";
+    function aiAsstMaterial(docTxt){
+      var out=aiAsstConvFileTexts.map(function(f){ return { name:f.name, label:f.label||"", text:f.text||"", from:"attached" }; });
+      if(docTxt && docTxt.text){ var re=/<file name="([^"]*)"(?: read="([^"]*)")?>\n([\s\S]*?)\n<\/file>/g, m; while((m=re.exec(docTxt.text))){ if(!out.some(function(o){ return o.name===m[1]; })) out.push({ name:m[1], label:m[2]||"", text:m[3], from:"saved" }); } }
+      return out;
+    }
+    function aiAsstSplitParts(material){
+      var parts=[], cur="", add=function(s2){ if(cur.length+s2.length>AI_PART_CHARS && cur){ parts.push(cur); cur=""; } cur+=s2; };
+      material.forEach(function(f){ var head='<file name="'+f.name+'"'+(f.label?' read="'+f.label+'"':'')+'>\n', lines=f.text.split("\n"), buf=head;
+        lines.forEach(function(ln){ var piece=ln+"\n"; if(buf.length+piece.length>AI_PART_CHARS){ add(buf+"</file>\n"); buf='<file name="'+f.name+'" (continued)>\n'; }
+          while(piece.length>AI_PART_CHARS){ add(buf+piece.slice(0,AI_PART_CHARS-buf.length)+"\n</file>\n"); piece=piece.slice(AI_PART_CHARS-buf.length); buf='<file name="'+f.name+'" (continued)>\n'; }
+          buf+=piece; });
+        add(buf+"</file>\n\n"); });
+      if(cur) parts.push(cur);
+      return parts;
+    }
+    function aiAsstReadInParts(question, material, thinking){
+      var parts=aiAsstSplitParts(material), n=parts.length, names=material.map(function(f){ return f.name; });
+      aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>'+(material.length===1?"This file is long":"These files are long")+' — Claude is reading '+(material.length===1?"it":"them")+' in '+n+' parts.</span>');
+      var setT=function(i){ if(thinking) thinking.innerHTML='<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Reading part '+i+' of '+n+'…</span>'; };
+      var notes="";
+      return parts.reduce(function(pr, part, i){ return pr.then(function(ok){ if(ok===false || aiAsstStopped) return false; setT(i+1);
+        var token="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); aiAsstToken=token;
+        var prompt="The operator's question: "+(question||"(read the attached file(s), summarize what they say and anything that implies a change in the app)")+"\n\nFiles: "+names.join(", ")+".\nThis is part "+(i+1)+" of "+n+".\n\nNotes so far:\n"+(notes||"(none yet)")+"\n\nPart "+(i+1)+" of "+n+":\n"+part;
+        return ldsShell.aiChat({ system: AI_PARTS_SYSTEM, prompt: prompt, timeoutMs: 300000, cancelToken: token }).then(function(r){
+          if(aiAsstStopped || (r && r.canceled)) return false;
+          if(!r || !r.ok) throw new Error((r && r.error) || "reading a part failed");
+          notes=String(r.text||"").trim(); return true; }); }); }, Promise.resolve(true)).then(function(ok){ return (ok===false || aiAsstStopped) ? null : { notes:notes, parts:n, files:names }; });
     }
     // How a thread entry reads for Claude.
     function aiAsstThreadText(m){
@@ -11720,6 +11890,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(m.role==="result") return "App (results of your actions — this is what really happened):\n"+m.text;
       if(m.role==="card") return "";
       if(m.role==="compact") return "Summary of the earlier conversation:\n"+m.text;
+      if(m.role==="notes") return "Notes taken while reading "+((m.files||[]).join(", ")||"the long file(s)")+" in "+(m.parts||"several")+" parts (exact figures with their pages):\n"+m.text;
       if(m.failed) return "";
       return "Assistant: "+m.text;
     }
@@ -11740,15 +11911,33 @@ tr.flagged:hover td{background:#fee2e2}
       Promise.all([idxP, txtP, recallP]).then(function(dres){
         if(aiAsstStopped){ aiAsstStopped=false; aiAsstThinkingEl=null; aiAsstPendingTurn=null; return; }   // Stop pressed during the doc lookup — don't fire the request
         var docIdx=dres[0], docTxt=dres[1], recall=dres[2];
+        // 2.9.7 (#250) — everything Claude should read; when it's more than one message holds, it is read in parts first
+        var material=aiAsstMaterial(docTxt), matChars=material.reduce(function(a2,m2){ return a2+m2.text.length; },0);
+        if(!t.round && !t.notes && matChars>AI_ONE_MESSAGE_CHARS){
+          aiAsstReadInParts(question, material, thinking).then(function(res){
+            if(!res){ if(aiAsstStopped){ aiAsstStopped=false; } aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
+            aiAsstHistory.push({ role:"notes", text:res.notes, parts:res.parts, files:res.files }); aiAsstPersist();
+            t.notes=res; aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall });
+          }).catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstShowError(String((err&&err.message)||err)); });
+          return;
+        }
+        aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall });
+      });
+    }
+    function aiAsstTurnSend(t, thinking, d){
+        var focusKey=t.focusKey, focusName=t.focusName, question=t.question, docIdx=d.docIdx, docTxt=d.docTxt, recall=d.recall, notes=t.notes||null;
+        var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token;
         var snap=aiAsstSnapshot();
         var lastIsUser = !t.round;
-        var thread=aiAsstSinceCompact(aiAsstHistory.slice(0, lastIsUser ? -1 : aiAsstHistory.length)).map(aiAsstThreadText).filter(Boolean).join("\n\n");
+        var pend=aiAsstPendingTurn, hist=aiAsstHistory.filter(function(m){ return !(lastIsUser && m===pend) && !(notes && m.role==="notes" && m.text===notes.notes); });   // the question and this request's notes go right below
+        var thread=aiAsstSinceCompact(hist).map(aiAsstThreadText).filter(Boolean).join("\n\n");
         var idxLine="";
         if(docIdx && docIdx.byKey){ var names=Object.keys(docIdx.byKey).map(function(k){ var e=docIdx.byKey[k]; return e.propName?(e.propName+" ["+e.files.join(", ")+"]"):""; }).filter(Boolean); if(names.length) idxLine="Saved property documents on file (the operator can select or name a property to load its documents into this chat): "+names.join("; ")+".\n\n"; }
         var focusBlock="";
         if(focusName){
           focusBlock="The operator is focused on the property \""+focusName+"\". ";
-          if(docTxt && docTxt.text){ focusBlock+="Its saved documents, newest first"+(docTxt.truncated?" (the last one is cut at the size limit)":"")+", are below — use them, no need to ask the operator to attach anything:\n"+docTxt.text+"\n\n"; }
+          if(notes && docTxt && docTxt.text){ focusBlock+="Its saved documents were read in parts — the notes are below.\n\n"; }
+          else if(docTxt && docTxt.text){ focusBlock+="Its saved documents, newest first, are below — use them, no need to ask the operator to attach anything:\n"+docTxt.text+"\n\n"; }
           else { focusBlock+="It has no readable saved documents yet; if the operator expects some, tell them to attach the file with this property selected so it is saved.\n\n"; }
           // 2.9.7 (#212) — say which saved documents could not be read, so the answer never pretends it saw them.
           var notRead=[]; if(docTxt && docTxt.unreadable && docTxt.unreadable.length) notRead.push("no readable text: "+docTxt.unreadable.join(", ")); if(docTxt && docTxt.left && docTxt.left.length) notRead.push("not read (over the 300,000-character limit for one property): "+docTxt.left.join(", "));
@@ -11774,7 +11963,7 @@ tr.flagged:hover td{background:#fee2e2}
           aiAsstPropertiesLine()+
           focusBlock+
           recallBlock+
-          aiAsstFilesBlock()+
+          (notes ? ("Notes taken while reading "+notes.files.join(", ")+" in "+notes.parts+" parts (they were too long for one message) — exact figures with their pages; answer from these notes and say when something you need is not in them:\n"+notes.notes+"\n\n") : aiAsstFilesBlock())+
           (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
           ask;
         var tmo = prompt.length > 60000 ? 240000 : 120000;   // a big attachment/property docs legitimately need longer; Stop is always there to bail out
@@ -11790,7 +11979,6 @@ tr.flagged:hover td{background:#fee2e2}
             aiAsstHandleReply(full, t);
           })
           .catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(aiAsstStopped){ aiAsstStopped=false; return; } if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstShowError(String((err&&err.message)||err)); });
-      });
     }
     // A failed call: saved in the chat (#246) and said in plain words with the next step (#245).
     function aiAsstShowError(raw){
@@ -11847,7 +12035,7 @@ tr.flagged:hover td{background:#fee2e2}
         // A round that only opened screens, all of which opened, is finished — the screen is the answer.
         if(outcomes.length && outcomes.every(function(o){ return o.ok && o.close; })){ aiAsstSetBusy(false); setTimeout(function(){ aiAsstClose(); }, 400); return; }
         if((t.round||0) + 1 >= AI_ASST_MAX_ROUNDS){ aiAsstBubble("assistant", '<span class="text-[12px] text-slate-500">Stopped after '+AI_ASST_MAX_ROUNDS+' steps — ask again to continue.</span>'); aiAsstSetBusy(false); return; }
-        aiAsstTurn({ question: t.question, focusKey: t.focusKey, focusName: t.focusName, round: (t.round||0) + 1 });
+        aiAsstTurn({ question: t.question, focusKey: t.focusKey, focusName: t.focusName, round: (t.round||0) + 1, notes: t.notes || null });
       });
     }
     // Every action block in a reply, in order: ```action {…}``` blocks (or a JSON array / {"actions":[…]}), and a
@@ -11927,6 +12115,7 @@ tr.flagged:hover td{background:#fee2e2}
           (m.outcomes||[]).filter(function(o){ return !o.card; }).forEach(function(o){ aiAsstBubble("assistant", '<span class="'+(o.ok?"text-emerald-700 font-semibold":"text-rose-700")+'">'+(o.ok?"✓ ":"✗ ")+escapeHtml(o.msg||"")+'</span>', {error:!o.ok}); });
         }
         else if(m.role==="compact"){ aiAsstCompactMarker(m.text); }
+        else if(m.role==="notes"){ aiAsstBubble("assistant", '<details><summary class="cursor-pointer text-[12px] font-semibold text-slate-500">Notes Claude took while reading '+escapeHtml((m.files||[]).join(", ")||"the long file")+' in '+escapeHtml(String(m.parts||"several"))+' parts</summary><div class="mt-1 text-[12px] text-slate-600 whitespace-pre-wrap">'+escapeHtml(m.text)+'</div></details>'); }
         else if(m.failed){ aiAsstBubble("assistant", escapeHtml(m.text), {error:true}); }
         else { var p=aiAsstParseActions(m.text); var t=p.text||(p.actions.length?"":m.text); if(t) aiAsstBubble("assistant", escapeHtml(t)); }
       });
@@ -12175,6 +12364,7 @@ tr.flagged:hover td{background:#fee2e2}
     // 2.9.4 — Explain/Check modal retired (the AI assistant explains and sanity-checks a loan on request).
     // AI: the in-app assistant (desktop shell only) — floating button opens a chat
     // that answers questions and performs safe actions on request.
+    try{ if(!/[?&]panel=/.test(location.search)) setTimeout(resumeReadingQueue, 3000); }catch(e){}   // 2.9.7 (#250) — a reading the app was closed in the middle of
     if(aiChatAvailable() && el("aiAsstFab")){
       el("aiAsstFab").hidden = false;
       el("aiAsstFab").addEventListener("click", aiAsstOpen);

@@ -75,7 +75,7 @@ const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').f
   await send('Who is the lender in the note?'); await idle();
   await send('And again?'); await idle(); await page.waitForTimeout(300);
   C=calls(); const last=(C[C.length-1]||{}).prompt||'';
-  ok(/<file name="note-243.txt">/.test(last)&&/MAGENTA BANK/.test(last),'the next message still sends the attached file');
+  ok(/<file name="note-243.txt"( read="[^"]*")?>/.test(last)&&/MAGENTA BANK/.test(last),'the next message still sends the attached file');
 
   // ---- Stop with a card waiting ----
   const loan=await page.evaluate(()=>window.LDS_loans().find(l=>!l.archived&&l.propertyName).propertyName);

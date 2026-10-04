@@ -1,6 +1,11 @@
 // Electron main process — wraps the offline Loan Debt Service Hub in a desktop
 // window. The whole UI/engine lives in index.html; this just hosts it.
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, net } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, net, protocol } = require('electron');
+// 2.9.7 (#60) — the app is served from an internal address, lds://app/, instead of a file: the second OCR engine
+// (PaddleOCR) needs a real web address to load its models and engine. Everything is still read from the app's own
+// files on disk; nothing leaves the computer.
+protocol.registerSchemesAsPrivileged([{ scheme: 'lds', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
+const APP_URL = 'lds://app/index.html';
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -43,6 +48,42 @@ function bringToFront(win) {
   try { app.focus({ steal: true }); } catch (e) { try { app.focus(); } catch (e2) {} }
 }
 
+const LDS_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.tar': 'application/x-tar', '.traineddata': 'application/octet-stream', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8' };
+function registerAppProtocol() {
+  protocol.handle('lds', async (req) => {
+    try {
+      const u = new URL(req.url);
+      let rel = decodeURIComponent(u.pathname).replace(/^\/+/, ''); if (!rel) rel = 'index.html';
+      const full = path.normalize(path.join(__dirname, rel));
+      if (full !== __dirname && !full.startsWith(__dirname + path.sep)) return new Response('forbidden', { status: 403 });   // only the app's own files
+      const buf = await fs.promises.readFile(full);
+      return new Response(buf, { status: 200, headers: { 'content-type': LDS_MIME[path.extname(full).toLowerCase()] || 'application/octet-stream', 'access-control-allow-origin': '*', 'cache-control': 'no-cache' } });
+    } catch (e) { return new Response('not found', { status: 404 }); }
+  });
+}
+// The settings saved at the old address (file://) are copied once to the new one: the first window opens the old
+// address for a moment, reads them, then loads the app; the page copies them in before anything reads them.
+let legacyStorage = null;
+function storageMigrated() { try { return fs.existsSync(path.join(app.getPath('userData'), 'storage-origin.json')); } catch (e) { return false; } }
+ipcMain.on('lds:legacy-storage', (e) => { e.returnValue = storageMigrated() ? null : legacyStorage; });
+ipcMain.on('lds:legacy-storage-done', (e, n) => {
+  try { fs.writeFileSync(path.join(app.getPath('userData'), 'storage-origin.json'), JSON.stringify({ origin: 'lds://app', migratedAt: new Date().toISOString(), keys: Number(n) || 0 })); } catch (x) {}
+  legacyStorage = null;
+});
+function loadApp(win) {
+  if (storageMigrated()) { win.loadURL(APP_URL); return; }
+  let done = false;
+  const go = () => { if (done || win.isDestroyed()) return; done = true; win.loadURL(APP_URL); };
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.executeJavaScript('(function(){var o={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);o[k]=localStorage.getItem(k);}}catch(e){}return o;})()')
+      .then((o) => { legacyStorage = (o && typeof o === 'object') ? o : {}; }).catch(() => { legacyStorage = {}; }).then(go);
+  });
+  setTimeout(go, 5000);   // never stuck on the old page
+  try { win.loadFile(path.join(__dirname, 'legacy-storage.html')); } catch (e) { go(); }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -71,7 +112,7 @@ function createWindow() {
   win.on('maximize', sendWinState);
   win.on('unmaximize', sendWinState);
 
-  win.loadFile(path.join(__dirname, 'index.html'));
+  loadApp(win);
 
   // Allow the app's own pop-out windows (e.g. the Maturity & Reset Calendar, opened
   // via window.open('') and written to in-renderer); send external http(s) links to
@@ -136,8 +177,8 @@ function openPanel(kind){
   win.webContents.on('did-fail-load', (ev, code, desc, url) => { mainLog('panel ' + kind + ' did-fail-load ' + code + ' ' + desc + ' ' + url); tellMain('lds:panel-error', { kind, error: desc || ('load failed ' + code) }); });
   win.webContents.on('render-process-gone', (ev, d) => { mainLog('panel ' + kind + ' render-process-gone ' + JSON.stringify(d)); tellMain('lds:panel-error', { kind, error: 'the window stopped (' + ((d && d.reason) || 'unknown') + ')' }); });
   win.webContents.on('console-message', (ev, level, message) => { if (level >= 3) mainLog('panel ' + kind + ' console error: ' + String(message).slice(0, 500)); });
-  try { win.loadFile(path.join(__dirname, 'index.html'), { query: { panel: kind } }); }
-  catch (err) { mainLog('panel ' + kind + ' loadFile threw: ' + ((err && err.stack) || err)); }
+  try { win.loadURL(APP_URL + '?panel=' + encodeURIComponent(kind)); }
+  catch (err) { mainLog('panel ' + kind + ' loadURL threw: ' + ((err && err.stack) || err)); }
   const sendState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e2) {} };
   win.on('maximize', sendState);
   win.on('unmaximize', sendState);
@@ -451,7 +492,6 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
 // property folder holds the ORIGINAL files, a <id>.txt cache of the extracted text
 // (what the assistant actually reads), and an index.json:
 //   { propKey, propName, files: [{ id, stored, name, size, type, savedAt, textLen }] }
-const DOC_TEXT_CAP = 300000;   // max extracted text handed to the assistant per property, per turn
 const APP_ROLES = new Set(['profile', 'assumptions', 'general', 'history']);   // the app's own records in a property folder
 function documentsDir(){ return path.join(app.getPath('userData'), 'documents'); }
 function propDir(propKey){ const h = crypto.createHash('sha1').update(String(propKey || '')).digest('hex').slice(0, 16); return path.join(documentsDir(), h); }
@@ -464,18 +504,21 @@ function docUniqueName(name, taken){
   return base + ' (' + Date.now() + ')' + ext;
 }
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
-function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '' }; }
+function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '' }; }
 
 // Save one original file (base64) + its extracted text under a property. Replaces an
 // existing file of the same name for that property. `role` tags what the file is
 // (e.g. "t12") so a consumer can find it again without guessing from the name.
-ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role }) => {
+ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role, label }) => {
+  if(!base64) return { ok: false, error: 'missing fields' };
+  return docSaveBuffer(e, { propKey, propName, name, buf: Buffer.from(base64, 'base64'), text, type, role, label });
+});
+function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label }) {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
-    if(!propKey || !name || !base64) return { ok: false, error: 'missing fields' };
+    if(!propKey || !name || !buf) return { ok: false, error: 'missing fields' };
     const dir = propDir(propKey); fs.mkdirSync(dir, { recursive: true });
     const idx = readDocIndex(dir); idx.propKey = propKey; idx.propName = propName || idx.propName || ''; idx.files = Array.isArray(idx.files) ? idx.files : [];
-    const buf = Buffer.from(base64, 'base64');
     const sha = crypto.createHash('sha1').update(buf).digest('hex');
     // Exact-duplicate guard: the same bytes already stored under this role is not re-saved (a second
     // identical T12 shouldn't create a phantom "newer" statement). The caller is told it was a dup.
@@ -495,11 +538,11 @@ ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type
     } else if (idx.files.some(f => f.name === finalName)) {
       finalName = docUniqueName(finalName, new Set(idx.files.map(f => f.name))); renamed = finalName;
     }
-    const entry = { id, stored, name: finalName, size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha };
+    const entry = { id, stored, name: finalName, size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha, readLabel: String(label || '').slice(0, 300) };
     idx.files.push(entry); writeDocIndex(dir, idx);
     return { ok: true, file: pubFile(entry), renamed };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+}
 // 2.9.7 (#37) — change a saved document's type (Loan agreement, T12, Rent roll, Unit Statistics, Other).
 ipcMain.handle('lds:doc-set-role', (e, { propKey, id, role }) => {
   dataChanged(e);
@@ -538,11 +581,10 @@ ipcMain.handle('lds:doc-text', (e, { propKey }) => {
     const files = (Array.isArray(idx.files) ? idx.files : []).filter(f => !APP_ROLES.has(f.role || '')).slice().sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
     let out = '', used = [], truncated = false; const unreadable = [], left = [];
     for(const f of files){
-      if(truncated){ left.push(f.name); continue; }
       let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
       if(!t){ unreadable.push(f.name); continue; }
-      if(out.length + t.length > DOC_TEXT_CAP){ t = t.slice(0, Math.max(0, DOC_TEXT_CAP - out.length)); truncated = true; }
-      out += '<file name="' + String(f.name).replace(/"/g, '') + '">\n' + t + '\n</file>\n\n';
+      // 2.9.7 (#250) — nothing is cut: a property's documents come back whole (the assistant reads them in parts)
+      out += '<file name="' + String(f.name).replace(/"/g, '') + '"' + (f.readLabel ? ' read="' + String(f.readLabel).replace(/"/g, '') + '"' : '') + '>\n' + t + '\n</file>\n\n';
       used.push(f.name);
     }
     return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated, unreadable, left };
@@ -563,6 +605,63 @@ ipcMain.handle('lds:doc-text-part', (e, { propKey, name, id, part, partSize }) =
     return { ok: true, name: f.name, role: f.role || '', savedAt: f.savedAt || 0, readable: t.length > 0, chars: t.length, part: p, parts, text: t.slice((p - 1) * size, p * size) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// 2.9.7 (#250) — the reading queue: a file added to a property's Documents is kept here (copied straight from disk
+// when the page can say where it is) while it is being read; once read it is filed and removed. If the app is
+// closed halfway, the next start continues it.
+function readqDir(){ return path.join(app.getPath('userData'), 'reading-queue'); }
+function readqJob(id){ try { return JSON.parse(fs.readFileSync(path.join(readqDir(), String(id).replace(/[^a-z0-9]/gi, '') + '.json'), 'utf8')); } catch (e) { return null; } }
+ipcMain.handle('lds:readq-add', (e, { name, type, base64, filePath, fallbackKey, fallbackName, role }) => {
+  try {
+    fs.mkdirSync(readqDir(), { recursive: true });
+    const id = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), bin = path.join(readqDir(), id + '.bin');
+    if (filePath && fs.existsSync(filePath)) fs.copyFileSync(filePath, bin);
+    else if (base64) fs.writeFileSync(bin, Buffer.from(String(base64), 'base64'));
+    else return { ok: false, error: 'no file' };
+    const job = { id, name: String(name || 'file'), type: type || '', size: fs.statSync(bin).size, fallbackKey: fallbackKey || '', fallbackName: fallbackName || '', role: role || '', addedAt: Date.now() };
+    fs.writeFileSync(path.join(readqDir(), id + '.json'), JSON.stringify(job));
+    return { ok: true, id, size: job.size };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+ipcMain.handle('lds:readq-list', () => {
+  try { if (!fs.existsSync(readqDir())) return { ok: true, jobs: [] };
+    return { ok: true, jobs: fs.readdirSync(readqDir()).filter(n => /\.json$/.test(n)).map(n => readqJob(n.replace(/\.json$/, ''))).filter(j => j && fs.existsSync(path.join(readqDir(), j.id + '.bin'))).sort((a, b) => a.addedAt - b.addedAt) };
+  } catch (err) { return { ok: false, jobs: [] }; }
+});
+ipcMain.handle('lds:readq-bytes', (e, { id }) => {
+  try { const j = readqJob(id); if (!j) return { ok: false, error: 'not found' }; return { ok: true, base64: fs.readFileSync(path.join(readqDir(), j.id + '.bin')).toString('base64'), name: j.name }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+ipcMain.handle('lds:readq-done', (e, { id }) => {
+  try { const b = path.join(readqDir(), String(id).replace(/[^a-z0-9]/gi, '')); try { fs.unlinkSync(b + '.bin'); } catch (x) {} try { fs.unlinkSync(b + '.json'); } catch (x) {} return { ok: true }; }
+  catch (err) { return { ok: false }; }
+});
+// Save a queued file into a property's folder without sending its bytes through the page (big files).
+ipcMain.handle('lds:doc-save-queued', (e, { id, propKey, propName, name, text, type, role, label }) => {
+  try { const j = readqJob(id); if (!j) return { ok: false, error: 'not found' };
+    const buf = fs.readFileSync(path.join(readqDir(), j.id + '.bin'));
+    return docSaveBuffer(e, { propKey, propName, name: name || j.name, buf, text, type: type || j.type, role, label });
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// 2.9.7 (#250) — pages read by OCR are kept by the file's checksum, so reading the same file again (after Stop, or
+// after the app was closed halfway) continues where it stopped. Old entries are dropped after 120 days.
+function ocrCacheDir(){ return path.join(app.getPath('userData'), 'ocr-cache'); }
+function ocrCacheFile(sha){ return path.join(ocrCacheDir(), String(sha).replace(/[^a-f0-9]/gi, '').slice(0, 64) + '.json'); }
+ipcMain.handle('lds:ocr-cache-get', (e, { sha }) => {
+  try { if (!sha) return { ok: true, pages: {} }; const j = JSON.parse(fs.readFileSync(ocrCacheFile(sha), 'utf8')); return { ok: true, pages: j.pages || {}, numPages: j.numPages || 0 }; }
+  catch (err) { return { ok: true, pages: {} }; }
+});
+ipcMain.handle('lds:ocr-cache-put', (e, { sha, page, text, pages }) => {
+  try {
+    if (!sha || !page) return { ok: false };
+    fs.mkdirSync(ocrCacheDir(), { recursive: true });
+    const f = ocrCacheFile(sha); let j = {}; try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (x) {}
+    j.pages = j.pages || {}; j.pages[String(page)] = { text: String(text || ''), at: Date.now() }; if (pages) j.numPages = pages; j.updatedAt = Date.now();
+    fs.writeFileSync(f, JSON.stringify(j));
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+function pruneOcrCache(){ try { const d = ocrCacheDir(), cut = Date.now() - 120 * 86400000; fs.readdirSync(d).forEach(n => { try { const f = path.join(d, n); if (fs.statSync(f).mtimeMs < cut) fs.unlinkSync(f); } catch (x) {} }); } catch (e) {} }
 // Read one original file back (base64) — for opening/exporting from the Documents panel.
 ipcMain.handle('lds:doc-read', (e, { propKey, id }) => {
   try {
@@ -866,6 +965,8 @@ ipcMain.handle('lds:ai-login', () => ai.login());
 ipcMain.handle('lds:ai-logout', () => ai.logout());
 
 app.whenReady().then(() => {
+  registerAppProtocol();
+  setTimeout(pruneOcrCache, 30000);
   Menu.setApplicationMenu(null); // no default menu bar
   ai.init(app);
   createWindow();

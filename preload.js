@@ -3,6 +3,18 @@
 // expose only a tiny, explicit surface on window.ldsShell.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 2.9.7 (#60) — the app moved from a file address to lds://app/. The settings saved at the old address are copied in
+// once, before the page reads anything (only keys this address doesn't have yet are copied).
+try {
+  if (location.protocol === 'lds:' && !localStorage.getItem('lds.originMigrated')) {
+    const dump = ipcRenderer.sendSync('lds:legacy-storage');
+    let n = 0;
+    if (dump && typeof dump === 'object') Object.keys(dump).forEach((k) => { if (localStorage.getItem(k) == null && typeof dump[k] === 'string') { localStorage.setItem(k, dump[k]); n++; } });
+    localStorage.setItem('lds.originMigrated', new Date().toISOString());
+    ipcRenderer.send('lds:legacy-storage-done', n);
+  }
+} catch (e) {}
+
 contextBridge.exposeInMainWorld('ldsShell', {
   // Marks this as the desktop build (the renderer checks it to show/hide the
   // Data menu, which is desktop-only).
@@ -120,6 +132,14 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Read one original file back (base64) to open/export it. Resolves {ok,base64,name,type}.
   docTextPart: (opts) => ipcRenderer.invoke('lds:doc-text-part', opts || {}),   // 2.9.7 — {propKey,name|id,part,partSize} → {ok,name,text,part,parts,chars,readable}
   docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),
+  readqAdd: (o) => ipcRenderer.invoke('lds:readq-add', o || {}),          // 2.9.7 (#250) — the reading queue (Documents)
+  readqList: () => ipcRenderer.invoke('lds:readq-list'),
+  readqBytes: (id) => ipcRenderer.invoke('lds:readq-bytes', { id }),
+  readqDone: (id) => ipcRenderer.invoke('lds:readq-done', { id }),
+  docSaveQueued: (o) => ipcRenderer.invoke('lds:doc-save-queued', o || {}),
+  filePath: (file) => { try { return require('electron').webUtils.getPathForFile(file) || ''; } catch (e) { return ''; } },   // where a dropped / chosen file is on disk
+  ocrCacheGet: (sha) => ipcRenderer.invoke('lds:ocr-cache-get', { sha }),             // 2.9.7 (#250) — pages already read by OCR
+  ocrCachePut: (o) => ipcRenderer.invoke('lds:ocr-cache-put', o || {}),
   // Delete one saved file. Resolves {ok}.
   docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),
   // 2.9.7 (#37) — change a saved document's type. → {ok,file} | {ok:false,error}
