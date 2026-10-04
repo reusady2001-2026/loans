@@ -340,7 +340,7 @@ saved, the key is used.
 ## 6. Testing
 
 - **17 unit-test files** (pure modules) — `npm test`.
-- **62 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
+- **61 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
   stand-in, never a real model) — `npm run test:e2e`.
 - CI runs the unit tests before every build.
 
