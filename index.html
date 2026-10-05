@@ -4248,7 +4248,7 @@ tr.flagged:hover td{background:#fee2e2}
       opFocusKey = key || ""; opBasis = "annual";
       const i = uwState.input;
       i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = ""; i.fileSha = "";
-      i.avgRentUnit = null; i.rrGPR = null;   // 2.9.8 (problem 5) — never carry the last property's rent over
+      i.avgRentUnit = null; i.rrGPR = null; i.t12Sheet = ""; i.t12RowOffset = 0;   // 2.9.8 (problem 5) — never carry the last property's rent (or sheet) over
       if(key){
         opDeskLoaded.delete(key);
         i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
@@ -11809,12 +11809,13 @@ tr.flagged:hover td{background:#fee2e2}
       var ask = t.ambiguous.length ? t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name!=="this file" ? amb.name+(amb.sheet ? " — sheet “"+amb.sheet+"”" : "")+" ("+name+")" : name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role && !roleByKey[k]) roleByKey[k]=amb.role; if(amb.sheet && !sheetByKey[k]) sheetByKey[k]=amb.sheet; } }); }); }, Promise.resolve()) : Promise.resolve();
       return ask.then(function(){
         if(!keys.length && !t.ambiguous.length && fallbackKey) keys=[fallbackKey];
-        // 2.9.8 — YOUR pick always gets the file: the property you dropped it on (or the chat's property). When the
-        // content names other properties, a T12 asks which sheet is this property's; a rent roll is kept as a document.
-        if(fallbackKey && keys.indexOf(fallbackKey) < 0){
-          if(t.detected==="t12" && t.sheets.length){ var fname=((opProp(fallbackKey)||{}).name)||fallbackKey;
-            return askWhichSheet(fname, name, t.sheets).then(function(sh){ keys.push(fallbackKey); if(sh){ roleByKey[fallbackKey]="t12"; sheetByKey[fallbackKey]=sh; } else roleByKey[fallbackKey]="other"; return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey }; }); }
-          keys.push(fallbackKey); if(roleByKey[fallbackKey]==null || t.detected==="rentroll") roleByKey[fallbackKey]= (role||(t.detected==="agreement"?"agreement":"other"));
+        // 2.9.8 (problem 1) — a T12 you dropped on a property (or attached in its chat) always reaches it: when the
+        // workbook doesn't name that property, the app asks which sheet is its own (or keeps it as a document). Other
+        // files still go only where their content says (2.9.7, #39) — a rent roll or an agreement naming another
+        // property never lands in this one's folder.
+        if(fallbackKey && keys.indexOf(fallbackKey) < 0 && t.detected==="t12" && t.sheets.length){
+          var fname=((opProp(fallbackKey)||{}).name)||fallbackKey;
+          return askWhichSheet(fname, name, t.sheets).then(function(sh){ keys.push(fallbackKey); if(sh){ roleByKey[fallbackKey]="t12"; sheetByKey[fallbackKey]=sh; } else roleByKey[fallbackKey]="other"; return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey }; });
         }
         return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey };
       });
