@@ -356,7 +356,10 @@ function writeSnapshot(json, kind){
   }
   const bd = blobsDir(); fs.mkdirSync(bd, { recursive: true });
   files.forEach(f => { const b = path.join(bd, f.sha1); if (!fs.existsSync(b)) fs.copyFileSync(f.abs, b); });
-  Object.assign(env, { format: 2, kind: 'snapshot', reason: kind, reasonLabel: BACKUP_KINDS[kind], sig, fileCount: files.length,
+  // 2.9.8 (b2) — a routine snapshot says WHAT changed ("Queens Gate Apartments: Loan Status Active → Extended")
+  const what = Array.isArray(env.changes) ? env.changes.filter(x => typeof x === 'string' && x.trim()).map(x => x.slice(0, 160)) : [];
+  const label = (kind === 'autobackup' && what.length) ? ('After: ' + what.slice(-3).join('; ') + (what.length > 3 ? ' (+' + (what.length - 3) + ' more)' : '')) : BACKUP_KINDS[kind];
+  Object.assign(env, { format: 2, kind: 'snapshot', reason: kind, reasonLabel: label, sig, fileCount: files.length,
     files: files.map(f => ({ path: f.path, size: f.size, sha1: f.sha1 })) }, fullCounts(files));
   const file = path.join(d, kind + '-' + stamp() + '.json');
   fs.writeFileSync(file, JSON.stringify(env), 'utf8');

@@ -2462,8 +2462,12 @@
       return ({ noi:{label:"NOI (annual)",type:"money"}, egi:{label:"Effective Gross Income (annual)",type:"money"}, opex:{label:"Operating Expenses (annual)",type:"money"}, capRate:{label:"Cap Rate",type:"pct"}, archived:{label:"Removed (archived)",type:"text"}, loanStatus:{label:"Loan Status",type:"text"}, created:{label:"Loan",type:"text"} })[key] || { label: key, type: "text" };
     }
     function loanHistoryFmt(key, v){ if(v === true) return "yes"; if(v === false) return "no"; const m = loanFieldMeta(key); try{ const d = displayValue(m.type, v); return d === "—" ? "" : d; }catch(e){ return v == null ? "" : String(v); } }
+    // 2.9.8 (b2) — what changed since the last automatic backup, in words; the next backup carries it as its reason.
+    var backupPending = [];
+    function noteChange(text){ text = String(text || "").replace(/\s+/g, " ").trim(); if(!text) return; if(backupPending[backupPending.length - 1] === text) return; backupPending.push(text.slice(0, 160)); if(backupPending.length > 40) backupPending.splice(0, backupPending.length - 40); }
     function loanHistoryAdd(loan, field, oldV, newV, from, extra){
       if(!loan || !field) return;
+      try{ const nm = loanLabel(loan); noteChange(field === "created" ? "Added loan " + nm : field === "archived" ? (newV ? "Removed loan " : "Restored loan ") + nm : nm + ": " + loanFieldMeta(field).label.replace(/\s*\(.*\)$/, "") + " " + (loanHistoryFmt(field, oldV) || "—") + " → " + (loanHistoryFmt(field, newV) || "—")); }catch(e){}
       if(!Array.isArray(loan._history)) loan._history = [];
       loan._history.push({ at: new Date().toISOString(), field: field, old: oldV === undefined ? null : oldV, new: newV === undefined ? null : newV, who: historyWhoFor(from), from: from || "typed", file: extra && extra.file || null, page: extra && extra.page || null, note: extra && extra.note || null });
     }
@@ -2496,6 +2500,7 @@
     const propHistQueue = {};
     function assumptionHistoryAdd(key, label, oldV, newV, note, field, from){
       if(!key) return;
+      try{ noteChange(opPropDisplayName(key) + ": " + label + " " + (oldV == null || oldV === "" ? "—" : oldV) + " → " + (newV == null || newV === "" ? "—" : newV)); }catch(e){}
       const entry = { at: new Date().toISOString(), field: field || label, label: label, old: oldV == null ? null : String(oldV), new: newV == null ? null : String(newV), who: historyWhoFor(from), from: from || "typed", note: note || null };
       propHistQueue[key] = (propHistQueue[key] || Promise.resolve()).catch(() => {}).then(async () => {
         const h = await propHistoryLoad(key); h.entries.push(entry); h.schema = "lds.history.v1";
@@ -4609,6 +4614,7 @@ tr.flagged:hover td{background:#fee2e2}
       profileCache[key] = prof;
       var r = await opWriteProfile(key, prof); if(r && r.ok === false) return null;
       standaloneProps[key] = { key: key, name: name };
+      noteChange("Added property " + name);
       redrawAll();   // 2.9.7 (#7) — counter, dropdown, Home and the open tab show it at once
       return key;
     }
@@ -4759,6 +4765,7 @@ tr.flagged:hover td{background:#fee2e2}
       var okWrite = true;
       try{ var r = await opWriteProfile(key, prof); if(r && r.ok === false) okWrite = false; }catch(e){ okWrite = false; }
       if(!okWrite){ prof.archived = before; profileCache[key] = prof; }
+      if(okWrite){ try{ noteChange((archived ? "Archived " : "Restored ") + (Profile.value(prof, "propertyName") || opPropDisplayName(key))); }catch(e){} }
       if(okWrite && !archived && !loans.some(l => propertyKey(l) === key)){ standaloneProps[key] = standaloneProps[key] || { key: key, name: Profile.value(prof, "propertyName") || key }; }
       try{ if(state.activeId && !propViewKey() && !loanIsActive(getLoan(state.activeId))) { const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
       redrawAll();   // 2.9.7 (#7, #33) — counter, dropdown, Home, strips and the open tab all follow
@@ -4770,6 +4777,7 @@ tr.flagged:hover td{background:#fee2e2}
     async function opDeletePropertyPermanent(key){
       if(!key) return { ok:false };
       if(!opIsArchived(key)) return { ok:false, error:"Archive the property before deleting it." };   // 2.9.7 (#206)
+      try{ noteChange("Deleted " + opPropDisplayName(key) + " permanently"); }catch(e){}
       // 2.9.7 (#208, #209) — the files go FIRST. If any can't be removed (a file open in Excel), the property
       // stays archived with its loans; it is reported deleted only once its folder is really gone.
       let r = { ok:true };
@@ -4838,6 +4846,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(fd && fd.type === "int"){ val = (rawVal === "" || rawVal == null) ? "" : (isFinite(+rawVal) ? Math.round(+rawVal) : rawVal); }
       if(fd && fd.type === "money"){ var mv = String(rawVal == null ? "" : rawVal).replace(/[$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"); val = (mv === "") ? "" : (isFinite(+mv) ? Math.round(+mv * 100) / 100 : rawVal); }   // 2.9.7 (#45)
       Profile.setField(profile, field, val, { changedBy: opts.changedBy || opOperator(), source: opts.source, reason: opts.reason });
+      try{ noteChange(opPropDisplayName(key) + ": " + (Profile.labelFor ? Profile.labelFor(field) : field) + " → " + (val === "" || val == null ? "—" : val)); }catch(e){}
       profileCache[key] = profile;
       await opWriteProfile(key, profile);
       // Silent: the property-view profile panel edits on blur; a re-render here would collapse the
@@ -4950,7 +4959,7 @@ tr.flagged:hover td{background:#fee2e2}
         var when = ""; try{ when = new Date(f.savedAt).toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" }); }catch(e){}
         return '<div class="flex items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">'+
           '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">'+escapeHtml(profileDocLabel(f.role))+'</span>'+
-          '<span class="flex-1 min-w-0 truncate text-sm text-slate-700" title="'+escapeHtml(f.name)+'">'+escapeHtml(f.name)+'</span>'+
+          '<span class="flex-1 min-w-0 text-sm text-slate-700" title="'+escapeHtml(f.name)+'"><span class="block truncate">'+escapeHtml(f.name)+'</span>'+(f.readLabel ? '<span class="block text-[11px] '+(/OCR|couldn/i.test(f.readLabel)?'text-amber-700':'text-slate-500')+'" data-docread>'+escapeHtml(f.readLabel)+'</span>' : '')+'</span>'+   // 2.9.8 (d4)
           '<span class="shrink-0 text-[10px] text-slate-400">'+fmtBytes(f.size)+' · '+when+'</span>'+
           '<button type="button" data-docdel="'+escapeHtml(f.id)+'" class="shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Remove">✕</button>'+
         '</div>';
@@ -8497,7 +8506,8 @@ tr.flagged:hover td{background:#fee2e2}
         let sig; try { sig = JSON.stringify(loans); } catch(e){ return; }
         if(sig === lastAutoSig && !autoBackupForced) return;   // nothing actually changed
         lastAutoSig = sig; autoBackupForced = false;
-        try { window.ldsShell.autoBackupWrite(JSON.stringify(backupEnvelope(loans)), "autobackup"); } catch(e){}
+        const env = backupEnvelope(loans); env.changes = backupPending.splice(0);   // 2.9.8 (b2) — what changed, in words
+        try { window.ldsShell.autoBackupWrite(JSON.stringify(env), "autobackup"); } catch(e){}
       }, 4000);
     }
 
@@ -11694,7 +11704,15 @@ tr.flagged:hover td{background:#fee2e2}
       }
       if(!out.keys.length && !out.ambiguous.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
       if(out.detected === "t12" && out.sheets.length === 1) out.keys.forEach(function(k){ if(!out.sheetByKey[k]) out.sheetByKey[k] = out.sheets[0]; });
+      // 2.9.8 (d4) — a loan agreement / note is recognised from its words (scanned ones too, once read), not left as "Other".
+      if(out.detected === "other" && text && looksLikeLoanAgreement(text)){ out.detected = "agreement"; out.keys.forEach(function(k){ if(!out.roleByKey[k]) out.roleByKey[k] = "agreement"; }); }
       return out;
+    }
+    function looksLikeLoanAgreement(text){
+      var head = String(text || "").slice(0, 6000), body = String(text || "").slice(0, 80000);
+      if(/\b(loan\s+agreement|promissory\s+note|credit\s+agreement|loan\s+and\s+security\s+agreement|mortgage\s+note|term\s+loan\s+agreement|deed\s+of\s+trust|loan\s+modification\s+agreement|note\s+modification)\b/i.test(head)) return true;
+      var n = 0; [/\bborrower\b/i, /\blender\b/i, /\bmaturity\s+date\b/i, /\b(interest|note)\s+rate\b/i, /\b(principal|loan)\s+amount\b/i, /\bprepayment\b/i].forEach(function(re){ if(re.test(body)) n++; });
+      return n >= 4;
     }
     // Properties whose name or street address appears in a document's text: [{ key, found }].
     function opTextMentions(text){
@@ -11762,6 +11780,7 @@ tr.flagged:hover td{background:#fee2e2}
       var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
       var msgs=[];
       if(names.length) msgs.push("Saved to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""));
+      if(names.length) noteChange("Saved a file to "+names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3)+" more":""));
       acc.read.forEach(function(x){ msgs.push("“"+x.name+"”: "+x.label); });   // 2.9.7 (#59, #100, #102) — what was read, by OCR, and what couldn't be
       acc.textFiled.forEach(function(x){ var p=opProp(x.key); msgs.push("“"+x.name+"” mentions “"+x.found+"”, so it was filed under "+((p&&p.name)||x.key)); });   // 2.9.7 (#39)
       if(acc.skipped.length) msgs.push("Not saved (no property chosen): "+acc.skipped.join(", "));
@@ -11795,7 +11814,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(fallbackKey && keys.indexOf(fallbackKey) < 0){
           if(t.detected==="t12" && t.sheets.length){ var fname=((opProp(fallbackKey)||{}).name)||fallbackKey;
             return askWhichSheet(fname, name, t.sheets).then(function(sh){ keys.push(fallbackKey); if(sh){ roleByKey[fallbackKey]="t12"; sheetByKey[fallbackKey]=sh; } else roleByKey[fallbackKey]="other"; return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey }; }); }
-          keys.push(fallbackKey); if(roleByKey[fallbackKey]==null || t.detected==="rentroll") roleByKey[fallbackKey]= (role||"other");
+          keys.push(fallbackKey); if(roleByKey[fallbackKey]==null || t.detected==="rentroll") roleByKey[fallbackKey]= (role||(t.detected==="agreement"?"agreement":"other"));
         }
         return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey };
       });
@@ -11894,7 +11913,9 @@ tr.flagged:hover td{background:#fee2e2}
           return '<div class="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 last:border-0" data-docrow="'+escapeHtml(f.id)+'">'+
             '<svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'+
             '<div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold text-slate-800">'+escapeHtml(f.name)+'</div>'+
-              '<div class="text-[11px] text-slate-400">'+fmtBytes(f.size)+' · saved '+escapeHtml(new Date(f.savedAt).toLocaleDateString())+(f.textLen?'':' · <span class="text-amber-600">no readable text</span>')+'</div></div>'+
+              '<div class="text-[11px] text-slate-400">'+fmtBytes(f.size)+' · saved '+escapeHtml(new Date(f.savedAt).toLocaleDateString())+(f.textLen?'':' · <span class="text-amber-600">no readable text</span>')+'</div>'+
+              (f.readLabel ? '<div class="text-[11px] '+(/OCR|couldn/i.test(f.readLabel)?'text-amber-700':'text-slate-500')+'" data-docread>'+escapeHtml(f.readLabel)+'</div>' : '')+   // 2.9.8 (d4) — how it was read
+              (f.sheet ? '<div class="text-[11px] text-slate-500">sheet “'+escapeHtml(f.sheet)+'” is this property’s</div>' : '')+'</div>'+
             '<select data-doctype="'+escapeHtml(f.id)+'" title="What this document is" class="shrink-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-600">'+typeOpts(f.role||"other")+'</select>'+
             '<button type="button" data-docsave="'+f.id+'" class="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Save copy</button>'+
             '<button type="button" data-docdel="'+f.id+'" class="shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50">Remove</button>'+
@@ -11947,6 +11968,7 @@ tr.flagged:hover td{background:#fee2e2}
     async function docRemoveDo(propKey, f){
       let r = null; try{ r = await ldsShell.docDelete(propKey, f.id); }catch(e){ r = { ok:false, error:String(e) }; }
       if(r && r.ok === false) return { ok:false, error: r.error || "" };
+      noteChange("Removed “" + f.name + "” from " + opPropDisplayName(propKey));
       if(f.role === "t12") await opAfterT12Change(propKey);
       try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
       renderDocsPanel(); aiAsstUpdatePropDocs();
