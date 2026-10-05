@@ -38,7 +38,9 @@ const bodyText = (page) => page.evaluate(() => document.getElementById('uwView')
   ok((await ls(page, 'ldsHub.operating.v1')) === null, 'fresh: no operating data in browser storage (ldsHub.operating.v1 is null)');
   const setup0 = await ls(page, 'lds_setup_v1');
   ok(!setup0 || (!/t12Meta/.test(setup0) && !/5,?210,?718/.test(setup0)), 'fresh: no T12 grid/meta and no stale NOI in browser storage');
-  ok(!fs.existsSync(PROPDIR), 'fresh: the property folder does not exist yet');
+  // 2.9.8 (problem 8) — every property has its folder from the start; a fresh one holds no T12 yet
+  const idx0 = (() => { try { return JSON.parse(fs.readFileSync(path.join(PROPDIR, 'index.json'), 'utf8')); } catch (e) { return {}; } })();
+  ok(!(idx0.files || []).some(f => f.role === 't12'), 'fresh: the property folder holds no T12 yet');
 
   await pick(page);
   await page.setInputFiles('#uwFile', CREST);

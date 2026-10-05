@@ -40,7 +40,10 @@
                  OTH:1, AMEN:1, PET:1, LATE:1, ADM:1, APP:1, PARK:1, COM:1, CAM:1, ANT:1 };
   var EXPENSE = { RET:1, INS:1, UTIL:1, PAY:1, GA:1, BDX:1, MKT:1, RM:1, CS:1, MGMT:1, TRSH:1, CAB:1, PLL:1 };
   // own-property lookup: "constructor" / "__proto__" / "toString" are not expense codes
-  function roleOf(code){ return Object.prototype.hasOwnProperty.call(EXPENSE, code) ? "expense" : "income"; }
+  // 2.9.8 — the operator's own categories (added in the T12 review): each says its side of NOI.
+  var CUSTOM_ROLE = {};
+  function setCustom(list){ CUSTOM_ROLE = {}; (list || []).forEach(function (c){ if (c && typeof c.code === "string" && (c.role === "income" || c.role === "expense")) CUSTOM_ROLE[c.code] = c.role; }); }
+  function roleOf(code){ if (Object.prototype.hasOwnProperty.call(CUSTOM_ROLE, code)) return CUSTOM_ROLE[code]; return Object.prototype.hasOwnProperty.call(EXPENSE, code) ? "expense" : "income"; }
 
   // A fee/amenity word next to one of these is an expense line ("Amenity Repairs",
   // "Pet Waste Station Supplies", "Parking Garage Management Contract"), not fee income.
@@ -312,5 +315,5 @@
     return { code: m || (p.isExp ? "GA" : "OTH"), confident: m !== null };
   }
 
-  return { classify: classify, classifyConfident: classifyConfident, subMatch: subMatch, roleOf: roleOf, INCOME: INCOME, EXPENSE: EXPENSE };
+  return { classify: classify, classifyConfident: classifyConfident, subMatch: subMatch, roleOf: roleOf, setCustom: setCustom, INCOME: INCOME, EXPENSE: EXPENSE };
 });

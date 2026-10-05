@@ -49,7 +49,7 @@ const noi=(page,re)=>page.evaluate((re)=>window.LDS_loanNOI(window.LDS_loans().f
   await page.waitForTimeout(2500);
   t=await panel(page);
   ok(/1 line on this T12 needs your review/i.test(t),'after one Save, one line is left');
-  ok(/✓ Utility Reimbursements: Expense · Utilities · \$60,000\.00 · chosen by You/.test(t)&&/Change/.test(t),'the decided line reads "✓ Utility Reimbursements: Expense · Utilities · $60,000.00 · chosen by You · … [Change]"');
+  ok(/✓ (Excel row \d+ · )?Utility Reimbursements: Expense · Utilities · \$60,000\.00 · chosen by You/.test(t)&&/Change/.test(t),'the decided line reads "✓ Utility Reimbursements: Expense · Utilities · $60,000.00 · chosen by You · … [Change]"');
   const n1=await noi(page,'villages of whitewater');
   ok(Math.abs(n1-(1092000-120000))<0.01,'the decision flows into the NOI at once (972,000; got '+n1+')');
   // decide card 2: the AI's amount

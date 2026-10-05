@@ -29,6 +29,20 @@
   var EXPENSE_CODES = ["RET","INS","UTIL","PAY","GA","BDX","MKT","RM","CS","MGMT","TRSH","CAB","PLL"];
   var OTHER = "NONOP";   // "something else": not part of the operating statement (below the line / capital)
   function roleOfCode(code){ return EXPENSE_CODES.indexOf(code) >= 0 ? "expense" : (code === OTHER ? "other" : "income"); }
+  // 2.9.8 — the operator's own categories join the lists (the review's choices and the AI's allowed answers).
+  var BASE_INCOME = INCOME_CODES.slice(), BASE_EXPENSE = EXPENSE_CODES.slice(), CUSTOM = [];
+  function setCustom(list){
+    CUSTOM = (list || []).filter(function (c){ return c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense"); });
+    INCOME_CODES.length = 0; BASE_INCOME.forEach(function (c){ INCOME_CODES.push(c); });
+    EXPENSE_CODES.length = 0; BASE_EXPENSE.forEach(function (c){ EXPENSE_CODES.push(c); });
+    CUSTOM.forEach(function (c){ var a = c.role === "expense" ? EXPENSE_CODES : INCOME_CODES; if (a.indexOf(c.code) < 0) a.push(c.code); });
+  }
+  function instruction(){
+    if (!CUSTOM.length) return INSTRUCTION;
+    var side = function (r){ return CUSTOM.filter(function (c){ return c.role === r; }).map(function (c){ return c.code + " " + c.label; }).join(", "); };
+    var inc = side("income"), exp = side("expense");
+    return INSTRUCTION + " The operator's own categories (use one when a line is exactly that): " + (inc ? "income: " + inc + (exp ? "; " : "") : "") + (exp ? "expense: " + exp : "") + ".";
+  }
 
   // ---- What the AI is given and how it answers -----------------------------------------------------
   // The T12 sheet, one line per sheet row, numbered the same way the regular reader numbers them
@@ -214,7 +228,7 @@
   }
   function pending(review){ return (review && Array.isArray(review.cards)) ? review.cards.filter(function (c){ return c && !c.decision; }).length : 0; }
 
-  return { INSTRUCTION: INSTRUCTION, schema: schema, buildAiInput: buildAiInput, regularLines: regularLines, compare: compare,
+  return { INSTRUCTION: INSTRUCTION, instruction: instruction, setCustom: setCustom, schema: schema, buildAiInput: buildAiInput, regularLines: regularLines, compare: compare,
            applyDecisions: applyDecisions, noiEffect: noiEffect, status: status, pending: pending, roleOfCode: roleOfCode,
            INCOME_CODES: INCOME_CODES, EXPENSE_CODES: EXPENSE_CODES, OTHER: OTHER };
 });
