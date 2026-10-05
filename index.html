@@ -3680,11 +3680,15 @@ tr.flagged:hover td{background:#fee2e2}
       if(!opFocusKey){ toast("Pick a property above first, then drop its T12 here.","info"); return; }
       if(!(window.ldsShell && ldsShell.docSave)){ toast("Saving T12s to a property needs the desktop app.","error"); return; }
       // Verify it's actually a T12 sheet before committing it to the folder.
-      let ok = false; try{ const buf = await file.arrayBuffer(); ok = !!opGridFromWorkbook(new Uint8Array(buf)); }catch(e){ ok = false; }
+      let ok = false, det = null; try{ const buf = await file.arrayBuffer(); det = opDetectGrid(new Uint8Array(buf)); ok = !!opGridFromWorkbook(new Uint8Array(buf)); }catch(e){ ok = false; }
       if(!ok){ toast("Couldn’t find a T12 sheet in that file (needs a Total column and month columns).","error"); return; }
       const key = opFocusKey, who = (opProp(key) || {}).name || "this property";
+      // 2.9.8 (problem 1) — a workbook with several properties' T12s goes to EVERY property it names, each with its
+      // own sheet (and to this property — the app asks which sheet is its own when the file doesn't name it).
+      const sheets = (det && det._t12Sheets) || [];
+      if(sheets.length > 1){ await aiSaveFilesToProp([file], key, who); return; }
       try{
-        const r = await opDiskSaveT12(key, file);
+        const r = await opDiskSaveT12(key, file, sheets.length ? sheets[0].sheet : "");
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
         await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
         var gd = null; try{ gd = await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
@@ -4343,13 +4347,13 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Save an uploaded T12 into the property's on-disk folder (the ONLY place it is kept), with a CSV
     // text cache so the assistant can read it too, then drop the session cache so it re-reads from disk.
-    async function opDiskSaveT12(key, file){
+    async function opDiskSaveT12(key, file, sheet){
       if(!(window.ldsShell && ldsShell.docSave)) return { ok: false, error: "desktop file store unavailable" };
       const buf = await file.arrayBuffer(), bytes = new Uint8Array(buf);
       let base64 = ""; { let s = ""; for(let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); base64 = btoa(s); }
       let text = ""; try{ const wb = XLSX.read(bytes, { type: "array" }), out = []; wb.SheetNames.forEach(nm => { const csv = XLSX.utils.sheet_to_csv(wb.Sheets[nm], { blankrows: false }); if(csv && csv.trim()) out.push("# Sheet: " + nm + "\n" + csv); }); text = out.join("\n\n"); }catch(e){}
       const p = opProp(key);
-      const r = await ldsShell.docSave({ propKey: key, propName: p ? p.name : key, name: file.name, base64, text, type: file.type || "", role: "t12" });
+      const r = await ldsShell.docSave({ propKey: key, propName: p ? p.name : key, name: file.name, base64, text, type: file.type || "", role: "t12", sheet: sheet || "" });
       opDeskLoaded.delete(key); OperatingStore.remove(key);   // force a fresh live re-read/re-parse from the file just saved
       return r;
     }
@@ -10521,6 +10525,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
+      "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names; a T12 workbook with one sheet per property goes to each with its own sheet. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties (same rule for T12 sheets). Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, open?}: import a rent roll attached in this chat or saved in the documents (open:true opens the importer). import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
@@ -10531,6 +10536,46 @@ tr.flagged:hover td{background:#fee2e2}
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
     ].join("\n");
 
+    // 2.9.8 (problem 1) — where a document goes when it is saved / copied to properties: for each property, as which
+    // type, and (a T12 workbook) with which sheet. `keys` = the properties asked for; none → the ones it names.
+    function opBytesToB64(bytes){ var s2=""; for(var i=0;i<bytes.length;i+=0x8000) s2+=String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000)); return btoa(s2); }
+    function docPlanTargets(name, bytes, text, keys, keepRole){
+      var grid = /\.(xlsx|xls|csv)$/i.test(name||"") ? opDetectGrid(bytes) : null;
+      var t = opFileTargets(name, text||"", grid, ""), plan = [];
+      var want = (keys && keys.length) ? keys : t.keys;
+      want.forEach(function(k){ var p=opProp(k)||opArchivedProps().find(function(x){ return x.key===k; })||{}; var role, sheet="";
+        if(t.detected==="t12"){ if(t.sheetByKey[k]){ role="t12"; sheet=t.sheetByKey[k]; } else if(t.sheets.length===1 && keys && keys.length){ role="t12"; sheet=t.sheets[0]; } else role="other"; }
+        else if(t.detected==="rentroll") role = (t.roleByKey[k]==="rentroll") ? "rentroll" : "other";
+        else role = keepRole || t.roleByKey[k] || "other";
+        plan.push({ key:k, name:p.name||k, role:role, sheet:sheet, multi: t.detected==="t12" && t.sheets.length>1 }); });
+      return Promise.resolve(plan);
+    }
+    function docPlanWhat(t){ return t.role==="t12" ? ("as its T12"+(t.sheet && t.multi ? " (sheet “"+t.sheet+"”)" : "")) : t.role==="rentroll" ? "as its rent roll" : (t.multi ? "as a document — none of the sheets is this property’s" : (t.role && t.role!=="other" ? "as its "+profileDocLabel(t.role).toLowerCase() : "as a document")); }
+    function aiAsstCopyMove(a, move){
+      var from=aiAsstResolveProp((a&&a.from)||(a&&a.name)), bad=aiAsstPropMiss(from, (a&&a.from)||(a&&a.name)); if(bad) return bad;
+      var to=[].concat((a&&a.to)||[]).filter(Boolean); if(!to.length) return {ok:false,msg:"Tell me which propert"+(move?"y to move it to":"ies to copy it to")+"."};
+      if(move && to.length>1) return {ok:false,msg:"A document moves to one property — or copy it to several."};
+      var keys=[]; for(var i=0;i<to.length;i++){ var r=aiAsstResolveProp(to[i]), b2=aiAsstPropMiss(r, to[i]); if(b2) return b2; if(r.key!==from.key && keys.indexOf(r.key)<0) keys.push(r.key); }
+      if(!keys.length) return {ok:false,msg:"That’s the property it is already in."};
+      if(!(a&&a.file)) return {ok:false,msg:"Tell me which document (its file name)."};
+      return ldsShell.docList(from.key).then(function(dl){ var want=String(a.file).toLowerCase(), fs2=((dl&&dl.files)||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""]; });
+        var hits=fs2.filter(function(f){ return f.name.toLowerCase()===want; }); if(!hits.length) hits=fs2.filter(function(f){ return f.name.toLowerCase().indexOf(want)>=0; });
+        if(!hits.length) return {ok:false,msg:'"'+a.file+'" isn’t among '+from.name+'’s documents.'};
+        if(hits.length>1) return {ok:false,msg:"Which one? "+hits.map(function(f){ return '"'+f.name+'"'; }).join(" or ")+"."};
+        var f=hits[0];
+        return ldsShell.docRead(from.key, f.id).then(function(rd){ if(!rd||!rd.ok) return {ok:false,msg:"I couldn’t read "+f.name+"."};
+          return docPlanTargets(f.name, opB64ToBytes(rd.base64), "", keys, f.role==="t12"?null:(f.role||"other")).then(function(plan){
+            return aiAsstApprovalCard((move?'Move':'Copy')+' <b>'+escapeHtml(f.name)+'</b> from '+escapeHtml(from.name)+' to '+plan.map(function(t){ return escapeHtml(t.name); }).join(", ")+'?'+(move?' It leaves '+escapeHtml(from.name)+'’s documents.':''), plan.map(function(t){ return aiAsstRow("t"+t.key, escapeHtml(t.name), null, escapeHtml(docPlanWhat(t))); }).join(""), function(){
+              var acc=newSaveAcc();
+              return Promise.all(plan.map(function(t){ return ldsShell.docCopy({ fromKey:from.key, id:f.id, toKey:t.key, toName:t.name, role:t.role, sheet:t.sheet||"" }).then(function(r){ if(r&&r.ok&&!r.duplicate){ acc.touched[t.key]=1; if(t.role==="t12") acc.t12[t.key]=t.sheet||true; } else if(r&&r.duplicate) acc.dup.push(t.name); else acc.failed.push(t.name); }); }))
+                .then(function(){ if(move && !acc.failed.length) return docRemoveDo(from.key, f); })
+                .then(function(){ saveAccSummary(acc); if(acc.failed.length) return {ok:false, html:'Couldn’t '+(move?'move':'copy')+' it to '+escapeHtml(acc.failed.join(", "))+(move?' — it stays in '+escapeHtml(from.name):'')+'.'};
+                  return {ok:true, html:'✓ '+(move?'Moved':'Copied')+' '+escapeHtml(f.name)+' to '+escapeHtml(plan.map(function(t){ return t.name; }).join(", "))+(acc.dup.length?' (already there: '+escapeHtml(acc.dup.join(", "))+')':'')+'.', toast:(move?'Moved':'Copied')+' '+f.name}; });
+            }, { approveLabel: move ? "Move" : "Copy" });
+          });
+        });
+      });
+    }
     // --- action execution -------------------------------------------------
     function aiAsstFindLoan(name){
       if(name==null) return null;
@@ -11295,6 +11340,31 @@ tr.flagged:hover td{background:#fee2e2}
           return {ok:true, html:'✓ Deleted '+escapeHtml(loanLabel(l))+' permanently.', toast:loanLabel(l)+' deleted'};
         }, { approveLabel:"Delete permanently", danger:true });
       },
+      // 2.9.8 (problem 1) — save a file attached in this chat, copy or move a saved document, to other properties.
+      // A T12 workbook goes to each property with that property's own sheet; a property none of whose sheets is its
+      // own gets the file as a document (the card says so). Each behind an Approve card.
+      save_attachment: function(a){
+        var want=String((a&&a.file)||"").toLowerCase(), list=aiAsstConvFileTexts.filter(function(x){ return x && x.fileObj; });
+        var hit=list.filter(function(x){ return x.name.toLowerCase()===want; }); if(!hit.length) hit=list.filter(function(x){ return want && x.name.toLowerCase().indexOf(want)>=0; }); if(!hit.length && list.length===1 && !want) hit=list;
+        if(!hit.length) return {ok:false,msg:(list.length ? 'Which attached file? '+list.map(function(x){ return '"'+x.name+'"'; }).join(" or ")+'.' : "There's no file attached in this chat to save — attach it again.")};
+        if(hit.length>1) return {ok:false,msg:"Which one? "+hit.map(function(x){ return '"'+x.name+'"'; }).join(" or ")+"."};
+        var att=hit[0], names=[].concat((a&&a.names)||(a&&a.name)||[]).filter(Boolean), keys=[];
+        for(var i=0;i<names.length;i++){ var r=aiAsstResolveProp(names[i]), bad=aiAsstPropMiss(r, names[i]); if(bad) return bad; if(keys.indexOf(r.key)<0) keys.push(r.key); }
+        return att.fileObj.arrayBuffer().then(function(buf){ var bytes=new Uint8Array(buf);
+          return docPlanTargets(att.name, bytes, att.text||"", keys).then(function(plan){
+            if(!plan.length) return {ok:false,msg:'"'+att.name+'" doesn’t name a property in the app — tell me which properties to save it to.'};
+            var b64=opBytesToB64(bytes);
+            return aiAsstApprovalCard('Save <b>'+escapeHtml(att.name)+'</b> to '+plan.length+' propert'+(plan.length===1?'y':'ies')+'?', plan.map(function(t){ return aiAsstRow("t"+t.key, escapeHtml(t.name), null, escapeHtml(docPlanWhat(t))); }).join(""), function(){
+              var acc=newSaveAcc();
+              return Promise.all(plan.map(function(t){ return ldsShell.docSave({ propKey:t.key, propName:t.name, name:att.name, base64:b64, text:att.text||"", type:(att.fileObj&&att.fileObj.type)||"", role:t.role, label:att.label||"", sheet:t.sheet||"" })
+                .then(function(r){ if(r&&r.ok&&!r.duplicate){ acc.touched[t.key]=1; if(t.role==="t12") acc.t12[t.key]=t.sheet||true; } else if(r&&r.duplicate) acc.dup.push(att.name+" ("+t.name+")"); else acc.failed.push(att.name+" ("+t.name+")"); }); }))
+                .then(function(){ saveAccSummary(acc); var n=Object.keys(acc.touched).length; return n ? {ok:true, html:'✓ Saved '+escapeHtml(att.name)+' to '+n+' propert'+(n===1?'y':'ies')+(acc.dup.length?' (already on file: '+escapeHtml(acc.dup.join(", "))+')':'')+'.', toast:'Saved to '+n+' propert'+(n===1?'y':'ies')} : {ok:false, html:(acc.dup.length?'Already on file: '+escapeHtml(acc.dup.join(", ")):'Couldn’t save it')+'.'}; });
+            }, { approveLabel:"Save" });
+          });
+        });
+      },
+      copy_document: function(a){ return aiAsstCopyMove(a, false); },
+      move_document: function(a){ return aiAsstCopyMove(a, true); },
       remove_document: function(a){
         var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
         if(!(a&&a.file)) return {ok:false,msg:"Tell me which document to remove (its file name)."};
@@ -11525,12 +11595,26 @@ tr.flagged:hover td{background:#fee2e2}
     // property/properties it belongs to, then saves it into ALL of their folders (a multi-property rent roll
     // is copied into each). A file always lands in at least one folder: if nothing in the content matches, it
     // goes to the property you dropped it on. The first workbook sheet a rent roll or a T12 recognizes.
+    // The workbook's first rent-roll / T12 sheet as a grid. 2.9.8 (problem 1) — it also lists EVERY T12 sheet
+    // (_t12Sheets: [{sheet, grid}]) so a file holding several properties' T12s goes to each of them.
     function opDetectGrid(bytes){
-      try{ var wb = XLSX.read(bytes, { type: "array" });
-        for(var i = 0; i < wb.SheetNames.length; i++){ var g = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true, defval: null });
-          if((window.RentRoll && RentRoll.findHeader(g).headerRow >= 0) || (window.T12Parse && T12Parse.findHeader(g).headerRow >= 0)) return g; }
+      try{ var wb = XLSX.read(bytes, { type: "array" }), first = null, t12s = [];
+        for(var i = 0; i < wb.SheetNames.length; i++){ var nm = wb.SheetNames[i], g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null }); g._sheet = nm;
+          var isT = !!(window.T12Parse && T12Parse.findHeader(g).headerRow >= 0), isR = !!(window.RentRoll && RentRoll.findHeader(g).headerRow >= 0);
+          if(isT) t12s.push({ sheet: nm, grid: g });
+          if(!first && (isR || isT)) first = g; }
+        if(first) first._t12Sheets = t12s;
+        return first;
       }catch(e){}
       return null;
+    }
+    // The property name printed above a T12's header (first text cell of a top row that isn't a report title).
+    function t12TopName(grid){
+      try{ var h = T12Parse.findHeader(grid);
+        for(var r = 0; r < Math.min(grid.length, h.headerRow); r++){ var cell = grid[r] && grid[r][0]; var s = cell == null ? "" : String(cell).trim();
+          if(s && /[a-z]{3,}/i.test(s) && !/statement|income|expense|rent\s*roll|period|as\s*of|month|year|trailing|t-?12|cash\s*flow|operating|report/i.test(s)) return s; }
+      }catch(e){}
+      return "";
     }
     // Which property folder(s) a file belongs to, from its content. Returns
     // { keys:[…], detected, matched:[{name,key}], unmatched:[names], roleByKey:{} }.
@@ -11539,7 +11623,7 @@ tr.flagged:hover td{background:#fee2e2}
     // that fits two properties equally well is never guessed: out.ambiguous lists the candidates to ask about.
     function opFileTargets(name, text, grid, fallbackKey){
       var props = opProperties();
-      var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {}, ambiguous: [], via: "" };
+      var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {}, ambiguous: [], via: "", sheetByKey: {}, sheets: [], unmatchedSheets: [] };
       function scoreAll(nm){ return props.map(function(p){ return { key: p.key, name: p.name, s: rrMatchScore(nm, p.name) }; }).filter(function(x){ return x.s >= 0.6; }).sort(function(a, b){ return b.s - a.s; }); }
       // → a key, or null; a tie at the top is recorded as ambiguous (asked about), never picked.
       function matchName(nm, role){ if(!nm || /^\(property\)$/i.test(nm)) return null; var sc = scoreAll(nm); if(!sc.length) return null;
@@ -11553,10 +11637,17 @@ tr.flagged:hover td{background:#fee2e2}
         roll.properties.forEach(function(b){ var k = matchName(b.name, "rentroll"); if(k) add(k, "rentroll", b.name); else if(b.name && !/^\(property\)$/i.test(b.name) && !out.ambiguous.some(function(a){ return a.name === b.name; })) out.unmatched.push(b.name); });
       } else if(grid && window.T12Parse && T12Parse.findHeader(grid).headerRow >= 0){
         out.detected = "t12";
-        var h = T12Parse.findHeader(grid), nm = "";
-        for(var r = 0; r < Math.min(grid.length, h.headerRow); r++){ var cell = grid[r] && grid[r][0]; var s = cell == null ? "" : String(cell).trim();
-          if(s && /[a-z]{3,}/i.test(s) && !/statement|income|expense|rent\s*roll|period|as\s*of|month|year|trailing|t-?12|cash\s*flow|operating|report/i.test(s)){ nm = s; break; } }
-        add(matchName(nm, "t12"), "t12", nm);
+        // 2.9.8 (problem 1) — every T12 sheet goes to ITS property: by the name printed above the statement, else
+        // by the sheet's tab name; a name that fits two properties is asked about; a sheet that fits none is said.
+        var sheets = (grid._t12Sheets && grid._t12Sheets.length) ? grid._t12Sheets : [{ sheet: grid._sheet || "", grid: grid }];
+        out.sheets = sheets.map(function(sh){ return sh.sheet; });
+        sheets.forEach(function(sh){
+          var top = t12TopName(sh.grid), a0 = out.ambiguous.length, k = matchName(top, "t12");
+          if(!k && out.ambiguous.length === a0 && sh.sheet && !/^(sheet|report|t-?12)\s*\d*$/i.test(sh.sheet)) k = matchName(sh.sheet, "t12");
+          for(var a = a0; a < out.ambiguous.length; a++) out.ambiguous[a].sheet = sh.sheet;
+          if(k){ add(k, "t12", top || sh.sheet); if(!out.sheetByKey[k]) out.sheetByKey[k] = sh.sheet; }
+          else if(sheets.length > 1 && out.ambiguous.length === a0) out.unmatchedSheets.push({ sheet: sh.sheet, top: top });
+        });
       }
       if(!out.keys.length && !out.ambiguous.length && name){ add(matchName(name.replace(/\.[a-z0-9]+$/i, "").replace(/[_\-]+/g, " "), out.detected === "other" ? null : out.detected), null, name); if(out.keys.length) out.via = "name"; }
       if(!out.keys.length && !out.ambiguous.length && text){
@@ -11569,6 +11660,7 @@ tr.flagged:hover td{background:#fee2e2}
         }
       }
       if(!out.keys.length && !out.ambiguous.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
+      if(out.detected === "t12" && out.sheets.length === 1) out.keys.forEach(function(k){ if(!out.sheetByKey[k]) out.sheetByKey[k] = out.sheets[0]; });
       return out;
     }
     // Properties whose name or street address appears in a document's text: [{ key, found }].
@@ -11623,7 +11715,15 @@ tr.flagged:hover td{background:#fee2e2}
       box.appendChild(row);
       return { set:function(t){ var n=row.querySelector("[data-readnote]"); if(n) n.textContent=t; }, stop:row.querySelector("[data-readstop]"), done:function(){ try{ row.remove(); }catch(e){} if(box && !box.children.length) box.remove(); } };
     }
-    function newSaveAcc(){ return { touched:{}, unmatched:[], dup:[], failed:[], noText:[], renamed:[], textFiled:[], skipped:[], read:[], stopped:[] }; }
+    function newSaveAcc(){ return { touched:{}, unmatched:[], dup:[], failed:[], noText:[], renamed:[], textFiled:[], skipped:[], read:[], stopped:[], t12:{}, unmatchedSheets:[] }; }
+    // 2.9.8 (problem 1) — every property that just received a T12 (one file can feed six) reads it now: its figures
+    // and General Data are rebuilt from its own sheet, and the AI double-reads it in the background.
+    function opAfterT12Saved(keys){
+      return keys.reduce(function(pr, k){ return pr.then(function(){
+        try{ OperatingStore.remove(k); }catch(e){}
+        return opAfterT12Change(k).catch(function(){}).then(function(){ try{ opT12Check(k); }catch(e){} });
+      }); }, Promise.resolve()).then(function(){ try{ redrawAll(); }catch(e){} });
+    }
     function saveAccSummary(acc){
       var keys=Object.keys(acc.touched); keys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
       var names=keys.map(function(k){ var p=opProp(k); return (p&&p.name)||k; });
@@ -11635,21 +11735,52 @@ tr.flagged:hover td{background:#fee2e2}
       acc.stopped.forEach(function(n){ msgs.push("Stopped reading “"+n+"” — nothing was saved; add it again to continue where it stopped (the pages already read are kept)"); });
       acc.renamed.forEach(function(x){ msgs.push("“"+x.from+"” was already there with different content — this one is kept as “"+x.to+"”"); });
       if(acc.dup.length) msgs.push("Already on file: "+acc.dup.join(", "));
+      var t12n=Object.keys(acc.t12||{}).length; if(t12n>1) msgs.push("The T12 file went to "+t12n+" properties, each with its own sheet");   // 2.9.8 (problem 1)
+      (acc.unmatchedSheets||[]).forEach(function(x){ msgs.push("Sheet “"+x.sheet+"”"+(x.top && x.top !== x.sheet ? " ("+x.top+")" : "")+" of “"+x.file+"” fits no property in the app — add the property, or ask the assistant to save it to one"); });
       acc.noText.forEach(function(x){ msgs.push("Saved “"+x.name+"”, but its text can't be read"+(/\.doc$/i.test(x.name)?" (.doc: save it as .docx or PDF)":(x.note?" ("+x.note+")":""))); });
       if(acc.failed.length) msgs.push("Couldn't save: "+acc.failed.join(", "));
       if(msgs.length) toast(msgs.join(" · "), acc.failed.length ? "error" : ((acc.noText.length||acc.dup.length||acc.read.length||acc.stopped.length) ? "info" : "check"));
       if(acc.unmatched.length) toast(acc.unmatched.length+" propert"+(acc.unmatched.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(acc.unmatched.length>1?"them":"it")+" to file "+(acc.unmatched.length>1?"these":"this")+".","info");
       renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
+      var tk=Object.keys(acc.t12||{}); if(tk.length) opAfterT12Saved(tk);
     }
     // Where a file goes (by its content), asking when a name fits two properties. → Promise<[keys], roleByKey>
     function fileRouteKeys(name, text, grid, fallbackKey, role, acc){
-      if(role && fallbackKey){ var rb={}; rb[fallbackKey]=role; return Promise.resolve({ keys:[fallbackKey], roleByKey:rb }); }
-      var t=opFileTargets(name, text||"", grid, fallbackKey), keys=t.keys.slice(), roleByKey=t.roleByKey||{};
+      var t=opFileTargets(name, text||"", grid, fallbackKey), multiT12 = t.detected==="t12" && t.sheets.length > 1;
+      // a type you picked, on the property you are on: the file goes there as that type (a workbook with several
+      // properties' T12s still goes to each of them — problem 1)
+      if(role && fallbackKey && !multiT12){ var rb={}; rb[fallbackKey]=role; var sb={}; if(role==="t12" && t.sheets.length) sb[fallbackKey]=t.sheetByKey[fallbackKey]||t.sheets[0]; return Promise.resolve({ keys:[fallbackKey], roleByKey:rb, sheetByKey:sb }); }
+      var keys=t.keys.slice(), roleByKey=t.roleByKey||{}, sheetByKey=t.sheetByKey||{};
       (t.unmatched||[]).forEach(function(n){ if(acc.unmatched.indexOf(n)<0) acc.unmatched.push(n); });
+      (t.unmatchedSheets||[]).forEach(function(n){ acc.unmatchedSheets = acc.unmatchedSheets || []; acc.unmatchedSheets.push({ file:name, sheet:n.sheet, top:n.top }); });
       if(t.via==="text" && keys[0] && keys[0]!==fallbackKey) acc.textFiled.push({ name:name, key:keys[0], found:(t.matched[0]||{}).name });
-      var ask = t.ambiguous.length ? t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name!=="this file" ? amb.name+" ("+name+")" : name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role) roleByKey[k]=amb.role; } }); }); }, Promise.resolve()) : Promise.resolve();   // 2.9.7 (#214)
-      return ask.then(function(){ if(!keys.length && !t.ambiguous.length && fallbackKey) keys=[fallbackKey]; return { keys:keys, roleByKey:roleByKey }; });
+      var ask = t.ambiguous.length ? t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name!=="this file" ? amb.name+(amb.sheet ? " — sheet “"+amb.sheet+"”" : "")+" ("+name+")" : name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role && !roleByKey[k]) roleByKey[k]=amb.role; if(amb.sheet && !sheetByKey[k]) sheetByKey[k]=amb.sheet; } }); }); }, Promise.resolve()) : Promise.resolve();
+      return ask.then(function(){
+        if(!keys.length && !t.ambiguous.length && fallbackKey) keys=[fallbackKey];
+        // 2.9.8 — YOUR pick always gets the file: the property you dropped it on (or the chat's property). When the
+        // content names other properties, a T12 asks which sheet is this property's; a rent roll is kept as a document.
+        if(fallbackKey && keys.indexOf(fallbackKey) < 0){
+          if(t.detected==="t12" && t.sheets.length){ var fname=((opProp(fallbackKey)||{}).name)||fallbackKey;
+            return askWhichSheet(fname, name, t.sheets).then(function(sh){ keys.push(fallbackKey); if(sh){ roleByKey[fallbackKey]="t12"; sheetByKey[fallbackKey]=sh; } else roleByKey[fallbackKey]="other"; return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey }; }); }
+          keys.push(fallbackKey); if(roleByKey[fallbackKey]==null || t.detected==="rentroll") roleByKey[fallbackKey]= (role||"other");
+        }
+        return { keys:keys, roleByKey:roleByKey, sheetByKey:sheetByKey };
+      });
     }
+    // 2.9.8 — which sheet of a workbook is this property's T12 (or none: keep it as a document).
+    function askWhichSheet(propName, fileName, sheets){
+      return new Promise(function(res){
+        var m = document.createElement("div");
+        m.className = "fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4"; m.setAttribute("data-whichsheet", "");
+        m.innerHTML = '<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 class="text-base font-bold text-slate-900">Which sheet is '+escapeHtml(propName)+'’s T12?</h3>'+
+          '<p class="mt-1 text-sm text-slate-600">“'+escapeHtml(fileName)+'” doesn’t name '+escapeHtml(propName)+'. Pick its sheet, or keep the file as a document.</p>'+
+          '<select data-sheetsel class="mt-3 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">'+sheets.map(function(sh){ return '<option value="'+escapeHtml(sh)+'">'+escapeHtml(sh)+'</option>'; }).join('')+'<option value="">None — keep it as a document</option></select>'+
+          '<div class="mt-4 flex justify-end gap-2"><button type="button" data-sheetok class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white">Save it</button></div></div>';
+        document.body.appendChild(m);
+        m.querySelector("[data-sheetok]").addEventListener("click", function(){ var v = m.querySelector("[data-sheetsel]").value || null; try{ m.remove(); }catch(e){} res(v); });
+      });
+    }
+
     // One queued file: read it (progress + Stop), file it where its content says, then take it off the queue.
     function readQueuedJob(job, file, acc){
       var cancel={ stopped:false }, ui=fileReadPanelRow(job.id, job.name);
@@ -11665,7 +11796,7 @@ tr.flagged:hover td{background:#fee2e2}
           return fileRouteKeys(job.name, res.text, null, job.fallbackKey, job.role, acc).then(function(rt){
             if(!rt.keys.length){ acc.skipped.push(job.name); return ldsShell.readqDone(job.id); }
             return Promise.all(rt.keys.map(function(k){ var p=opProp(k);
-              return ldsShell.docSaveQueued({ id:job.id, propKey:k, propName:(p&&p.name)||job.fallbackName||k, name:job.name, text:res.text||"", type:job.type||"", role:(rt.roleByKey[k]||"other"), label:res.label||"" })
+              return ldsShell.docSaveQueued({ id:job.id, propKey:k, propName:(p&&p.name)||job.fallbackName||k, name:job.name, text:res.text||"", type:job.type||"", role:(rt.roleByKey[k]||"other"), label:res.label||"", sheet:(rt.sheetByKey&&rt.sheetByKey[k])||"" })
                 .then(function(r){ if(!r||!r.ok){ acc.failed.push(job.name); return; } if(r.duplicate){ acc.dup.push(job.name); return; } acc.touched[k]=1; if(r.renamed) acc.renamed.push({ from:job.name, to:r.renamed }); }).catch(function(){ acc.failed.push(job.name); }); }))
               .then(function(){ return ldsShell.readqDone(job.id); });
           });
@@ -11695,8 +11826,9 @@ tr.flagged:hover td{background:#fee2e2}
             if(!rt.keys.length){ acc.skipped.push(file.name); return; }
             if(!String(ex.text||"").trim()) acc.noText.push({ name:file.name, note:ex.note||"" });
             return Promise.all(rt.keys.map(function(k){ var p=opProp(k);
-              return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:(rt.roleByKey[k]||"other"), label:ex.label||""})
-                .then(function(r){ if(!r||!r.ok){ acc.failed.push(file.name); return; } if(r.duplicate){ acc.dup.push(file.name); return; } acc.touched[k]=1; if(r.renamed) acc.renamed.push({ from:file.name, to:r.renamed }); })
+              var role=(rt.roleByKey[k]||"other"), sheet=(rt.sheetByKey&&rt.sheetByKey[k])||"";
+              return ldsShell.docSave({propKey:k, propName:(p&&p.name)||fallbackName||k, name:file.name, base64:b64, text:(ex.text||""), type:file.type||"", role:role, label:ex.label||"", sheet:sheet})
+                .then(function(r){ if(!r||!r.ok){ acc.failed.push(file.name); return; } if(r.duplicate){ acc.dup.push(file.name+((p&&p.name)?" ("+p.name+")":"")); return; } acc.touched[k]=1; if(role==="t12"){ acc.t12[k]=sheet||true; } if(r.renamed) acc.renamed.push({ from:file.name, to:r.renamed }); })
                 .catch(function(){ acc.failed.push(file.name); }); }));
           });
         }).catch(function(){ acc.failed.push(file.name); });

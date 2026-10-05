@@ -507,16 +507,17 @@ function docUniqueName(name, taken){
   return base + ' (' + Date.now() + ')' + ext;
 }
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
-function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '' }; }
+function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '', sheet: f.sheet || '' }; }
 
 // Save one original file (base64) + its extracted text under a property. Replaces an
 // existing file of the same name for that property. `role` tags what the file is
 // (e.g. "t12") so a consumer can find it again without guessing from the name.
-ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role, label }) => {
+ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role, label, sheet }) => {
   if(!base64) return { ok: false, error: 'missing fields' };
-  return docSaveBuffer(e, { propKey, propName, name, buf: Buffer.from(base64, 'base64'), text, type, role, label });
+  return docSaveBuffer(e, { propKey, propName, name, buf: Buffer.from(base64, 'base64'), text, type, role, label, sheet });
 });
-function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label }) {
+// 2.9.8 — `sheet`: for a workbook holding several properties' T12s, the sheet that is THIS property's T12.
+function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label, sheet }) {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!propKey || !name || !buf) return { ok: false, error: 'missing fields' };
@@ -526,7 +527,10 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
     // Exact-duplicate guard: the same bytes already stored under this role is not re-saved (a second
     // identical T12 shouldn't create a phantom "newer" statement). The caller is told it was a dup.
     const already = idx.files.find(f => f.sha === sha && (f.role || '') === (role || ''));
-    if(already){ return { ok: true, duplicate: true, file: pubFile(already) }; }
+    if(already){
+      if(sheet && (already.sheet || '') !== String(sheet)){ already.sheet = String(sheet).slice(0, 120); writeDocIndex(dir, idx); return { ok: true, resheeted: true, file: pubFile(already) }; }   // 2.9.8 — same file, now pointed at this property's own sheet
+      return { ok: true, duplicate: true, file: pubFile(already) };
+    }
     const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const stored = id + docSafeExt(name);
     fs.writeFileSync(path.join(dir, stored), buf);
@@ -542,10 +546,22 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
       finalName = docUniqueName(finalName, new Set(idx.files.map(f => f.name))); renamed = finalName;
     }
     const entry = { id, stored, name: finalName, size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha, readLabel: String(label || '').slice(0, 300) };
+    if (sheet) entry.sheet = String(sheet).slice(0, 120);
     idx.files.push(entry); writeDocIndex(dir, idx);
     return { ok: true, file: pubFile(entry), renamed };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 }
+// 2.9.8 (problem 1) — copy a saved document to another property's folder (original, its read text and how it was
+// read), optionally as another type / pointed at that property's own sheet of a workbook.
+ipcMain.handle('lds:doc-copy', (e, { fromKey, id, toKey, toName, role, sheet }) => {
+  try {
+    if (!fromKey || !id || !toKey) return { ok: false, error: 'missing fields' };
+    const src = propDir(fromKey), sidx = readDocIndex(src), f = (sidx.files || []).find(x => x.id === id);
+    if (!f) return { ok: false, error: 'not found' };
+    const buf = fs.readFileSync(path.join(src, f.stored)); let text = ''; try { text = fs.readFileSync(path.join(src, f.id + '.txt'), 'utf8'); } catch (x) {}
+    return docSaveBuffer(e, { propKey: toKey, propName: toName, name: f.name, buf, text, type: f.type, role: role != null ? role : (f.role || ''), label: f.readLabel || '', sheet: sheet != null ? sheet : (f.sheet || '') });
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 // 2.9.7 (#37) — change a saved document's type (Loan agreement, T12, Rent roll, Unit Statistics, Other).
 ipcMain.handle('lds:doc-set-role', (e, { propKey, id, role }) => {
   dataChanged(e);
@@ -640,10 +656,10 @@ ipcMain.handle('lds:readq-done', (e, { id }) => {
   catch (err) { return { ok: false }; }
 });
 // Save a queued file into a property's folder without sending its bytes through the page (big files).
-ipcMain.handle('lds:doc-save-queued', (e, { id, propKey, propName, name, text, type, role, label }) => {
+ipcMain.handle('lds:doc-save-queued', (e, { id, propKey, propName, name, text, type, role, label, sheet }) => {
   try { const j = readqJob(id); if (!j) return { ok: false, error: 'not found' };
     const buf = fs.readFileSync(path.join(readqDir(), j.id + '.bin'));
-    return docSaveBuffer(e, { propKey, propName, name: name || j.name, buf, text, type: type || j.type, role, label });
+    return docSaveBuffer(e, { propKey, propName, name: name || j.name, buf, text, type: type || j.type, role, label, sheet });
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 

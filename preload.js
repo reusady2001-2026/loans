@@ -143,6 +143,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   ocrCachePut: (o) => ipcRenderer.invoke('lds:ocr-cache-put', o || {}),
   // Delete one saved file. Resolves {ok}.
   docDelete: (propKey, id) => ipcRenderer.invoke('lds:doc-delete', { propKey, id }),
+  docCopy: (o) => ipcRenderer.invoke('lds:doc-copy', o || {}),   // 2.9.8
   // 2.9.7 (#37) — change a saved document's type. → {ok,file} | {ok:false,error}
   docSetRole: (propKey, id, role) => ipcRenderer.invoke('lds:doc-set-role', { propKey, id, role }),
   // Move a property's whole document folder when its key changes (an address edit). Resolves {ok,moved,reason?}.
