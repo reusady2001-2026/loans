@@ -30,6 +30,13 @@
   var RENTAL  = ["GPR","EMPL","MOD","VAC","CONC","BD"];
   var OTHER   = ["RUBS","TRSH RUB","TRSH COL","PARK","PET","MTM","LATE","APP","ADM","AMEN","COM","CAM","ANT","OTH"];
   var EXPENSE = ["RET","INS","UTIL","PAY","GA","BDX","MKT","RM","CS","TRSH","CAB","PLL","MGMT"];
+  // 2.9.8 — the operator's own categories: their names join LABEL; a line under one is carried at its T12 amount.
+  var CUSTOM = [], customLabels = [];
+  function setCustom(list){
+    customLabels.forEach(function (k){ delete LABEL[k]; }); customLabels = [];
+    CUSTOM = (list || []).filter(function (c){ return c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense"); });
+    CUSTOM.forEach(function (c){ if (!Object.prototype.hasOwnProperty.call(LABEL, c.code)){ LABEL[c.code] = String(c.label); customLabels.push(c.code); } });
+  }
   var BUDGET  = { INS:1, PAY:1, GA:1, MKT:1, RM:1, CS:1 };   // priced $/unit in the underwritten column
   // "(1,234.56)" is an accounting negative — stripping the parens used to flip its sign.
   var num = function (v){
@@ -143,7 +150,12 @@
     var actualVac = (has("VAC") && vacBase > 0) ? Math.max(0, -(sums.VAC || 0)) / vacBase : null;
     var effVac = pick(actualVac, assumeVac);
     var assumeMgmt = (bm.mgmtPct != null ? num(bm.mgmtPct) : 0.025);
-    var inPlaceEGI = 0; RENTAL.concat(OTHER).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
+    // 2.9.8 — the operator's OWN categories (added in the T12 review) are lines too: an income one joins other
+    // income, an expense one is carried at its T12 amount. A code nobody knows is still left out (and reported as
+    // dropped by the operating model), as before.
+    var extraInc = [], extraExp = [];
+    CUSTOM.forEach(function (c){ if (sums[c.code] == null) return; (c.role === "expense" ? extraExp : extraInc).push(c.code); });
+    var inPlaceEGI = 0; RENTAL.concat(OTHER, extraInc).forEach(function (c){ inPlaceEGI += (sums[c] || 0); });   // effective gross income, in place
     var actualMgmt = (has("MGMT") && inPlaceEGI > 0) ? Math.max(0, sums.MGMT || 0) / inPlaceEGI : null;
     var effMgmt = pick(actualMgmt, assumeMgmt);
     // Concessions and bad debt pass through at the statement's own proven figure (no assumption applied).
@@ -166,6 +178,7 @@
 
     // Other income — one line per category present, pass-through
     OTHER.forEach(function (c){ if(has(c)) L(c, "other", "value", { uw: sums[c] }); });
+    extraInc.forEach(function (c){ L(c, "other", "value", { uw: sums[c] }); });   // 2.9.8
 
     // Expenses — budget $/unit where a benchmark is given, else pass-through;
     // management fee is % of EGI; reserves are $/unit.
@@ -177,6 +190,7 @@
       if(BUDGET[c] && budget[c] != null) L(c, "expense", "perUnit", { param: budget[c] });
       else L(c, "expense", "value", { uw: sums[c] });
     });
+    extraExp.forEach(function (c){ L(c, "expense", "value", { uw: sums[c] }); });   // 2.9.8 — your own expense categories, at their T12 amount
     L("reserves", "reserve", "perUnit", { param: (bm.reservePerUnit != null ? bm.reservePerUnit : 200), t12: 0 });
     lines[lines.length-1].label = "Replacement Reserves";
 
@@ -232,5 +246,5 @@
   }
 
   return { buildSetup: buildSetup, classifySum: classifySum, fromParse: fromParse, sizingSummary: sizingSummary,
-           LABEL: LABEL, RENTAL: RENTAL, OTHER: OTHER, EXPENSE: EXPENSE };
+           setCustom: setCustom, LABEL: LABEL, RENTAL: RENTAL, OTHER: OTHER, EXPENSE: EXPENSE };
 });

@@ -2512,7 +2512,8 @@
     const ASSUMPTION_META = {
       vacancyPct: { label: "Vacancy", type: "pct" }, mgmtPct: { label: "Management fee", type: "pct" }, reservePerUnit: { label: "Reserves / unit", type: "money" },
       "sizing.capRate": { label: "Cap rate", type: "pct" }, "sizing.ltvMax": { label: "Max LTV", type: "pct" }, "sizing.dscrMin": { label: "Min DSCR", type: "x" },
-      "sizing.dyMin": { label: "Min debt yield", type: "pct" }, "sizing.intRate": { label: "Interest rate", type: "pct" }, "sizing.amortYears": { label: "Amortization (years)", type: "num" }
+      "sizing.dyMin": { label: "Min debt yield", type: "pct" }, "sizing.intRate": { label: "Interest rate", type: "pct" }, "sizing.amortYears": { label: "Amortization (years)", type: "num" },
+      "rentTyped.avgRentUnit": { label: "Average rent / unit (typed)", type: "money" }, "rentTyped.rrGPR": { label: "Gross potential rent (typed)", type: "money" }   // 2.9.8
     };
     function assumptionLineName(code){ try{ return (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[code]) || code; }catch(e){ return code; } }
     function assumptionLabel(path){
@@ -2534,6 +2535,7 @@
       Object.keys(b.sizing || {}).forEach(k => { if(ASSUMPTION_META["sizing." + k] && b.sizing[k] != null) out["sizing." + k] = b.sizing[k]; });
       Object.keys(b.benchmarks || {}).forEach(k => { if(b.benchmarks[k] != null) out["benchmarks." + k] = b.benchmarks[k]; });
       Object.keys(b.lineOverrides || {}).forEach(k => { const o = b.lineOverrides[k]; if(o && o.value != null) out["lineOverrides." + k] = o.value; });
+      if(b.rentTyped){ if(b.rentTyped.avgRentUnit != null) out["rentTyped.avgRentUnit"] = b.rentTyped.avgRentUnit; if(b.rentTyped.rrGPR != null) out["rentTyped.rrGPR"] = b.rentTyped.rrGPR; }   // 2.9.8
       return out;
     }
     const assumptionBase = {}, assumptionPending = {};
@@ -3731,6 +3733,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench){ delete s.input.t12Grid; delete s.input.t12Rows; delete s.input.t12Meta; delete s.input.aiParsed; delete s.input.aiT12; delete s.input.fileName; return s; } }catch(e){} return { input: uwDefaults() }; })();
     let uwLastBuilt = null;
+    try{ window.LDS_uwLines = () => (uwLastBuilt && uwLastBuilt.worksheet ? uwLastBuilt.worksheet.lines.map(l => ({ key: l.key, label: l.label, t12: l.t12, uw: l.uw })) : []); }catch(e){}   // 2.9.8 diagnostics
     // The T12 itself lives on disk in the property folder — NEVER in browser storage. uwState keeps
     // only the benchmarks / units / sizing prefs; the T12 grid + parsed meta are transient mirrors of
     // the file on disk and are stripped before persisting, so no operating figure is ever frozen here.
@@ -3830,7 +3833,9 @@ tr.flagged:hover td{background:#fee2e2}
           '</div>'+
           (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
             '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
-              (i.t12Meta.totals && i.t12Meta.totals.noi!=null ? ' &middot; statement NOI <b class="text-slate-700 tabular-nums">'+uwFmt(i.t12Meta.totals.noi)+'</b>' : '')+'</span>'+
+              // 2.9.8 — the NOI the app USES (your T12 rule: the last 3 months × 4 when it applies), not the statement's own 12-month line
+              (function(){ const g = gdFullCache[opFocusKey], n = g && g.noi;
+                return (n && n.inPlace != null) ? ' &middot; NOI used <b class="text-slate-700 tabular-nums" id="uwNoiUsed">'+uwFmt(n.inPlace)+'</b> <span class="text-slate-400">('+escapeHtml(noiMethodLabel(n))+')</span>' : ''; })()+'</span>'+
             (i.t12Meta.periods.length>1 ? '<label class="flex items-center gap-1.5">Period basis <select data-uwf="basis" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">'+
               i.t12Meta.periods.map(p=>'<option value="'+p.key+'"'+(p.key===(i.basis||"total")?' selected':'')+'>'+p.label+(p.noi!=null?' &mdash; '+fmtMoney(p.noi):'')+'</option>').join('')+'</select></label>' : '')+
           '</div>' : '')+
@@ -4070,8 +4075,15 @@ tr.flagged:hover td{background:#fee2e2}
       if(t.hasAttribute && t.hasAttribute("data-uwline")){ uwSetLineOverride(t.getAttribute("data-uwline"), t.value, false); return; }        // edit an underwritten total (its $/unit is derived)
       const k = t.getAttribute && t.getAttribute("data-uwf");
       if(k==="units"){ uwFillRentFromAvg(); uwMaybeUpdateProfileUnits(); uwSyncGridInputs(); uwRerenderSetup(); return; }
-      if(k==="avgRentUnit"){ uwFillRentFromAvg(); uwSyncGridInputs(); uwRerenderSetup(); return; }
-      if(k==="rrGPR"){ uwState.input.avgRentUnit = null; saveUW(); uwSyncGridInputs(); uwRerenderSetup(); return; } });
+      // 2.9.8 (problem 5) — a rent you type belongs to THIS property: it is saved with its assumptions (and its
+      // history); clearing the box goes back to the property's own rent roll.
+      if(k==="avgRentUnit"){ const a = uwNum(uwState.input.avgRentUnit); if(a == null) uwState.input.rrGPR = null; uwFillRentFromAvg(); uwRentTypedSave(a != null ? { avgRentUnit: a, rrGPR: null } : null); uwSyncGridInputs(); uwRerenderSetup(); if(a == null) uwRenderRentRollBox(); return; }
+      if(k==="rrGPR"){ uwState.input.avgRentUnit = null; const g = uwNum(uwState.input.rrGPR); saveUW(); uwRentTypedSave(g != null ? { avgRentUnit: null, rrGPR: g } : null); uwSyncGridInputs(); uwRerenderSetup(); if(g == null) uwRenderRentRollBox(); return; } });
+    function uwRentTypedSave(v){
+      const b = uwState.input.bench || (uwState.input.bench = opMergeBench(uwDefaults().bench, null));
+      if(v) b.rentTyped = v; else delete b.rentTyped;
+      saveUW(); if(opFocusKey) opSaveAssumptions(opFocusKey);
+    }
     document.addEventListener("click", (e)=>{ const t = e.target; if(!t || !t.closest) return;
       const lr = t.closest("[data-uwlinereset]"); if(lr){ uwResetLineOverride(lr.getAttribute("data-uwlinereset")); return; }   // reset a pinned underwritten line
       if(t.closest("#uwFileBtn")){ const f = el("uwFile"); if(f) f.click(); return; }
@@ -4172,7 +4184,7 @@ tr.flagged:hover td{background:#fee2e2}
           t12 = scored[0].f;
         }
         const rd = await ldsShell.docRead(key, t12.id); if(!rd || !rd.ok || !rd.base64) return null;
-        const grid = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) return null;
+        const grid = opGridFromWorkbook(opB64ToBytes(rd.base64), t12.sheet || null); if(!grid) return null;
         return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name, id: t12.id, sha: t12.sha || "", lastMonth: opGridLastMonth(grid) };
       }catch(e){ return null; }
     }
@@ -4184,7 +4196,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!f || !f.id) return "";
       if(Object.prototype.hasOwnProperty.call(opT12LastCache, f.id)) return opT12LastCache[f.id];
       let lm = "";
-      try{ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const g = opGridFromWorkbook(opB64ToBytes(rd.base64)); if(g) lm = opGridLastMonth(g); } }catch(e){}
+      try{ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const g = opGridFromWorkbook(opB64ToBytes(rd.base64), f.sheet || null); if(g) lm = opGridLastMonth(g); } }catch(e){}
       opT12LastCache[f.id] = lm; return lm;
     }
     // An OLDER T12 goes into the property's history only: its months fill gaps, never overwrite newer ones.
@@ -4221,17 +4233,22 @@ tr.flagged:hover td{background:#fee2e2}
       opFocusKey = key || ""; opBasis = "annual";
       const i = uwState.input;
       i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = ""; i.fileSha = "";
+      i.avgRentUnit = null; i.rrGPR = null;   // 2.9.8 (problem 5) — never carry the last property's rent over
       if(key){
         opDeskLoaded.delete(key);
         i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
+        if(opFocusKey !== key) return;   // another property was picked meanwhile
+        { const rt = i.bench.rentTyped || {}; i.avgRentUnit = (rt.avgRentUnit != null) ? rt.avgRentUnit : null; i.rrGPR = (rt.rrGPR != null) ? rt.rrGPR : null; }   // a rent typed for THIS property
         try{ assumptionBaseline(key, i.bench); propHistoryLoad(key).then(() => { if(opFocusKey === key) uwRefreshHistoryLinks(); }); }catch(e){}   // 2.9.7 (#253)
         const r = await opReadPropT12(key);
-        if(r){ i.t12Grid = r.grid; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
+        if(r){ i.t12Grid = r.grid; i.t12Sheet = r.grid._sheet || ""; i.t12RowOffset = r.grid._r0 || 0; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
         // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
         try{ await opEnsureProfile(key); var pu = opProfileEffective(key, "residentialUnits"); i.units = (pu != null && pu !== "") ? pu : null; }catch(e){}
+        if(i.avgRentUnit != null && i.rrGPR == null) uwFillRentFromAvg();   // a typed average → its yearly rent on these units
       } else { i.bench = opMergeBench(uwDefaults().bench, null); }
+      saveUW();
       renderUnderwriting();
       // Claude works out what to push the moment a property with a T12 is focused (once per session, cached).
       // The upload path passes skipAutoPush and runs it once itself AFTER rebuilding General Data (so the
@@ -4285,9 +4302,15 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // base64 → Uint8Array; a workbook's first T12-shaped sheet → a header:1 grid (or null).
     function opB64ToBytes(b64){ const bin = atob(b64), n = bin.length, out = new Uint8Array(n); for(let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
-    function opGridFromWorkbook(bytes){
+    // The workbook's T12 sheet as a grid: the named sheet when one is given (a file with one T12 per property keeps,
+    // per property, which sheet is its own — 2.9.8), else the first sheet with a T12 header. The grid carries the
+    // sheet's name (_sheet) and the Excel row its first line sits on (_r0, 0-based) — so "row N" can be said as
+    // the row you see in Excel (2.9.8).
+    function opGridFromWorkbook(bytes, sheetName){
       try{ const wb = XLSX.read(bytes, { type: "array" });
-        for(const nm of wb.SheetNames){ const g = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null }); if(T12Parse.findHeader(g).headerRow >= 0) return g; }
+        const mk = (nm) => { const ws = wb.Sheets[nm]; if(!ws) return null; const g = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }); let r0 = 0; try{ r0 = ws["!ref"] ? XLSX.utils.decode_range(ws["!ref"]).s.r : 0; }catch(e){ r0 = 0; } g._sheet = nm; g._r0 = r0; return g; };
+        if(sheetName && wb.Sheets[sheetName]){ const g = mk(sheetName); if(g && T12Parse.findHeader(g).headerRow >= 0) return g; }
+        for(const nm of wb.SheetNames){ const g = mk(nm); if(g && T12Parse.findHeader(g).headerRow >= 0) return g; }
       }catch(e){}
       return null;
     }
@@ -4508,6 +4531,45 @@ tr.flagged:hover td{background:#fee2e2}
       profileCache[key] = prof;
       var r = await opWriteProfile(key, prof);
       return !!(r && r.ok);
+    }
+    // 2.9.8 (problem 8) — the folder rule, for EVERY property the app shows (active or archived), however it came to
+    // be (before 2.9.7, an Excel import, a restore): its folder exists with profile.json (its name and address) and
+    // general-data.json ("no T12 yet" until one is added). Written, then read back to confirm; a property whose
+    // folder could not be made is listed on Data Health instead of staying silent. Runs at every start, after an
+    // Excel import, and when Data Health opens.
+    var opFolderCheck = { at: null, made: [], failed: [] }, _folderCheckRun = null;
+    function opEnsureAllFolders(){
+      if(_folderCheckRun) return _folderCheckRun;
+      _folderCheckRun = (async function(){
+        const res = { at: new Date().toISOString(), made: [], failed: [] };
+        if(!(window.ldsShell && ldsShell.docIndex && ldsShell.docSave)){ opFolderCheck = res; return res; }
+        const files = async () => { try{ const r = await ldsShell.docIndex(); return (r && r.byKey) || {}; }catch(e){ return null; } };
+        let by = await files(); if(!by){ opFolderCheck = res; return res; }
+        const props = opProperties().concat(opArchivedProps());
+        for(const p of props){
+          const have = (by[p.key] && by[p.key].files) || [];
+          const needProfile = have.indexOf("profile.json") < 0, needGD = have.indexOf("general-data.json") < 0;
+          if(!needProfile && !needGD) continue;
+          try{
+            if(needProfile){
+              const prof = await opEnsureProfile(p.key), sr = (p.loans && p.loans[0]) || (p.inactive && p.inactive[0]) || propSeniorLoan(p.key) || null;
+              const nm = String(p.name || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
+              if(nm && !Profile.value(prof, "propertyName")) Profile.setField(prof, "propertyName", nm, { changedBy: opOperator() });
+              if(sr && sr.propertyAddress && !Profile.value(prof, "propertyAddress")) Profile.setField(prof, "propertyAddress", String(sr.propertyAddress).trim(), { changedBy: opOperator() });
+              profileCache[p.key] = prof; await opWriteProfile(p.key, prof);
+            }
+            if(needGD) await opWriteGeneralDataFile(p.key, { propKey: p.key, propertyName: p.name, noT12: true, note: "no T12 yet", createdAt: new Date().toISOString() });
+            res.made.push({ key: p.key, name: p.name });
+          }catch(e){}
+        }
+        if(res.made.length) by = (await files()) || by;   // read back: every property must now have both files
+        props.forEach(p => { const have = (by[p.key] && by[p.key].files) || []; if(have.indexOf("profile.json") < 0 || have.indexOf("general-data.json") < 0) res.failed.push({ key: p.key, name: p.name }); });
+        res.made = res.made.filter(m => !res.failed.some(f => f.key === m.key));
+        opFolderCheck = res;
+        if(res.made.length || res.failed.length){ try{ ldsShell.log && ldsShell.log("folder check: made " + res.made.length + ", failed " + res.failed.length + (res.failed.length ? " (" + res.failed.map(f => f.name).join(", ") + ")" : "")); }catch(e){} }
+        return res;
+      })().finally(() => { _folderCheckRun = null; });
+      return _folderCheckRun;
     }
     // 2.9.7 (#44, #232, #233) — what stands in the way of a new property with this name, checked the same way for
     // the Add Property form and the assistant: an active property of that name, an ARCHIVED one (restore it or start
@@ -4968,6 +5030,18 @@ tr.flagged:hover td{background:#fee2e2}
       var abs = tie.absorbed.length ? '<div class="mt-0.5 text-[10px] text-rose-700">Absorbed the gap: ' + tie.absorbed.map(function(a){ return escapeHtml(a.label) + ' ' + (a.amount >= 0 ? '+' : '−') + fmtMoney(Math.abs(a.amount)) + ' <span class="text-rose-500">(' + escapeHtml(a.why) + ')</span>'; }).join('; ') + '</div>' : '';
       return note + '<div class="mt-0.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700" id="uwNoiTie">&#10007; Doesn’t tie: statement says ' + fmtMoney(tie.printed) + ', lines add to ' + fmtMoney(tie.built) + ' (gap ' + fmtMoney(Math.abs(tie.gap)) + ')' + abs + '</div>';
     }
+    // 2.9.8 (problem 5) — a property's gross potential rent for the underwriting: the rent typed for it (yearly,
+    // or monthly average × units × 12), else its own rent roll (average market rent of the occupied units × all
+    // units × 12, #17), else none. Never another property's numbers.
+    async function opPropGPR(key, bench, units){
+      const rt = (bench && bench.rentTyped) || {};
+      if(rt.rrGPR != null && isFinite(rt.rrGPR)) return Number(rt.rrGPR);
+      let rr = null; try{ rr = Object.prototype.hasOwnProperty.call(loanRRCache, key) && loanRRCache[key] !== undefined ? loanRRCache[key] : await opRentRollBlockFor(key); }catch(e){ rr = null; }
+      const b = rr && rr.block, u = (units != null && units > 0) ? units : (b && b.residentialUnits) || null;
+      if(rt.avgRentUnit != null && isFinite(rt.avgRentUnit)) return (u > 0) ? Math.round(Number(rt.avgRentUnit) * u * 12) : null;
+      if(b && b.avgMarketRentOccupied != null && u > 0) return Math.round(b.avgMarketRentOccupied * u * 12);
+      return null;
+    }
     // Read the property's saved T12 grid + its assumptions and build the Setup — the
     // authoritative in-place + underwritten NOI, the SAME inputs the tab uses when the
     // property is focused (so the stored figures equal what's on screen).
@@ -4978,7 +5052,7 @@ tr.flagged:hover td{background:#fee2e2}
       var bench = focused ? uwState.input.bench : opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : propUnits(key);   // 2.9.7 (#19) — the profile's units, the same number the tab shows
-      var rrGPR = focused ? uwNum(uwState.input.rrGPR) : null;
+      var rrGPR = await opPropGPR(key, bench, units);   // 2.9.8 (problem 5) — THIS property's rent, open or not
       var rv = null;
       try{ var gdr = gdFullCache[key] || await opLoadGeneralData(key); rv = gdr && gdr.t12Review; }catch(e){}
       if(rv && rv.fileSha && r.sha && rv.fileSha !== r.sha) rv = null;   // decisions belong to the file they were made on
@@ -5038,6 +5112,7 @@ tr.flagged:hover td{background:#fee2e2}
         var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: propUnits(key) };
         var existing = await opLoadGeneralData(key);
         var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
+        delete gd.noT12; delete gd.note;   // 2.9.8 — the "no T12 yet" starter file becomes the real record
         if(existing && existing.push) gd.push = existing.push;                 // 2.9.7 (#78) — the saved "what to push" survives a rebuild;
         if(existing && existing.assumptions) gd.assumptions = existing.assumptions;   // whether it is stale is decided by what it was run on
         if(existing && existing.t12Review) gd.t12Review = existing.t12Review;
@@ -5422,6 +5497,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ await opComputeVersion(); }catch(e){}
       try{ await opLoadAllProfiles(); }catch(e){}   // 2.9.1 — profiles into the cache, for the completeness column
       try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); await opEnsureProfile(props[i].key); }catch(e){} } }catch(e){}
+      try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8)
       let orphans = []; try{ orphans = await healthOrphanFolders(); }catch(e){}   // 2.9.7 (#216)
       if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
       view.innerHTML = dataHealthHtml();
@@ -5645,6 +5721,12 @@ tr.flagged:hover td{background:#fee2e2}
         kpiCard("With a T12", nT12 + " of " + props.length, { sub: (props.length - nT12) + " missing" })+
         kpiCard("Units known", nUnits + " of " + props.length, { sub: (props.length - nUnits) + " blank" })+
         kpiCard("Need a maturity decision", String(decisions.length), { sub: decisions.length ? "matured / undecided" : "all current" })+
+      '</div>'+
+      // 2.9.8 (problem 8) — every property has its folder; this must always read 0
+      '<div class="rounded-xl border '+(opFolderCheck.failed.length ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700')+' px-4 py-2 text-sm" data-health-folders="'+opFolderCheck.failed.length+'">'+
+        '<b>Properties without a folder: '+opFolderCheck.failed.length+'</b>'+
+        (opFolderCheck.failed.length ? ' — couldn’t create: '+escapeHtml(opFolderCheck.failed.map(f => f.name).join(', '))+'. Close anything that has those files open and reopen Data Health.' : ' — every property has its folder with its profile and general data.')+
+        (opFolderCheck.made.length ? ' <span class="text-slate-500">(created '+opFolderCheck.made.length+' just now: '+escapeHtml(opFolderCheck.made.slice(0,6).map(m => m.name).join(', '))+(opFolderCheck.made.length > 6 ? '…' : '')+')</span>' : '')+
       '</div>';
       const dupCard = dups.length ?
         '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">'+
@@ -5838,6 +5920,40 @@ tr.flagged:hover td{background:#fee2e2}
       return rv;
     }
     function t12CodeLabel(code){ if(code === "NONOP") return "Not operating (left out of NOI)"; return (window.SetupBuilder && SetupBuilder.LABEL && SetupBuilder.LABEL[code]) || code; }
+    // 2.9.8 (problem 6) — your own T12 categories. A name typed in the review that the app doesn't have becomes a
+    // category on that side (income or expense) for every property and every later review; the AI's double reading
+    // is told about it, and Underwriting carries it as its own line at its T12 amount. Kept with the settings (and
+    // in backups). One you added can be removed while no line uses it.
+    var CUSTOM_CATS_KEY = "lds.customCategories";
+    function customCats(){ try{ const v = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || "[]"); return Array.isArray(v) ? v.filter(c => c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense")) : []; }catch(e){ return []; } }
+    function customCatsApply(){ const l = customCats(); try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
+    function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} customCatsApply(); }
+    const catNorm = (x) => String(x || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+    function customCatAdd(name, role){
+      name = String(name || "").replace(/\s+/g, " ").trim();
+      if(!name) return { ok:false, error:"Type the category's name first." };
+      if(role !== "income" && role !== "expense") return { ok:false, error:"Pick income or expense." };
+      const mine = role === "expense" ? T12Check.EXPENSE_CODES : T12Check.INCOME_CODES, theirs = role === "expense" ? T12Check.INCOME_CODES : T12Check.EXPENSE_CODES;
+      const same = mine.find(c => catNorm(t12CodeLabel(c)) === catNorm(name) || catNorm(c) === catNorm(name)); if(same) return { ok:true, code: same, existing:true };
+      const other = theirs.find(c => catNorm(t12CodeLabel(c)) === catNorm(name)); if(other) return { ok:false, error:"“"+t12CodeLabel(other)+"” is "+(role === "expense" ? "an income" : "an expense")+" category — pick it in the "+(role === "expense" ? "Income" : "Expense")+" row instead." };
+      const l = customCats(); let base = "C_" + (name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "CAT"), code = base, n = 2;
+      while(l.some(c => c.code === code) || (window.SetupBuilder && SetupBuilder.LABEL && Object.prototype.hasOwnProperty.call(SetupBuilder.LABEL, code))) code = base + "_" + (n++);
+      l.push({ code: code, role: role, label: name, createdAt: new Date().toISOString() }); customCatsSave(l);
+      return { ok:true, code: code, created:true };
+    }
+    // Where a category is used: decisions in every property's T12 review, and lines in its saved figures.
+    async function customCatUses(code){
+      const used = [];
+      for(const p of opProperties().concat(opArchivedProps())){
+        let gd = null; try{ gd = await opLoadGeneralData(p.key); }catch(e){ gd = null; }
+        const inReview = !!(gd && gd.t12Review && (gd.t12Review.cards || []).some(c => c && c.decision && c.decision.code === code));
+        const inLines = !!(gd && gd.lines && Object.prototype.hasOwnProperty.call(gd.lines, code));
+        let inStore = false; try{ opInit(); const r = OperatingStore.get(p.key); inStore = !!(r && r.lines && r.lines[code] != null); }catch(e){}
+        if(inReview || inLines || inStore) used.push(p.name);
+      }
+      return used;
+    }
+    customCatsApply();
     function t12RoleWord(role){ return role === "expense" ? "an expense" : (role === "income" ? "income" : "not operating"); }
     // 2.9.7 — when a property's folder moved (an address edit) while its T12 check was running, the
     // result follows the folder instead of re-creating the old one.
@@ -5862,7 +5978,7 @@ tr.flagged:hover td{background:#fee2e2}
       t12ReviewLive[key] = { fileSha: r.sha, fileName: r.name, status: "checking", cards: [] };
       if(opFocusKey === key){ try{ renderUnderwriting(); }catch(e){} }
       let res = null;
-      try{ res = await ldsShell.aiExtract({ instruction: T12Check.INSTRUCTION, schema: T12Check.schema(), input: T12Check.buildAiInput(r.grid, { fileName: r.name }), timeoutMs: 300000 }); }catch(e){ res = { ok:false, error: String((e && e.message) || e) }; }
+      try{ res = await ldsShell.aiExtract({ instruction: (T12Check.instruction ? T12Check.instruction() : T12Check.INSTRUCTION), schema: T12Check.schema(), input: T12Check.buildAiInput(r.grid, { fileName: r.name }), timeoutMs: 300000 }); }catch(e){ res = { ok:false, error: String((e && e.message) || e) }; }
       let rv;
       if(!res || !res.ok){
         rv = { fileSha: r.sha, fileName: r.name, status: "error", error: (res && res.error) || "Claude could not read the file.", cards: [], at: new Date().toISOString() };
@@ -5870,7 +5986,7 @@ tr.flagged:hover td{background:#fee2e2}
         const parsedM = T12Parse.parseGrid(r.grid, { basis: "total", monthly: true });
         const reg = T12Check.regularLines(parsedM, opClassifyLine);
         const cmp = T12Check.compare(reg, res.data || {});
-        rv = { fileSha: r.sha, fileName: r.name, status: cmp.agree ? "agree" : "needs-review", cards: cmp.cards, compared: cmp.compared, aiTotals: cmp.totals.ai, at: new Date().toISOString() };
+        rv = { fileSha: r.sha, fileName: r.name, sheet: r.grid._sheet || "", rowOffset: r.grid._r0 || 0, status: cmp.agree ? "agree" : "needs-review", cards: cmp.cards, compared: cmp.compared, aiTotals: cmp.totals.ai, at: new Date().toISOString() };
       }
       await opT12Persist(key, rv);
       delete t12ReviewLive[key];
@@ -5896,11 +6012,17 @@ tr.flagged:hover td{background:#fee2e2}
       if(card.type === "amount"){ return d.choice === "regular" ? "regular reader’s amount ("+fmtMoney(d.annual)+")" : d.choice === "ai" ? "AI’s amount ("+fmtMoney(d.annual)+")" : "another amount ("+fmtMoney(d.annual)+")"; }
       return (d.role === "income" ? "Income" : d.role === "expense" ? "Expense" : "Something else") + " · " + t12CodeLabel(d.code) + " · " + fmtMoney(d.annual);
     }
+    // 2.9.8 — a review card's line as the row you see in Excel: the reader's row (1 = the sheet's first used row)
+    // plus where the sheet's used area starts. Reviews made before 2.9.8 take the offset of the T12 now open.
+    function t12RowOffset(rv){ if(rv && rv.rowOffset != null) return Number(rv.rowOffset) || 0; const i = uwState.input || {}; return (rv && rv.fileSha && i.fileSha === rv.fileSha) ? (i.t12RowOffset || 0) : 0; }
+    function t12SheetOf(rv){ if(rv && rv.sheet) return rv.sheet; const i = uwState.input || {}; return (rv && rv.fileSha && i.fileSha === rv.fileSha) ? (i.t12Sheet || "") : ""; }
+    function t12ExcelRow(rv, card){ return (card && card.row != null) ? Number(card.row) + t12RowOffset(rv) : null; }
     function opT12CardHtml(key, rv, card, idx){
-      const reg = card.regular || {}, ai = card.ai || {}, file = escapeHtml(rv.fileName || "the T12"), rowTxt = card.row != null ? "row " + card.row : "its row";
+      const reg = card.regular || {}, ai = card.ai || {}, file = escapeHtml(rv.fileName || "the T12"), xr = t12ExcelRow(rv, card), rowTxt = xr != null ? "Excel row " + xr : "its row";
+      const where = '<div class="mb-1 flex flex-wrap items-baseline gap-x-2 text-[12px]" data-t12where="'+(xr != null ? xr : '')+'"><span class="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white">Excel row '+(xr != null ? xr : '?')+'</span>'+(t12SheetOf(rv) ? '<span class="text-slate-500">sheet “'+escapeHtml(t12SheetOf(rv))+'”</span>' : '')+'<span class="font-semibold text-slate-800">“'+escapeHtml(card.label || '')+'”</span></div>';
       const done = card.decision, open = !done || t12EditOpen[key + "|" + card.id];
       if(done && !open){
-        return '<div class="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[12px] text-emerald-800" data-t12card="'+idx+'">&#10003; <b>'+escapeHtml(card.label)+'</b>: '+escapeHtml(t12ChoiceText(card, done))+' · chosen by '+escapeHtml(done.by || "You")+' · '+escapeHtml(fmtWhenShort(done.at))+(done.note?' · <span class="italic">“'+escapeHtml(done.note)+'”</span>':'')+
+        return '<div class="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-[12px] text-emerald-800" data-t12card="'+idx+'">&#10003; '+(xr != null ? '<span class="text-emerald-700">Excel row '+xr+' · </span>' : '')+'<b>'+escapeHtml(card.label)+'</b>: '+escapeHtml(t12ChoiceText(card, done))+' · chosen by '+escapeHtml(done.by || "You")+' · '+escapeHtml(fmtWhenShort(done.at))+(done.note?' · <span class="italic">“'+escapeHtml(done.note)+'”</span>':'')+
           ' <button type="button" data-t12change="'+idx+'" class="ml-1 font-semibold text-brand-700 underline">Change</button></div>';
       }
       const th = '<th class="px-2 py-1 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">';
@@ -5913,9 +6035,11 @@ tr.flagged:hover td{background:#fee2e2}
           : 'If the AI is right, NOI is '+fmtMoney(Math.abs(card.noiEffect))+(card.noiEffect < 0 ? ' lower.' : ' higher.'));
         how = 'File '+file+', '+rowTxt+(card.heading ? ', under '+escapeHtml(card.heading) : '')+'.';
         const pre = done || { role: reg.role === "other" ? ai.role : reg.role, code: reg.role === "other" ? ai.code : reg.code, annual: reg.role === "other" ? ai.annual : reg.annual, monthly: reg.role === "other" ? ai.monthly : reg.monthly };
-        const opt = (codes, sel) => codes.map(c => '<option value="'+c+'"'+(c === sel ? ' selected' : '')+'>'+escapeHtml(t12CodeLabel(c))+'</option>').join('');
+        const opt = (codes, sel) => codes.map(c => '<option value="'+c+'"'+(c === sel ? ' selected' : '')+'>'+escapeHtml(t12CodeLabel(c))+'</option>').join('') +
+          (codes.length > 1 ? '<option value="__new__">+ New category…</option>' : '');   // 2.9.8 (problem 6) — a category the app doesn't have yet
         const rowC = (role, label, codes) => '<tr>'+td+'<label class="inline-flex items-center gap-1.5"><input type="radio" name="t12r'+idx+'" value="'+role+'"'+(pre.role === role ? ' checked' : '')+' data-t12role="'+idx+'"> '+label+'</label></td>'+
-          td+'<select data-t12code="'+idx+'" data-for="'+role+'" class="rounded border border-slate-300 px-1 py-0.5 text-[12px]">'+opt(codes, pre.role === role ? pre.code : codes[0])+'</select></td>'+
+          td+'<select data-t12code="'+idx+'" data-for="'+role+'" class="rounded border border-slate-300 px-1 py-0.5 text-[12px]">'+opt(codes, pre.role === role ? pre.code : codes[0])+'</select>'+
+            (codes.length > 1 ? '<span data-t12newwrap="'+idx+'" data-for="'+role+'" class="hidden mt-1 flex items-center gap-1"><input data-t12newname="'+idx+'" data-for="'+role+'" class="w-40 rounded border border-brand-300 px-1.5 py-0.5 text-[12px]" placeholder="Name, e.g. Other Expenses"><button type="button" data-t12newadd="'+idx+'" data-for="'+role+'" class="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Add</button></span>' : '')+'</td>'+
           td+'<input data-t12amt="'+idx+'" data-for="'+role+'" inputmode="decimal" class="w-28 rounded border border-slate-300 px-1 py-0.5 text-right text-[12px] tabular-nums" value="'+(pre.role === role ? Math.round(pre.annual * 100) / 100 : Math.round((pre.annual || 0) * 100) / 100)+'"></td></tr>';
         choices = '<table class="mt-2 w-full border-collapse"><thead><tr>'+th+'This line is…</th>'+th+'Category</th>'+th+'Amount (year)</th></tr></thead><tbody>'+
           rowC("income", "Income", T12Check.INCOME_CODES)+ rowC("expense", "Expense", T12Check.EXPENSE_CODES)+ rowC("other", "Something else", [T12Check.OTHER])+'</tbody></table>';
@@ -5939,7 +6063,7 @@ tr.flagged:hover td{background:#fee2e2}
       const monthBoxes = months.length ? '<div class="mt-2 hidden" data-t12months="'+idx+'"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Months — the year total is their sum</div><div class="mt-1 grid grid-cols-3 sm:grid-cols-6 gap-1">'+
         months.map(ym => '<label class="text-[10px] text-slate-500">'+escapeHtml(ymShort(ym))+'<input data-t12m="'+idx+'" data-ym="'+ym+'" inputmode="decimal" class="mt-0.5 w-full rounded border border-slate-300 px-1 py-0.5 text-right text-[11px] tabular-nums" value="'+(baseM[ym] != null ? baseM[ym] : 0)+'"></label>').join('')+
         '</div><div class="mt-1 text-[11px] text-slate-500">Year total: <b class="tabular-nums" data-t12sum="'+idx+'"></b></div></div>' : '';
-      return '<div class="rounded-xl border border-amber-200 bg-white p-3 shadow-sm" data-t12card="'+idx+'">'+
+      return '<div class="rounded-xl border border-amber-200 bg-white p-3 shadow-sm" data-t12card="'+idx+'">'+ where +
         '<table class="w-full border-collapse"><thead><tr>'+th+'The problem</th>'+th+'Why it matters</th>'+th+'How to check</th></tr></thead><tbody><tr>'+td+problem+'</td>'+td+why+'</td>'+td+how+'</td></tr></tbody></table>'+
         choices + monthBoxes +
         '<div class="mt-2 flex flex-wrap items-center gap-2"><input data-t12note="'+idx+'" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-[12px]" placeholder="Note (optional)" value="'+escapeHtml((done && done.note) || "")+'">'+
@@ -5960,9 +6084,53 @@ tr.flagged:hover td{background:#fee2e2}
       const cards = rv.cards || [], n = T12Check.pending(rv);
       const head = st === "checked"
         ? '<div class="font-semibold text-emerald-700">&#10003; This T12 is checked</div>'
-        : '<div class="font-semibold text-amber-800">&#9888; '+n+' line'+(n===1?'':'s')+' on this T12 need'+(n===1?'s':'')+' your review — until you decide, the app uses the regular reader’s version.</div>';
-      return wrap(st === "checked" ? "border-emerald-200 bg-emerald-50/50" : "border-amber-300 bg-amber-50", head + '<div class="mt-2 space-y-2">'+cards.map((c, i) => opT12CardHtml(key, rv, c, i)).join('')+'</div>');
+        : '<div class="font-semibold text-amber-800">&#9888; '+n+' line'+(n===1?'':'s')+' on this T12 need'+(n===1?'s':'')+' your review — until you decide, the app uses the regular reader’s version.</div>'+
+          (function(){ const rows = cards.filter(c => !c.decision).map(c => t12ExcelRow(rv, c)).filter(x => x != null).sort((a, b) => a - b);   // 2.9.8 — where to look in the file
+            return rows.length ? '<div class="mt-1 text-[12px] text-amber-900" data-t12rows="'+rows.join(',')+'">Rows to check in '+escapeHtml(rv.fileName || 'the file')+(t12SheetOf(rv) ? ', sheet “'+escapeHtml(t12SheetOf(rv))+'”' : '')+': <b>'+rows.join(', ')+'</b></div>' : ''; })();
+      const mineCats = customCats();
+      const catsBox = mineCats.length ? '<details class="mt-2 text-[12px]" data-t12cats><summary class="cursor-pointer select-none font-semibold text-slate-600">Your categories ('+mineCats.length+')</summary><div class="mt-1 space-y-1">'+
+        mineCats.map(c => '<div class="flex items-center gap-2"><span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">'+(c.role === "expense" ? "expense" : "income")+'</span><span class="text-slate-800">'+escapeHtml(c.label)+'</span><button type="button" data-t12catdel="'+escapeHtml(c.code)+'" class="text-[11px] font-semibold text-rose-600 underline">Remove</button></div>').join('')+
+        '<div class="text-[11px] text-slate-400">A category can be removed only while no line on any property uses it.</div></div></details>' : '';
+      return wrap(st === "checked" ? "border-emerald-200 bg-emerald-50/50" : "border-amber-300 bg-amber-50", head + '<div class="mt-2 space-y-2">'+cards.map((c, i) => opT12CardHtml(key, rv, c, i)).join('')+'</div>' + catsBox);
     }
+    // 2.9.8 (problem 6) — "+ New category…": a name box appears; Add makes the category (or picks the one you
+    // already have by that name) and selects it, in this card and in every other card's list on that side.
+    document.addEventListener("change", function(e){
+      const sel = e.target && e.target.closest && e.target.closest("select[data-t12code]"); if(!sel) return;
+      const idx = sel.getAttribute("data-t12code"), role = sel.getAttribute("data-for");
+      const wrapEl = document.querySelector('[data-t12newwrap="'+idx+'"][data-for="'+role+'"]');
+      if(sel.value === "__new__"){ if(wrapEl){ wrapEl.classList.remove("hidden"); const inp = wrapEl.querySelector("input"); if(inp) inp.focus(); } const r = document.querySelector('input[name="t12r'+idx+'"][value="'+role+'"]'); if(r) r.checked = true; }
+      else if(wrapEl) wrapEl.classList.add("hidden");
+    });
+    document.addEventListener("click", function(e){
+      const add = e.target && e.target.closest && e.target.closest("[data-t12newadd]");
+      if(add){
+        const idx = add.getAttribute("data-t12newadd"), role = add.getAttribute("data-for");
+        const inp = document.querySelector('[data-t12newname="'+idx+'"][data-for="'+role+'"]'), sel = document.querySelector('select[data-t12code="'+idx+'"][data-for="'+role+'"]');
+        const r = customCatAdd(inp ? inp.value : "", role);
+        if(!r.ok){ toast(r.error, "info"); return; }
+        document.querySelectorAll('select[data-t12code][data-for="'+role+'"]').forEach(function(s2){
+          if(![].some.call(s2.options, o => o.value === r.code)){ const o = document.createElement("option"); o.value = r.code; o.textContent = t12CodeLabel(r.code); const nw = [].find.call(s2.options, x => x.value === "__new__"); s2.insertBefore(o, nw || null); }
+        });
+        if(sel) sel.value = r.code;
+        const wrapEl = document.querySelector('[data-t12newwrap="'+idx+'"][data-for="'+role+'"]'); if(wrapEl) wrapEl.classList.add("hidden");
+        const rr = document.querySelector('input[name="t12r'+idx+'"][value="'+role+'"]'); if(rr) rr.checked = true;
+        toast(r.created ? "Added “"+t12CodeLabel(r.code)+"” to your "+role+" categories — every review offers it from now on." : "“"+t12CodeLabel(r.code)+"” is already a category — picked it.", "check");
+        return;
+      }
+      const del = e.target && e.target.closest && e.target.closest("[data-t12catdel]");
+      if(del){
+        const code = del.getAttribute("data-t12catdel"), name = t12CodeLabel(code);
+        del.disabled = true;
+        customCatUses(code).then(function(used){
+          del.disabled = false;
+          if(used.length){ toast("“"+name+"” is used on "+used.slice(0, 4).join(", ")+(used.length > 4 ? "…" : "")+" — it stays.", "info"); return; }
+          confirmDialog("Remove the category “"+name+"”?", "No line on any property uses it. It leaves every review's list.", function(){
+            customCatsSave(customCats().filter(c => c.code !== code)); toast("Removed “"+name+"”.", "check"); try{ renderUnderwriting(); }catch(x){}
+          }, "Remove");
+        });
+      }
+    });
     // Read a card's form into a decision.
     function opT12ReadDecision(view, rv, idx){
       const card = rv.cards[idx]; if(!card) return null;
@@ -5975,6 +6143,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(card.type === "belongs"){
         const r = q('input[name="t12r'+idx+'"]:checked'); if(!r) return null;
         const role = r.value, code = (q('[data-t12code="'+idx+'"][data-for="'+role+'"]') || {}).value;
+        if(code === "__new__") return { pendingNew: true };   // 2.9.8 — the new category isn't added yet
         let annual = uwNum((q('[data-t12amt="'+idx+'"][data-for="'+role+'"]') || {}).value);
         let monthly = (card.regular.role === "other" ? card.ai.monthly : card.regular.monthly) || {};
         if(boxesOpen && any){ monthly = months; annual = Math.round(sumM * 100) / 100; }
@@ -5995,6 +6164,7 @@ tr.flagged:hover td{background:#fee2e2}
       const view = el("uwView"), rv = opT12ReviewFor(key, uwState.input.fileSha); if(!view || !rv || !rv.cards[idx]) return;
       const d = opT12ReadDecision(view, rv, idx);
       if(!d){ toast("Pick one of the choices first.", "info"); return; }
+      if(d.pendingNew){ toast("Type the new category's name and click Add first.", "info"); return; }
       const card = rv.cards[idx], before = card.decision ? t12ChoiceText(card, card.decision) : "regular reader’s version";
       card.decision = d; delete t12EditOpen[key + "|" + card.id];
       rv.status = T12Check.status(rv);
@@ -6142,6 +6312,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The contract's bridge, exposed for tests/diagnostics as a live OBJECT (a getter, because loans/bench change).
     try{ Object.defineProperty(window, "LDS_OPERATING_HOOKS", { get: opHooks, configurable: true }); }catch(e){}
+    try{ window.opArchivedProps = opArchivedProps; window.LDS_hasT12 = (k)=>propertyHasT12(k); window.LDS_folderCheck = ()=>opFolderCheck; }catch(e){}   // 2.9.8 diagnostics
     try{ window.opProperties = opProperties; window.propertyKey = propertyKey; window.opPushInput = opPushInput; }catch(e){}   // diagnostics for tests: the per-property grouping + what Claude is sent for "what to push"
     try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     try{ window.LDS_loanTier=(l)=>loanTier(l); window.LDS_loanDSCR=(l)=>loanDSCR(l); window.LDS_loanLTV=(l)=>loanLTV(l); window.LDS_loanDebtYield=(l)=>loanDebtYield(l); window.LDS_activeLoan=()=>getLoan(state.activeId); window.LDS_combinedRefiLoan=(members)=>combinedRefiLoan(members); window.LDS_computeBalance=(l)=>compute(l).derived.currentBalance; }catch(e){}   // diagnostics: the credit tier (3 metrics) + combined-stack refi
@@ -6154,6 +6325,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
     try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
+    try{ window.LDS_aiAsstOpenConv=(sc,id)=>aiAsstOpenConv(sc,id); window.LDS_aiAsstSystem=()=>AI_ASST_SYSTEM; }catch(e){}   // 2.9.8 diagnostics
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; window.LDS_readFileBytes=(name,b64,stopAfterPage)=>{ const c={stopped:false}; return fileTextFromBytes(name, opB64ToBytes(b64), { cancel:c, onProgress:(o)=>{ if(stopAfterPage && o.page>=stopAfterPage && !o.pct) c.stopped=true; } }); }; window.LDS_resumeReadingQueue=()=>resumeReadingQueue(); window.LDS_asstSplitCount=(text)=>aiAsstSplitParts([{name:'x',label:'',text:text}]).length; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
@@ -6181,6 +6353,7 @@ tr.flagged:hover td{background:#fee2e2}
     // Per-property Import/Update rent-roll button (property view) — imports for that property (Fix #1 safety net).
     try{ if(!document._rrImportForBound){ document._rrImportForBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-rrimportfor]"); if(b){ e.preventDefault(); opRentRollImportPickFor(b.getAttribute("data-rrimportfor")); } }); } }catch(e){}
     try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
+    try{ window.LDS_propGPR=async(k)=>{ const b=opMergeBench(uwDefaults().bench, await opLoadAssumptions(k)); return opPropGPR(k, b, propUnits(k)); }; window.LDS_uwFocus=()=>opFocusKey; }catch(e){}   // 2.9.8 diagnostics
     try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
     function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
@@ -6505,7 +6678,8 @@ tr.flagged:hover td{background:#fee2e2}
       var curAvg = uwNum(uwState.input.avgRentUnit);
       // 2.9.7 (#17) — your formula: the average MARKET rent of the OCCUPIED units × all units × 12 (vacant units left out of the average).
       var avgBasis = (b.avgMarketRentOccupied != null) ? b.avgMarketRentOccupied : null;
-      if((curAvg == null || curAvg === 0) && avgBasis != null){ uwState.input.avgRentUnit = avgBasis; changed = true; }
+      const typedGPR = !!(uwState.input.bench && uwState.input.bench.rentTyped && uwState.input.bench.rentTyped.rrGPR != null);   // 2.9.8 — a typed yearly rent stands alone
+      if((curAvg == null || curAvg === 0) && avgBasis != null && !typedGPR){ uwState.input.avgRentUnit = avgBasis; changed = true; }
       if(!changed) return false;
       var curGPR = uwNum(uwState.input.rrGPR);
       if(curGPR == null || curGPR === 0){ try{ uwFillRentFromAvg(); }catch(e){} }   // derive GPR only when the user hasn't set one
@@ -6603,6 +6777,7 @@ tr.flagged:hover td{background:#fee2e2}
       try{ if(tab.kind === "health") renderDataHealth(); }catch(e){}
       try{ if(tab.kind === "calendar") loadCalendarFrame(); }catch(e){}
       try{ renderTabStrip(); }catch(e){}
+      try{ const m = el("aiAsstModal"); if(m && !m.classList.contains("hidden")) aiAsstFillProps(); }catch(e){}   // 2.9.8 (problem 7) — the assistant's property list follows every add / rename / archive
     }
     function openTab(kind){
       let t = ldsTabs.find(x => x.kind === kind);
@@ -6993,15 +7168,21 @@ tr.flagged:hover td{background:#fee2e2}
         byType[loan.rateType]=(byType[loan.rateType]||0)+(d.currentBalance||0);
         const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
       const wAvg=totalBal>0?rateWB/totalBal:0;
-      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp}; });
-      let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0;
+      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,name:sr.propertyName||loanLabel(sr)}; });
+      // 2.9.8 (problem 4) — properties with no active loan stay in: their NOI counts, with no debt.
+      try{ opProperties().filter(p=>!(p.loans&&p.loans.length)).forEach(p=>{ items.push({ sr:null, key:p.key, name:p.name, combo:false, count:0, cp:loanlessPosition(p), noLoan:true }); }); }catch(e){}
+      let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0, dyNoi=0, dyBal=0, nNoLoan=0;
       // Every property with a positive NOI counts toward the portfolio coverage. A property with NOI ≤ 0 has no
       // meaningful ratio and is simply not counted. 2.9.7 (#119) — Portfolio DSCR = total NOI ÷ total yearly loan
       // payments over those properties (the Underwriting overview's formula, so both screens show one number);
       // Portfolio LTV (#165) = their total balance ÷ total value.
-      items.forEach(it=>{const cp=it.cp; if(cp.noi>0){nCov++;covBal+=cp.balTot||0; sumNOI+=cp.noi; sumDS+=cp.annualDS||0; if(cp.dscr!=null&&cp.dscr<COV_DSCR_FLOOR)nBelowD++; if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;} if(cp.value>0){ sumValue+=cp.value; sumBalV+=cp.balTot||0; if(cp.ltv!=null&&cp.ltv>COV_LTV_MAX)nAboveL++; }}});
-      const wDscr=sumDS>0?sumNOI/sumDS:null, wDy=covBal>0?dyW/covBal:null, wLtv=sumValue>0?sumBalV/sumValue:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
-      try{ window.LDS_lastHomeCoverage = { wDscr: wDscr, wDy: wDy, wLtv: wLtv, sumNOI: sumNOI, sumDS: sumDS, nCov: nCov, targets: portfolioTargets() }; }catch(e){}   // diagnostics
+      // 2.9.8 — a property with no loan adds its NOI to DSCR's and debt yield's numerators and its value to LTV's
+      // denominator, with no debt: removing a loan raises DSCR and debt yield and lowers LTV, as it should.
+      items.forEach(it=>{const cp=it.cp; if(!(cp.noi>0)) return; nCov++;
+        if(it.noLoan){ nNoLoan++; sumNOI+=cp.noi; dyNoi+=cp.noi; if(cp.value>0) sumValue+=cp.value; return; }
+        covBal+=cp.balTot||0; sumNOI+=cp.noi; sumDS+=cp.annualDS||0; if(cp.dscr!=null&&cp.dscr<COV_DSCR_FLOOR)nBelowD++; if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); dyNoi+=cp.noi; dyBal+=cp.balTot||0; if(cp.debtYield<COV_DY_FLOOR)nBelowY++;} if(cp.value>0){ sumValue+=cp.value; sumBalV+=cp.balTot||0; if(cp.ltv!=null&&cp.ltv>COV_LTV_MAX)nAboveL++; }});
+      const wDscr=sumDS>0?sumNOI/sumDS:null, wDy=dyBal>0?dyNoi/dyBal:null, wLtv=(sumValue>0&&(sumBalV>0||nNoLoan))?sumBalV/sumValue:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
+      try{ window.LDS_lastHomeCoverage = { wDscr: wDscr, wDy: wDy, wLtv: wLtv, sumNOI: sumNOI, sumDS: sumDS, sumBal: dyBal, sumValue: sumValue, nCov: nCov, nNoLoan: nNoLoan, targets: portfolioTargets() }; }catch(e){}   // diagnostics
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: rows.length+" loans · "+moneyShort(totalOrig)+" originated"})+
@@ -7020,7 +7201,7 @@ tr.flagged:hover td{background:#fee2e2}
       const ladder=chartCard("Debt maturing by year","balloon / payoff by maturity — amber = next 2 years",
         dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
       const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)||(it.cp.ltv!=null&&it.cp.ltv>COV_LTV_MAX)))
-        .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr.propertyName||loanLabel(it.sr))+'</span>').join(' ');
+        .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.name)+'</span>').join(' ');
       const coverageViz=chartCard("Coverage vs targets", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
         dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
         '<div class="h-3"></div>'+
@@ -7032,12 +7213,22 @@ tr.flagged:hover td{background:#fee2e2}
 
       const dCls=v=>v==null?'text-slate-400':v>=COV_DSCR_FLOOR?'text-emerald-700':v>=1.10?'text-amber-600':'text-rose-600';
       const yCls=v=>v==null?'text-slate-400':v>=COV_DY_FLOOR?'text-emerald-700':v>=0.06?'text-amber-600':'text-rose-600';
-      const sorted=items.slice().sort((a,b)=>{const av=a.cp.noi>0?(a.cp.dscr==null?9:a.cp.dscr):Infinity,bv=b.cp.noi>0?(b.cp.dscr==null?9:b.cp.dscr):Infinity;return av-bv;});
+      const rk=it=>it.noLoan?(it.cp.noi>0?20:30):(it.cp.noi>0?(it.cp.dscr==null?9:it.cp.dscr):Infinity); const sorted=items.slice().sort((a,b)=>{const av=rk(a),bv=rk(b); return av===bv?0:(av===Infinity?1:(bv===Infinity?-1:av-bv));});
       const thc=(t,e)=>'<th class="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 '+(e||'')+'">'+t+'</th>';
       // 2.9.4 — the refinance-opportunity columns (current rate vs today's market) fold into this table.
       const gCls=g=>g==null?'text-slate-400':g>0.0025?'text-emerald-700 font-semibold':'text-slate-500';
       const propRate=it=>{ try{ const list=it.combo?loansForProperty(it.sr):[it.sr]; let bT=0,cW=0,mW=0,any=false; list.forEach(l=>{ const dd=compute(l).derived; const mpp=refiMarketParts(l,l,{termMonths:l.loanTermMonths||l.amortizationMonths}); const b=dd.currentBalance||0; if(mpp&&mpp.marketRate!=null)any=true; bT+=b; cW+=(dd.currentRate||0)*b; mW+=((mpp&&mpp.marketRate)||0)*b; }); const cur=bT>0?cW/bT:(compute(it.sr).derived.currentRate||0), mkt=(any&&bT>0)?mW/bT:null; return {cur:cur,mkt:mkt,gap:mkt!=null?cur-mkt:null}; }catch(e){ return {cur:null,mkt:null,gap:null}; } };
       const tbody=sorted.map(it=>{const cp=it.cp,entered=cp.entered,covered=cp.noi>0;   // entered = an NOI figure exists (any sign); covered = positive, so ratios exist
+        if(it.noLoan){   // 2.9.8 — a property with no loan: its NOI is counted, there is no debt to cover
+          const nl='<span class="text-[11px] font-semibold text-slate-400">no loan</span>';
+          return '<tr class="hover:bg-slate-50" data-covnoloan="'+escapeHtml(it.key)+'">'+
+            '<td class="px-3 py-2 text-sm font-medium text-slate-900">'+escapeHtml(it.name)+' <span class="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold uppercase text-slate-500">no loan</span></td>'+
+            '<td class="px-3 py-2 text-sm text-right tabular-nums '+(entered&&!covered?'text-rose-600 font-semibold':'text-slate-600')+'">'+(entered?fmtMoney(cp.noi):'—')+'</td>'+
+            '<td class="px-3 py-2 text-right">'+nl+'</td><td class="px-3 py-2 text-right">'+nl+'</td><td class="px-3 py-2 text-right">'+nl+'</td>'+
+            '<td class="px-3 py-2 text-sm text-right text-slate-400">—</td><td class="px-3 py-2 text-sm text-right text-slate-400">—</td><td class="px-3 py-2 text-sm text-right text-slate-400">—</td>'+
+            '<td class="px-3 py-2"><div class="flex items-center justify-between gap-2">'+(entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">NOI counted · no debt</span>':'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>')+
+              '<button type="button" data-openprop="'+escapeHtml(it.key)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Open</button></div></td>'+
+          '</tr>'; }
         const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
         const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
           :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
@@ -7984,18 +8175,23 @@ tr.flagged:hover td{background:#fee2e2}
     // Merge: a matched loan gets ONLY the sheet-provided fields overwritten (so it never loses data the sheet
     // omitted); an unmatched loan is added in full. 2.9.7 (#231) — shared with the assistant's import (no screen change).
     function importApplyDrafts(drafts, from){
-      let added=0, updated=0, unchanged=0, firstId=null;
+      let added=0, updated=0, unchanged=0, firstId=null; const moves=[];
       drafts.forEach(d => {
         const e = evalImportRow(d), match = e.match;
         if(match){
           if(!e.changed){ unchanged++; return; }   // 2.9.7 (#71) — an untouched loan stays exactly as it was
-          const before = JSON.parse(JSON.stringify(match));
+          const before = JSON.parse(JSON.stringify(match)), kb = propertyKey(match);
           (d._provided||new Set()).forEach(k => { if(!importSameVal(k, d[k], match[k])) match[k] = d[k]; });
           try{ loanHistoryDiff(before, match, from || "excel-import"); }catch(err){}   // 2.9.7 (#252)
+          const ka = propertyKey(match); if(kb !== ka) moves.push({ loan: match, kb, ka });   // 2.9.8 — a new name/address moves its folder, as a typed edit does
           updated++; if(!firstId) firstId = match._id;
         }
         else { d.isHistorical = true; delete d._provided; delete d._importId; try{ loanHistoryAdd(d, "created", null, "added", from || "excel-import"); }catch(err){} loans.push(d); added++; if(!firstId) firstId = d._id; }
       });
+      // 2.9.8 (problem 8) — the folders follow the import: renamed properties' files move, then every property
+      // (new ones included) is made sure to have its folder.
+      (async () => { for(const m of moves){ try{ opFollowRename(m.loan, m.kb, m.ka); }catch(e){} try{ await propRenameFiles(m.loan, m.kb, m.ka, { merge: false, from: from || "excel-import" }); }catch(e){} }
+        try{ await opEnsureAllFolders(); }catch(e){} })();
       return { added, updated, unchanged, firstId };
     }
     function closeImportPreview(){ importState = null; hideModal("importPreview"); }
@@ -8654,6 +8850,27 @@ tr.flagged:hover td{background:#fee2e2}
         debtYield: (noi > 0 && balTot > 0) ? noi / balTot : null,
         ltv: (value > 0 && balTot > 0) ? balTot / value : null,
       };
+    }
+    // 2.9.8 (problem 4) — a property with NO active loan (never had one, or its loans were removed / paid off)
+    // still earns its NOI: the portfolio counts that income with no debt against it. Its NOI comes from the same
+    // places as any property's — your override, its T12, its operating lines, the last loan's own NOI figure,
+    // the profile's entered NOI — and its value from that NOI at the last loan's cap rate (else the default).
+    function propNOIByKey(key, inactive){
+      const ov = propNOIOverride(key); if(ov != null) return ov;
+      const g = gdNOICache[key]; if(g && g.inPlace != null && isFinite(g.inPlace)) return g.inPlace;
+      try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return n; } }catch(e){}
+      const old = (inactive || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi)));
+      const pos = old.find(l => Number(l.noi) > 0); if(pos) return Number(pos.noi);
+      if(old.length) return Number(old[0].noi);
+      return propEnteredNOI(key);
+    }
+    function loanlessPosition(p){
+      const inact = (p.inactive || []).slice().sort(loanRank);
+      const noi = propNOIByKey(p.key, inact);
+      const sr = inact.find(l => !isMezz(l)) || inact[0] || null;
+      const cr = sr ? loanCapRate(sr) : defaultCapRate(null), value = (noi > 0 && cr > 0) ? noi / cr : null;
+      return { count: 0, origTot: 0, balTot: 0, piMoTot: 0, dsMoTot: 0, noi, entered: noi != null, value, annualDS: 0,
+               blended: 0, dscr: null, debtYield: null, ltv: null, noLoan: true };
     }
     // A synthetic single loan representing a whole property's combined debt, so the
     // property can be refinanced as ONE package (you refinance the property, not the
@@ -10293,6 +10510,7 @@ tr.flagged:hover td{background:#fee2e2}
       "ATTACHMENTS: the operator may attach files (PDF, Word, Excel, text, Markdown, and pictures — JPG/PNG, read by OCR). When they do, the message carries each file's extracted text inside <file name=\"…\" read=\"…\"> tags (read= says how it was read: pages, pages read by OCR, pages that couldn't be read). Files attached earlier in the conversation are sent again with every message. When the files are too long for one message you get NOTES taken while reading them in parts instead of the text — answer from the notes — treat that as the source for their request (e.g. read a T12 for NOI, a servicer statement for a balance or rate, an agreement for terms). If a file's content implies a change to an existing loan, use propose_loan_change so the operator can review and approve it. Quote the figures you took from the file. Never claim you saved anything.",
       "SCANNED AND MISSING PAGES: file text is marked page by page. A page marked \"[page N · read by OCR — may contain errors]\" was read from a scan: whenever your answer uses something from such a page, add \"(from page N, read from a scan — may contain errors; please check against the original)\". A page marked \"could not be read\" (or a read=\"…\" label saying pages couldn't be read, or that reading was stopped) is MISSING — never answer as if you read it; say which pages are missing when they matter.",
       "SAVED PROPERTY DOCUMENTS: files the operator saved to a property persist across sessions. When they focus a property (a property picker, or by naming it), that property's saved documents are included in the message the same way (inside <file> tags) — use them directly; do NOT ask the operator to re-upload a file that is already on file. The message also lists which properties have saved documents. If they ask about a property whose documents aren't loaded, tell them to select that property (or say its name) so its files load.",
+      "THE PROPERTY SELECTOR at the top of the chat belongs to the operator: you cannot change it. A chat is about one property, or it is a general chat, for good — naming a property in a general chat does not make it that property's chat (its data is still given to you). Never say you selected, switched or focused a property; if the operator wants a chat about another property, tell them to pick it in the selector (that opens a new chat).",
       "ACTIONS — when the operator asks you to DO something in the app, reply with a short sentence saying what you are about to do, then one fenced code block tagged action per step, each holding one JSON object {\"action\":\"…\",\"args\":{…}} (several blocks run in the order written). Use only these actions and argument names:",
       "READING ACTIONS — nothing changes and no card is shown; use them yourself whenever you need to look something up, and their DATA comes back to you in the next message: list_properties {} (every property — active, without a loan, archived — with its loans and their status); read_property {name} (one property in full: its loans and status, profile, NOI from the T12 and entered, underwriting assumptions, T12 lines with the change vs the prior year, rent roll, refinance verdict, documents); read_rates {} (the market rates the app holds and where each comes from); read_documents {name, file?, part?} (without file: the property's saved documents; with file: that document's text — a long one comes in parts, ask for part 2, 3 … to keep reading, never answer about a part you have not read); read_data_health {} (the Data Health page); read_settings {} (targets, default assumptions, Claude connection, backups).",
       "SCREENS — only when the operator asks to SEE something; each brings its tab to the front: open_loan {name} (a loan's page, or the senior + mezz view of a property name); open_property {name} (a property's page); show_portfolio {}; open_calendar {}; open_underwriting {name?}; open_data_health {}; open_settings {}; open_export {} (the Export-to-Excel dialog); open_documents_folder {}.",
@@ -11192,7 +11410,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(!aiAsstHistory.length) aiAsstRenderWelcome();
       aiAsstToggleHistory(false);
       // If opened from a loan, focus that loan's property by default.
-      if((state.mode==="view"||state.mode==="edit"||state.mode==="refi") && state.activeId){ var al=getLoan(state.activeId); if(al) aiAsstFocusPropKey=propertyKey(al); }
+      // 2.9.8 (problem 9) — a chat already under way comes back exactly as you left it (general stays general);
+      // the page on screen only picks the property of a brand-new, empty chat.
+      if(!aiAsstHistory.length && !aiAsstConvId && (state.mode==="view"||state.mode==="edit"||state.mode==="refi") && state.activeId){ var al=getLoan(state.activeId); if(al) aiAsstFocusPropKey=propertyKey(al); }
       aiAsstFillProps();
       aiAsstFillModelEffort();   // show model/effort immediately if we already have status; refresh fills it otherwise
       aiAsstRefreshConn();
@@ -11265,7 +11485,9 @@ tr.flagged:hover td{background:#fee2e2}
       var sel=el("aiAsstProp"); if(!sel) return;
       if(!docsAvailable()){ sel.parentNode.classList.add("hidden"); return; }
       var opts='<option value="">No property — general chat</option>';
-      aiAsstProperties().forEach(function(p){ opts+='<option value="'+escapeHtml(p.key)+'"'+(p.key===aiAsstFocusPropKey?' selected':'')+'>'+escapeHtml(p.name)+'</option>'; });
+      var plist=aiAsstProperties();
+      if(aiAsstFocusPropKey && !plist.some(function(p){ return p.key===aiAsstFocusPropKey; })){ var gone=aiAsstPropName(aiAsstFocusPropKey); if(gone) plist=plist.concat([{ key:aiAsstFocusPropKey, name:gone+" (archived)" }]); }   // the chat's own property stays shown even if archived
+      plist.forEach(function(p){ opts+='<option value="'+escapeHtml(p.key)+'"'+(p.key===aiAsstFocusPropKey?' selected':'')+'>'+escapeHtml(p.name)+'</option>'; });
       sel.innerHTML=opts; sel.value=aiAsstFocusPropKey;
       aiAsstUpdatePropDocs();
     }
@@ -11695,7 +11917,7 @@ tr.flagged:hover td{background:#fee2e2}
                       var ocrP = (hit && hit.text) ? Promise.resolve(hit.text) : (function(){
                         var vp0=pg.getViewport({scale:1}), scale=Math.min(3, Math.max(1, 1700/(vp0.width||1))), vp=pg.getViewport({scale:scale}), cv=document.createElement("canvas");
                         cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
-                        return pg.render({ canvasContext: cv.getContext("2d",{willReadFrequently:true}), viewport: vp }).promise.then(function(){ return ocrCanvas(cv, function(pct){ prog({ page:num, pages:n, scanned:true, pct:pct }); }); })
+                        return pg.render({ canvasContext: cv.getContext("2d",{willReadFrequently:true}), viewport: vp, intent: "print" }).promise.then(function(){ return ocrCanvas(cv, function(pct){ prog({ page:num, pages:n, scanned:true, pct:pct }); }); })
                           .then(function(ot){ if(ot && sha && ldsShell.ocrCachePut) ldsShell.ocrCachePut({ sha:sha, page:num, text:ot, pages:n }).catch(function(){}); return ot; }); })();
                       return ocrP.then(function(ot){
                         if(ot){ ocrPages.push(num); out[i]="[page "+num+" · read by OCR — may contain errors]\n"+(real?real+"\n":"")+ot; }
@@ -11808,9 +12030,11 @@ tr.flagged:hover td{background:#fee2e2}
       if(loading){ toast("Still reading the attached file — one moment","info"); return; }
       if((!question && !ready.length) || aiAsstBusy || !aiAsstConnected) return;
       var input=el("aiAsstInput"); if(input) input.value="";
-      // Focus property: the picker, else a property whose name appears in the message.
-      var focusKey = aiAsstFocusPropKey || aiAsstDetectProp(question);
+      // 2.9.8 (problem 9) — the chat's property is the selector's, nothing else: a general chat stays general even
+      // when you name a property (Claude still reads that property's data to answer — see readKey below).
+      var focusKey = aiAsstFocusPropKey;
       var focusName = focusKey ? aiAsstPropName(focusKey) : "";
+      var readKey = focusKey || aiAsstDetectProp(question), readName = readKey ? aiAsstPropName(readKey) : "";
       if(!aiAsstConvScope) aiAsstConvScope = focusKey || "portfolio";   // fix the conversation's scope at its first message
       var chips = ready.length ? ('<div class="mt-1.5 flex flex-wrap gap-1">'+ready.map(function(f){ return '<span class="inline-flex items-center gap-1 rounded bg-white/20 px-1.5 py-0.5 text-[11px]">📎 '+escapeHtml(f.name)+'</span>'; }).join("")+'</div>') : "";
       var propTag = focusName ? ('<div class="mt-1 text-[11px] opacity-80">🏢 '+escapeHtml(focusName)+'</div>') : "";
@@ -11827,9 +12051,11 @@ tr.flagged:hover td{background:#fee2e2}
       // focused property, so a file dropped in the assistant always lands in at least one folder.
       if(toSave.length && docsAvailable()){
         var fobjs = toSave.map(function(f){ return f.fileObj; }).filter(Boolean);
+        // 2.9.8 — filed by CONTENT in any chat (a T12 naming six properties goes to all six — problem 1); the fallback
+        // is the chat's own property only, never one guessed from the words of a general chat.
         if(fobjs.length){ try{ aiSaveFilesToProp(fobjs, focusKey || "", focusName || ""); }catch(e){} }
       }
-      aiAsstTurn({ question: question, focusKey: focusKey, focusName: focusName, round: 0, fresh: !!ready.length });
+      aiAsstTurn({ question: question, focusKey: readKey, focusName: readName, general: !focusKey, round: 0, fresh: !!ready.length });
     }
     // 2.9.7 (#53, #56) — every property, not only the ones with an active loan: loan-less and archived ones too,
     // so Claude never says a property doesn't exist when it is just archived or has no loan yet.
@@ -11935,7 +12161,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(docIdx && docIdx.byKey){ var names=Object.keys(docIdx.byKey).map(function(k){ var e=docIdx.byKey[k]; return e.propName?(e.propName+" ["+e.files.join(", ")+"]"):""; }).filter(Boolean); if(names.length) idxLine="Saved property documents on file (the operator can select or name a property to load its documents into this chat): "+names.join("; ")+".\n\n"; }
         var focusBlock="";
         if(focusName){
-          focusBlock="The operator is focused on the property \""+focusName+"\". ";
+          focusBlock=(t.general ? "This is a GENERAL chat (not tied to a property); the operator's message names the property \""+focusName+"\", so its data is included. " : "The operator is focused on the property \""+focusName+"\". ");
           if(notes && docTxt && docTxt.text){ focusBlock+="Its saved documents were read in parts — the notes are below.\n\n"; }
           else if(docTxt && docTxt.text){ focusBlock+="Its saved documents, newest first, are below — use them, no need to ask the operator to attach anything:\n"+docTxt.text+"\n\n"; }
           else { focusBlock+="It has no readable saved documents yet; if the operator expects some, tell them to attach the file with this property selected so it is saved.\n\n"; }
@@ -12035,7 +12261,7 @@ tr.flagged:hover td{background:#fee2e2}
         // A round that only opened screens, all of which opened, is finished — the screen is the answer.
         if(outcomes.length && outcomes.every(function(o){ return o.ok && o.close; })){ aiAsstSetBusy(false); setTimeout(function(){ aiAsstClose(); }, 400); return; }
         if((t.round||0) + 1 >= AI_ASST_MAX_ROUNDS){ aiAsstBubble("assistant", '<span class="text-[12px] text-slate-500">Stopped after '+AI_ASST_MAX_ROUNDS+' steps — ask again to continue.</span>'); aiAsstSetBusy(false); return; }
-        aiAsstTurn({ question: t.question, focusKey: t.focusKey, focusName: t.focusName, round: (t.round||0) + 1, notes: t.notes || null });
+        aiAsstTurn({ question: t.question, focusKey: t.focusKey, focusName: t.focusName, general: t.general, round: (t.round||0) + 1, notes: t.notes || null });
       });
     }
     // Every action block in a reply, in order: ```action {…}``` blocks (or a JSON array / {"actions":[…]}), and a
@@ -12137,7 +12363,7 @@ tr.flagged:hover td{background:#fee2e2}
         aiAsstHistory=(c.messages||[]).map(function(m){ return Object.assign({}, m); });   // 2.9.7 (#98) — cards, results and outcomes come back too
         aiAsstConvFileTexts=[];
         aiAsstConvId=c.id; aiAsstConvScope=c.scope||scope; aiAsstConvTitle=c.title||""; aiAsstConvFiles=c.files||[]; aiAsstConvPinned=!!c.pinned;
-        if(c.scope && c.scope!=="portfolio"){ aiAsstFocusPropKey=c.scope; aiAsstFillProps(); }
+        aiAsstFocusPropKey=(c.scope && c.scope!=="portfolio") ? c.scope : ""; aiAsstFillProps();   // 2.9.8 — a general chat reopens as general
         aiAsstRenderThread();
         aiAsstToggleHistory(false);
         toast("Reopened — the assistant has this conversation’s memory","check");
@@ -12256,14 +12482,14 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Start a new chat: clear the running thread + any staged attachments and show the
     // welcome. The loans themselves are untouched — this only frees the assistant's context.
-    function aiAsstNewSession(){
+    function aiAsstNewSession(opts){
       if(aiAsstBusy) aiAsstStop();
       aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[];
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
       aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
       aiAsstToggleHistory(false);
       aiAsstRenderWelcome();
-      toast("Started a new chat","check");
+      if(!(opts && opts.quiet)) toast("Started a new chat","check");
     }
     // Compact: ask Claude to summarize the conversation so far into a compact brief, then
     // replace the whole thread with that one summary. Keeps continuity (loans discussed,
@@ -12376,7 +12602,15 @@ tr.flagged:hover td{background:#fee2e2}
       if(el("aiAsstNew")) el("aiAsstNew").addEventListener("click", aiAsstNewSession);
       if(el("aiAsstCompact")) el("aiAsstCompact").addEventListener("click", aiAsstCompact);
       if(el("aiAsstHistoryBtn")) el("aiAsstHistoryBtn").addEventListener("click", function(){ aiAsstToggleHistory(); });
-      if(el("aiAsstProp")) el("aiAsstProp").addEventListener("change", function(){ aiAsstFocusPropKey=this.value||""; aiAsstUpdatePropDocs(); });
+      // 2.9.8 (problem 9) — one chat is one property, or general: picking another one in a chat that has started opens
+      // a new chat for it; the chat you were in stays saved (History) under its own property.
+      if(el("aiAsstProp")) el("aiAsstProp").addEventListener("change", function(){
+        var nv=this.value||""; if(nv===aiAsstFocusPropKey) return;
+        var started=!!aiAsstConvId || aiAsstHistory.some(function(m){ return m && m.role==="user"; });
+        var was=aiAsstConvScope && aiAsstConvScope!=="portfolio" ? aiAsstPropName(aiAsstConvScope) : "";
+        aiAsstFocusPropKey=nv;
+        if(started){ aiAsstNewSession({ quiet:true }); toast("New chat for "+(nv ? aiAsstPropName(nv) : "general questions")+" — your chat"+(was ? " about "+was : "")+" is saved in History","check"); }
+        aiAsstFillProps(); aiAsstUpdatePropDocs(); });
       if(el("aiAsstModelPick")) el("aiAsstModelPick").addEventListener("change", function(){ var v=(this.value||"").trim(); this.value=v; if(ldsShell.aiSetModel) ldsShell.aiSetModel(v).then(function(r){ if(aiStatusCache) aiStatusCache.model=(r&&typeof r.model==="string")?r.model:v; }); });
       if(el("aiAsstEffortPick")) el("aiAsstEffortPick").addEventListener("change", function(){ var v=this.value; if(ldsShell.aiSetEffort) ldsShell.aiSetEffort(v).then(function(){ if(aiStatusCache) aiStatusCache.effort=v; }); });
       // File attachments: button + hidden input + drag-and-drop onto the chat.
@@ -12495,6 +12729,7 @@ tr.flagged:hover td{background:#fee2e2}
     if(appBooting){
       (async function bootLoad(){
         try{ await opLoadAllProfiles(); }catch(e){}
+        try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8) — every property shown has its folder
         try{ await opRecomputeOnVersionChange(); }catch(e){}
         try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
         appBooting = false;

@@ -101,6 +101,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      // 2.9.8 — keep working when the window is behind another one: OCR reads a scanned page by
+      // drawing it, and Chromium otherwise slows a background window's timers and drawing to a crawl.
+      backgroundThrottling: false,
     },
   });
 
@@ -166,7 +169,7 @@ function openPanel(kind){
     win = new BrowserWindow({
       width: kind === 'calendar' ? 1200 : 1100, height: 860, minWidth: 720, minHeight: 520, show: false,
       backgroundColor: '#f6f8f2', title: panelTitle(kind), autoHideMenuBar: true, titleBarStyle: 'hidden',
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false, backgroundThrottling: false },
     });
   } catch (err) { mainLog('open-panel ' + kind + ' failed: ' + ((err && err.stack) || err)); return { ok: false, error: String((err && err.message) || err) }; }
   panelWindows[kind] = win;
@@ -561,6 +564,7 @@ ipcMain.handle('lds:doc-list', (e, { propKey }) => {
   catch (err) { return { ok: false, error: String((err && err.message) || err), files: [] }; }
 });
 // A light index across ALL properties (propKey → filenames) for the assistant snapshot.
+ipcMain.on('lds:log', (e, line) => { mainLog('app: ' + String(line || '').slice(0, 2000)); });   // 2.9.8
 ipcMain.handle('lds:doc-index', () => {
   const out = {};
   try {
@@ -964,6 +968,8 @@ ipcMain.handle('lds:ai-chat-cancel', (e, { token }) => ai.cancelChat(token));
 ipcMain.handle('lds:ai-login', () => ai.login());
 ipcMain.handle('lds:ai-logout', () => ai.logout());
 
+// 2.9.8 — a window that is hidden or covered keeps running at full speed (OCR, reading queue).
+try { app.commandLine.appendSwitch('disable-renderer-backgrounding'); app.commandLine.appendSwitch('disable-backgrounding-occluded-windows'); app.commandLine.appendSwitch('disable-background-timer-throttling'); } catch (e) {}
 app.whenReady().then(() => {
   registerAppProtocol();
   setTimeout(pruneOcrCache, 30000);

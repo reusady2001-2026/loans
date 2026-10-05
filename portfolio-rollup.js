@@ -143,10 +143,11 @@
   // never on one side of a ratio only: a matured loan (balance 0, DS > 0) counts
   // in DSCR but not in DY, so its NOI cannot lift the portfolio debt yield above
   // every row's own. noiProps counts every property with an NOI; a ratio is
-  // null, never 0 or NaN, unless both of its sums are positive.
+  // null, never 0 or NaN, unless both of its sums are positive. 2.9.8: a property with no loan is on the
+  // NOI side of both ratios (noLoanProps) — its income is the portfolio's, it just carries no debt.
   function totalsOf(rows){
     var t = { properties: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0, noiProps: 0,
-              dscrProps: 0, dscrNoi: 0, dsCovered: 0, dyProps: 0, dyNoi: 0, balanceCovered: 0, dscr: null, dy: null };
+              dscrProps: 0, dscrNoi: 0, dsCovered: 0, dyProps: 0, dyNoi: 0, balanceCovered: 0, noLoanProps: 0, dscr: null, dy: null };
     rows.forEach(function (r){
       t.loans += r.loans || 0;
       if (r.balance != null)  t.balance  += r.balance;
@@ -155,6 +156,10 @@
       if (r.noi == null) return;
       t.noi = (t.noi == null ? 0 : t.noi) + r.noi;
       t.noiProps++;
+      // 2.9.8 — a property with NO loan still earns its NOI: it counts on the NOI side of both ratios
+      // (owned free and clear, it adds income and no debt), so removing a loan raises the portfolio's
+      // DSCR and debt yield instead of dropping the property's income.
+      if (!(r.loans > 0)) { t.noLoanProps++; t.dscrProps++; t.dscrNoi += r.noi; t.dyProps++; t.dyNoi += r.noi; return; }
       if (r.annualDS > 0) { t.dscrProps++; t.dscrNoi += r.noi; t.dsCovered += r.annualDS; }
       if (r.balance > 0)  { t.dyProps++;   t.dyNoi   += r.noi; t.balanceCovered += r.balance; }
     });
@@ -229,7 +234,8 @@
     var of = function (n){ return n + " of " + N + (N === 1 ? " property" : " properties"); };
     if (!k) return "NOI on " + of(0) + " — enter operating lines to get a portfolio DSCR / debt yield";
     var part = function (label, r, n, covered, what){ return label + " " + r + " (" + of(n) + (n ? ", " + short(covered) + " " + what : "") + ")"; };
-    return part("DSCR", ratio(t.dscr), t.dscrProps || 0, t.dsCovered, "DS") + " · " + part("DY", pct(t.dy), t.dyProps || 0, t.balanceCovered, "balance") + " · NOI on " + of(k);
+    return part("DSCR", ratio(t.dscr), t.dscrProps || 0, t.dsCovered, "DS") + " · " + part("DY", pct(t.dy), t.dyProps || 0, t.balanceCovered, "balance") + " · NOI on " + of(k) +
+      (t.noLoanProps ? " · " + t.noLoanProps + " with no loan (NOI counted, no debt)" : "");
   }
   function day(iso){ var m = (typeof iso === "string") && iso.match(ISO_DAY); return m ? (m[2] + "/" + m[3] + "/" + m[1]) : DASH; }
   // Maturity cell: normally the date; when a loan on the row has matured or its extension is undecided,

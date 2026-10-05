@@ -479,5 +479,22 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   global.OperatingCalc = fake;
 });
 
+section("2.9.8 — a property with no loan keeps its NOI in the portfolio (no debt)", () => {
+  // Weaver's loan is removed: its record (NOI 815,000) stays, it simply carries no debt any more.
+  const loans = LOANS.filter(l => l._id !== "l-weaver");
+  const t = PR.buildRows(REC, loans, hooksFor(loans), GD).totals;
+  ok(cents(t.noi, 12765000), "total NOI is unchanged: 12,765,000 (got " + t.noi + ")");
+  ok(t.noLoanProps === 1, "Weaver is counted as a property with no loan (got " + t.noLoanProps + ")");
+  ok(cents(t.dsCovered, 6852000) && cents(t.balanceCovered, 121000000), "its debt left the ratios: DS 6,852,000 / balance 121,000,000 (got " + t.dsCovered + " / " + t.balanceCovered + ")");
+  ok(t.dscr === 12765000 / 6852000, "DSCR = 12,765,000 / 6,852,000 = 1.863 — higher than with the loan (1.760) (got " + t.dscr + ")");
+  ok(t.dy === 12765000 / 121000000, "debt yield = 12,765,000 / 121,000,000 = 10.55% — higher than with the loan (9.90%) (got " + t.dy + ")");
+  ok(t.dscr > out.totals.dscr && t.dy > out.totals.dy, "removing a loan raises both ratios, never lowers them");
+  const back = PR.buildRows(REC, LOANS, hooksFor(LOANS), GD).totals;
+  ok(back.dscr === out.totals.dscr && back.dy === out.totals.dy && back.noLoanProps === 0, "restoring the loan gives exactly the earlier numbers");
+  ok(/1 with no loan \(NOI counted, no debt\)/.test(PR.scopeText ? PR.scopeText(t) : (function(){ const m = mount(); PR.render(m, PR.buildRows(REC, loans, hooksFor(loans), GD)); return m.innerHTML; })()), "the roll-up says how many properties have no loan");
+  const orphanOnly = PR.buildRows({ [K.orphan]: REC[K.orphan] }, [], hooksFor([]), GD).totals;
+  ok(orphanOnly.dscr === null && orphanOnly.dy === null && orphanOnly.noLoanProps === 0, "a property with no loan AND no NOI adds nothing (unknown ≠ zero)");
+});
+
 console.log("\n" + (fails ? fails + " of " + count + " checks FAILED" : "all " + count + " checks passed"));
 process.exit(fails ? 1 : 0);
