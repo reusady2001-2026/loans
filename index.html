@@ -1519,6 +1519,7 @@
     }
     function setLiveRate(id, r){
       if(!r || !isFinite(r.value)) return;
+      if(r.builtin){ INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: null, saved: true, builtin: true }; return; }   // 2.9.8 — a built-in value is never stored or labelled as fetched
       if(r.stale){ INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: null, saved: true }; return; }
       INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: new Date().toISOString(), live: true };
       try{ const all = JSON.parse(localStorage.getItem(LIVE_RATES_KEY) || "{}"); all[id] = { value: r.value, date: r.date || null, fetchedAt: INDEX_CACHE[id].fetchedAt }; localStorage.setItem(LIVE_RATES_KEY, JSON.stringify(all)); }catch(e){}
@@ -1528,6 +1529,7 @@
     function rateSourceText(id){
       const c = INDEX_CACHE[id], cat = INDEX_BY_ID[id];
       if(cat && !cat.live) return "your entered value";
+      if(c && c.builtin) return "Built-in rate — fetch to update";
       if(c && !c.saved) return "live" + (c.date ? " · " + fmtDateLong(c.date) : "");
       if(c && c.saved) return "Last saved rate · " + fmtDateLong(c.date || c.fetchedAt);
       return "Built-in rate — fetch to update";
@@ -3145,7 +3147,9 @@
       const l = latestDated(Object.assign({}, DAILY_BUILTIN.sofr30, RATE_HIST.sofr30 || {}));
       if(!l) return null;
       RATE_HIST.meta.sofr30 = { value: l.value, date: l.date, fetchedAt: new Date().toISOString() }; saveRateHist();
-      return { value: l.value, date: l.date, stale: (daysSince(l.date) || 0) > 4 };   // older than a long weekend → "last saved <date>"
+      // 2.9.8 — a value that only exists in the built-in table was never fetched: it is labelled "Built-in rate", not "Last saved rate".
+      const fromSaved = Object.prototype.hasOwnProperty.call(RATE_HIST.sofr30 || {}, l.date);
+      return { value: l.value, date: l.date, stale: (daysSince(l.date) || 0) > 4, builtin: !fromSaved };   // older than a long weekend → "last saved <date>"
     }
     // 2.9.7 (#256) — 1-month Term SOFR: Pensford's public rate data, read by the main process (the site
     // does not allow it from the page). Today's value plus every day since the last one saved. If the site
@@ -3166,7 +3170,8 @@
       const l = latestDated(Object.assign({}, DAILY_BUILTIN.termsofr1m, RATE_HIST.termsofr1m || {}));
       if(!l) return null;
       RATE_HIST.meta.termsofr1m.value = l.value; RATE_HIST.meta.termsofr1m.date = l.date; saveRateHist();
-      return { value: l.value, date: l.date, stale: !(r && r.ok && r.live) };
+      const fromSaved = Object.prototype.hasOwnProperty.call(RATE_HIST.termsofr1m || {}, l.date);
+      return { value: l.value, date: l.date, stale: !(r && r.ok && r.live), builtin: !fromSaved };
     }
     function isoAddDays(iso, n){ const d = new Date(String(iso).slice(0,10) + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
     // Days since a dated value (for the "may have changed" note after 7 days without a fresh one).

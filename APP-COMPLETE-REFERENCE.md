@@ -410,8 +410,9 @@ saved, the key is used.
 ## 8. Stage 2.9.8 — what shipped, and what still needs checking
 
 **What shipped** — the problems found testing the installed 2.9.7:
-1. A T12 workbook with one sheet per property goes to every property, each with its own sheet; your pick always
-   gets the file; the assistant can save, copy and move files between properties.
+1. A T12 workbook with one sheet per property goes to every property, each with its own sheet; the property you
+   dropped it on gets it too (the app asks which sheet is its T12); the assistant can save, copy and move files
+   between properties.
 2. Popping a tab out works like a browser tab (it leaves the strip; docks back where it was, as the window showed).
 3. OCR keeps reading while the app is in the background.
 4. Removing a loan keeps the property's NOI in the portfolio (DSCR / debt yield up, LTV down).
@@ -424,6 +425,8 @@ saved, the key is used.
 11. "Needs review" shows the real Excel row and sheet.
 12. Automatic backups say what changed.
 13. Documents show how each file was read and recognise loan agreements.
+14. A rate that was never fetched (30-day Average SOFR, 1-month Term SOFR with no internet) says "Built-in rate —
+    fetch to update", not "Last saved rate", and is never stored as if it had been fetched.
 
 **Check on the real installed 2.9.8 (Windows)** — Part 2 of the check list (one check per item above), plus:
 OCR reading on while you work in another window, and the pop-out windows.
