@@ -1,19 +1,19 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.7 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.8 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.7
+**Current version:** 2.9.8
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
-**Portfolio today:** 27 properties.
+**Portfolio today:** 29 properties.
 
 > This is the master overview. It sits alongside the other docs in the repo (`README.md`, `TODO.md`,
 > `QUESTIONS-FOR-AZRIEL.md`, `SPEC-v2.3.0-operating-model.md`, `OPERATING-CONTRACT.md`,
 > `LOAN-VALIDATION-FLAGS.md`, `DESKTOP.md`, `GRADE-BOARD.md`, `INVOICE-RECONCILIATION.md`) and is meant to be
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
-> the app (marked "2.9.7" below).
+> the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8").
 
 ---
 
@@ -81,7 +81,10 @@ Release with the installer, `.blockmap` and `latest.yml` (what each machine's up
 Windows SmartScreen shows "More info → Run anyway" the first time.
 
 **The workspace (navigation):** a tabbed workspace. Tabs can be dragged to reorder and popped out into their own
-windows (and docked back). The tab kinds:
+windows (and docked back). **2.9.8:** popping a tab out works like dragging a browser tab out — the tab leaves the
+main window, and its window opens on what the tab showed (Underwriting's property, the Calendar's view and
+filters); **Dock into main window** puts it back in the same place, showing what the window showed; "+" for a tool
+that is out brings its window to the front; closing the window with its X closes the tab. The tab kinds:
 - **Home** — the portfolio dashboard, every loan's and property's page, and the refinance screen.
 - **Underwriting** — sizing, assumptions, T12, rent roll, "what to push".
 - **Calendar** — the Maturity & Reset Calendar.
@@ -98,7 +101,9 @@ Everything is stored on disk under the app's user-data folder; the browser stora
 
 - **`loans.json`** (2.9.7) — every loan record (moved out of browser storage; copied over on the first 2.9.7 start).
 - **One folder per property** (`documents/<sha1(key)[:16]>`), keyed by the property's name (address as
-  tiebreaker), holding:
+  tiebreaker). **2.9.8:** every property the app shows has one, even with no file, with `profile.json` and
+  `general-data.json` ("no T12 yet" until one is added) — checked at every start and after an Excel import. A T12
+  workbook's entry records which sheet is that property's. Holding:
   - `profile.json` — the property's details, each with who / when / where-from history;
   - `assumptions.json` — its Underwriting assumptions (and pinned lines);
   - `general-data.json` — the monthly operating series, both NOIs, the T12 double reading, "what to push";
@@ -122,6 +127,11 @@ files, the app asks first ("Put them together").
   with **Restore** and **Delete permanently**.
 - **KPI tiles are clickable**; the DSCR tile shows its formula. Portfolio **targets** (DSCR 1.25×, LTV 75%, debt
   yield 8%) are set in Settings.
+- **Portfolio coverage (2.9.8):** every property that isn't archived counts its NOI — with or without a loan.
+  Portfolio DSCR = all NOI ÷ all yearly loan payments; debt yield = all NOI ÷ all debt; LTV = all debt ÷ all
+  property values. A property with no loan stays in the Coverage table with its NOI and "no loan". Total debt and
+  the weighted-average rate cover loans only. Underwriting's Portfolio roll-up uses the same rule. A sold property
+  must be **archived** (not just its loan removed), or its NOI keeps counting.
 - **Properties with no loan** are listed with a **"No loan yet"** badge; choosing one opens **its own page**
   (profile, documents, Add the first loan, Open in Underwriting, Archive / Un-archive / Delete permanently).
 - Every add, archive, un-archive, delete or rename redraws everything at once (counter, dropdown, Home, the
@@ -137,7 +147,8 @@ files, the app asks first ("Put them together").
   the combined view's Rate Type comes from the real loans.
 - **One name, one address per property** (2.9.7): changing them in the profile changes them on all its loans;
   a new address on the senior asks whether the mezz moves too.
-- **Remove a loan = archive it** (recoverable). A loan record is deleted only from "Removed & paid-off loans",
+- **Remove a loan = archive it** (recoverable). **2.9.8:** the property stays — its NOI still counts in the
+  portfolio (with no debt), so removing a loan raises Portfolio DSCR and debt yield and lowers LTV. A loan record is deleted only from "Removed & paid-off loans",
   behind **Delete permanently**.
 - **Archive / un-archive** a property. **Delete permanently** only an **archived** property, behind a confirm
   that lists exactly what goes; its files are deleted first, and if one can't be (open in Excel) nothing else is.
@@ -190,7 +201,17 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   $0 or less (lease-up). A file with more than 12 months uses only its last 12. Otherwise NOI = the 12-month
   total. The same NOI everywhere. *(The annualization override was removed — your rule is fixed.)*
 - **The double reading (2.9.7):** every T12 is read by the regular reader and by the AI, automatically; lines
-  where they disagree go to **"Needs review"** for you. The AI checks; it never sets a number.
+  where they disagree go to **"Needs review"** for you. The AI checks; it never sets a number. **2.9.8:** each
+  card starts with the **real Excel row** and the sheet ("Excel row 147 · sheet “T12”"), and the review lists every
+  row to check; the Category list has **"+ New category…"** — a name you type becomes your own income or expense
+  category for every property and every later review (the AI is told about it too); in Underwriting it is its own
+  line at its T12 amount. One you added can be removed while no line uses it.
+- **The grey line under the T12 drop (2.9.8)** shows the **NOI used** and how it was worked out ("T3 × 4 · …"),
+  not the statement's own 12-month line.
+- **A workbook with one T12 per property (2.9.8):** each sheet goes to its property (by the name above the
+  statement, else the tab name); the file is saved in every one of those folders, each remembering its own sheet,
+  and every reading of that property's T12 uses its sheet. A sheet that fits no property is said; a name that fits
+  two is asked about.
 - A **tie check** badge shows whether the statement's own totals tie to its lines; an older-year T12 goes to the
   history instead of replacing the current one.
 
@@ -221,7 +242,11 @@ with the property, is shown.
 ### 4.10 Rent roll & unit statistics
 - Read a **Yardi rent roll** → each property's units, occupancy, average market / in-place rent, square footage.
 - **Gross potential rent fills in automatically** (2.9.4; formula 2.9.7, #17): the average market rent of the
-  **occupied** units × **all** units × 12. *(There is no "Use these" button — #110.)*
+  **occupied** units × **all** units × 12. *(There is no "Use these" button — #110.)* **2.9.8:** the average rent
+  and gross potential rent belong to **each property** — opening another property in Underwriting shows its own
+  (a rent you typed for it, else its own rent roll, else empty), never the last property's; its saved underwritten
+  NOI uses its own rent whether it is open or not. The first start of 2.9.8 recomputes every property's figures,
+  which repairs any saved with another property's rent.
 - Content-based file routing: a dropped file goes to the property (or properties) its content names; a name
   that fits two properties is asked about, never guessed.
 
@@ -235,12 +260,18 @@ with the property, is shown.
 
 ### 4.12 Data Health page
 Properties, T12s, units known, loans needing a maturity decision; duplicates (by address); folders with no
-property (attach or delete); **Recompute all figures**; **Check all T12s with AI**.
+property (attach or delete); **Recompute all figures**; **Check all T12s with AI**. **2.9.8:** "Properties
+without a folder" — must always read 0.
 
 ### 4.13 Documents
 - Add files from a property's page (**Add files**, or drop them on the Documents panel) — any size, no limit
   (2.9.7). A type is detected or chosen (T12, rent roll, loan agreement, …) and can be changed; the app's own
   records are not listed; every removal asks first.
+- **Where a file goes (2.9.8):** by its content, to every property it names; **the property you dropped it on (or
+  the chat's property) always gets it too** — when the file doesn't name that property, a T12 asks which sheet is
+  its own (or keeps it as a document). The same file already in another folder never blocks a save. A loan
+  agreement is recognised from its words ("Loan agreement", not "Other"); a type you pick still wins. Each file
+  shows how it was read under its name ("40 pages · read by OCR — may contain errors").
 - **Reading a file (2.9.7):** a small panel shows the progress ("reading scanned page 3 of 40") with **Stop**;
   the message afterwards says what was read ("40 pages · read by OCR — may contain errors · 2 pages couldn't be
   read (pages 7, 12)"). A file being read when the app closes is finished at the next start.
@@ -264,6 +295,13 @@ work, and it treats old chat memory as something to weigh, not trust.
 - Loan changes use the loan form's checks; profile changes the profile's checks; an unusual cap rate (outside
   3–12%) is flagged.
 
+**The property selector (2.9.8):** a chat belongs to one property or is a general chat, for good. Picking another
+property in a chat that has started opens a new chat (the old one stays saved under its property); naming a
+property in a general chat doesn't change the selector or where the chat is saved (Claude still gets that
+property's data); closing and reopening brings back the same chat with the same selector; the page on screen only
+picks the property of a brand-new chat. The list follows every add, rename, archive or delete at once; the
+assistant can't move the selector itself.
+
 **Reading actions** (no card): `list_properties`, `read_property`, `read_rates`, `read_documents` (a long document
 part by part), `read_data_health`, `read_settings`, `list_backups`.
 
@@ -279,7 +317,9 @@ asked for first; the form opens only on request), `propose_profile_change`, `set
 `set_loan_status`, `remove_document`, `set_document_type`, `import_rent_roll`, `import_excel` ("N new, M
 updated"), `start_refinance` (and save it), `set_refi_noi_basis`, `add_refi_lever`, `toggle_refi_move`,
 `set_refi_terms` (amount, term, amortization, IO, rate type, index, spread), `recompute_all`, `backup_now`,
-`restore_backup` (says plainly what is replaced for good). Other: `run_push` (needs a T12), `fetch_live_rate`,
+`restore_backup` (says plainly what is replaced for good); **2.9.8:** `save_attachment` (a file attached in the chat,
+to the properties named — or every property its content names), `copy_document`, `move_document` (a saved
+document between properties; a T12 workbook goes with each property's own sheet). Other: `run_push` (needs a T12), `fetch_live_rate`,
 `export_schedule_csv`.
 
 **Files in the chat:** PDF, Word, Excel, text and pictures (JPG / PNG). A file attached once is sent with every
@@ -310,6 +350,8 @@ saved, the key is used.
 - **When OCR starts**, the assistant says: *"Reading the file now — it's a scanned document, so I'm running OCR.
   This will take a couple of minutes; please wait."* (your wording, kept — #99).
 - **Pictures:** JPG / PNG files are read by OCR, and so are the pictures inside a Word file (in their place).
+- **In the background (2.9.8):** reading goes on while the app is behind another window (pages are drawn without
+  waiting for the screen, and Windows can't slow the app down while it's hidden).
 - **Progress, Stop, resume:** page-by-page progress on the file; **Stop** stops between pages; pages already read
   are kept, so reading the same file again continues where it stopped.
 - **Read once:** a file read in the chat is not read again when it is saved to the property.
@@ -321,7 +363,8 @@ saved, the key is used.
   portfolio targets (Home). *(No benchmarks editor — benchmarks are per property in Underwriting, #112; no GL-mapping editor,
   #113.)*
 - **Data menu:** **Back up to a file…** (one file holds the loans, every property folder, every chat and the
-  settings), **Restore from a file…**, the recent automatic backups (each says why it was taken), **Export all
+  settings), **Restore from a file…**, the recent automatic backups (each says why it was taken — **2.9.8:** a routine one says *what* changed, e.g.
+"After: Queens Gate Apartments: Loan Status Active → Extended"), **Export all
   loans to Excel…**, **Import loans from Excel…** (matched by the app's own Loan ID, then loan number, then name + address; "N
   new, M updated, U unchanged").
 - A restore replaces everything, after saving a safety snapshot of the current data first.
@@ -339,8 +382,8 @@ saved, the key is used.
 
 ## 6. Testing
 
-- **17 unit-test files** (pure modules) — `npm test`.
-- **61 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
+- **18 unit-test files** (pure modules) — `npm test`.
+- **70 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
   stand-in, never a real model) — `npm run test:e2e`.
 - CI runs the unit tests before every build.
 
@@ -359,29 +402,31 @@ saved, the key is used.
 - **2.9.4** — an AI assistant that acts (the action registry); automatic rent fill.
 - **2.9.5** — chat persistence + history; memory recall.
 - **2.9.6** — acceptance fixes; the OCR reader.
-- **2.9.7** — *(this stage)* every decision from the 2.9.6 audit (see §8).
+- **2.9.7** — every decision from the 2.9.6 audit.
+- **2.9.8** — *(this stage)* the fixes from testing the installed 2.9.7 (see §8).
 
 ---
 
-## 8. Stage 2.9.7 — what shipped, and what still needs checking
+## 8. Stage 2.9.8 — what shipped, and what still needs checking
 
-**What shipped** — the 2.9.6 audit's decisions, in parts: test infrastructure; one "active loans" rule and
-archive-on-remove; loans on disk and every property loaded at start; the T12 rule, tie check and double reading;
-three sets of limits; rent-roll GPR and one units number; loan / assumption / profile change history; one
-complete backup; the page of a property with no loan; one rename for every path; safe permanent delete;
-duplicates by address; LIBOR / Term SOFR / 30-day Average SOFR history; the refinance rules (property-wide payoff,
-your stage-2 rule, the decision case, hybrid periods, saved rates); the assistant (steps with results, cards with
-ticks and sources, reading actions, everything a user can do, your NOI rule, chat history); OCR and big files
-(the `lds://app/` address so both engines run, page marking, scans with a stamp line, pictures, missing pages,
-progress / Stop / resume, no size limit, reading in parts).
+**What shipped** — the problems found testing the installed 2.9.7:
+1. A T12 workbook with one sheet per property goes to every property, each with its own sheet; your pick always
+   gets the file; the assistant can save, copy and move files between properties.
+2. Popping a tab out works like a browser tab (it leaves the strip; docks back where it was, as the window showed).
+3. OCR keeps reading while the app is in the background.
+4. Removing a loan keeps the property's NOI in the portfolio (DSCR / debt yield up, LTV down).
+5. Underwriting's average rent and gross potential rent belong to each property; saved figures repaired.
+6. Your own T12 categories ("+ New category…").
+7. The assistant's property selector follows every change; the assistant can't move it.
+8. Every property has its folder with `profile.json` and `general-data.json` (start, Excel import, Data Health).
+9. One chat is one property, or general.
+10. The grey line under the T12 drop shows the NOI used.
+11. "Needs review" shows the real Excel row and sheet.
+12. Automatic backups say what changed.
+13. Documents show how each file was read and recognise loan agreements.
 
-**Check on the real installed 2.9.7 (Windows) — these can't be confirmed in the build environment:**
-1. **Update landed** — the app reads 2.9.7; your **settings carried over** from the old address (portfolio targets,
-   saved rates, "Not a duplicate" choices) and the loans are all there.
-2. **Pop-out windows** (#43 / #228) — pop out Data Health and the Calendar; each opens in its own window. If one
-   doesn't, the app now says why and writes a log (`logs/main.log` in the app's data folder) — send that file.
-3. **Both OCR engines** (#60) — attach a scanned PDF: the file's label should read "… read by OCR — may contain
-   errors". On a poor scan, an "engines differ here" flag on a number means both engines ran.
+**Check on the real installed 2.9.8 (Windows)** — Part 2 of the check list (one check per item above), plus:
+OCR reading on while you work in another window, and the pop-out windows.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -390,7 +435,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.8 — One shared database (+ the pooled analysis, moved here from 2.9.7)
+### 2.9.9 — One shared database (+ the pooled analysis, moved here from 2.9.7)
 - **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
   a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
   and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
@@ -398,7 +443,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 - **Pooled / cross-collateralized analysis** — loans pooled across several properties analyzed as one credit
   position: combined coverage, combined sizing, release / substitution across the pool.
 
-### 2.9.9 — Automated Yardi ingestion
+### 2.9.10 — Automated Yardi ingestion
 Pull operating data and rent rolls from Yardi directly instead of manual file drops.
 
 ---
@@ -406,7 +451,7 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 ## 10. Known caveats
 
 - **PaddleOCR on Windows** — both engines run in the build environment under the new `lds://app/` address; the
-  installed Windows app is the final check (§8). If it can't start there, OCR runs on tesseract alone and nothing
+  installed Windows app is the final check. If it can't start there, OCR runs on tesseract alone and nothing
   breaks.
 - **Installer size** — ~260 MB because of the two vendored OCR engines and their models; auto-update downloads
   mostly the changed blocks.
@@ -415,4 +460,4 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 
 ---
 
-*Last updated for version 2.9.7.*
+*Last updated for version 2.9.8.*
