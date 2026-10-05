@@ -3482,6 +3482,8 @@ tr.flagged:hover td{background:#fee2e2}
   function usd(iso){var p=String(iso).split('-');return p[1]+'/'+p[2]+'/'+p[0];}
   function away(y,m){return (y-D.nowY)*12+(m-D.nowM);}
   var st={view:'list',lenders:{},loans:{},amtMin:null,amtMax:null,sort:'date',search:'',openYears:null,chip:null};
+  try{ if(window.__CAL_STATE__ && typeof window.__CAL_STATE__==='object'){ for(var sk in window.__CAL_STATE__) if(Object.prototype.hasOwnProperty.call(st,sk)) st[sk]=window.__CAL_STATE__[sk]; } }catch(e){}
+  window.__calState=function(){ return JSON.parse(JSON.stringify(st)); };
   function selCount(o){var n=0;for(var k in o){if(o[k])n++;}return n;}
   function fEvents(){var lo=selCount(st.lenders)>0,lc=selCount(st.loans)>0;return D.events.filter(function(e){if(lo&&!st.lenders[e.lender])return false;if(lc&&!st.loans[e.loanId])return false;if(st.amtMin!=null&&e.amount<st.amtMin)return false;if(st.amtMax!=null&&e.amount>st.amtMax)return false;return true;});}
   function sortEv(a){a=a.slice();if(st.sort==='amtAsc')a.sort(function(x,y){return x.amount-y.amount;});else if(st.sort==='amtDesc')a.sort(function(x,y){return y.amount-x.amount;});else a.sort(function(x,y){return x.iso<y.iso?-1:x.iso>y.iso?1:0;});return a;}
@@ -3569,12 +3571,14 @@ tr.flagged:hover td{background:#fee2e2}
     else if(t.id==='clearBtn'){clearAll();}
   });
   app.innerHTML=headerHtml()+controlsHtml()+'<div id="content"></div>';
+  try{ (function(){ var cb=document.querySelectorAll('[data-lender]');for(var a=0;a<cb.length;a++)cb[a].checked=!!st.lenders[cb[a].getAttribute('data-lender')]; var cl=document.querySelectorAll('[data-loan]');for(var b=0;b<cl.length;b++)if(cl[b].tagName==='INPUT')cl[b].checked=!!st.loans[cl[b].getAttribute('data-loan')]; var mn=document.getElementById('amtMin'),mx=document.getElementById('amtMax'),ls=document.getElementById('loanSearch'); if(mn&&st.amtMin!=null)mn.value=st.amtMin; if(mx&&st.amtMax!=null)mx.value=st.amtMax; if(ls&&st.search)ls.value=st.search; setSeg(); updateCounts(); filterLoanOpts(); })(); }catch(e){}
   renderContent();
 })();
 `;
     // Build the interactive calendar document (self-contained). Serves both the
     // calendar tab's iframe (srcdoc) and, when torn off, a standalone window.
-    function calendarDocHtml(){
+    var calPendingState = null;   // 2.9.8 — the view / filters a docked Calendar window handed back
+    function calendarDocHtml(calState){
       const now = todayParts();
       const book = activeLoans();   // 2.9.7 (#2, #31, #72) — active loans only: no archived property, no removed / paid-off loan
       const rows0 = book.map(l => ({ loan:l, cur:compute(l) }));
@@ -3608,12 +3612,14 @@ tr.flagged:hover td{background:#fee2e2}
       const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
         '<title>Maturity & Reset Calendar — Living Residential</title><style>'+CAL_CSS+'</style></head><body>'+
         '<div id="app"></div>'+
-        '<script>window.__CAL_DATA__='+json+';<\/script>'+
+        '<script>window.__CAL_DATA__='+json+';'+(calState ? 'window.__CAL_STATE__='+JSON.stringify(calState).replace(/</g,'\\u003c')+';' : '')+'<\/script>'+
         '<script>'+CAL_JS+'<\/script>'+
         '</body></html>';
       return html;
     }
-    function loadCalendarFrame(){ const f = el("calendarFrame"); if(f) f.srcdoc = calendarDocHtml(); }
+    function loadCalendarFrame(){ const f = el("calendarFrame"); if(!f) return; let keep = calPendingState; calPendingState = null;
+      if(!keep){ try{ const w = f.contentWindow; if(w && w.__calState) keep = w.__calState(); }catch(e){} }   // a redraw keeps your view and filters
+      f.srcdoc = calendarDocHtml(keep); }
     function popCalendarWindow(){
       const w = window.open('', 'ldsCalendar', 'width=1200,height=880');
       if(!w){ toast("Allow pop-ups to open the calendar window", "info"); return null; }
@@ -5521,7 +5527,7 @@ tr.flagged:hover td{background:#fee2e2}
         tc.disabled = false; tc.textContent = 'Check all T12s with AI';
       });
       view.querySelectorAll('[data-health-open]').forEach(b => b.addEventListener('click', () => {
-        openTab('underwriting'); opSelectProperty(b.getAttribute('data-health-open'));
+        uwOpenFor(b.getAttribute('data-health-open'));
       }));
     }
     function healthWhen(iso){ try{ return new Date(iso).toLocaleString(); }catch(e){ return String(iso || ''); } }
@@ -6360,7 +6366,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_propGPR=async(k)=>{ const b=opMergeBench(uwDefaults().bench, await opLoadAssumptions(k)); return opPropGPR(k, b, propUnits(k)); }; window.LDS_uwFocus=()=>opFocusKey; }catch(e){}   // 2.9.8 diagnostics
     try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
-    function opOpenProperty(loan){ openTab("underwriting"); opSelectProperty(propertyKey(loan)); }
+    function opOpenProperty(loan){ uwOpenFor(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
     // saying where the NOI comes from, with a button that opens the property's sheet.
     function renderLoanOpPanel(){
@@ -6463,7 +6469,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
       const on = (sel, fn) => { const b = host.querySelector(sel); if(b) b.addEventListener("click", fn); };
       on("[data-propadd]", () => startAdd(name));
-      on("[data-propuw]", () => { try{ openTab("underwriting"); opSelectProperty(key); }catch(e){} });
+      on("[data-propuw]", () => { try{ uwOpenFor(key); }catch(e){} });
       on("[data-proparchive]", () => confirmDialog("Archive “"+name+"”?", "It leaves Home, the totals and the assistant. Un-archive it from this page or the Archived strip on Home.", async () => {
         let ok = false; try{ ok = await opArchiveProperty(key, true); }catch(e){ ok = false; }
         if(!ok){ toast("Couldn’t archive “"+name+"” — its file couldn’t be saved. Try again.", "error"); return; }
@@ -6784,14 +6790,13 @@ tr.flagged:hover td{background:#fee2e2}
       try{ const m = el("aiAsstModal"); if(m && !m.classList.contains("hidden")) aiAsstFillProps(); }catch(e){}   // 2.9.8 (problem 7) — the assistant's property list follows every add / rename / archive
     }
     function openTab(kind){
+      if(ldsPopped[kind]){ if(LDS_SHELL && LDS_SHELL.focusPanel) LDS_SHELL.focusPanel(kind); return; }   // 2.9.8 — it is out in its own window: bring that window up
       let t = ldsTabs.find(x => x.kind === kind);
       if(!t){ t = { id: kind+"-"+ (ldsTabs.length) , title: tabTitle(kind), kind: kind, fixed:false, poppedOut:false }; ldsTabs.push(t); }
-      if(t.poppedOut){ dockTabRequest(t.id); }   // if it's out in a window, that window is where it lives
       activateTab(t.id);
     }
     function closeTab(id){
       const i = ldsTabs.findIndex(t => t.id === id); if(i < 0 || ldsTabs[i].fixed) return;
-      if(ldsTabs[i].poppedOut) popCloseWindow(ldsTabs[i].kind);
       const wasActive = ldsActiveTab === id;
       ldsTabs.splice(i, 1);
       if(wasActive) activateTab("home"); else renderTabStrip();
@@ -6846,40 +6851,67 @@ tr.flagged:hover td{background:#fee2e2}
        Plain browser: the calendar falls back to a pop-up window.
        ================================================================ */
     const LDS_SHELL = (typeof window !== "undefined") ? window.ldsShell : null;
+    // 2.9.8 (problem 2) — a tab popped out LEAVES the strip, like a browser tab dragged out; the window opens on what
+    // the tab was showing. Docking puts it back where it was, showing what the window was showing. Closing the
+    // window with its X closes the tab. "+" (or any "open") for a tool that is out brings its window to the front.
+    const ldsPopped = {};   // kind -> { tab, index } while that tool lives in its own window
+    function tabState(kind){
+      try{
+        if(kind === "underwriting") return { prop: opFocusKey || "" };
+        if(kind === "calendar"){ const f = el("calendarFrame"), w = f && f.contentWindow; return (w && w.__calState) ? { cal: w.__calState() } : {}; }
+      }catch(e){}
+      return {};
+    }
     function popOutTab(id){
       const t = ldsTabs.find(x => x.id === id); if(!t || t.fixed) return;
-      if(t.poppedOut){ if(LDS_SHELL && LDS_SHELL.focusPanel) LDS_SHELL.focusPanel(t.kind); return; }
+      if(ldsPopped[t.kind]){ if(LDS_SHELL && LDS_SHELL.focusPanel) LDS_SHELL.focusPanel(t.kind); return; }
       if(LDS_SHELL && LDS_SHELL.openPanelWindow){
+        const st = tabState(t.kind);
         // 2.9.7 (#43, #228) — the tab leaves the strip only once the window really opened; otherwise say why.
-        Promise.resolve(LDS_SHELL.openPanelWindow(t.kind)).then(r => {
+        Promise.resolve(LDS_SHELL.openPanelWindow(t.kind, st)).then(r => {
           if(r && r.ok === false){ toast("Couldn’t open " + t.title + " in its own window" + (r.error ? " (" + r.error + ")" : "") + ". It stays here as a tab.", "error"); return; }
-          t.poppedOut = true;
-          if(ldsActiveTab === id) activateTab("home"); else renderTabStrip();
+          const i = ldsTabs.indexOf(t); if(i < 0) return;
+          ldsPopped[t.kind] = { tab: t, index: i }; ldsTabs.splice(i, 1); t.poppedOut = true;
+          if(ldsActiveTab === id){ const next = ldsTabs[Math.min(i, ldsTabs.length - 1)] || ldsTabs[0]; activateTab(next ? next.id : "home"); } else renderTabStrip();
         }).catch(err => toast("Couldn’t open " + t.title + " in its own window (" + String(err && err.message || err) + ").", "error"));
       } else if(t.kind === "calendar"){ popCalendarWindow(); }
       else { toast("Pop-out windows need the desktop app", "info"); }
     }
-    function dockTabRequest(id){
-      const t = (typeof id === "string") ? ldsTabs.find(x => x.id === id) : id; if(!t) return;
-      t.poppedOut = false; if(LDS_SHELL && LDS_SHELL.closePanelWindow) LDS_SHELL.closePanelWindow(t.kind);
+    // Put a popped-out tool back in the strip, where it was, showing `state` (what its window showed).
+    function dockTab(kind, state){
+      const p = ldsPopped[kind]; let t = p && p.tab;
+      if(p){ delete ldsPopped[kind]; t.poppedOut = false; if(ldsTabs.indexOf(t) < 0) ldsTabs.splice(Math.max(1, Math.min(p.index, ldsTabs.length)), 0, t); }
+      if(!t){ t = ldsTabs.find(x => x.kind === kind); if(!t){ t = { id: kind+"-"+ldsTabs.length, title: tabTitle(kind), kind: kind, fixed:false, poppedOut:false }; ldsTabs.push(t); } }
+      if(kind === "calendar" && state && state.cal) calPendingState = state.cal;
+      if(kind === "underwriting" && state && state.prop != null && state.prop !== opFocusKey){ activateTab(t.id); try{ opSelectProperty(state.prop || ""); }catch(e){} return t; }
       activateTab(t.id);
+      return t;
+    }
+    function dockTabRequest(id){
+      const t = (typeof id === "string") ? (ldsTabs.find(x => x.id === id) || Object.keys(ldsPopped).map(k => ldsPopped[k].tab).find(x => x.id === id)) : id; if(!t) return;
+      if(LDS_SHELL && LDS_SHELL.closePanelWindow) LDS_SHELL.closePanelWindow(t.kind);
+      dockTab(t.kind, null);
     }
     function popCloseWindow(kind){ if(LDS_SHELL && LDS_SHELL.closePanelWindow) LDS_SHELL.closePanelWindow(kind); }
-    // A panel window docked itself → re-home that tab here and show it.
-    if(LDS_SHELL && LDS_SHELL.onDockPanel){ LDS_SHELL.onDockPanel((kind) => {
-      let t = ldsTabs.find(x => x.kind === kind);
-      if(!t){ t = { id: kind+"-"+ldsTabs.length, title: tabTitle(kind), kind:kind, fixed:false, poppedOut:false }; ldsTabs.push(t); }
-      t.poppedOut = false; activateTab(t.id);
-    }); }
+    // Underwriting on a property: in its own window when it is out, else as the tab here.
+    function uwOpenFor(key){
+      if(ldsPopped.underwriting && LDS_SHELL && LDS_SHELL.panelCommand){ LDS_SHELL.panelCommand("underwriting", { select: key || "" }); return; }
+      openTab("underwriting"); opSelectProperty(key);
+    }
+    // A panel window docked itself → re-home that tab here, as the window showed it.
+    if(LDS_SHELL && LDS_SHELL.onDockPanel){ LDS_SHELL.onDockPanel((kind, state) => { dockTab(kind, state); }); }
     // A pop-out window failed to load → bring the tab back and say what happened.
     if(LDS_SHELL && LDS_SHELL.onPanelError){ LDS_SHELL.onPanelError((p) => {
-      const t = ldsTabs.find(x => x.kind === (p && p.kind)); if(t){ t.poppedOut = false; renderTabStrip(); }
-      toast("The " + tabTitle((p && p.kind) || "") + " window couldn’t load" + (p && p.error ? " (" + p.error + ")" : "") + " — it is back as a tab.", "error");
+      const k = p && p.kind; if(k && ldsPopped[k]) dockTab(k, null); else renderTabStrip();
+      toast("The " + tabTitle(k || "") + " window couldn’t load" + (p && p.error ? " (" + p.error + ")" : "") + " — it is back as a tab.", "error");
     }); }
-    // A panel window was closed from its own controls → keep the tab, clear the flag.
+    // A panel window was closed with its own X → the tab is closed (a docked window already came back above).
     if(LDS_SHELL && LDS_SHELL.onPanelClosed){ LDS_SHELL.onPanelClosed((kind) => {
-      const t = ldsTabs.find(x => x.kind === kind); if(t){ t.poppedOut = false; renderTabStrip(); }
+      if(ldsPopped[kind]){ delete ldsPopped[kind]; renderTabStrip(); }
     }); }
+    // The window's side: the main window asks it to show a property.
+    if(LDS_SHELL && LDS_SHELL.onPanelCommand){ LDS_SHELL.onPanelCommand((p) => { try{ if(p && p.select != null && document.body.getAttribute("data-panelwin") === "underwriting") opSelectProperty(p.select); }catch(e){} }); }
+    try{ window.LDS_popped = () => Object.keys(ldsPopped); window.LDS_tabs = () => ldsTabs.map(t => t.kind); window.LDS_tabState = (k) => tabState(k); }catch(e){}   // 2.9.8 diagnostics
 
     // This window may itself be a torn-off panel (index.html?panel=<kind>): show
     // only that tool + a slim "dock back" bar, and skip the whole tabbed shell.
@@ -6896,11 +6928,12 @@ tr.flagged:hover td{background:#fee2e2}
         bar.innerHTML = '<span class="inline-flex items-center gap-2 text-sm font-bold text-slate-800">'+(TAB_SVG[kind]||"")+(kind==="calendar"?"Maturity &amp; Reset Calendar":kind==="health"?"Data Health":"Underwriting &amp; Sizing")+'</span>'+
           '<button type="button" id="panelDockBtn" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">'+TAB_SVG.pop+'Dock into main window</button>';
         main.insertBefore(bar, main.firstChild);
-        bar.querySelector("#panelDockBtn").addEventListener("click", () => { if(LDS_SHELL && LDS_SHELL.dockPanel) LDS_SHELL.dockPanel(kind); });
+        bar.querySelector("#panelDockBtn").addEventListener("click", () => { if(LDS_SHELL && LDS_SHELL.dockPanel) LDS_SHELL.dockPanel(kind, tabState(kind)); });   // 2.9.8 — goes back showing what this window shows
       }
-      if(kind === "underwriting"){ el("uwView").hidden = false; renderUnderwriting(); }
+      let st0 = {}; try{ st0 = JSON.parse(new URLSearchParams(location.search).get("state") || "{}") || {}; }catch(e){ st0 = {}; }   // 2.9.8 — what the tab was showing
+      if(kind === "underwriting"){ el("uwView").hidden = false; renderUnderwriting(); if(st0.prop) setTimeout(() => { try{ opSelectProperty(st0.prop); }catch(e){} }, 0); }
       else if(kind === "health"){ const hv = el("healthView"); if(hv) hv.hidden = false; try{ renderDataHealth(); }catch(e){} }
-      else { el("calendarPanel").hidden = false; loadCalendarFrame(); }
+      else { el("calendarPanel").hidden = false; if(st0.cal) calPendingState = st0.cal; loadCalendarFrame(); }
       return true;
     }
 
@@ -7496,7 +7529,7 @@ tr.flagged:hover td{background:#fee2e2}
 
       dom.portfolioView.querySelectorAll('[data-goto]').forEach(tr => tr.addEventListener('click', () => selectLoan(tr.getAttribute('data-goto'))));
       // 2.9.6 — a loan-less property opens in Underwriting (its profile + Add-loan flow).
-      dom.portfolioView.querySelectorAll('[data-openprop]').forEach(tr => tr.addEventListener('click', () => { const k = tr.getAttribute('data-openprop'); try{ openTab('underwriting'); opSelectProperty(k); }catch(e){} }));
+      dom.portfolioView.querySelectorAll('[data-openprop]').forEach(tr => tr.addEventListener('click', () => { const k = tr.getAttribute('data-openprop'); try{ uwOpenFor(k); }catch(e){} }));
       // Coverage dashboard: "Add NOI" opens the NOI prompt then re-renders; "Refi path" opens the analysis.
       dom.portfolioView.querySelectorAll('[data-covnoi]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); const loan = getLoan(btn.getAttribute('data-covnoi')); if(loan){ state.activeId = loan._id; openNoiFlow(loan, () => render()); } }));
       dom.portfolioView.querySelectorAll('[data-covpath]').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); state.activeId = btn.getAttribute('data-covpath'); startRefi(); }));
@@ -10811,7 +10844,7 @@ tr.flagged:hover td{background:#fee2e2}
       open_property: function(a){ var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad; activateTab("home"); opOpenPropertyProfile(r.key); return {ok:true,close:true,msg:"Opened "+r.name+"’s page."}; },
       show_portfolio: function(){ activateTab("home"); setMode("portfolio"); return {ok:true,close:true,msg:"Showing the portfolio overview."}; },
       open_calendar: function(){ if(typeof openTab==="function") openTab("calendar"); return {ok:true,close:true,msg:"Opened the Maturity & Reset Calendar."}; },
-      open_underwriting: function(a){ if(a && a.name){ var r=aiAsstResolveProp(a.name, {archived:false}), bad=aiAsstPropMiss(r, a.name); if(bad) return bad; openTab("underwriting"); return Promise.resolve(opSelectProperty(r.key)).then(function(){ return {ok:true,close:true,msg:"Opened Underwriting & Sizing on "+r.name+"."}; }); }
+      open_underwriting: function(a){ if(a && a.name){ var r=aiAsstResolveProp(a.name, {archived:false}), bad=aiAsstPropMiss(r, a.name); if(bad) return bad; if(ldsPopped.underwriting){ uwOpenFor(r.key); return {ok:true,close:true,msg:"Showing "+r.name+" in the Underwriting window."}; } openTab("underwriting"); return Promise.resolve(opSelectProperty(r.key)).then(function(){ return {ok:true,close:true,msg:"Opened Underwriting & Sizing on "+r.name+"."}; }); }
         if(typeof openTab==="function") openTab("underwriting"); return {ok:true,close:true,msg:"Opened Underwriting & Sizing."}; },
       // 2.9.7 (#27) — the refinance is always of the PROPERTY (all its loans together). It is prepared in the
       // background and offered for approval here; the screen opens only when you ask (open: true).

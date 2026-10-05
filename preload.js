@@ -86,7 +86,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
 
   // ---- Tear-off tool panels (a tab popped into its own window) ----
   // Open a tool ('calendar' | 'underwriting') as its own window (index.html?panel=…).
-  openPanelWindow: (kind) => { try { return ipcRenderer.invoke('lds:open-panel-invoke', kind); } catch (e) { return Promise.resolve({ ok: false, error: String(e) }); } },   // 2.9.7 (#43) → {ok} | {ok:false,error}
+  openPanelWindow: (kind, state) => { try { return ipcRenderer.invoke('lds:open-panel-invoke', kind, state || null); } catch (e) { return Promise.resolve({ ok: false, error: String(e) }); } },   // 2.9.7 (#43) → {ok} | {ok:false,error}
   // 2.9.7 (#43) — a pop-out window failed to open or load: { kind, error }.
   onPanelError: (cb) => { try { ipcRenderer.on('lds:panel-error', (_e, p) => { try { cb(p); } catch (x) {} }); } catch (e) {} },
   // Close a panel window (used when its tab is closed from the main strip).
@@ -94,10 +94,13 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Bring an already-open panel window to the front.
   focusPanel: (kind) => { try { ipcRenderer.send('lds:focus-panel', kind); } catch (e) {} },
   // From inside a panel window: dock this tool back into the main window's strip.
-  dockPanel: (kind) => { try { ipcRenderer.send('lds:dock-panel', kind); } catch (e) {} },
+  dockPanel: (kind, state) => { try { ipcRenderer.send('lds:dock-panel', kind, state || null); } catch (e) {} },
+  // 2.9.8 — main window → a popped-out window: { select: propKey } etc. And the window's side of it.
+  panelCommand: (kind, payload) => { try { ipcRenderer.send('lds:panel-command', kind, payload || {}); } catch (e) {} },
+  onPanelCommand: (cb) => { try { ipcRenderer.on('lds:panel-command', (_e, p) => { try { cb(p || {}); } catch (x) {} }); } catch (e) {} },
   // Main window: a panel window asked to dock back. cb(kind). Returns unsubscribe.
   onDockPanel: (cb) => {
-    const fn = (_e, kind) => { try { cb(kind); } catch (e) {} };
+    const fn = (_e, kind, state) => { try { cb(kind, state || null); } catch (e) {} };
     ipcRenderer.on('lds:dock-panel', fn);
     return () => { try { ipcRenderer.removeListener('lds:dock-panel', fn); } catch (e) {} };
   },

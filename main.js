@@ -160,7 +160,9 @@ function panelTitle(kind) { return PANEL_KINDS[kind] || 'Loan Debt Service Hub';
 // userData/logs/main.log and told to the main window, never swallowed.
 function mainLog(line){ try { const d = path.join(app.getPath('userData'), 'logs'); fs.mkdirSync(d, { recursive: true }); fs.appendFileSync(path.join(d, 'main.log'), new Date().toISOString() + ' ' + line + '\n'); } catch (e) {} }
 function tellMain(channel, payload){ try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload); } catch (e) {} }
-function openPanel(kind){
+// 2.9.8 (problem 2) — `state`: what the tab was showing (Underwriting's property, the Calendar's view and filters),
+// so the window opens exactly where the tab was.
+function openPanel(kind, state){
   if (!PANEL_KINDS[kind]) return { ok: false, error: 'unknown panel ' + kind };
   const existing = panelWindows[kind];
   if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return { ok: true, existing: true }; }
@@ -180,7 +182,8 @@ function openPanel(kind){
   win.webContents.on('did-fail-load', (ev, code, desc, url) => { mainLog('panel ' + kind + ' did-fail-load ' + code + ' ' + desc + ' ' + url); tellMain('lds:panel-error', { kind, error: desc || ('load failed ' + code) }); });
   win.webContents.on('render-process-gone', (ev, d) => { mainLog('panel ' + kind + ' render-process-gone ' + JSON.stringify(d)); tellMain('lds:panel-error', { kind, error: 'the window stopped (' + ((d && d.reason) || 'unknown') + ')' }); });
   win.webContents.on('console-message', (ev, level, message) => { if (level >= 3) mainLog('panel ' + kind + ' console error: ' + String(message).slice(0, 500)); });
-  try { win.loadURL(APP_URL + '?panel=' + encodeURIComponent(kind)); }
+  let q = '?panel=' + encodeURIComponent(kind); try { if (state && typeof state === 'object') q += '&state=' + encodeURIComponent(JSON.stringify(state).slice(0, 20000)); } catch (e) {}
+  try { win.loadURL(APP_URL + q); }
   catch (err) { mainLog('panel ' + kind + ' loadURL threw: ' + ((err && err.stack) || err)); }
   const sendState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e2) {} };
   win.on('maximize', sendState);
@@ -191,14 +194,17 @@ function openPanel(kind){
   });
   return { ok: true };
 }
-ipcMain.handle('lds:open-panel-invoke', (e, kind) => openPanel(kind));
+ipcMain.handle('lds:open-panel-invoke', (e, kind, state) => openPanel(kind, state));
 ipcMain.on('lds:open-panel', (e, kind) => { const r = openPanel(kind); if (!r.ok) tellMain('lds:panel-error', { kind, error: r.error }); });
 ipcMain.on('lds:close-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) w.close(); });
 ipcMain.on('lds:focus-panel', (e, kind) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) { w.show(); w.focus(); } });
-ipcMain.on('lds:dock-panel', (e, kind) => {
-  try { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('lds:dock-panel', kind); bringToFront(mainWindow); } } catch (e2) {}
+ipcMain.on('lds:dock-panel', (e, kind, state) => {
+  try { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('lds:dock-panel', kind, state || null); bringToFront(mainWindow); } } catch (e2) {}
   const w = panelWindows[kind]; if (w && !w.isDestroyed()) w.close();
 });
+
+// 2.9.8 — the main window asks a popped-out window to do something (e.g. show a property in Underwriting).
+ipcMain.on('lds:panel-command', (e, kind, payload) => { const w = panelWindows[kind]; if (w && !w.isDestroyed()) { try { w.webContents.send('lds:panel-command', payload || {}); w.show(); w.focus(); } catch (x) {} } });
 
 // Manual backup — native Save dialog, writes wherever the user chooses.
 ipcMain.handle('lds:backup-save', async (e, { json, defaultName }) => {
