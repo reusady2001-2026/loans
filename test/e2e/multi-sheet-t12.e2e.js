@@ -66,7 +66,8 @@ const until=async(page,fn,arg,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(m
   // ---- Underwriting reads each property's own sheet ----
   await page.evaluate(()=>{const b=document.getElementById('tabNewBtn');if(b)b.click();const o=document.querySelector('[data-tabopen="underwriting"]');if(o)o.click();});
   await page.waitForFunction(()=>document.getElementById('opPropPick'),null,{timeout:8000});
-  await page.evaluate((k)=>{const s=document.getElementById('opPropPick');s.value=k;s.dispatchEvent(new Event('change',{bubbles:true}));},P.cm.key); await page.waitForTimeout(2500);
+  await page.evaluate((k)=>{const s=document.getElementById('opPropPick');s.value=k;s.dispatchEvent(new Event('change',{bubbles:true}));},P.cm.key);
+  await until(page,()=>{ const e=document.getElementById('uwNoiUsed'); return !!(e&&e.textContent); },null,20000);   // the property's figures load in the background
   const used=await page.evaluate(()=>{ const e=document.getElementById('uwNoiUsed'); return e?e.textContent:''; });
   ok(/960,000/.test(used),'Underwriting on 1222 Commerce St uses its sheet: NOI used '+used);
 
