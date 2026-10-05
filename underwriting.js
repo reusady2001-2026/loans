@@ -200,7 +200,7 @@
   // Standard sizing assumptions and the standard underwriting benchmarks —
   // the defaults the model starts from; overridden per property.
   var DEFAULTS = {
-    capRate: 0.055, ltvMax: 0.75, dscrMin: 1.20, dyMin: 0.07, intRate: 0.055, amortYears: 30,
+    capRate: 0.055, ltvMax: 0.75, dscrMin: 1.25, dyMin: 0.07, intRate: 0.055, amortYears: 30,   // 2.9.7 (#165) — DSCR starts at the refinance's 1.25×
     vacancyPct: 0.05, mgmtFeePct: 0.025, reservePerUnit: 200
   };
   // The same numbers in the operating contract's Assumptions shape (§2: mgmtPct

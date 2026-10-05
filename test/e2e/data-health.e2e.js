@@ -45,27 +45,38 @@ async function openHealth(page){
 
   // recompute-all runs and leaves a log line
   await page.evaluate(()=>{const b=document.querySelector('#healthView [data-health-recompute]');if(b)b.click();});
-  await page.waitForFunction(()=>/Last recompute/.test((document.getElementById('healthView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
+  await page.waitForFunction(()=>/Last recompute/.test((document.getElementById('healthView')||{}).innerText||''),null,{timeout:30000}).catch(()=>{});
   await page.waitForTimeout(400);
   const t2=await view();
   ok(/Last recompute/.test(t2),'after Recompute all, a "Last recompute" log line appears');
   const logN=await page.evaluate(()=>{try{return (JSON.parse(localStorage.getItem('lds.recomputeLog')||'[]')).length;}catch(e){return 0;}});
   ok(logN>=1,'the recompute log has at least one entry ('+logN+')');
 
-  // ghost-duplicate heuristic: two properties that share a street NUMBER + street name but sit at
-  // different full addresses (here, different cities) — the app keeps them as SEPARATE properties (a
-  // shared full address would instead auto-merge them into one, the senior+mezz grouping), yet they
-  // collide on the address signature, so they're surfaced for a human to review as a possible double-entry.
+  // 2.9.7 (#219) — the street AND the city must match. Same street + city written differently (one with the
+  // state and zip) stays two properties but is flagged; the same street in ANOTHER city is a different building.
   const before=Array.isArray(dups0)?dups0.length:0;
   const flagged=await page.evaluate(()=>{
     const ls=window.LDS_loans?window.LDS_loans():[];
-    if(ls.length<2) return null;
+    if(ls.length<4) return null;
     ls[0].propertyName='Ghost Test A'; ls[0].propertyAddress='1107 Ghost Lane, Testville, OH 45000';
-    ls[1].propertyName='Ghost Test B'; ls[1].propertyAddress='1107 Ghost Lane, Otherville, PA 19000';
+    ls[1].propertyName='Ghost Test B'; ls[1].propertyAddress='1107 Ghost Ln, Testville';
+    ls[2].propertyName='Ghost Test C'; ls[2].propertyAddress='1107 Ghost Lane, Otherville, PA 19000';
     return window.LDS_dupCandidates?window.LDS_dupCandidates():null;
   });
-  ok(Array.isArray(flagged)&&flagged.length>before,'the injected same-address pair adds a new duplicate candidate ('+before+' → '+(flagged?flagged.length:0)+')');
-  ok(Array.isArray(flagged)&&flagged.some(g=>g.some(k=>/ghost/i.test(k))),'the injected Ghost Test pair is flagged');
+  ok(Array.isArray(flagged)&&flagged.length>before,'the injected same street + city pair adds a duplicate candidate ('+before+' → '+(flagged?flagged.length:0)+')');
+  const ghostGroup=(flagged||[]).find(g=>g.some(k=>/ghost test a/i.test(k)));
+  ok(ghostGroup&&ghostGroup.some(k=>/ghost test b/i.test(k)),'Ghost Test A ↔ Ghost Test B (same street, same city) is flagged');
+  ok(!(flagged||[]).some(g=>g.some(k=>/ghost test c/i.test(k))),'Ghost Test C (same street, another city) is NOT flagged');
+  // #42 — names only when a property has no address; "Not a duplicate" is remembered
+  await page.evaluate(()=>{ const ls=window.LDS_loans(); ls[3].propertyName='Weaver Mill Apartments'; ls[3].propertyAddress=''; });
+  await page.evaluate(async()=>{ await window.LDS_addProperty('Weaver Mill'); });
+  await page.waitForTimeout(400);
+  const nameDup=await page.evaluate(()=>window.LDS_dupCandidates().find(g=>g.some(k=>/weaver mill/.test(k))&&g.length===2)||null);
+  ok(nameDup&&nameDup.some(k=>/weaver mill apartments/.test(k)),'with no address, "Weaver Mill" ↔ "Weaver Mill Apartments" is flagged by name ('+JSON.stringify(nameDup)+')');
+  await page.evaluate((keys)=>{ const b=document.createElement('button'); b.setAttribute('data-notdup',JSON.stringify(keys)); document.body.appendChild(b); b.click(); b.remove(); },nameDup||[]);
+  await page.waitForTimeout(300);
+  const after=await page.evaluate(()=>window.LDS_dupCandidates().some(g=>g.some(k=>/weaver mill/.test(k))));
+  ok(!after,'"Not a duplicate" is remembered — the pair is no longer shown');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

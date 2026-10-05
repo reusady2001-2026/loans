@@ -9,9 +9,8 @@
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
-const CREST=path.join(APP,'test','fixtures','crest-t12.xlsx');
-const SP='/tmp/claude-0/-home-user-loans/0ea2848d-a7d5-57d0-bf6f-575e4bc508cf/scratchpad';
-const FAKE=path.join(SP,'fake-claude-push.js');
+const CREST=path.join(APP,'test','fixtures','sample-t12.xlsx');
+const FAKE=path.join(APP,'test','fixtures','fake-claude-push.js');   // fake Claude CLI (no real model)
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-push-'));
 const INPUT=path.join(UDATA,'push-input.json');
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
@@ -62,17 +61,17 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   ok(!abbr.test(panel),'no forbidden abbreviations in the panel (full words only)'+(abbr.test(panel)?' — found: '+(panel.match(abbr)||[])[0]:''));
   ok(!/DSCR|debt service coverage|maturit|refinanc/i.test(panel),'the panel does NOT talk about loan covenants (operations only)');
 
-  // ---- Raise the vacancy assumption to 8% (ABOVE the statement's 6.11%): the engine now CREDITS the proven
-  //      6.11% ("use the better"), the underwriting tab says so, and Claude never proposes "credit it" (automatic). ----
+  // ---- Raise the vacancy assumption to 8% (ABOVE the statement's 5.15%): the engine now CREDITS the proven
+  //      5.15% ("use the better"), the underwriting tab says so, and Claude never proposes "credit it" (automatic). ----
   await page.evaluate(()=>{const i=[...document.querySelectorAll('#uwView [data-uwbench]')].find(x=>x.getAttribute('data-uwbench')==='vacancyPct');if(i){i.value='8';i.dispatchEvent(new Event('change',{bubbles:true}));}});
   await page.waitForTimeout(500);
   const uwText=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
-  ok(/credited at the statement.{0,6}6\.11%/i.test(uwText)&&/better than the 8\.00% assumed/i.test(uwText),'the underwriting tab shows vacancy CREDITED at the proven 6.11% (better than the 8% assumed) — the "use the better" rule, visible to the user');
+  ok(/credited at the statement.{0,6}5\.15\d?%/i.test(uwText)&&/better than the 8\.00% assumed/i.test(uwText),'the underwriting tab shows vacancy CREDITED at the proven 5.15% (better than the 8% assumed) — the "use the better" rule, visible to the user');
   await page.evaluate(()=>{const b=document.getElementById('opPushRun');if(b)b.click();});
   await page.waitForFunction(()=>/already credits the proven/i.test((document.getElementById('opScanMount')||{}).innerText||''),null,{timeout:20000}).catch(()=>{});
   const panel2=await panelText(page), sent2=readInput();
   ok(sent2&&Math.abs(sent2.underwritingAssumptions.vacancy-0.08)<1e-9,'on re-analysis Claude is sent the new 8% assumption');
-  ok(/already credits the proven 6\.\d\d%/i.test(panel2),'Claude acknowledges the underwriting ALREADY credits the proven occupancy — there is no "credit it" move to make');
+  ok(/already credits the proven 5\.15%/i.test(panel2),'Claude acknowledges the underwriting ALREADY credits the proven occupancy — there is no "credit it" move to make');
   ok(!/nearer the proven/i.test(panel2)&&!/improve/i.test((panel2.split('estimated NOI impact')[0]||'')),'no "credit the proven vacancy" move, and no "improve to a worse vacancy"');
 
   ok(await page.evaluate(()=>!!document.getElementById('opPushRun')),'a "Re-analyse" button is offered');

@@ -12,9 +12,9 @@ const NO_COMM={ GPR:1000000, RET:50000 };
 const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
 
 (async()=>{
-  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env)});
+  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent'})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
-  await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
+  await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{state:'attached',timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
 
   // ---- commercial income is IN the NOI (200,000 of other income, net of the 2.5% mgmt fee on it) ----
   const noiNo=await page.evaluate((m)=>window.LDS_uwSetupNoi(m,100,{}),NO_COMM);
@@ -48,6 +48,25 @@ const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
   ok(view.headerCols===5,'the table shows 5 columns: line + in-place $ + $/unit + underwritten $ + $/unit');
   ok(/[0-9]/.test(view.gprInPlacePer),'a residential line shows a computed in-place $/unit');
 
+  // ---- 2.9.7 (#77): three NOI rows when there is commercial income; EGI $/unit is apartments only ----
+  const split=await page.evaluate((m)=>{
+    var d=document.createElement('div'); d.innerHTML=window.LDS_uwSetupHtml(m,100,{});
+    var num=function(t){ return Number(String(t||'').replace(/[^0-9.\-]/g,''))||0; };
+    var row=function(id){ var r=d.querySelector('#'+id); return r?Array.prototype.slice.call(r.cells).map(function(c){return (c.innerText||'').trim();}):null; };
+    var egi=Array.prototype.slice.call(d.querySelectorAll('tbody tr')).find(function(r){ return /Effective Gross Income/.test(r.cells[0].innerText); });
+    var plain=Array.prototype.slice.call(d.querySelectorAll('tbody tr')).some(function(r){ return /^Net Operating Income/.test((r.cells[0].innerText||'').trim()); });
+    return { apts:row('uwNoiApts'), comm:row('uwNoiComm'), tot:row('uwNoiTotal'), egi:egi?Array.prototype.slice.call(egi.cells).map(function(c){return (c.innerText||'').trim();}):null, plain:plain,
+      noNoComm:(function(){ var d2=document.createElement('div'); d2.innerHTML=window.LDS_uwSetupHtml({GPR:1000000,RET:50000},100,{}); return !d2.querySelector('#uwNoiApts') && Array.prototype.slice.call(d2.querySelectorAll('tbody tr')).some(function(r){ return /^Net Operating Income/.test((r.cells[0].innerText||'').trim()); }); })() };
+  },WITH_COMM);
+  const n=s=>Number(String(s||'').replace(/[^0-9.\-]/g,''))||0;
+  ok(split.apts&&split.comm&&split.tot&&!split.plain,'with commercial income the NOI shows three rows: apartments, commercial, total');
+  ok(/carries shared expenses/i.test(split.apts[0])&&/rent, no shared expenses/i.test(split.comm[0]),'the labels say "carries shared expenses" / "rent, no shared expenses"');
+  ok(Math.abs(n(split.apts[1])+n(split.comm[1])-n(split.tot[1]))<1 && Math.abs(n(split.apts[3])+n(split.comm[3])-n(split.tot[3]))<1,'apartments + commercial = total, in place and underwritten');
+  ok(Math.abs(n(split.tot[3])-noiComm)<1,'NOI — total is unchanged (the figure DSCR, max loan and the refinance use)');
+  ok(Math.abs(n(split.apts[2])-n(split.apts[1])/100)<0.01,'apartments $/unit = apartments NOI ÷ 100 apartment units ('+split.apts[2]+')');
+  ok(split.tot[2]==='—'&&split.tot[4]==='—','the total has no $/unit');
+  ok(Math.abs(n(split.egi[2])-(n(split.egi[1])-200000)/100)<0.01,'EGI $/unit shows apartments only (EGI less commercial, ÷ apartment units) ('+split.egi[2]+')');
+  ok(split.noNoComm,'without commercial income it stays one "Net Operating Income" row');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
   console.log(fails.n?fails.n+' FAILED':'all commercial e2e checks passed');

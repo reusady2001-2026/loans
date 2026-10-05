@@ -50,7 +50,7 @@
     var rows = (parsed && Array.isArray(parsed.rows)) ? parsed.rows : [];
     rows.forEach(function (r){
       if (!r || !isObj(r.monthly)) return;
-      var c = classify(r.name, r.section, r.sub);
+      var c = classify(r.name, r.section, r.sub, r);   // the row rides along, so a decided line (forceCode) keeps its category
       if (!c || !c.code) return;
       var e = out.byCode[c.code] || (out.byCode[c.code] = { code: c.code, role: c.role || null, label: c.label || c.code, monthly: {} });
       if (c.role != null) e.role = c.role;
@@ -94,7 +94,10 @@
       var incoming = s[c], ln = lines[c] || (lines[c] = { code: c, role: incoming.role, label: incoming.label, monthly: {} });
       if (incoming.role != null) ln.role = incoming.role;
       if (incoming.label) ln.label = incoming.label;
-      for (var ym in incoming.monthly) if (Object.prototype.hasOwnProperty.call(incoming.monthly, ym)) ln.monthly[ym] = incoming.monthly[ym];   // newer wins
+      for (var ym in incoming.monthly) if (Object.prototype.hasOwnProperty.call(incoming.monthly, ym)){
+        if (meta.keepExisting && isNum(ln.monthly[ym])) continue;   // 2.9.7 (#14) — an OLDER file only fills months not already on record
+        ln.monthly[ym] = incoming.monthly[ym];                       // otherwise the newer statement wins
+      }
     }
     var months = windowMonths(lines, cap), keep = {};
     months.forEach(function (ym){ keep[ym] = 1; });
@@ -108,7 +111,7 @@
       var t = sumOver(m2, latest12), p = sumOver(m2, prior12);
       l.ttm = t.sum; l.ttmMonths = t.n; l.priorTtm = p.n ? p.sum : null; l.priorMonths = p.n;
     }
-    return {
+    var out = {
       schema: SCHEMA,
       propKey: meta.propKey != null ? meta.propKey : (gd.propKey != null ? gd.propKey : null),
       identity: isObj(meta.identity) ? meta.identity : (gd.identity || null),
@@ -117,6 +120,10 @@
       lines: lines,
       updatedAt: meta.now || gd.updatedAt || null
     };
+    // 2.9.7 — everything else the record carries (Claude's saved "what to push", the assumptions snapshot, the
+    // T12 review decisions, …) rides along untouched: a merge of new months never drops another part of the record.
+    for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !Object.prototype.hasOwnProperty.call(out, k)) out[k] = gd[k];
+    return out;
   }
   function assign(a, b){ for (var k in b) if (Object.prototype.hasOwnProperty.call(b, k)) a[k] = b[k]; return a; }
 
@@ -152,32 +159,56 @@
     }
     return r2(noi);
   }
-  // In-place NOI rule (fixed): the NOI is the trailing-12-month total, EXCEPT when the statement's
-  // FIRST TWO months both have NOI <= 0 — a building that was leasing up at the start of the period.
-  // In that one case the 12-month total understates the run-rate, so the NOI is the LAST THREE months
-  // × 4. The first-two-months test is the WHOLE trigger; the statement's length is irrelevant (a 10- or
-  // 12-month statement is judged the same way). Annualized per line (codeSums) so a caller can rebuild
-  // the underwritten column on the same run-rate — reserves are an annual per-unit figure and are never
-  // summed off a short statement. A gross-rent line is still required, only so a statement of pure
-  // expenses (no income at all) can't produce a false positive. series = monthlySeries() output.
-  // Returns { applied, noi, monthsUsed, codeSums, basis, annualizedStart, reason }.
-  function annualizedNOI(series){
+  // In-place NOI rule (2.9.7 — the T12 rule, per Azriel; #11, #257). Only T12 files are uploaded (12
+  // months or more). Applied to the file's DATED months:
+  //   • a file with MORE than 12 months uses only its LAST 12 (the earlier months stay in the history);
+  //   • NOI = the last 3 months × 4 when the file covers FEWER than 12 months (7, 8, 9, 10…), or when the
+  //     first two of its (last-12) months both have NOI of $0 or less (lease-up);
+  //   • otherwise NOI = the 12-month total.
+  // Every line is summed (codeSums) over the months used, so a caller rebuilds the in-place AND the
+  // underwritten column on the same months — reserves stay an annual per-unit figure. The lease-up test
+  // still needs a gross-rent line, so a statement of pure expenses can't trigger it.
+  // Returns { applied (annualized), trimmed (last 12 of a longer file), noi, monthsUsed, codeSums, basis,
+  //           why: "short" | "leaseup" | "last12" | "total", monthsInFile, window, annualizedStart, reason }.
+  function noiRule(series){
     var byCode = (series && series.byCode) || {};
     var months = (series && Array.isArray(series.months)) ? series.months.slice().sort() : [];
-    if (months.length < 3) return { applied: false, noi: null, reason: "fewer than 3 months of data" };
-    if (!byCode.GPR || !byCode.GPR.monthly) return { applied: false, noi: null, reason: "no gross-rent line — a real statement is required to judge it" };
-    var m1 = monthNOI(byCode, months[0]), m2 = monthNOI(byCode, months[1]);   // NOI of the first two dated months
-    if (!(m1 <= 0 && m2 <= 0)) return { applied: false, noi: null, reason: "the first two months have positive NOI — the 12-month total stands" };
-    var last3 = months.slice(months.length - 3), noi3 = 0, codeSums = {};
-    last3.forEach(function (ym){ noi3 += monthNOI(byCode, ym); });
-    for (var c in byCode) if (Object.prototype.hasOwnProperty.call(byCode, c)){
-      var mo = byCode[c].monthly, s = 0;
-      last3.forEach(function (ym){ if (isNum(mo[ym])) s += mo[ym]; });
-      codeSums[c] = r2(s * 4);                                              // per-line last 3 months × 4 (annualized run-rate)
+    var monthsInFile = months.length;
+    if (!months.length) return { applied: false, trimmed: false, noi: null, why: "total", monthsInFile: 0, window: [], windowNOI: null, reason: "no dated months — the statement total stands" };
+    var win = months.length > 12 ? months.slice(months.length - 12) : months;
+    var trimmed = months.length > 12;
+    var sumsOver = function (list, k){
+      var cs = {};
+      for (var c in byCode) if (Object.prototype.hasOwnProperty.call(byCode, c)){
+        var mo = byCode[c].monthly, s = 0;
+        list.forEach(function (ym){ if (isNum(mo[ym])) s += mo[ym]; });
+        cs[c] = r2(s * (k || 1));
+      }
+      return cs;
+    };
+    var noiOver = function (list){ var n = 0; list.forEach(function (ym){ n += monthNOI(byCode, ym); }); return r2(n); };
+    var hasIncome = false; for (var ci in byCode) if (Object.prototype.hasOwnProperty.call(byCode, ci) && byCode[ci].role !== "expense") hasIncome = true;
+    var shortFile = win.length < 12 && hasIncome;
+    var windowNOI = noiOver(win);   // the classified lines' NOI over the months judged (the last 12 of a longer file)   // a file with no income lines at all is not a statement to annualize
+    var leaseUp = false;
+    if (win.length >= 2 && byCode.GPR && byCode.GPR.monthly){
+      var m1 = monthNOI(byCode, win[0]), m2 = monthNOI(byCode, win[1]);
+      leaseUp = (m1 <= 0 && m2 <= 0);
     }
-    return { applied: true, noi: r2(noi3 * 4), monthsUsed: last3, codeSums: codeSums,
-             basis: "last 3 months × 4", annualizedStart: true };
+    if ((shortFile || leaseUp) && win.length >= 3){
+      var last3 = win.slice(win.length - 3);
+      return { applied: true, trimmed: trimmed, noi: r2(noiOver(last3) * 4), monthsUsed: last3, codeSums: sumsOver(last3, 4),
+               basis: "last 3 months × 4", annualizedStart: true, why: shortFile ? "short" : "leaseup", monthsInFile: monthsInFile, window: win, windowNOI: windowNOI,
+               reason: shortFile ? ("the statement covers " + win.length + " months — fewer than 12") : "the first two months have NOI of $0 or less (lease-up)" };
+    }
+    if (trimmed){
+      return { applied: false, trimmed: true, noi: noiOver(win), monthsUsed: win, codeSums: sumsOver(win, 1), basis: "last 12 months",
+               why: "last12", monthsInFile: monthsInFile, window: win, windowNOI: windowNOI, reason: "the file covers " + monthsInFile + " months; using the last 12" };
+    }
+    return { applied: false, trimmed: false, noi: null, why: "total", monthsInFile: monthsInFile, window: win, windowNOI: windowNOI, reason: "the 12-month total stands" };
   }
+  // Kept for callers of the older name: the same rule.
+  function annualizedNOI(series){ return noiRule(series); }
 
-  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI };
+  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI, noiRule: noiRule };
 });

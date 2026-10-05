@@ -17,6 +17,7 @@
 
   var BASE = './vendor/paddleocr/';
   var inst = null, busy = null, failed = false;
+  function abs(rel) { try { return new URL(BASE + rel, location.href).href; } catch (e) { return BASE + rel; } }
 
   function loadBundle() {
     if (window.PaddleOCRSDK) return Promise.resolve(window.PaddleOCRSDK);
@@ -41,10 +42,12 @@
         if (!PaddleOCR) throw new Error('PaddleOCR SDK export not found');
         inst = await PaddleOCR.create({
           textDetectionModelName: 'PP-OCRv5_mobile_det',
-          textDetectionModelAsset: { url: BASE + 'models/PP-OCRv5_mobile_det.tar' },
+          textDetectionModelAsset: { url: abs('models/PP-OCRv5_mobile_det.tar') },
           textRecognitionModelName: 'PP-OCRv5_mobile_rec',
-          textRecognitionModelAsset: { url: BASE + 'models/PP-OCRv5_mobile_rec.tar' },
-          ortOptions: { backend: 'wasm', wasmPaths: BASE + 'ort/', numThreads: 1 }
+          textRecognitionModelAsset: { url: abs('models/PP-OCRv5_mobile_rec.tar') },
+          // 2.9.7 (#60) — full addresses of the engine files we ship (a relative path was resolved against the bundle's
+          // own folder, and the default asks for a build we don't ship)
+          ortOptions: { backend: 'wasm', wasmPaths: { mjs: abs('ort/ort-wasm-simd-threaded.mjs'), wasm: abs('ort/ort-wasm-simd-threaded.wasm') }, numThreads: 1 }
         });
         return inst;
       } catch (e) {

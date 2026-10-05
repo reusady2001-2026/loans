@@ -40,12 +40,18 @@
     { key: "rentableSqFt",    label: "Rentable sq ft",      type: "int",      group: "Size", unit: "sq ft" },
     { key: "yearBuilt",       label: "Year built",          type: "int",      group: "Size" },
     { key: "acquisitionDate", label: "Acquisition date",    type: "date",     group: "Ownership",
-      help: "When Living acquired it. If it falls inside a T12's months, it also triggers the last-3-months annualization." },
+      help: "When Living acquired it." },   // 2.9.7 (#211) — the old "triggers annualization" note was not part of the T12 rule
     { key: "manager",         label: "Manager",             type: "text",     group: "Ownership",
       help: "Living, or the third-party manager's name." },
     { key: "dataSource",      label: "Data source",         type: "select",   group: "Ownership",
       options: ["", "Living Yardi", "Third-party", "Manual"] },
     { key: "yardiCode",       label: "Yardi property code", type: "text",     group: "Ownership" },
+    // 2.9.7 (#45, #46) — the property's own NOI. "Entered" is used only while there is no T12 (the assistant may
+    // set it after your approval); the override is typed by you only and replaces the T12's NOI everywhere.
+    { key: "noi",             label: "NOI (annual, entered)", type: "money",  group: "NOI", unit: "$ a year",
+      help: "Used when the property has no T12 - once a T12 is uploaded, its NOI is used instead. Negative is allowed." },
+    { key: "noiOverride",     label: "NOI override",        type: "money",    group: "NOI", unit: "$ a year",
+      help: "Typed by you only. Replaces the T12's NOI everywhere - DSCR, debt yield, the roll-up and the refinance. Clear it to go back to the T12." },
     { key: "notes",           label: "Notes",               type: "textarea", group: "Notes" }
   ];
 
@@ -102,7 +108,7 @@
         changedBy: prev.changedBy || null, changedAt: prev.changedAt || null,
         reason: opts.reason || null
       });
-      if (entry.history.length > 20) entry.history = entry.history.slice(0, 20);
+      // 2.9.7 (#254) — every past change is kept (no 20-change limit; the files are tiny).
     }
     profile.fields[key] = entry;
     if (!profile.createdAt) profile.createdAt = at;

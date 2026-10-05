@@ -6,7 +6,7 @@
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
 const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_modules')+'/playwright');
-const CREST=path.join(APP,'test','fixtures','crest-t12.xlsx');
+const CREST=path.join(APP,'test','fixtures','sample-t12.xlsx');
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-move-'));
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
 const KEY='name:villages of whitewater';
@@ -28,6 +28,14 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.waitForTimeout(400);
   await page.setInputFiles('#uwFile',CREST);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
+  // 2.9.7 — after an upload the app saves the T12 check's result into the folder; let that write land before
+  // this test moves the folder by hand (the app's own move waits for it).
+  for(let t=0;t<70;t++){
+    const done=await page.evaluate(async(k)=>{ try{ const l=await window.ldsShell.docList(k); const f=(l.files||[]).find(x=>x.role==='general'); if(!f) return false;
+      const rd=await window.ldsShell.docRead(k,f.id); const gd=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(rd.base64),c=>c.charCodeAt(0))));
+      return !!(gd.t12Review&&gd.t12Review.status&&gd.t12Review.status!=='checking'); }catch(e){ return false; } },KEY);
+    if(done) break; await page.waitForTimeout(300);
+  }
   await page.waitForTimeout(300);
 
   const R=await page.evaluate(async(keys)=>{

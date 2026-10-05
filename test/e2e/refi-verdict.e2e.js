@@ -34,7 +34,8 @@ async function scenario(page, loanId, factor, rate){
   await page.waitForFunction(()=>{const v=document.getElementById('refiView'); return v&&!v.hidden;},null,{timeout:8000}).catch(()=>{});
   await page.waitForTimeout(300);
   const dom = await page.evaluate(()=>({ text:(document.getElementById('refiView')||{}).innerText||'',
-    o1:document.querySelectorAll('#refiView [id^="o1_"]').length,
+    o1:document.querySelectorAll('#refiOptions [id^="o1_"]').length,   // the proposed loan's own boxes (2.9.7 #258: the rate row sits in the verdict card)
+    pricing:document.querySelectorAll('#refiPricing [id^="o1_"]').length,
     save:!!document.getElementById('refiSaveBtn'),
     tables:document.querySelectorAll('#refiView table').length }));
   return { s, dom };
@@ -69,7 +70,7 @@ async function scenario(page, loanId, factor, rate){
   ok(B.s.refi===false, 'the overall verdict is still Don’t refinance');
   ok(B.dom.o1===0 && B.dom.save===false, 'the proposed loan + Save stay hidden — nothing worth proposing');
   ok(/Can you\?\s*Yes/i.test(B.dom.text) && /Should you\?\s*No/i.test(B.dom.text), 'it shows Can = Yes but Should = No');
-  ok(/same money/i.test(B.dom.text), 'it explains the "same money" reasoning (not a payment-based one)');
+  ok(/money you owe/i.test(B.dom.text) && !/payment/i.test((B.dom.text.match(/Should you\?[\s\S]*$/)||[''])[0].split('Proposed')[0]), 'it explains the reasoning on the money you owe (not a payment-based one)');
 
   // ---- Both clear: cheaper rate on the same money → refinance, proposal revealed ----
   const C = await scenario(page, loanId, 0.20, 0.13);
@@ -82,6 +83,7 @@ async function scenario(page, loanId, factor, rate){
 
   // ---- card visibility tracks the verdict exactly across all three ----
   ok((A.dom.o1===0)&&(B.dom.o1===0)&&(C.dom.o1>0), 'the proposed-loan card is shown iff the verdict is Refinance');
+  ok(A.dom.pricing>0&&B.dom.pricing>0&&C.dom.pricing>0, 'the proposed-rate row is in the verdict card whatever the verdict (#258)');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

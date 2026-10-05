@@ -58,8 +58,11 @@
   }
 
   // ---------- tesseract engine (offline) ----------
-  var tessWorker = null, tessBusy = null;
-  async function tessEnsure(onProgress){
+  // 2.9.7 (#62) — ONE progress reporter, always set: the engine calls it for every step (an unset reporter made it
+  // throw ~44 hidden errors per file); it passes "recognizing text" progress to whoever is reading the page now.
+  var tessWorker = null, tessBusy = null, tessProgress = null;
+  function tessLogger(m){ try{ if(tessProgress && m && m.status === 'recognizing text') tessProgress(m.progress); }catch(e){} }
+  async function tessEnsure(){
     if(tessWorker) return tessWorker;
     if(tessBusy) return tessBusy;
     tessBusy = (async function(){
@@ -69,14 +72,15 @@
         corePath:   VENDOR + 'tesseract-core-simd-lstm.wasm.js',
         langPath:   VENDOR,
         gzip: false,
-        logger: onProgress ? function (m){ try{ if(m && m.status === 'recognizing text') onProgress(m.progress); }catch(e){} } : undefined
+        logger: tessLogger,
+        errorHandler: function(){}
       });
       await w.setParameters({ tessedit_pageseg_mode: '3', user_defined_dpi: '200' });
       tessWorker = w; return w;
     })();
     return tessBusy;
   }
-  async function tessRecognize(image, onProgress){ var w = await tessEnsure(onProgress); var r = await w.recognize(image); return (r && r.data && r.data.text) || ''; }
+  async function tessRecognize(image, onProgress){ var w = await tessEnsure(); tessProgress = onProgress || null; try{ var r = await w.recognize(image); return (r && r.data && r.data.text) || ''; } finally { tessProgress = null; } }
 
   // ---------- second engine (registered externally, e.g. PaddleOCR) ----------
   // Shape: { recognize(image): Promise<string|null> }. recognize returns null when it can't run,
@@ -88,15 +92,18 @@
 
   // ---------- public ----------
   // Recognize one page image (a canvas or <img>) → merged text from whichever engines are available.
+  var lastEngines = { a: false, b: false };
   async function recognizePage(image, opts){
     opts = opts || {};
     var a = '', b = null;
     try{ a = await tessRecognize(image, opts.onProgress); }catch(e){ a = ''; }
     try{ b = await engineBRecognize(image); }catch(e){ b = null; }
+    lastEngines = { a: !!String(a).trim(), b: b != null && !!String(b).trim() };
     if(b == null || !String(b).trim()) return a;
     if(!String(a).trim()) return b;
     return reconcile(a, b);
   }
+  function enginesUsed(){ return lastEngines; }   // which engines read the last page (diagnostics + tests)
   function available(){ return !!global.Tesseract; }
 
   var api = {
@@ -105,6 +112,7 @@
     tessEnsure: tessEnsure,
     registerEngine: registerEngine,
     hasSecondEngine: hasSecondEngine,
+    enginesUsed: enginesUsed,
     available: available
   };
   global.LDS_OCR = api;

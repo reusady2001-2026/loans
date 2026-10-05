@@ -35,6 +35,10 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   // remove it (the panel's Remove button)
   await page.evaluate(()=>{const b=document.querySelector('#loanDocsPanel [data-docdel]');if(b)b.click();});
+  // 2.9.7 (#213) — every removal asks first
+  await page.waitForFunction(()=>{const m=document.getElementById('confirmModal');return m&&!m.classList.contains('hidden');},null,{timeout:6000}).catch(()=>{});
+  ok(await page.evaluate(()=>/agreement\.txt/.test(document.getElementById('confirmTitle').textContent)),'removing asks first, naming the file');
+  await page.evaluate(()=>document.getElementById('confirmOk').click());
   await page.waitForFunction(()=>!/agreement\.txt/i.test((document.getElementById('loanDocsPanel')||{}).innerText||''),null,{timeout:6000}).catch(()=>{});
   ok(await page.evaluate(()=>!/agreement\.txt/i.test((document.getElementById('loanDocsPanel')||{}).innerText||'')),'removing the document takes it out of the list');
 

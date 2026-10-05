@@ -329,8 +329,15 @@
     // only stands as a last resort. Printed figures are cents, so keep the difference in cents.
     if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = Math.round((totals.income - totals.expense) * 100) / 100;
     if (hasSummary && totals.noi == null && summaryTotals.noi != null){ totals.noi = summaryTotals.noi; footing.noiRow = summaryFooting.noiRow; }
+    // 2.9.7 (#257) — with opts.monthly, the statement's own printed footing rows month by month, so a
+    // file longer than 12 months can be checked against the same 12 months the NOI is taken from.
+    var totalsMonthly = null;
+    if (monthCols){
+      totalsMonthly = {};
+      ["income", "expense", "noi"].forEach(function (k){ var ri = footing[k + "Row"]; if (ri != null && ri >= 0 && grid[ri]) totalsMonthly[k] = monthlyOf(grid[ri]); });
+    }
     return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
-             monthCols: monthCols, basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
+             monthCols: monthCols, totalsMonthly: totalsMonthly, basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
              rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine,
              summaryTotals: hasSummary ? summaryTotals : null, summaryFooting: hasSummary ? summaryFooting : null,
              summaryMismatch: summaryMismatch, warnings: warnings };

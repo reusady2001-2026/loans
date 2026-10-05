@@ -357,28 +357,30 @@ try {
 
   // =========================================================================
   section("E5 — missing / blank / non-numeric parameters fall back to DEFAULTS");
-  ok(UW.DEFAULTS.capRate === 0.055 && UW.DEFAULTS.ltvMax === 0.75 && UW.DEFAULTS.dscrMin === 1.2 && UW.DEFAULTS.dyMin === 0.07 &&
-     UW.DEFAULTS.intRate === 0.055 && UW.DEFAULTS.amortYears === 30, "DEFAULTS sizing numbers = the hand case (5.5% / 75% / 1.20× / 7% / 5.5% / 30)");
+  // 2.9.7 (#165) — the sizing card starts at the refinance's limits: DSCR 1.25× (was 1.20×), LTV 75%, debt yield 7%.
+  ok(UW.DEFAULTS.capRate === 0.055 && UW.DEFAULTS.ltvMax === 0.75 && UW.DEFAULTS.dscrMin === 1.25 && UW.DEFAULTS.dyMin === 0.07 &&
+     UW.DEFAULTS.intRate === 0.055 && UW.DEFAULTS.amortYears === 30, "DEFAULTS sizing numbers = 5.5% / 75% / 1.25× / 7% / 5.5% / 30 (#165)");
+  var DEF_DSCR_LEG = NOI_UW / (UW.DEFAULTS.dscrMin * MC30), DEF_CENTS = Math.round(DEF_DSCR_LEG * 100);   // the DSCR leg at the default floor, read from the module
   ok(UW.DEFAULTS.vacancyPct === 0.05 && UW.DEFAULTS.mgmtFeePct === 0.025 && UW.DEFAULTS.mgmtPct === 0.025 && UW.DEFAULTS.reservePerUnit === 200 &&
-     JSON.stringify(UW.DEFAULTS.sizing) === szSnap, "DEFAULTS also carries the contract shape (mgmtPct + nested sizing), mgmtFeePct kept");
+     JSON.stringify(UW.DEFAULTS.sizing) === JSON.stringify({ capRate: UW.DEFAULTS.capRate, ltvMax: UW.DEFAULTS.ltvMax, dscrMin: UW.DEFAULTS.dscrMin, dyMin: UW.DEFAULTS.dyMin, intRate: UW.DEFAULTS.intRate, amortYears: UW.DEFAULTS.amortYears }), "DEFAULTS also carries the contract shape (mgmtPct + nested sizing), mgmtFeePct kept");
   var dCases = [
     ["{}", UW.sizeLoan(NOI_UW, {})],
     ["undefined", UW.sizeLoan(NOI_UW)],
     ["null", UW.sizeLoan(NOI_UW, null)],
     ["null/\"\"/\"abc\"/undefined/NaN/Infinity values", UW.sizeLoan(NOI_UW, { capRate: null, ltvMax: "", dscrMin: "abc", dyMin: undefined, intRate: NaN, amortYears: Infinity })],
-    ["text \"0.055\" / \"75%\" / \"1.20\" / \"7%\" / \"5.5%\" / \"30\"", UW.sizeLoan(NOI_UW, { capRate: "0.055", ltvMax: "75%", dscrMin: "1.20", dyMin: "7%", intRate: "5.5%", amortYears: "30" })],
+    ["text \"0.055\" / \"75%\" / \"1.25\" / \"7%\" / \"5.5%\" / \"30\"", UW.sizeLoan(NOI_UW, { capRate: "0.055", ltvMax: "75%", dscrMin: "1.25", dyMin: "7%", intRate: "5.5%", amortYears: "30" })],
     ["DEFAULTS itself", UW.sizeLoan(NOI_UW, UW.DEFAULTS)]
   ];
   dCases.forEach(function (c) {
     var d = c[1];
-    ok(Math.round(d.maxLoan * 100) === 987703690 && d.binding === "DSCR" && JSON.stringify(d.params) === szSnap,
-       "params " + c[0] + " → the DEFAULTS sizing: max loan 9,877,036.90 (DSCR), params = DEFAULTS");
+    ok(Math.round(d.maxLoan * 100) === DEF_CENTS && d.binding === "DSCR" && JSON.stringify(d.params) === JSON.stringify(UW.DEFAULTS.sizing),
+       "params " + c[0] + " → the DEFAULTS sizing: max loan = the DSCR leg at the default floor, params = DEFAULTS");
   });
   var d3 = UW.sizeLoan(NOI_UW, { capRate: 0.06 });
   //   value = 807,562.50 / 0.06 = 13,459,375.00 ; LTV leg = 0.75 × that = 10,094,531.25 ; DSCR leg unchanged 9,877,036.90 → still binds
   cents(d3.value, 13459375, "partial {capRate 0.06}: value = NOI / 0.06");
   cents(d3.loanLTV, 10094531.25, "…LTV leg at the DEFAULT 75%");
-  cents(d3.maxLoan, 9877036.90, "…max loan still the DSCR leg at the DEFAULT 1.20× / 5.5% / 30-yr");
+  cents(d3.maxLoan, DEF_DSCR_LEG, "…max loan still the DSCR leg at the DEFAULT floor / 5.5% / 30-yr");
   ok(d3.params.capRate === 0.06 && d3.params.ltvMax === 0.75 && d3.params.amortYears === 30, "…params show the merge");
   var d5 = UW.sizeLoan(NOI_UW, { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 250, sizing: Object.assign({}, SZ, { ltvMax: 0.55 }) });
   ok(d5.binding === "LTV" && Math.round(d5.maxLoan * 100) === 807562500, "a whole benchmarks object (nested .sizing) is unwrapped: 55% LTV binds at 8,075,625");
@@ -461,7 +463,7 @@ try {
   attempts.forEach(function (f) { try { f(); } catch (e) { threwN++; } });
   same(JSON.stringify(UW.DEFAULTS), snapD, "5 write / delete / replace attempts leave DEFAULTS byte-identical (" + threwN + " threw TypeError under strict mode)");
   ok(Object.isFrozen(UW.DEFAULTS) && Object.isFrozen(UW.DEFAULTS.sizing), "Object.isFrozen(DEFAULTS) && Object.isFrozen(DEFAULTS.sizing)");
-  ok(Math.round(UW.sizeLoan(NOI_UW, {}).maxLoan * 100) === 987703690 && UW.sizeLoan(NOI_UW, {}).params.ltvMax === 0.75, "blank-box fallback still sizes at the untouched DEFAULTS afterwards");
+  ok(Math.round(UW.sizeLoan(NOI_UW, {}).maxLoan * 100) === Math.round(NOI_UW / (UW.DEFAULTS.dscrMin * MC30) * 100) && UW.sizeLoan(NOI_UW, {}).params.ltvMax === 0.75, "blank-box fallback still sizes at the untouched DEFAULTS afterwards");
 
   // =========================================================================
   section("E4 on the Crest T12 fixture — app bench (5% vacancy, 2.5% mgmt, $200/unit reserves, no budget), units 0 and 300; printed NOI 9,483,604.28");
@@ -483,7 +485,7 @@ try {
       // 2.5% management fee, $200/unit reserves, NO $/unit budget, no rent-roll
       // GPR — so the underwritten column re-prices exactly three things (VAC,
       // MGMT, reserves) and every other line passes through at its actual.
-      var APP = { vacancyPct: 0.05, mgmtPct: 0.025, reservePerUnit: 200, budget: {}, sizing: SZ };
+      var APP = Object.assign(require("./app-values.js").pick(require("./app-values.js").appBench(), ["vacancyPct", "mgmtPct", "reservePerUnit"]), { budget: {}, sizing: SZ });   // read from the app, not a copy (#251)
       var parsed = { rows: d.rows, categories: d.categories, totals: d.totals };
       var c0 = SB.buildSetup({ parsed: parsed, units: 0, benchmarks: APP });
       var cs = c0.categorySums, L0 = c0.result.underwritten.lines, ip = c0.result.inPlace, uw0 = c0.result.underwritten;

@@ -29,6 +29,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Every unit test must pass before anything is built or published — a version that fails
+      # its own checks never reaches a release (#251).
+      - name: Run the unit tests
+        run: npm test
+
       # Always ship the newest Claude Code CLI so the app has the current models and
       # effort levels the subscription exposes. Forced here (not just via package.json)
       # so every build picks up the latest even when the lockfile pins an older one.

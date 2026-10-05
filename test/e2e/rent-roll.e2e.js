@@ -66,7 +66,9 @@ const CSV=[
   ok(!/use these/i.test(uwbox),'the "Use these" button is gone (values auto-load instead)');
   await page.waitForFunction(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return u && String(u.value)==='4'; },null,{timeout:6000}).catch(()=>{});
   ok(await page.evaluate(()=>{ const u=document.querySelector('#uwView [data-uwf="units"]'); return u && String(u.value)==='4'; }),'the units input auto-filled (4) from the rent roll');
-  ok(await page.evaluate(()=>{ const a=document.querySelector('#uwView [data-uwf="avgRentUnit"]'); return a && String(a.value)==='1800'; }),'…and the average rent input auto-filled ($1,800)');
+  // 2.9.7 (#17) — the average is the MARKET rent of the occupied units: (1,500 + 2,000 + 2,000) / 3 = 1,833.33
+  const avgIn=await page.evaluate(()=>{ const a=document.querySelector('#uwView [data-uwf="avgRentUnit"]'); return a?String(a.value):''; });
+  ok(Math.abs(parseFloat(avgIn)-1833.33)<0.01,'…and the average rent input auto-filled with the occupied units\' market rent ($1,833.33, got '+avgIn+')');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

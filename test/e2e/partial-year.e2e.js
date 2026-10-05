@@ -1,9 +1,8 @@
-/* e2e for v2.9.0.1: the annualization rule is ONLY the first-two-months test. A statement whose first
-   two months have POSITIVE NOI is NOT annualized — it is summed as-is — even if it has fewer than 12
-   months. (This is the 2.8.8 "fewer-than-12-months" auto-annualize being REMOVED: Yuval's rule is that
-   last-3-months × 4 applies only when the first two months' NOI are both <= 0.)
-   Fixture (7 months, GPR 100k/mo, taxes 10k/mo — first two months NOI = 90k > 0): statement NOI is the
-   7-month sum 630,000; it must be kept as-is (basis "statement"), NOT annualized to 1,080,000.
+/* e2e for 2.9.7 (#11) — the T12 rule (per Azriel): a statement covering FEWER than 12 months is annualized
+   from its last 3 months × 4 — even when its first two months are positive (the 2.9.0.1 first-two-months-only
+   rule is replaced). Fixture (7 months, GPR 100k/mo, taxes 10k/mo): the 7-month sum is 630,000; the NOI must be
+   the last 3 months × 4 = 1,080,000 (basis "annualized"), labelled "T3 × 4", with a banner saying the statement
+   covers 7 months.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/partial-year.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs'),crypto=require('crypto');
 const APP=path.resolve(__dirname,'..','..');
@@ -30,7 +29,7 @@ function readGD(){ try{ const idx=JSON.parse(fs.readFileSync(path.join(PROPDIR,'
   return f?JSON.parse(fs.readFileSync(path.join(PROPDIR,f.stored),'utf8')):null; }catch(e){ return null; } }
 
 (async()=>{
-  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env)});
+  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent'})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
   await page.evaluate(()=>{const b=document.getElementById('tabNewBtn');if(b)b.click();const o=document.querySelector('[data-tabopen="underwriting"]');if(o)o.click();});
@@ -43,24 +42,28 @@ function readGD(){ try{ const idx=JSON.parse(fs.readFileSync(path.join(PROPDIR,'
   await page.setInputFiles('#uwFile',FIX);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
   await page.waitForTimeout(500);
+  // The app writes general-data.json in the background after the upload — wait for it (a busy machine is slower).
+  for(let t=0;t<50&&!((readGD()||{}).noi);t++) await page.waitForTimeout(300);
 
-  // ---- general-data.json keeps the 7-month statement as-is; NO annualization (first two months are positive) ----
+  // ---- general-data.json: the 7-month statement is annualized (last 3 months × 4) ----
   const gd=readGD();
   ok(!!gd,'general-data.json written');
-  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='statement','a statement with positive first two months is NOT annualized (basis "statement", not "annualized")');
-  ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-STMT)<2,'IN-PLACE NOI is the 7-month sum 630,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
-  ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-ANNUALIZED)>2,'IN-PLACE NOI is NOT the annualized 1,080,000');
-  ok(gd&&gd.noi&&(gd.noi.annualizedMonths==null),'no annualization months are recorded');
-  ok(gd&&gd.noi&&gd.noi.underwritten>0&&gd.noi.underwritten<700000,'UNDERWRITTEN NOI is off the 7-month statement (well under 700k), not annualized — got '+(gd&&gd.noi&&Math.round(gd.noi.underwritten)));
+  ok(gd&&gd.noi&&gd.noi.inPlaceBasis==='annualized'&&gd.noi.ruleWhy==='short','a 7-month statement is annualized because it covers fewer than 12 months (basis "annualized", why "short")');
+  ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-ANNUALIZED)<2,'IN-PLACE NOI is the last 3 months × 4 = 1,080,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
+  ok(gd&&gd.noi&&Math.abs(gd.noi.inPlaceStatement-STMT)<2,'the 7-month statement total 630,000 is kept for reference');
+  ok(gd&&gd.noi&&Array.isArray(gd.noi.annualizedMonths)&&gd.noi.annualizedMonths.join(',')==='2026-05,2026-06,2026-07','the annualization months are May, Jun, Jul 2026');
+  ok(gd&&gd.noi&&gd.noi.underwritten>700000,'UNDERWRITTEN NOI is on the same annualized run-rate (over 700k) — got '+(gd&&gd.noi&&Math.round(gd.noi.underwritten)));
 
-  // ---- the underwriting tab shows the statement figure, not an annualized one ----
+  // ---- the underwriting tab shows the annualized figure and says why ----
   const uw=await page.evaluate(()=>document.getElementById('uwView').innerText||'');
-  ok(uw.indexOf('630,000')>=0,'the tab shows the 7-month statement NOI (630,000)');
-  ok(uw.indexOf('1,080,000')<0,'the tab does NOT show an annualized figure (1,080,000)');
-  ok(!/last 3 months/i.test(uw),'no "last 3 months × 4" annualization banner appears');
+  ok(uw.indexOf('1,080,000')>=0,'the tab shows the annualized NOI (1,080,000)');
+  ok(/last 3 months/i.test(uw)&&/covers 7 months/i.test(uw),'the banner says the statement covers 7 months and uses the last 3 months × 4');
+  ok(/T3 × 4/.test(uw),'the NOI is labelled "T3 × 4"');
+  const home=await page.evaluate(()=>window.LDS_loanNOI(window.LDS_loans().find(l=>/villages of whitewater/i.test(l.propertyName))));
+  ok(Math.abs(home-ANNUALIZED)<2,'Home and the refinance read the same 1,080,000 (got '+home+')');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
-  console.log(fails.n?fails.n+' FAILED':'all partial-year (not-annualized) e2e checks passed');
+  console.log(fails.n?fails.n+' FAILED':'all partial-year (annualized) e2e checks passed');
   process.exit(fails.n?1:0);
 })().catch(e=>{console.error('E2E CRASH',e);process.exit(2);});

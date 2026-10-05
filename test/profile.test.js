@@ -62,7 +62,7 @@ section("history on change", () => {
   // history cap
   const c = P.emptyProfile("k");
   for (let i = 0; i < 30; i++) P.setField(c, "notes", "v" + i, { changedAt: "2026-09-" + (i < 9 ? "0" + (i + 1) : (i + 1)) + "T00:00:00Z" });
-  ok(P.getField(c, "notes").history.length === 20, "history is capped at 20 (got " + P.getField(c, "notes").history.length + ")");
+  ok(P.getField(c, "notes").history.length === 29, "every past change is kept — no 20-change limit (#254) (got " + P.getField(c, "notes").history.length + ")");
 });
 
 section("value() treats blanks as unset", () => {

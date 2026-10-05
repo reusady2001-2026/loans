@@ -136,7 +136,7 @@
   function aggregate(name, units, opts){
     opts = opts || {};
     var out = { name: name || "(property)", units: units, residentialUnits: 0, occupiedUnits: 0, commercialUnits: 0,
-      vacantUnits: 0, residentialSqft: null, gprAnnual: null, avgMarketRent: null, avgActualRent: null, occupancy: null,
+      vacantUnits: 0, residentialSqft: null, gprAnnual: null, avgMarketRent: null, avgMarketRentOccupied: null, gprFromOccupiedMarket: null, avgActualRent: null, occupancy: null,
       unitStats: [], commercialAnnual: null, warnings: [] };
     var propComm = COMMERCIAL_NAME_RE.test(name || "");
     units.forEach(function(u){
@@ -157,6 +157,11 @@
     var marketVals = res.map(function(u){ return u.marketRent; }).filter(function(v){ return v != null; });
     if (res.length && marketVals.length) out.gprAnnual = round2(sum(marketVals) * 12);
     out.avgMarketRent = marketVals.length ? round2(mean(marketVals)) : null;
+    // 2.9.7 (#17) — the gross-potential-rent basis: the average MARKET rent of the OCCUPIED units (vacant units
+    // left out of the average); GPR = that average × all residential units × 12.
+    var occMarket = res.filter(function(u){ return u.occupied && u.marketRent != null; }).map(function(u){ return u.marketRent; });
+    out.avgMarketRentOccupied = occMarket.length ? round2(mean(occMarket)) : null;
+    out.gprFromOccupiedMarket = (occMarket.length && res.length) ? round2(mean(occMarket) * res.length * 12) : null;
     var occActual = res.filter(function(u){ return u.occupied && u.actualRent != null && u.actualRent > 0; }).map(function(u){ return u.actualRent; });
     out.avgActualRent = occActual.length ? round2(mean(occActual)) : null;
     if (res.length) out.occupancy = round2(res.filter(function(u){ return u.occupied; }).length / res.length);

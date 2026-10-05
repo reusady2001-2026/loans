@@ -1,6 +1,6 @@
 {
   "name": "loan-debt-service-hub",
-  "version": "2.9.6",
+  "version": "2.9.7",
   "description": "Commercial Loan Debt Service Hub \u2014 offline desktop app",
   "main": "main.js",
   "author": "BSI",
@@ -8,6 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node test/run-unit.js",
+    "test:e2e": "node test/run-e2e.js",
     "build:win": "electron-builder --win portable --publish never",
     "build:win-installer": "electron-builder --win nsis --publish never",
     "build:linux": "electron-builder --linux AppImage"
@@ -19,6 +21,7 @@
     "artifactName": "LoanDebtServiceHub-Setup-${version}.${ext}",
     "files": [
       "index.html",
+      "legacy-storage.html",
       "underwriting.js",
       "t12-classify.js",
       "setup-builder.js",
@@ -31,6 +34,8 @@
       "general-data.js",
       "profile.js",
       "rent-roll.js",
+      "t12-check.js",
+      "rate-history.js",
       "ocr.js",
       "ai.js",
       "main.js",
