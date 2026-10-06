@@ -1,7 +1,7 @@
 /* ============================================================================
    General Data - the per-PROPERTY "General Data" record that lives beside the
    T12 in the property's folder (general-data.json). It holds the property's
-   identity, its two NOIs (in-place T12 and the calculated underwritten NOI),
+   two NOIs (in-place T12 and the calculated underwritten NOI),
    and a ROLLING 24-MONTH history of every operating line, built up as T12s are
    uploaded over time. Each upload contributes its monthly columns; overlapping
    months take the newer statement's figure, and only the most recent 24 months
@@ -82,8 +82,10 @@
 
   // Merge a freshly-parsed monthly series into the rolling record. New months win
   // on overlap (the latest statement is authoritative for a month it re-reports).
-  // meta: { propKey, identity, noi, now, cap }. Returns a fresh record; `existing`
-  // is not mutated.
+  // meta: { propKey, noi, now, cap }. Returns a fresh record; `existing`
+  // is not mutated. 2.9.10 — the property's name, address and units live in its
+  // profile only: this record keeps no copy of them, and an old copy is dropped.
+  var NOT_KEPT = { identity: 1, propertyName: 1 };
   function merge(existing, series, meta){
     meta = meta || {};
     var cap = isNum(meta.cap) ? meta.cap : CAP;
@@ -114,7 +116,6 @@
     var out = {
       schema: SCHEMA,
       propKey: meta.propKey != null ? meta.propKey : (gd.propKey != null ? gd.propKey : null),
-      identity: isObj(meta.identity) ? meta.identity : (gd.identity || null),
       noi: isObj(meta.noi) ? assign({ computedAt: meta.now || null }, meta.noi) : (gd.noi || null),
       window: { months: months, cap: cap },
       lines: lines,
@@ -122,7 +123,7 @@
     };
     // 2.9.7 — everything else the record carries (Claude's saved "what to push", the assumptions snapshot, the
     // T12 review decisions, …) rides along untouched: a merge of new months never drops another part of the record.
-    for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !Object.prototype.hasOwnProperty.call(out, k)) out[k] = gd[k];
+    for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !Object.prototype.hasOwnProperty.call(out, k) && !NOT_KEPT[k]) out[k] = gd[k];
     return out;
   }
   function assign(a, b){ for (var k in b) if (Object.prototype.hasOwnProperty.call(b, k)) a[k] = b[k]; return a; }
@@ -210,5 +211,8 @@
   // Kept for callers of the older name: the same rule.
   function annualizedNOI(series){ return noiRule(series); }
 
-  return { SCHEMA: SCHEMA, CAP: CAP, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI, noiRule: noiRule };
+  // what a written record must not carry (the app's writer drops these from every write — 2.9.10)
+  function strip(gd){ if (!isObj(gd)) return gd; var o = {}; for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !NOT_KEPT[k]) o[k] = gd[k]; return o; }
+
+  return { SCHEMA: SCHEMA, CAP: CAP, strip: strip, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI, noiRule: noiRule };
 });

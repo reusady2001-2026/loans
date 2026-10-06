@@ -3,6 +3,8 @@
        the new loan from ITS rate (the line says "30-day Avg SOFR x.xx%", not the overnight value).
    (8) "Fetch live rate" also opens a list of every rate the app holds: its value, where it comes from, and which of
        your loans use it; "Other / Custom" reads "each loan's own value", not 5%.
+   2.9.10 (g7) — Refinance's Index lists (Floating, and Hybrid's fixed-period one) hold EVERY rate the app fetches
+       (US Prime Rate and Fed Funds were missing), and nothing it doesn't fetch.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/rates-299.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -35,14 +37,23 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.evaluate(()=>{ const b=document.querySelector('#refiPricing [data-rtype="Floating"]'); if(b) b.click(); }); await page.waitForTimeout(600);
   const opts=await page.evaluate(()=>{ const s=document.getElementById('o1_index'); return s?[...s.options].map(o=>o.textContent):[]; });
   ok(opts.includes('SOFR (overnight)')&&opts.includes('SOFR 30-day Average (NY Fed)')&&opts.includes('1-month Term SOFR (CME)'),'Refinance’s Index list: SOFR (overnight), SOFR 30-day Average, 1-month Term SOFR ('+opts.slice(0,4).join(' | ')+'…)');
-  const rate=(id)=>page.evaluate((id)=>window.LDS_indexCache?((window.LDS_indexCache(id)||{}).value):null,id);
-  for(const [id,short] of [['sofr30','30-day Avg SOFR'],['termsofr1m','1-mo Term SOFR']]){
+  // 2.9.10 (g7) — EVERY rate the app fetches is in Refinance's lists (Prime and Fed Funds were missing), and only those
+  const fetched=await page.evaluate(()=>window.LDS_indexCatalog().filter(c=>c.live).map(c=>c.label));
+  const fx=await page.evaluate(()=>{ const b=document.querySelector('#refiPricing [data-rtype="Hybrid ARM"]'); return !!b; });
+  ok(fetched.length===12&&opts.length===fetched.length&&fetched.every(l=>opts.includes(l)),'the Floating Index list has every fetched rate — '+opts.length+' of '+fetched.length+' (US Prime Rate: '+opts.includes('US Prime Rate')+', Fed Funds: '+opts.includes('Fed Funds (EFFR)')+')');
+  ok(!opts.some(o=>/Other|30-Year/.test(o)),'…and nothing the app doesn’t fetch (no “Other / Custom”, no 30-year Treasury)');
+  // the rate the app holds for an index: fetched or saved, else the built-in value (offline, Prime/Fed Funds were never fetched here)
+  const rate=(id)=>page.evaluate((id)=>{ const c=window.LDS_indexCache&&window.LDS_indexCache(id); if(c&&c.value!=null) return c.value; const k=window.LDS_indexCatalog().find(x=>x.id===id); return k?k.fallback:null; },id);
+  for(const [id,short] of [['sofr30','30-day Avg SOFR'],['termsofr1m','1-mo Term SOFR'],['prime','Prime'],['effr','EFFR']]){
     await page.evaluate((id)=>{ const s=document.getElementById('o1_index'); s.value=id; s.dispatchEvent(new Event('change',{bubbles:true})); },id); await page.waitForTimeout(1200);
     const t=await page.evaluate(()=>document.getElementById('refiPricing').innerText);
     const v=await rate(id);
     const m=t.match(new RegExp(short.replace(/[-]/g,'\\-')+' ([0-9.]+)%'));
     ok(m&&v!=null&&Math.abs(parseFloat(m[1])-v)<0.01,'picking '+short+' prices it from its own rate ('+(m&&m[1])+'% vs the '+id+' rate '+v+'%)');
   }
+  if(fx){ await page.evaluate(()=>document.querySelector('#refiPricing [data-rtype="Hybrid ARM"]').click()); await page.waitForTimeout(600);
+    const fxo=await page.evaluate(()=>{ const s=document.getElementById('o1_fxindex'); return s?[...s.options].map(o=>o.textContent):[]; });
+    ok(fxo.length===fetched.length&&fetched.every(l=>fxo.includes(l)),'the Hybrid “Index (matches the fixed period)” list has every fetched rate too ('+fxo.length+')'); }
   const sofrV=parseFloat(L.sofr.v), s30=await rate('sofr30');
   ok(isFinite(sofrV)&&s30!=null&&Math.abs(sofrV-s30)>0.0001,'…which is not the overnight SOFR value ('+s30+'% vs '+sofrV+'%)');
 
