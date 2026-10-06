@@ -3232,12 +3232,40 @@
       const live = INDEX_CATALOG.filter(i => i.live);
       if(btn) btn.disabled = true; if(label) label.textContent = "Fetching…";
       let n = 0;
-      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ setLiveRate(cat.id, r); if(!r.stale) n++; } }catch(e){} }));
+      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ setLiveRate(cat.id, r); if(!r.stale && !r.builtin) n++; } }catch(e){} }));   // 2.9.9 — a built-in value is not "refreshed from the US feeds"
       if(btn) btn.disabled = false; if(label) label.textContent = "Fetch live rate";
       if(n){ try{ toast("Live rates updated — "+n+" refreshed from US feeds.", "check"); }catch(e){} }
       else { try{ toast("Couldn’t fetch live rates (offline?). Existing values kept.", "info"); }catch(e){} }
       try{ render(); }catch(e){}                                                   // home area: portfolio coverage gap / loan / refi
       try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
+      try{ showRatesList(n); }catch(e){}   // 2.9.9 (fix 8)
+    }
+    // 2.9.9 (fix 8) — every rate the app holds, its value, where it comes from, and which of your loans use it.
+    function ratesListRows(){
+      var book = activeLoans(), kind = function(l){ return l.rateType === "Floating" ? "floating" : (l.rateType === "Hybrid ARM" ? "hybrid" : "fixed"); };
+      return INDEX_CATALOG.map(function(cat){
+        var c = INDEX_CACHE[cat.id], on = book.filter(function(l){ return l.index === cat.id; });
+        var value = cat.live ? fmtPct((c ? c.value : cat.fallback) / 100) : "each loan’s own value";
+        var src = cat.live ? rateSourceText(cat.id) : "typed on each loan";
+        var who = on.map(function(l){ return loanLabel(l) + (cat.live ? (kind(l) === "fixed" ? " (fixed — its rate is locked)" : " (" + kind(l) + ")") : " (" + (l.armAssumedIndex != null && l.armAssumedIndex !== "" ? fmtPct(Number(l.armAssumedIndex) > 1 ? Number(l.armAssumedIndex) / 100 : Number(l.armAssumedIndex)) : "no value typed") + ")"); });
+        return { id: cat.id, label: cat.label, value: value, src: src, loans: who };
+      });
+    }
+    function showRatesList(refreshed){
+      var old = document.querySelector("[data-rateslist]"); if(old) old.remove();
+      var rows = ratesListRows();
+      var m = document.createElement("div");
+      m.className = "fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4"; m.setAttribute("data-rateslist", "");
+      m.innerHTML = '<div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">'+
+        '<div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-bold text-slate-900">Market rates</h3>'+
+        '<p class="text-xs text-slate-500">'+(refreshed ? refreshed+' refreshed from the US feeds just now.' : 'Couldn’t fetch (offline?) — the last saved values.')+' The app holds '+rows.length+' rates.</p></div>'+
+        '<button type="button" data-rateslistclose class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">✕</button></div>'+
+        '<table class="mt-3 w-full text-left text-[12px]"><thead><tr class="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400"><th class="py-1.5 pr-2">Rate</th><th class="py-1.5 pr-2 text-right">Value</th><th class="py-1.5 pr-2">Where it comes from</th><th class="py-1.5">Your loans on it</th></tr></thead><tbody>'+
+        rows.map(function(r){ return '<tr class="border-b border-slate-100 align-top" data-raterow="'+escapeHtml(r.id)+'"><td class="py-1.5 pr-2 font-semibold text-slate-800">'+escapeHtml(r.label)+'</td>'+
+          '<td class="py-1.5 pr-2 text-right tabular-nums font-bold text-slate-900" data-ratevalue>'+escapeHtml(r.value)+'</td><td class="py-1.5 pr-2 text-slate-500" data-ratesrc>'+escapeHtml(r.src)+'</td>'+
+          '<td class="py-1.5 text-slate-600" data-rateloans>'+(r.loans.length ? escapeHtml(r.loans.join(", ")) : '<span class="text-slate-300">—</span>')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+      document.body.appendChild(m);
+      m.addEventListener("click", function(e){ if(e.target === m || (e.target.closest && e.target.closest("[data-rateslistclose]"))) m.remove(); });
     }
 
     // Show/hide conditional term fields within a container, then refresh the
@@ -8854,7 +8882,7 @@ tr.flagged:hover td{background:#fee2e2}
     // the operator has hand-overridden the yardstick's base value or spread.
     let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false, refiHoldManual = false;
     function tenorShort(id){
-      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", prime:"Prime", effr:"EFFR" })[id]
+      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", sofr30:"30-day Avg SOFR", termsofr1m:"1-mo Term SOFR", prime:"Prime", effr:"EFFR" })[id]
         || (INDEX_BY_ID[id] ? INDEX_BY_ID[id].label : id);
     }
     function refiOptBtnClass(active){
@@ -9971,7 +9999,9 @@ tr.flagged:hover td{background:#fee2e2}
         '</tr></thead><tbody class="divide-y divide-slate-100 tabular-nums">'+body+'</tbody></table></div>';
     }
     // Indices you can price a proposed loan over: SOFR + the Treasury tenors the app tracks.
-    const REFI_INDEX_CHOICES = ["sofr","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
+    // 2.9.9 (fix 7) — the 30-day Average SOFR and 1-month Term SOFR too (2.9.7 #256 added them for loans only); each is
+    // priced from its own rate.
+    const REFI_INDEX_CHOICES = ["sofr","sofr30","termsofr1m","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
     // The honest rate build-up shown at the top of the proposed loan: a rate-type toggle,
     // the base-index picker, an editable spread (0 by default on the fixed side, the
     // comp-derived margin on the floating side), and the resulting rate spelled out —
@@ -10222,7 +10252,9 @@ tr.flagged:hover td{background:#fee2e2}
         wrap.addEventListener("change", (e) => {
           const t = e.target, m = t && (t.id||"").match(/^o(1)_(.+)$/); if(!m) return;
           const n = Number(m[1]), field = m[2], draft = refiDrafts[n]; if(!draft) return;
-          if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
+          if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan);
+            try{ ensureIndexLive(draft.index, () => { applyProposedPricing(loan, draft); renderRefi(loan); }); }catch(e){}   // 2.9.9 (fix 7) — the chosen index's own rate (fetched once if it wasn't yet)
+            return; }
           if(field === "fxindex"){ draft._fixedIndex = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
           const blank = String(t.value||"").trim() === "";
           const raw = parseFloat((t.value||"").replace(/[^0-9.\-]/g,"")), v = isNaN(raw) ? 0 : raw;
@@ -11474,7 +11506,9 @@ tr.flagged:hover td{background:#fee2e2}
         });
       },
       read_rates: function(){
-        var out=INDEX_CATALOG.map(function(cat){ var c=INDEX_CACHE[cat.id], v=c?c.value:cat.fallback; return { id:cat.id, name:cat.label, percent:aiR(v,4), source: c && !c.saved ? "live, fetched "+fmtWhenShort(c.fetchedAt) : rateSourceText(cat.id) }; });
+        var out=INDEX_CATALOG.map(function(cat){ var c=INDEX_CACHE[cat.id], v=c?c.value:cat.fallback;
+          if(!cat.live) return { id:cat.id, name:cat.label, percent:null, source:"not a market rate — each loan on it uses its own typed value (the 5% in the app is only a placeholder)" };   // 2.9.9
+          return { id:cat.id, name:cat.label, percent:aiR(v,4), source: c && !c.saved ? "live, fetched "+fmtWhenShort(c.fetchedAt) : rateSourceText(cat.id) }; });
         return { ok:true, msg:"Read the "+out.length+" market rates the app holds (not fetched again — use fetch_live_rate for today’s).", data:out };
       },
       read_documents: function(a){
