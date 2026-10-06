@@ -41,7 +41,13 @@ const CSV=[
   await page.evaluate((k)=>window.LDS_openProfile(k), keys.other);
   await page.waitForFunction(()=>{ const v=document.getElementById('loanView'); return v&&!v.hidden&&document.getElementById('loanDocsFile'); },null,{timeout:8000});
   await page.setInputFiles('#loanDocsFile',FIX);
-  await page.waitForTimeout(1500);   // async: read → detect → route → save to each folder
+  // 2.9.9 (fix 2) — a file with several properties shows the card first: the sections that name a property are set to
+  // it; the property it was dropped on (named by none) is set to nothing; you approve
+  await page.waitForFunction(()=>!!document.querySelector('[data-partsmodal]'),null,{timeout:15000}).catch(()=>{});
+  const card=await page.evaluate(()=>{ const m=document.querySelector('[data-partsmodal]'); return m?{ sel:[...m.querySelectorAll('[data-partsel]')].map(s=>s.value), tick:[...m.querySelectorAll('[data-partuse]')].map(c=>c.checked) }:null; });
+  ok(card&&card.sel[0]===keys.mk&&card.sel[1]===keys.ok2&&card.tick[0]&&card.tick[1],'the card sets each section to the property it names (Maple Court, Oak Plaza)');
+  await page.evaluate(()=>document.querySelector('[data-partsmodal] [data-partsok]').click());
+  await page.waitForFunction(async(k)=>{ const d=await window.ldsShell.docList(k); return (d.files||[]).some(f=>f.role==='rentroll'); },keys.ok2,{timeout:15000}).catch(()=>{});   // saved to each folder
 
   // it routed by CONTENT into both named folders, not the drop location
   const routed=await page.evaluate(async (k)=>{
