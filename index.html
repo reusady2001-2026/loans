@@ -10684,6 +10684,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
       "FILES WITH SEVERAL PARTS (a workbook with several sheets, or a rent roll with several properties' sections on one sheet): the app never decides by itself which part is whose. A card lists every part with a list of the operator's properties: in a property chat this property is set on its part when the app can tell (or the section you name), the other parts start unticked, and \"Add as a new property\" is never set — only the operator picks it. Each property keeps the answer (sheet number X, section Y) in its general-data.json and reads ONLY its own part. In the text you get, a multi-part file of this property holds only its own part; a part not answered yet is left out — never use another part's figures for this property, and when one isn't answered say so and point to the card (Documents → Answer). Saving, importing, copying or moving such a file always goes through that card.",
+      "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
@@ -11454,6 +11455,22 @@ tr.flagged:hover td{background:#fee2e2}
             t12: t12, rentRoll: rent, refinance: p&&p.loans.length ? aiAsstRefiRead(p.loans[0]) : undefined,
             documents: dl&&dl.ok ? (dl.files||[]).map(function(f){ return f.name+(f.textLen?"":" (no readable text)"); }) : undefined };
           return { ok:true, msg:"Read "+r.name+".", data:data };
+        });
+      },
+      // 2.9.9 (fix 6) — a file that was not read for this message, read on request (in parts, stopping at the answer)
+      read_files: function(a){
+        var want=[].concat((a&&a.files)||(a&&a.file)||[]).map(String).filter(Boolean); if(!want.length) return {ok:false,msg:"Name the file(s) to read."};
+        var key=aiAsstFocusPropKey||"";
+        var txtP=(key && docsAvailable()) ? ldsShell.docText(key).then(function(dt){ return aiAsstScopeDocText(key, dt); }).catch(function(){ return null; }) : Promise.resolve(null);
+        return txtP.then(function(dt){
+          var material=aiAsstMaterial(dt), sel=material.filter(function(f){ var n=f.name.toLowerCase(); return want.some(function(w){ w=w.toLowerCase(); return n===w || n.indexOf(w)>=0; }); });
+          if(!sel.length) return {ok:false,msg:"No file named "+want.join(", ")+" — the files on hand: "+(material.map(function(f){ return f.name; }).join(", ")||"none")+"."};
+          var q=(aiAsstHistory.filter(function(m){ return m&&m.role==="user"; }).pop()||{}).text||""; if(a&&a.why) q+="\n(What to look for: "+a.why+")";
+          return aiAsstReadInParts(q, sel, aiAsstThinkingEl, { stopWhenAnswered: !(a&&a.all) }).then(function(res){
+            if(!res) return {ok:false,msg:"The reading was stopped."};
+            aiAsstHistory.push({ role:"notes", text:res.notes, parts:res.parts, files:res.files }); aiAsstPersist();
+            return {ok:true,msg:"Read "+res.files.join(", ")+" ("+res.parts+(res.of?" of "+res.of:"")+" part"+(res.parts===1?"":"s")+").",data:{ notes:res.notes }};
+          });
         });
       },
       read_rates: function(){
@@ -12501,7 +12518,9 @@ tr.flagged:hover td{background:#fee2e2}
     // "Recalled from earlier" note so it is never silent.
     var AI_RECALL_MIN = 6;    // minimum chat-search score to pull a past conversation into context
     var AI_RECALL_MAX = 2;    // at most 2 recalled conversations — bounds the added tokens (cost)
-    var AI_RECALL_STOP={the:1,and:1,for:1,are:1,was:1,were:1,what:1,whats:1,how:1,does:1,did:1,you:1,this:1,that:1,with:1,about:1,tell:1,show:1,give:1,please:1,per:1,its:1,they:1,them:1,have:1,has:1,had:1,from:1,into:1,your:1,our:1,can:1,could:1,would:1,should:1,will:1,any:1,all:1,not:1,but:1,which:1,when:1,where:1,who:1};
+    // 2.9.9 (fix 9) — and the words nearly every chat in this app has, which say nothing about what a question is about
+    var AI_RECALL_STOP={app:1,every:1,hold:1,holds:1,come:1,comes:1,value:1,values:1,file:1,files:1,read:1,reading:1,list:1,property:1,properties:1,info:1,information:1,thing:1,things:1,want:1,need:1,know:1,make:1,just:1,also:1,like:1,look:1,see:1,check:1,say:1,said:1,one:1,new:1,get:1,use:1,used:1,here:1,there:1,now:1,yes:1,okay:1,
+      the:1,and:1,for:1,are:1,was:1,were:1,what:1,whats:1,how:1,does:1,did:1,you:1,this:1,that:1,with:1,about:1,tell:1,show:1,give:1,please:1,per:1,its:1,they:1,them:1,have:1,has:1,had:1,from:1,into:1,your:1,our:1,can:1,could:1,would:1,should:1,will:1,any:1,all:1,not:1,but:1,which:1,when:1,where:1,who:1};
     // Content-word query for recall: drop punctuation, stopwords and short tokens so it matches
     // on what the question is ABOUT, not on "what/the/is". Also drop the focused property's own
     // name — it is implied by the scope, and would otherwise match every chat about that property.
@@ -12510,6 +12529,9 @@ tr.flagged:hover td{background:#fee2e2}
       return String(q||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/)
         .filter(function(t){ return t.length>=3 && !AI_RECALL_STOP[t] && !strip[t]; }).slice(0,12).join(" ");
     }
+    // 2.9.7 (#244) at least 2 different words in common; 2.9.9 (fix 9) and RELATED: the title shares a word with the
+    // question, or one message has two of its words close together (a long chat has any two words somewhere).
+    function aiAsstRecallRelated(m){ return !!m && m.hitTerms >= 2 && (m.titleHit !== undefined ? (m.titleHit || m.near) : true); }
     // A slim, visible note above the answer naming which past conversations were recalled.
     function aiAsstRecallNote(picks){
       var log=el("aiAsstLog"); if(!log||!picks||!picks.length) return;
@@ -12527,7 +12549,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!q) return Promise.resolve({query:"", picks:[]});
       return ldsShell.chatSearch({query:q, scopes:scopes, wholeWords:true}).then(function(r){
         var ms=(r&&r.matches)||[];
-        var picks=ms.filter(function(m){ return m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — the same rule as a real turn
+        var picks=ms.filter(aiAsstRecallRelated).slice(0, AI_RECALL_MAX);   // the same rule as a real turn
         return { query:q, total:ms.length, picks:picks.map(function(m){ return {title:m.title, scope:m.scope, score:m.score, hitTerms:m.hitTerms, role:m.role, snippet:m.snippet}; }) };
       });
     };
@@ -12630,10 +12652,11 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The files of this conversation, sent whole with every message (#243); when everything is more than one message
     // can hold, they are read in parts instead (#250).
-    function aiAsstFilesBlock(){
-      if(!aiAsstConvFileTexts.length) return "";
+    function aiAsstFilesBlock(inSet){
+      var list = aiAsstConvFileTexts.filter(function(f){ return !inSet || inSet(f.name); });   // 2.9.9 (fix 6)
+      if(!list.length) return "";
       return "Files attached in this conversation — their extracted text (each page is marked; \"read by OCR — may contain errors\" marks a page read from a scan, \"could not be read\" a page that is missing):\n"+
-        aiAsstConvFileTexts.map(function(f){ return '<file name="'+escapeHtml(f.name)+'"'+(f.label?' read="'+escapeHtml(f.label)+'"':'')+'>\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
+        list.map(function(f){ return '<file name="'+escapeHtml(f.name)+'"'+(f.label?' read="'+escapeHtml(f.label)+'"':'')+'>\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
     }
     // ── 2.9.7 (#250, choice 1a) — reading in parts. When the files (attached + the focused property's saved documents)
     // are more than Claude can read in one message, Claude reads them part by part, keeping notes — exact figures with
@@ -12641,7 +12664,7 @@ tr.flagged:hover td{background:#fee2e2}
     // text stays with the files, so a follow-up question reads them in parts again.
     var AI_ONE_MESSAGE_CHARS = 400000, AI_PART_CHARS = 300000;
     try{ var _pc=Number(localStorage.getItem("lds.asstPartChars")); if(_pc>=1000){ AI_PART_CHARS=_pc; AI_ONE_MESSAGE_CHARS=Math.round(_pc*4/3); } }catch(e){}   // (tests)
-    var AI_PARTS_SYSTEM = "You read long documents for the Loan Debt Service Hub's assistant, one part at a time, so it can answer the operator's question. Keep NOTES: copy every fact that bears on the question exactly as written — figures, dates, names, rates, terms — each with its file name and page number (the text marks pages as [page N]); say when a page was \"read by OCR — may contain errors\" and list pages that \"could not be read\". Add to the notes you are given; never drop earlier notes. Reply with the complete updated notes only — no preamble.";
+    var AI_PARTS_SYSTEM = "You read long documents for the Loan Debt Service Hub's assistant, one part at a time, so it can answer the operator's question. After the notes, end with one last line: ANSWERED: yes — when the notes now fully answer the question — otherwise ANSWERED: no. Keep NOTES: copy every fact that bears on the question exactly as written — figures, dates, names, rates, terms — each with its file name and page number (the text marks pages as [page N]); say when a page was \"read by OCR — may contain errors\" and list pages that \"could not be read\". Add to the notes you are given; never drop earlier notes. Reply with the complete updated notes only — no preamble.";
     function aiAsstMaterial(docTxt){
       var out=aiAsstConvFileTexts.map(function(f){ return { name:f.name, label:f.label||"", text:f.text||"", from:"attached" }; });
       if(docTxt && docTxt.text){ var re=/<file name="([^"]*)"(?: read="([^"]*)")?>\n([\s\S]*?)\n<\/file>/g, m; while((m=re.exec(docTxt.text))){ if(!out.some(function(o){ return o.name===m[1]; })) out.push({ name:m[1], label:m[2]||"", text:m[3], from:"saved" }); } }
@@ -12657,9 +12680,12 @@ tr.flagged:hover td{background:#fee2e2}
       if(cur) parts.push(cur);
       return parts;
     }
-    function aiAsstReadInParts(question, material, thinking){
-      var parts=aiAsstSplitParts(material), n=parts.length, names=material.map(function(f){ return f.name; });
-      aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>'+(material.length===1?"This file is long":"These files are long")+' — Claude is reading '+(material.length===1?"it":"them")+' in '+n+' parts.</span>');
+    function aiAsstReadInParts(question, material, thinking, opts){
+      opts=opts||{};
+      var parts=aiAsstSplitParts(material), n=parts.length, names=material.map(function(f){ return f.name; }), stoppedAt=0;
+      // 2.9.9 (fix 6) — which files are read (and which are not), then the parts
+      var only = (opts.skipped && opts.skipped.length) ? 'Reading only '+names.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+' — not needed for this: '+opts.skipped.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'. ' : '';
+      aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>'+only+(only ? 'Claude is reading '+(material.length===1?"it":"them") : (material.length===1?"This file is long":"These files are long")+' — Claude is reading '+(material.length===1?"it":"them"))+' in '+n+' part'+(n===1?'':'s')+(opts.stopWhenAnswered && n>1 ? ', and stops as soon as it has the answer' : '')+'.</span>');
       var setT=function(i){ if(thinking) thinking.innerHTML='<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Reading part '+i+' of '+n+'…</span>'; };
       var notes="";
       return parts.reduce(function(pr, part, i){ return pr.then(function(ok){ if(ok===false || aiAsstStopped) return false; setT(i+1);
@@ -12668,7 +12694,40 @@ tr.flagged:hover td{background:#fee2e2}
         return ldsShell.aiChat({ system: AI_PARTS_SYSTEM, prompt: prompt, timeoutMs: 300000, cancelToken: token }).then(function(r){
           if(aiAsstStopped || (r && r.canceled)) return false;
           if(!r || !r.ok) throw new Error((r && r.error) || "reading a part failed");
-          notes=String(r.text||"").trim(); return true; }); }); }, Promise.resolve(true)).then(function(ok){ return (ok===false || aiAsstStopped) ? null : { notes:notes, parts:n, files:names }; });
+          var txt=String(r.text||"").trim(), m=txt.match(/\n?\s*ANSWERED:\s*(yes|no)\s*\.?\s*$/i);
+          notes=m ? txt.slice(0, m.index).trim() : txt;
+          if(m && /yes/i.test(m[1]) && opts.stopWhenAnswered && i < n-1){ stoppedAt=i+1; return false; }   // 2.9.9 (fix 6) — it has the answer: the rest isn't read
+          return true; }); }); }, Promise.resolve(true)).then(function(ok){
+            if(stoppedAt && !aiAsstStopped){ aiAsstBubble("assistant", '<span class="text-slate-600" data-readstopped>Found the answer in part '+stoppedAt+' of '+n+' — the rest wasn’t read.</span>'); return { notes:notes, parts:stoppedAt, of:n, files:names }; }
+            return (ok===false || aiAsstStopped) ? null : { notes:notes, parts:n, files:names }; });
+    }
+    // ── 2.9.9 (fix 6) — understand the task first, then read only the files it needs ─────────────────────────────
+    // When a message's files are long, one quick call decides which of them can answer it (none, when the conversation
+    // or the notes already do, or when the message asks to DO something); only those are read, in parts, and the reading
+    // stops as soon as the answer is found — unless the operator asked to read everything.
+    var AI_PLAN_CHARS = Math.round(AI_ONE_MESSAGE_CHARS / 4);
+    var AI_PLAN_SYSTEM = "You decide, BEFORE anything is read, which of the files below must be read to answer the operator's message — the fewest that can answer it. Rules: a message that asks the app to DO something (import, save, link, approve, delete, change…) and needs no figure from a file reads none; a message the conversation or the notes already answer reads none; rents, units or occupancy → the rent roll; income, expenses or NOI → the T12; loan terms (rate, maturity, prepayment, reserves, covenants) → the loan agreement; read every file only when the operator explicitly asks to read all of them. Reply with JSON only, no prose: {\"read\":[\"exact file names, most useful first\"],\"readAll\":false,\"why\":\"one short sentence\"}";
+    function aiAsstWantsAll(q){ q=String(q||"").toLowerCase();
+      return /\b(read|go through|review|scan)\b[^.?!]{0,30}\b(all|every|each|whole|entire)\b/.test(q) || /\b(all|every|each)\s+(of\s+)?(the\s+|its\s+|his\s+|these\s+)?(files|documents|docs)\b/.test(q) ||
+        /\bread\s+(the|its|these|all)\s+(files|documents|docs)\b/.test(q) || /\b(whole|entire|full)\s+(loan\s+)?(agreement|document|file)\b/.test(q) || /\bkeep reading\b/.test(q); }
+    function aiAsstPlanRead(question, material, focusKey){
+      var rolesP = (focusKey && docsAvailable()) ? ldsShell.docList(focusKey).then(function(dl){ var m={}; ((dl&&dl.files)||[]).forEach(function(f){ m[f.name]=f.role||""; }); return m; }).catch(function(){ return {}; }) : Promise.resolve({});
+      return rolesP.then(function(roles){
+        var list = material.map(function(f){ var head=String(f.text||"").replace(/\s+/g," ").slice(0, 280), r=roles[f.name];
+          return '- "'+f.name+'" · '+(f.from==="attached"?"attached in this chat":"saved")+(r?" · type: "+(profileDocLabel(r)||r):"")+" · "+f.text.length.toLocaleString()+" characters · begins: "+head; }).join("\n");
+        var hist = aiAsstHistory.filter(function(m){ return m && m !== aiAsstPendingTurn && m.role !== "notes" && m.role !== "card"; }).slice(-6).map(function(m){ return aiAsstThreadText(m).slice(0, 500); }).filter(Boolean).join("\n");
+        var notes = aiAsstHistory.filter(function(m){ return m && m.role === "notes"; }).map(function(m){ return "Notes from "+(m.files||[]).join(", ")+":\n"+String(m.text||"").slice(0, 4000); }).slice(-2).join("\n\n");
+        var prompt = "The operator's message: "+(question||"(no words — files were attached)")+"\n\n"+(hist?("Recent conversation:\n"+hist+"\n\n"):"")+(notes?("Notes already taken in this chat:\n"+notes+"\n\n"):"")+"Files:\n"+list;
+        var token="q"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); aiAsstToken=token;
+        return ldsShell.aiChat({ system: AI_PLAN_SYSTEM, prompt: prompt, timeoutMs: 90000, cancelToken: token }).then(function(r){
+          if(!r || !r.ok) return null;
+          var m = String(r.text||"").match(/\{[\s\S]*\}/); if(!m) return null;
+          var j = null; try{ j = JSON.parse(m[0]); }catch(e){ return null; }
+          var names = material.map(function(f){ return f.name; }), pick = [];
+          (Array.isArray(j.read) ? j.read : []).forEach(function(x){ var hit = names.find(function(n){ return n.toLowerCase() === String(x).toLowerCase(); }) || names.find(function(n){ return n.toLowerCase().indexOf(String(x).toLowerCase()) >= 0; }); if(hit && pick.indexOf(hit) < 0) pick.push(hit); });
+          return { read: pick, readAll: !!j.readAll, why: String(j.why||"") };
+        }).catch(function(){ return null; });
+      });
     }
     // How a thread entry reads for Claude.
     function aiAsstThreadText(m){
@@ -12701,6 +12760,30 @@ tr.flagged:hover td{background:#fee2e2}
         var docIdx=dres[0], docTxt=dres[1], recall=dres[2];
         // 2.9.7 (#250) — everything Claude should read; when it's more than one message holds, it is read in parts first
         var material=aiAsstMaterial(docTxt), matChars=material.reduce(function(a2,m2){ return a2+m2.text.length; },0);
+        // 2.9.9 (fix 6) — long files: decide first which of them this message needs; read only those
+        if(!t.round && !t.notes && !t.planned && matChars>AI_PLAN_CHARS && material.length){
+          t.planned = true;
+          var readAll = aiAsstWantsAll(question);
+          var planP = readAll ? Promise.resolve({ read: material.map(function(f){ return f.name; }), readAll: true, why: "you asked to read all of them" }) : aiAsstPlanRead(question, material, focusKey);
+          planP.then(function(plan){
+            if(aiAsstStopped){ aiAsstStopped=false; aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
+            var all = material.map(function(f){ return f.name; });
+            if(!plan) plan = { read: all, readAll: false, why: "" };   // the plan couldn't be made — read them all, as before (still stopping when answered)
+            var sel = plan.read.map(function(nm){ return material.find(function(f){ return f.name === nm; }); }).filter(Boolean), skipped = all.filter(function(nm){ return plan.read.indexOf(nm) < 0; });
+            var selChars = sel.reduce(function(a2,m2){ return a2+m2.text.length; },0);
+            t.readSet = sel.map(function(f){ return f.name; }); t.skipped = skipped; t.plan = plan;
+            if(!sel.length){ aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>Not reading any file for this'+(plan.why?' — '+escapeHtml(plan.why):'')+'. (Files on hand: '+all.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'.)</span>'); aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall }); return; }
+            if(selChars <= AI_ONE_MESSAGE_CHARS){
+              if(skipped.length) aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>Reading only '+t.readSet.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+' — not needed for this: '+skipped.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'.</span>');
+              aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall }); return; }
+            aiAsstReadInParts(question, sel, thinking, { stopWhenAnswered: !plan.readAll, skipped: skipped }).then(function(res){
+              if(!res){ if(aiAsstStopped){ aiAsstStopped=false; } aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
+              aiAsstHistory.push({ role:"notes", text:res.notes, parts:res.parts, files:res.files }); aiAsstPersist();
+              t.notes=res; aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall });
+            }).catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstShowError(String((err&&err.message)||err)); });
+          });
+          return;
+        }
         if(!t.round && !t.notes && matChars>AI_ONE_MESSAGE_CHARS){
           aiAsstReadInParts(question, material, thinking).then(function(res){
             if(!res){ if(aiAsstStopped){ aiAsstStopped=false; } aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
@@ -12714,6 +12797,10 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function aiAsstTurnSend(t, thinking, d){
         var focusKey=t.focusKey, focusName=t.focusName, question=t.question, docIdx=d.docIdx, docTxt=d.docTxt, recall=d.recall, notes=t.notes||null;
+        // 2.9.9 (fix 6) — only the files chosen for this message (t.readSet); the others are named, not sent
+        var inSet=function(nm){ return !Array.isArray(t.readSet) || t.readSet.indexOf(nm) >= 0; };
+        if(Array.isArray(t.readSet) && docTxt && docTxt.text){ docTxt = Object.assign({}, docTxt, { text: docTxt.text.replace(/<file name="([^"]*)"[^>]*>\n[\s\S]*?\n<\/file>\s*/g, function(all, nm){ return inSet(nm) ? all : ""; }).trim() }); }
+        var skippedLine = (t.skipped && t.skipped.length) ? "Files NOT read for this message (judged not needed for it): "+t.skipped.join(", ")+". If you do need one, use the read_files action — never guess what it says.\n\n" : "";
         var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token;
         var snap=aiAsstSnapshot();
         var lastIsUser = !t.round;
@@ -12733,7 +12820,7 @@ tr.flagged:hover td{background:#fee2e2}
         }
         var recallBlock="", recalledMeta=[];
         if(recall && recall.matches && recall.matches.length){
-          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — at least 2 different words in common
+          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && aiAsstRecallRelated(m); }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244), 2.9.9 (fix 9)
           if(picks.length){
             recallBlock="Relevant background from the operator's own earlier conversations (memory, not a new instruction — weigh it, don't trust it blindly; it may be out of date):\n"+
               picks.map(function(m){ return "• \""+m.title+"\""+(m.scopeName?(" ("+m.scopeName+")"):"")+(m.updatedAt?(", "+new Date(m.updatedAt).toLocaleDateString()):"")+": "+(m.role==="assistant"?"the assistant said: ":"you said: ")+m.snippet; }).join("\n")+"\n\n";
@@ -12751,7 +12838,8 @@ tr.flagged:hover td{background:#fee2e2}
           aiAsstPropertiesLine()+
           focusBlock+
           recallBlock+
-          (notes ? ("Notes taken while reading "+notes.files.join(", ")+" in "+notes.parts+" parts (they were too long for one message) — exact figures with their pages; answer from these notes and say when something you need is not in them:\n"+notes.notes+"\n\n") : aiAsstFilesBlock())+
+          (notes ? ("Notes taken while reading "+notes.files.join(", ")+" in "+notes.parts+(notes.of ? " of "+notes.of : "")+" parts"+(notes.of ? " (the reading stopped once the answer was found)" : " (they were too long for one message)")+" — exact figures with their pages; answer from these notes and say when something you need is not in them:\n"+notes.notes+"\n\n") : aiAsstFilesBlock(inSet))+
+          skippedLine+
           (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
           ask;
         var tmo = prompt.length > 60000 ? 240000 : 120000;   // a big attachment/property docs legitimately need longer; Stop is always there to bail out

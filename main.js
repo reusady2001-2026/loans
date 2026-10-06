@@ -942,7 +942,14 @@ ipcMain.handle('lds:chat-search', (e, { query, scopes, wholeWords }) => {
           score += hitTerms * 5;   // reward matching MORE of the distinct query terms, not just many hits of one
           let best = '', bestHits = -1, bestRole = '';
           said.forEach(m => { const txt = String((m && m.text) || ''), low = txt.toLowerCase(); let h = 0; terms.forEach(t => { if(count(low, t) > 0) h++; }); if(h > bestHits){ bestHits = h; best = txt; bestRole = m.role === 'user' ? 'user' : 'assistant'; } });
-          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, role: bestRole, snippet: chatSnippet(best, terms) });
+          // 2.9.9 (fix 9) — a long chat contains almost any two words somewhere; it is RELATED only when its title shares
+          // a word with the question, or one of its messages has two of the question's words within 15 words of each other.
+          const tl = String(meta.title || '').toLowerCase(), titleHit = terms.some(t => count(tl, t) > 0);
+          const near = said.some(m => { const w = String((m && m.text) || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean), pos = [];
+            w.forEach((x, i) => { const ti = terms.indexOf(x); if(ti >= 0) pos.push([i, ti]); });
+            for(let a = 0; a < pos.length; a++) for(let b = a + 1; b < pos.length && pos[b][0] - pos[a][0] <= 15; b++) if(pos[b][1] !== pos[a][1]) return true;
+            return false; });
+          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, titleHit, near, role: bestRole, snippet: chatSnippet(best, terms) });
         }
       });
     });
