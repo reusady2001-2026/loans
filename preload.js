@@ -149,6 +149,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docCopy: (o) => ipcRenderer.invoke('lds:doc-copy', o || {}),   // 2.9.8
   // 2.9.7 (#37) — change a saved document's type. → {ok,file} | {ok:false,error}
   docSetRole: (propKey, id, role) => ipcRenderer.invoke('lds:doc-set-role', { propKey, id, role }),
+  docSetMeta: (o) => ipcRenderer.invoke('lds:doc-set-meta', o || {}),   // 2.9.9 — { propKey, id, sheet?, section? }
   // Move a property's whole document folder when its key changes (an address edit). Resolves {ok,moved,reason?}.
   docMove: (fromKey, toKey, propName, opts) => ipcRenderer.invoke('lds:doc-move', { fromKey, toKey, propName, merge: !!(opts && opts.merge) }),
   // 2.9.7 (#40, #216) — a renamed property's chats move with it. {fromScope,toScope,scopeName} → {ok,moved,count}

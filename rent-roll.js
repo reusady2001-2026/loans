@@ -262,7 +262,7 @@
         var nm = map.name != null ? str(row[map.name]) : "";
         if (!nm && map.resident != null) nm = str(row[map.resident]);
         if (/all\s*properties/i.test(nm)){ pending = []; section = "current"; continue; }   // grand total, not a property
-        if (pending.length){ out.properties.push(aggregate(nm.replace(/\(.*$/, "").trim(), pending, opts)); }
+        if (pending.length){ var agg = aggregate(nm.replace(/\(.*$/, "").trim(), pending, opts); agg.fullName = nm; out.properties.push(agg); }   // 2.9.9 — the section's own label, code included ("The Euclid(15169)")
         pending = []; section = "current"; continue;
       }
       if (section === "future") continue;   // leasing pipeline — excluded
