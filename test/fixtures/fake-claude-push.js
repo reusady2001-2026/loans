@@ -77,6 +77,18 @@ function answerT12(raw){
 
 function answerChat(raw) {
   const sysI = a.indexOf('--append-system-prompt'), sys = sysI >= 0 ? a[sysI + 1] : '';
+  // 2.9.9 (fix 6) — the "which files does this message need" step: answered from $LDS_FAKE_PLAN_FILE (a JSON array of
+  // plans, used in order) or, by default, "read every file"; logged to $LDS_FAKE_PLAN_LOG (never to the chat log, so
+  // the older tests' call counts are unchanged).
+  if (/decide, BEFORE anything is read, which/i.test(sys)) {
+    const names = []; String(raw).replace(/^- "([^"]+)"/gm, (m, n) => { names.push(n); return m; });
+    let q = []; try { q = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_PLAN_FILE, 'utf8')); } catch (e) {}
+    const plan = q.length ? q.shift() : { read: names, readAll: false, why: 'fake: read every file' };
+    try { if (process.env.LDS_FAKE_PLAN_FILE) fs.writeFileSync(process.env.LDS_FAKE_PLAN_FILE, JSON.stringify(q)); } catch (e) {}
+    if (process.env.LDS_FAKE_PLAN_LOG) { try { fs.appendFileSync(process.env.LDS_FAKE_PLAN_LOG, JSON.stringify({ prompt: raw, plan: plan }) + '\n'); } catch (e) {} }
+    console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: JSON.stringify(plan), total_cost_usd: 0 }));
+    return;
+  }
   if (process.env.LDS_FAKE_CHAT_LOG) { try { fs.appendFileSync(process.env.LDS_FAKE_CHAT_LOG, JSON.stringify({ prompt: raw, sysLen: sys.length }) + '\n'); } catch (e) {} }
   let q = []; try { q = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_CHAT_FILE, 'utf8')); } catch (e) {}
   const r = q.length ? q.shift() : '(no scripted reply)';

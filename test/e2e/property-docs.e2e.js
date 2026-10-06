@@ -61,7 +61,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'lds-route-'));
   const one=path.join(tmp,'memo.txt'); fs.writeFileSync(one,'Insurance renewal for Heritage Key Villas, effective next month.');
   const both=path.join(tmp,'portfolio-memo.txt'); fs.writeFileSync(both,'Notes covering Heritage Key Villas and Creekside at Grand Prairie.');
-  await page.setInputFiles('#loanDocsFile',one); await page.waitForTimeout(1500);
+  await page.setInputFiles('#loanDocsFile',one); for(let i=0;i<20&&!/memo\.txt/.test(await toastText());i++) await page.waitForTimeout(400);   // waits for the save message
   const tr=await toastText();
   const hk=await page.evaluate(async()=>{ const p=window.opProperties().find(x=>x.name==='Heritage Key Villas'); return ((await window.ldsShell.docList(p.key)).files||[]).some(f=>f.name==='memo.txt'); });
   ok(hk&&/mentions “Heritage Key Villas”, so it was filed under Heritage Key Villas/.test(tr),'a document naming one property is filed there, and says so ("'+tr.slice(0,120)+'")');

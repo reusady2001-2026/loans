@@ -516,17 +516,18 @@ function docUniqueName(name, taken){
   return base + ' (' + Date.now() + ')' + ext;
 }
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
-function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '', sheet: f.sheet || '' }; }
+function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '', sheet: f.sheet || '', section: f.section || '' }; }
 
 // Save one original file (base64) + its extracted text under a property. Replaces an
 // existing file of the same name for that property. `role` tags what the file is
 // (e.g. "t12") so a consumer can find it again without guessing from the name.
-ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role, label, sheet }) => {
+ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type, role, label, sheet, section }) => {
   if(!base64) return { ok: false, error: 'missing fields' };
-  return docSaveBuffer(e, { propKey, propName, name, buf: Buffer.from(base64, 'base64'), text, type, role, label, sheet });
+  return docSaveBuffer(e, { propKey, propName, name, buf: Buffer.from(base64, 'base64'), text, type, role, label, sheet, section });
 });
 // 2.9.8 — `sheet`: for a workbook holding several properties' T12s, the sheet that is THIS property's T12.
-function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label, sheet }) {
+// 2.9.9 — `section`: for a rent roll holding several properties, the section (property block) that is THIS property's.
+function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label, sheet, section }) {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!propKey || !name || !buf) return { ok: false, error: 'missing fields' };
@@ -538,6 +539,7 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
     const already = idx.files.find(f => f.sha === sha && (f.role || '') === (role || ''));
     if(already){
       if(sheet && (already.sheet || '') !== String(sheet)){ already.sheet = String(sheet).slice(0, 120); writeDocIndex(dir, idx); return { ok: true, resheeted: true, file: pubFile(already) }; }   // 2.9.8 — same file, now pointed at this property's own sheet
+      if(section && (already.section || '') !== String(section)){ already.section = String(section).slice(0, 160); writeDocIndex(dir, idx); return { ok: true, resectioned: true, file: pubFile(already) }; }   // 2.9.9 — same rent roll, now pointed at this property's own section
       return { ok: true, duplicate: true, file: pubFile(already) };
     }
     const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -556,19 +558,33 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
     }
     const entry = { id, stored, name: finalName, size: buf.length, type: type || '', role: role || '', savedAt: Date.now(), textLen: t.length, sha, readLabel: String(label || '').slice(0, 300) };
     if (sheet) entry.sheet = String(sheet).slice(0, 120);
+    if (section) entry.section = String(section).slice(0, 160);
     idx.files.push(entry); writeDocIndex(dir, idx);
     return { ok: true, file: pubFile(entry), renamed };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 }
 // 2.9.8 (problem 1) — copy a saved document to another property's folder (original, its read text and how it was
 // read), optionally as another type / pointed at that property's own sheet of a workbook.
-ipcMain.handle('lds:doc-copy', (e, { fromKey, id, toKey, toName, role, sheet }) => {
+ipcMain.handle('lds:doc-copy', (e, { fromKey, id, toKey, toName, role, sheet, section }) => {
   try {
     if (!fromKey || !id || !toKey) return { ok: false, error: 'missing fields' };
     const src = propDir(fromKey), sidx = readDocIndex(src), f = (sidx.files || []).find(x => x.id === id);
     if (!f) return { ok: false, error: 'not found' };
     const buf = fs.readFileSync(path.join(src, f.stored)); let text = ''; try { text = fs.readFileSync(path.join(src, f.id + '.txt'), 'utf8'); } catch (x) {}
-    return docSaveBuffer(e, { propKey: toKey, propName: toName, name: f.name, buf, text, type: f.type, role: role != null ? role : (f.role || ''), label: f.readLabel || '', sheet: sheet != null ? sheet : (f.sheet || '') });
+    return docSaveBuffer(e, { propKey: toKey, propName: toName, name: f.name, buf, text, type: f.type, role: role != null ? role : (f.role || ''), label: f.readLabel || '', sheet: sheet != null ? sheet : (f.sheet || ''), section: section != null ? section : '' });
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// 2.9.9 — point a saved workbook at this property's own T12 sheet / rent-roll section ("" clears it).
+ipcMain.handle('lds:doc-set-meta', (e, { propKey, id, sheet, section }) => {
+  dataChanged(e);
+  try {
+    if (!propKey || !id) return { ok: false, error: 'bad request' };
+    const dir = propDir(propKey), idx = readDocIndex(dir);
+    const f = (idx.files || []).find(x => x.id === id); if (!f) return { ok: false, error: 'not found' };
+    if (sheet != null) { if (sheet) f.sheet = String(sheet).slice(0, 120); else delete f.sheet; }
+    if (section != null) { if (section) f.section = String(section).slice(0, 160); else delete f.section; }
+    writeDocIndex(dir, idx);
+    return { ok: true, file: pubFile(f) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // 2.9.7 (#37) — change a saved document's type (Loan agreement, T12, Rent roll, Unit Statistics, Other).
@@ -665,10 +681,10 @@ ipcMain.handle('lds:readq-done', (e, { id }) => {
   catch (err) { return { ok: false }; }
 });
 // Save a queued file into a property's folder without sending its bytes through the page (big files).
-ipcMain.handle('lds:doc-save-queued', (e, { id, propKey, propName, name, text, type, role, label, sheet }) => {
+ipcMain.handle('lds:doc-save-queued', (e, { id, propKey, propName, name, text, type, role, label, sheet, section }) => {
   try { const j = readqJob(id); if (!j) return { ok: false, error: 'not found' };
     const buf = fs.readFileSync(path.join(readqDir(), j.id + '.bin'));
-    return docSaveBuffer(e, { propKey, propName, name: name || j.name, buf, text, type: type || j.type, role, label, sheet });
+    return docSaveBuffer(e, { propKey, propName, name: name || j.name, buf, text, type: type || j.type, role, label, sheet, section });
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
@@ -926,7 +942,14 @@ ipcMain.handle('lds:chat-search', (e, { query, scopes, wholeWords }) => {
           score += hitTerms * 5;   // reward matching MORE of the distinct query terms, not just many hits of one
           let best = '', bestHits = -1, bestRole = '';
           said.forEach(m => { const txt = String((m && m.text) || ''), low = txt.toLowerCase(); let h = 0; terms.forEach(t => { if(count(low, t) > 0) h++; }); if(h > bestHits){ bestHits = h; best = txt; bestRole = m.role === 'user' ? 'user' : 'assistant'; } });
-          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, role: bestRole, snippet: chatSnippet(best, terms) });
+          // 2.9.9 (fix 9) — a long chat contains almost any two words somewhere; it is RELATED only when its title shares
+          // a word with the question, or one of its messages has two of the question's words within 15 words of each other.
+          const tl = String(meta.title || '').toLowerCase(), titleHit = terms.some(t => count(tl, t) > 0);
+          const near = said.some(m => { const w = String((m && m.text) || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean), pos = [];
+            w.forEach((x, i) => { const ti = terms.indexOf(x); if(ti >= 0) pos.push([i, ti]); });
+            for(let a = 0; a < pos.length; a++) for(let b = a + 1; b < pos.length && pos[b][0] - pos[a][0] <= 15; b++) if(pos[b][1] !== pos[a][1]) return true;
+            return false; });
+          matches.push({ scope: full.scope || idx.scope || '', scopeName: full.scopeName || idx.scopeName || '', id: meta.id, title: meta.title || '', updatedAt: meta.updatedAt || 0, score, hitTerms, titleHit, near, role: bestRole, snippet: chatSnippet(best, terms) });
         }
       });
     });

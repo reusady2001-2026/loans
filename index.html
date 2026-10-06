@@ -25,6 +25,8 @@
   <script src="./portfolio-rollup.js"></script>
   <script src="./general-data.js"></script>
   <script src="./profile.js"></script>
+  <script src="./prop-names.js"></script>
+  <script src="./file-parts.js"></script>
   <script src="./rent-roll.js"></script>
   <script src="./t12-check.js"></script>
   <script src="./rate-history.js"></script>
@@ -3225,17 +3227,45 @@
     }
     // Global "Fetch live rate" (title bar): refresh today's Treasury curve + SOFR + the other live indices
     // into the session cache, then re-render so the refi market rate, coverage rate-gap and previews update.
-    async function fetchAllLiveRates(){
+    async function fetchAllLiveRates(opts){
       const btn = el("fetchRateBtn"), label = el("fetchRateLabel");
       const live = INDEX_CATALOG.filter(i => i.live);
       if(btn) btn.disabled = true; if(label) label.textContent = "Fetching…";
       let n = 0;
-      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ setLiveRate(cat.id, r); if(!r.stale) n++; } }catch(e){} }));
+      await Promise.all(live.map(async cat => { try{ const r = await fetchIndexValue(cat.id); if(r){ setLiveRate(cat.id, r); if(!r.stale && !r.builtin) n++; } }catch(e){} }));   // 2.9.9 — a built-in value is not "refreshed from the US feeds"
       if(btn) btn.disabled = false; if(label) label.textContent = "Fetch live rate";
       if(n){ try{ toast("Live rates updated — "+n+" refreshed from US feeds.", "check"); }catch(e){} }
       else { try{ toast("Couldn’t fetch live rates (offline?). Existing values kept.", "info"); }catch(e){} }
       try{ render(); }catch(e){}                                                   // home area: portfolio coverage gap / loan / refi
       try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
+      if(opts && opts.list){ try{ showRatesList(n); }catch(e){} }   // 2.9.9 (fix 8) — from the button only (the assistant's fetch never opens a window)
+    }
+    // 2.9.9 (fix 8) — every rate the app holds, its value, where it comes from, and which of your loans use it.
+    function ratesListRows(){
+      var book = activeLoans(), kind = function(l){ return l.rateType === "Floating" ? "floating" : (l.rateType === "Hybrid ARM" ? "hybrid" : "fixed"); };
+      return INDEX_CATALOG.map(function(cat){
+        var c = INDEX_CACHE[cat.id], on = book.filter(function(l){ return l.index === cat.id; });
+        var value = cat.live ? fmtPct((c ? c.value : cat.fallback) / 100) : "each loan’s own value";
+        var src = cat.live ? rateSourceText(cat.id) : "typed on each loan";
+        var who = on.map(function(l){ return loanLabel(l) + (cat.live ? (kind(l) === "fixed" ? " (fixed — its rate is locked)" : " (" + kind(l) + ")") : " (" + (l.armAssumedIndex != null && l.armAssumedIndex !== "" ? fmtPct(Number(l.armAssumedIndex) > 1 ? Number(l.armAssumedIndex) / 100 : Number(l.armAssumedIndex)) : "no value typed") + ")"); });
+        return { id: cat.id, label: cat.label, value: value, src: src, loans: who };
+      });
+    }
+    function showRatesList(refreshed){
+      var old = document.querySelector("[data-rateslist]"); if(old) old.remove();
+      var rows = ratesListRows();
+      var m = document.createElement("div");
+      m.className = "fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4"; m.setAttribute("data-rateslist", "");
+      m.innerHTML = '<div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">'+
+        '<div class="flex items-start justify-between gap-3"><div><h3 class="text-base font-bold text-slate-900">Market rates</h3>'+
+        '<p class="text-xs text-slate-500">'+(refreshed ? refreshed+' refreshed from the US feeds just now.' : 'Couldn’t fetch (offline?) — the last saved values.')+' The app holds '+rows.length+' rates.</p></div>'+
+        '<button type="button" data-rateslistclose class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">✕</button></div>'+
+        '<table class="mt-3 w-full text-left text-[12px]"><thead><tr class="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400"><th class="py-1.5 pr-2">Rate</th><th class="py-1.5 pr-2 text-right">Value</th><th class="py-1.5 pr-2">Where it comes from</th><th class="py-1.5">Your loans on it</th></tr></thead><tbody>'+
+        rows.map(function(r){ return '<tr class="border-b border-slate-100 align-top" data-raterow="'+escapeHtml(r.id)+'"><td class="py-1.5 pr-2 font-semibold text-slate-800">'+escapeHtml(r.label)+'</td>'+
+          '<td class="py-1.5 pr-2 text-right tabular-nums font-bold text-slate-900" data-ratevalue>'+escapeHtml(r.value)+'</td><td class="py-1.5 pr-2 text-slate-500" data-ratesrc>'+escapeHtml(r.src)+'</td>'+
+          '<td class="py-1.5 text-slate-600" data-rateloans>'+(r.loans.length ? escapeHtml(r.loans.join(", ")) : '<span class="text-slate-300">—</span>')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+      document.body.appendChild(m);
+      m.addEventListener("click", function(e){ if(e.target === m || (e.target.closest && e.target.closest("[data-rateslistclose]"))) m.remove(); });
     }
 
     // Show/hide conditional term fields within a container, then refresh the
@@ -3696,13 +3726,15 @@ tr.flagged:hover td{background:#fee2e2}
       if(!opFocusKey){ toast("Pick a property above first, then drop its T12 here.","info"); return; }
       if(!(window.ldsShell && ldsShell.docSave)){ toast("Saving T12s to a property needs the desktop app.","error"); return; }
       // Verify it's actually a T12 sheet before committing it to the folder.
-      let ok = false, det = null; try{ const buf = await file.arrayBuffer(); det = opDetectGrid(new Uint8Array(buf)); ok = !!opGridFromWorkbook(new Uint8Array(buf)); }catch(e){ ok = false; }
+      let ok = false, det = null, info = null; try{ const buf = await file.arrayBuffer(); det = opDetectGrid(new Uint8Array(buf)); info = opPartsInfo(new Uint8Array(buf), file.name); ok = !!(det && det._t12Sheets && det._t12Sheets.length); }catch(e){ ok = false; }
       if(!ok){ toast("Couldn’t find a T12 sheet in that file (needs a Total column and month columns).","error"); return; }
       const key = opFocusKey, who = (opProp(key) || {}).name || "this property";
       // 2.9.8 (problem 1) — a workbook with several properties' T12s goes to EVERY property it names, each with its
       // own sheet (and to this property — the app asks which sheet is its own when the file doesn't name it).
       const sheets = (det && det._t12Sheets) || [];
-      if(sheets.length > 1){ await aiSaveFilesToProp([file], key, who); return; }
+      // 2.9.9 (fix 2) — a workbook with several parts: the card asks which part is whose (this property's is set for you
+      // when the app can tell, never guessed when it can't)
+      if((info && info.multi) || sheets.length > 1){ await aiSaveFilesToProp([file], key, who); if(opFocusKey === key){ try{ await opSelectProperty(key, { skipAutoPush: true }); }catch(e){} renderUnderwriting(); } return; }
       try{
         const r = await opDiskSaveT12(key, file, sheets.length ? sheets[0].sheet : "");
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
@@ -3851,8 +3883,11 @@ tr.flagged:hover td{background:#fee2e2}
             (i.fileName ? '<p class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">'+escapeHtml(i.fileName)+(b?' &middot; Setup built':'')+'</p>'+
               (i.fileSha ? ' <span id="uwFileVerified" class="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" title="This is the exact file saved in the property’s folder (its checksum is on record), so the same statement can never be saved twice.">&#10003; file verified</span>' : '') : '')+   // 2.9.7 (#73)
           '</div>'+
+          // 2.9.9 (fix 1) — a saved workbook with several T12 sheets and no answer: its numbers aren't used until you say
+          (function(){ const w = opFocusKey ? opPartsWaitingFor(opFocusKey, "t12") : []; return w.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800" data-uwpartswait>'+
+            w.map(function(fn){ return '“'+escapeHtml(fn)+'” has several T12 sheets — which one is this property’s? Its numbers aren’t used until you say. '+opPartsAnswerBtn(opFocusKey, fn, "Answer"); }).join('<br>')+'</div>' : ''; })()+
           (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
-            '<span>Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
+            '<span>'+(i.t12Sheet && i.t12SheetsCount > 1 ? 'Sheet <b class="text-slate-700" data-uwsheet>'+(i.t12SheetNo || '?')+' of '+i.t12SheetsCount+' · '+escapeHtml(i.t12Sheet)+'</b> &middot; ' : '')+'Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
               // 2.9.8 — the NOI the app USES (your T12 rule: the last 3 months × 4 when it applies), not the statement's own 12-month line
               (function(){ const g = gdFullCache[opFocusKey], n = g && g.noi;
                 return (n && n.inPlace != null) ? ' &middot; NOI used <b class="text-slate-700 tabular-nums" id="uwNoiUsed">'+uwFmt(n.inPlace)+'</b> <span class="text-slate-400">('+escapeHtml(noiMethodLabel(n))+')</span>' : ''; })()+'</span>'+
@@ -4182,6 +4217,66 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function opInit(){ if(opInited || !window.OperatingStore) return; opInited = true; opClearStale(); try{ OperatingStore.init({ storage: opMemStorage }); OperatingStore.load(); }catch(e){} }
     const opDeskLoaded = new Set();   // propKeys whose disk T12 we've read into the session store already (in-memory, not persisted)
+    // ── 2.9.9 (fixes 1, 2) — files with several parts ─────────────────────────────────────────────────────────
+    // A part is a sheet, or one property's section on a rent-roll sheet (FileParts). You say which part is whose
+    // (one card); each property keeps the answer in its general-data.json (fileParts: sheet number X, section Y).
+    // The app then reads ONLY that part for that property. A file with several parts of a kind and no answer is
+    // never guessed: the property waits for your answer (Data Health, Documents, Underwriting show it).
+    var opPartsInfoCache = {};    // file sha (or id) → FileParts.analyzeWorkbook(…) — a saved file never changes
+    var opPartsBytes = [];        // the last few files' bytes, so a reader doesn't read the same file twice
+    var opPartsWaiting = {};      // propKey → { t12: [file names], rentroll: [file names] } waiting for your answer
+    function opIsSheetFile(name){ return /\.(xlsx|xls|xlsm|csv)$/i.test(String(name || "")); }
+    function opPartsInfo(bytes, name){
+      if(!bytes || !opIsSheetFile(name) || !window.XLSX || !window.FileParts) return null;
+      try{ var wb = XLSX.read(bytes, { type: "array" });
+        return FileParts.analyzeWorkbook(wb, { XLSX: XLSX, T12Parse: window.T12Parse, RentRoll: window.RentRoll, topName: t12TopName }); }catch(e){ return null; }
+    }
+    async function opPartsInfoForFile(key, f){
+      if(!f || !opIsSheetFile(f.name)) return null;
+      var ck = f.sha || (key + "|" + f.id), hit = opPartsBytes.find(function(x){ return x.ck === ck; }), bytes = hit ? hit.bytes : null;
+      if(!bytes){ try{ var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null; bytes = opB64ToBytes(rd.base64); }catch(e){ return null; }
+        opPartsBytes.push({ ck: ck, bytes: bytes }); if(opPartsBytes.length > 6) opPartsBytes.shift(); }
+      if(!opPartsInfoCache[ck]) opPartsInfoCache[ck] = opPartsInfo(bytes, f.name);
+      return opPartsInfoCache[ck] ? { info: opPartsInfoCache[ck], bytes: bytes } : null;
+    }
+    // A property's answers (general-data.json → fileParts).
+    function gdRecordsOf(key){ var gd = gdFullCache[key]; return (gd && Array.isArray(gd.fileParts)) ? gd.fileParts : []; }
+    async function gdRecordsLoad(key){ if(!Object.prototype.hasOwnProperty.call(gdFullCache, key) || gdFullCache[key] == null){ try{ var gd = await opLoadGeneralData(key); if(gd) gdFullCache[key] = gd; }catch(e){} } return gdRecordsOf(key); }
+    function opRecordFilePart(key, rec){
+      return gdSerial(key, async () => {
+        var gd = await opLoadGeneralData(key); if(!gd) gd = { propKey: key, noT12: true, note: "no T12 yet" };
+        gd.fileParts = FileParts.upsertRecord(gd.fileParts, rec); gd.updatedAt = new Date().toISOString();
+        await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd;
+      });
+    }
+    // Which part of a saved file is THIS property's, for a kind ("t12" / "rentroll", or null = any part):
+    // { part, status, info, bytes }. status: "recorded" (your answer) · "single" (the file has one part of that kind)
+    // · "name" (several parts, exactly one names this property and no other property — a file saved before 2.9.9)
+    // · "none" (you said no part is this property's) · "nokind" · "unknown" (waits for your answer).
+    async function opResolvePart(key, f, kind){
+      var r = await opPartsInfoForFile(key, f); if(!r || !r.info) return { status: "nofile" };
+      // any kind: the data parts (T12s, rent-roll sections) — a plain extra sheet (report parameters …) never makes a
+      // file's only T12 ambiguous
+      var data = r.info.parts.filter(function(p){ return p.kind !== "sheet"; });
+      var info = r.info, cands = kind ? info.parts.filter(function(p){ return p.kind === kind; }) : (data.length ? data : info.parts);
+      var rec = FileParts.findRecord(await gdRecordsLoad(key), f.sha, f.name);
+      if(rec){ if(rec.none) return { status: "none", info: info };
+        var rp = FileParts.partForRecord(info, rec);
+        if(rp) return (!kind || rp.kind === kind) ? { part: rp, status: "recorded", info: info, bytes: r.bytes } : { status: "none", info: info }; }
+      if(!cands.length) return { status: "nokind", info: info };
+      if(cands.length === 1) return { part: cands[0], status: "single", info: info, bytes: r.bytes };
+      var hits = cands.filter(function(p){ var nm = FileParts.partName(p), bm = propBestMatch(nm, 0.85) || (p.title ? propBestMatch(p.title, 0.85) : null); return bm && bm.key === key; });
+      if(hits.length === 1) return { part: hits[0], status: "name", info: info, bytes: r.bytes };
+      return { status: "unknown", info: info };
+    }
+    function opPartsWaitSet(key, kind, names){ var w = opPartsWaiting[key] || (opPartsWaiting[key] = {}); w[kind] = (names || []).slice(); }
+    function opPartsWaitingFor(key, kind){ var w = opPartsWaiting[key]; return (w && w[kind]) || []; }
+    // The grid of one part (its sheet), with the sheet's first Excel row (for "Excel row N").
+    function opGridFromPart(bytes, part){
+      try{ var wb = XLSX.read(bytes, { type: "array" }), nm = (part && wb.Sheets[part.sheet]) ? part.sheet : (part && wb.SheetNames[part.sheetNo - 1]); if(!nm || !wb.Sheets[nm]) return null;
+        var ws = wb.Sheets[nm], g = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }); var r0 = 0; try{ r0 = ws["!ref"] ? XLSX.utils.decode_range(ws["!ref"]).s.r : 0; }catch(e){ r0 = 0; }
+        g._sheet = nm; g._r0 = r0; return g; }catch(e){ return null; }
+    }
     // Read a property's T12 straight from its on-disk folder and parse it LIVE. Returns
     // { grid, parsed, name } or null when the folder holds no readable T12. Nothing is cached
     // to browser storage — every call re-reads the file, so the numbers can never go stale.
@@ -4194,30 +4289,38 @@ tr.flagged:hover td{background:#fee2e2}
         // the one uploaded last: uploading an older year's T12 adds it to the history but never replaces the
         // newer statement. Same last month → the newer upload.
         let t12s = files.filter(f => f.role === "t12");
-        if(!t12s.length) t12s = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "") && !/^(profile|general-data|assumptions)/i.test(f.name || ""));
-        if(!t12s.length) return null;
-        let t12 = t12s.slice().sort((a, b) => b.savedAt - a.savedAt)[0];
-        if(t12s.length > 1){
+        // 2.9.9 (fix 1) — only a file saved with no type at all may be read as the T12; one you kept "as a document" never is
+        if(!t12s.length) t12s = files.filter(f => (f.role || "") === "" && opIsSheetFile(f.name) && !/^(profile|general-data|assumptions)/i.test(f.name || ""));
+        if(!t12s.length){ opPartsWaitSet(key, "t12", []); return null; }
+        const cands = [], waiting = [];
+        for(const f of t12s){ const r = await opResolvePart(key, f, "t12"); if(r.part) cands.push({ f: f, r: r }); else if(r.status === "unknown") waiting.push(f.name); }
+        opPartsWaitSet(key, "t12", waiting);
+        if(!cands.length) return null;
+        let pick = cands.slice().sort((a, b) => b.f.savedAt - a.f.savedAt)[0];
+        if(cands.length > 1){
           const scored = [];
-          for(const f of t12s){ scored.push({ f: f, lm: await opT12LastMonth(key, f) }); }
-          scored.sort((a, b) => String(b.lm || "").localeCompare(String(a.lm || "")) || (b.f.savedAt - a.f.savedAt));
-          t12 = scored[0].f;
+          for(const c of cands){ scored.push({ c: c, lm: await opT12LastMonth(key, c.f) }); }
+          scored.sort((a, b) => String(b.lm || "").localeCompare(String(a.lm || "")) || (b.c.f.savedAt - a.c.f.savedAt));
+          pick = scored[0].c;
         }
-        const rd = await ldsShell.docRead(key, t12.id); if(!rd || !rd.ok || !rd.base64) return null;
-        const grid = opGridFromWorkbook(opB64ToBytes(rd.base64), t12.sheet || null); if(!grid) return null;
-        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: t12.name, id: t12.id, sha: t12.sha || "", lastMonth: opGridLastMonth(grid) };
+        const grid = opGridFromPart(pick.r.bytes, pick.r.part); if(!grid || T12Parse.findHeader(grid).headerRow < 0) return null;
+        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: pick.f.name, id: pick.f.id, sha: pick.f.sha || "", lastMonth: opGridLastMonth(grid),
+          sheet: pick.r.part.sheet, sheetNo: pick.r.part.sheetNo, sheets: pick.r.info.sheetsCount, partStatus: pick.r.status, multi: pick.r.info.multi };
       }catch(e){ return null; }
     }
     // 2.9.7 (#14) — the last dated month a T12 grid covers ("YYYY-MM", or "" when it has no dated months).
     function opGridLastMonth(grid){ try{ const d = T12Parse.parseGrid(grid, { basis: "total", monthly: true }); const ms = (d.monthCols || []).map(m => m && m.ym).filter(Boolean).sort(); return ms.length ? ms[ms.length - 1] : ""; }catch(e){ return ""; } }
     function opGridMonths(grid){ try{ const d = T12Parse.parseGrid(grid, { basis: "total", monthly: true }); return (d.monthCols || []).map(m => m && m.ym).filter(Boolean).sort(); }catch(e){ return []; } }
-    const opT12LastCache = {};   // file id → last month (a stored file never changes)
+    const opT12LastCache = {};   // file id + its part → last month (a stored file never changes)
     async function opT12LastMonth(key, f){
       if(!f || !f.id) return "";
-      if(Object.prototype.hasOwnProperty.call(opT12LastCache, f.id)) return opT12LastCache[f.id];
-      let lm = "";
-      try{ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const g = opGridFromWorkbook(opB64ToBytes(rd.base64), f.sheet || null); if(g) lm = opGridLastMonth(g); } }catch(e){}
-      opT12LastCache[f.id] = lm; return lm;
+      let lm = "", r = null;
+      try{ r = await opResolvePart(key, f, "t12"); }catch(e){ r = null; }
+      if(!r || !r.part) return "";
+      const ck = key + "|" + f.id + "|" + r.part.sheetNo;
+      if(Object.prototype.hasOwnProperty.call(opT12LastCache, ck)) return opT12LastCache[ck];
+      try{ const g = opGridFromPart(r.bytes, r.part); if(g) lm = opGridLastMonth(g); }catch(e){}
+      opT12LastCache[ck] = lm; return lm;
     }
     // An OLDER T12 goes into the property's history only: its months fill gaps, never overwrite newer ones.
     function opMergeT12History(key, grid){ return gdSerial(key, () => opMergeT12HistoryNow(key, grid)); }
@@ -4253,7 +4356,7 @@ tr.flagged:hover td{background:#fee2e2}
       opFocusKey = key || ""; opBasis = "annual";
       const i = uwState.input;
       i.t12Grid = null; i.t12Rows = []; i.t12Meta = null; i.aiParsed = null; i.aiT12 = null; i.fileName = ""; i.fileSha = "";
-      i.avgRentUnit = null; i.rrGPR = null; i.t12Sheet = ""; i.t12RowOffset = 0;   // 2.9.8 (problem 5) — never carry the last property's rent (or sheet) over
+      i.avgRentUnit = null; i.rrGPR = null; i.t12Sheet = ""; i.t12SheetNo = null; i.t12SheetsCount = null; i.t12RowOffset = 0;   // 2.9.8 (problem 5) — never carry the last property's rent (or sheet) over
       if(key){
         opDeskLoaded.delete(key);
         i.bench = opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));   // this property's own assumptions (else the defaults)
@@ -4261,7 +4364,7 @@ tr.flagged:hover td{background:#fee2e2}
         { const rt = i.bench.rentTyped || {}; i.avgRentUnit = (rt.avgRentUnit != null) ? rt.avgRentUnit : null; i.rrGPR = (rt.rrGPR != null) ? rt.rrGPR : null; }   // a rent typed for THIS property
         try{ assumptionBaseline(key, i.bench); propHistoryLoad(key).then(() => { if(opFocusKey === key) uwRefreshHistoryLinks(); }); }catch(e){}   // 2.9.7 (#253)
         const r = await opReadPropT12(key);
-        if(r){ i.t12Grid = r.grid; i.t12Sheet = r.grid._sheet || ""; i.t12RowOffset = r.grid._r0 || 0; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
+        if(r){ i.t12Grid = r.grid; i.t12Sheet = r.grid._sheet || ""; i.t12SheetNo = r.sheetNo || null; i.t12SheetsCount = r.sheets || null; i.t12RowOffset = r.grid._r0 || 0; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total"; uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
         // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
@@ -4329,8 +4432,11 @@ tr.flagged:hover td{background:#fee2e2}
     function opGridFromWorkbook(bytes, sheetName){
       try{ const wb = XLSX.read(bytes, { type: "array" });
         const mk = (nm) => { const ws = wb.Sheets[nm]; if(!ws) return null; const g = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }); let r0 = 0; try{ r0 = ws["!ref"] ? XLSX.utils.decode_range(ws["!ref"]).s.r : 0; }catch(e){ r0 = 0; } g._sheet = nm; g._r0 = r0; return g; };
-        if(sheetName && wb.Sheets[sheetName]){ const g = mk(sheetName); if(g && T12Parse.findHeader(g).headerRow >= 0) return g; }
-        for(const nm of wb.SheetNames){ const g = mk(nm); if(g && T12Parse.findHeader(g).headerRow >= 0) return g; }
+        // 2.9.9 (fix 1) — a named sheet is that sheet or nothing; with no name, the workbook's T12 only when it has ONE.
+        // Never the first of several: that is how a property got another property's NOI.
+        if(sheetName){ if(!wb.Sheets[sheetName]) return null; const g = mk(sheetName); return (g && T12Parse.findHeader(g).headerRow >= 0) ? g : null; }
+        const found = []; for(const nm of wb.SheetNames){ const g = mk(nm); if(g && T12Parse.findHeader(g).headerRow >= 0) found.push(g); }
+        if(found.length === 1) return found[0];
       }catch(e){}
       return null;
     }
@@ -4352,12 +4458,20 @@ tr.flagged:hover td{background:#fee2e2}
         const list = await ldsShell.docList(key); if(!list || !list.ok) return null;
         const files = (list.files || []).filter(f => /\.(xlsx|xls|csv)$/i.test(f.name || "") && ["t12","general","assumptions","profile"].indexOf(f.role || "") < 0);
         const ranked = files.slice().sort((a, b) => (b.role === "rentroll" ? 1 : 0) - (a.role === "rentroll" ? 1 : 0) || b.savedAt - a.savedAt);
+        // 2.9.9 (fix 1) — only THIS property's part of a rent roll: your answer, the file's only rent-roll section, or
+        // (a file saved before 2.9.9) the one section that names this property. Several sections and none of those →
+        // it waits for your answer; another property's section is never used.
+        const waiting = []; let found = null;
         for(const f of ranked){
-          const rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) continue;
-          const grid = opRentRollGridFromWorkbook(opB64ToBytes(rd.base64)); if(!grid) continue;
+          const r = await opResolvePart(key, f, "rentroll");
+          if(!r.part){ if(r.status === "unknown") waiting.push(f.name); continue; }
+          const grid = opGridFromPart(r.bytes, r.part); if(!grid) continue;
           const roll = RentRoll.parse(grid);
-          if(roll && roll.headerRow >= 0 && roll.properties && roll.properties.length) return { file: f, grid: grid, roll: roll };
+          if(roll && roll.headerRow >= 0 && roll.properties && roll.properties.length){ found = { file: f, grid: grid, roll: roll, part: r.part, partStatus: r.status, multi: r.info.multi }; break; }
         }
+        opPartsWaitSet(key, "rentroll", found ? [] : waiting);
+        if(found) return found;
+        if(waiting.length) return { waiting: waiting };
       }catch(e){}
       return null;
     }
@@ -4698,64 +4812,35 @@ tr.flagged:hover td{background:#fee2e2}
       el("rrImportBody").innerHTML = '<p class="text-sm text-slate-500">Reading '+escapeHtml(file.name)+'…</p>';
       el("rrImportApply").disabled = true;
       var pair = await Promise.all([fileToBase64(file), aiExtractFileText(file)]);
-      var b64 = pair[0], ex = pair[1] || {};
-      var grid = /\.(xlsx|xls|csv)$/i.test(file.name || "") ? opDetectGrid(opB64ToBytes(b64)) : null;
-      if(!grid || !window.RentRoll || RentRoll.findHeader(grid).headerRow < 0){ el("rrImportBody").innerHTML = '<p class="text-sm text-rose-600">That file doesn’t look like a rent roll — no unit / rent columns found.</p>'; return; }
-      var roll = RentRoll.parse(grid), props = opProperties();
-      var rows = roll.properties.map(function(b){
-        var best = null, sc = 0; props.forEach(function(p){ var s = rrMatchScore(b.name, p.name); if(s > sc){ sc = s; best = p; } });
-        var key = (best && sc >= 0.6) ? best.key : null;
-        return { block: b, key: key, existingName: key ? best.name : "", include: true };
-      });
-      // Opened from a property's page with a single-property file → default the assignment to THAT property
-      // (the user said "import for this one"). A multi-property file keeps the auto-match; the dropdowns correct it.
-      if(rrImportPreferKey && rows.length === 1){ var pk = opProp(rrImportPreferKey); if(pk){ rows[0].key = rrImportPreferKey; rows[0].existingName = pk.name || rrImportPreferKey; } }
-      rrImportState = { fileName: file.name, base64: b64, text: (ex.text || ""), rows: rows };
-      el("rrImportApply").disabled = !rows.length;
+      var b64 = pair[0], ex = pair[1] || {}, bytes = opB64ToBytes(b64);
+      // 2.9.9 (fixes 2, 3) — the same card as everywhere: every part of the file (a property's section, or a sheet)
+      // with your properties to pick from. Opened from a property's page, that property is set on its section when
+      // the app can tell — otherwise nothing is set and it asks. "Add as a new property" is never set for you.
+      var info = opPartsInfo(bytes, file.name);
+      if(!info || !info.parts.some(function(p){ return p.kind === "rentroll"; })){ el("rrImportBody").innerHTML = '<p class="text-sm text-rose-600">That file doesn’t look like a rent roll — no unit / rent columns found.</p>'; return; }
+      var sha = await opSha1(bytes), ctxKey = (rrImportPreferKey && opProp(rrImportPreferKey)) ? rrImportPreferKey : "";
+      var defaults = opPartsDefaults(info, ctxKey, file.name, sha, ctxKey ? "chat" : "page");
+      rrImportState = { fileName: file.name, base64: b64, bytes: bytes, sha: sha, text: (ex.text || ""), info: info, ctxKey: ctxKey, defaults: defaults,
+        rows: info.parts.map(function(p){ var d = defaults.rows[p.no] || {}; return { part: p, block: { name: p.title || p.section || p.sheet }, key: d.key || null, include: !!d.tick }; }) };
+      el("rrImportApply").disabled = false;
       renderRentRollImport();
     }
     function renderRentRollImport(){
       var st = rrImportState; if(!st) return;
-      el("rrImportSub").textContent = st.fileName + " — " + st.rows.length + " propert" + (st.rows.length === 1 ? "y" : "ies") + " in the file";
-      // Fix #1 safety net: each block in the file gets a dropdown to assign it to an existing property or add it
-      // as new — so a multi-property file dropped on the wrong property page can be corrected, block by block.
-      var allProps = opProperties().slice().sort(function(a, b){ return String(a.name || a.key).localeCompare(String(b.name || b.key)); });
-      el("rrImportBody").innerHTML = st.rows.map(function(r, i){
-        var b = r.block;
-        var tag = r.key ? '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">update</span>' : '<span class="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700">add new</span>';
-        var line = b.residentialUnits + ' units · ' + b.occupiedUnits + ' occ · ' + b.vacantUnits + ' vac · avg mkt ' + rrMoney(b.avgMarketRent) + ' · avg in-place ' + rrMoney(b.avgActualRent) + (b.residentialSqft != null ? ' · ' + Math.round(b.residentialSqft).toLocaleString() + ' sf' : '') + (b.commercialUnits ? ' · +' + b.commercialUnits + ' commercial' : '');
-        var opts = '<option value="">➕ Add as a new property</option>' + allProps.map(function(p){
-          return '<option value="' + escapeHtml(p.key) + '"' + (r.key === p.key ? ' selected' : '') + '>' + escapeHtml(p.name || p.key) + '</option>';
-        }).join('');
-        return '<div class="rounded-xl border border-slate-200 p-3 mb-2">'+
-          '<div class="flex items-start gap-3">'+
-            '<input type="checkbox" data-rrimp="' + i + '"' + (r.include ? ' checked' : '') + ' class="mt-1 accent-brand-600">'+
-            '<div class="min-w-0 flex-1">'+
-              '<div class="flex items-center gap-2 flex-wrap"><span class="text-sm font-bold text-slate-800">' + escapeHtml(b.name) + '</span>' + tag + '</div>'+
-              '<div class="text-[11px] text-slate-500 mt-0.5">' + line + '</div>'+
-              '<div class="mt-2 flex items-center gap-2"><span class="text-[11px] font-medium text-slate-500 shrink-0">Assign to</span>'+
-                '<select data-rrimpsel="' + i + '" class="min-w-0 flex-1 max-w-[260px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">' + opts + '</select></div>'+
-            '</div>'+
-          '</div></div>';
-      }).join('');
-      var nAdd = st.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = st.rows.filter(function(r){ return r.include && r.key; }).length;
-      el("rrImportNote").textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder";
+      el("rrImportSub").textContent = st.fileName + " — " + st.info.parts.length + " part" + (st.info.parts.length === 1 ? "" : "s") + " in the file";
+      el("rrImportBody").innerHTML = '<div data-partscard><p class="mb-2 text-sm text-slate-600">'+opPartsIntro(st.fileName, st.info, st.ctxKey, st.defaults, st.ctxKey ? "chat" : "page")+'</p>'+
+        '<div class="rounded-xl border border-slate-200 px-3">'+opPartsRowsHtml(st.info, st.defaults, st.ctxKey)+'</div></div>';
+      el("rrImportNote").textContent = "Each property keeps which section is its own · nothing is saved until you import";
     }
     async function opRentRollImportApply(){
       var st = rrImportState; if(!st) return;
-      var sel = st.rows.filter(function(r){ return r.include; });
-      if(!sel.length){ opRentRollImportClose(); return; }
-      var saved = 0;
-      for(var i = 0; i < sel.length; i++){
-        var r = sel[i], key = r.key;
-        if(!key){ try{ var cc = propCreateCheck(r.block.name);   // 2.9.7 — you chose "Add as a new property": no questions, but never a second property of the same name
-          key = (cc.kind === "exists" || cc.kind === "loan") ? cc.key : (cc.kind === "archived" ? (await opArchiveProperty(cc.key, false), cc.key) : await opCreatePropertyNamed(r.block.name)); }catch(e){} }
-        if(!key) continue;
-        var p = opProp(key);
-        try{ await ldsShell.docSave({ propKey: key, propName: (p && p.name) || r.block.name, name: st.fileName, base64: st.base64, text: st.text, type: "", role: "rentroll" }); saved++; try{ delete loanRRCache[key]; }catch(e){} }catch(e){}
-      }
+      var ch = opPartsChoices(el("rrImportBody"), st.info), bad = ch.filter(function(c){ return c.use && !c.key; });
+      if(bad.length){ el("rrImportNote").textContent = "Pick a property for part " + bad.map(function(c){ return c.part.no; }).join(", ") + " — or untick it."; return; }
+      if(!ch.some(function(c){ return c.use && c.key; })){ opRentRollImportClose(); try{ toast("Nothing was imported — no part was linked to a property.", "info"); }catch(e){} return; }
+      el("rrImportApply").disabled = true;
+      var out = await opApplyPartChoices({ name: st.fileName, b64: st.base64, bytes: st.bytes, text: st.text, type: "", label: "", sha: st.sha }, st.info, ch, st.ctxKey, {});
       opRentRollImportClose();
-      try{ toast("Imported the rent roll into " + saved + " propert" + (saved === 1 ? "y" : "ies") + ".", "check"); }catch(e){}
+      try{ toast(opPartsResultText(st.fileName, out), out.failed.length ? "error" : "check"); }catch(e){}
       redrawAll(); try{ renderLoanUnitStats(); }catch(e){}   // 2.9.7 (#7)
     }
     // Archive (or un-archive) a property: an archived property leaves every list, the roll-up and the
@@ -5523,8 +5608,10 @@ tr.flagged:hover td{background:#fee2e2}
       try{ const props = opProperties(); for(let i = 0; i < props.length; i++){ try{ await opEnsureGeneralData(props[i].key); await opEnsureProfile(props[i].key); }catch(e){} } }catch(e){}
       try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8)
       let orphans = []; try{ orphans = await healthOrphanFolders(); }catch(e){}   // 2.9.7 (#216)
+      let partsRows = []; try{ partsRows = await opPartsAudit(); }catch(e){}   // 2.9.9 (fix 1)
       if(el("healthView") && el("healthView").hidden) return;   // user navigated away while it loaded
       view.innerHTML = dataHealthHtml();
+      { const pc = document.createElement("div"); pc.innerHTML = healthPartsHtml(partsRows); const first = view.querySelector(".space-y-4"); if(first) first.insertBefore(pc.firstChild, first.children[1] || null); }
       if(orphans.length){ const card = document.createElement("div"); card.innerHTML = healthOrphansHtml(orphans); const first = view.querySelector(".space-y-4"); if(first) first.insertBefore(card.firstChild, first.children[2] || null); }
       const rc = view.querySelector('[data-health-recompute]');
       if(rc) rc.addEventListener('click', async () => {
@@ -5543,6 +5630,29 @@ tr.flagged:hover td{background:#fee2e2}
       view.querySelectorAll('[data-health-open]').forEach(b => b.addEventListener('click', () => {
         uwOpenFor(b.getAttribute('data-health-open'));
       }));
+    }
+    // 2.9.9 (fix 1) — every saved workbook with several parts whose part for a property isn't answered (its numbers
+    // aren't used) or was only matched by its name (a file saved before 2.9.9 — confirm it once).
+    async function opPartsAudit(){
+      var out = [];
+      if(!docsAvailable()) return out;
+      var props = opProperties();
+      for(var i = 0; i < props.length; i++){ var k = props[i].key;
+        try{ var dl = await ldsShell.docList(k), files = ((dl && dl.files) || []).filter(function(f){ return opIsSheetFile(f.name) && !APP_DOC_ROLES[f.role || ""]; }), seen = {};
+          for(var j = 0; j < files.length; j++){ var f = files[j]; if(seen[f.name]) continue; seen[f.name] = 1;
+            var r = await opResolvePart(k, f, null);
+            if(r.info && r.info.multi && (r.status === "unknown" || r.status === "name")) out.push({ key: k, name: props[i].name, file: f.name, parts: r.info.parts.length, status: r.status, label: r.part ? FileParts.partLabel(r.part, r.info.sheetsCount) : "" });
+          } }catch(e){}
+      }
+      return out;
+    }
+    function healthPartsHtml(rows){
+      var waiting = rows.filter(function(r){ return r.status === "unknown"; }), byName = rows.filter(function(r){ return r.status === "name"; });
+      return '<div class="rounded-xl border '+(waiting.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700')+' px-4 py-2 text-sm" data-health-parts="'+waiting.length+'">'+
+        '<div class="font-semibold">Files with several parts waiting for your answer: '+waiting.length+'</div>'+
+        (waiting.length ? '<ul class="mt-1 space-y-0.5 text-[12px]">'+waiting.map(function(r){ return '<li data-health-partrow>'+escapeHtml(r.name)+' · “'+escapeHtml(r.file)+'” ('+r.parts+' parts) — its numbers aren’t used until you say which part is its own · '+opPartsAnswerBtn(r.key, r.file, "Answer")+'</li>'; }).join('')+'</ul>' : '')+
+        (byName.length ? '<div class="mt-1 text-[12px] text-slate-600">Matched by name only — confirm once: '+byName.map(function(r){ return escapeHtml(r.name)+' · “'+escapeHtml(r.file)+'” → '+escapeHtml(r.label)+' '+opPartsAnswerBtn(r.key, r.file, "Confirm"); }).join(' · ')+'</div>' : '')+
+      '</div>';
     }
     function healthWhen(iso){ try{ return new Date(iso).toLocaleString(); }catch(e){ return String(iso || ''); } }
     function healthStatusBadge(status){
@@ -6370,13 +6480,10 @@ tr.flagged:hover td{background:#fee2e2}
     try{ var _rrx = el("rrImportX"); if(_rrx && !_rrx._bound){ _rrx._bound = true; _rrx.addEventListener("click", opRentRollImportClose); } }catch(e){}
     try{ var _rrc = el("rrImportCancel"); if(_rrc && !_rrc._bound){ _rrc._bound = true; _rrc.addEventListener("click", opRentRollImportClose); } }catch(e){}
     try{ var _rra = el("rrImportApply"); if(_rra && !_rra._bound){ _rra._bound = true; _rra.addEventListener("click", opRentRollImportApply); } }catch(e){}
-    try{ var _rrb = el("rrImportBody"); if(_rrb && !_rrb._bound){ _rrb._bound = true; _rrb.addEventListener("change", function(e){ var cb = e.target; if(!cb || !cb.getAttribute || !rrImportState) return;
-      if(cb.getAttribute("data-rrimp") != null){ var i = +cb.getAttribute("data-rrimp"); if(rrImportState.rows[i]){ rrImportState.rows[i].include = cb.checked; var nAdd = rrImportState.rows.filter(function(r){ return r.include && !r.key; }).length, nUpd = rrImportState.rows.filter(function(r){ return r.include && r.key; }).length; var note = el("rrImportNote"); if(note) note.textContent = nAdd + " to add · " + nUpd + " to update · the file saves to each folder"; } return; }
-      if(cb.getAttribute("data-rrimpsel") != null){ var j = +cb.getAttribute("data-rrimpsel"); if(rrImportState.rows[j]){ var v = cb.value || ""; rrImportState.rows[j].key = v || null; var pj = v ? opProp(v) : null; rrImportState.rows[j].existingName = pj ? (pj.name || v) : ""; renderRentRollImport(); } return; }
-    }); } }catch(e){}
     // Per-property Import/Update rent-roll button (property view) — imports for that property (Fix #1 safety net).
     try{ if(!document._rrImportForBound){ document._rrImportForBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-rrimportfor]"); if(b){ e.preventDefault(); opRentRollImportPickFor(b.getAttribute("data-rrimportfor")); } }); } }catch(e){}
     try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
+    try{ window.LDS_readT12=async(k)=>{ const r=await opReadPropT12(k); return r?{ sheet:r.sheet, sheetNo:r.sheetNo, sheets:r.sheets, noi:r.parsed&&r.parsed.totals?r.parsed.totals.noi:null, name:r.name, status:r.partStatus }:null; }; window.LDS_partsWaiting=(k)=>opPartsWaiting[k]||null; window.LDS_gdRecords=async(k)=>{ const gd=await opLoadGeneralData(k); return (gd&&gd.fileParts)||[]; }; window.LDS_rrBlockFresh=async(k)=>{ try{ delete loanRRCache[k]; }catch(e){} const r=await opRentRollBlockFor(k); return r?(r.block?{ name:r.block.name, units:r.block.residentialUnits, section:r.part&&r.part.section }:{ waiting:r.waiting||null }):null; }; }catch(e){}   // 2.9.9 diagnostics
     try{ window.LDS_propGPR=async(k)=>{ const b=opMergeBench(uwDefaults().bench, await opLoadAssumptions(k)); return opPropGPR(k, b, propUnits(k)); }; window.LDS_uwFocus=()=>opFocusKey; }catch(e){}   // 2.9.8 diagnostics
     try{ window.LDS_profile=(k)=>opProfileSync(k); window.LDS_ensureProfile=(k)=>opEnsureProfile(k); window.LDS_setProfileField=(k,f,v,o)=>opProfileSetField(k,f,v,o); window.LDS_profileComplete=(k)=>opProfileCompleteness(k); window.LDS_profileEffective=(k,f)=>opProfileEffective(k,f); window.LDS_openProfile=(k)=>opOpenPropertyProfile(k); window.LDS_addProperty=(n)=>opAddProperty(n); window.LDS_archiveProperty=(k,a)=>opArchiveProperty(k,a); window.LDS_standaloneProps=()=>Object.keys(standaloneProps); window.LDS_archivedProps=()=>opArchivedProps().map(p=>p.key); window.LDS_loadAllProfiles=()=>opLoadAllProfiles(); window.LDS_isArchived=(k)=>opIsArchived(k); window.LDS_openSizing=(k)=>{ openTab("underwriting"); return opSelectProperty(k); }; window.LDS_uwUnitsInput=()=>{ var el=document.querySelector('#uwView [data-uwf="units"]'); return el?el.value:null; }; }catch(e){}   // diagnostics: profile-on-property-view + Add Property + archive + Read agreement + Sizing units pre-fill
     // Open a property's operating model from anywhere (e.g. the loan view).
@@ -6581,6 +6688,31 @@ tr.flagged:hover td{background:#fee2e2}
       var common = at.filter(function(t){ return bt.indexOf(t) >= 0; }).length;
       return common >= 2 ? 0.6 : (common === 1 ? 0.25 : 0);
     }
+    // 2.9.9 — the names a property goes by (the app's name, its loans' property names) and its Yardi code(s). They
+    // only PRE-FILL the "which part is whose" card (fix 2) — a file's parts are never linked by a name alone.
+    function propNamesOf(key, pObj){
+      var p = pObj || opProp(key) || opArchivedProps().find(function(x){ return x.key === key; }) || null, names = [], codes = [];
+      var push = function(n){ n = String(n == null ? "" : n).trim(); if(n && !names.some(function(x){ return PropNames.norm(x) === PropNames.norm(n); })) names.push(n); };
+      var code = function(c){ c = String(c == null ? "" : c).replace(/\D+/g, ""); if(c.length >= 3 && codes.indexOf(c) < 0) codes.push(c); };
+      if(p){ push(p.name); (p.loans || []).forEach(function(l){ push(String(l.propertyName || "").replace(/\s*\(\s*mezz[^)]*\)/i, "")); }); }
+      var prof = profileCache[key];
+      if(prof){ push(Profile.value(prof, "propertyName"));
+        var yc = Profile.value(prof, "yardiCode"); if(yc) String(yc).split(/[,;\s]+/).forEach(code); }
+      // the codes of the parts you linked to it ("12 Month Statement-15169" → 15169), so its rent-roll section
+      // "The Euclid(15169)" is suggested for it next time
+      gdRecordsOf(key).forEach(function(r){ if(r && !r.none){ PropNames.codesIn(r.section || "").forEach(code); PropNames.codesIn(r.sheet || "").forEach(code); } });
+      return { names: names, codes: codes };
+    }
+    function propNameScore(fileName, key, pObj){ var n = propNamesOf(key, pObj); return PropNames.matchScore(fileName, n.names, n.codes); }
+    // The best property for a name found in a file: { key, s } (s ≥ min), or null. A tie at the top is never guessed.
+    function propBestMatch(fileName, min, keys){
+      var all = opProperties(), byKey = {}; all.forEach(function(p){ byKey[p.key] = p; });   // the property list once, not once per property
+      var list = (keys || all.map(function(p){ return p.key; })).map(function(k){ return { key: k, s: propNameScore(fileName, k, byKey[k]) }; })
+        .filter(function(x){ return x.s >= (min == null ? 0.6 : min); }).sort(function(a, b){ return b.s - a.s; });
+      if(!list.length) return null;
+      if(list.length > 1 && list[1].s === list[0].s) return { key: null, s: list[0].s, tie: list.filter(function(x){ return x.s === list[0].s; }).map(function(x){ return x.key; }) };
+      return list[0];
+    }
     // The rent-roll property block that best matches an app property (by name), read from the folder.
     // 2.9.7 (#77) — commercial units: the profile's field, else the rent roll's count of commercial spaces.
     function propCommercialUnits(key){
@@ -6589,15 +6721,17 @@ tr.flagged:hover td{background:#fee2e2}
       return null;
     }
     async function opRentRollBlockFor(key){
-      var res = await opReadPropRentRoll(key); if(!res || !res.roll || !res.roll.properties.length) return null;
-      var props = res.roll.properties;
-      var pl = opProp(key), sr = pl && pl.loans && pl.loans[0];
-      var pname = (sr && sr.propertyName) || (pl && pl.name) || key;
-      if(props.length === 1) return { block: props[0], file: res.file, roll: res.roll, matchedBy: "only" };
-      var best = null, score = 0;
-      props.forEach(function(b){ var s = rrMatchScore(b.name, pname); if(s > score){ score = s; best = b; } });
-      if(best && score >= 0.5) return { block: best, file: res.file, roll: res.roll, matchedBy: "name" };
-      return { block: null, file: res.file, roll: res.roll, choices: props.map(function(b){ return b.name; }) };
+      var res = await opReadPropRentRoll(key);
+      if(res && res.waiting) return { block: null, waiting: res.waiting };   // 2.9.9 — several sections, no answer yet
+      if(!res || !res.roll || !res.roll.properties.length) return null;
+      var props = res.roll.properties, part = res.part;
+      // 2.9.9 (fix 1) — the section you linked (sectionNo), checked against its name; else the sheet's only property
+      if(part && part.sectionNo){ var b = props[part.sectionNo - 1];
+        if(b && (!part.section || (b.fullName || b.name) === part.section)) return { block: b, file: res.file, roll: res.roll, part: part, matchedBy: res.partStatus };
+        b = props.find(function(x){ return (x.fullName || x.name) === part.section; });
+        return b ? { block: b, file: res.file, roll: res.roll, part: part, matchedBy: res.partStatus } : { block: null, waiting: [res.file.name] }; }
+      if(props.length === 1) return { block: props[0], file: res.file, roll: res.roll, part: part, matchedBy: "only" };
+      return { block: null, waiting: [res.file.name] };
     }
     function rrPct(x){ return (x == null) ? "—" : Math.round(x * 100) + "%"; }
     function rrMoney(x){ return (x == null) ? "—" : "$" + Math.round(x).toLocaleString(); }
@@ -6659,7 +6793,7 @@ tr.flagged:hover td{background:#fee2e2}
       var w = hasBlock ? rrStatsWarnHtml(r.block) : { btn:"", list:"" };
       var sub = hasBlock
         ? ('From '+((r.file && r.file.name)?escapeHtml(r.file.name):'the rent roll')+((r.matchedBy==='name')?' &mdash; '+escapeHtml(r.block.name):''))
-        : (loading ? 'Reading the rent roll…' : 'No rent roll on file for this property yet.');
+        : (loading ? 'Reading the rent roll…' : ((r && r.waiting && r.waiting.length) ? '<span class="font-semibold text-amber-700" data-rrwait>“'+escapeHtml(r.waiting[0])+'” covers several properties — which section is this property’s? Its figures aren’t used until you say.</span> '+opPartsAnswerBtn(key, r.waiting[0], "Answer") : 'No rent roll on file for this property yet.'));   // 2.9.9 (fix 1)
       var header = '<div class="border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-2">'+
         '<div class="min-w-0"><h2 class="text-base font-bold text-slate-900">Rent roll summary</h2><p class="text-xs text-slate-500">'+sub+'</p></div>'+
         '<div class="flex items-center gap-2 shrink-0">'+w.btn+btn+'</div></div>';
@@ -6684,7 +6818,10 @@ tr.flagged:hover td{background:#fee2e2}
         opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; if(opFocusKey === key) uwRenderRentRollBox(); });
         host.innerHTML = ""; return;
       }
-      var r = loanRRCache[key]; if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
+      var r = loanRRCache[key];
+      if(r && r.waiting && r.waiting.length){ host.innerHTML = '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800" data-uwrrwait>'+   // 2.9.9 (fix 1)
+        r.waiting.map(function(fn){ return '“'+escapeHtml(fn)+'” covers several properties — which section is this property’s? Its figures aren’t used until you say. '+opPartsAnswerBtn(key, fn, "Answer"); }).join('<br>')+'</div>'; return; }
+      if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
       var b = r.block;
       if(uwAutoLoadRentRoll(b)) return;   // filled the empty inputs and re-rendered — the re-render draws the summary
       host.innerHTML = '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">'+
@@ -8748,7 +8885,7 @@ tr.flagged:hover td{background:#fee2e2}
     // the operator has hand-overridden the yardstick's base value or spread.
     let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false, refiHoldManual = false;
     function tenorShort(id){
-      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", prime:"Prime", effr:"EFFR" })[id]
+      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", sofr30:"30-day Avg SOFR", termsofr1m:"1-mo Term SOFR", prime:"Prime", effr:"EFFR" })[id]
         || (INDEX_BY_ID[id] ? INDEX_BY_ID[id].label : id);
     }
     function refiOptBtnClass(active){
@@ -8819,15 +8956,18 @@ tr.flagged:hover td{background:#fee2e2}
     // fallback when a loan has no name at all. Address text is normalised (case, spacing, punctuation
     // and common street-type / direction abbreviations) so "10400 Edgewood Rd" and "10400 Edgewood
     // Road" are the same place. A senior and its mezz share one key (the "(mezz)" suffix is stripped).
-    function normPropName(s){ return String(s || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+    // 2.9.9 — both are pure functions of the text and run for every loan on every property lookup: remembered by text
+    var normPropMemo = { name: new Map(), addr: new Map() };
+    function normPropMemoGet(m, s, fn){ var k = String(s || ""), v = m.get(k); if(v === undefined){ v = fn(k); if(m.size > 20000) m.clear(); m.set(k, v); } return v; }
+    function normPropName(s){ return normPropMemoGet(normPropMemo.name, s, function(k){ return k.replace(/\s*\(\s*mezz[^)]*\)/i, "").replace(/\s+/g, " ").trim().toLowerCase(); }); }
     var ADDR_ABBR = { rd:"road", st:"street", str:"street", ave:"avenue", av:"avenue", blvd:"boulevard", boul:"boulevard",
       dr:"drive", ln:"lane", ct:"court", cir:"circle", crl:"circle", pkwy:"parkway", pky:"parkway", hwy:"highway",
       pl:"place", ter:"terrace", terr:"terrace", trl:"trail", sq:"square", ste:"suite", apt:"apartment", bldg:"building",
       n:"north", s:"south", e:"east", w:"west", ne:"northeast", nw:"northwest", se:"southeast", sw:"southwest",
       "n.":"north", "s.":"south", "e.":"east", "w.":"west" };
     function normPropAddr(s){
-      var a = String(s || "").replace(/[.,]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-      return a ? a.split(" ").map(function(w){ return ADDR_ABBR[w] || w; }).join(" ") : "";
+      return normPropMemoGet(normPropMemo.addr, s, function(k){ var a = k.replace(/[.,]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+        return a ? a.split(" ").map(function(w){ return ADDR_ABBR[w] || w; }).join(" ") : ""; });
     }
     // true when another loan shares this normalised name but sits at a DIFFERENT normalised address
     function propNameShared(name, addr){
@@ -9862,7 +10002,9 @@ tr.flagged:hover td{background:#fee2e2}
         '</tr></thead><tbody class="divide-y divide-slate-100 tabular-nums">'+body+'</tbody></table></div>';
     }
     // Indices you can price a proposed loan over: SOFR + the Treasury tenors the app tracks.
-    const REFI_INDEX_CHOICES = ["sofr","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
+    // 2.9.9 (fix 7) — the 30-day Average SOFR and 1-month Term SOFR too (2.9.7 #256 added them for loans only); each is
+    // priced from its own rate.
+    const REFI_INDEX_CHOICES = ["sofr","sofr30","termsofr1m","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
     // The honest rate build-up shown at the top of the proposed loan: a rate-type toggle,
     // the base-index picker, an editable spread (0 by default on the fixed side, the
     // comp-derived margin on the floating side), and the resulting rate spelled out —
@@ -10113,7 +10255,9 @@ tr.flagged:hover td{background:#fee2e2}
         wrap.addEventListener("change", (e) => {
           const t = e.target, m = t && (t.id||"").match(/^o(1)_(.+)$/); if(!m) return;
           const n = Number(m[1]), field = m[2], draft = refiDrafts[n]; if(!draft) return;
-          if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
+          if(field === "index"){ draft.index = t.value; applyProposedPricing(loan, draft); renderRefi(loan);
+            try{ ensureIndexLive(draft.index, () => { applyProposedPricing(loan, draft); renderRefi(loan); }); }catch(e){}   // 2.9.9 (fix 7) — the chosen index's own rate (fetched once if it wasn't yet)
+            return; }
           if(field === "fxindex"){ draft._fixedIndex = t.value; applyProposedPricing(loan, draft); renderRefi(loan); return; }
           const blank = String(t.value||"").trim() === "";
           const raw = parseFloat((t.value||"").replace(/[^0-9.\-]/g,"")), v = isNaN(raw) ? 0 : raw;
@@ -10573,13 +10717,15 @@ tr.flagged:hover td{background:#fee2e2}
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
-      "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names; a T12 workbook with one sheet per property goes to each with its own sheet. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties (same rule for T12 sheets). Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
-      "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, open?}: import a rent roll attached in this chat or saved in the documents (open:true opens the importer). import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
+      "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
+      "FILES WITH SEVERAL PARTS (a workbook with several sheets, or a rent roll with several properties' sections on one sheet): the app never decides by itself which part is whose. A card lists every part with a list of the operator's properties: in a property chat this property is set on its part when the app can tell (or the section you name), the other parts start unticked, and \"Add as a new property\" is never set — only the operator picks it. Each property keeps the answer (sheet number X, section Y) in its general-data.json and reads ONLY its own part. In the text you get, a multi-part file of this property holds only its own part; a part not answered yet is left out — never use another part's figures for this property, and when one isn't answered say so and point to the card (Documents → Answer). Saving, importing, copying or moving such a file always goes through that card.",
+      "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
+      "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
       "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
-      "Action rules: (1) Act only when the operator asked you to do something — a plain question gets a plain answer, no action block (reading actions are the exception: use them whenever you need to look something up). (2) A reply may hold several actions; they run in order, a change waits for the operator's Approve card, and the results of every action (and every Approve / Cancel) come back to you in the next message under \"App (results of your actions)\". Keep going — more actions if needed — until the request is finished, then report plainly what was done and what was not. Never repeat an action that already succeeded, and never re-propose a card the operator cancelled: ask what they want instead. (3) When the request is not one action on the list, do it as a COMBINATION of listed actions (e.g. create a property, then add its loan): say the plan in one line, then run the steps, each change behind its own Approve card. If no combination does exactly what was asked, say so BEFORE doing anything and offer the closest option (e.g. \"I can't delete it permanently — I can archive it. Want that?\"); never swap in a different action silently. (4) Data changes happen in the background and never switch the operator's screen; open a screen (open_loan, open_calendar …) only when the operator asks to see it. (5) NEVER claim you already saved, added, edited or deleted anything until a result says it was approved and done; a cancelled or failed result means it did NOT happen — say so.",
+      "Action rules: (1) Act only when the operator asked you to do something — a plain question gets a plain answer, no action block (reading actions are the exception: use them whenever you need to look something up). (2) A reply may hold several actions; they run in order, a change waits for the operator's Approve card, and the results of every action (and every Approve / Cancel) come back to you in the next message under \"App (results of your actions)\". Keep going — more actions if needed — until the request is finished, then report plainly what was done and what was not. Never repeat an action that already succeeded, and never re-propose a card the operator cancelled: ask what they want instead. (3) When the request is not one action on the list, do it as a COMBINATION of listed actions (e.g. create a property, then add its loan): say the plan in one line, then run the steps, each change behind its own Approve card. If no combination does exactly what was asked, say so BEFORE doing anything and offer the closest option (e.g. \"I can't delete it permanently — I can archive it. Want that?\"); never swap in a different action silently. (4) Data changes happen in the background and never switch the operator's screen; open a screen (open_loan, open_calendar …) only when the operator asks to see it. (5) NEVER claim you already saved, added, edited or deleted anything until a result says it was approved and done; describe what happened ONLY as the result says it (e.g. a result that says \"Created a new property\" means the app created it — never call it an existing property); never predict what the app or a card will do beyond what this prompt says, and never offer a way to fix something that the actions here can't do; a cancelled or failed result means it did NOT happen — say so.",
       "IMPORTANT — how a change is applied, and how you VERIFY it. You cannot apply a change yourself; it takes effect ONLY when the operator clicks Approve on its card. What happened on each card (approved and done / cancelled / approved but it failed) comes back to you as a result — trust the result over anything else. The loan snapshot in every message also reflects the CURRENT saved values, so you can double-check a field. If the operator later says nothing changed, read the snapshot (or read_property): if the value is set, tell them it IS saved and where it shows; if not, propose it again so a fresh card appears.",
       "Formatting: plain text, no markdown tables. Show dollars with a $ and thousands separators and rates as percentages with two or three decimals. Be concise and factual; when you calculate, briefly state the figures you used."
     ].join("\n");
@@ -10612,6 +10758,11 @@ tr.flagged:hover td{background:#fee2e2}
         if(hits.length>1) return {ok:false,msg:"Which one? "+hits.map(function(f){ return '"'+f.name+'"'; }).join(" or ")+"."};
         var f=hits[0];
         return ldsShell.docRead(from.key, f.id).then(function(rd){ if(!rd||!rd.ok) return {ok:false,msg:"I couldn’t read "+f.name+"."};
+          // 2.9.9 (fix 2) — a workbook with several parts goes through the parts card (the property it goes to is set on
+          // its part when the app can tell; a move takes it out of the first property once it is linked)
+          var bytes0=opB64ToBytes(rd.base64), info0=opPartsInfo(bytes0, f.name);
+          if(info0 && info0.multi) return aiAsstPartsCard({ name:f.name, bytes:bytes0, text:"", type:f.type||"", label:f.readLabel||"", sha:f.sha }, info0, keys.length===1 ? keys[0] : "",
+            { keepInCtx: keys.length===1, lead:(move?"Move":"Copy")+" <b>"+escapeHtml(f.name)+"</b> from "+escapeHtml(from.name)+".", after: move ? function(out){ if((out.linked.length || out.none.length) && !out.failed.length) return docRemoveDo(from.key, f); } : null });   // you asked to put it there: it lands there even with no part of its own
           return docPlanTargets(f.name, opB64ToBytes(rd.base64), "", keys, f.role==="t12"?null:(f.role||"other")).then(function(plan){
             return aiAsstApprovalCard((move?'Move':'Copy')+' <b>'+escapeHtml(f.name)+'</b> from '+escapeHtml(from.name)+' to '+plan.map(function(t){ return escapeHtml(t.name); }).join(", ")+'?'+(move?' It leaves '+escapeHtml(from.name)+'’s documents.':''), plan.map(function(t){ return aiAsstRow("t"+t.key, escapeHtml(t.name), null, escapeHtml(docPlanWhat(t))); }).join(""), function(){
               var acc=newSaveAcc();
@@ -10825,15 +10976,18 @@ tr.flagged:hover td{background:#fee2e2}
         '<span class="text-[11px] text-slate-400">nothing changes until you approve</span></div></div>';
       var bub=aiAsstBubble("assistant", card);
       var ap=bub?bub.querySelector(".aiAsstEditApprove"):null, al=bub?bub.querySelector(".aiAsstEditAlt"):null, cn=bub?bub.querySelector(".aiAsstEditCancel"):null, done=false;
-      var entry={ role:"card", html: aiAsstCardBody(introHtml, rowsHtml), text: "Card: "+aiAsstPlain(introHtml)+(rowsHtml?("\n"+aiAsstPlain(rowsHtml)):""), outcome:"", ok:null };
+      var entry={ role:"card", html: aiAsstCardBody(introHtml, rowsHtml), text: "Card: "+aiAsstPlain(introHtml)+(opts.cardText ? ("\n"+opts.cardText) : (rowsHtml?("\n"+aiAsstPlain(rowsHtml)):"")), outcome:"", ok:null };
       aiAsstHistory.push(entry); aiAsstPersist();
       var settle; var pending=new Promise(function(r){ settle=r; });
       var handle={ cancel:function(why){ if(!done) finish(why||"Cancelled — nothing was changed.", false, true); } };
       aiAsstOpenCards.push(handle);
       function finish(html, ok, cancelled, data){ done=true; [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; });
         aiAsstOpenCards=aiAsstOpenCards.filter(function(h){ return h!==handle; });
-        if(bub){ bub.querySelectorAll(".aiAsstLine").forEach(function(c){ c.disabled=true; if(c.checked) c.setAttribute("checked",""); else c.removeAttribute("checked"); });
-          var body=bub.querySelector("[data-asstcard]"); if(body){ var cl=body.cloneNode(true); var bt=cl.querySelector(".aiAsstEditApprove"); if(bt&&bt.parentNode) bt.parentNode.remove(); entry.html=cl.innerHTML; } }   // the saved card shows which lines were ticked
+        if(bub){ bub.querySelectorAll(".aiAsstLine,[data-partuse]").forEach(function(c){ c.disabled=true; if(c.checked) c.setAttribute("checked",""); else c.removeAttribute("checked"); });
+          bub.querySelectorAll("[data-partsel]").forEach(function(sl){ sl.disabled=true; Array.prototype.forEach.call(sl.options, function(o){ if(o.selected) o.setAttribute("selected",""); else o.removeAttribute("selected"); }); });   // 2.9.9 — the saved card shows what was picked
+          var body=bub.querySelector("[data-asstcard]"); if(body){ var cl=body.cloneNode(true); var bt=cl.querySelector(".aiAsstEditApprove"); if(bt&&bt.parentNode) bt.parentNode.remove();
+            cl.querySelectorAll("select[data-partsel]").forEach(function(sl){ var sp=document.createElement("div"); sp.className="mt-0.5 text-[12px] font-semibold text-emerald-700"; var o=sl.querySelector("option[selected]")||sl.options[0]; sp.textContent="→ "+((o&&o.textContent)||""); sl.parentNode.replaceChild(sp, sl); });   // 2.9.9 — saved as the pick, not the whole list
+            entry.html=cl.innerHTML; } }   // the saved card shows which lines were ticked
         if(bub){ var foot=document.createElement("div"); foot.className="mt-2 pt-2 border-t border-slate-200/70 text-[12px] font-semibold "+(ok?"text-emerald-700":"text-slate-500"); foot.innerHTML=html; bub.appendChild(foot); var lg=el("aiAsstLog"); if(lg) lg.scrollTop=lg.scrollHeight; }
         var msg=aiAsstPlain(html).replace(/^✓\s*/,"");
         entry.outcome=html; entry.ok=!!ok; entry.text+="\n→ "+(ok?"approved: ":"")+msg; aiAsstPersist();
@@ -10844,7 +10998,7 @@ tr.flagged:hover td{background:#fee2e2}
         var boxes=bub?Array.prototype.slice.call(bub.querySelectorAll(".aiAsstLine")):[], picked=boxes.length ? boxes.filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute("data-asstline"); }) : null;
         if(picked && !picked.length){ finish("Nothing was ticked — nothing was changed.", false, true); return; }
         [ap,al,cn].forEach(function(b){ if(b) b.disabled=true; }); boxes.forEach(function(c){ c.disabled=true; });
-        Promise.resolve().then(function(){ return fn(picked); }).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false, !!res.cancelled, res.data); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
+        Promise.resolve().then(function(){ return fn(picked, bub); }).then(function(res){ res=res||{}; finish(res.html||"✓ Done.", res.ok!==false, !!res.cancelled, res.data); if(res.ok!==false && res.toast){ try{ toast(res.toast,"check"); }catch(e){} } })
           .catch(function(e){ finish("That couldn’t be completed: "+escapeHtml(String((e&&e.message)||e)), false); }); }
       if(ap) ap.addEventListener("click", function(){ run(applyFn); });
       if(al && opts.altFn) al.addEventListener("click", function(){ run(opts.altFn); });
@@ -11034,26 +11188,20 @@ tr.flagged:hover td{background:#fee2e2}
       import_rent_roll: function(a){
         var rp=a&&a.name ? aiAsstResolveProp(a.name, {archived:false}) : null; if(rp && rp.ambiguous) return aiAsstPropMiss(rp, a.name);
         if(a && a.open){ if(!rp) return {ok:false,msg:"Tell me which property to import the rent roll for."}; try{ opRentRollImportPickFor(rp.key); }catch(e){} return {ok:true,close:true,msg:"Opened the rent-roll importer for "+rp.name+"."}; }
-        return aiAsstFindFile(a&&a.file, { ext:/\.(xlsx|xls|csv)$/i, key: rp&&rp.key, role:"rentroll" }).then(function(f){
+        // 2.9.9 (fixes 3, 4) — through the parts card: every section with your properties to pick from. In a property
+        // chat that property is set on its section (the one you name, else the one the app can tell — never a guess);
+        // other sections start unticked; "Add as a new property" is never set — the operator picks it.
+        var ctxKey = aiAsstFocusPropKey || (rp && rp.key) || "";
+        return aiAsstFindFile(a&&a.file, { ext:/\.(xlsx|xls|csv)$/i, key: ctxKey || (rp&&rp.key), role:"rentroll" }).then(function(f){
           if(!f) return {ok:false,msg:"Attach the rent roll here (or name a saved one) and I’ll read it — nothing was imported."};
-          var grid=opDetectGrid(opB64ToBytes(f.base64));
-          if(!grid || !window.RentRoll || RentRoll.findHeader(grid).headerRow<0) return {ok:false,msg:f.name+" doesn’t look like a rent roll — no unit / rent columns found."};
-          var roll=RentRoll.parse(grid), props=opProperties();
-          var rows=roll.properties.map(function(b){ var best=null, sc=0; props.forEach(function(p){ var s2=rrMatchScore(b.name, p.name); if(s2>sc){ sc=s2; best=p; } });
-            var key=(best && sc>=0.6) ? best.key : null; if(rp && roll.properties.length===1) key=rp.key; return { block:b, key:key, name: key ? opPropDisplayName(key) : b.name }; });
-          var html=rows.map(function(r2,i){ var b2=r2.block; return aiAsstRow("b"+i, b2.name+(r2.key?" → "+r2.name:""), null, (r2.key?"update":"add as a new property")+" · "+b2.residentialUnits+" units, "+b2.occupiedUnits+" occupied, avg rent "+rrMoney(b2.avgActualRent), { tick: rows.length>1 }); }).join('');
-          return aiAsstApprovalCard('Import the rent roll <b>'+escapeHtml(f.name)+'</b> ('+rows.length+' propert'+(rows.length===1?'y':'ies')+')?', html, function(picked){
-            var use=rows.filter(function(r2,i){ return !picked || picked.indexOf("b"+i)>=0; }), done=[];
-            return use.reduce(function(pr, r2){ return pr.then(function(){
-              var k=r2.key; var mk=k ? Promise.resolve(k) : (function(){ var c=propCreateCheck(r2.block.name); return (c.kind==="exists"||c.kind==="loan") ? Promise.resolve(c.key) : (c.kind==="archived" ? Promise.resolve(null) : opCreatePropertyNamed(r2.block.name)); })();
-              return mk.then(function(key){ if(!key) return; var p2=opProp(key), nm2=(p2&&p2.name)||r2.block.name, okd=function(res){ if(res&&res.ok){ done.push(nm2); try{ delete loanRRCache[key]; }catch(e){} } };
-                // already in this property's documents (attached or saved earlier) → it becomes the rent roll; else it is saved there
-                return ldsShell.docList(key).then(function(dl){ var have=((dl&&dl.files)||[]).find(function(x){ return x.name===f.name; });
-                  if(have) return (have.role==="rentroll") ? okd({ok:true}) : ldsShell.docSetRole(key, have.id, "rentroll").then(okd);
-                  return ldsShell.docSave({ propKey:key, propName:nm2, name:f.name, base64:f.base64, text:f.text||"", type:"", role:"rentroll" }).then(okd); }); });
-            }); }, Promise.resolve()).then(function(){ try{ redrawAll(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
-              return done.length ? {ok:true, html:'✓ Imported the rent roll into '+escapeHtml(done.join(", "))+'.', toast:'Rent roll imported'} : {ok:false, html:"Nothing was imported."}; });
-          });
+          var bytes=opB64ToBytes(f.base64), info=opPartsInfo(bytes, f.name), rrParts=info ? info.parts.filter(function(p){ return p.kind==="rentroll"; }) : [];
+          if(!rrParts.length) return {ok:false,msg:f.name+" doesn’t look like a rent roll — no unit / rent columns found."};
+          var ctxNo=null;
+          if(a && a.section && ctxKey){ var want=String(a.section).trim();
+            var hit=rrParts.filter(function(p){ var nm=p.section||p.title||""; return nm.toLowerCase()===want.toLowerCase() || PropNames.score(want, nm)>=0.85 || PropNames.score(PropNames.baseName(want), PropNames.baseName(nm))===1; });
+            if(hit.length===1) ctxNo=hit[0].no;
+            else return {ok:false,msg:(hit.length ? 'More than one section fits "'+want+'"' : 'There is no section "'+want+'" in '+f.name)+' — its sections are: '+rrParts.map(function(p){ return '"'+(p.section||p.title||p.sheet)+'"'; }).join(", ")+". Nothing was imported."}; }
+          return opSha1(bytes).then(function(sha){ return aiAsstPartsCard({ name:f.name, bytes:bytes, text:f.text||"", type:"", label:"", sha:sha }, info, ctxKey, { ctxPartNo:ctxNo, keepInCtx:false, lead:"Import the rent roll <b>"+escapeHtml(f.name)+"</b>." }); });
         });
       },
       // 2.9.7 (#95, #51) — every refinance change is behind an Approve card, in plain names; the result (with the new
@@ -11333,7 +11481,7 @@ tr.flagged:hover td{background:#fee2e2}
             t12={ months: ms[0]+" → "+ms[ms.length-1], lines: GeneralData.deltas(gd).map(function(ln){ return { line:ln.label, kind:ln.role, trailing12:aiR(ln.ttm), changeVsPriorYear: ln.changePct!=null?aiR(ln.changePct,4):undefined }; }) }; }
           var b=opMergeBench(uwDefaults().bench, saved);
           var rent; if(rr && rr.block){ var bk=rr.block; rent={ file: rr.file&&rr.file.name, units:bk.residentialUnits, occupied:bk.occupiedUnits, vacant:bk.vacantUnits, occupancy:bk.occupancy, avgMarketRent:aiR(bk.avgMarketRent), avgActualRent:aiR(bk.avgActualRent), grossPotentialRentAnnual:aiR(bk.gprAnnual), commercialUnits:bk.commercialUnits||undefined }; }
-          else if(rr && rr.choices) rent={ note:"The saved rent roll covers several properties and none matches this name: "+rr.choices.join(", ") };
+          else if(rr && rr.waiting) rent={ note:"Its saved rent roll ("+rr.waiting.join(", ")+") covers several properties and the operator hasn't said yet which section is this property's — its figures are NOT used. The app shows a card to answer it (Documents → Answer, or Data Health)." };   // 2.9.9
           var entered=null; try{ entered=p&&p.loans.length ? refiEnteredNOI(refiTargetFor(p.loans[0])) : null; }catch(e){}
           var data={ name:r.name, archived:r.archived||undefined, archivedOn: r.archived&&profileCache[key]&&profileCache[key].archivedAt?String(profileCache[key].archivedAt).slice(0,10):undefined,
             loans: all.map(aiAsstLoanFacts), profile: prof,
@@ -11344,8 +11492,26 @@ tr.flagged:hover td{background:#fee2e2}
           return { ok:true, msg:"Read "+r.name+".", data:data };
         });
       },
+      // 2.9.9 (fix 6) — a file that was not read for this message, read on request (in parts, stopping at the answer)
+      read_files: function(a){
+        var want=[].concat((a&&a.files)||(a&&a.file)||[]).map(String).filter(Boolean); if(!want.length) return {ok:false,msg:"Name the file(s) to read."};
+        var key=aiAsstFocusPropKey||"";
+        var txtP=(key && docsAvailable()) ? ldsShell.docText(key).then(function(dt){ return aiAsstScopeDocText(key, dt); }).catch(function(){ return null; }) : Promise.resolve(null);
+        return txtP.then(function(dt){
+          var material=aiAsstMaterial(dt), sel=material.filter(function(f){ var n=f.name.toLowerCase(); return want.some(function(w){ w=w.toLowerCase(); return n===w || n.indexOf(w)>=0; }); });
+          if(!sel.length) return {ok:false,msg:"No file named "+want.join(", ")+" — the files on hand: "+(material.map(function(f){ return f.name; }).join(", ")||"none")+"."};
+          var q=(aiAsstHistory.filter(function(m){ return m&&m.role==="user"; }).pop()||{}).text||""; if(a&&a.why) q+="\n(What to look for: "+a.why+")";
+          return aiAsstReadInParts(q, sel, aiAsstThinkingEl, { stopWhenAnswered: !(a&&a.all) }).then(function(res){
+            if(!res) return {ok:false,msg:"The reading was stopped."};
+            aiAsstHistory.push({ role:"notes", text:res.notes, parts:res.parts, files:res.files }); aiAsstPersist();
+            return {ok:true,msg:"Read "+res.files.join(", ")+" ("+res.parts+(res.of?" of "+res.of:"")+" part"+(res.parts===1?"":"s")+").",data:{ notes:res.notes }};
+          });
+        });
+      },
       read_rates: function(){
-        var out=INDEX_CATALOG.map(function(cat){ var c=INDEX_CACHE[cat.id], v=c?c.value:cat.fallback; return { id:cat.id, name:cat.label, percent:aiR(v,4), source: c && !c.saved ? "live, fetched "+fmtWhenShort(c.fetchedAt) : rateSourceText(cat.id) }; });
+        var out=INDEX_CATALOG.map(function(cat){ var c=INDEX_CACHE[cat.id], v=c?c.value:cat.fallback;
+          if(!cat.live) return { id:cat.id, name:cat.label, percent:null, source:"not a market rate — each loan on it uses its own typed value (the 5% in the app is only a placeholder)" };   // 2.9.9
+          return { id:cat.id, name:cat.label, percent:aiR(v,4), source: c && !c.saved ? "live, fetched "+fmtWhenShort(c.fetchedAt) : rateSourceText(cat.id) }; });
         return { ok:true, msg:"Read the "+out.length+" market rates the app holds (not fetched again — use fetch_live_rate for today’s).", data:out };
       },
       read_documents: function(a){
@@ -11399,6 +11565,9 @@ tr.flagged:hover td{background:#fee2e2}
         var att=hit[0], names=[].concat((a&&a.names)||(a&&a.name)||[]).filter(Boolean), keys=[];
         for(var i=0;i<names.length;i++){ var r=aiAsstResolveProp(names[i]), bad=aiAsstPropMiss(r, names[i]); if(bad) return bad; if(keys.indexOf(r.key)<0) keys.push(r.key); }
         return att.fileObj.arrayBuffer().then(function(buf){ var bytes=new Uint8Array(buf);
+          // 2.9.9 (fix 2) — a workbook with several parts: the card says which part goes to which property
+          var info0=opPartsInfo(bytes, att.name);
+          if(info0 && info0.multi) return opSha1(bytes).then(function(sha){ return aiAsstPartsCard({ name:att.name, bytes:bytes, text:att.text||"", type:(att.fileObj&&att.fileObj.type)||"", label:att.label||"", sha:sha }, info0, keys.length===1 ? keys[0] : (aiAsstFocusPropKey||""), { lead:"Save <b>"+escapeHtml(att.name)+"</b>." }); });
           return docPlanTargets(att.name, bytes, att.text||"", keys).then(function(plan){
             if(!plan.length) return {ok:false,msg:'"'+att.name+'" doesn’t name a property in the app — tell me which properties to save it to.'};
             var b64=opBytesToB64(bytes);
@@ -11672,7 +11841,7 @@ tr.flagged:hover td{background:#fee2e2}
     function opFileTargets(name, text, grid, fallbackKey){
       var props = opProperties();
       var out = { keys: [], detected: "other", matched: [], unmatched: [], roleByKey: {}, ambiguous: [], via: "", sheetByKey: {}, sheets: [], unmatchedSheets: [] };
-      function scoreAll(nm){ return props.map(function(p){ return { key: p.key, name: p.name, s: rrMatchScore(nm, p.name) }; }).filter(function(x){ return x.s >= 0.6; }).sort(function(a, b){ return b.s - a.s; }); }
+      function scoreAll(nm){ return props.map(function(p){ return { key: p.key, name: p.name, s: propNameScore(nm, p.key, p) }; }).filter(function(x){ return x.s >= 0.6; }).sort(function(a, b){ return b.s - a.s; }); }   // 2.9.9 — every name it goes by
       // → a key, or null; a tie at the top is recorded as ambiguous (asked about), never picked.
       function matchName(nm, role){ if(!nm || /^\(property\)$/i.test(nm)) return null; var sc = scoreAll(nm); if(!sc.length) return null;
         var top = sc.filter(function(x){ return x.s === sc[0].s; });
@@ -11733,6 +11902,196 @@ tr.flagged:hover td{background:#fee2e2}
         if(found) out.push({ key: p.key, found: found });
       });
       return out;
+    }
+    // ── 2.9.9 (fixes 2, 3, 4) — the card that asks which part of a file is whose ─────────────────────────────────
+    // One row per part (a sheet, or a property's section on a rent-roll sheet): a tick box and a property list (your
+    // properties; "Add as a new property" last — never set for you). The property you're on is set on its part when
+    // the app can tell (your earlier answer for this file or last month's, a name or code, or the file's only data
+    // part); otherwise nothing is set and the card asks. In a property chat only that property's part is ticked.
+    async function opSha1(bytes){ try{ var h = await crypto.subtle.digest("SHA-1", bytes); return Array.prototype.map.call(new Uint8Array(h), function(b){ return ("0" + b.toString(16)).slice(-2); }).join(""); }catch(e){ return ""; } }
+    function opPartsDefaults(info, ctxKey, fileName, sha, mode){
+      var byKey = {}; opProperties().forEach(function(p){ var r = gdRecordsOf(p.key); if(r.length) byKey[p.key] = r; });
+      var sug = FileParts.suggestFromRecords(info, byKey, fileName, sha), used = {};
+      Object.keys(sug).forEach(function(no){ used[sug[no]] = 1; });
+      info.parts.forEach(function(p){ if(sug[p.no] != null) return;
+        // only a suggestion you see and approve, so a looser match than reading uses (0.6: two shared words, as the
+        // rent-roll importer always did) — a tie is never suggested
+        var bm = propBestMatch(FileParts.partName(p), 0.6) || (p.title ? propBestMatch(p.title, 0.6) : null) || (/\d{3,}/.test(p.sheet) ? propBestMatch(p.sheet, 1) : null);
+        if(bm && !bm.key) bm = null;
+        if(bm && bm.key && !used[bm.key]){ sug[p.no] = bm.key; used[bm.key] = 1; } });
+      var ctxPart = null; Object.keys(sug).forEach(function(no){ if(sug[no] === ctxKey) ctxPart = +no; });
+      if(ctxKey && ctxPart == null){ var data = info.parts.filter(function(p){ return p.kind !== "sheet"; });
+        if(data.length === 1 && sug[data[0].no] == null){ sug[data[0].no] = ctxKey; ctxPart = data[0].no; } }
+      var rows = {}; info.parts.forEach(function(p){ var k = sug[p.no] || ""; rows[p.no] = { key: k, tick: !!k && (mode !== "chat" || k === ctxKey) }; });
+      return { rows: rows, ctxPart: ctxPart };
+    }
+    function opPartKindText(p){ return p.kind === "t12" ? "T12" : (p.kind === "rentroll" ? "Rent roll" : "Sheet"); }
+    function opPartsRowsHtml(info, defaults, ctxKey){
+      var props = opProperties().slice().sort(function(a, b){ return String(a.name || a.key).localeCompare(String(b.name || b.key)); }), ctxP = ctxKey ? opProp(ctxKey) : null;
+      return info.parts.map(function(p){
+        var d = defaults.rows[p.no] || {}, sel = d.key || "", nn = PropNames.baseName(FileParts.partName(p)) || p.sheet;
+        var opt = function(k, label){ return '<option value="'+escapeHtml(k)+'"'+(sel === k ? ' selected' : '')+'>'+escapeHtml(label)+'</option>'; };
+        var opts = opt("", "Don’t link") + (ctxP ? opt(ctxKey, ctxP.name + " (this property)") : "") +
+          props.filter(function(x){ return x.key !== ctxKey; }).map(function(x){ return opt(x.key, x.name); }).join("") +
+          '<option value="__new__">➕ Add as a new property “'+escapeHtml(nn)+'”</option>';
+        return '<div class="py-1.5 border-b border-slate-200/70 last:border-0" data-partrow="'+p.no+'">'+
+          '<label class="flex items-start gap-2 cursor-pointer"><input type="checkbox" class="mt-0.5 h-3.5 w-3.5 accent-emerald-600" data-partuse="'+p.no+'"'+(d.tick ? ' checked' : '')+'>'+
+          '<span class="min-w-0"><span class="block text-[12px] font-semibold text-slate-700">'+escapeHtml(FileParts.partLabel(p, info.sheetsCount))+'</span>'+
+          '<span class="block text-[11px] text-slate-500">'+opPartKindText(p)+(p.info ? ' · '+escapeHtml(p.info) : '')+'</span></span></label>'+
+          '<select data-partsel="'+p.no+'" class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">'+opts+'</select></div>';
+      }).join("");
+    }
+    // Picking a property ticks the row; a property picked on one row leaves every other row (one part per property).
+    document.addEventListener("change", function(e){
+      var t = e.target; if(!t || !t.getAttribute) return;
+      if(t.hasAttribute("data-partsel")){
+        var box = t.closest("[data-partscard]") || document, no = t.getAttribute("data-partsel"), v = t.value;
+        var cb = box.querySelector('[data-partuse="'+no+'"]'); if(cb) cb.checked = !!v;
+        if(v && v !== "__new__") box.querySelectorAll("[data-partsel]").forEach(function(o){ if(o !== t && o.value === v){ o.value = ""; var c2 = box.querySelector('[data-partuse="'+o.getAttribute("data-partsel")+'"]'); if(c2) c2.checked = false; } });
+      }
+    });
+    function opPartsChoices(container, info){
+      return info.parts.map(function(p){ var cb = container.querySelector('[data-partuse="'+p.no+'"]'), sl = container.querySelector('[data-partsel="'+p.no+'"]');
+        return { part: p, use: !!(cb && cb.checked), key: sl ? sl.value : "" }; });
+    }
+    function opPartsIntro(fileName, info, ctxKey, defaults, mode){
+      var ctxN = ctxKey ? ((opProp(ctxKey) || {}).name || ctxKey) : "";
+      var head = '“'+escapeHtml(fileName)+'” has '+info.parts.length+' parts'+(info.sheetsCount > 1 ? ' on '+info.sheetsCount+' sheets' : '')+'. ';
+      if(!ctxKey) return head + 'Pick the property for each part you want to link — a part with no property is left out.';
+      if(defaults.ctxPart != null) return head + 'Part '+defaults.ctxPart+' is set to <b>'+escapeHtml(ctxN)+'</b>'+(mode === "chat" ? ' — other parts are linked only if you tick them.' : '.')+' Check it, change anything, then approve.';
+      return head + '<b>Which part is '+escapeHtml(ctxN)+'’s?</b> Pick it below — nothing is set for you.';
+    }
+    // The card as a window (Documents, Underwriting, the rent-roll importer, Data Health's Answer). → choices | null
+    function askFileParts(fileName, info, ctxKey, opts){
+      opts = opts || {};
+      var defaults = opPartsDefaults(info, ctxKey, fileName, opts.sha || "", opts.mode || "page");
+      return new Promise(function(res){
+        var m = document.createElement("div");
+        m.className = "fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4"; m.setAttribute("data-partsmodal", "");
+        m.innerHTML = '<div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" data-partscard>'+
+          '<h3 class="text-base font-bold text-slate-900">Which part of this file belongs to which property?</h3>'+
+          '<p class="mt-1 text-sm text-slate-600">'+opPartsIntro(fileName, info, ctxKey, defaults, opts.mode)+'</p>'+
+          '<div class="mt-3 rounded-xl border border-slate-200 px-3">'+opPartsRowsHtml(info, defaults, ctxKey)+'</div>'+
+          '<p class="mt-2 text-[11px] text-slate-400">Each property keeps its answer (sheet number and name) and reads only its own part — never another property’s numbers. Nothing is saved until you approve.</p>'+
+          '<p class="mt-1 hidden text-[12px] font-semibold text-rose-600" data-partserr></p>'+
+          '<div class="mt-4 flex justify-end gap-2"><button type="button" data-partscancel class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>'+
+          '<button type="button" data-partsok class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white">Approve</button></div></div>';
+        document.body.appendChild(m);
+        var done = function(v){ try{ m.remove(); }catch(e){} res(v); };
+        m.querySelector("[data-partscancel]").addEventListener("click", function(){ done(null); });
+        m.querySelector("[data-partsok]").addEventListener("click", function(){
+          var ch = opPartsChoices(m, info), bad = ch.filter(function(c){ return c.use && !c.key; });
+          if(bad.length){ var er = m.querySelector("[data-partserr]"); er.textContent = "Pick a property for part "+bad.map(function(c){ return c.part.no; }).join(", ")+" — or untick it."; er.classList.remove("hidden"); return; }
+          done(ch); });
+      });
+    }
+    // Link the chosen parts: the file goes to each property (or, already there, is pointed at its part), and each
+    // property's general-data.json records its part. src: { name, b64, bytes, text, type, label, sha }.
+    // opts.keepInCtx — the file stays in the context property's documents even when none of its parts is linked
+    // there (recorded "none", so it is not asked again). → { linked:[{key,name,label,kind}], created:[], none:[], failed:[] }
+    async function opApplyPartChoices(src, info, choices, ctxKey, opts){
+      opts = opts || {};
+      var out = { linked: [], created: [], none: [], failed: [] }, who = opOperator(), when = new Date().toISOString();
+      var sha = src.sha || (src.bytes ? await opSha1(src.bytes) : "");
+      if(!src.b64 && src.bytes) src.b64 = opBytesToB64(src.bytes);
+      var t12Keys = [], rrKeys = [], touched = {};
+      var use = choices.filter(function(c){ return c.use && c.key; });
+      for(var i = 0; i < use.length; i++){
+        var c = use[i], k = c.key, part = c.part;
+        if(k === "__new__"){
+          var nm = PropNames.baseName(FileParts.partName(part)) || part.sheet, cc = propCreateCheck(nm);
+          if(cc.kind === "exists" || cc.kind === "loan") k = cc.key;
+          else if(cc.kind === "archived"){ out.failed.push(nm + " (an archived property has that name — restore it first)"); continue; }
+          else { k = await opCreatePropertyNamed(nm); if(!k){ out.failed.push(nm); continue; } out.created.push(nm); }
+        }
+        var pr = opProp(k) || {}, role = part.kind === "t12" ? "t12" : (part.kind === "rentroll" ? "rentroll" : (opts.role || "other"));
+        try{
+          var have = null; try{ var dl = await ldsShell.docList(k); have = ((dl && dl.files) || []).find(function(f){ return sha && f.sha === sha; }) || null; }catch(e){}
+          if(have){
+            if(have.role !== role && !APP_DOC_ROLES[have.role || ""]) await ldsShell.docSetRole(k, have.id, role);
+            await ldsShell.docSetMeta({ propKey: k, id: have.id, sheet: part.sheet || "", section: part.section || "" });
+          } else {
+            var r = await ldsShell.docSave({ propKey: k, propName: pr.name || k, name: src.name, base64: src.b64, text: src.text || "", type: src.type || "", role: role, label: src.label || "", sheet: part.sheet || "", section: part.section || "" });
+            if(!r || !r.ok){ out.failed.push(pr.name || k); continue; }
+            if(!sha && r.file && r.file.sha) sha = r.file.sha;
+          }
+          await opRecordFilePart(k, FileParts.makeRecord(src.name, sha, info, part, who, when));
+          touched[k] = 1; out.linked.push({ key: k, name: pr.name || opPropDisplayName(k), label: FileParts.partLabel(part, info.sheetsCount), kind: part.kind });
+          if(role === "t12") t12Keys.push(k); if(role === "rentroll") rrKeys.push(k);
+        }catch(e){ out.failed.push(pr.name || k); }
+      }
+      if(ctxKey && !touched[ctxKey] && opProp(ctxKey)){
+        try{
+          var dl2 = await ldsShell.docList(ctxKey), have2 = ((dl2 && dl2.files) || []).find(function(f){ return sha && f.sha === sha; });
+          if(have2 || opts.keepInCtx){
+            if(!have2){ var r2 = await ldsShell.docSave({ propKey: ctxKey, propName: (opProp(ctxKey) || {}).name || ctxKey, name: src.name, base64: src.b64, text: src.text || "", type: src.type || "", role: "other", label: src.label || "" }); if(!sha && r2 && r2.file) sha = r2.file.sha; }
+            else if(have2.role === "t12" || have2.role === "rentroll") await ldsShell.docSetRole(ctxKey, have2.id, "other");   // none of its parts is this property's — never read as its T12 / rent roll
+            await opRecordFilePart(ctxKey, FileParts.makeRecord(src.name, sha, info, null, who, when));
+            out.none.push((opProp(ctxKey) || {}).name || ctxKey);
+          }
+        }catch(e){}
+      }
+      rrKeys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
+      Object.keys(touched).concat(ctxKey ? [ctxKey] : []).forEach(function(k){ try{ delete loanRRCache[k]; opPartsWaitSet(k, "t12", []); opPartsWaitSet(k, "rentroll", []); }catch(e){} });
+      if(t12Keys.length || out.none.length){ try{ await opAfterT12Saved(t12Keys.concat(ctxKey && out.none.length ? [ctxKey] : [])); }catch(e){} }
+      try{ redrawAll(); }catch(e){} try{ renderDocsPanel(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
+      try{ if(el("uwView") && !el("uwView").hidden){ if(opFocusKey && touched[opFocusKey]) await opSelectProperty(opFocusKey, { skipAutoPush: true }); renderUnderwriting(); } }catch(e){}
+      try{ noteChange("Linked the parts of " + src.name); }catch(e){}
+      return out;
+    }
+    // In words — the same in a toast, a chat card's result and what Claude is told (2.9.9, fix 5).
+    function opPartsResultText(fileName, out){
+      var bits = [];
+      if(out.linked.length) bits.push("Linked “"+fileName+"”: "+out.linked.map(function(l){ return l.name+" ← "+l.label; }).join("; ")+".");
+      if(out.created.length) bits.push("Created "+(out.created.length === 1 ? "a new property" : out.created.length+" new properties")+": "+out.created.join(", ")+".");
+      if(out.none.length) bits.push("Kept in "+out.none.join(", ")+"’s documents with no part linked (not asked again).");
+      if(out.failed.length) bits.push("Couldn’t link: "+out.failed.join(", ")+".");
+      return bits.join(" ") || "Nothing was linked.";
+    }
+    // "Answer" (Data Health, Documents, Underwriting): ask about a file already saved in a property.
+    async function opAnswerFileParts(key, fileName){
+      try{
+        var dl = await ldsShell.docList(key), f = ((dl && dl.files) || []).filter(function(x){ return x.name === fileName && !APP_DOC_ROLES[x.role || ""]; }).sort(function(a, b){ return b.savedAt - a.savedAt; })[0];
+        if(!f){ toast("“"+fileName+"” isn’t in this property’s documents any more.", "info"); return null; }
+        var r = await opPartsInfoForFile(key, f); if(!r || !r.info){ toast("Couldn’t read “"+fileName+"”.", "error"); return null; }
+        var ch = await askFileParts(f.name, r.info, key, { sha: f.sha, mode: "page" }); if(!ch) return null;
+        var out = await opApplyPartChoices({ name: f.name, bytes: r.bytes, text: "", type: f.type || "", label: f.readLabel || "", sha: f.sha }, r.info, ch, key, {});
+        toast(opPartsResultText(f.name, out), out.failed.length ? "error" : "check");
+        try{ renderDataHealth(); }catch(e){}
+        return out;
+      }catch(e){ return null; }
+    }
+    document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-partsanswer]"); if(!b) return; e.preventDefault(); opAnswerFileParts(b.getAttribute("data-partsanswer"), b.getAttribute("data-partsfile")); });
+    function opPartsAnswerBtn(key, fileName, label){ return '<button type="button" class="underline font-semibold" data-partsanswer="'+escapeHtml(key)+'" data-partsfile="'+escapeHtml(fileName)+'">'+(label || "Answer")+'</button>'; }
+    // The same card in the assistant chat (a file attached with several parts, a rent-roll import, or a saved file
+    // Claude is about to read that has no answer yet). → { ok, pending } (the approval card)
+    function aiAsstPartsCard(src, info, ctxKey, opts){
+      opts = opts || {};
+      var mode = ctxKey ? "chat" : "page", defaults = opPartsDefaults(info, ctxKey, src.name, src.sha || "", mode);
+      if(opts.ctxPartNo && ctxKey){ Object.keys(defaults.rows).forEach(function(no){ if(defaults.rows[no].key === ctxKey){ defaults.rows[no] = { key: "", tick: false }; } });
+        defaults.rows[opts.ctxPartNo] = { key: ctxKey, tick: true }; defaults.ctxPart = opts.ctxPartNo; }   // the section Claude named for this property
+      var intro = (opts.lead ? opts.lead + " " : "") + opPartsIntro(src.name, info, ctxKey, defaults, mode);
+      var plain = info.parts.map(function(p){ var d = defaults.rows[p.no] || {}; var nm = d.key ? ((opProp(d.key) || {}).name || d.key) : "no property"; return "Part "+p.no+": "+FileParts.partLabel(p, info.sheetsCount)+" → "+nm+(d.tick ? " (ticked)" : " (not ticked)"); }).join("\n");
+      return aiAsstApprovalCard(intro, '<div data-partscard>'+opPartsRowsHtml(info, defaults, ctxKey)+'</div>', function(picked, bub){
+        var ch = opPartsChoices(bub || document, info), loose = ch.filter(function(c){ return c.use && !c.key; }).map(function(c){ return c.part.no; });
+        return opApplyPartChoices(src, info, ch, ctxKey, { keepInCtx: opts.keepInCtx !== false, role: opts.role }).then(function(out){ return (opts.after ? Promise.resolve(opts.after(out)).catch(function(){}) : Promise.resolve()).then(function(){ return out; }); }).then(function(out){
+          try{ var att = aiAsstConvFileTexts.find(function(x){ return x.name === src.name; }); if(att && out.linked.length) att.text = "[Which part is whose (the operator's answer): "+out.linked.map(function(l){ return l.label+" → "+l.name; }).join("; ")+". Use each part's figures ONLY for its own property.]\n"+String(att.text || "").replace(/^\[Which part is whose[^\n]*\n/, ""); }catch(e){}
+          var txt = opPartsResultText(src.name, out) + (loose.length ? " Part "+loose.join(", ")+" was ticked with no property — left out." : "");
+          return { ok: out.linked.length > 0 || out.none.length > 0, html: (out.linked.length ? "✓ " : "") + escapeHtml(txt), toast: out.linked.length ? "Linked " + src.name : "",
+            data: { linked: out.linked.map(function(l){ return l.name+" ← "+l.label; }), createdNewProperties: out.created, keptWithNoPart: out.none, failed: out.failed } };
+        });
+      }, { approveLabel: "Approve", cardText: plain });
+    }
+    // Excel files with several parts, split from the rest (they go through the card). → { multi:[{src, info}], rest:[File] }
+    function opSplitMultiPart(files, texts){
+      texts = texts || {};
+      return Promise.all(Array.prototype.slice.call(files || []).map(function(f){
+        if(!opIsSheetFile(f.name)) return Promise.resolve({ rest: f });
+        return f.arrayBuffer().then(function(buf){ var bytes = new Uint8Array(buf), info = opPartsInfo(bytes, f.name);
+          if(!info || !info.multi) return { rest: f };
+          return opSha1(bytes).then(function(sha){ return { multi: { src: { name: f.name, bytes: bytes, text: texts[f.name] || "", type: f.type || "", label: "", sha: sha }, info: info } }; });
+        }).catch(function(){ return { rest: f }; });
+      })).then(function(list){ return { multi: list.filter(function(x){ return x.multi; }).map(function(x){ return x.multi; }), rest: list.filter(function(x){ return x.rest; }).map(function(x){ return x.rest; }) }; });
     }
     // "Which property is this for?" — a small chooser; resolves the picked key, or null (not filed).
     function askWhichProperty(fileName, keys, found){
@@ -11796,6 +12155,7 @@ tr.flagged:hover td{background:#fee2e2}
       (acc.unmatchedSheets||[]).forEach(function(x){ msgs.push("Sheet “"+x.sheet+"”"+(x.top && x.top !== x.sheet ? " ("+x.top+")" : "")+" of “"+x.file+"” fits no property in the app — add the property, or ask the assistant to save it to one"); });
       acc.noText.forEach(function(x){ msgs.push("Saved “"+x.name+"”, but its text can't be read"+(/\.doc$/i.test(x.name)?" (.doc: save it as .docx or PDF)":(x.note?" ("+x.note+")":""))); });
       if(acc.failed.length) msgs.push("Couldn't save: "+acc.failed.join(", "));
+      (acc.parts||[]).forEach(function(x){ msgs.push(x); });   // 2.9.9 — what the parts card linked
       if(msgs.length) toast(msgs.join(" · "), acc.failed.length ? "error" : ((acc.noText.length||acc.dup.length||acc.read.length||acc.stopped.length) ? "info" : "check"));
       if(acc.unmatched.length) toast(acc.unmatched.length+" propert"+(acc.unmatched.length>1?"ies aren't":"y isn't")+" in the app yet — add "+(acc.unmatched.length>1?"them":"it")+" to file "+(acc.unmatched.length>1?"these":"this")+".","info");
       renderDocsPanel(); try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs();
@@ -11868,6 +12228,19 @@ tr.flagged:hover td{background:#fee2e2}
       opts = opts || {};
       var files=Array.prototype.slice.call(list||[]); if(!files.length || !docsAvailable()) return Promise.resolve();
       var acc=newSaveAcc();
+      // 2.9.9 (fix 2) — a workbook with several parts (sheets, or properties' sections) never goes anywhere by itself:
+      // the card asks which part is whose, one file at a time; the rest are filed as before.
+      if(!opts.noParts) return opSplitMultiPart(files).then(function(sp){
+        return sp.multi.reduce(function(pr, m){ return pr.then(function(){
+          return askFileParts(m.src.name, m.info, fallbackKey || "", { sha: m.src.sha, mode: "page" }).then(function(ch){
+            if(!ch){ acc.skipped.push(m.src.name); return; }
+            return opApplyPartChoices(m.src, m.info, ch, fallbackKey || "", { keepInCtx: true, role: opts.role }).then(function(out){ acc.parts = acc.parts || []; acc.parts.push(opPartsResultText(m.src.name, out)); if(out.failed.length) acc.failed.push(m.src.name); });
+          }); }); }, Promise.resolve()).then(function(){
+            if(!sp.rest.length){ saveAccSummary(acc); return; }
+            return aiSaveFilesToProp(sp.rest, fallbackKey, fallbackName, Object.assign({}, opts, { noParts: true, acc: acc }));
+          });
+      });
+      if(opts.acc) acc = opts.acc;
       return Promise.all(files.map(function(file){
         var memo = fileReadMemo && fileReadMemo.has(file);
         if(!memo && READ_KINDS.test(file.name||"") && ldsShell.readqAdd){
@@ -11921,7 +12294,7 @@ tr.flagged:hover td{background:#fee2e2}
             '<div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold text-slate-800">'+escapeHtml(f.name)+'</div>'+
               '<div class="text-[11px] text-slate-400">'+fmtBytes(f.size)+' · saved '+escapeHtml(new Date(f.savedAt).toLocaleDateString())+(f.textLen?'':' · <span class="text-amber-600">no readable text</span>')+'</div>'+
               (f.readLabel ? '<div class="text-[11px] '+(/OCR|couldn/i.test(f.readLabel)?'text-amber-700':'text-slate-500')+'" data-docread>'+escapeHtml(f.readLabel)+'</div>' : '')+   // 2.9.8 (d4) — how it was read
-              (f.sheet ? '<div class="text-[11px] text-slate-500">sheet “'+escapeHtml(f.sheet)+'” is this property’s</div>' : '')+'</div>'+
+              (opIsSheetFile(f.name) ? '<div class="text-[11px] text-slate-500" data-docpart="'+escapeHtml(f.id)+'"></div>' : '')+'</div>'+   // 2.9.9 — which part of the file is this property's (filled in below)
             '<select data-doctype="'+escapeHtml(f.id)+'" title="What this document is" class="shrink-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-600">'+typeOpts(f.role||"other")+'</select>'+
             '<button type="button" data-docsave="'+f.id+'" class="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Save copy</button>'+
             '<button type="button" data-docdel="'+f.id+'" class="shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50">Remove</button>'+
@@ -11940,6 +12313,13 @@ tr.flagged:hover td{background:#fee2e2}
             '</div>'+
           '</div>'+rows+'</div>';
         host.querySelectorAll('[data-docdel]').forEach(function(b){ b.addEventListener('click', function(){ var f=files.find(function(x){ return x.id===b.getAttribute('data-docdel'); }); if(f) docRemoveAsk(propKey, f); }); });
+        // 2.9.9 (fixes 1, 2) — a workbook with several parts says which part is this property's, or asks
+        files.filter(function(f){ return opIsSheetFile(f.name); }).reduce(function(pr, f){ return pr.then(function(){ return opResolvePart(propKey, f, null).then(function(rp){
+          var slot = host.querySelector('[data-docpart="'+f.id+'"]'); if(!slot || !rp || !rp.info || !rp.info.multi) return;
+          if(rp.part) slot.innerHTML = 'This property’s part: '+escapeHtml(FileParts.partLabel(rp.part, rp.info.sheetsCount))+(rp.status === "name" ? ' <span class="text-amber-700">(by its name — not confirmed)</span> · '+opPartsAnswerBtn(propKey, f.name, "Confirm") : ' · '+opPartsAnswerBtn(propKey, f.name, "Change"));
+          else if(rp.status === "none") slot.innerHTML = 'None of its '+rp.info.parts.length+' parts is this property’s · '+opPartsAnswerBtn(propKey, f.name, "Change");
+          else if(rp.status === "unknown"){ slot.className = "text-[11px] font-semibold text-amber-700"; slot.innerHTML = 'It has '+rp.info.parts.length+' parts — which one is this property’s? Its numbers aren’t used until you say. '+opPartsAnswerBtn(propKey, f.name, "Answer"); }
+        }); }); }, Promise.resolve()).catch(function(){});
         host.querySelectorAll('[data-doctype]').forEach(function(sel){ sel.addEventListener('change', function(){ var id=sel.getAttribute('data-doctype'), f=files.find(function(x){ return x.id===id; }), was=f&&f.role;
           ldsShell.docSetRole(propKey, id, sel.value).then(function(rr){
             if(!rr||!rr.ok){ toast("Couldn’t change its type"+(rr&&rr.error?" ("+rr.error+")":"")+".","error"); renderDocsPanel(); return; }
@@ -12178,7 +12558,9 @@ tr.flagged:hover td{background:#fee2e2}
     // "Recalled from earlier" note so it is never silent.
     var AI_RECALL_MIN = 6;    // minimum chat-search score to pull a past conversation into context
     var AI_RECALL_MAX = 2;    // at most 2 recalled conversations — bounds the added tokens (cost)
-    var AI_RECALL_STOP={the:1,and:1,for:1,are:1,was:1,were:1,what:1,whats:1,how:1,does:1,did:1,you:1,this:1,that:1,with:1,about:1,tell:1,show:1,give:1,please:1,per:1,its:1,they:1,them:1,have:1,has:1,had:1,from:1,into:1,your:1,our:1,can:1,could:1,would:1,should:1,will:1,any:1,all:1,not:1,but:1,which:1,when:1,where:1,who:1};
+    // 2.9.9 (fix 9) — and the words nearly every chat in this app has, which say nothing about what a question is about
+    var AI_RECALL_STOP={app:1,every:1,hold:1,holds:1,come:1,comes:1,value:1,values:1,file:1,files:1,read:1,reading:1,list:1,property:1,properties:1,info:1,information:1,thing:1,things:1,want:1,need:1,know:1,make:1,just:1,also:1,like:1,look:1,see:1,check:1,say:1,said:1,one:1,new:1,get:1,use:1,used:1,here:1,there:1,now:1,yes:1,okay:1,
+      the:1,and:1,for:1,are:1,was:1,were:1,what:1,whats:1,how:1,does:1,did:1,you:1,this:1,that:1,with:1,about:1,tell:1,show:1,give:1,please:1,per:1,its:1,they:1,them:1,have:1,has:1,had:1,from:1,into:1,your:1,our:1,can:1,could:1,would:1,should:1,will:1,any:1,all:1,not:1,but:1,which:1,when:1,where:1,who:1};
     // Content-word query for recall: drop punctuation, stopwords and short tokens so it matches
     // on what the question is ABOUT, not on "what/the/is". Also drop the focused property's own
     // name — it is implied by the scope, and would otherwise match every chat about that property.
@@ -12187,6 +12569,9 @@ tr.flagged:hover td{background:#fee2e2}
       return String(q||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/)
         .filter(function(t){ return t.length>=3 && !AI_RECALL_STOP[t] && !strip[t]; }).slice(0,12).join(" ");
     }
+    // 2.9.7 (#244) at least 2 different words in common; 2.9.9 (fix 9) and RELATED: the title shares a word with the
+    // question, or one message has two of its words close together (a long chat has any two words somewhere).
+    function aiAsstRecallRelated(m){ return !!m && m.hitTerms >= 2 && (m.titleHit !== undefined ? (m.titleHit || m.near) : true); }
     // A slim, visible note above the answer naming which past conversations were recalled.
     function aiAsstRecallNote(picks){
       var log=el("aiAsstLog"); if(!log||!picks||!picks.length) return;
@@ -12204,11 +12589,51 @@ tr.flagged:hover td{background:#fee2e2}
       if(!q) return Promise.resolve({query:"", picks:[]});
       return ldsShell.chatSearch({query:q, scopes:scopes, wholeWords:true}).then(function(r){
         var ms=(r&&r.matches)||[];
-        var picks=ms.filter(function(m){ return m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — the same rule as a real turn
+        var picks=ms.filter(aiAsstRecallRelated).slice(0, AI_RECALL_MAX);   // the same rule as a real turn
         return { query:q, total:ms.length, picks:picks.map(function(m){ return {title:m.title, scope:m.scope, score:m.score, hitTerms:m.hitTerms, role:m.role, snippet:m.snippet}; }) };
       });
     };
 
+    // ── 2.9.9 (fixes 1, 2) — what Claude reads of a property's saved workbooks: only this property's part ─────────
+    var aiAsstPartsAsked = {};   // file sha → asked about in this conversation (not asked again if you cancel)
+    function opTextForPart(text, info, part){
+      var t = String(text || ""), head = "[This file holds "+info.parts.length+" parts; THIS property's part is "+FileParts.partLabel(part, info.sheetsCount)+
+        (part.section ? " — use ONLY the section “"+part.section+"”; the other sections on that sheet belong to other properties" : "")+". The other sheets are left out.]\n";
+      if(!/^# Sheet: /m.test(t)) return head + t;
+      var blocks = t.split(/\n(?=# Sheet: )/), mine = blocks.filter(function(b){ return b.replace(/^\n+/, "").indexOf("# Sheet: " + part.sheet + "\n") === 0; });
+      return head + (mine.length ? mine.join("\n") : t);
+    }
+    // Before Claude reads a property's saved files in its chat: a workbook with several parts and no answer gets the
+    // card first (once per conversation). Then the text Claude gets holds only this property's part of each.
+    async function aiAsstAskUnansweredParts(key){
+      try{
+        var dl = await ldsShell.docList(key), files = ((dl && dl.files) || []).filter(function(f){ return opIsSheetFile(f.name) && !APP_DOC_ROLES[f.role || ""]; });
+        for(var i = 0; i < files.length; i++){ var f = files[i], ak = f.sha || (key + "|" + f.id); if(aiAsstPartsAsked[ak]) continue;
+          var r = await opResolvePart(key, f, null); if(!r.info || !r.info.multi || r.status !== "unknown") continue;
+          aiAsstPartsAsked[ak] = 1;
+          var fb = await opPartsInfoForFile(key, f);
+          var c = aiAsstPartsCard({ name: f.name, bytes: fb && fb.bytes, text: "", type: f.type || "", label: f.readLabel || "", sha: f.sha }, r.info, key,
+            { keepInCtx: false, lead: "Before Claude reads “"+escapeHtml(f.name)+"”: this property has no answer yet for which part of it is its own." });
+          if(c && c.pending) await c.pending;
+        }
+      }catch(e){}
+    }
+    async function aiAsstScopeDocText(key, docTxt){
+      if(!key || !docTxt || !docTxt.text || !docsAvailable()) return docTxt;
+      try{
+        var dl = await ldsShell.docList(key), files = ((dl && dl.files) || []).filter(function(f){ return opIsSheetFile(f.name) && !APP_DOC_ROLES[f.role || ""]; }), by = {};
+        for(var i = 0; i < files.length; i++){ var f = files[i]; if(by[f.name]) continue; var r = await opResolvePart(key, f, null); if(r.info && r.info.multi) by[f.name] = r; }
+        if(!Object.keys(by).length) return docTxt;
+        var text = docTxt.text.replace(/<file name="([^"]*)"((?: read="[^"]*")?)>\n([\s\S]*?)\n<\/file>/g, function(all, nm, rd, body){
+          var r = by[nm]; if(!r) return all;
+          var inner = r.part ? opTextForPart(body, r.info, r.part)
+            : (r.status === "none" ? "[None of this file's "+r.info.parts.length+" parts is this property's (the operator said so) — its figures belong to other properties and are left out.]"
+            : "[This file has "+r.info.parts.length+" parts and the operator hasn't said yet which one is this property's — its figures are left out so another property's numbers are never used. Ask the operator to answer the card (Documents → Answer).]");
+          return '<file name="'+nm+'"'+rd+'>\n'+inner+'\n</file>';
+        });
+        return Object.assign({}, docTxt, { text: text });
+      }catch(e){ return docTxt; }
+    }
     // 2.9.7 (#49, #55, #242, #243, #98) — the assistant loop. A reply may carry several actions; they run in
     // order (a change waits for its Approve card), every result goes back to Claude, and Claude keeps working
     // until the request is finished — then it reports what it did. Everything (the cards and their outcomes,
@@ -12242,13 +12667,18 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstSetBusy(true);
       // Persist attachments — routed by CONTENT to the property folder(s) they belong to, falling back to the
       // focused property, so a file dropped in the assistant always lands in at least one folder.
+      var before = Promise.resolve();
       if(toSave.length && docsAvailable()){
-        var fobjs = toSave.map(function(f){ return f.fileObj; }).filter(Boolean);
-        // 2.9.8 — filed by CONTENT in any chat (a T12 naming six properties goes to all six — problem 1); the fallback
-        // is the chat's own property only, never one guessed from the words of a general chat.
-        if(fobjs.length){ try{ aiSaveFilesToProp(fobjs, focusKey || "", focusName || ""); }catch(e){} }
+        var fobjs = toSave.map(function(f){ return f.fileObj; }).filter(Boolean), texts = {}; toSave.forEach(function(f){ texts[f.name] = f.text || ""; });
+        // 2.9.8 — filed by CONTENT in any chat; the fallback is the chat's own property only, never one guessed from
+        // the words of a general chat. 2.9.9 (fixes 2, 4) — a workbook with several parts first gets the card here in
+        // the chat: the chat's property is set on its part, other parts are linked only if you tick them.
+        if(fobjs.length) before = opSplitMultiPart(fobjs, texts).then(function(sp){
+          if(sp.rest.length){ try{ aiSaveFilesToProp(sp.rest, focusKey || "", focusName || "", { noParts: true }); }catch(e){} }
+          return sp.multi.reduce(function(pr, m){ return pr.then(function(){ var c = aiAsstPartsCard(m.src, m.info, focusKey || ""); return c && c.pending; }); }, Promise.resolve());
+        }).catch(function(){});
       }
-      aiAsstTurn({ question: question, focusKey: readKey, focusName: readName, general: !focusKey, round: 0, fresh: !!ready.length });
+      before.then(function(){ aiAsstTurn({ question: question, focusKey: readKey, focusName: readName, general: !focusKey, round: 0, fresh: !!ready.length }); });
     }
     // 2.9.7 (#53, #56) — every property, not only the ones with an active loan: loan-less and archived ones too,
     // so Claude never says a property doesn't exist when it is just archived or has no loan yet.
@@ -12262,10 +12692,11 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The files of this conversation, sent whole with every message (#243); when everything is more than one message
     // can hold, they are read in parts instead (#250).
-    function aiAsstFilesBlock(){
-      if(!aiAsstConvFileTexts.length) return "";
+    function aiAsstFilesBlock(inSet){
+      var list = aiAsstConvFileTexts.filter(function(f){ return !inSet || inSet(f.name); });   // 2.9.9 (fix 6)
+      if(!list.length) return "";
       return "Files attached in this conversation — their extracted text (each page is marked; \"read by OCR — may contain errors\" marks a page read from a scan, \"could not be read\" a page that is missing):\n"+
-        aiAsstConvFileTexts.map(function(f){ return '<file name="'+escapeHtml(f.name)+'"'+(f.label?' read="'+escapeHtml(f.label)+'"':'')+'>\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
+        list.map(function(f){ return '<file name="'+escapeHtml(f.name)+'"'+(f.label?' read="'+escapeHtml(f.label)+'"':'')+'>\n'+f.text+'\n</file>'; }).join("\n\n")+"\n\n";
     }
     // ── 2.9.7 (#250, choice 1a) — reading in parts. When the files (attached + the focused property's saved documents)
     // are more than Claude can read in one message, Claude reads them part by part, keeping notes — exact figures with
@@ -12273,7 +12704,7 @@ tr.flagged:hover td{background:#fee2e2}
     // text stays with the files, so a follow-up question reads them in parts again.
     var AI_ONE_MESSAGE_CHARS = 400000, AI_PART_CHARS = 300000;
     try{ var _pc=Number(localStorage.getItem("lds.asstPartChars")); if(_pc>=1000){ AI_PART_CHARS=_pc; AI_ONE_MESSAGE_CHARS=Math.round(_pc*4/3); } }catch(e){}   // (tests)
-    var AI_PARTS_SYSTEM = "You read long documents for the Loan Debt Service Hub's assistant, one part at a time, so it can answer the operator's question. Keep NOTES: copy every fact that bears on the question exactly as written — figures, dates, names, rates, terms — each with its file name and page number (the text marks pages as [page N]); say when a page was \"read by OCR — may contain errors\" and list pages that \"could not be read\". Add to the notes you are given; never drop earlier notes. Reply with the complete updated notes only — no preamble.";
+    var AI_PARTS_SYSTEM = "You read long documents for the Loan Debt Service Hub's assistant, one part at a time, so it can answer the operator's question. After the notes, end with one last line: ANSWERED: yes — when the notes now fully answer the question — otherwise ANSWERED: no. Keep NOTES: copy every fact that bears on the question exactly as written — figures, dates, names, rates, terms — each with its file name and page number (the text marks pages as [page N]); say when a page was \"read by OCR — may contain errors\" and list pages that \"could not be read\". Add to the notes you are given; never drop earlier notes. Reply with the complete updated notes only — no preamble.";
     function aiAsstMaterial(docTxt){
       var out=aiAsstConvFileTexts.map(function(f){ return { name:f.name, label:f.label||"", text:f.text||"", from:"attached" }; });
       if(docTxt && docTxt.text){ var re=/<file name="([^"]*)"(?: read="([^"]*)")?>\n([\s\S]*?)\n<\/file>/g, m; while((m=re.exec(docTxt.text))){ if(!out.some(function(o){ return o.name===m[1]; })) out.push({ name:m[1], label:m[2]||"", text:m[3], from:"saved" }); } }
@@ -12289,9 +12720,12 @@ tr.flagged:hover td{background:#fee2e2}
       if(cur) parts.push(cur);
       return parts;
     }
-    function aiAsstReadInParts(question, material, thinking){
-      var parts=aiAsstSplitParts(material), n=parts.length, names=material.map(function(f){ return f.name; });
-      aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>'+(material.length===1?"This file is long":"These files are long")+' — Claude is reading '+(material.length===1?"it":"them")+' in '+n+' parts.</span>');
+    function aiAsstReadInParts(question, material, thinking, opts){
+      opts=opts||{};
+      var parts=aiAsstSplitParts(material), n=parts.length, names=material.map(function(f){ return f.name; }), stoppedAt=0;
+      // 2.9.9 (fix 6) — which files are read (and which are not), then the parts
+      var only = (opts.skipped && opts.skipped.length) ? 'Reading only '+names.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+' — not needed for this: '+opts.skipped.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'. ' : '';
+      aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>'+only+(only ? 'Claude is reading '+(material.length===1?"it":"them") : (material.length===1?"This file is long":"These files are long")+' — Claude is reading '+(material.length===1?"it":"them"))+' in '+n+' part'+(n===1?'':'s')+(opts.stopWhenAnswered && n>1 ? ', and stops as soon as it has the answer' : '')+'.</span>');
       var setT=function(i){ if(thinking) thinking.innerHTML='<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> Reading part '+i+' of '+n+'…</span>'; };
       var notes="";
       return parts.reduce(function(pr, part, i){ return pr.then(function(ok){ if(ok===false || aiAsstStopped) return false; setT(i+1);
@@ -12300,7 +12734,40 @@ tr.flagged:hover td{background:#fee2e2}
         return ldsShell.aiChat({ system: AI_PARTS_SYSTEM, prompt: prompt, timeoutMs: 300000, cancelToken: token }).then(function(r){
           if(aiAsstStopped || (r && r.canceled)) return false;
           if(!r || !r.ok) throw new Error((r && r.error) || "reading a part failed");
-          notes=String(r.text||"").trim(); return true; }); }); }, Promise.resolve(true)).then(function(ok){ return (ok===false || aiAsstStopped) ? null : { notes:notes, parts:n, files:names }; });
+          var txt=String(r.text||"").trim(), m=txt.match(/\n?\s*ANSWERED:\s*(yes|no)\s*\.?\s*$/i);
+          notes=m ? txt.slice(0, m.index).trim() : txt;
+          if(m && /yes/i.test(m[1]) && opts.stopWhenAnswered && i < n-1){ stoppedAt=i+1; return false; }   // 2.9.9 (fix 6) — it has the answer: the rest isn't read
+          return true; }); }); }, Promise.resolve(true)).then(function(ok){
+            if(stoppedAt && !aiAsstStopped){ aiAsstBubble("assistant", '<span class="text-slate-600" data-readstopped>Found the answer in part '+stoppedAt+' of '+n+' — the rest wasn’t read.</span>'); return { notes:notes, parts:stoppedAt, of:n, files:names }; }
+            return (ok===false || aiAsstStopped) ? null : { notes:notes, parts:n, files:names }; });
+    }
+    // ── 2.9.9 (fix 6) — understand the task first, then read only the files it needs ─────────────────────────────
+    // When a message's files are long, one quick call decides which of them can answer it (none, when the conversation
+    // or the notes already do, or when the message asks to DO something); only those are read, in parts, and the reading
+    // stops as soon as the answer is found — unless the operator asked to read everything.
+    var AI_PLAN_CHARS = Math.round(AI_ONE_MESSAGE_CHARS / 4);
+    var AI_PLAN_SYSTEM = "You decide, BEFORE anything is read, which of the files below must be read to answer the operator's message — the fewest that can answer it. Rules: a message that asks the app to DO something (import, save, link, approve, delete, change…) and needs no figure from a file reads none; a message the conversation or the notes already answer reads none; rents, units or occupancy → the rent roll; income, expenses or NOI → the T12; loan terms (rate, maturity, prepayment, reserves, covenants) → the loan agreement; read every file only when the operator explicitly asks to read all of them. Reply with JSON only, no prose: {\"read\":[\"exact file names, most useful first\"],\"readAll\":false,\"why\":\"one short sentence\"}";
+    function aiAsstWantsAll(q){ q=String(q||"").toLowerCase();
+      return /\b(read|go through|review|scan)\b[^.?!]{0,30}\b(all|every|each|whole|entire)\b/.test(q) || /\b(all|every|each)\s+(of\s+)?(the\s+|its\s+|his\s+|these\s+)?(files|documents|docs)\b/.test(q) ||
+        /\bread\s+(the|its|these|all)\s+(files|documents|docs)\b/.test(q) || /\b(whole|entire|full)\s+(loan\s+)?(agreement|document|file)\b/.test(q) || /\bkeep reading\b/.test(q); }
+    function aiAsstPlanRead(question, material, focusKey){
+      var rolesP = (focusKey && docsAvailable()) ? ldsShell.docList(focusKey).then(function(dl){ var m={}; ((dl&&dl.files)||[]).forEach(function(f){ m[f.name]=f.role||""; }); return m; }).catch(function(){ return {}; }) : Promise.resolve({});
+      return rolesP.then(function(roles){
+        var list = material.map(function(f){ var head=String(f.text||"").replace(/\s+/g," ").slice(0, 280), r=roles[f.name];
+          return '- "'+f.name+'" · '+(f.from==="attached"?"attached in this chat":"saved")+(r?" · type: "+(profileDocLabel(r)||r):"")+" · "+f.text.length.toLocaleString()+" characters · begins: "+head; }).join("\n");
+        var hist = aiAsstHistory.filter(function(m){ return m && m !== aiAsstPendingTurn && m.role !== "notes" && m.role !== "card"; }).slice(-6).map(function(m){ return aiAsstThreadText(m).slice(0, 500); }).filter(Boolean).join("\n");
+        var notes = aiAsstHistory.filter(function(m){ return m && m.role === "notes"; }).map(function(m){ return "Notes from "+(m.files||[]).join(", ")+":\n"+String(m.text||"").slice(0, 4000); }).slice(-2).join("\n\n");
+        var prompt = "The operator's message: "+(question||"(no words — files were attached)")+"\n\n"+(hist?("Recent conversation:\n"+hist+"\n\n"):"")+(notes?("Notes already taken in this chat:\n"+notes+"\n\n"):"")+"Files:\n"+list;
+        var token="q"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); aiAsstToken=token;
+        return ldsShell.aiChat({ system: AI_PLAN_SYSTEM, prompt: prompt, timeoutMs: 90000, cancelToken: token }).then(function(r){
+          if(!r || !r.ok) return null;
+          var m = String(r.text||"").match(/\{[\s\S]*\}/); if(!m) return null;
+          var j = null; try{ j = JSON.parse(m[0]); }catch(e){ return null; }
+          var names = material.map(function(f){ return f.name; }), pick = [];
+          (Array.isArray(j.read) ? j.read : []).forEach(function(x){ var hit = names.find(function(n){ return n.toLowerCase() === String(x).toLowerCase(); }) || names.find(function(n){ return n.toLowerCase().indexOf(String(x).toLowerCase()) >= 0; }); if(hit && pick.indexOf(hit) < 0) pick.push(hit); });
+          return { read: pick, readAll: !!j.readAll, why: String(j.why||"") };
+        }).catch(function(){ return null; });
+      });
     }
     // How a thread entry reads for Claude.
     function aiAsstThreadText(m){
@@ -12318,12 +12785,13 @@ tr.flagged:hover td{background:#fee2e2}
     function aiAsstSinceCompact(list){ var i=-1; list.forEach(function(m, j){ if(m && m.role==="compact") i=j; }); return i<0 ? list : list.slice(i); }
     // One round: build the prompt from the CURRENT app state, ask Claude, then act on its reply.
     function aiAsstTurn(t){
+      if(!t.round && !t.general && t.focusKey && docsAvailable() && !t._partsAsked){ t._partsAsked = true; aiAsstAskUnansweredParts(t.focusKey).then(function(){ aiAsstTurn(t); }); return; }   // 2.9.9 (fix 2)
       var focusKey=t.focusKey, focusName=t.focusName, question=t.question;
       var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token; aiAsstStopped=false;
       var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> '+(t.round ? "Working on it…" : "Thinking…")+'</span>');
       aiAsstThinkingEl=thinking;
       var idxP = docsAvailable() ? ldsShell.docIndex().catch(function(){return null;}) : Promise.resolve(null);
-      var txtP = (focusKey && docsAvailable()) ? ldsShell.docText(focusKey).catch(function(){return null;}) : Promise.resolve(null);
+      var txtP = (focusKey && docsAvailable()) ? ldsShell.docText(focusKey).catch(function(){return null;}).then(function(dt){ return aiAsstScopeDocText(focusKey, dt); }) : Promise.resolve(null);   // 2.9.9 — only this property's part of each workbook
       var recallScopes=[]; if(focusKey) recallScopes.push(focusKey); recallScopes.push("portfolio");
       var recallQ = t.round ? "" : aiAsstRecallQuery(question, focusName);
       var recallP = (chatsAvailable() && recallQ) ? ldsShell.chatSearch({query:recallQ, scopes:recallScopes, wholeWords:true}).catch(function(){return null;}) : Promise.resolve(null);
@@ -12332,6 +12800,30 @@ tr.flagged:hover td{background:#fee2e2}
         var docIdx=dres[0], docTxt=dres[1], recall=dres[2];
         // 2.9.7 (#250) — everything Claude should read; when it's more than one message holds, it is read in parts first
         var material=aiAsstMaterial(docTxt), matChars=material.reduce(function(a2,m2){ return a2+m2.text.length; },0);
+        // 2.9.9 (fix 6) — long files: decide first which of them this message needs; read only those
+        if(!t.round && !t.notes && !t.planned && matChars>AI_PLAN_CHARS && material.length){
+          t.planned = true;
+          var readAll = aiAsstWantsAll(question);
+          var planP = readAll ? Promise.resolve({ read: material.map(function(f){ return f.name; }), readAll: true, why: "you asked to read all of them" }) : aiAsstPlanRead(question, material, focusKey);
+          planP.then(function(plan){
+            if(aiAsstStopped){ aiAsstStopped=false; aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
+            var all = material.map(function(f){ return f.name; });
+            if(!plan) plan = { read: all, readAll: false, why: "" };   // the plan couldn't be made — read them all, as before (still stopping when answered)
+            var sel = plan.read.map(function(nm){ return material.find(function(f){ return f.name === nm; }); }).filter(Boolean), skipped = all.filter(function(nm){ return plan.read.indexOf(nm) < 0; });
+            var selChars = sel.reduce(function(a2,m2){ return a2+m2.text.length; },0);
+            t.readSet = sel.map(function(f){ return f.name; }); t.skipped = skipped; t.plan = plan;
+            if(!sel.length){ aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>Not reading any file for this'+(plan.why?' — '+escapeHtml(plan.why):'')+'. (Files on hand: '+all.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'.)</span>'); aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall }); return; }
+            if(selChars <= AI_ONE_MESSAGE_CHARS){
+              if(skipped.length) aiAsstBubble("assistant", '<span class="text-slate-600" data-readparts>Reading only '+t.readSet.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+' — not needed for this: '+skipped.map(function(x){ return '“'+escapeHtml(x)+'”'; }).join(", ")+'.</span>');
+              aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall }); return; }
+            aiAsstReadInParts(question, sel, thinking, { stopWhenAnswered: !plan.readAll, skipped: skipped }).then(function(res){
+              if(!res){ if(aiAsstStopped){ aiAsstStopped=false; } aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
+              aiAsstHistory.push({ role:"notes", text:res.notes, parts:res.parts, files:res.files }); aiAsstPersist();
+              t.notes=res; aiAsstTurnSend(t, thinking, { docIdx:docIdx, docTxt:docTxt, recall:recall });
+            }).catch(function(err){ aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstShowError(String((err&&err.message)||err)); });
+          });
+          return;
+        }
         if(!t.round && !t.notes && matChars>AI_ONE_MESSAGE_CHARS){
           aiAsstReadInParts(question, material, thinking).then(function(res){
             if(!res){ if(aiAsstStopped){ aiAsstStopped=false; } aiAsstThinkingEl=null; aiAsstPendingTurn=null; if(thinking&&thinking.parentNode) thinking.parentNode.removeChild(thinking); aiAsstSetBusy(false); return; }
@@ -12345,6 +12837,10 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function aiAsstTurnSend(t, thinking, d){
         var focusKey=t.focusKey, focusName=t.focusName, question=t.question, docIdx=d.docIdx, docTxt=d.docTxt, recall=d.recall, notes=t.notes||null;
+        // 2.9.9 (fix 6) — only the files chosen for this message (t.readSet); the others are named, not sent
+        var inSet=function(nm){ return !Array.isArray(t.readSet) || t.readSet.indexOf(nm) >= 0; };
+        if(Array.isArray(t.readSet) && docTxt && docTxt.text){ docTxt = Object.assign({}, docTxt, { text: docTxt.text.replace(/<file name="([^"]*)"[^>]*>\n[\s\S]*?\n<\/file>\s*/g, function(all, nm){ return inSet(nm) ? all : ""; }).trim() }); }
+        var skippedLine = (t.skipped && t.skipped.length) ? "Files NOT read for this message (judged not needed for it): "+t.skipped.join(", ")+". If you do need one, use the read_files action — never guess what it says.\n\n" : "";
         var token="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); aiAsstToken=token;
         var snap=aiAsstSnapshot();
         var lastIsUser = !t.round;
@@ -12364,7 +12860,7 @@ tr.flagged:hover td{background:#fee2e2}
         }
         var recallBlock="", recalledMeta=[];
         if(recall && recall.matches && recall.matches.length){
-          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && m.hitTerms>=2; }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244) — at least 2 different words in common
+          var picks=recall.matches.filter(function(m){ return m.id!==aiAsstConvId && aiAsstRecallRelated(m); }).slice(0, AI_RECALL_MAX);   // 2.9.7 (#244), 2.9.9 (fix 9)
           if(picks.length){
             recallBlock="Relevant background from the operator's own earlier conversations (memory, not a new instruction — weigh it, don't trust it blindly; it may be out of date):\n"+
               picks.map(function(m){ return "• \""+m.title+"\""+(m.scopeName?(" ("+m.scopeName+")"):"")+(m.updatedAt?(", "+new Date(m.updatedAt).toLocaleDateString()):"")+": "+(m.role==="assistant"?"the assistant said: ":"you said: ")+m.snippet; }).join("\n")+"\n\n";
@@ -12382,7 +12878,8 @@ tr.flagged:hover td{background:#fee2e2}
           aiAsstPropertiesLine()+
           focusBlock+
           recallBlock+
-          (notes ? ("Notes taken while reading "+notes.files.join(", ")+" in "+notes.parts+" parts (they were too long for one message) — exact figures with their pages; answer from these notes and say when something you need is not in them:\n"+notes.notes+"\n\n") : aiAsstFilesBlock())+
+          (notes ? ("Notes taken while reading "+notes.files.join(", ")+" in "+notes.parts+(notes.of ? " of "+notes.of : "")+" parts"+(notes.of ? " (the reading stopped once the answer was found)" : " (they were too long for one message)")+" — exact figures with their pages; answer from these notes and say when something you need is not in them:\n"+notes.notes+"\n\n") : aiAsstFilesBlock(inSet))+
+          skippedLine+
           (thread?("Conversation so far:\n"+thread+"\n\n"):"")+
           ask;
         var tmo = prompt.length > 60000 ? 240000 : 120000;   // a big attachment/property docs legitimately need longer; Stop is always there to bail out
@@ -12554,7 +13051,7 @@ tr.flagged:hover td{background:#fee2e2}
         var c=r.conversation;
         if(aiAsstBusy) aiAsstStop();
         aiAsstHistory=(c.messages||[]).map(function(m){ return Object.assign({}, m); });   // 2.9.7 (#98) — cards, results and outcomes come back too
-        aiAsstConvFileTexts=[];
+        aiAsstConvFileTexts=[]; aiAsstPartsAsked={};
         aiAsstConvId=c.id; aiAsstConvScope=c.scope||scope; aiAsstConvTitle=c.title||""; aiAsstConvFiles=c.files||[]; aiAsstConvPinned=!!c.pinned;
         aiAsstFocusPropKey=(c.scope && c.scope!=="portfolio") ? c.scope : ""; aiAsstFillProps();   // 2.9.8 — a general chat reopens as general
         aiAsstRenderThread();
@@ -12677,7 +13174,7 @@ tr.flagged:hover td{background:#fee2e2}
     // welcome. The loans themselves are untouched — this only frees the assistant's context.
     function aiAsstNewSession(opts){
       if(aiAsstBusy) aiAsstStop();
-      aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[];
+      aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[]; aiAsstPartsAsked={};
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
       aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
       aiAsstToggleHistory(false);
@@ -12779,7 +13276,7 @@ tr.flagged:hover td{background:#fee2e2}
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
     // Global "Fetch live rate" (title bar) — available on every tab.
-    if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", fetchAllLiveRates);
+    if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", function(){ fetchAllLiveRates({ list: true }); });
     // 2.9.4 — Explain/Check modal retired (the AI assistant explains and sanity-checks a loan on request).
     // AI: the in-app assistant (desktop shell only) — floating button opens a chat
     // that answers questions and performs safe actions on request.

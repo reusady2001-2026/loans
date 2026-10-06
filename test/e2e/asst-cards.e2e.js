@@ -53,7 +53,8 @@ const CSV=['Rent Roll','Unit,Unit Type,Unit,Resident,Name,Market,Actual',',,Sq F
   const RK=await page.evaluate(async(csv)=>{ const k=await window.LDS_addProperty('Card Rent Court'); await window.ldsShell.docSave({propKey:k,propName:'Card Rent Court',name:'card-rentroll.csv',base64:btoa(csv),text:'',type:'text/csv',role:'other'}); return k; },CSV);
   await page.waitForTimeout(300);
   r=await run({action:'import_rent_roll',args:{name:'Card Rent Court',file:'card-rentroll.csv'}});
-  ok(r.card&&/Card Rent Court/.test(r.text)&&/2 units, 1 occupied/.test(r.text)&&/update/.test(r.text),'the card shows what will be imported (2 units, 1 occupied → update Card Rent Court)');
+  const sel1=await page.evaluate(()=>{ const c=[...document.querySelectorAll('#aiAsstLog [data-asstcard]')].pop(); const s=c&&c.querySelector('[data-partsel]'), b=c&&c.querySelector('[data-partuse]'); return { v:s?s.value:'', t:!!(b&&b.checked) }; });
+  ok(r.card&&/Card Rent Court/.test(r.text)&&/2 units, 1 occupied/.test(r.text)&&sel1.v===RK&&sel1.t,'the card shows what will be imported (2 units, 1 occupied → Card Rent Court, set and ticked) — 2.9.9: the parts card');
   res=await click('aiAsstEditApprove'); await page.waitForTimeout(600);
   const RR=await page.evaluate(async(k)=>{ const d=await window.ldsShell.docList(k); return (d.files||[]).filter(f=>f.role==='rentroll').map(f=>f.name); },RK);
   ok(res&&res.ok&&RR.includes('card-rentroll.csv'),'approved → filed as the property’s rent roll');

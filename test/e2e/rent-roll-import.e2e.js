@@ -39,14 +39,17 @@ const CSV=[
   await page.waitForFunction(()=>{ const b=document.getElementById('rrImportBody'); return b && /Maple Court/.test(b.innerText||'') && /Oak Plaza/.test(b.innerText||''); },null,{timeout:8000});
   const modal=await page.evaluate(()=>document.getElementById('rrImportBody').innerText||'');
   ok(/Maple Court/.test(modal) && /Oak Plaza/.test(modal),'the modal lists both properties from the file');
-  ok(/add new/i.test(modal),'…each shown as "add new" (not in the portfolio yet)');
+  // 2.9.9 (fixes 2, 3) — a section that fits no property is set to nothing: "Add as a new property" is offered, never set
+  const sel0=await page.evaluate(()=>[...document.querySelectorAll('#rrImportBody [data-partsel]')].map(s=>({ v:s.value, add:[...s.options].some(o=>o.value==='__new__') })));
+  ok(sel0.length===2&&sel0.every(x=>x.v===''&&x.add),'…each set to nothing, with "Add as a new property" offered (never set for you)');
   ok(/2 units/.test(modal),'…with its summary (2 units)');
-  const st=await page.evaluate(()=>{ const s=window.LDS_rentRollImportState(); return s?s.rows.map(r=>({name:r.block.name, key:r.key, units:r.block.residentialUnits})):null; });
-  ok(st && st.length===2 && st.every(r=>r.key===null),'both are matched as new (no existing key)');
+  const st=await page.evaluate(()=>{ const s=window.LDS_rentRollImportState(); return s?s.rows.map(r=>({name:r.block.name, key:r.key})):null; });
+  ok(st && st.length===2 && st.every(r=>r.key===null),'neither is matched to an existing property');
 
-  // import
+  // pick "Add as a new property" for both, then import
+  await page.evaluate(()=>{ document.querySelectorAll('#rrImportBody [data-partsel]').forEach(s=>{ s.value='__new__'; s.dispatchEvent(new Event('change',{bubbles:true})); }); });
   await page.click('#rrImportApply');
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(()=>document.getElementById('rrImportModal').classList.contains('hidden'),null,{timeout:10000}).catch(()=>{});
   ok(await page.evaluate(()=>document.getElementById('rrImportModal').classList.contains('hidden')),'the modal closes after import');
   const n1=await page.evaluate(()=>window.opProperties().length);
   ok(n1===29,'both properties were added to the portfolio (29)');
