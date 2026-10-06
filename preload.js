@@ -132,7 +132,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   docIndex: () => ipcRenderer.invoke('lds:doc-index'),
   log: (line) => { try { ipcRenderer.send('lds:log', String(line || '').slice(0, 2000)); } catch (e) {} },   // 2.9.8 — a line in userData/logs/main.log
   // The concatenated extracted text of a property's documents (bounded). Resolves {ok,text,files}.
-  docText: (propKey) => ipcRenderer.invoke('lds:doc-text', { propKey }),
+  docText: (propKey, opts) => ipcRenderer.invoke('lds:doc-text', { propKey, records: !!(opts && opts.records) }),   // 2.9.10 — records: the app's own records too
   // Read one original file back (base64) to open/export it. Resolves {ok,base64,name,type}.
   docTextPart: (opts) => ipcRenderer.invoke('lds:doc-text-part', opts || {}),   // 2.9.7 — {propKey,name|id,part,partSize} → {ok,name,text,part,parts,chars,readable}
   docRead: (propKey, id) => ipcRenderer.invoke('lds:doc-read', { propKey, id }),

@@ -4330,7 +4330,7 @@ tr.flagged:hover td{background:#fee2e2}
         const parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
         const series = GeneralData.monthlySeries(parsedM, opClassifyLine);
         const existing = await opLoadGeneralData(key); if(!existing) return false;
-        const gd = GeneralData.merge(existing, series, { propKey: key, identity: existing.identity, noi: existing.noi, now: new Date().toISOString(), keepExisting: true });
+        const gd = GeneralData.merge(existing, series, { propKey: key, noi: existing.noi, now: new Date().toISOString(), keepExisting: true });
         await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd;
         return true;
       }catch(e){ return false; }
@@ -4559,7 +4559,8 @@ tr.flagged:hover td{background:#fee2e2}
     }
     async function opWriteGeneralDataFile(key, gd){
       if(!key || !(window.ldsShell && ldsShell.docSave)) return;
-      try{ var json = JSON.stringify(gd), bytes = new TextEncoder().encode(json), str = "";
+      // 2.9.10 — every write drops an old copy of the name, address or units (the profile is their one source)
+      try{ var json = JSON.stringify((window.GeneralData && GeneralData.strip) ? GeneralData.strip(gd) : gd), bytes = new TextEncoder().encode(json), str = "";
         for(var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
         var pr = opProp(key);
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
@@ -4692,7 +4693,7 @@ tr.flagged:hover td{background:#fee2e2}
               if(sr && sr.propertyAddress && !Profile.value(prof, "propertyAddress")) Profile.setField(prof, "propertyAddress", String(sr.propertyAddress).trim(), { changedBy: opOperator() });
               profileCache[p.key] = prof; await opWriteProfile(p.key, prof);
             }
-            if(needGD) await opWriteGeneralDataFile(p.key, { propKey: p.key, propertyName: p.name, noT12: true, note: "no T12 yet", createdAt: new Date().toISOString() });
+            if(needGD) await opWriteGeneralDataFile(p.key, { propKey: p.key, noT12: true, note: "no T12 yet", createdAt: new Date().toISOString() });   // 2.9.10 — the name is in profile.json
             res.made.push({ key: p.key, name: p.name });
           }catch(e){}
         }
@@ -5218,9 +5219,9 @@ tr.flagged:hover td{background:#fee2e2}
         var ctx = await opSetupFromDisk(key); if(!ctx) return null;
         var series = GeneralData.monthlySeries(ctx.parsedM, opClassifyLine);
         var noi = opGDNoi(ctx); noi.computedWith = await opComputeVersion();
-        var identity = { propertyName: ctx.p ? ctx.p.name : key, address: (ctx.sr && ctx.sr.propertyAddress) || null, units: propUnits(key) };
+        // 2.9.10 — no copy of the name, address or units here: they live in the property's profile only
         var existing = await opLoadGeneralData(key);
-        var gd = GeneralData.merge(existing, series, { propKey: key, identity: identity, noi: noi, now: new Date().toISOString() });
+        var gd = GeneralData.merge(existing, series, { propKey: key, noi: noi, now: new Date().toISOString() });
         delete gd.noT12; delete gd.note;   // 2.9.8 — the "no T12 yet" starter file becomes the real record
         if(existing && existing.push) gd.push = existing.push;                 // 2.9.7 (#78) — the saved "what to push" survives a rebuild;
         if(existing && existing.assumptions) gd.assumptions = existing.assumptions;   // whether it is stale is decided by what it was run on
@@ -6457,7 +6458,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
-    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
+    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_indexCatalog=()=>INDEX_CATALOG.map(c=>({id:c.id,label:c.label,live:!!c.live,fallback:c.fallback})); window.LDS_gdPersistExtras=(k,extras)=>{ delete gdFullCache[k]; return opPersistGeneralExtras(k, extras); }; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
     try{ window.LDS_aiAsstOpenConv=(sc,id)=>aiAsstOpenConv(sc,id); window.LDS_aiAsstSystem=()=>AI_ASST_SYSTEM; }catch(e){}   // 2.9.8 diagnostics
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; window.LDS_readFileBytes=(name,b64,stopAfterPage)=>{ const c={stopped:false}; return fileTextFromBytes(name, opB64ToBytes(b64), { cancel:c, onProgress:(o)=>{ if(stopAfterPage && o.page>=stopAfterPage && !o.pct) c.stopped=true; } }); }; window.LDS_resumeReadingQueue=()=>resumeReadingQueue(); window.LDS_asstSplitCount=(text)=>aiAsstSplitParts([{name:'x',label:'',text:text}]).length; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
@@ -8885,7 +8886,7 @@ tr.flagged:hover td{background:#fee2e2}
     // the operator has hand-overridden the yardstick's base value or spread.
     let refiTermOption = 1, refiBaseManual = false, refiSpreadManual = false, refiHoldManual = false;
     function tenorShort(id){
-      return ({ ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", sofr30:"30-day Avg SOFR", termsofr1m:"1-mo Term SOFR", prime:"Prime", effr:"EFFR" })[id]
+      return ({ ust1y:"1-yr UST", ust2y:"2-yr UST", ust3y:"3-yr UST", ust5y:"5-yr UST", ust7y:"7-yr UST", ust10y:"10-yr UST", ust20y:"20-yr UST", sofr:"SOFR", sofr30:"30-day Avg SOFR", termsofr1m:"1-mo Term SOFR", prime:"Prime", effr:"EFFR" })[id]
         || (INDEX_BY_ID[id] ? INDEX_BY_ID[id].label : id);
     }
     function refiOptBtnClass(active){
@@ -10004,7 +10005,9 @@ tr.flagged:hover td{background:#fee2e2}
     // Indices you can price a proposed loan over: SOFR + the Treasury tenors the app tracks.
     // 2.9.9 (fix 7) — the 30-day Average SOFR and 1-month Term SOFR too (2.9.7 #256 added them for loans only); each is
     // priced from its own rate.
-    const REFI_INDEX_CHOICES = ["sofr","sofr30","termsofr1m","ust1y","ust2y","ust3y","ust5y","ust7y","ust10y","ust20y","ust30y"].filter(function(id){ return !!INDEX_BY_ID[id]; });
+    // 2.9.10 — every rate the app fetches, in the app's own order (Prime and Fed Funds were missing); a rate added
+    // to INDEX_CATALOG later shows here by itself. "Other / Custom" is not a fetched rate, so it stays out.
+    const REFI_INDEX_CHOICES = INDEX_CATALOG.filter(function(c){ return c.live; }).map(function(c){ return c.id; });
     // The honest rate build-up shown at the top of the proposed loan: a rate-type toggle,
     // the base-index picker, an editable spread (0 by default on the fixed side, the
     // comp-derived margin on the floating side), and the resulting rate spelled out —
@@ -10719,6 +10722,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
       "FILES WITH SEVERAL PARTS (a workbook with several sheets, or a rent roll with several properties' sections on one sheet): the app never decides by itself which part is whose. A card lists every part with a list of the operator's properties: in a property chat this property is set on its part when the app can tell (or the section you name), the other parts start unticked, and \"Add as a new property\" is never set — only the operator picks it. Each property keeps the answer (sheet number X, section Y) in its general-data.json and reads ONLY its own part. In the text you get, a multi-part file of this property holds only its own part; a part not answered yet is left out — never use another part's figures for this property, and when one isn't answered say so and point to the card (Documents → Answer). Saving, importing, copying or moving such a file always goes through that card.",
+      "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, the T12 review decisions, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json only.",
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
@@ -11488,7 +11492,8 @@ tr.flagged:hover td{background:#fee2e2}
             noi: { fromT12InPlace: g&&g.inPlace!=null?aiR(g.inPlace):undefined, fromT12Underwritten: g&&g.underwritten!=null?aiR(g.underwritten):undefined, basis: g?noiMethodLabel(g):undefined, entered: entered!=null?aiR(entered):(propEnteredNOI(key)!=null?aiR(propEnteredNOI(key)):undefined), operatorOverride: propNOIOverride(key)!=null?aiR(propNOIOverride(key)):undefined },
             assumptions: { ownToThisProperty: !!saved, vacancy:b.vacancyPct, managementFee:b.mgmtPct, reservePerUnit:b.reservePerUnit, payrollPerUnit:b.benchmarks&&b.benchmarks.PAY, repairsPerUnit:b.benchmarks&&b.benchmarks.RM, sizing:b.sizing, lineOverrides: b.lineOverrides&&Object.keys(b.lineOverrides).length?b.lineOverrides:undefined },
             t12: t12, rentRoll: rent, refinance: p&&p.loans.length ? aiAsstRefiRead(p.loans[0]) : undefined,
-            documents: dl&&dl.ok ? (dl.files||[]).map(function(f){ return f.name+(f.textLen?"":" (no readable text)"); }) : undefined };
+            documents: dl&&dl.ok ? (dl.files||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""]; }).map(function(f){ return f.name+(f.textLen?"":" (no readable text)"); }) : undefined,
+            appRecords: dl&&dl.ok ? (dl.files||[]).filter(function(f){ return APP_DOC_ROLES[f.role||""]; }).map(function(f){ return f.name; }) : undefined };   // 2.9.10
           return { ok:true, msg:"Read "+r.name+".", data:data };
         });
       },
@@ -11496,7 +11501,7 @@ tr.flagged:hover td{background:#fee2e2}
       read_files: function(a){
         var want=[].concat((a&&a.files)||(a&&a.file)||[]).map(String).filter(Boolean); if(!want.length) return {ok:false,msg:"Name the file(s) to read."};
         var key=aiAsstFocusPropKey||"";
-        var txtP=(key && docsAvailable()) ? ldsShell.docText(key).then(function(dt){ return aiAsstScopeDocText(key, dt); }).catch(function(){ return null; }) : Promise.resolve(null);
+        var txtP=(key && docsAvailable()) ? ldsShell.docText(key, { records: true }).then(function(dt){ return aiAsstScopeDocText(key, dt); }).catch(function(){ return null; }) : Promise.resolve(null);
         return txtP.then(function(dt){
           var material=aiAsstMaterial(dt), sel=material.filter(function(f){ var n=f.name.toLowerCase(); return want.some(function(w){ w=w.toLowerCase(); return n===w || n.indexOf(w)>=0; }); });
           if(!sel.length) return {ok:false,msg:"No file named "+want.join(", ")+" — the files on hand: "+(material.map(function(f){ return f.name; }).join(", ")||"none")+"."};
@@ -11517,10 +11522,11 @@ tr.flagged:hover td{background:#fee2e2}
       read_documents: function(a){
         if(!docsAvailable()) return {ok:false,msg:"Documents need the desktop app."};
         var r=aiAsstResolveProp(a&&a.name), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
-        if(!(a && a.file)) return ldsShell.docList(r.key).then(function(dl){ var fs2=(dl&&dl.files)||[];
-          return { ok:true, msg:r.name+" has "+fs2.length+" saved document"+(fs2.length===1?"":"s")+".", data: fs2.map(function(f){ return { file:f.name, kind:f.role||"other", saved: f.savedAt?new Date(f.savedAt).toISOString().slice(0,10):undefined, readableCharacters: f.textLen||0 }; }) }; });
+        if(!(a && a.file)) return ldsShell.docList(r.key).then(function(dl){ var all2=(dl&&dl.files)||[], fs2=all2.filter(function(f){ return !APP_DOC_ROLES[f.role||""]; }), recs=all2.filter(function(f){ return APP_DOC_ROLES[f.role||""]; });
+          // 2.9.10 — the app's own records are listed apart from the documents, and are readable by name
+          return { ok:true, msg:r.name+" has "+fs2.length+" saved document"+(fs2.length===1?"":"s")+(recs.length?" and "+recs.length+" of the app’s own records ("+recs.map(function(f){ return f.name; }).join(", ")+")":"")+".", data: { documents: fs2.map(function(f){ return { file:f.name, kind:f.role||"other", saved: f.savedAt?new Date(f.savedAt).toISOString().slice(0,10):undefined, readableCharacters: f.textLen||0 }; }), appRecords: recs.map(function(f){ return { file:f.name, holds: AI_RECORD_HOLDS[f.role]||"", saved: f.savedAt?new Date(f.savedAt).toISOString().slice(0,10):undefined }; }) } }; });
         return ldsShell.docTextPart({ propKey:r.key, name:String(a.file), part:a.part||1 }).then(function(t){
-          if(!t || !t.ok) return {ok:false,msg:'"'+a.file+'" isn’t among '+r.name+'’s documents'+(t&&t.files&&t.files.length?" ("+t.files.join(", ")+")":"")+"."};
+          if(!t || !t.ok) return {ok:false,msg:'"'+a.file+'" isn’t among '+r.name+'’s documents'+(t&&t.files&&t.files.length?" ("+t.files.join(", ")+")":"")+(t&&t.records&&t.records.length?" or the app’s own records ("+t.records.join(", ")+")":"")+"."};
           if(!t.readable) return {ok:false,msg:'"'+t.name+'" has no readable text (a scan the app couldn’t read).'};
           return { ok:true, msg:"Read "+t.name+(t.parts>1?" — part "+t.part+" of "+t.parts+(t.part<t.parts?" (ask for part "+(t.part+1)+" to keep reading)":""):"")+".", data:{ file:t.name, part:t.part, parts:t.parts, characters:t.chars, text:t.text } };
         });
@@ -12747,6 +12753,8 @@ tr.flagged:hover td{background:#fee2e2}
     // stops as soon as the answer is found — unless the operator asked to read everything.
     var AI_PLAN_CHARS = Math.round(AI_ONE_MESSAGE_CHARS / 4);
     var AI_PLAN_SYSTEM = "You decide, BEFORE anything is read, which of the files below must be read to answer the operator's message — the fewest that can answer it. Rules: a message that asks the app to DO something (import, save, link, approve, delete, change…) and needs no figure from a file reads none; a message the conversation or the notes already answer reads none; rents, units or occupancy → the rent roll; income, expenses or NOI → the T12; loan terms (rate, maturity, prepayment, reserves, covenants) → the loan agreement; read every file only when the operator explicitly asks to read all of them. Reply with JSON only, no prose: {\"read\":[\"exact file names, most useful first\"],\"readAll\":false,\"why\":\"one short sentence\"}";
+    // 2.9.10 — what each of the app's own records holds (the assistant's list of a property's files)
+    var AI_RECORD_HOLDS = { profile: "the Profile tab — units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes, each with where it came from", general: "the property's numbers — both NOIs, the month-by-month T12 line history, what to push, the T12 review decisions, which part of each multi-part file is its own", assumptions: "its Underwriting assumptions", history: "the history of its assumption changes" };
     function aiAsstWantsAll(q){ q=String(q||"").toLowerCase();
       return /\b(read|go through|review|scan)\b[^.?!]{0,30}\b(all|every|each|whole|entire)\b/.test(q) || /\b(all|every|each)\s+(of\s+)?(the\s+|its\s+|his\s+|these\s+)?(files|documents|docs)\b/.test(q) ||
         /\bread\s+(the|its|these|all)\s+(files|documents|docs)\b/.test(q) || /\b(whole|entire|full)\s+(loan\s+)?(agreement|document|file)\b/.test(q) || /\bkeep reading\b/.test(q); }
@@ -12791,7 +12799,7 @@ tr.flagged:hover td{background:#fee2e2}
       var thinking=aiAsstBubble("assistant", '<span class="inline-flex items-center gap-2 text-slate-500"><svg class="h-4 w-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg> '+(t.round ? "Working on it…" : "Thinking…")+'</span>');
       aiAsstThinkingEl=thinking;
       var idxP = docsAvailable() ? ldsShell.docIndex().catch(function(){return null;}) : Promise.resolve(null);
-      var txtP = (focusKey && docsAvailable()) ? ldsShell.docText(focusKey).catch(function(){return null;}).then(function(dt){ return aiAsstScopeDocText(focusKey, dt); }) : Promise.resolve(null);   // 2.9.9 — only this property's part of each workbook
+      var txtP = (focusKey && docsAvailable()) ? ldsShell.docText(focusKey, { records: aiAsstWantsAll(question) }).catch(function(){return null;}).then(function(dt){ return aiAsstScopeDocText(focusKey, dt); }) : Promise.resolve(null);   // 2.9.9 — only this property's part of each workbook
       var recallScopes=[]; if(focusKey) recallScopes.push(focusKey); recallScopes.push("portfolio");
       var recallQ = t.round ? "" : aiAsstRecallQuery(question, focusName);
       var recallP = (chatsAvailable() && recallQ) ? ldsShell.chatSearch({query:recallQ, scopes:recallScopes, wholeWords:true}).catch(function(){return null;}) : Promise.resolve(null);
@@ -12847,7 +12855,7 @@ tr.flagged:hover td{background:#fee2e2}
         var pend=aiAsstPendingTurn, hist=aiAsstHistory.filter(function(m){ return !(lastIsUser && m===pend) && !(notes && m.role==="notes" && m.text===notes.notes); });   // the question and this request's notes go right below
         var thread=aiAsstSinceCompact(hist).map(aiAsstThreadText).filter(Boolean).join("\n\n");
         var idxLine="";
-        if(docIdx && docIdx.byKey){ var names=Object.keys(docIdx.byKey).map(function(k){ var e=docIdx.byKey[k]; return e.propName?(e.propName+" ["+e.files.join(", ")+"]"):""; }).filter(Boolean); if(names.length) idxLine="Saved property documents on file (the operator can select or name a property to load its documents into this chat): "+names.join("; ")+".\n\n"; }
+        if(docIdx && docIdx.byKey){ var names=Object.keys(docIdx.byKey).map(function(k){ var e=docIdx.byKey[k], dd=e.docs||e.files||[], rr=e.records||[]; return e.propName?(e.propName+" ["+(dd.length?dd.join(", "):"no documents")+(rr.length?"; the app’s own records: "+rr.join(", "):"")+"]"):""; }).filter(Boolean); if(names.length) idxLine="Saved property documents on file (the operator can select or name a property to load its documents into this chat): "+names.join("; ")+".\n\n"; }
         var focusBlock="";
         if(focusName){
           focusBlock=(t.general ? "This is a GENERAL chat (not tied to a property); the operator's message names the property \""+focusName+"\", so its data is included. " : "The operator is focused on the property \""+focusName+"\". ");

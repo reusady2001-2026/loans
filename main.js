@@ -516,6 +516,15 @@ function docUniqueName(name, taken){
   return base + ' (' + Date.now() + ')' + ext;
 }
 function docSafeExt(name){ const e = path.extname(String(name || '')).replace(/[^.a-z0-9]/gi, ''); return e.slice(0, 12); }
+// 2.9.10 — the app's own records are readable too (the operator asked: "read all the files" must reach them). Their
+// text is the JSON itself, laid out one field per line; a record has no extracted .txt like a document has.
+const RECORD_LABEL = { profile: 'the app’s own record — the Profile tab', general: 'the app’s own record — the property’s numbers (NOIs, T12 line history, what to push, review decisions, file parts)', assumptions: 'the app’s own record — its Underwriting assumptions', history: 'the app’s own record — the history of its assumption changes' };
+function isRecord(f){ return APP_ROLES.has((f && f.role) || ''); }
+function recordText(dir, f){
+  let t = ''; try { t = fs.readFileSync(path.join(dir, f.stored || ''), 'utf8'); } catch (x) { return ''; }
+  try { return JSON.stringify(JSON.parse(t), null, 1); } catch (x) { return t; }
+}
+function fileText(dir, f){ if (isRecord(f)) return recordText(dir, f); try { return fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { return ''; } }
 function pubFile(f){ return { id: f.id, name: f.name, size: f.size, type: f.type, role: f.role || '', savedAt: f.savedAt, textLen: f.textLen || 0, sha: f.sha || '', readLabel: f.readLabel || '', sheet: f.sheet || '', section: f.section || '' }; }
 
 // Save one original file (base64) + its extracted text under a property. Replaces an
@@ -612,27 +621,32 @@ ipcMain.handle('lds:doc-index', () => {
     const root = documentsDir(); if(!fs.existsSync(root)) return { ok: true, byKey: out };
     fs.readdirSync(root).forEach(h => {
       const idx = readDocIndex(path.join(root, h));
-      if(idx.propKey && Array.isArray(idx.files) && idx.files.length) out[idx.propKey] = { propName: idx.propName || '', files: idx.files.map(f => f.name) };
+      if(idx.propKey && Array.isArray(idx.files) && idx.files.length) out[idx.propKey] = { propName: idx.propName || '', files: idx.files.map(f => f.name), docs: idx.files.filter(f => !isRecord(f)).map(f => f.name), records: idx.files.filter(isRecord).map(f => f.name) };   // 2.9.10 — documents and the app's records apart
     });
   } catch (e) {}
   return { ok: true, byKey: out };
 });
 // The concatenated extracted text of a property's documents (bounded) — what the assistant
 // reads when it's focused on that property.
-ipcMain.handle('lds:doc-text', (e, { propKey }) => {
+ipcMain.handle('lds:doc-text', (e, { propKey, records }) => {
   try {
     const dir = propDir(propKey), idx = readDocIndex(dir);
     // 2.9.7 (#212) — newest documents first; say which ones could not be read (no text) or did not fit.
-    const files = (Array.isArray(idx.files) ? idx.files : []).filter(f => !APP_ROLES.has(f.role || '')).slice().sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
-    let out = '', used = [], truncated = false; const unreadable = [], left = [];
+    // 2.9.10 — the app's own records come after the documents, and only when asked for (records: true — the operator
+    // asked to read all the files); an ordinary question reads documents only.
+    const all = Array.isArray(idx.files) ? idx.files : [];
+    const files = all.filter(f => !isRecord(f)).slice().sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
+      .concat(records ? all.filter(isRecord).slice().sort((a, b) => String(a.name).localeCompare(String(b.name))) : []);
+    let out = '', used = [], truncated = false; const unreadable = [], left = [], recs = [];
     for(const f of files){
-      let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
+      const t = fileText(dir, f);
       if(!t){ unreadable.push(f.name); continue; }
       // 2.9.7 (#250) — nothing is cut: a property's documents come back whole (the assistant reads them in parts)
-      out += '<file name="' + String(f.name).replace(/"/g, '') + '"' + (f.readLabel ? ' read="' + String(f.readLabel).replace(/"/g, '') + '"' : '') + '>\n' + t + '\n</file>\n\n';
-      used.push(f.name);
+      const label = isRecord(f) ? (RECORD_LABEL[f.role] || 'the app’s own record') : (f.readLabel || '');
+      out += '<file name="' + String(f.name).replace(/"/g, '') + '"' + (label ? ' read="' + String(label).replace(/"/g, '') + '"' : '') + '>\n' + t + '\n</file>\n\n';
+      used.push(f.name); if (isRecord(f)) recs.push(f.name);
     }
-    return { ok: true, text: out.trim(), files: used, propName: idx.propName || '', truncated, unreadable, left };
+    return { ok: true, text: out.trim(), files: used, records: recs, propName: idx.propName || '', truncated, unreadable, left };
   } catch (err) { return { ok: false, error: String((err && err.message) || err), text: '', files: [] }; }
 });
 // 2.9.7 (#53, #250) — one saved document's text, in parts (the assistant reads a long file part by part instead
@@ -640,14 +654,15 @@ ipcMain.handle('lds:doc-text', (e, { propKey }) => {
 ipcMain.handle('lds:doc-text-part', (e, { propKey, name, id, part, partSize }) => {
   try {
     const dir = propDir(propKey), idx = readDocIndex(dir);
-    const files = (Array.isArray(idx.files) ? idx.files : []).filter(f => !APP_ROLES.has(f.role || ''));
+    // 2.9.10 — documents first, then the app's own records (profile.json, general-data.json, …), which are read by name too
+    const all = Array.isArray(idx.files) ? idx.files : [], files = all.filter(f => !isRecord(f)).concat(all.filter(isRecord));
     const want = String(name || '').toLowerCase().trim();
-    const f = id ? files.find(x => x.id === id) : (files.find(x => String(x.name).toLowerCase() === want) || files.filter(x => String(x.name).toLowerCase().indexOf(want) >= 0).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))[0]);
-    if (!f) return { ok: false, error: 'not found', files: files.map(x => x.name) };
-    let t = ''; try { t = fs.readFileSync(path.join(dir, f.id + '.txt'), 'utf8'); } catch (x) { t = ''; }
+    const f = id ? files.find(x => x.id === id) : (files.find(x => String(x.name).toLowerCase() === want) || files.filter(x => String(x.name).toLowerCase().indexOf(want) >= 0).sort((a, b) => (isRecord(a) - isRecord(b)) || ((b.savedAt || 0) - (a.savedAt || 0)))[0]);
+    if (!f) return { ok: false, error: 'not found', files: all.filter(x => !isRecord(x)).map(x => x.name), records: all.filter(isRecord).map(x => x.name) };
+    const t = fileText(dir, f);
     const size = Math.max(10000, Math.min(400000, Number(partSize) || 100000));
     const parts = Math.max(1, Math.ceil(t.length / size)), p = Math.max(1, Math.min(parts, Math.round(Number(part) || 1)));
-    return { ok: true, name: f.name, role: f.role || '', savedAt: f.savedAt || 0, readable: t.length > 0, chars: t.length, part: p, parts, text: t.slice((p - 1) * size, p * size) };
+    return { ok: true, name: f.name, role: f.role || '', record: isRecord(f), savedAt: f.savedAt || 0, readable: t.length > 0, chars: t.length, part: p, parts, text: t.slice((p - 1) * size, p * size) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // 2.9.7 (#250) — the reading queue: a file added to a property's Documents is kept here (copied straight from disk

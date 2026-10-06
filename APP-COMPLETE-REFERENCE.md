@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.9 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.10 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.9
+**Current version:** 2.9.10
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -14,7 +14,7 @@ Windows install, and what comes next.*
 > `LOAN-VALIDATION-FLAGS.md`, `DESKTOP.md`, `GRADE-BOARD.md`, `INVOICE-RECONCILIATION.md`) and is meant to be
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
 > the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8"); 2.9.9 the
-> fixes from testing 2.9.8 (marked "2.9.9").
+> fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10").
 
 ---
 
@@ -109,9 +109,14 @@ Everything is stored on disk under the app's user-data folder; the browser stora
   workbook's entry records which sheet is that property's. Holding:
   - `profile.json` — the property's details, each with who / when / where-from history;
   - `assumptions.json` — its Underwriting assumptions (and pinned lines);
-  - `general-data.json` — the monthly operating series, both NOIs, the T12 double reading, "what to push";
+  - `general-data.json` — the monthly operating series, both NOIs, the T12 double reading, "what to push". **2.9.10:**
+    it keeps no copy of the property's name, address or units — those live in `profile.json` only (an old copy is
+    dropped the next time the file is saved);
   - `history.json` (2.9.7) — the change history of its assumptions;
   - the T12 file(s), rent rolls and every other document, each with its extracted text and a type.
+  - **2.9.10:** the four JSON files above are *the app's own records*. The assistant's file list names them apart
+    from your documents, and Claude reads them when you ask it to read all of a property's files, or names one
+    (`read_files` / `read_documents`); an ordinary question reads documents only.
 - **`chats/`** — the assistant's saved conversations, one folder per property plus one for the portfolio.
 - **`backups/`** — automatic snapshots (each says why it was taken) and full backups.
 - **`ocr-cache/`** (2.9.7) — pages already read by OCR, by the file's checksum, so a reading continues where it
@@ -272,6 +277,10 @@ with the property, is shown.
 - **2.9.9:** **Fetch live rate** (title bar) also opens a list of every rate the app holds — its value, where it
   comes from, and which of your loans use it ("Other / Custom" reads "each loan's own value"). Refinance's Index
   list has **SOFR 30-day Average** and **1-month Term SOFR** next to overnight SOFR, each priced from its own rate.
+- **2.9.10:** both of Refinance's Index lists (Floating, and Hybrid's "matches the fixed period") hold **every rate
+  the app fetches** — US Prime Rate, Fed Funds (EFFR), the three SOFRs and the 1- to 20-year Treasuries (12) — taken
+  from the app's own list of rates, so a rate added later shows there by itself. "Other / Custom" isn't a fetched
+  rate and stays out.
 
 ### 4.12 Data Health page
 Properties, T12s, units known, loans needing a maturity decision; duplicates (by address); folders with no
@@ -318,7 +327,8 @@ property: …").
 **Reading only what's needed (2.9.9):** when a message's files are long, one quick call decides which of them it
 needs (none for an instruction, or when the chat's notes already answer); only those are read, in parts, and the
 reading **stops at the part that answers it** — unless you ask to read all the files. The chat says which files
-were read and which weren't; Claude can read a skipped one (`read_files`). **Memory recall** brings in a past chat
+were read and which weren't; Claude can read a skipped one (`read_files`). **2.9.10:** "read all the files" also
+reads the property's own records (profile, general data, assumptions, history). **Memory recall** brings in a past chat
 only when its title shares a word with the question, or one of its messages has two of the question's words close
 together.
 **The property selector (2.9.8):** a chat belongs to one property or is a general chat, for good. Picking another
@@ -430,32 +440,26 @@ saved, the key is used.
 - **2.9.6** — acceptance fixes; the OCR reader.
 - **2.9.7** — every decision from the 2.9.6 audit.
 - **2.9.8** — the fixes from testing the installed 2.9.7.
-- **2.9.9** — *(this stage)* the fixes from testing the installed 2.9.8 (see §8).
+- **2.9.9** — the fixes from testing the installed 2.9.8.
+- **2.9.10** — *(this stage)* the fixes from testing the installed 2.9.9 (see §8).
 
 ---
 
-## 8. Stage 2.9.9 — what shipped, and what still needs checking
+## 8. Stage 2.9.10 — what shipped, and what still needs checking
 
-**What shipped** — the problems found testing the installed 2.9.8:
-1. **Never another property's numbers** — a workbook with several parts is never read from its first sheet; a file
-   kept "as a document" is never read as the T12; a part with no answer waits (Data Health, Documents, Underwriting).
-2. **Files with several parts: you decide, the app remembers** — one card for every part (Documents, Underwriting,
-   the rent-roll importer, the assistant, and before Claude reads an unanswered file); each property keeps sheet
-   number X / section Y in `general-data.json`; next month's export arrives filled in from last time.
-3. **Rent-roll import uses that card** — your properties to pick from; never a new property set for you.
-4. **A one-property chat changes only that property** unless you tick other parts.
-5. **The assistant says only what really happened** — results say what changed, including a property created.
-6. **Claude reads only the files it needs** and stops when it has the answer; everything only when you ask.
-7. **Refinance's Index list** has SOFR 30-day Average and 1-month Term SOFR, each priced from its own rate.
-8. **Fetch live rate** also opens a list of every rate: value, where it comes from, which loans use it; "Other /
-   Custom" reads "each loan's own value".
-9. **Memory recall** only brings in chats related to the question.
-Also: property lookups were made much faster (the screen froze for seconds after some uploads); a built-in rate is
-no longer counted as "refreshed from the US feeds".
+**What shipped** — from testing the installed 2.9.9 (check list Part 3: 9 passed, g7 failed):
+1. **Claude reaches the property's own records** — "read all the files" now includes `profile.json`,
+   `general-data.json`, `assumptions.json` and `history.json`, each marked as the app's own record; one can be read
+   by name. Before, the file list named them but every reader refused them, so Claude said it would read them and
+   couldn't. An ordinary question still reads documents only.
+2. **One source for the name, address and units** — `general-data.json` no longer keeps its own copy (nothing in the
+   app read it back, so it could only go stale and mislead whoever read the file); the profile is their one source.
+3. **Refinance's Index lists hold every fetched rate** (g7) — US Prime Rate and Fed Funds were missing; the lists now
+   come from the app's own list of rates.
 
-**Check on the real installed 2.9.9 (Windows)** — Part 3 of the check list. **First thing after installing:**
-Data Health → "Files with several parts waiting for your answer" — answer each once (40 N Euclid Ave's T12 and rent
-roll are among them).
+The 2.9.9 stage (what shipped then) is in the git history and the 2.9.9 pull request.
+
+**Check on the real installed 2.9.10 (Windows)** — Part 4 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -464,7 +468,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.10 — One shared database (+ the pooled analysis, moved here from 2.9.7)
+### 2.9.11 — One shared database (+ the pooled analysis, moved here from 2.9.7)
 - **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
   a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
   and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
@@ -472,7 +476,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 - **Pooled / cross-collateralized analysis** — loans pooled across several properties analyzed as one credit
   position: combined coverage, combined sizing, release / substitution across the pool.
 
-### 2.9.11 — Automated Yardi ingestion
+### 2.9.12 — Automated Yardi ingestion
 Pull operating data and rent rolls from Yardi directly instead of manual file drops.
 
 ---
@@ -489,4 +493,4 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 
 ---
 
-*Last updated for version 2.9.9.*
+*Last updated for version 2.9.10.*

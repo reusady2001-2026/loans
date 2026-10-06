@@ -69,7 +69,7 @@ const dscrPair=(page)=>page.evaluate(()=>{
   ok(gd&&gd.lines.RET&&Math.abs(gd.lines.RET.ttm-sum(gd.lines.RET.monthly))<0.02,'the taxes trailing-12 equals the sum of its 12 months');
   ok(gd&&gd.noi&&typeof gd.noi.inPlace==='number'&&gd.noi.inPlace>0,'in-place NOI stored ('+(gd&&gd.noi&&gd.noi.inPlace)+')');
   ok(gd&&gd.noi&&typeof gd.noi.underwritten==='number'&&gd.noi.underwritten>0,'underwritten NOI stored ('+(gd&&gd.noi&&gd.noi.underwritten)+')');
-  ok(gd&&gd.identity&&/whitewater/i.test(gd.identity.propertyName||''),'the property identity is recorded');
+  ok(gd&&!('identity' in gd)&&!('propertyName' in gd),'2.9.10 — no copy of the name/address/units in general-data.json (the profile is their one source)');
 
   // ---- B. the underwriting tab shows the General Data history card ----
   const uw=await uwText(page);

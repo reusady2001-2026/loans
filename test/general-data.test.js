@@ -46,7 +46,11 @@ group("merge — first upload of a 12-month T12", function (){
     { now: "2026-07-01T00:00:00Z", propKey: "name:whitewater", identity: { propertyName: "Villages of Whitewater", units: 240 },
       noi: { inPlace: 9840, underwritten: 10200, period: "12-mo Total", sourceFile: "WW.xlsx" } });
   ok(gd.schema === "lds.general-data.v1", "schema stamped");
-  ok(gd.propKey === "name:whitewater" && gd.identity.units === 240, "identity carried");
+  ok(gd.propKey === "name:whitewater" && !("identity" in gd), "2.9.10 — no copy of the name/address/units: they live in the profile only");
+  var old = G.merge({ propKey: "name:whitewater", identity: { propertyName: "Old Name", units: 200 }, propertyName: "Old Name", push: { moves: [1] } }, series("2026-01", 12, { RET: 100 }), { now: "2026-07-01T00:00:00Z" });
+  ok(!("identity" in old) && !("propertyName" in old) && old.push && old.push.moves.length === 1, "an old copy is dropped on the next merge; everything else rides along (what to push)");
+  var st = G.strip({ propKey: "k", identity: { units: 1 }, propertyName: "X", noT12: true });
+  ok(st.propKey === "k" && st.noT12 === true && !("identity" in st) && !("propertyName" in st), "strip() — what every write drops");
   near(gd.noi.inPlace, 9840, "in-place NOI stored"); near(gd.noi.underwritten, 10200, "underwritten NOI stored");
   ok(gd.noi.computedAt === "2026-07-01T00:00:00Z", "noi stamped with the compute time");
   ok(gd.window.months.length === 12 && gd.window.cap === 24, "window = 12 months, cap 24");
