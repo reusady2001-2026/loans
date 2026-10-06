@@ -3227,7 +3227,7 @@
     }
     // Global "Fetch live rate" (title bar): refresh today's Treasury curve + SOFR + the other live indices
     // into the session cache, then re-render so the refi market rate, coverage rate-gap and previews update.
-    async function fetchAllLiveRates(){
+    async function fetchAllLiveRates(opts){
       const btn = el("fetchRateBtn"), label = el("fetchRateLabel");
       const live = INDEX_CATALOG.filter(i => i.live);
       if(btn) btn.disabled = true; if(label) label.textContent = "Fetching…";
@@ -3238,7 +3238,7 @@
       else { try{ toast("Couldn’t fetch live rates (offline?). Existing values kept.", "info"); }catch(e){} }
       try{ render(); }catch(e){}                                                   // home area: portfolio coverage gap / loan / refi
       try{ if(el("uwView") && !el("uwView").hidden) renderUnderwriting(); }catch(e){}
-      try{ showRatesList(n); }catch(e){}   // 2.9.9 (fix 8)
+      if(opts && opts.list){ try{ showRatesList(n); }catch(e){} }   // 2.9.9 (fix 8) — from the button only (the assistant's fetch never opens a window)
     }
     // 2.9.9 (fix 8) — every rate the app holds, its value, where it comes from, and which of your loans use it.
     function ratesListRows(){
@@ -4255,7 +4255,10 @@ tr.flagged:hover td{background:#fee2e2}
     // · "none" (you said no part is this property's) · "nokind" · "unknown" (waits for your answer).
     async function opResolvePart(key, f, kind){
       var r = await opPartsInfoForFile(key, f); if(!r || !r.info) return { status: "nofile" };
-      var info = r.info, cands = info.parts.filter(function(p){ return !kind || p.kind === kind; });
+      // any kind: the data parts (T12s, rent-roll sections) — a plain extra sheet (report parameters …) never makes a
+      // file's only T12 ambiguous
+      var data = r.info.parts.filter(function(p){ return p.kind !== "sheet"; });
+      var info = r.info, cands = kind ? info.parts.filter(function(p){ return p.kind === kind; }) : (data.length ? data : info.parts);
       var rec = FileParts.findRecord(await gdRecordsLoad(key), f.sha, f.name);
       if(rec){ if(rec.none) return { status: "none", info: info };
         var rp = FileParts.partForRecord(info, rec);
@@ -11911,7 +11914,10 @@ tr.flagged:hover td{background:#fee2e2}
       var sug = FileParts.suggestFromRecords(info, byKey, fileName, sha), used = {};
       Object.keys(sug).forEach(function(no){ used[sug[no]] = 1; });
       info.parts.forEach(function(p){ if(sug[p.no] != null) return;
-        var bm = propBestMatch(FileParts.partName(p), 0.85) || (p.title ? propBestMatch(p.title, 0.85) : null) || (/\d{3,}/.test(p.sheet) ? propBestMatch(p.sheet, 1) : null);
+        // only a suggestion you see and approve, so a looser match than reading uses (0.6: two shared words, as the
+        // rent-roll importer always did) — a tie is never suggested
+        var bm = propBestMatch(FileParts.partName(p), 0.6) || (p.title ? propBestMatch(p.title, 0.6) : null) || (/\d{3,}/.test(p.sheet) ? propBestMatch(p.sheet, 1) : null);
+        if(bm && !bm.key) bm = null;
         if(bm && bm.key && !used[bm.key]){ sug[p.no] = bm.key; used[bm.key] = 1; } });
       var ctxPart = null; Object.keys(sug).forEach(function(no){ if(sug[no] === ctxKey) ctxPart = +no; });
       if(ctxKey && ctxPart == null){ var data = info.parts.filter(function(p){ return p.kind !== "sheet"; });
@@ -13270,7 +13276,7 @@ tr.flagged:hover td{background:#fee2e2}
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
     // Global "Fetch live rate" (title bar) — available on every tab.
-    if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", fetchAllLiveRates);
+    if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", function(){ fetchAllLiveRates({ list: true }); });
     // 2.9.4 — Explain/Check modal retired (the AI assistant explains and sanity-checks a loan on request).
     // AI: the in-app assistant (desktop shell only) — floating button opens a chat
     // that answers questions and performs safe actions on request.

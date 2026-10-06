@@ -49,7 +49,7 @@ function rentRoll(file, sections){ const lines=['Rent Roll','Unit,Unit Type,Unit
     env:Object.assign({},process.env,{LDS_CLAUDE_BIN:FAKE,LDS_FAKE_CHAT_FILE:REPLIES,LDS_FAKE_CHAT_LOG:CALLS})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(2500);
-  const P=await page.evaluate(()=>{ const f=(re)=>{ const p=window.opProperties().find(x=>re.test(x.name)); return {key:p.key,name:p.name}; }; return { q:f(/queens gate/i), w:f(/villages of whitewater/i), i:f(/villages of independence/i), n:window.opProperties().length }; });
+  const P=await page.evaluate(()=>{ const f=(re)=>{ const p=window.opProperties().find(x=>re.test(x.name)); return {key:p.key,name:p.name}; }; return { q:f(/queens gate/i), w:f(/villages of whitewater/i), i:f(/villages of independence/i), fp:f(/residences at forest park/i), n:window.opProperties().length }; });
   const toastText=()=>page.evaluate(()=>(document.getElementById('toastText')||{}).textContent||'');
 
   // ---- (1) saved the 2.9.7 way: role T12, no sheet, on a property the file never names ----
@@ -67,7 +67,7 @@ function rentRoll(file, sections){ const lines=['Rent Roll','Unit,Unit Type,Unit
   ok(await until(page,()=>!!document.querySelector('[data-partsmodal]')),'Answer opens the card');
   const card=await page.evaluate(()=>{ const m=document.querySelector('[data-partsmodal]'); return { text:m.innerText, sel:[...m.querySelectorAll('[data-partsel]')].map(s=>s.value), tick:[...m.querySelectorAll('[data-partuse]')].map(c=>c.checked) }; });
   ok(/Which part is Queens Gate Apartments’s\?/.test(card.text),'the card asks which part is Queens Gate’s — nothing is set for it');
-  ok(card.sel[0]===''&&card.sel[1]===''&&card.sel[2]===P.w.key&&card.sel[3]===P.i.key,'sheets that name a property are set to it; sheet 1 (Forest Park — not in the app) and sheet 2 are not ('+card.sel.join(' | ')+')');
+  ok(card.sel[0]===P.fp.key&&card.sel[1]===''&&card.sel[2]===P.w.key&&card.sel[3]===P.i.key,'sheets that name a property are set to it (sheet 1 “Residences at Forest Park Hotel” → The Residences at Forest Park); sheet 2 (“The Euclid”) is not ('+card.sel.join(' | ')+')');
   ok(!card.sel.includes('__new__')&&/Sheet 2 of 4 · 12 Month Statement-15169 · The Euclid/.test(card.text),'"Add as a new property" is never set; each row says "Sheet 2 of 4 · 12 Month Statement-15169 · The Euclid"');
   await page.evaluate((k)=>{ const s=document.querySelector('[data-partsmodal] [data-partsel="2"]'); s.value=k; s.dispatchEvent(new Event('change',{bubbles:true})); },P.q.key);
   ok(await page.evaluate(()=>document.querySelector('[data-partsmodal] [data-partuse="2"]').checked),'picking Queens Gate ticks that row');
@@ -88,7 +88,7 @@ function rentRoll(file, sections){ const lines=['Rent Roll','Unit,Unit Type,Unit
   await page.setInputFiles('#loanDocsFile',BOOK2);
   ok(await until(page,()=>!!document.querySelector('[data-partsmodal]')),'adding next month’s export in Documents shows the card');
   const card2=await page.evaluate(()=>{ const m=document.querySelector('[data-partsmodal]'); return { sel:[...m.querySelectorAll('[data-partsel]')].map(s=>s.value), tick:[...m.querySelectorAll('[data-partuse]')].map(c=>c.checked), text:m.innerText }; });
-  ok(card2.sel[1]===P.q.key&&card2.tick[1]&&card2.sel[2]===P.w.key&&card2.sel[3]===P.i.key&&card2.sel[0]==='','…filled in from last time: sheet 2 → Queens Gate, 3 → Whitewater, 4 → Independence ('+card2.sel.join(' | ')+')');
+  ok(card2.sel[1]===P.q.key&&card2.tick[1]&&card2.sel[2]===P.w.key&&card2.sel[3]===P.i.key&&card2.sel[0]===P.fp.key,'…filled in from last time: sheet 1 → Forest Park, 2 → Queens Gate, 3 → Whitewater, 4 → Independence ('+card2.sel.join(' | ')+')');
   await page.evaluate(()=>document.querySelector('[data-partsmodal] [data-partsok]').click());
   ok(await until(page,(k)=>window.LDS_readT12(k).then(r=>!!r&&r.name==='Scheduler_Reports_Aug.xlsx'&&r.sheetNo===2),P.q.key,30000),'Queens Gate reads the new file’s sheet 2');
 
