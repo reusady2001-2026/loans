@@ -83,13 +83,25 @@ const AGRT=AGR.join('\n'), RRT='RENT ROLL as of 09/10/2026\n'+Array.from({length
 
   // ---- (6d) "read all the files" reads everything, with no early stop ----
   const all='<file name="Loan Agreement.txt">\n'+AGRT+'\n</file>\n\n<file name="RentRoll.txt">\n'+RRT+'\n</file>\n\n<file name="T12 summary.txt">\n'+T12T+'\n</file>\n\n';
-  const NA=await page.evaluate(async(k)=>{ const dt=await window.ldsShell.docText(k); return window.LDS_asstSplitCount(dt.text); },Q.key);
+  const NA=await page.evaluate(async(k)=>window.LDS_asstMaterialParts(k, true),Q.key);   // 2.9.10+ — "read all" includes the property's own records (2.9.11: profile.json with what the tab shows)
   const rep4=[]; for(let i=1;i<=NA;i++) rep4.push('NOTES '+i+'\nANSWERED: yes'); rep4.push('Summary of all three files.');
   fs.writeFileSync(REPLIES,JSON.stringify(rep4));
   const p0=lines(PLANLOG).length; c0=lines(CALLS).length;
   await send('Read all the files of this property');
   ok(lines(PLANLOG).length===p0,'"Read all the files" skips the planning step');
   ok(lines(CALLS).slice(c0).length===NA+1,'…and reads every part of every file ('+NA+' parts) even though a part said ANSWERED: yes');
+
+  // ---- (6e) 2.9.11 — a record you NAME is read before the answer, even when the planning step leaves it out ----
+  fs.writeFileSync(PLANS,JSON.stringify([{read:[],readAll:false,why:"profile.json isn't one of the files that can be read here."}]));
+  fs.writeFileSync(REPLIES,JSON.stringify(['NOTES: the profile\nANSWERED: yes','NOTES 2\nANSWERED: yes','NOTES 3\nANSWERED: yes','NOTES 4\nANSWERED: yes','Here is what profile.json says.']));
+  c0=lines(CALLS).length;
+  await send('What does profile.json say?');
+  const b6=(await lastBubbles(1))[0]||'';
+  ok(/Reading only “profile\.json”/.test(b6)&&!/isn.t one of the files/.test(b6),'a record you name is read even when the planning step leaves it out ("'+b6.slice(0,150)+'")');
+  const s6=lines(CALLS).slice(c0).map(c=>c.prompt).join('\n');
+  ok(/What the Profile tab shows for this property/.test(s6)&&/Address \/ market: [^\n]*\((in profile\.json|NOT in profile\.json — the Profile tab shows it from the senior loan's record|not set: neither profile\.json nor the loan record has it)\)/.test(s6),'Claude gets profile.json with what the Profile tab shows on top — the address and where it comes from');
+  ok(!/Loan agreement clause/.test(s6),'…and not the documents it doesn’t need');
+  ok(await page.evaluate(()=>{ const ns=[...document.querySelectorAll('#aiAsstLog > *')].slice(-6).map(e=>e.textContent).join(' '); return !/Recalled from earlier/.test(ns); }),'no old chat is recalled for a file you name');
 
   // ---- (9) recall only related chats ----
   const filler=(w)=>Array.from({length:60},(_,i)=>'Line '+i+' of the T12 classification notes for the portfolio.').join(' ');
