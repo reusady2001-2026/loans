@@ -51,6 +51,8 @@ group("merge — first upload of a 12-month T12", function (){
   ok(!("identity" in old) && !("propertyName" in old) && old.push && old.push.moves.length === 1, "an old copy is dropped on the next merge; everything else rides along (what to push)");
   var st = G.strip({ propKey: "k", identity: { units: 1 }, propertyName: "X", noT12: true });
   ok(st.propKey === "k" && st.noT12 === true && !("identity" in st) && !("propertyName" in st), "strip() — what every write drops");
+  var st2 = G.strip({ propKey: "k", push: { moves: [1], address: "1 Main St" } });
+  ok(st2.push.moves.length === 1 && !("address" in st2.push), "2.9.11 — strip() also drops the copy of the address \"what to push\" kept");
   near(gd.noi.inPlace, 9840, "in-place NOI stored"); near(gd.noi.underwritten, 10200, "underwritten NOI stored");
   ok(gd.noi.computedAt === "2026-07-01T00:00:00Z", "noi stamped with the compute time");
   ok(gd.window.months.length === 12 && gd.window.cap === 24, "window = 12 months, cap 24");

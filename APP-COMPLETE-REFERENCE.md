@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.10 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.11 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.10
+**Current version:** 2.9.11
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -14,7 +14,8 @@ Windows install, and what comes next.*
 > `LOAN-VALIDATION-FLAGS.md`, `DESKTOP.md`, `GRADE-BOARD.md`, `INVOICE-RECONCILIATION.md`) and is meant to be
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
 > the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8"); 2.9.9 the
-> fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10").
+> fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10"); 2.9.11 the
+> fixes from testing 2.9.10 (marked "2.9.11").
 
 ---
 
@@ -68,7 +69,7 @@ loaded from a file address, which the second OCR engine (PaddleOCR) could not ru
 | `portfolio-rollup.js` | Rolls every property up into the portfolio view and totals. |
 | `profile.js` | The per-property Profile schema + field history. |
 | `rent-roll.js` | Reads a Yardi rent roll → units, occupancy, average rents, square footage. |
-| `file-parts.js` | 2.9.9 — a workbook's parts (its sheets, or the properties' sections on a rent-roll sheet), numbered as in Excel, and the answer each property keeps (sheet number + name, section number + name). |
+| `file-parts.js` | 2.9.9 — a workbook's parts (its sheets, or the properties' sections on a rent-roll sheet), numbered as in Excel, and the answer each property keeps (sheet number + name, section number + name). **2.9.11:** several parts per property (and one part for several properties), T12 sheets added together month by month, a PDF's page ranges. |
 | `prop-names.js` | 2.9.9 — matching a name found in a file to a property (its names and Yardi code) — only to pre-fill the parts card. |
 | `rate-history.js` | 2.9.7 — built-in rate history: 1-month LIBOR (monthly 1989–2024, daily Dec 2021–Jun 2023), 1-month Term SOFR and 30-day Average SOFR (daily). |
 | `ocr.js` | Offline OCR: runs both engines on a page and reconciles them into one reading (pure `reconcile()`). |
@@ -229,6 +230,21 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   part is this property's? **Answer**" in Documents, Underwriting, the rent-roll summary and Data Health), and its
   numbers aren't used meanwhile. A file saved before 2.9.9 whose part names the property is used and listed to
   confirm once. A file you keep "as a document" is never read as the T12.
+  **2.9.11 — full freedom:** any part can go to any property. **Several parts can go to one property** (a property in
+  phases — "Heritage Key Villas Phase 1 … 4") and they are **combined**: a rent roll unit by unit (units, occupied,
+  average rents, rent a year and sq ft are the whole property's — the file's own totals), T12 sheets line by line,
+  month by month (Underwriting says "… (combined) — added together"; sheets covering different months are flagged).
+  **One part can go to several properties** ("+ another property" on its row). Picking a property on one row no
+  longer clears the others; parts whose names start with the property's name are all set to it; each property records
+  every part (`fileParts[].items`), and next month's file comes back with all of them set. **PDFs too:** Documents →
+  **"Pages & properties"** splits a PDF by page ranges (several loan agreements in one file) or links one range to
+  several properties (one agreement over several properties); Claude can propose the ranges (`split_document`) on the
+  same card. Each property then reads only its own pages. *(One loan secured by several properties — a pooled loan —
+  is its own later stage.)*
+  **Results tied to the exact parts (2.9.11):** the T12 AI check (and your decisions on it) and "what to push" count
+  only for the same file **and the same part(s)** they were made on. One made on another property's sheet of the
+  same workbook (40 N Euclid's check was made on Forest Park's sheet in 2.9.8) is dropped and redone; a combined
+  statement's review cards show no Excel row (the lines are added from several sheets).
 - A **tie check** badge shows whether the statement's own totals tie to its lines; an older-year T12 goes to the
   history instead of replacing the current one.
 
@@ -277,6 +293,9 @@ with the property, is shown.
 - **2.9.9:** **Fetch live rate** (title bar) also opens a list of every rate the app holds — its value, where it
   comes from, and which of your loans use it ("Other / Custom" reads "each loan's own value"). Refinance's Index
   list has **SOFR 30-day Average** and **1-month Term SOFR** next to overnight SOFR, each priced from its own rate.
+- **2.9.11 — "What to push" uses the app's own NOI:** it is given the app's in-place and underwritten NOI (and each
+  line's two amounts) and measures every move from them — one underwritten NOI everywhere, never a second one worked
+  out by Claude (the operator's decision; still no ready-made list of moves). It keeps no copy of the address.
 - **2.9.10:** both of Refinance's Index lists (Floating, and Hybrid's "matches the fixed period") hold **every rate
   the app fetches** — US Prime Rate, Fed Funds (EFFR), the three SOFRs and the 1- to 20-year Treasuries (12) — taken
   from the app's own list of rates, so a rate added later shows there by itself. "Other / Custom" isn't a fetched
@@ -328,7 +347,12 @@ property: …").
 needs (none for an instruction, or when the chat's notes already answer); only those are read, in parts, and the
 reading **stops at the part that answers it** — unless you ask to read all the files. The chat says which files
 were read and which weren't; Claude can read a skipped one (`read_files`). **2.9.10:** "read all the files" also
-reads the property's own records (profile, general data, assumptions, history). **Memory recall** brings in a past chat
+reads the property's own records (profile, general data, assumptions, history). **2.9.11:** a file you **name**
+("What does profile.json say?") is always read before Claude answers — once, from what it says now, never from old
+notes or a recalled chat; profile.json comes with **what the Profile tab shows** (a field the file leaves empty is
+filled from the senior loan's record, with where each value comes from). New actions: `check_t12` (re-run the AI
+check of a property's own sheets) and `split_document` (propose a PDF's page ranges); `import_rent_roll` takes
+`sections` (several). **Memory recall** brings in a past chat
 only when its title shares a word with the question, or one of its messages has two of the question's words close
 together.
 **The property selector (2.9.8):** a chat belongs to one property or is a general chat, for good. Picking another
@@ -441,25 +465,30 @@ saved, the key is used.
 - **2.9.7** — every decision from the 2.9.6 audit.
 - **2.9.8** — the fixes from testing the installed 2.9.7.
 - **2.9.9** — the fixes from testing the installed 2.9.8.
-- **2.9.10** — *(this stage)* the fixes from testing the installed 2.9.9 (see §8).
+- **2.9.10** — the fixes from testing the installed 2.9.9.
+- **2.9.11** — *(this stage)* the fixes from testing the installed 2.9.10 (see §8).
 
 ---
 
-## 8. Stage 2.9.10 — what shipped, and what still needs checking
+## 8. Stage 2.9.11 — what shipped, and what still needs checking
 
-**What shipped** — from testing the installed 2.9.9 (check list Part 3: 9 passed, g7 failed):
-1. **Claude reaches the property's own records** — "read all the files" now includes `profile.json`,
-   `general-data.json`, `assumptions.json` and `history.json`, each marked as the app's own record; one can be read
-   by name. Before, the file list named them but every reader refused them, so Claude said it would read them and
-   couldn't. An ordinary question still reads documents only.
-2. **One source for the name, address and units** — `general-data.json` no longer keeps its own copy (nothing in the
-   app read it back, so it could only go stale and mislead whoever read the file); the profile is their one source.
-3. **Refinance's Index lists hold every fetched rate** (g7) — US Prime Rate and Fed Funds were missing; the lists now
-   come from the app's own list of rates.
+**What shipped** — from testing the installed 2.9.10 (check list Part 4) and the Heritage Key Villas rent roll:
+1. **Full freedom over a file's parts** — any part (a sheet, a rent-roll section, a PDF's page range) can go to any
+   property; several parts to one property are combined (a rent roll unit by unit — Heritage Key Villas' four
+   phases are one property of 521 units, 491 occupied; T12 sheets line by line, month by month); one part can go to
+   several properties. For the user (Documents, Underwriting, the rent-roll importer, Data Health) and the assistant.
+2. **PDFs** — a PDF split by page ranges (several agreements in one file) or linked to several properties (one
+   agreement over several properties); each property reads only its pages. The pooled loan itself is a later stage.
+3. **Results tied to the exact parts** — the T12 AI check, its decisions and "what to push" count only for the same
+   file and the same parts; 40 N Euclid's (made on Forest Park's sheet in 2.9.8) are dropped and redone. New
+   assistant action `check_t12`.
+4. **The assistant and the records** — a file you name is read before the answer; profile.json comes with what the
+   Profile tab shows; "what to push" keeps no address copy.
+5. **One underwritten NOI** — "what to push" measures every move from the app's own NOI.
 
-The 2.9.9 stage (what shipped then) is in the git history and the 2.9.9 pull request.
+The 2.9.10 stage is in the git history and its pull request.
 
-**Check on the real installed 2.9.10 (Windows)** — Part 4 of the check list.
+**Check on the real installed 2.9.11 (Windows)** — Part 5 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -468,15 +497,16 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.11 — One shared database (+ the pooled analysis, moved here from 2.9.7)
+### 2.9.12 — One shared database (+ the pooled loan, moved here from 2.9.7)
 - **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
   a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
   and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
   hosted (see `QUESTIONS-FOR-AZRIEL.md`).
-- **Pooled / cross-collateralized analysis** — loans pooled across several properties analyzed as one credit
-  position: combined coverage, combined sizing, release / substitution across the pool.
+- **Pooled / cross-collateralized loans** — one loan secured by several properties (one balance, one payment),
+  analyzed as one credit position: combined coverage, combined sizing, release / substitution across the pool. Its
+  documents can already be linked to all its properties (2.9.11); the loan itself is this stage.
 
-### 2.9.12 — Automated Yardi ingestion
+### 2.9.13 — Automated Yardi ingestion
 Pull operating data and rent rolls from Yardi directly instead of manual file drops.
 
 ---
@@ -493,4 +523,4 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 
 ---
 
-*Last updated for version 2.9.10.*
+*Last updated for version 2.9.11.*

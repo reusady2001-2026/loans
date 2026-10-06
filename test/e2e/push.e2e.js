@@ -46,8 +46,12 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   // ---- The app hands Claude ONLY the assumptions + the T12 — nothing else, no menu ----
   const sent=readInput();
   ok(sent&&/Villages of Whitewater/i.test(sent.property||''),'Claude was sent THIS property by name');
-  ok(sent&&!('possibleMoves' in sent)&&!('actualsFromStatement' in sent)&&!('underwrittenNOI' in sent)&&!('inPlaceNOI' in sent),'ONLY the assumptions + the T12 are sent — no menu, no pre-computed actuals or NOI (Claude derives what it needs)');
-  ok(sent&&Object.keys(sent).sort().join(',')==='address,benchmarksPerUnit,property,t12,underwritingAssumptions,units','the payload is exactly { property, address, units, underwritingAssumptions, benchmarksPerUnit, t12 } — nothing more (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
+  ok(sent&&!('possibleMoves' in sent)&&!('actualsFromStatement' in sent),'no menu of moves and no pre-computed actuals are sent (Claude decides what to push)');
+  ok(sent&&Object.keys(sent).sort().join(',')==='address,appNOI,benchmarksPerUnit,property,t12,underwritingAssumptions,units','the payload is exactly { property, address, units, underwritingAssumptions, benchmarksPerUnit, t12, appNOI } — nothing more (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
+  // 2.9.11 (the operator's decision) — the APP'S OWN in-place and underwritten NOI go with it, so Claude never works out a second one
+  const gdn=await page.evaluate((k)=>{ const m=window.LDS_gdNOICache?window.LDS_gdNOICache():null; return (m&&m[k])||null; }, KEY).catch(()=>null);
+  ok(sent&&sent.appNOI&&typeof sent.appNOI.inPlace==='number'&&typeof sent.appNOI.underwritten==='number'&&Array.isArray(sent.appNOI.lines)&&sent.appNOI.lines.length>3,'Claude is given the app’s in-place NOI '+(sent&&sent.appNOI&&sent.appNOI.inPlace)+' and underwritten NOI '+(sent&&sent.appNOI&&sent.appNOI.underwritten)+', with each line’s two amounts');
+  ok(!gdn||(Math.abs(gdn.inPlace-sent.appNOI.inPlace)<1&&Math.abs(gdn.underwritten-sent.appNOI.underwritten)<1),'…the same two figures the app shows ('+(gdn?gdn.inPlace+' / '+gdn.underwritten:'n/a')+')');
   ok(sent&&sent.t12&&Array.isArray(sent.t12.income)&&sent.t12.income.length>0&&Array.isArray(sent.t12.expense)&&sent.t12.expense.length>0,'Claude is sent the property’s own classified T12 (income + expense lines)');
   ok(sent&&sent.t12.income.every(r=>r.line&&typeof r.annual==='number')&&sent.t12.expense.some(r=>/repairs and maintenance/i.test(r.line)),'the T12 lines are full-word labels with actual annual dollars (e.g. "repairs and maintenance")');
   ok(sent&&sent.t12.income.some(r=>/gross potential rent/i.test(r.line))&&sent.t12.income.some(r=>/vacancy/i.test(r.line)),'the T12 carries gross potential rent AND the vacancy line, so Claude can derive the actual vacancy itself');

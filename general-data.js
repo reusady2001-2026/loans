@@ -212,7 +212,9 @@
   function annualizedNOI(series){ return noiRule(series); }
 
   // what a written record must not carry (the app's writer drops these from every write — 2.9.10)
-  function strip(gd){ if (!isObj(gd)) return gd; var o = {}; for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !NOT_KEPT[k]) o[k] = gd[k]; return o; }
+  function strip(gd){ if (!isObj(gd)) return gd; var o = {}; for (var k in gd) if (Object.prototype.hasOwnProperty.call(gd, k) && !NOT_KEPT[k]) o[k] = gd[k];
+    if (isObj(o.push) && Object.prototype.hasOwnProperty.call(o.push, "address")) { o.push = assign({}, o.push); delete o.push.address; }   // 2.9.11 — "what to push" kept a copy of the address
+    return o; }
 
   return { SCHEMA: SCHEMA, CAP: CAP, strip: strip, monthlySeries: monthlySeries, merge: merge, deltas: deltas, windowMonths: windowMonths, ymShift: ymShift, monthNOI: monthNOI, annualizedNOI: annualizedNOI, noiRule: noiRule };
 });
