@@ -53,6 +53,7 @@ const until=async(page,fn,arg,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(m
   const fq=await files(P.qg.key), fc=await files(P.cm.key);
   ok(fq.length===1&&fq[0].role==='t12'&&fq[0].sheet==='Queens Gate','Queens Gate: saved as its T12, sheet “Queens Gate” ('+JSON.stringify(fq)+')');
   ok(fc.length===1&&fc[0].role==='t12'&&fc[0].sheet==='Commerce','1222 Commerce St: saved as its T12, sheet “Commerce” ('+JSON.stringify(fc)+')');
+  await until(page,()=>/Linked/.test((document.getElementById('toastText')||{}).textContent||''),null,15000);   // the message comes once every folder is saved
   const toast1=await page.evaluate(()=>(document.getElementById('toastText')||{}).textContent||'');
   ok(/Linked “Portfolio T12s\.xlsx”: /.test(toast1)&&/Queens Gate Apartments ← Sheet 1 of 3/.test(toast1)&&/1222 Commerce St ← Sheet 2 of 3/.test(toast1),'the message says which sheet went where ("'+toast1.slice(0,200)+'")');
   ok(await until(page,(re)=>{ const l=window.LDS_loans().find(x=>new RegExp(re,'i').test(x.propertyName)&&!x.archived); return Math.abs((window.LDS_loanNOI(l)||0)-3000000)<1; },'queens gate',30000),'Queens Gate\'s NOI comes from its own sheet: $3,000,000 (got '+(await noiOf('queens gate'))+')');
