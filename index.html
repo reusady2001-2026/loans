@@ -10759,7 +10759,7 @@ tr.flagged:hover td{background:#fee2e2}
           // its part when the app can tell; a move takes it out of the first property once it is linked)
           var bytes0=opB64ToBytes(rd.base64), info0=opPartsInfo(bytes0, f.name);
           if(info0 && info0.multi) return aiAsstPartsCard({ name:f.name, bytes:bytes0, text:"", type:f.type||"", label:f.readLabel||"", sha:f.sha }, info0, keys.length===1 ? keys[0] : "",
-            { keepInCtx:false, lead:(move?"Move":"Copy")+" <b>"+escapeHtml(f.name)+"</b> from "+escapeHtml(from.name)+".", after: move ? function(out){ if(out.linked.length && !out.failed.length) return docRemoveDo(from.key, f); } : null });
+            { keepInCtx: keys.length===1, lead:(move?"Move":"Copy")+" <b>"+escapeHtml(f.name)+"</b> from "+escapeHtml(from.name)+".", after: move ? function(out){ if((out.linked.length || out.none.length) && !out.failed.length) return docRemoveDo(from.key, f); } : null });   // you asked to put it there: it lands there even with no part of its own
           return docPlanTargets(f.name, opB64ToBytes(rd.base64), "", keys, f.role==="t12"?null:(f.role||"other")).then(function(plan){
             return aiAsstApprovalCard((move?'Move':'Copy')+' <b>'+escapeHtml(f.name)+'</b> from '+escapeHtml(from.name)+' to '+plan.map(function(t){ return escapeHtml(t.name); }).join(", ")+'?'+(move?' It leaves '+escapeHtml(from.name)+'’s documents.':''), plan.map(function(t){ return aiAsstRow("t"+t.key, escapeHtml(t.name), null, escapeHtml(docPlanWhat(t))); }).join(""), function(){
               var acc=newSaveAcc();

@@ -1,4 +1,7 @@
-/* e2e for 2.9.8 (problem 1) — one T12 workbook with a sheet per property.
+/* e2e for 2.9.8 (problem 1), as 2.9.9 (fix 2) does it — one T12 workbook with a sheet per property.
+   2.9.9: the workbook never goes anywhere by itself — the card lists every sheet with a property list (the sheets that
+   name a property are set to it, the property you're on is set when the app can tell, "Add as a new property" is
+   never set) and nothing is saved until you approve.
    Dropped on a property's Documents, the file goes to EVERY property it names, each with its own sheet, and each
    property's NOI comes from its own sheet (Home, Underwriting); a sheet that fits no property is said. Uploading
    the same file again on a property it doesn't name is never blocked: the app asks which sheet is that property's
@@ -42,12 +45,16 @@ const until=async(page,fn,arg,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(m
   await page.evaluate((k)=>window.LDS_openProfile(k),P.qg.key);
   await until(page,()=>{ const v=document.getElementById('loanView'); return v&&!v.hidden&&!!document.getElementById('loanDocsFile'); });
   await page.setInputFiles('#loanDocsFile',BOOK);
+  ok(await until(page,()=>!!document.querySelector('[data-partsmodal]')),'dropping it shows the card: which sheet is whose');
+  const k1=await page.evaluate(()=>{ const m=document.querySelector('[data-partsmodal]'); return { sel:[...m.querySelectorAll('[data-partsel]')].map(s=>s.value), tick:[...m.querySelectorAll('[data-partuse]')].map(c=>c.checked) }; });
+  ok(k1.sel[0]===P.qg.key&&k1.tick[0]&&k1.sel[1]===P.cm.key&&k1.tick[1]&&k1.sel[2]===''&&!k1.tick[2],'Queens Gate and 1222 Commerce St are set on their own sheets; “Nowhere” is set to nothing ('+k1.sel.join(' | ')+')');
+  await page.evaluate(()=>document.querySelector('[data-partsmodal] [data-partsok]').click());
   ok(await until(page,async(k)=>{ const d=await window.ldsShell.docList(k); return (d.files||[]).some(f=>f.name==='Portfolio T12s.xlsx'); },P.cm.key),'the file reached 1222 Commerce St too (it was dropped on Queens Gate)');
   const fq=await files(P.qg.key), fc=await files(P.cm.key);
   ok(fq.length===1&&fq[0].role==='t12'&&fq[0].sheet==='Queens Gate','Queens Gate: saved as its T12, sheet “Queens Gate” ('+JSON.stringify(fq)+')');
   ok(fc.length===1&&fc[0].role==='t12'&&fc[0].sheet==='Commerce','1222 Commerce St: saved as its T12, sheet “Commerce” ('+JSON.stringify(fc)+')');
   const toast1=await page.evaluate(()=>(document.getElementById('toastText')||{}).textContent||'');
-  ok(/went to 2 properties/.test(toast1)&&/Sheet “Nowhere/.test(toast1),'the message says it went to 2 properties and names the sheet that fits none ("'+toast1.slice(0,200)+'")');
+  ok(/Linked “Portfolio T12s\.xlsx”: /.test(toast1)&&/Queens Gate Apartments ← Sheet 1 of 3/.test(toast1)&&/1222 Commerce St ← Sheet 2 of 3/.test(toast1),'the message says which sheet went where ("'+toast1.slice(0,200)+'")');
   ok(await until(page,(re)=>{ const l=window.LDS_loans().find(x=>new RegExp(re,'i').test(x.propertyName)&&!x.archived); return Math.abs((window.LDS_loanNOI(l)||0)-3000000)<1; },'queens gate',30000),'Queens Gate\'s NOI comes from its own sheet: $3,000,000 (got '+(await noiOf('queens gate'))+')');
   ok(await until(page,(re)=>{ const l=window.LDS_loans().find(x=>new RegExp(re,'i').test(x.propertyName)&&!x.archived); return Math.abs((window.LDS_loanNOI(l)||0)-960000)<1; },'1222 commerce',30000),'1222 Commerce St\'s NOI comes from ITS sheet: $960,000 (got '+(await noiOf('1222 commerce'))+')');
 
@@ -55,13 +62,12 @@ const until=async(page,fn,arg,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(m
   await page.evaluate((k)=>window.LDS_openProfile(k),P.ww.key);
   await until(page,()=>{ const v=document.getElementById('loanView'); return v&&!v.hidden&&!!document.getElementById('loanDocsFile'); });
   await page.setInputFiles('#loanDocsFile',BOOK);
-  ok(await until(page,()=>!!document.querySelector('[data-whichsheet]')),'uploading it on Villages of Whitewater asks which sheet is its T12');
-  const opts=await page.evaluate(()=>[...document.querySelectorAll('[data-whichsheet] [data-sheetsel] option')].map(o=>o.textContent));
-  ok(opts.join('|')==='Queens Gate|Commerce|Nowhere|None — keep it as a document','…offering every sheet, or none ('+opts.join(' / ')+')');
-  await page.evaluate(()=>{ const s=document.querySelector('[data-whichsheet] [data-sheetsel]'); s.value='Nowhere'; document.querySelector('[data-whichsheet] [data-sheetok]').click(); });
+  ok(await until(page,()=>!!document.querySelector('[data-partsmodal]')),'uploading it on Villages of Whitewater shows the card again');
+  const k2=await page.evaluate(()=>{ const m=document.querySelector('[data-partsmodal]'); return { text:m.innerText, sel:[...m.querySelectorAll('[data-partsel]')].map(s=>s.value) }; });
+  ok(/Which part is Villages of Whitewater’s\?/.test(k2.text)&&!k2.sel.includes(P.ww.key)&&k2.sel[0]===P.qg.key&&k2.sel[1]===P.cm.key,'…it asks which sheet is Villages of Whitewater’s (nothing set for it); the others keep their answers');
+  await page.evaluate((k)=>{ const s=document.querySelector('[data-partsmodal] [data-partsel="3"]'); s.value=k; s.dispatchEvent(new Event('change',{bubbles:true})); document.querySelector('[data-partsmodal] [data-partsok]').click(); },P.ww.key);
   ok(await until(page,async(k)=>{ const d=await window.ldsShell.docList(k); return (d.files||[]).some(f=>f.name==='Portfolio T12s.xlsx'&&f.role==='t12'&&f.sheet==='Nowhere'); },P.ww.key),'Villages of Whitewater got it as its T12 with the sheet you picked — the same file elsewhere did not block it');
-  const toast2=await page.evaluate(()=>(document.getElementById('toastText')||{}).textContent||'');
-  ok(/Already on file/.test(toast2)&&!/Couldn/.test(toast2),'the properties that already had it say "Already on file" ("'+toast2.slice(0,160)+'")');
+  ok((await files(P.qg.key)).length===1&&(await files(P.cm.key)).length===1,'the properties that already had it keep one copy each');
 
   // ---- Underwriting reads each property's own sheet ----
   await page.evaluate(()=>{const b=document.getElementById('tabNewBtn');if(b)b.click();const o=document.querySelector('[data-tabopen="underwriting"]');if(o)o.click();});
@@ -87,7 +93,7 @@ const until=async(page,fn,arg,ms)=>{ const t0=Date.now(); while(Date.now()-t0<(m
   script([ 'Copying.\n'+act({action:'copy_document',args:{file:'Portfolio T12s.xlsx',from:'Queens Gate Apartments',to:['M Lofts']}}), 'Done.' ]);
   await page.evaluate(()=>{ document.getElementById('aiAsstInput').value='Copy the portfolio T12 file from Queens Gate to M Lofts'; document.getElementById('aiAsstSend').click(); });
   const c2=await approve();
-  ok(/Copy .*Portfolio T12s\.xlsx.* from Queens Gate Apartments to M Lofts/i.test(c2.replace(/\s+/g,' '))&&/none of the sheets/i.test(c2),'copy_document card says M Lofts gets it as a document (none of the sheets is its own)');
+  ok(/Copy .*Portfolio T12s\.xlsx.* from Queens Gate Apartments/i.test(c2.replace(/\s+/g,' '))&&/Which part is M Lofts’s\?/.test(c2),'copy_document shows the parts card — it asks which sheet is M Lofts’s (none is set)');
   ok((await files(P.ml.key)).some(f=>f.name==='Portfolio T12s.xlsx'&&f.role==='other'),'…M Lofts has the copy, as a document — its NOI isn\'t touched');
   script([ 'Moving.\n'+act({action:'move_document',args:{file:'note.txt',from:'M Lofts',to:'Villages of Whitewater'}}), 'Done.' ]);
   await page.evaluate(()=>{ document.getElementById('aiAsstInput').value='Move the note from M Lofts to Whitewater'; document.getElementById('aiAsstSend').click(); });
