@@ -420,5 +420,16 @@ eq(Calc.perLoan(recA, [{ id: "legacy" }], hooks)[0].loanId, "legacy", "loanId fa
 isNull(Calc.perLoan(recA, [{}], hooks)[0].loanId, "loanId null when the loan has no id");
 
 // ---------------------------------------------------------------------------
+section("2.9.12 — stackOn: the combined ratios on a GIVEN NOI (the app's one NOI)");
+var sOn = Calc.stackOn(st.noi, loans, hooks);
+ok(sOn.dscr === st.dscr && sOn.dy === st.dy && sOn.ltv === st.ltv && sOn.value === st.value, "stackOn(the record's own NOI) ≡ stack(record) — one formula");
+var sTwice = Calc.stackOn(st.noi * 2, loans, hooks);
+ratio(sTwice.dscr, st.dscr * 2, "twice the NOI → twice the DSCR");
+ratio(sTwice.dy, st.dy * 2, "…twice the debt yield");
+ratio(sTwice.ltv, st.ltv / 2, "…half the LTV (value = NOI ÷ the senior's cap rate)");
+isNull(Calc.stackOn(null, loans, hooks).dscr, "no NOI → no DSCR (null, never NaN)");
+isNull(Calc.stackOn(-5, loans, hooks).dy, "a negative NOI → no debt yield");
+
+// ---------------------------------------------------------------------------
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

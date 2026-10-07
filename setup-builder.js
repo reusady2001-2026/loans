@@ -123,7 +123,7 @@
     return { sums: sums, inPlaceNOI: noi, totals: totals, review: review, reconcile: reconcile, expenseBadDebt: (expSum.BDX || 0) };
   }
 
-  // input: { t12Lines | categorySums, units, rrGPR, benchmarks:{ vacancyPct, mgmtPct,
+  // input: { t12Lines | categorySums, units, rrGPR, rrCommercial, benchmarks:{ vacancyPct, mgmtPct,
   //          reservePerUnit, budget:{code:$/unit}, sizing:{capRate,ltvMax,dscrMin,dyMin,intRate,amortYears} } }
   function buildSetup(input){
     input = input || {};
@@ -177,7 +177,13 @@
     if(has("BD"))   L("BD",   "rental", "value", { uw: sums.BD });
 
     // Other income — one line per category present, pass-through
-    OTHER.forEach(function (c){ if(has(c)) L(c, "other", "value", { uw: sums[c] }); });
+    // 2.9.12 — commercial rent LEASE BY LEASE from the rent roll (input.rrCommercial, a year: each occupied
+    // commercial unit's current rent × 12, a vacant one at $0) is the UNDERWRITTEN Commercial Rent, even when the
+    // statement has no such line; the in-place column keeps the statement's own figure.
+    OTHER.forEach(function (c){
+      if(c === "COM" && input.rrCommercial != null){ L("COM", "other", "value", { t12: sums.COM || 0, uw: num(input.rrCommercial) }); return; }
+      if(has(c)) L(c, "other", "value", { uw: sums[c] });
+    });
     extraInc.forEach(function (c){ L(c, "other", "value", { uw: sums[c] }); });   // 2.9.8
 
     // Expenses — budget $/unit where a benchmark is given, else pass-through;

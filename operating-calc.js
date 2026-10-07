@@ -11,6 +11,7 @@
      effectiveNOI() the NOI the ratios run on — in-place, or null with no lines
      perLoan()      DSCR / debt yield / value / LTV per loan on the property
      stack()        the same ratios on the COMBINED position (senior + mezz)
+     stackOn()      stack() on a given NOI (2.9.12 — the app's one NOI, T12 rule)
    Ratios mirror the app's loanDSCR / loanDebtYield / loanLTV / combinedPosition
    (index.html) to the letter — null, never NaN or Infinity, whenever NOI is not
    positive or the denominator is not — so the operating model can never
@@ -160,15 +161,18 @@
   // The combined position, as combinedPosition() reads it: debt service and
   // balance summed across the stack (unknowns count as 0, like its `|| 0`),
   // value off the senior's cap rate, ratios on the sums.
-  function stack(record, loans, hooks){
+  function stack(record, loans, hooks){ return stackOn(effectiveNOI(record), loans, hooks); }
+  // 2.9.12 — the same combined ratios on a GIVEN NOI: the app's one NOI (your override, else the T12 rule's NOI
+  // from general-data), so the roll-up never runs its ratios on a second, differently annualized NOI.
+  function stackOn(noi, loans, hooks){
     loans = Array.isArray(loans) ? loans : [];
-    var noi = effectiveNOI(record), ds = 0, bal = 0;
+    noi = fin(noi); var ds = 0, bal = 0;
     loans.forEach(function (l){ ds += hook(hooks, "annualDebtService", l) || 0; bal += hook(hooks, "currentBalance", l) || 0; });
     var value = propertyValue(noi, loans, hooks);
     return { count: loans.length, noi: noi, annualDS: ds, balance: bal, value: value,
              dscr: ratio(noi, ds), dy: ratio(noi, bal), ltv: ratio(bal, value) };
   }
 
-  return { derive: derive, effectiveNOI: effectiveNOI, perLoan: perLoan, stack: stack,
+  return { derive: derive, effectiveNOI: effectiveNOI, perLoan: perLoan, stack: stack, stackOn: stackOn,
            mergeAssumptions: mergeAssumptions, categorySums: categorySums, DEFAULTS: DEFAULTS };
 });

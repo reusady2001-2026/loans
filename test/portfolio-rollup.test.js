@@ -496,5 +496,26 @@ section("2.9.8 — a property with no loan keeps its NOI in the portfolio (no de
   ok(orphanOnly.dscr === null && orphanOnly.dy === null && orphanOnly.noLoanProps === 0, "a property with no loan AND no NOI adds nothing (unknown ≠ zero)");
 });
 
+section("2.9.12 — the roll-up runs on the app's ONE NOI (hooks.propertyNOI), not the operating lines' own total", () => {
+  const prev = global.OperatingCalc; delete global.OperatingCalc;   // the real engine (stackOn)
+  try {
+    const kC = "addr:1 commerce st", lC = { _id: "l-c", propertyName: "Commerce", propertyAddress: "1 Commerce St", maturityDate: "2030-01-01" };
+    const recs = { [kC]: { propKey: kC, propertyName: "Commerce", units: 268, period: null, lines: { GPR: line(1200000), RET: line(274919.63, false) }, assumptions: null, meta } };   // its lines total 925,080.37
+    const DSx = { "l-c": 1745000 }, BALx = { "l-c": 24200000 }, CAPx = { "l-c": 0.065 };
+    const hk = (over) => hooksFor([lC], Object.assign({ annualDebtService: l => DSx[l._id], currentBalance: l => BALx[l._id], capRate: l => CAPx[l._id] }, over || {}));
+    const before = PR.buildRows(recs, [lC], hk(), GD).rows[0];
+    ok(cents(before.noi, 925080.37), "with no app NOI, the row falls back to the operating lines' total (925,080.37)");
+    const one = { inPlace: 2171632.44, underwritten: 1950000, from: "t12" };
+    const row = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? one : null) }), GD).rows[0];
+    ok(cents(row.noi, 2171632.44), "NOI = the app's T12-rule NOI (2,171,632.44), not the lines' 925,080.37");
+    ok(cents(row.uwNoi, 1950000), "UW NOI = the app's underwritten NOI");
+    ok(approx(row.dscr, 2171632.44 / 1745000) && approx(row.dy, 2171632.44 / 24200000) && approx(row.ltv, 24200000 / (2171632.44 / 0.065)), "DSCR / debt yield / LTV all run on that one NOI");
+    const noRec = PR.buildRows({}, [lC], hk({ propertyNOI: () => one }), GD).rows[0];
+    ok(cents(noRec.noi, 2171632.44) && approx(noRec.dscr, 2171632.44 / 1745000), "a property with no operating record still shows the app's NOI and its ratios");
+    const thrower = PR.buildRows(recs, [lC], hk({ propertyNOI: () => { throw new Error("boom"); } }), GD).rows[0];
+    ok(cents(thrower.noi, 925080.37) && !thrower.error, "a hook that throws falls back to the operating lines, the row still renders");
+  } finally { global.OperatingCalc = prev; }
+});
+
 console.log("\n" + (fails ? fails + " of " + count + " checks FAILED" : "all " + count + " checks passed"));
 process.exit(fails ? 1 : 0);
