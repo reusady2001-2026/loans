@@ -194,6 +194,23 @@ try {
   cents(b4.result.underwritten.noi, 789037.5, "…NOI = 807,562.50 − 19,000 (EGI) + 475 (MGMT) = 789,037.50");
 
   // =========================================================================
+  section("2.9.12 — commercial rent LEASE BY LEASE from the rent roll (rrCommercial)");
+  var cs = { GPR: 1000000, COM: 286075.4, RET: 50000 };   // a statement whose commercial rent began mid-year
+  var c0 = SB.buildSetup({ categorySums: cs, units: 100, benchmarks: BENCH });
+  var c1 = SB.buildSetup({ categorySums: cs, units: 100, rrCommercial: 686580.96, benchmarks: BENCH });
+  var comLn = c1.worksheet.lines.filter(function (l) { return l.key === "COM"; })[0];
+  ok(comLn && comLn.t12 === 286075.4 && comLn.uw === 686580.96, "COM: in-place = the statement's 286,075.40, underwritten = the leases' 686,580.96");
+  cents(c1.result.underwritten.lines.COM, 686580.96, "the underwritten Commercial Rent is the rent roll's leases × 12");
+  cents(c1.result.inPlace.noi, c0.result.inPlace.noi, "the in-place NOI is untouched (the statement's own figure)");
+  cents(c1.result.underwritten.noi - c0.result.underwritten.noi, (686580.96 - 286075.4) * (1 - 0.025), "the underwritten NOI moves by the difference, net of the 2.5% management fee on it");
+  var c2 = SB.buildSetup({ categorySums: { GPR: 1000000, RET: 50000 }, units: 100, rrCommercial: 120000, benchmarks: BENCH });
+  var com2 = c2.worksheet.lines.filter(function (l) { return l.key === "COM"; })[0];
+  ok(com2 && com2.t12 === 0 && com2.uw === 120000, "no Commercial Rent on the statement: the line still comes from the rent roll (in-place 0)");
+  var c3 = SB.buildSetup({ categorySums: cs, units: 100, rrCommercial: 0, benchmarks: BENCH });
+  cents(c3.result.underwritten.lines.COM, 0, "every commercial unit vacant: the underwritten Commercial Rent is $0");
+  cents(c0.result.underwritten.lines.COM, 286075.4, "no commercial units in the rent roll (rrCommercial absent): the statement's line stands");
+
+  // =========================================================================
   section("E4 — blankWorksheet");
   var bw = UW.blankWorksheet();
   same(bw.units, null, "starts with units null");

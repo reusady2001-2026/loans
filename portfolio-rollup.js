@@ -4,8 +4,9 @@
    Avalon White Plains); leverage on a property is read on the COMBINED stack,
    never one piece alone, so senior + mezz collapse into a single row whose
    DSCR / debt yield / LTV use the SUMMED debt service and balance.
-   Each row carries the property's live operating numbers (in-place and
-   underwritten NOI from its operating record) next to its debt (balance,
+   Each row carries the property's NOI — the app's one NOI when the app hands
+   it in (hooks.propertyNOI, 2.9.12: your override, else the T12 rule's in-place
+   and underwritten NOI), else its operating record's — next to its debt (balance,
    annual debt service, earliest maturity). A property that has loans but no
    operating record yet still appears — with NOI "—" — so nothing is hidden.
 
@@ -111,7 +112,20 @@
         for (var mi = 0; mi < group.length; mi++) { var f = ""; try { f = hooks.maturityFlag(group[mi]); } catch (e) { f = ""; } if (f) { row.decision = f; break; } }
       }
       var st;
-      if (rec) {
+      // 2.9.12 — the app's ONE NOI for the property (hooks.propertyNOI: your override, else the T12 rule's in-place
+      // and underwritten NOI from its general-data), the same figures Underwriting and the property page show. The
+      // operating record's own 12-month-total NOI is only the fallback for a property the app has no NOI for yet.
+      var pn = null;
+      if (typeof hooks.propertyNOI === "function") { try { pn = hooks.propertyNOI(key); } catch (e) { pn = null; } }
+      var pnIn = pn ? fin(pn.inPlace) : null;
+      if (pnIn != null && C && typeof C.stackOn === "function") {
+        row.noi = pnIn;
+        row.noiFrom = pn.from || "app";
+        var pnUw = fin(pn.underwritten);
+        if (pnUw != null) row.uwNoi = pnUw;
+        else if (rec && lineCount(rec) > 0) { var d0 = C.derive(rec, gd); row.uwNoi = fin(d0 && d0.underwrittenNOI); }
+        st = C.stackOn(pnIn, group, hooks) || {};
+      } else if (rec) {
         if (calcErr) throw calcErr;
         row.noi = fin(C.effectiveNOI(rec));
         // A record with no lines has no underwritten NOI either: derive() on nothing

@@ -122,6 +122,67 @@ group("2.9.7 (#17) — gross potential rent = average MARKET rent of the OCCUPIE
   eq(p.gprFromOccupiedMarket, 72000, "GPR = 1,200 × 5 units × 12 = 72,000");
 });
 
+group("2.9.12 — occupied is what the rent roll says, never worked out from the rent", function(){
+  // The Yardi shape with no status column: a resident on the unit = occupied (even at $0 rent), VACANT = vacant,
+  // MODEL = non-revenue (one of the units, neither occupied nor vacant) — the export's own summary counts.
+  var g = [
+    ["Unit", "Unit Type", "Unit", "Resident", "Name", "Market", "Actual"],
+    ["", "", "Sq Ft", "", "", "Rent", "Rent"],
+    ["Current/Notice/Vacant Residents", null, null, null, null, null, null],
+    ["100", "Comm.man", 40000, "t100", "Big Charter School", 0, 50000],   // commercial (Comm.man), market 0
+    ["101", "1X1", 700, "t101", "Ann", 1400, 1400],
+    ["102", "1X1", 700, "t102", "Ben", 1300, 0],                          // moved in, $0 rent → OCCUPIED (the rent roll says so)
+    ["103", "1X1", 700, "VACANT", "VACANT", 1500, 0],
+    ["104", "1X1", 760, "MODEL", "MODEL", 1392, 0],                       // non-revenue
+    ["", "", "", "Total", "Manor House(commerce)", 5592, 51400]
+  ];
+  var p = RR.parse(g).properties[0];
+  eq(p.residentialUnits, 4, "4 apartments (the Comm.man unit is commercial)");
+  eq(p.occupiedUnits, 2, "2 occupied — Ann, and Ben at $0 rent");
+  eq(p.vacantUnits, 1, "1 vacant — only the unit marked VACANT");
+  eq(p.nonRevenueUnits, 1, "1 non-revenue — the MODEL");
+  ok(p.units.filter(function(u){ return u.unit === "102"; })[0].occupied === true, "unit 102 (a resident, $0 rent) is occupied");
+  eq(p.avgMarketRentOccupied, 1350, "average market rent of the occupied = (1,400 + 1,300) / 2 = 1,350");
+  eq(p.gprFromOccupiedMarket, 1350 * 4 * 12, "GPR = 1,350 × all 4 apartments × 12");
+  eq(p.commercialUnits, 1, "the Comm.man unit is commercial");
+  eq(p.commercialAnnual, 600000, "commercial rent lease by lease: 50,000 × 12 = 600,000");
+  // a status column decides when there is one
+  var s = RR.parse([
+    ["Unit", "Unit Type", "Market Rent", "Actual Rent", "Status"],
+    ["1", "1BR", 1000, 0, "Occupied"],          // the status says occupied → occupied, at $0
+    ["2", "1BR", 1000, 0, "Notice"],            // on notice is still occupied
+    ["3", "1BR", 1000, 900, "Vacant-Leased"],   // the status says vacant → vacant, whatever the rent
+    ["4", "1BR", 1000, 0, "Model"]
+  ]).properties[0];
+  eq(s.occupiedUnits, 2, "status column: Occupied and Notice are occupied");
+  eq(s.vacantUnits, 1, "status column: Vacant-Leased is vacant");
+  eq(s.nonRevenueUnits, 1, "status column: Model is non-revenue");
+  // a sheet that names no resident and has no status falls back to the rent
+  var r = RR.parse([["Unit", "Unit Type", "Market Rent", "Actual Rent"], ["1", "1BR", 1000, 1000], ["2", "1BR", 1000, 0]]).properties[0];
+  eq(r.occupiedUnits, 1, "no resident, no status → occupied by its rent");
+});
+
+group("2.9.12 — commercial income lease by lease; a vacant commercial unit is $0", function(){
+  var g = [
+    ["Unit", "Unit Type", "Unit", "Resident", "Name", "Market", "Actual"],
+    ["", "", "Sq Ft", "", "", "Rent", "Rent"],
+    ["100", "Comm.man", 40000, "t100", "Big Charter School", 0, 50000.25],
+    ["150", "Comm.man", 2000, "t150", "Sandwich Shop", 0, 3000.5],
+    ["160", "Retail", 1500, "VACANT", "VACANT", 2500, 2500],          // vacant — $0, whatever its row shows
+    ["201", "1X1", 700, "t201", "Ann", 1400, 1400],
+    ["", "", "", "Total", "Plaza", 3900, 56900.75]
+  ];
+  var p = RR.parse(g).properties[0];
+  eq(p.commercialUnits, 3, "3 commercial units");
+  eq(p.commercialAnnual, (50000.25 + 3000.5) * 12, "Σ occupied leases × 12 = 636,009; the vacant unit adds $0");
+  eq(p.commercialLeases.length, 3, "each lease is listed");
+  var v = p.commercialLeases.filter(function(l){ return l.unit === "160"; })[0];
+  ok(v && v.occupied === false && v.monthly === 0, "the vacant commercial unit is listed at $0");
+  var t = p.commercialLeases.filter(function(l){ return l.unit === "100"; })[0];
+  ok(t && t.tenant === "Big Charter School" && t.sqft === 40000 && t.monthly === 50000.25, "a lease: unit, tenant, sq ft, monthly rent");
+  eq(p.residentialUnits, 1, "the apartment count leaves the commercial units out");
+});
+
 group("anomalies are listed per property, not dropped or thresholded", function(){
   var g = [
     ["Unit", "Unit Type", "Market Rent", "Actual Rent"],

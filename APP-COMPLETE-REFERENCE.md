@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.11 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.12 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.11
+**Current version:** 2.9.12
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -15,7 +15,7 @@ Windows install, and what comes next.*
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
 > the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8"); 2.9.9 the
 > fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10"); 2.9.11 the
-> fixes from testing 2.9.10 (marked "2.9.11").
+> fixes from testing 2.9.10 (marked "2.9.11"); 2.9.12 the fixes from testing 2.9.11 (marked "2.9.12").
 
 ---
 
@@ -199,6 +199,14 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   benchmarks editor moved from Settings to each property — #112.)*
 - **Commercial income** is its own line: NOI is shown in three rows — apartments (all shared expenses, ÷
   apartment units), commercial (commercial rent, no shared expenses, ÷ commercial units) and total.
+  **2.9.12 — lease by lease:** when the property's rent roll has commercial units, the **underwritten** Commercial
+  Rent is each occupied commercial unit's current rent × 12, a vacant one at **$0** (the leases are listed under the
+  line); the in-place column keeps the statement's own figure. No commercial units in the rent roll → the
+  statement's line, as before.
+- **2.9.12 — one NOI everywhere:** the property page's NOI, DSCR, debt yield and LTV, and the Underwriting
+  "Portfolio roll-up", read the same NOI as Underwriting, the portfolio and the refinance — your override, else the
+  T12 rule's NOI (last 3 months × 4 when the rule says so) — and say how it was worked out ("From the T12 · T3 × 4 ·
+  Jun → Aug 2026"). The operating lines' own 12-month total is no longer shown as the NOI anywhere.
 - *(The GL-mapping editor was removed on purpose in 2.9.3 — #113; there is no re-mapping screen.)*
 - Every change to an assumption is kept in its history (old → new, when, who, where from).
 
@@ -275,7 +283,11 @@ with the property, is shown.
 ### 4.10 Rent roll & unit statistics
 - Read a **Yardi rent roll** → each property's units, occupancy, average market / in-place rent, square footage.
 - **Gross potential rent fills in automatically** (2.9.4; formula 2.9.7, #17): the average market rent of the
-  **occupied** units × **all** units × 12. *(There is no "Use these" button — #110.)* **2.9.8:** the average rent
+  **occupied** units × **all** units × 12.
+- **Occupied is what the rent roll says (2.9.12):** its status column when it has one; otherwise a unit with a
+  resident on it is occupied whatever its rent ($0 included), "VACANT" is vacant, and a MODEL / office / down unit
+  is **non-revenue** — one of the units, neither occupied nor vacant. The counts match the rent roll's own summary
+  (1222 Commerce St: 221 apartments + 2 commercial = 223 occupied, 46 vacant, 1 non-revenue). *(There is no "Use these" button — #110.)* **2.9.8:** the average rent
   and gross potential rent belong to **each property** — opening another property in Underwriting shows its own
   (a rent you typed for it, else its own rent roll, else empty), never the last property's; its saved underwritten
   NOI uses its own rent whether it is open or not. The first start of 2.9.8 recomputes every property's figures,
@@ -466,29 +478,28 @@ saved, the key is used.
 - **2.9.8** — the fixes from testing the installed 2.9.7.
 - **2.9.9** — the fixes from testing the installed 2.9.8.
 - **2.9.10** — the fixes from testing the installed 2.9.9.
-- **2.9.11** — *(this stage)* the fixes from testing the installed 2.9.10 (see §8).
+- **2.9.11** — the fixes from testing the installed 2.9.10.
+- **2.9.12** — *(this stage)* the fixes from testing the installed 2.9.11 (see §8).
 
 ---
 
-## 8. Stage 2.9.11 — what shipped, and what still needs checking
+## 8. Stage 2.9.12 — what shipped, and what still needs checking
 
-**What shipped** — from testing the installed 2.9.10 (check list Part 4) and the Heritage Key Villas rent roll:
-1. **Full freedom over a file's parts** — any part (a sheet, a rent-roll section, a PDF's page range) can go to any
-   property; several parts to one property are combined (a rent roll unit by unit — Heritage Key Villas' four
-   phases are one property of 521 units, 491 occupied; T12 sheets line by line, month by month); one part can go to
-   several properties. For the user (Documents, Underwriting, the rent-roll importer, Data Health) and the assistant.
-2. **PDFs** — a PDF split by page ranges (several agreements in one file) or linked to several properties (one
-   agreement over several properties); each property reads only its pages. The pooled loan itself is a later stage.
-3. **Results tied to the exact parts** — the T12 AI check, its decisions and "what to push" count only for the same
-   file and the same parts; 40 N Euclid's (made on Forest Park's sheet in 2.9.8) are dropped and redone. New
-   assistant action `check_t12`.
-4. **The assistant and the records** — a file you name is read before the answer; profile.json comes with what the
-   Profile tab shows; "what to push" keeps no address copy.
-5. **One underwritten NOI** — "what to push" measures every move from the app's own NOI.
+**What shipped** — from testing the installed 2.9.11 (check list Part 5 all passed) and 1222 Commerce St's T12 and
+rent roll:
+1. **One NOI on the property page and in the Portfolio roll-up** — they showed the operating lines' 12-month total
+   ($925,080.37 for 1222 Commerce St) while Underwriting and the portfolio showed the T12 rule's NOI (lease-up →
+   last 3 months × 4 = $2,171,632.44). Now every screen shows the one NOI, with its DSCR, debt yield and LTV, and
+   says how it was worked out.
+2. **Commercial income lease by lease** — the underwritten Commercial Rent is the rent roll's leases (each occupied
+   commercial unit's current rent × 12; a vacant one $0), listed under the line. 1222 Commerce St: unit 100 and
+   unit 150 ("Comm.man") → $686,580.96 a year.
+3. **Occupied is what the rent roll says** — a unit with a resident is occupied even at $0 rent; a MODEL is
+   non-revenue. The counts now equal the rent roll's own summary.
 
-The 2.9.10 stage is in the git history and its pull request.
+The 2.9.11 stage is in the git history and its pull request.
 
-**Check on the real installed 2.9.11 (Windows)** — Part 5 of the check list.
+**Check on the real installed 2.9.12 (Windows)** — Part 6 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -497,7 +508,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.12 — One shared database (+ the pooled loan, moved here from 2.9.7)
+### 2.9.13 — One shared database (+ the pooled loan, moved here from 2.9.7)
 - **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
   a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
   and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
@@ -506,7 +517,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
   analyzed as one credit position: combined coverage, combined sizing, release / substitution across the pool. Its
   documents can already be linked to all its properties (2.9.11); the loan itself is this stage.
 
-### 2.9.13 — Automated Yardi ingestion
+### 2.9.14 — Automated Yardi ingestion
 Pull operating data and rent rolls from Yardi directly instead of manual file drops.
 
 ---
@@ -523,4 +534,4 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 
 ---
 
-*Last updated for version 2.9.11.*
+*Last updated for version 2.9.12.*

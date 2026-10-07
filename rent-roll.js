@@ -26,7 +26,9 @@
    • The average ACTUAL rent EXCLUDES vacant (zero-rent) units — "you have to
      exclude the zeros… you don't want the vacancies to weigh down the average."
 
-   • VACANT is marked by the resident/name reading "VACANT". Commercial space
+   • OCCUPIED is what the rent roll says (2.9.12): its status column when it has one; otherwise a unit with a
+     resident on it is occupied whatever its rent, VACANT is marked by the resident/name reading "VACANT", and a
+     MODEL / office / down unit is non-revenue (one of the units, neither occupied nor vacant). Commercial space
      (CAM / "Comm" unit types, restaurants and shops, or a property named
      "…Commercial") is kept for its income (the NOI) but excluded from the
      residential unit count, GPR and per-unit averages.
@@ -85,6 +87,9 @@
   var SECTION_FUTURE_RE  = /future\s*residents?\s*\/\s*applicant/i;
   var TOTAL_RE = /^total\b/i;
   var VACANT_RE = /^vacant$/i;
+  // 2.9.12 — a unit the rent roll carries as NON-REVENUE (a model, the leasing office, a down unit): one of the
+  // property's units, but neither occupied nor vacant — the export's own "Non Rev Units" line.
+  var NONREV_RE = /^(model|admin|administrative|office|leasing\s*office|down|non[\s-]*rev(enue)?)(\s*unit)?$/i;
 
   function scoreHeaderRow(cells){
     var used = {}, map = {}, score = 0;
@@ -136,8 +141,8 @@
   function aggregate(name, units, opts){
     opts = opts || {};
     var out = { name: name || "(property)", units: units, residentialUnits: 0, occupiedUnits: 0, commercialUnits: 0,
-      vacantUnits: 0, residentialSqft: null, gprAnnual: null, avgMarketRent: null, avgMarketRentOccupied: null, gprFromOccupiedMarket: null, avgActualRent: null, occupancy: null,
-      unitStats: [], commercialAnnual: null, warnings: [] };
+      vacantUnits: 0, nonRevenueUnits: 0, residentialSqft: null, gprAnnual: null, avgMarketRent: null, avgMarketRentOccupied: null, gprFromOccupiedMarket: null, avgActualRent: null, occupancy: null,
+      unitStats: [], commercialAnnual: null, commercialLeases: [], warnings: [] };
     var propComm = COMMERCIAL_NAME_RE.test(name || "");
     units.forEach(function(u){
       u.commercial = u.commercial || propComm;   // a property named "…Commercial" is all commercial
@@ -150,7 +155,8 @@
     out.residentialUnits = res.length;
     out.commercialUnits = comm.length;
     out.occupiedUnits = res.filter(function(u){ return u.occupied; }).length;
-    out.vacantUnits = res.filter(function(u){ return !u.occupied; }).length;
+    out.vacantUnits = res.filter(function(u){ return !u.occupied && !u.nonRevenue; }).length;
+    out.nonRevenueUnits = res.filter(function(u){ return !u.occupied && u.nonRevenue; }).length;   // 2.9.12 — a model / down unit: neither occupied nor vacant
     var resSqfts = res.map(function(u){ return u.sqft; }).filter(function(v){ return v != null; });
     out.residentialSqft = resSqfts.length ? sum(resSqfts) : null;   // total rentable square footage of the property
 
@@ -165,8 +171,13 @@
     var occActual = res.filter(function(u){ return u.occupied && u.actualRent != null && u.actualRent > 0; }).map(function(u){ return u.actualRent; });
     out.avgActualRent = occActual.length ? round2(mean(occActual)) : null;
     if (res.length) out.occupancy = round2(res.filter(function(u){ return u.occupied; }).length / res.length);
-    var commActual = comm.map(function(u){ return u.actualRent; }).filter(function(v){ return v != null; });
-    if (comm.length) out.commercialAnnual = round2(sum(commActual) * 12);
+    // 2.9.12 — commercial income LEASE BY LEASE: each occupied commercial unit at its current rent, a vacant one at
+    // $0 (whatever rent the row shows). commercialAnnual is that rent × 12 — the underwritten Commercial Rent.
+    out.commercialLeases = comm.map(function(u){
+      return { unit: u.unit, tenant: (u.name && !VACANT_RE.test(u.name)) ? u.name : (u.resident || ""), sqft: u.sqft,
+               monthly: u.occupied ? round2(u.actualRent > 0 ? u.actualRent : 0) : 0, occupied: !!u.occupied };
+    });
+    if (comm.length) out.commercialAnnual = round2(sum(out.commercialLeases.map(function(l){ return l.monthly; })) * 12);
 
     var byType = {};
     res.forEach(function(u){ var t = u.type || "(unspecified)"; (byType[t] = byType[t] || []).push(u); });
@@ -199,13 +210,18 @@
     var statusRaw = map.status != null ? low(row[map.status]) : "";
     if (!unitId && market == null && actual == null) return null;
     var commercial = COMMERCIAL_TYPE_RE.test(low(typeRaw)) || COMMERCIAL_TYPE_RE.test(low(unitId));
+    // 2.9.12 — OCCUPIED IS WHAT THE RENT ROLL SAYS, never worked out from the rent: its status column when it has
+    // one; otherwise a unit with a resident on it is occupied whatever its rent ($0 included), "VACANT" is vacant,
+    // and a MODEL / office / down unit is non-revenue. Only a sheet that names no resident falls back to the rent.
     var vacant = VACANT_RE.test(resident) || VACANT_RE.test(nameRaw) || /vacan/.test(statusRaw);
+    var nonRevenue = !vacant && (NONREV_RE.test(resident) || NONREV_RE.test(nameRaw) || /non\s*-?\s*rev|\bmodel\b|\bdown\b/.test(statusRaw));
     var occupied;
-    if (vacant) occupied = false;
-    else if (/occup|leased|current|filled/.test(statusRaw)) occupied = true;
+    if (vacant || nonRevenue) occupied = false;
+    else if (/occup|leased|current|filled|notice|evict/.test(statusRaw)) occupied = true;
+    else if (resident || nameRaw) occupied = true;
     else occupied = (actual != null && actual > 0);
     return { unit: unitId, type: typeRaw, sqft: sqft, resident: resident, name: nameRaw,
-      marketRent: market, actualRent: actual, occupied: occupied, commercial: commercial };
+      marketRent: market, actualRent: actual, occupied: occupied, nonRevenue: nonRevenue, commercial: commercial };
   }
 
   // The printed "Summary Groups" footing, when present: occupied / vacant / non-revenue unit counts and

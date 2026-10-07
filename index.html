@@ -3819,8 +3819,10 @@ tr.flagged:hover td{background:#fee2e2}
       });
       return rows;
     }
+    let uwBuiltCom = null;   // 2.9.12 — the lease-by-lease commercial rent the last build used (null = the statement's line)
     function uwBuild(){
       const i = uwState.input;
+      const com = opRRCommercialSync(opFocusKey), rrCom = com ? com.annual : null; uwBuiltCom = rrCom;
       if(!window.SetupBuilder){ uwLastBuilt = null; return; }
       // The parsed statement. In-place income/expense/NOI are read
       // from the statement's own printed footing (t12-parse totals), so the Setup's
@@ -3831,16 +3833,16 @@ tr.flagged:hover td{background:#fee2e2}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), bench: i.bench, review: opT12ReviewFor(opFocusKey, i.fileSha) }).setup;   // 2.9.7 (#108) — with the user's T12 review decisions
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, bench: i.bench, review: opT12ReviewFor(opFocusKey, i.fileSha) }).setup;   // 2.9.7 (#108) — with the user's T12 review decisions
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
-            units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench });
+            units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, benchmarks: i.bench });
         }
         return;
       }
       const lines = parseT12Text(i.t12Text||"");
-      uwLastBuilt = lines.length ? SetupBuilder.buildSetup({ t12Lines: lines, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), benchmarks: i.bench }) : null;
+      uwLastBuilt = lines.length ? SetupBuilder.buildSetup({ t12Lines: lines, units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, benchmarks: i.bench }) : null;
     }
 
     // Re-render ONLY the setup output (cards + table + sizing), leaving the units / GPR / avg-rent input grid
@@ -3982,6 +3984,11 @@ tr.flagged:hover td{background:#fee2e2}
       const comIP = comLn && comLn.t12 != null ? comLn.t12 : 0, comUW = (r.underwritten.lines && r.underwritten.lines.COM != null) ? r.underwritten.lines.COM : comIP;
       const hasCom = !!comLn && (Math.abs(comIP) > 0.005 || Math.abs(comUW) > 0.005);
       const cUnits = hasCom ? propCommercialUnits(opFocusKey) : null;
+      // 2.9.12 — the underwritten Commercial Rent is the rent roll's leases, lease by lease (a vacant unit at $0)
+      const comRR = opRRCommercialSync(opFocusKey);
+      const comLeasesRow = comRR ? '<tr data-uwcomleases><td colspan="5" class="pb-1.5 pl-4 text-[10px] leading-snug text-violet-600">Underwritten lease by lease from the rent roll: '+
+        comRR.leases.map(l => 'unit '+escapeHtml(String(l.unit || "?"))+(l.tenant ? ' &middot; '+escapeHtml(l.tenant) : '')+(l.sqft ? ' &middot; '+Math.round(l.sqft).toLocaleString()+' sf' : '')+' &middot; '+(l.occupied ? fmtMoney(l.monthly)+'/mo' : '$0 (vacant)')).join('; ')+
+        ' &rarr; <strong>'+fmtMoney(comRR.annual)+'/yr</strong>. The in-place column is the statement&rsquo;s own figure.</td></tr>' : '';
       const perA = v => (unitsOk && v != null) ? v / uUnits : null, perC = v => (cUnits && v != null) ? v / cUnits : null;
       let rows = "", prev = null;
       b.worksheet.lines.forEach(ln => {
@@ -3989,6 +3996,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true, hasCom ? { ip: perA(r.inPlace.egi - comIP), uw: perA(r.underwritten.egi - comUW) } : null);
         if(prev==="expense" && ln.section!=="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
         rows += line(ln); prev = ln.section;
+        if(ln.key === "COM" && comRR && !(ovMap.COM != null)) rows += comLeasesRow;   // 2.9.12 — the leases the underwritten figure is built from
       });
       if(prev==="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
       if(hasCom){
@@ -5148,9 +5156,9 @@ tr.flagged:hover td{background:#fee2e2}
       var trimmed = !annualized && !!(lu && lu.trimmed && lu.codeSums);
       var setup;
       if(annualized || trimmed){
-        setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
+        setup = SetupBuilder.buildSetup({ categorySums: lu.codeSums, units: opt.units, rrGPR: opt.rrGPR, rrCommercial: opt.rrCommercial, benchmarks: opt.bench });
       } else {
-        setup = SetupBuilder.buildSetup({ parsed: { rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }, units: opt.units, rrGPR: opt.rrGPR, benchmarks: opt.bench });
+        setup = SetupBuilder.buildSetup({ parsed: { rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals }, units: opt.units, rrGPR: opt.rrGPR, rrCommercial: opt.rrCommercial, benchmarks: opt.bench });
       }
       var tie = uwTieInfo(parsedM, lu, fpReconcile);
       try{ setup.tie = tie; setup.noiRule = lu; }catch(e){}
@@ -5192,14 +5200,27 @@ tr.flagged:hover td{background:#fee2e2}
     // 2.9.8 (problem 5) — a property's gross potential rent for the underwriting: the rent typed for it (yearly,
     // or monthly average × units × 12), else its own rent roll (average market rent of the occupied units × all
     // units × 12, #17), else none. Never another property's numbers.
-    async function opPropGPR(key, bench, units){
+    async function opPropGPR(key, bench, units, rrRead){
       const rt = (bench && bench.rentTyped) || {};
       if(rt.rrGPR != null && isFinite(rt.rrGPR)) return Number(rt.rrGPR);
-      let rr = null; try{ rr = Object.prototype.hasOwnProperty.call(loanRRCache, key) && loanRRCache[key] !== undefined ? loanRRCache[key] : await opRentRollBlockFor(key); }catch(e){ rr = null; }
+      let rr = (rrRead !== undefined) ? rrRead : null;   // 2.9.12 — the rent roll the caller already read
+      if(rrRead === undefined){ try{ rr = Object.prototype.hasOwnProperty.call(loanRRCache, key) && loanRRCache[key] !== undefined ? loanRRCache[key] : await opRentRollBlockFor(key); }catch(e){ rr = null; } }
       const b = rr && rr.block, u = (units != null && units > 0) ? units : (b && b.residentialUnits) || null;
       if(rt.avgRentUnit != null && isFinite(rt.avgRentUnit)) return (u > 0) ? Math.round(Number(rt.avgRentUnit) * u * 12) : null;
       if(b && b.avgMarketRentOccupied != null && u > 0) return Math.round(b.avgMarketRentOccupied * u * 12);
       return null;
+    }
+    // 2.9.12 — commercial income LEASE BY LEASE from the property's rent roll: each occupied commercial unit at its
+    // current rent, a vacant one at $0 → { annual, leases, file }, or null when its rent roll has no commercial units
+    // (then the statement's Commercial Rent line stands, as before). It is the UNDERWRITTEN Commercial Rent.
+    function opRRCommercialOf(rr){
+      var b = rr && rr.block;
+      if(!b || !(b.commercialUnits > 0) || b.commercialAnnual == null || !isFinite(b.commercialAnnual)) return null;
+      return { annual: b.commercialAnnual, leases: b.commercialLeases || [], file: (rr.file && rr.file.name) || "" };
+    }
+    function opRRCommercialSync(key){ try{ return key ? opRRCommercialOf(loanRRCache[key]) : null; }catch(e){ return null; } }
+    async function opPropRentRoll(key){
+      try{ return Object.prototype.hasOwnProperty.call(loanRRCache, key) && loanRRCache[key] !== undefined ? loanRRCache[key] : await opRentRollBlockFor(key); }catch(e){ return null; }
     }
     // Read the property's saved T12 grid + its assumptions and build the Setup — the
     // authoritative in-place + underwritten NOI, the SAME inputs the tab uses when the
@@ -5211,12 +5232,14 @@ tr.flagged:hover td{background:#fee2e2}
       var bench = focused ? uwState.input.bench : opMergeBench(uwDefaults().bench, await opLoadAssumptions(key));
       var p = opProp(key), sr = p && p.loans && p.loans[0];
       var units = focused ? uwNum(uwState.input.units) : propUnits(key);   // 2.9.7 (#19) — the profile's units, the same number the tab shows
-      var rrGPR = await opPropGPR(key, bench, units);   // 2.9.8 (problem 5) — THIS property's rent, open or not
+      var rrRead = await opPropRentRoll(key);            // its rent roll, read once
+      var rrGPR = await opPropGPR(key, bench, units, rrRead || null);   // 2.9.8 (problem 5) — THIS property's rent, open or not
+      var rrCom = opRRCommercialOf(rrRead);              // 2.9.12 — its commercial leases, lease by lease
       var rv = null;
       try{ var gdr = gdFullCache[key] || await opLoadGeneralData(key); rv = gdr && gdr.t12Review; }catch(e){}
       if(rv && rv.fileSha && r.sha && rv.fileSha !== r.sha) rv = null;   // decisions belong to the file they were made on
       if(rv && !opT12ReviewFits(rv, opT12Cur[key])) rv = null;   // 2.9.11 — … and to the part(s) they were made on
-      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, bench: bench, review: rv });
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, rrCommercial: rrCom ? rrCom.annual : null, bench: bench, review: rv });
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
@@ -5380,7 +5403,20 @@ tr.flagged:hover td{background:#fee2e2}
         maturity: l => { try{ const d = compute(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
         // The loan's status when it needs a maturity decision (Matured / Extension undecided), else "" — the roll-up flags it on the row.
         maturityFlag: l => { try{ return loanNeedsMaturityDecision(l) ? loanStatusOf(l) : ""; }catch(e){ return ""; } },
-        globalDefaults: () => uwState.input.bench };
+        globalDefaults: () => uwState.input.bench,
+        // 2.9.12 — the property's ONE NOI for the roll-up: the same in-place and underwritten figures Underwriting,
+        // the property page and the portfolio show (your override, else the T12 rule's NOI from general-data).
+        propertyNOI: k => propOneNOI(k) };
+    }
+    // 2.9.12 — a property's NOI as the whole app reads it, with where it came from: your override, else the T12
+    // rule's NOI (general-data.json — annualized when the rule says so), else null (the caller falls back to the
+    // operating lines / the loan's own NOI). { inPlace, underwritten, from: "override" | "t12", method }.
+    function propOneNOI(key){
+      const ov = propNOIOverride(key), g = gdNOICache[key];
+      const uw = (g && g.underwritten != null && isFinite(g.underwritten)) ? g.underwritten : null;
+      if(ov != null) return { inPlace: ov, underwritten: uw, from: "override", method: "your NOI override" };
+      if(g && g.inPlace != null && isFinite(g.inPlace)) return { inPlace: g.inPlace, underwritten: uw, from: "t12", method: noiMethodLabel(g) };
+      return null;
     }
     // One entry per property (keyed exactly like the rest of the app), named by its senior loan.
     function opProperties(){
@@ -6551,7 +6587,7 @@ tr.flagged:hover td{background:#fee2e2}
     // Per-property Import/Update rent-roll button (property view) — imports for that property (Fix #1 safety net).
     try{ if(!document._rrImportForBound){ document._rrImportForBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-rrimportfor]"); if(b){ e.preventDefault(); opRentRollImportPickFor(b.getAttribute("data-rrimportfor")); } }); } }catch(e){}
     try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
-    try{ window.LDS_readT12=async(k)=>{ const r=await opReadPropT12(k); return r?{ sheet:r.sheet, sheetNo:r.sheetNo, sheets:r.sheets, noi:r.parsed&&r.parsed.totals?r.parsed.totals.noi:null, name:r.name, status:r.partStatus, combined:!!r.combined, partSig:r.partSig, partsLabel:r.partsLabel, monthsDiffer:!!r.monthsDiffer }:null; }; window.LDS_partsWaiting=(k)=>opPartsWaiting[k]||null; window.LDS_gdRecords=async(k)=>{ const gd=await opLoadGeneralData(k); return (gd&&gd.fileParts)||[]; }; window.LDS_rrBlockFresh=async(k)=>{ try{ delete loanRRCache[k]; }catch(e){} const r=await opRentRollBlockFor(k); return r?(r.block?{ name:r.block.name, units:r.block.residentialUnits, occupied:r.block.occupiedUnits, vacant:r.block.vacantUnits, sqft:r.block.residentialSqft, gpr:r.block.gprAnnual, avgMarket:r.block.avgMarketRent, section:r.part&&r.part.section, combined:!!r.combined, label:r.block.fullName||"", parts:(r.parts||[]).length }:{ waiting:r.waiting||null }):null; };
+    try{ window.LDS_readT12=async(k)=>{ const r=await opReadPropT12(k); return r?{ sheet:r.sheet, sheetNo:r.sheetNo, sheets:r.sheets, noi:r.parsed&&r.parsed.totals?r.parsed.totals.noi:null, name:r.name, status:r.partStatus, combined:!!r.combined, partSig:r.partSig, partsLabel:r.partsLabel, monthsDiffer:!!r.monthsDiffer }:null; }; window.LDS_partsWaiting=(k)=>opPartsWaiting[k]||null; window.LDS_gdRecords=async(k)=>{ const gd=await opLoadGeneralData(k); return (gd&&gd.fileParts)||[]; }; window.LDS_rrBlockFresh=async(k)=>{ try{ delete loanRRCache[k]; }catch(e){} const r=await opRentRollBlockFor(k); return r?(r.block?{ name:r.block.name, units:r.block.residentialUnits, occupied:r.block.occupiedUnits, vacant:r.block.vacantUnits, sqft:r.block.residentialSqft, gpr:r.block.gprAnnual, avgMarket:r.block.avgMarketRent, nonRevenue:r.block.nonRevenueUnits, commercial:r.block.commercialUnits, commercialAnnual:r.block.commercialAnnual, commercialLeases:(r.block.commercialLeases||[]).length, avgMarketOccupied:r.block.avgMarketRentOccupied, section:r.part&&r.part.section, combined:!!r.combined, label:r.block.fullName||"", parts:(r.parts||[]).length }:{ waiting:r.waiting||null }):null; };
       window.LDS_rrImportFor=(k)=>{ rrImportPreferKey=k||null; };
       window.LDS_partsInfo=(bytes,name)=>opPartsInfo(bytes,name); window.LDS_partsDefaults=(info,k,name,sha,mode)=>opPartsDefaults(info,k,name,sha||"",mode||"page");
       window.LDS_applyParts=(src,info,choices,k,opts)=>opApplyPartChoices(src,info,choices,k,opts||{}); window.LDS_pdfParts=(k,id)=>opPdfPartsFromDocs(k,id);
@@ -6564,6 +6600,7 @@ tr.flagged:hover td{background:#fee2e2}
     function opOpenProperty(loan){ uwOpenFor(propertyKey(loan)); }
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
     // saying where the NOI comes from, with a button that opens the property's sheet.
+    const loanOpGDPending = new Set();   // 2.9.12 — properties whose general-data NOI the property page is reading
     function renderLoanOpPanel(){
       const host = el("loanOpPanel"); if(!host) return;
       const loan = getLoan(state.activeId);
@@ -6571,11 +6608,22 @@ tr.flagged:hover td{background:#fee2e2}
       opInit();
       const key = propertyKey(loan), members = loansForProperty(loan), rec = OperatingStore.get(key);
       const hasModel = !!(rec && rec.lines && Object.keys(rec.lines).length);
-      const noi = hasModel ? OperatingCalc.effectiveNOI(rec) : (noiEntered(loan) ? Number(loan.noi) : null);
-      const stack = hasModel ? OperatingCalc.stack(rec, members, opHooks()) : null;
-      const cp = combinedPosition(members);
-      const dscr = stack ? stack.dscr : cp.dscr, dy = stack ? stack.dy : cp.debtYield, ltv = stack ? stack.ltv : cp.ltv;
-      const when = hasModel && rec.meta && rec.meta.lastUpdated ? new Date(rec.meta.lastUpdated).toLocaleDateString() : null;
+      // 2.9.12 — ONE NOI: the property's NOI here is the one Underwriting, the portfolio and the refinance use
+      // (combinedPosition → your override, else the T12 rule's NOI, else the operating lines, else the loan's) —
+      // never the operating lines' own 12-month total next to an annualized NOI everywhere else.
+      if(!Object.prototype.hasOwnProperty.call(gdNOICache, key) && !loanOpGDPending.has(key)){   // its NOI not read yet → read it, then redraw
+        loanOpGDPending.add(key);
+        opEnsureGeneralData(key).catch(() => {}).then(() => { loanOpGDPending.delete(key);
+          if(!Object.prototype.hasOwnProperty.call(gdNOICache, key)) return;
+          const l = getLoan(state.activeId); if(state.mode === "view" && l && propertyKey(l) === key){ try{ render(); }catch(e){} } });   // the whole page: its KPIs read the same NOI
+      }
+      const cp = combinedPosition(members), one = propOneNOI(key);
+      const noi = cp.noi, dscr = cp.dscr, dy = cp.debtYield, ltv = cp.ltv;
+      const gdAt = (one && one.from === "t12" && gdFullCache[key] && gdFullCache[key].updatedAt) ? new Date(gdFullCache[key].updatedAt).toLocaleDateString() : null;
+      const opAt = hasModel && rec.meta && rec.meta.lastUpdated ? new Date(rec.meta.lastUpdated).toLocaleDateString() : null;
+      const src = one ? (one.from === "override" ? "Your NOI override (Property profile)" : "From the T12" + (one.method ? " &middot; " + escapeHtml(one.method) : "") + (gdAt ? " &middot; updated " + gdAt : ""))
+        : (noi != null && hasModel && opNOI(loan) === noi) ? "From the property&rsquo;s operating lines" + (opAt ? " &middot; updated " + opAt : "")
+        : (noi != null ? "Hand-entered NOI &mdash; no T12 yet" : "No NOI yet");
       const tile = (l, v) => '<div><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div></div>';
       host.innerHTML =
         '<div class="boxline rounded-2xl border border-brand-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">'+
@@ -6587,7 +6635,7 @@ tr.flagged:hover td{background:#fee2e2}
           '</div>'+
           '<div class="flex flex-col items-start sm:items-end gap-1">'+
             '<button type="button" id="loanOpOpen" class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">'+(hasModel ? "Open operating model" : "Build operating model")+'</button>'+
-            '<span class="text-[10px] text-slate-400">'+(hasModel ? "From the property&rsquo;s operating model"+(when ? " &middot; updated "+when : "") : (noi != null ? "Hand-entered NOI &mdash; no operating model yet" : "No NOI yet"))+(members.length > 1 ? " &middot; shared by "+members.length+" loans" : "")+'</span>'+
+            '<span class="text-[10px] text-slate-400" data-loanopsrc>'+src+(members.length > 1 ? " &middot; shared by "+members.length+" loans" : "")+'</span>'+
           '</div>'+
         '</div>';
     }
@@ -6832,8 +6880,10 @@ tr.flagged:hover td{background:#fee2e2}
         rrStatTile('Avg in-place', rrMoney(b.avgActualRent))+
         rrStatTile('Sq ft', sqft)+
       '</div>';
-      var comm = b.commercialUnits ? '<div class="mt-2 text-[11px] text-violet-600">+ ' + b.commercialUnits + ' commercial unit' + (b.commercialUnits > 1 ? 's' : '') + ' · ' + rrMoney(b.commercialAnnual) + '/yr income (kept for the NOI, out of the per-unit math)</div>' : '';
-      return grid + comm;
+      var nonRev = b.nonRevenueUnits ? '<div class="mt-2 text-[11px] text-slate-500" data-rrnonrev>Of the ' + b.residentialUnits + ' units, ' + b.nonRevenueUnits + (b.nonRevenueUnits > 1 ? ' are' : ' is') + ' non-revenue (model / office / down) — neither occupied nor vacant, as the rent roll counts it</div>' : '';   // 2.9.12
+      var vacC = (b.commercialLeases || []).filter(function(l){ return !l.occupied; }).length;   // 2.9.12 — lease by lease, a vacant one at $0
+      var comm = b.commercialUnits ? '<div class="mt-2 text-[11px] text-violet-600" data-rrcomm>+ ' + b.commercialUnits + ' commercial unit' + (b.commercialUnits > 1 ? 's' : '') + (vacC ? ' (' + vacC + ' vacant, at $0)' : '') + ' · ' + rrMoney(b.commercialAnnual) + '/yr lease by lease — the underwritten Commercial Rent (out of the per-unit math)</div>' : '';
+      return grid + nonRev + comm;
     }
     // The "N to check" warnings toggle button + its hidden list, for a parsed block.
     function rrStatsWarnHtml(b){
@@ -6907,10 +6957,12 @@ tr.flagged:hover td{background:#fee2e2}
       if(r === undefined || !r || !r.block){ host.innerHTML = ""; return; }
       var b = r.block;
       if(uwAutoLoadRentRoll(b)) return;   // filled the empty inputs and re-rendered — the re-render draws the summary
+      { var comNow = opRRCommercialSync(key), comWant = comNow ? comNow.annual : null;   // 2.9.12 — the leases arrived (or changed) after the setup was built
+        if(comWant !== uwBuiltCom){ try{ uwRerenderSetup(); }catch(e){} } }
       host.innerHTML = '<div class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">'+
         '<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500">From the rent roll</div>'+
         (r.combined ? '<div class="text-[11px] text-slate-500" data-uwrrcombined>'+escapeHtml(b.fullName)+' — all its units together</div>' : '')+   // 2.9.11
-        '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div>'+
+        '<div class="mt-1 text-xs font-semibold text-slate-700">'+b.residentialUnits+' units · '+b.occupiedUnits+' occ · '+b.vacantUnits+' vac'+(b.nonRevenueUnits?' · '+b.nonRevenueUnits+' non-rev':'')+' · avg in-place '+rrMoney(b.avgActualRent)+'/mo · avg market '+rrMoney(b.avgMarketRent)+'/mo'+(b.residentialSqft!=null?' · '+Math.round(b.residentialSqft).toLocaleString()+' sf':'')+'</div>'+
         '<div class="mt-1 text-[11px] text-slate-400">Loaded into Units and average rent above — the average is the market rent of the '+b.occupiedUnits+' occupied units'+(b.avgMarketRentOccupied!=null?' ('+rrMoney(b.avgMarketRentOccupied)+'/mo)':'')+', × all '+b.residentialUnits+' units × 12 = gross potential rent. Edit either box to override.</div></div>';
     }
     // Auto-fill units + average rent from the rent roll into any EMPTY input. Returns true if it changed
@@ -11616,7 +11668,7 @@ tr.flagged:hover td{background:#fee2e2}
           var t12; if(gd && gd.lines && gd.window && Array.isArray(gd.window.months) && gd.window.months.length && window.GeneralData){ var ms=gd.window.months;
             t12={ months: ms[0]+" → "+ms[ms.length-1], lines: GeneralData.deltas(gd).map(function(ln){ return { line:ln.label, kind:ln.role, trailing12:aiR(ln.ttm), changeVsPriorYear: ln.changePct!=null?aiR(ln.changePct,4):undefined }; }) }; }
           var b=opMergeBench(uwDefaults().bench, saved);
-          var rent; if(rr && rr.block){ var bk=rr.block; rent={ file: rr.file&&rr.file.name, units:bk.residentialUnits, occupied:bk.occupiedUnits, vacant:bk.vacantUnits, occupancy:bk.occupancy, avgMarketRent:aiR(bk.avgMarketRent), avgActualRent:aiR(bk.avgActualRent), grossPotentialRentAnnual:aiR(bk.gprAnnual), commercialUnits:bk.commercialUnits||undefined }; }
+          var rent; if(rr && rr.block){ var bk=rr.block; rent={ file: rr.file&&rr.file.name, units:bk.residentialUnits, occupied:bk.occupiedUnits, vacant:bk.vacantUnits, nonRevenue:bk.nonRevenueUnits||undefined, occupancy:bk.occupancy, avgMarketRent:aiR(bk.avgMarketRent), avgActualRent:aiR(bk.avgActualRent), grossPotentialRentAnnual:aiR(bk.gprAnnual), commercialUnits:bk.commercialUnits||undefined, commercialRentLeaseByLease: bk.commercialUnits ? aiR(bk.commercialAnnual) : undefined }; }
           else if(rr && rr.waiting) rent={ note:"Its saved rent roll ("+rr.waiting.join(", ")+") covers several properties and the operator hasn't said yet which section is this property's — its figures are NOT used. The app shows a card to answer it (Documents → Answer, or Data Health)." };   // 2.9.9
           var entered=null; try{ entered=p&&p.loans.length ? refiEnteredNOI(refiTargetFor(p.loans[0])) : null; }catch(e){}
           var data={ name:r.name, archived:r.archived||undefined, archivedOn: r.archived&&profileCache[key]&&profileCache[key].archivedAt?String(profileCache[key].archivedAt).slice(0,10):undefined,
@@ -12208,7 +12260,7 @@ tr.flagged:hover td{background:#fee2e2}
           }
         }catch(e){}
       }
-      rrKeys.forEach(function(k){ try{ delete loanRRCache[k]; }catch(e){} });
+      rrKeys.forEach(function(k){ try{ delete loanRRCache[k]; opRefreshGeneralDataNOI(k); }catch(e){} });   // 2.9.12 — its rent (GPR, commercial leases) feeds the saved NOI
       Object.keys(touched).concat(ctxKey ? [ctxKey] : []).forEach(function(k){ try{ delete loanRRCache[k]; opPartsWaitSet(k, "t12", []); opPartsWaitSet(k, "rentroll", []); }catch(e){} });
       if(t12Keys.length || out.none.length){ try{ await opAfterT12Saved(t12Keys.concat(ctxKey && out.none.length ? [ctxKey] : [])); }catch(e){} }
       try{ redrawAll(); }catch(e){} try{ renderDocsPanel(); }catch(e){} try{ renderLoanUnitStats(); }catch(e){}
