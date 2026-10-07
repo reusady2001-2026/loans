@@ -28,7 +28,8 @@ const t12Sheet=(top,rent,tax)=>XLSX.utils.aoa_to_sheet([[top],["12 Month Stateme
 // a Yardi rent roll: one property in phases, each phase a section closed by its "Total" row (sq ft 800 a unit)
 const PH=[{name:'Queens Gate Apartments Phase 1(qg1)',units:5,occ:4},{name:'Queens Gate Apartments Phase 2(qg2)',units:6,occ:6},{name:'Queens Gate Apartments Phase 3(qg3)',units:4,occ:3},{name:'Queens Gate Apartments Phase 4(qg4)',units:3,occ:2}];
 function rentRoll(file){ const lines=['Rent Roll','For Selected Properties - All Of Them Combined Are Queens Gate','Unit,Unit Type,Unit,Resident,Name,Market,Actual',',,Sq Ft,,,Rent,Rent','Current/Notice/Vacant Residents'];
-  PH.forEach((s,si)=>{ for(let u=0;u<s.units;u++) lines.push((100*(si+1)+u)+',A1,800,t'+si+u+',Res '+u+','+(1500+si*100)+','+(u<s.occ?1450:0)); lines.push(',,,Total,'+s.name+','+((1500+si*100)*s.units)+','+(1450*s.occ)); });
+  // a vacant unit is written VACANT, as the rent roll says it (2.9.12 — a unit with a resident is occupied, whatever its rent)
+  PH.forEach((s,si)=>{ for(let u=0;u<s.units;u++) lines.push((100*(si+1)+u)+',A1,800,'+(u<s.occ?'t'+si+u+',Res '+u:'VACANT,VACANT')+','+(1500+si*100)+','+(u<s.occ?1450:0)); lines.push(',,,Total,'+s.name+','+((1500+si*100)*s.units)+','+(1450*s.occ)); });
   const p=path.join(UDATA,file); fs.writeFileSync(p,lines.join('\n')+'\n'); return p; }
 (async()=>{
   const RR=rentRoll('RentRoll_QueensGate_Phases.csv');
