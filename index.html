@@ -930,7 +930,12 @@
       <!-- 2.9.7 (#3, #83) — the page of a property with no loan: its profile, its documents, Add the first loan, Archive -->
       <section id="propView" class="space-y-6" hidden>
         <div id="propHeader"></div>
+        <!-- 2.9.13 — everything about the PROPERTY that a loan property's page has: its NOI, its rent roll, and its
+             removed / paid-off loans (with Restore) -->
+        <div id="propInactivePanel"></div>
+        <div id="propOpPanel"></div>
         <div id="propProfilePanel"></div>
+        <div id="propUnitStatsPanel"></div>
         <div id="propDocsPanel"></div>
       </section>
 
@@ -3380,8 +3385,8 @@
       dom.portfolioView.hidden = !(state.mode==="portfolio");
 
       // Only one page's panels exist at a time (the documents panel's buttons use fixed ids).
-      if(state.mode==="prop"){ ["loanProfilePanel","loanDocsPanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
-      else { ["propHeader","propProfilePanel","propDocsPanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
+      if(state.mode==="prop"){ ["loanProfilePanel","loanDocsPanel","loanOpPanel","loanUnitStatsPanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
+      else { ["propHeader","propProfilePanel","propDocsPanel","propOpPanel","propUnitStatsPanel","propInactivePanel"].forEach(id => { const h = el(id); if(h) h.innerHTML = ""; }); }
       if(state.mode==="portfolio"){
         renderPortfolio();
       } else if(state.mode==="prop"){
@@ -6601,7 +6606,18 @@ tr.flagged:hover td{background:#fee2e2}
     // Loan view: a compact card with this property's operating NOI and combined DSCR / DY / LTV,
     // saying where the NOI comes from, with a button that opens the property's sheet.
     const loanOpGDPending = new Set();   // 2.9.12 — properties whose general-data NOI the property page is reading
+    // The property the open page is about: a loan's page, or (2.9.13) the page of a property with no loan.
+    function pagePropKey(){ if(state.mode === "prop") return propViewKey(); const l = state.mode === "view" ? getLoan(state.activeId) : null; return l ? propertyKey(l) : ""; }
+    // Its NOI not read yet → read it, then redraw the page (its tiles read the same NOI).
+    function opNeedPageNOI(key){
+      if(!key || Object.prototype.hasOwnProperty.call(gdNOICache, key) || loanOpGDPending.has(key)) return;
+      loanOpGDPending.add(key);
+      opEnsureGeneralData(key).catch(() => {}).then(() => { loanOpGDPending.delete(key);
+        if(!Object.prototype.hasOwnProperty.call(gdNOICache, key)) return;
+        if(pagePropKey() === key){ try{ render(); }catch(e){} } });
+    }
     function renderLoanOpPanel(){
+      if(state.mode === "prop"){ renderPropOpPanel(); return; }   // 2.9.13 — a property with no loan has its NOI box too
       const host = el("loanOpPanel"); if(!host) return;
       const loan = getLoan(state.activeId);
       if(!loan || !opReady()){ host.innerHTML = ""; return; }
@@ -6611,12 +6627,7 @@ tr.flagged:hover td{background:#fee2e2}
       // 2.9.12 — ONE NOI: the property's NOI here is the one Underwriting, the portfolio and the refinance use
       // (combinedPosition → your override, else the T12 rule's NOI, else the operating lines, else the loan's) —
       // never the operating lines' own 12-month total next to an annualized NOI everywhere else.
-      if(!Object.prototype.hasOwnProperty.call(gdNOICache, key) && !loanOpGDPending.has(key)){   // its NOI not read yet → read it, then redraw
-        loanOpGDPending.add(key);
-        opEnsureGeneralData(key).catch(() => {}).then(() => { loanOpGDPending.delete(key);
-          if(!Object.prototype.hasOwnProperty.call(gdNOICache, key)) return;
-          const l = getLoan(state.activeId); if(state.mode === "view" && l && propertyKey(l) === key){ try{ render(); }catch(e){} } });   // the whole page: its KPIs read the same NOI
-      }
+      opNeedPageNOI(key);
       const cp = combinedPosition(members), one = propOneNOI(key);
       const noi = cp.noi, dscr = cp.dscr, dy = cp.debtYield, ltv = cp.ltv;
       const gdAt = (one && one.from === "t12" && gdFullCache[key] && gdFullCache[key].updatedAt) ? new Date(gdFullCache[key].updatedAt).toLocaleDateString() : null;
@@ -6640,6 +6651,42 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
     }
     document.addEventListener("click", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#loanOpOpen")) return; const loan = getLoan(state.activeId); if(loan) opOpenProperty(loan); });
+    // 2.9.13 — the NOI box on the page of a property with NO loan: the same NOI as everywhere else (your override, else
+    // the T12 rule's, else its operating lines, else the last loan's / your entered NOI — Home's loanlessPosition),
+    // how it was worked out, and its value at a cap rate (the last loan's, else the default). With no debt there is no
+    // DSCR, debt yield or LTV — the box says so instead of showing dashes.
+    function renderPropOpPanel(){
+      const host = el("propOpPanel"); if(!host) return;
+      const key = propViewKey(); if(!key){ host.innerHTML = ""; return; }
+      try{ opInit(); }catch(e){}
+      opNeedPageNOI(key);
+      const inact = loans.filter(l => propertyKey(l) === key && loanIsInactiveSelf(l)).sort(loanRank);
+      const pos = loanlessPosition({ key: key, inactive: inact }), noi = pos.noi, one = propOneNOI(key);
+      const sr = inact.find(l => !isMezz(l)) || inact[0] || null, cr = sr ? loanCapRate(sr) : defaultCapRate(null);
+      let rec = null; try{ rec = window.OperatingStore ? OperatingStore.get(key) : null; }catch(e){ rec = null; }
+      let opN = null; try{ opN = (rec && window.OperatingCalc) ? OperatingCalc.effectiveNOI(rec) : null; }catch(e){ opN = null; }
+      const gdAt = (one && one.from === "t12" && gdFullCache[key] && gdFullCache[key].updatedAt) ? new Date(gdFullCache[key].updatedAt).toLocaleDateString() : null;
+      const src = one ? (one.from === "override" ? "Your NOI override (Property profile)" : "From the T12" + (one.method ? " &middot; " + escapeHtml(one.method) : "") + (gdAt ? " &middot; updated " + gdAt : ""))
+        : (noi == null) ? "No NOI yet &mdash; upload its T12 or enter one in its profile"
+        : (opN != null && opN === noi) ? "From the property&rsquo;s operating lines"
+        : (propEnteredNOI(key) === noi) ? "Your entered NOI (Property profile) &mdash; no T12 yet"
+        : "The last loan&rsquo;s own NOI &mdash; no T12 yet";
+      const tile = (l, v, sub) => '<div><div class="text-[10px] uppercase tracking-wide text-slate-400">'+l+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div>'+(sub ? '<div class="text-[10px] text-slate-400">'+sub+'</div>' : '')+'</div>';
+      host.innerHTML =
+        '<div class="boxline rounded-2xl border border-brand-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3" data-propop>'+
+          '<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1">'+
+            tile("Property NOI", noi != null ? fmtMoney(noi) : "&mdash;")+
+            tile("Value", pos.value != null ? fmtMoney(pos.value) : "&mdash;", pos.value != null ? "NOI &divide; cap rate" : "")+
+            tile("Cap rate", cr > 0 ? fmtPct(cr) : "&mdash;", sr ? "the last loan&rsquo;s" : "the default")+
+            tile("Debt", "None", "no loan &mdash; no DSCR, debt yield or LTV")+
+          '</div>'+
+          '<div class="flex flex-col items-start sm:items-end gap-1">'+
+            '<button type="button" id="propOpOpen" class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100">Open in Underwriting</button>'+
+            '<span class="text-[10px] text-slate-400" data-loanopsrc>'+src+'</span>'+
+          '</div>'+
+        '</div>';
+      const b = host.querySelector("#propOpOpen"); if(b) b.addEventListener("click", () => { try{ uwOpenFor(key); }catch(e){} });
+    }
 
     // 2.9.3 — the property's PROFILE lives here, on the property's own detail view (no separate tab): the facts
     // that don't change (units, sq ft, acquisition, manager, status, notes), editable, with the mismatch
@@ -6699,20 +6746,18 @@ tr.flagged:hover td{background:#fee2e2}
                         : '<span class="ml-1 align-middle rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span>')+'</h2>'+
               '<p class="mt-1 text-xs text-slate-500">'+(archived
                 ? 'Archived — out of Home, the totals and the assistant. Un-archive it to bring it back, or delete it permanently.'
-                : 'This property has no active loan'+(removed ? ' ('+removed+' removed or paid-off loan'+(removed>1?'s are':' is')+' listed on Home)' : '')+'. Its profile and documents are below.')+'</p></div>'+
+                : 'This property has no active loan'+(removed ? ' ('+removed+' removed or paid-off loan'+(removed>1?'s':'')+' below, to restore)' : '')+'. Its NOI, profile, rent roll and documents are below.')+'</p></div>'+
             '<div class="flex flex-wrap items-center gap-2 shrink-0" id="propPageActions">'+
               (archived
                 ? btn('data-propunarchive', 'Un-archive', 'border border-amber-300 bg-white text-amber-700 hover:bg-amber-50')+
                   btn('data-propdelete', 'Delete permanently', 'border border-rose-200 bg-white text-rose-600 hover:bg-rose-50')
                 : btn('data-propadd', '+ Add the first loan', 'bg-brand-600 text-white hover:bg-brand-500')+
-                  btn('data-propuw', 'Open in Underwriting', 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50')+
-                  btn('data-proparchive', 'Archive', 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'))+
+                  btn('data-proparchive', 'Archive', 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'))+   // 2.9.13 — "Open in Underwriting" moved into its NOI box, as on a loan's page
             '</div>'+
           '</div>'+
         '</div>';
       const on = (sel, fn) => { const b = host.querySelector(sel); if(b) b.addEventListener("click", fn); };
       on("[data-propadd]", () => startAdd(name));
-      on("[data-propuw]", () => { try{ uwOpenFor(key); }catch(e){} });
       on("[data-proparchive]", () => confirmDialog("Archive “"+name+"”?", "It leaves Home, the totals and the assistant. Un-archive it from this page or the Archived strip on Home.", async () => {
         let ok = false; try{ ok = await opArchiveProperty(key, true); }catch(e){ ok = false; }
         if(!ok){ toast("Couldn’t archive “"+name+"” — its file couldn’t be saved. Try again.", "error"); return; }
@@ -6724,8 +6769,35 @@ tr.flagged:hover td{background:#fee2e2}
         else toast("Couldn’t restore the property — its file couldn’t be saved. Try again.", "error");
       });
       on("[data-propdelete]", () => propDeleteAsk(key, name, () => { state.activeId = null; setMode(loans.length ? "portfolio" : "empty"); }));   // 2.9.7 (#207, #208)
+      try{ renderPropInactivePanel(key, archived); }catch(e){}   // 2.9.13
+      try{ renderLoanOpPanel(); }catch(e){}                      // 2.9.13 — its NOI box
       try{ renderLoanProfilePanel(); }catch(e){}
+      try{ renderLoanUnitStats(); }catch(e){}                    // 2.9.13 — its rent roll
       try{ renderDocsPanel(); }catch(e){}
+    }
+    // 2.9.13 — the property's removed / paid-off loans, on its own page, with Restore (back into every total; the
+    // page becomes its loan page) and Delete permanently — the same two actions Home's "Removed & paid-off loans" has.
+    function renderPropInactivePanel(key, archived){
+      const host = el("propInactivePanel"); if(!host) return;
+      const list = archived ? [] : loans.filter(l => propertyKey(l) === key && loanIsInactiveSelf(l)).sort(loanRank);
+      if(!list.length){ host.innerHTML = ""; return; }
+      host.innerHTML = '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-3 flex items-start gap-3 flex-wrap" data-propinactive>'+
+          '<div class="min-w-0 mr-1"><span class="text-xs font-bold uppercase tracking-wide text-slate-600">Its removed &amp; paid-off loans ('+list.length+')</span>'+
+          '<p class="text-[11px] text-slate-500">Out of every total, tile and the calendar — restore one to bring it back.</p></div>'+
+          '<div class="flex flex-wrap items-center gap-1.5">'+
+            list.map(l => '<span class="inline-flex items-center overflow-hidden rounded-lg border border-slate-300 bg-white">'+
+              '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700">'+escapeHtml(loanLabel(l))+' '+loanStatusTagHtml(l)+(l.archivedAt?' <span class="font-normal text-slate-400">'+escapeHtml(fmtDateUS(String(l.archivedAt).slice(0,10)))+'</span>':'')+'</span>'+
+              '<button type="button" data-proprestoreloan="'+escapeHtml(l._id)+'" class="border-l border-slate-200 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50" title="Restore — back into every total, tile and the calendar">Restore</button>'+
+              '<button type="button" data-propdeleteloan="'+escapeHtml(l._id)+'" class="inline-flex items-center border-l border-slate-200 px-1.5 py-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700" title="Delete this loan record permanently"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>'+
+            '</span>').join('')+
+          '</div>'+
+        '</div>';
+      host.querySelectorAll('[data-proprestoreloan]').forEach(b => b.addEventListener('click', () => {
+        restoreLoan(b.getAttribute('data-proprestoreloan'));
+        const p = opProperties().find(x => x.key === key);   // it has a loan again → its loan page
+        if(p && p.loans && p.loans.length){ state.activeId = positionIdForProperty(p); setMode("view"); }
+      }));
+      host.querySelectorAll('[data-propdeleteloan]').forEach(b => b.addEventListener('click', () => deleteLoanPermanentAsk(b.getAttribute('data-propdeleteloan'))));
     }
     // Profile edits from the property view's profile panel: save the field to its property (silently, no
     // re-render). Keyed to the panel's property. (Reading an agreement to fill these is now the assistant's job.)
@@ -6911,12 +6983,13 @@ tr.flagged:hover td{background:#fee2e2}
     // rent roll is on file, or an empty state + an "Import rent roll" button when none is. The button imports
     // for THIS property (a multi-property file still opens the per-block assignment — the Fix #1 safety net).
     function renderLoanUnitStats(){
-      var host = el("loanUnitStatsPanel"); if(!host) return;
-      var loan = getLoan(state.activeId); if(!loan){ host.innerHTML = ""; return; }
-      var key = propertyKey(loan);
+      var pk = state.mode === "prop" ? propViewKey() : "";   // 2.9.13 — the page of a property with no loan has it too
+      var host = el(pk ? "propUnitStatsPanel" : "loanUnitStatsPanel"); if(!host) return;
+      var loan = pk ? null : getLoan(state.activeId); if(!loan && !pk){ host.innerHTML = ""; return; }
+      var key = pk || propertyKey(loan);
       if(!Object.prototype.hasOwnProperty.call(loanRRCache, key)){
         loanRRCache[key] = undefined;
-        opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; var l = getLoan(state.activeId); if(l && propertyKey(l) === key) renderLoanUnitStats(); });
+        opRentRollBlockFor(key).then(function(r){ loanRRCache[key] = r || null; if(pagePropKey() === key) renderLoanUnitStats(); });
       }
       var r = loanRRCache[key];
       var loading = (r === undefined);

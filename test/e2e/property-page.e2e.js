@@ -28,10 +28,10 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(!!opt&&/no loan yet/.test(opt),'the dropdown lists it as "'+opt+'"');
   await pick('prop:'+key); await page.waitForTimeout(800);
   const P=await page.evaluate(()=>{ const v=document.getElementById('propView'); return { shown:v&&!v.hidden, loanView:!document.getElementById('loanView').hidden,
-    head:(document.getElementById('propHeader')||{}).innerText||'', prof:!!document.querySelector('#propProfilePanel [data-profilekey]'), docs:(document.getElementById('propDocsPanel')||{}).innerText||'' }; });
+    head:(document.getElementById('propHeader')||{}).innerText||'', op:(document.getElementById('propOpPanel')||{}).innerText||'', prof:!!document.querySelector('#propProfilePanel [data-profilekey]'), docs:(document.getElementById('propDocsPanel')||{}).innerText||'' }; });
   ok(P.shown&&!P.loanView,'choosing it opens the property page (not a blank loan view)');
   ok(/Lonely Acres/.test(P.head)&&/No loan yet/i.test(P.head),'the page names the property and says "No loan yet"');
-  ok(/Add the first loan/.test(P.head)&&/Open in Underwriting/.test(P.head)&&/Archive/.test(P.head),'it offers Add the first loan, Open in Underwriting and Archive');
+  ok(/Add the first loan/.test(P.head)&&/Open in Underwriting/.test(P.op)&&/Archive/.test(P.head),'it offers Add the first loan, Open in Underwriting (in its NOI box since 2.9.13, as on a loan’s page) and Archive');
   ok(P.prof,'the property profile is on the page');
   ok(/Documents/.test(P.docs),'the documents panel is on the page');
   // a profile edit on this page is saved
