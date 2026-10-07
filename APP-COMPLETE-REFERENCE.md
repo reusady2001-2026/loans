@@ -9,7 +9,7 @@ Windows install, and what comes next.*
 **Repo:** `reusady2001-2026/loans`
 **Portfolio today:** 29 properties.
 
-> This is the master overview. It sits alongside the other docs in the repo (`README.md`, `TODO.md`,
+> This is the master overview. It sits alongside the other docs in the repo (`README.md`,
 > `QUESTIONS-FOR-AZRIEL.md`, `SPEC-v2.3.0-operating-model.md`, `OPERATING-CONTRACT.md`,
 > `LOAN-VALIDATION-FLAGS.md`, `DESKTOP.md`, `GRADE-BOARD.md`, `INVOICE-RECONCILIATION.md`) and is meant to be
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
@@ -522,6 +522,15 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ### 2.9.15 — Automated Yardi ingestion
 Pull operating data and rent rolls from Yardi directly instead of manual file drops.
+
+### Possible refinement (no stage yet) — re-amortize the payment at an ARM reset
+*(Moved here from the retired `TODO.md`, which was last kept at 2.8.8.)* The two "Fixed P&I" loans that also have
+an ARM reset — **1222 Commerce St** (Customers Bank, reset 5/1/2031, Note ¶2(D)) and **The Botanic (Carteret)**
+(Customers Bank, reset 1/1/2031) — **hold** the stated payment across the reset: the interest re-prices at the
+new rate, the payment stays the same. Their notes **re-amortize** the balance over the remaining 26 years at the
+reset rate. That rate depends on the 5-year Treasury in 2031 (unknowable today), so holding is the app's
+approximation; the fixed-period payment ties to each note to the cent. Re-amortizing at the projected reset rate
+would make the 2031+ payments (and balances, DSCR) match what the bank will bill.
 
 ---
 
