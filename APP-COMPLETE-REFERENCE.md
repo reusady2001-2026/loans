@@ -511,28 +511,36 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.14 — One shared database (+ the pooled loan, moved here from 2.9.7)
-- **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
-  a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
-  and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
-  hosted (see `QUESTIONS-FOR-AZRIEL.md`).
-- **Pooled / cross-collateralized loans** — one loan secured by several properties (one balance, one payment),
-  analyzed as one credit position: combined coverage, combined sizing, release / substitution across the pool. Its
-  documents can already be linked to all its properties (2.9.11); the loan itself is this stage.
+*(Order set by the operator, 2026-10-07.)*
 
-### 2.9.15 — Automated Yardi ingestion
-Pull operating data and rent rolls from Yardi directly instead of manual file drops.
+### 2.9.14 — Pooled / cross-collateralized loans (the next big piece of work)
+One loan secured by several properties (one balance, one payment), analyzed as one credit position: combined
+coverage, combined sizing, release / substitution across the pool. Its documents can already be linked to all its
+properties (2.9.11); the loan itself is this stage.
+
+### 3.0.0 — One shared database
+So the team works off the same data: sign-in and users, per-group data separation, a daily backup, every edit
+stamped (who / when / why) as an audit trail, the last-opened state saved, the user's local files untouched.
+Hosting: the plan names **Supabase**.
+
+### After 3.0.0 — Yardi ingestion (to be defined)
+The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
+database (Supabase) reads that mailbox and updates each property's data. It needs the shared database (3.0.0)
+first; the details (mailbox, file matching, what is updated, how a mismatch is reported) are still to be defined.
 
 ### Possible refinement (no stage yet) — re-amortize the payment at an ARM reset
 *(Moved here from the retired `TODO.md`, which was last kept at 2.8.8.)* The two "Fixed P&I" loans that also have
 an ARM reset — **1222 Commerce St** (Customers Bank, reset 5/1/2031, Note ¶2(D)) and **The Botanic (Carteret)**
 (Customers Bank, reset 1/1/2031) — **hold** the stated payment across the reset: the interest re-prices at the
-new rate, the payment stays the same. Their notes **re-amortize** the balance over the remaining 26 years at the
-reset rate. That rate depends on the 5-year Treasury in 2031 (unknowable today), so holding is the app's
-approximation; the fixed-period payment ties to each note to the cent. Re-amortizing at the projected reset rate
-would make the 2031+ payments (and balances, DSCR) match what the bank will bill.
+new rate, the payment stays the same. Per the validation notes (`LOAN-VALIDATION-FLAGS.md` §11 and the 1222
+Commerce section), the notes **re-amortize** the balance over a 26-year schedule at the reset rate (the greater of
+the floor and the 5-yr Treasury + 2.50%) — to be confirmed word for word against ¶2(D) of each Note. Holding is the
+app's approximation since the "Fixed P&I" option; the fixed-period payment ties to each note to the cent.
 
----
+### By design for now (not planned)
+- Phases that come as **separate files** are not combined (phases as sheets / sections of ONE file are).
+- **No code signing** (Windows SmartScreen shows "More info → Run anyway" once).
+- **Installer size** (~260 MB, the two OCR engines).
 
 ## 10. Known caveats
 
