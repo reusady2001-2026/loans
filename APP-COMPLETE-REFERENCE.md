@@ -534,8 +534,9 @@ an ARM reset — **1222 Commerce St** (Customers Bank, reset 5/1/2031, Note ¶2(
 (Customers Bank, reset 1/1/2031) — **hold** the stated payment across the reset: the interest re-prices at the
 new rate, the payment stays the same. **1222 Commerce St — confirmed** by its Note's ¶2(D): *"Commencing on May 1,
 2031 … constant monthly payments to be applied first to the payment of interest at the Reset Interest Rate and the
-balance in reduction of principal (based upon a 26-year amortization schedule)."* The Botanic (Carteret): the
-validation notes say the same (§2(D)); its text is still to be checked. Holding is the
+balance in reduction of principal (based upon a 26-year amortization schedule)."* **The Botanic (Carteret) —
+confirmed** by its Note's §2(D), the same words from **January 1, 2031**. Everything else in both notes' ¶2 (the
+interest-only year, the stated payment, the balloon, Actual/360) already matches the app. Holding is the
 app's approximation since the "Fixed P&I" option; the fixed-period payment ties to each note to the cent.
 
 ### By design for now (not planned)
