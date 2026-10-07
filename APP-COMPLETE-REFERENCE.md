@@ -532,9 +532,10 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 *(Moved here from the retired `TODO.md`, which was last kept at 2.8.8.)* The two "Fixed P&I" loans that also have
 an ARM reset — **1222 Commerce St** (Customers Bank, reset 5/1/2031, Note ¶2(D)) and **The Botanic (Carteret)**
 (Customers Bank, reset 1/1/2031) — **hold** the stated payment across the reset: the interest re-prices at the
-new rate, the payment stays the same. Per the validation notes (`LOAN-VALIDATION-FLAGS.md` §11 and the 1222
-Commerce section), the notes **re-amortize** the balance over a 26-year schedule at the reset rate (the greater of
-the floor and the 5-yr Treasury + 2.50%) — to be confirmed word for word against ¶2(D) of each Note. Holding is the
+new rate, the payment stays the same. **1222 Commerce St — confirmed** by its Note's ¶2(D): *"Commencing on May 1,
+2031 … constant monthly payments to be applied first to the payment of interest at the Reset Interest Rate and the
+balance in reduction of principal (based upon a 26-year amortization schedule)."* The Botanic (Carteret): the
+validation notes say the same (§2(D)); its text is still to be checked. Holding is the
 app's approximation since the "Fixed P&I" option; the fixed-period payment ties to each note to the cent.
 
 ### By design for now (not planned)
