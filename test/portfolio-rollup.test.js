@@ -149,41 +149,43 @@ section("maturity — earliest among the property's loans", () => {
   ok(junk.maturity === null, "non-ISO maturity strings/numbers are ignored, never a NaN date");
 });
 
-section("totals", () => {
+section("totals — 2.9.15 (C1): every property counts, whatever its state", () => {
   const t = out.totals;
   ok(t.properties === 6 && t.loans === 6, "properties 6, loans 2+1+1+0+1+1 = 6 (got " + t.properties + "/" + t.loans + ")");
-  ok(cents(t.noi, 12765000), "noi = 12,000,000 + 815,000 − 50,000 = 12,765,000.00 (nulls skipped) (got " + t.noi + ")");
+  ok(cents(t.noi, 12765000), "noi = 12,000,000 + 815,000 − 50,000 = 12,765,000.00 (no NOI adds nothing to the column) (got " + t.noi + ")");
   ok(cents(t.uwNoi, 12255750), "uwNoi = 11,500,000 + 795,750 − 40,000 = 12,255,750.00 (got " + t.uwNoi + ")");
   ok(cents(t.balance, 135470000), "balance = 120,000,000 + 1,000,000 + 6,370,000 + 0 + 8,000,000 + 100,000 = 135,470,000.00 (got " + t.balance + ")");
   ok(cents(t.annualDS, 7624000), "annualDS = 6,792,000 + 60,000 + 360,000 + 0 + 400,000 + 12,000 = 7,624,000.00 (got " + t.annualDS + ")");
-  // Coverage is read over the 3 properties that HAVE an NOI (Avalon, Weaver, Linden); M Lofts, Zeta and
-  // the Orphan record carry no NOI, so their debt must stay OUT of the ratio's denominator:
-  //   dsCovered = 6,792,000 + 400,000 + 60,000 = 7,252,000 ; balanceCovered = 120,000,000 + 8,000,000 + 1,000,000 = 129,000,000
-  ok(t.noiProps === 3 && t.properties === 6 && t.dscrProps === 3 && t.dyProps === 3 && !("props" in t), "NOI on 3 of 6 properties; all 3 carry DS > 0 and balance > 0, so both ratio scopes are 3 (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + " of " + t.properties + ")");
-  ok(t.dscrNoi === 12765000 && t.dyNoi === 12765000, "the per-scope numerators equal ΣNOI here (every NOI'd property is in both scopes)");
-  ok(cents(t.dsCovered, 7252000) && cents(t.balanceCovered, 129000000), "dsCovered 7,252,000.00 / balanceCovered 129,000,000.00 (got " + t.dsCovered + " / " + t.balanceCovered + ")");
-  ok(approx(t.dscr, 1.7602041, 1e-7) && t.dscr === 12765000 / 7252000, "dscr = 12,765,000 / 7,252,000 = 1.7602041 over the NOI'd properties only (got " + t.dscr + ")");
-  ok(approx(t.dy, 0.0989535, 1e-7) && t.dy === 12765000 / 129000000, "dy = 12,765,000 / 129,000,000 = 0.0989535 over the NOI'd properties only (got " + t.dy + ")");
-  ok(t.dscr !== 12765000 / 7624000 && t.dy !== 12765000 / 135470000, "…not ΣNOI over ALL properties' debt (1.674 / 9.42%), which would understate coverage");
+  // Every property counts: M Lofts and Zeta (loans, no NOI) count at $0 NOI with ALL their debt, Linden's negative NOI
+  // counts as it is, the Orphan record (no loan, no NOI) is a property too:
+  //   DSCR = 12,765,000 / 7,624,000 ; DY = 12,765,000 / 135,470,000 ; LTV = 135,470,000 / (12,000,000 / 0.055 + 815,000 / 0.06)
+  ok(t.noiProps === 3 && t.noNOIProps === 3 && t.negativeProps === 1 && t.noLoanProps === 1 && !("props" in t), "NOI on 3 of 6, no NOI on 3 (M Lofts, Zeta, Orphan), 1 negative (Linden), 1 with no loan (Orphan) (got " + t.noiProps + "/" + t.noNOIProps + "/" + t.negativeProps + "/" + t.noLoanProps + ")");
+  ok(cents(t.noNOIDebt, 6470000), "the debt on the properties with no NOI: 6,370,000 + 100,000 + 0 = 6,470,000.00 (got " + t.noNOIDebt + ")");
+  ok(t.dscr === 12765000 / 7624000 && approx(t.dscr, 1.6743179, 1e-7), "dscr = 12,765,000 / 7,624,000 = 1.6743179 — ΣNOI over EVERY property's debt service (got " + t.dscr + ")");
+  ok(t.dy === 12765000 / 135470000 && approx(t.dy, 0.0942275, 1e-6), "dy = 12,765,000 / 135,470,000 = 9.42% — over EVERY property's balance (got " + t.dy + ")");
+  ok(approx(t.ltv, 135470000 / (12000000 / 0.055 + 815000 / 0.06), 1e-12) && PR.fmt.pct(t.ltv) === "58.45%", "ltv = all the balance / the value of the positive-NOI properties = 58.45% (got " + t.ltv + ")");
+  ok(t.dscr !== 12765000 / 7252000 && t.dy !== 12765000 / 129000000, "…never the old read that left the debt on properties with no NOI out (1.76× / 9.90%)");
   const none = PR.buildRows({}, [L.mlofts, L.zeta], hooksFor(LOANS), GD).totals;
-  ok(none.noi === null && none.uwNoi === null && none.dscr === null && none.dy === null, "no NOI anywhere → noi/uwNoi/dscr/dy null (unknown ≠ zero)");
-  ok(none.balance === 6470000 && none.annualDS === 372000 && none.properties === 2 && none.loans === 2, "…while the debt totals are still summed (6,470,000 / 372,000)");
-  ok(none.noiProps === 0 && none.dscrProps === 0 && none.dyProps === 0 && none.dsCovered === 0 && none.balanceCovered === 0 && none.properties === 2, "…and the coverage scopes are 0 of 2, nothing behind the ratios");
+  ok(none.noi === null && none.uwNoi === null, "no NOI anywhere → the NOI column totals stay empty");
+  ok(none.dscr === 0 && none.dy === 0 && none.ltv === null, "…but the ratios are 0: $0 NOI against 372,000 of debt service and 6,470,000 of balance — the debt is never hidden (LTV has no value to divide by)");
+  ok(none.balance === 6470000 && none.annualDS === 372000 && none.properties === 2 && none.loans === 2, "…the debt totals are summed (6,470,000 / 372,000)");
+  ok(none.noiProps === 0 && none.noNOIProps === 2 && cents(none.noNOIDebt, 6470000), "…and both properties are named as having no NOI, with their 6,470,000 of debt");
   const neg = PR.buildRows({ [K.lease]: REC[K.lease] }, [L.lease], hooksFor(LOANS), GD).totals;
-  ok(neg.noi === -50000 && neg.dscr === null && neg.dy === null, "Σnoi ≤ 0 → dscr/dy null, noi itself still reported");
-  ok(neg.noiProps === 1 && neg.dscrProps === 1 && neg.dyProps === 1 && neg.dsCovered === 60000 && neg.balanceCovered === 1000000 && neg.dscrNoi === -50000, "…a negative NOI still counts as an NOI in both scopes (its DS / balance are positive)");
+  ok(neg.noi === -50000 && neg.dscr === -50000 / 60000 && neg.dy === -50000 / 1000000, "a negative NOI counts as it is: DSCR −50,000 / 60,000 = −0.83×, DY −5.00%");
+  ok(neg.noiProps === 1 && neg.negativeProps === 1 && neg.noNOIProps === 0 && neg.dscrNoi === -50000, "…it is an NOI (not a missing one), and it is named as at or below $0");
   const empty = PR.buildRows({}, [], hooksFor([]), GD);
-  ok(empty.rows.length === 0 && empty.totals.properties === 0 && empty.totals.loans === 0 && empty.totals.balance === 0 && empty.totals.noiProps === 0 && empty.totals.dscrProps === 0 && empty.totals.dyProps === 0, "empty portfolio → no rows, zero counts, no NaN");
-  // The critic's case: A covers 1.50×, B has no NOI → the portfolio DSCR is A's 1.50× with scope "1 of 2"
+  ok(empty.rows.length === 0 && empty.totals.properties === 0 && empty.totals.loans === 0 && empty.totals.balance === 0 && empty.totals.noiProps === 0 && empty.totals.noNOIProps === 0
+     && empty.totals.dscr === null && empty.totals.dy === null && empty.totals.ltv === null, "empty portfolio → no rows, zero counts, null ratios, no NaN");
+  // The critic's case under 2.9.15: A covers 1.50×, B carries debt with no NOI → B's debt counts: 150,000 / 600,000 = 0.25×
   const abCalc = fakeCalc({ "addr:a st": 150000 }, { "addr:a st": 140000 });
   global.OperatingCalc = abCalc;
   const A = { _id: "a", propertyName: "A", propertyAddress: "A St" }, B = { _id: "b", propertyName: "B", propertyAddress: "B St" };
   const ab = PR.buildRows({ "addr:a st": { propKey: "addr:a st", propertyName: "A", units: 10, period: null, lines: { GPR: line(200000) }, assumptions: null, meta } }, [A, B],
     hooksFor([A, B], { annualDebtService: l => ({ a: 100000, b: 500000 })[l._id], currentBalance: l => ({ a: 1000000, b: 5000000 })[l._id], capRate: () => 0.06 }), GD).totals;
   global.OperatingCalc = fake;
-  ok(ab.dscr === 1.5 && ab.dy === 0.15, "A: 150,000 / 100,000 = 1.50×, B: no NOI → totals.dscr 1.50, dy 0.15 (got " + ab.dscr + " / " + ab.dy + ")");
-  ok(ab.noiProps === 1 && ab.dscrProps === 1 && ab.dyProps === 1 && ab.properties === 2, "noiProps 1 of 2, DSCR scope 1, DY scope 1 (got " + ab.noiProps + "/" + ab.dscrProps + "/" + ab.dyProps + " of " + ab.properties + ")");
-  ok(ab.dsCovered === 100000 && ab.balanceCovered === 1000000 && ab.annualDS === 600000 && ab.balance === 6000000, "dsCovered 100,000 / balanceCovered 1,000,000 — while the dollar totals still cover ALL properties: DS 600,000, balance 6,000,000");
+  ok(ab.dscr === 0.25 && ab.dy === 0.025, "A: 150,000 / 100,000 = 1.50× alone; with B (no NOI, DS 500,000, balance 5,000,000) the portfolio is 150,000 / 600,000 = 0.25×, DY 2.50% (got " + ab.dscr + " / " + ab.dy + ")");
+  ok(ab.noiProps === 1 && ab.noNOIProps === 1 && ab.properties === 2 && ab.noNOIDebt === 5000000, "NOI on 1 of 2, 1 with no NOI carrying 5,000,000 of debt (got " + ab.noiProps + "/" + ab.noNOIProps + "/" + ab.noNOIDebt + ")");
+  ok(ab.annualDS === 600000 && ab.balance === 6000000, "the dollar totals and the ratios cover the same properties: DS 600,000, balance 6,000,000");
 });
 
 section("sorting — by name, deterministic on ties, independent of input order", () => {
@@ -226,7 +228,7 @@ section("inputs: records as array, loans/defaults from hooks, NaN guards, errors
   ok(w.noi === null && w.uwNoi === null && w.dscr === null && w.dy === null && w.ltv === null && w.balance === null && w.annualDS === null, "non-finite / non-number engine outputs → null, never NaN");
   ok(m.balance === 0 && m.annualDS === 0, "loan-only sums treat an unknown hook value as 0, not NaN");
   ok([g.totals.noi, g.totals.uwNoi, g.totals.dscr, g.totals.dy].every(v => v === null) && g.totals.balance === 0 && g.totals.annualDS === 0
-     && g.totals.noiProps === 0 && g.totals.dsCovered === 0 && g.totals.balanceCovered === 0, "totals stay null/finite (scope 0 of 2)");
+     && g.totals.noiProps === 0 && g.totals.noNOIProps === 2 && g.totals.ltv === null, "totals stay null/finite (no NOI on either property)");
   ok(g.rows.map(r => r.propKey).join("|") === K.mlofts + "|" + K.weaver && g.rows.map(r => r.name).join("|") === "M Lofts|Weaver Mill Apartments", "rows keep their keys and names, sorted (got " + g.rows.map(r => r.name).join(" | ") + ")");
   ok(w.units === 120 && w.loans === 1 && w.maturity === "2030-12-01" && m.units === null && m.loans === 1 && m.maturity === "2027-05-01" && !("error" in w) && !("error" in m), "…and their units / loan counts / maturities; garbage figures are nulls, not errors");
   global.OperatingCalc = fake;
@@ -257,13 +259,13 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   const ti = html.indexOf("data-op-total"), tot = html.slice(ti, html.indexOf("</tr>", ti));
   ok(tot.includes("6 properties") && tot.includes(">6<"), "totals row: 6 properties, 6 loans");
   ok(tot.includes(">$12,765,000.00<") && tot.includes(">$12,255,750.00<") && tot.includes(">$135,470,000.00<") && tot.includes(">$7,624,000.00<"), "totals row money");
-  ok(tot.includes(">1.76×<") && tot.includes(">9.90%<"), "totals row DSCR 1.76× / DY 9.90% (NOI'd properties only)");
-  const SCOPE = "DSCR 1.76× (3 of 6 properties, $7.25M DS) · DY 9.90% (3 of 6 properties, $129.00M balance) · NOI on 3 of 6 properties";
+  ok(tot.includes(">1.67×<") && tot.includes(">9.42%<") && tot.includes(">58.45%<"), "totals row DSCR 1.67× / DY 9.42% / LTV 58.45% — every property counted");
+  const SCOPE = "6 of 6 properties counted — DSCR 1.67× · DY 9.42% · LTV 58.45% · 3 with no NOI, counted at $0 ($6.47M debt) · 1 with NOI at or below $0 · 1 with no loan (no debt)";
   const si = html.indexOf("data-op-scope"), sc = si < 0 ? "" : html.slice(si, html.indexOf("</tr>", si));
-  ok(si > ti && sc.includes(">" + SCOPE + "<"), "scope line under the totals reads \"" + SCOPE + "\"");
-  ok(tot.includes('title="' + SCOPE + '"'), "totals DSCR / DY cells carry the scope as a title");
-  ok(PR.scopeText(out.totals) === SCOPE && PR.scopeText({ properties: 2, noiProps: 0 }) === "NOI on 0 of 2 properties — enter operating lines to get a portfolio DSCR / debt yield", "scopeText: with and without an NOI");
-  ok(PR.scopeText({ properties: 1, noiProps: 1, dscrProps: 0, dyProps: 1, dy: 0.05, balanceCovered: 2000000 }) === "DSCR — (0 of 1 property) · DY 5.00% (1 of 1 property, $2.00M balance) · NOI on 1 of 1 property", "scopeText: an empty DSCR scope next to a populated DY scope");
+  ok(si > ti && sc.includes(">" + SCOPE + "<"), "scope line under the totals reads \"" + SCOPE + "\" (got " + JSON.stringify(PR.scopeText(out.totals)) + ")");
+  ok(tot.includes('title="' + SCOPE + '"'), "totals DSCR / DY / LTV cells carry the scope as a title");
+  ok(PR.scopeText(out.totals) === SCOPE && PR.scopeText({ properties: 2 }) === "2 of 2 properties counted — DSCR — · DY — · LTV —", "scopeText: the whole book, and a book with no figures yet");
+  ok(PR.scopeText({ properties: 1, noNOIProps: 1, noNOIDebt: 2000000, dscr: 0, dy: 0, ltv: null }) === "1 of 1 property counted — DSCR 0.00× · DY 0.00% · LTV — · 1 with no NOI, counted at $0 ($2.00M debt)", "scopeText: a property with debt and no NOI is counted and named, never left out");
   ok(PR.fmt.short(7252000) === "$7.25M" && PR.fmt.short(129000000) === "$129.00M" && PR.fmt.short(850000) === "$850K" && PR.fmt.short(1.5e9) === "$1.50B" && PR.fmt.short(12) === "$12" && PR.fmt.short(null) === "—", "fmt.short");
   ok(PR.fmt.short(999999) === "$1.00M" && PR.fmt.short(999.6) === "$1K" && PR.fmt.short(999999999) === "$1.00B" && PR.fmt.short(999499) === "$999K" && PR.fmt.short(999500) === "$1.00M" && PR.fmt.short(-999999) === "-$1.00M" && PR.fmt.short(999.4) === "$999", "fmt.short rolls over at the unit boundary: 999,999 → $1.00M, 999.6 → $1K, 999,999,999 → $1.00B (999,499 stays $999K)");
   ok(PR.fmt.short(-0.4) === "$0" && PR.fmt.short(-0.004) === "$0" && PR.fmt.short(-400) === "-$400" && PR.fmt.short(-1500) === "-$2K" && PR.fmt.short(0) === "$0", "fmt.short: a value that rounds to zero is never -$0 (like money); real negatives keep the sign");
@@ -306,7 +308,7 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok(e.innerHTML.includes("No properties yet"), "render(mount, null) does not throw");
   let nullThrew = null; try { PR.render(null, out, {}); } catch (e2) { nullThrew = e2; }
   ok(!nullThrew, "render(null mount) is a no-op — does not throw" + (nullThrew ? " (threw " + nullThrew.message + ")" : ""));
-  ok(e.innerHTML.includes("NOI on 0 of 0 properties") && !/NaN|undefined/.test(e.innerHTML), "empty portfolio scope line, no NaN / undefined");
+  ok(e.innerHTML.includes("0 of 0 properties counted") && !/NaN|undefined/.test(e.innerHTML), "empty portfolio scope line, no NaN / undefined");
 });
 
 section("formatters", () => {
@@ -375,9 +377,9 @@ section("hardening — null lines, mezz-only names, hooks.maturity, per-row erro
   ok(!rowHtmlOf(em.innerHTML, K.avalon).includes("data-op-error"), "healthy rows carry no marker");
 });
 
-section("totals — per-ratio scope: DSCR over NOI'd properties with DS > 0, DY over those with balance > 0", () => {
-  // A matured property (balance 0, DS 3,724,389.60): with NOI 3,000,000 it belongs in the DSCR aggregate
-  // but NOT in the DY one, so Avalon's 1.00% stays the portfolio DY (the old definition read 3.50%).
+section("totals — the whole book: a property with no balance or no debt service still counts", () => {
+  // A matured property (balance 0, DS 3,724,389.60, NOI 3,000,000) and Avalon (NOI 1,200,000): 2.9.15 (C1) — every
+  // property's NOI is on both sides, every property's debt under both: DSCR = 4,200,000 / 10,764,389.60, DY = 4,200,000 / 120,000,000.
   const AV = { _id: "av", propertyName: "Avalon White Plains", propertyAddress: "White Plains, NY" };
   const PEP = { _id: "pep", propertyName: "Matured Zero-Balance Co.", propertyAddress: "1 Matured Way" };
   const NODS = { _id: "nods", propertyName: "No Debt Service", propertyAddress: "1 Paid Off Ln" };
@@ -388,22 +390,22 @@ section("totals — per-ratio scope: DSCR over NOI'd properties with DS > 0, DY 
   global.OperatingCalc = fakeCalc({ [kAv]: 1200000, [kPep]: 3000000, [kNo]: 500000 }, { [kAv]: 1100000, [kPep]: 2900000, [kNo]: 450000 });
   const two = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "Matured Zero-Balance Co.") }, [AV, PEP], hk([AV, PEP]), GD);
   const pep = byKey(two.rows)[kPep], av = byKey(two.rows)[kAv];
-  ok(pep.dscr === 3000000 / 3724389.60 && PR.fmt.ratio(pep.dscr) === "0.81×" && pep.dy === null && pep.ltv === null && pep.balance === 0, "matured row: DSCR 3,000,000 / 3,724,389.60 = 0.81×, DY — and LTV — on a zero balance");
+  ok(pep.dscr === 3000000 / 3724389.60 && PR.fmt.ratio(pep.dscr) === "0.81×" && pep.dy === null && pep.ltv === null && pep.balance === 0, "matured row: DSCR 3,000,000 / 3,724,389.60 = 0.81×, DY — and LTV — on a zero balance (the row keeps its own state)");
   ok(av.dy === 0.01, "Avalon row DY = 1,200,000 / 120,000,000 = 1.00%");
   let t = two.totals;
-  ok(t.noiProps === 2 && t.dscrProps === 2 && t.dyProps === 1, "scopes: NOI on 2, DSCR on 2, DY on 1 (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + ")");
-  ok(cents(t.dscrNoi, 4200000) && cents(t.dsCovered, 10764389.60) && approx(t.dscr, 0.3901754, 1e-7) && t.dscr === 4200000 / (7040000 + 3724389.60), "DSCR = (1,200,000 + 3,000,000) / (7,040,000 + 3,724,389.60) = 0.3901754 (got " + t.dscr + ")");
-  ok(t.dyNoi === 1200000 && t.balanceCovered === 120000000 && t.dy === 0.01, "DY = 1,200,000 / 120,000,000 = 1.00% — the matured property's NOI stays out (got " + t.dy + "; the old definition gave 0.035)");
-  ok(t.dy !== 4200000 / 120000000 && cents(t.noi, 4200000) && t.balance === 120000000 && cents(t.annualDS, 10764389.60), "…while the dollar totals still cover both (NOI 4,200,000.00, DS 10,764,389.60)");
-  // the mirror case: an NOI'd property with DS 0 and a balance → out of DSCR, in DY
+  ok(t.noiProps === 2 && t.properties === 2 && t.noNOIProps === 0, "both properties counted, both with an NOI");
+  ok(cents(t.dscrNoi, 4200000) && approx(t.dscr, 0.3901754, 1e-7) && t.dscr === 4200000 / (7040000 + 3724389.60), "DSCR = (1,200,000 + 3,000,000) / (7,040,000 + 3,724,389.60) = 0.3901754 (got " + t.dscr + ")");
+  ok(t.dyNoi === 4200000 && t.dy === 4200000 / 120000000, "DY = 4,200,000 / 120,000,000 = 3.50% — the matured property's NOI counts too (got " + t.dy + ")");
+  ok(cents(t.noi, 4200000) && t.balance === 120000000 && cents(t.annualDS, 10764389.60), "…the same NOI, debt service and balance as the dollar totals");
+  // a property with a balance and no debt service: in both ratios like every other
   const three = PR.buildRows({ [kAv]: recOf(kAv, "Avalon White Plains"), [kPep]: recOf(kPep, "Matured Zero-Balance Co."), [kNo]: recOf(kNo, "No Debt Service") }, [AV, PEP, NODS], hk([AV, PEP, NODS]), GD);
   const nod = byKey(three.rows)[kNo]; t = three.totals;
   ok(nod.dscr === null && nod.dy === 0.1 && approx(nod.ltv, 0.6, 1e-12), "No-DS row: DSCR —, DY 500,000 / 5,000,000 = 10%, LTV 60%");
-  ok(t.noiProps === 3 && t.dscrProps === 2 && t.dyProps === 2, "scopes: NOI on 3, DSCR on 2 (Avalon, matured), DY on 2 (Avalon, No-DS) (got " + t.noiProps + "/" + t.dscrProps + "/" + t.dyProps + ")");
-  ok(t.dscr === 4200000 / (7040000 + 3724389.60) && cents(t.dsCovered, 10764389.60) && t.dscrNoi === 4200000, "DSCR unchanged by a property without debt service");
-  ok(t.dyNoi === 1700000 && t.balanceCovered === 125000000 && t.dy === 1700000 / 125000000 && approx(t.dy, 0.0136, 1e-12), "DY = (1,200,000 + 500,000) / (120,000,000 + 5,000,000) = 1.36% (got " + t.dy + ")");
-  ok(PR.scopeText(t) === "DSCR 0.39× (2 of 3 properties, $10.76M DS) · DY 1.36% (2 of 3 properties, $125.00M balance) · NOI on 3 of 3 properties", "scope line names both scopes (got " + JSON.stringify(PR.scopeText(t)) + ")");
-  // the critic's probe: Harbor Point alone reads 7.33%; a zero-balance NOI'd property added must not move it
+  ok(t.noiProps === 3 && t.properties === 3, "all 3 counted");
+  ok(t.dscr === 4700000 / (7040000 + 3724389.60) && t.dscrNoi === 4700000, "DSCR = 4,700,000 / 10,764,389.60 — its NOI counts, it adds no debt service");
+  ok(t.dyNoi === 4700000 && t.dy === 4700000 / 125000000 && approx(t.dy, 0.0376, 1e-12), "DY = 4,700,000 / 125,000,000 = 3.76% (got " + t.dy + ")");
+  ok(PR.scopeText(t) === "3 of 3 properties counted — DSCR 0.44× · DY 3.76% · LTV 159.57%", "scope line (got " + JSON.stringify(PR.scopeText(t)) + ")");
+  // Harbor Point alone reads 7.33%; a zero-balance property with an NOI adds its NOI and no balance
   const HP = { _id: "hp", propertyName: "Harbor Point", propertyAddress: "Harbor" }, ZB = { _id: "zb", propertyName: "Zero Balance", propertyAddress: "Zero" };
   const kHp = "addr:harbor", kZb = "addr:zero";
   global.OperatingCalc = fakeCalc({ [kHp]: 1100000, [kZb]: 300000 }, { [kHp]: 1000000, [kZb]: 280000 });
@@ -411,8 +413,8 @@ section("totals — per-ratio scope: DSCR over NOI'd properties with DS > 0, DY 
   const alone = PR.buildRows({ [kHp]: recOf(kHp, "Harbor Point") }, [HP], hph([HP]), GD).totals;
   const plus = PR.buildRows({ [kHp]: recOf(kHp, "Harbor Point"), [kZb]: recOf(kZb, "Zero Balance") }, [HP, ZB], hph([HP, ZB]), GD).totals;
   ok(alone.dy === 1100000 / 15000000 && PR.fmt.pct(alone.dy) === "7.33%", "Harbor Point alone: DY 1,100,000 / 15,000,000 = 7.33%");
-  ok(plus.dy === alone.dy && plus.dyProps === 1 && plus.balanceCovered === 15000000 && plus.dyNoi === 1100000, "…stays exactly 7.33% with a zero-balance NOI'd property added (DY scope still 1)");
-  ok(plus.dscrProps === 2 && plus.dscr === 1400000 / 1000000 && plus.noiProps === 2 && cents(plus.noi, 1400000), "…which does join the DSCR scope: (1,100,000 + 300,000) / (800,000 + 200,000) = 1.40×, NOI on 2");
+  ok(plus.dy === 1400000 / 15000000 && plus.dyNoi === 1400000 && plus.balance === 15000000, "…with a zero-balance property added: DY 1,400,000 / 15,000,000 = 9.33%");
+  ok(plus.dscr === 1400000 / 1000000 && plus.noiProps === 2 && cents(plus.noi, 1400000), "…and DSCR (1,100,000 + 300,000) / (800,000 + 200,000) = 1.40×, NOI on 2");
   // a record-backed property whose currentBalance hook throws INSIDE stack(): its noi / uwNoi were computed
   // before the throw and must be nulled, or the totals would count an NOI the row does not show
   global.OperatingCalc = fakeCalc({ "addr:a st": 150000, "addr:b st": 200000 }, { "addr:a st": 140000, "addr:b st": 190000 });
@@ -421,7 +423,7 @@ section("totals — per-ratio scope: DSCR over NOI'd properties with DS > 0, DY 
   const abHooks = hooksFor([A, B], { annualDebtService: l => ({ a: 100000, b: 50000 })[l._id], currentBalance: l => { if (l._id === "b") throw new Error("no schedule for B"); return 1000000; }, capRate: () => 0.06 });
   const ab = PR.buildRows(abRecs, [A, B], abHooks, GD), bRow = byKey(ab.rows)["addr:b st"];
   ok(/no schedule for B/.test(bRow.error) && bRow.noi === null && bRow.uwNoi === null && bRow.annualDS === null && bRow.balance === null, "B: currentBalance throws inside stack() → noi AND uwNoi null although both had been computed before the throw");
-  ok(ab.totals.noiProps === 1 && ab.totals.noi === 150000 && ab.totals.uwNoi === 140000 && ab.totals.dscr === 1.5 && ab.totals.dscrProps === 1 && ab.totals.dyProps === 1, "totals exclude B: noiProps 1, noi 150,000, uwNoi 140,000, DSCR 1.50 (not 2 / 350,000 / 330,000)");
+  ok(ab.totals.noiProps === 1 && ab.totals.noNOIProps === 1 && ab.totals.noi === 150000 && ab.totals.uwNoi === 140000 && ab.totals.dscr === 1.5, "totals do not count B's half-computed NOI: noiProps 1, noi 150,000, uwNoi 140,000, DSCR 1.50 (not 2 / 350,000 / 330,000); B is named as having no NOI");
   global.OperatingCalc = fake;
 });
 
@@ -470,9 +472,9 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   ok(t.properties === 3 && t.loans === 4, "totals: 3 properties, 4 loans");
   ok(cents(t.noi, 1630000) && cents(t.uwNoi, 1591500), "totals noi 1,630,000.00 / uwNoi 1,591,500.00 = 795,750 (Weaver) + 795,750 (Override, actual credited) (got " + t.noi + " / " + t.uwNoi + ")");
   ok(cents(t.balance, 16500000) && cents(t.annualDS, 940000), "totals balance 16,500,000.00 / annualDS 940,000.00");
-  // Coverage over the two NOI'd properties: Weaver (DS 550,000 / bal 10,000,000) + Override (300,000 / 5,000,000); Loan Only stays out
-  ok(t.noiProps === 2 && t.properties === 3 && t.dscrProps === 2 && t.dyProps === 2 && cents(t.dsCovered, 850000) && cents(t.balanceCovered, 15000000), "scope: NOI on 2 of 3 (DSCR scope 2, DY scope 2), DS 850,000.00 / balance 15,000,000.00 behind the ratios");
-  ok(approx(t.dscr, 1630000 / 850000, 1e-12) && approx(t.dy, 1630000 / 15000000, 1e-12), "totals dscr = 1,630,000 / 850,000 = 1.9176 / dy = 1,630,000 / 15,000,000 = 10.87% (Loan Only's debt excluded)");
+  // Every property counts: Loan Only has no NOI, so it counts at $0 with its 90,000 of debt service and 1,500,000 of balance
+  ok(t.noiProps === 2 && t.properties === 3 && t.noNOIProps === 1 && cents(t.noNOIDebt, 1500000), "NOI on 2 of 3; Loan Only has none and carries 1,500,000.00 of debt");
+  ok(approx(t.dscr, 1630000 / 940000, 1e-12) && approx(t.dy, 1630000 / 16500000, 1e-12), "totals dscr = 1,630,000 / 940,000 = 1.734 / dy = 1,630,000 / 16,500,000 = 9.88% (Loan Only's debt counted)");
   const nl = PR.buildRows({ "addr:9 null st": { propKey: "addr:9 null st", propertyName: "Null Lines", units: 400, period: null, lines: { GPR: null }, assumptions: null, meta } },
     [{ _id: "i-null", propertyName: "Null Lines", propertyAddress: "9 Null St", maturityDate: "2030-01-01" }], hooks, GD).rows[0];
   ok(nl.noi === null && nl.uwNoi === null, "real engine, lines:{GPR:null} → noi null AND uwNoi null, not −80,000 = −$200 × 400 units (got " + nl.uwNoi + ")");
@@ -484,16 +486,16 @@ section("2.9.8 — a property with no loan keeps its NOI in the portfolio (no de
   const loans = LOANS.filter(l => l._id !== "l-weaver");
   const t = PR.buildRows(REC, loans, hooksFor(loans), GD).totals;
   ok(cents(t.noi, 12765000), "total NOI is unchanged: 12,765,000 (got " + t.noi + ")");
-  ok(t.noLoanProps === 1, "Weaver is counted as a property with no loan (got " + t.noLoanProps + ")");
-  ok(cents(t.dsCovered, 6852000) && cents(t.balanceCovered, 121000000), "its debt left the ratios: DS 6,852,000 / balance 121,000,000 (got " + t.dsCovered + " / " + t.balanceCovered + ")");
-  ok(t.dscr === 12765000 / 6852000, "DSCR = 12,765,000 / 6,852,000 = 1.863 — higher than with the loan (1.760) (got " + t.dscr + ")");
-  ok(t.dy === 12765000 / 121000000, "debt yield = 12,765,000 / 121,000,000 = 10.55% — higher than with the loan (9.90%) (got " + t.dy + ")");
+  ok(t.noLoanProps === 2, "Weaver joins the Orphan record as a property with no loan (got " + t.noLoanProps + ")");
+  ok(cents(t.annualDS, 7224000) && cents(t.balance, 127470000), "its debt left the ratios: DS 7,224,000 / balance 127,470,000 (got " + t.annualDS + " / " + t.balance + ")");
+  ok(t.dscr === 12765000 / 7224000, "DSCR = 12,765,000 / 7,224,000 = 1.767 — higher than with the loan (1.674) (got " + t.dscr + ")");
+  ok(t.dy === 12765000 / 127470000, "debt yield = 12,765,000 / 127,470,000 = 10.01% — higher than with the loan (9.42%) (got " + t.dy + ")");
   ok(t.dscr > out.totals.dscr && t.dy > out.totals.dy, "removing a loan raises both ratios, never lowers them");
   const back = PR.buildRows(REC, LOANS, hooksFor(LOANS), GD).totals;
-  ok(back.dscr === out.totals.dscr && back.dy === out.totals.dy && back.noLoanProps === 0, "restoring the loan gives exactly the earlier numbers");
-  ok(/1 with no loan \(NOI counted, no debt\)/.test(PR.scopeText ? PR.scopeText(t) : (function(){ const m = mount(); PR.render(m, PR.buildRows(REC, loans, hooksFor(loans), GD)); return m.innerHTML; })()), "the roll-up says how many properties have no loan");
+  ok(back.dscr === out.totals.dscr && back.dy === out.totals.dy && back.noLoanProps === 1, "restoring the loan gives exactly the earlier numbers");
+  ok(/2 with no loan \(no debt\)/.test(PR.scopeText(t)), "the roll-up says how many properties have no loan");
   const orphanOnly = PR.buildRows({ [K.orphan]: REC[K.orphan] }, [], hooksFor([]), GD).totals;
-  ok(orphanOnly.dscr === null && orphanOnly.dy === null && orphanOnly.noLoanProps === 0, "a property with no loan AND no NOI adds nothing (unknown ≠ zero)");
+  ok(orphanOnly.properties === 1 && orphanOnly.noLoanProps === 1 && orphanOnly.noNOIProps === 1 && orphanOnly.dscr === null && orphanOnly.dy === null, "a property with no loan AND no NOI still counts as a property; with no debt there is no ratio to show");
 });
 
 section("2.9.12 — the roll-up runs on the app's ONE NOI (hooks.propertyNOI), not the operating lines' own total", () => {

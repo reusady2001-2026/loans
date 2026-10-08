@@ -179,6 +179,7 @@
   // "(NOI)" / "/ (LOSS)" / "before debt service" qualifier is still the NOI.
   var RE_NOI    = /^(TOTAL\s+)?(NET\s+OPERATING\s+INCOME|NOI)(\s*[\(\/\-–:].*|\s+BEFORE\b.*)?$/;
   var RE_EXPHDR = /^(OPERATING\s+)?(EXPENSES?|EXPENDITURES?)$|^OPEX$/;
+  var RE_CODE   = /^\d[\d.\-]{2,}$/;                       // an account number ("41010001", "6100-00", "5.100")
   function isCaps(s){ return /[A-Z]/.test(s) && s === s.toUpperCase(); }
 
   function parseGrid(grid, opts){
@@ -230,6 +231,40 @@
       return false;
     }
 
+    // 2.9.15 — subtotals printed WITHOUT "Total": some statements repeat the section's name under its lines
+    // ("Utilities" under the utility lines, "Operating Expenses" under every expense), or name the sum differently
+    // ("Gross Potential Rent" under "Residential Rent"). Counted as lines they doubled income and tripled expenses.
+    // Such a row is a subtotal when its amount — in the period column AND in every month column — is the sum of the
+    // detail lines just above it. A one-line section needs one more sign: the row repeats its section's name, or the
+    // statement numbers its lines (an account code) and this row has none.
+    var codeCol = -1;
+    (function(){
+      var best = -1, bestN = 0, nAmt = 0, lim = Math.min(descCol, isFinite(firstNum) ? firstNum : descCol);
+      var counts = [];
+      for (var r = dataStart; r < grid.length; r++){
+        var rw = grid[r]; if (!rw || typeof rw !== "object" || toNum(rw[amountCol]) == null || !labelOf(rw)) continue;
+        nAmt++;
+        for (var c = 0; c < lim; c++) if (RE_CODE.test(str(rw[c]))) counts[c] = (counts[c] || 0) + 1;
+      }
+      counts.forEach(function(n, c){ if (n > bestN){ bestN = n; best = c; } });
+      if (best >= 0 && bestN >= 3 && bestN / nAmt >= 0.4) codeCol = best;   // the subtotals and totals themselves carry none
+    })();
+    var sumCols = [amountCol].concat(h.months.filter(function(c){ return c !== amountCol; }));
+    // How many of the last detail lines (1…all of this phase) this row is the sum of; 0 when none.
+    function sumOfLast(row, lines){
+      var acc = sumCols.map(function(){ return 0; });
+      for (var k = 1; k <= lines.length; k++){
+        var src = grid[lines[lines.length - k].row], ok = true;
+        for (var j = 0; j < sumCols.length; j++){
+          var n = toNum(src[sumCols[j]]); if (n != null) acc[j] += n;
+          var v = toNum(row[sumCols[j]]);
+          if (Math.abs((v == null ? 0 : v) - acc[j]) > 1) ok = false;
+        }
+        if (ok) return k;
+      }
+      return 0;
+    }
+
     // The statement's own account hierarchy is authoritative: an ALL-CAPS label with
     // no amount is a section/sub-section header; mixed-case rows with an amount are
     // detail lines; "Total …"/"Net …" rows are subtotals (skipped as detail). The
@@ -240,7 +275,7 @@
     // statement prints no income total) → below (after TOTAL EXPENSES: debt service,
     // reserves, depreciation… are NOT operating lines) → stop at NET OPERATING INCOME.
     var TOP = /^(INCOME|EXPENSES?|EXPENDITURES?|OPEX|OPERATING\s+(INCOME|EXPENSES?|EXPENDITURES?)|OPERATING\s+REVENUES?|REVENUES?|GROSS\s+(INCOME|REVENUE))$/;
-    var rows = [], categories = [], belowLine = [], totals = { income: null, expense: null, noi: null };
+    var rows = [], categories = [], belowLine = [], subtotals = [], phaseLines = [], totals = { income: null, expense: null, noi: null };
     var footing = { incomeRow: -1, expenseRow: -1, noiRow: -1 };
     // A statement can print a SUMMARY block (its top-line totals, sometimes with category
     // subtotals) ABOVE the detail. Those figures are a fallback only: the DETAIL footing the
@@ -273,7 +308,7 @@
       if (amt == null){                                        // header / label row
         if (isTotal) continue;
         if (TOP.test(up)){                                     // a top-level section starts a new hierarchy
-          if (phase === "income" && RE_EXPHDR.test(up)) phase = "expense";
+          if (phase === "income" && RE_EXPHDR.test(up)){ phase = "expense"; phaseLines = []; }
           sub = ""; continue;
         }
         sub = name; continue;
@@ -292,7 +327,7 @@
           }
           // the DETAIL footing — authoritative; it overrides a summary's provisional figure
           if (totals[foot] == null){ totals[foot] = amt; footing[foot + "Row"] = r; detailFooted[foot] = true; }
-          if (foot === "income"){ if (phase === "income"){ phase = "expense"; sub = ""; } }
+          if (foot === "income"){ if (phase === "income"){ phase = "expense"; sub = ""; phaseLines = []; } }
           else if (foot === "expense") phase = "below";        // TOTAL EXPENSES ends the operating detail from any phase
           else if (foot === "noi") break;                      // operating bottom line — rows below (debt service, depreciation, net income) are not operating
           continue;
@@ -304,9 +339,25 @@
         continue;                                              // never counted as a detail line
       }
       if (phase === "below"){ belowLine.push({ name: name, amount: amt, row: r }); continue; }
+      if (phaseLines.length){                                  // 2.9.15 — a subtotal printed without "Total"
+        var k = sumCols.some(function(c){ return toNum(row[c]); }) ? sumOfLast(row, phaseLines) : 0;   // a row of zeros stays a line
+        var sameAsHeader = !!sub && up === sub.toUpperCase().replace(/\s+/g, " ").trim();
+        var codeless = codeCol >= 0 && codeCol !== descCol && !RE_CODE.test(str(row[codeCol]));
+        if (k && ((k >= 2 && sumCols.length >= 3) || sameAsHeader || codeless)){
+          // the whole phase's sum under the phase's own name ("Operating Expenses", "Revenue") is its printed total
+          if (k === phaseLines.length && phase === "expense" && totals.expense == null && RE_EXPHDR.test(up)){
+            totals.expense = amt; footing.expenseRow = r; detailFooted.expense = true; phase = "below"; continue;
+          }
+          if (k === phaseLines.length && phase === "income" && totals.income == null && /^(OPERATING\s+)?(INCOME|REVENUES?)$/.test(up)){
+            totals.income = amt; footing.incomeRow = r; detailFooted.income = true; phase = "expense"; sub = ""; phaseLines = []; continue;
+          }
+          subtotals.push({ name: name, amount: amt, section: section, row: r, of: k });
+          continue;
+        }
+      }
       var rowObj = { name: name, amount: amt, section: section, sub: sub, row: r };
       if (monthCols) rowObj.monthly = monthlyOf(row);         // per-line calendar-month values, only when opts.monthly
-      rows.push(rowObj);
+      rows.push(rowObj); phaseLines.push(rowObj);
       if (amt) nzRows++;                                       // $0 stub rows above a summary block must not defeat its detection
     }
     var hasSummary = summaryTotals.income != null || summaryTotals.expense != null || summaryTotals.noi != null;
@@ -338,7 +389,7 @@
     }
     return { headerRow: h.headerRow, descCol: descCol, amountCol: amountCol, cols: cols, months: h.months,
              monthCols: monthCols, totalsMonthly: totalsMonthly, basis: basis, basisUsed: basisUsed, periodsAvailable: Object.keys(cols).filter(function(k){ return cols[k] >= 0; }),
-             rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine,
+             rows: rows, categories: categories, totals: totals, footing: footing, belowLine: belowLine, subtotals: subtotals, codeCol: codeCol,
              summaryTotals: hasSummary ? summaryTotals : null, summaryFooting: hasSummary ? summaryFooting : null,
              summaryMismatch: summaryMismatch, warnings: warnings };
   }
