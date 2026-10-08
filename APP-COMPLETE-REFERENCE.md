@@ -1,22 +1,22 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.13 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.14 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.13
+**Current version:** 2.9.14
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
 **Portfolio today:** 29 properties.
 
-> This is the master overview. It sits alongside the other docs in the repo (`README.md`, `TODO.md`,
+> This is the master overview. It sits alongside the other docs in the repo (`README.md`,
 > `QUESTIONS-FOR-AZRIEL.md`, `SPEC-v2.3.0-operating-model.md`, `OPERATING-CONTRACT.md`,
 > `LOAN-VALIDATION-FLAGS.md`, `DESKTOP.md`, `GRADE-BOARD.md`, `INVOICE-RECONCILIATION.md`) and is meant to be
 > the one you read first. 2.9.7 corrected the places where the 2.9.6 version of this document no longer matched
 > the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8"); 2.9.9 the
 > fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10"); 2.9.11 the
 > fixes from testing 2.9.10 (marked "2.9.11"); 2.9.12 the fixes from testing 2.9.11 (marked "2.9.12"); 2.9.13 the fix from testing 2.9.12
-> (marked "2.9.13").
+> (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14").
 
 ---
 
@@ -153,6 +153,12 @@ files, the app asks first ("Put them together").
   Only what belongs to a loan stays off: the loan tiles, the floating-rate notice, the Loan Record, the schedule.
 - Every add, archive, un-archive, delete or rename redraws everything at once (counter, dropdown, Home, the
   open tab).
+- **2.9.14 — pooled loans on Home:** a pooled loan is **one row** named with its properties ("Maple Court · Birch
+  Gardens · …", past 5 the first 3 and "+ N more") and a **POOL · N PROPERTIES** badge: its NOI is the sum of its
+  properties' own NOIs, against its one payment. Coverage is measured per **stack** — every property and every loan
+  tied together by any loan: a pooled mezz over the same pool, or one member's own extra loan, joins the pool's row,
+  and each property's NOI is counted once. A single property's senior + mezz is a stack of one, exactly as before.
+  Above the Coverage table: **Refinance several properties together…** (§4.8).
 
 ### 4.2 Property & loan management
 - **Add a property** — the same checks for the form and the assistant (2.9.7): an archived property of that name
@@ -172,6 +178,37 @@ files, the app asks first ("Put them together").
 - **Duplicates** (Data Health): the full street address + city must match; names are compared only when a
   property has no address; each warning has **"Not a duplicate"**.
 - **Loan statuses:** Active, Matured, Extended, Extension undecided, Paid off.
+- **2.9.14 — pooled (cross-collateralized) loans:** one loan record secured by **any number of properties** (one
+  balance, one payment). Its own name / address is the **lead** property; **"Also secures this loan"** on the loan
+  form lists the others — a list of your properties with a tick box, a search box and an **allocated amount** for each
+  (optional; without them a property's share follows its NOI), a line adding the amounts up, and a box for a
+  property **not in the app yet** ("Add to this loan" — it becomes a property of its own, with its folder, when you
+  Save). So three new properties under one new loan = Add loan, type the first, add the other two, Save. Stored on the
+  loan as "Name = amount; …" (an Excel row too).
+  - **Every member's page** shows the **pool panel**: balance, P&I, pool NOI, DSCR, debt yield / LTV, and each
+    property's NOI, allocated amount, allocated balance and allocated DSCR. Each member is **"In a pooled loan"**,
+    never "no loan"; the calendar has **one** maturity; Data Health, the roll-up and the assistant see one loan.
+  - **Release…** (next to each property in the panel): the release price (it suggests the property's share of
+    today's balance — loan agreements often ask 105–125% of the allocated amount; type yours), the date, and whether
+    the payment is **recalculated** over the amortization left or **kept**. The paydown goes into the schedule on that
+    date; the property leaves the pool and keeps its NOI with no loan; a "Released:" line and the loan's history keep
+    it. Releasing the lead moves the loan to the member with the largest allocated amount. Stored on the loan as
+    **Pool releases** (an Excel row).
+  - **Renames** — from the property page, the loan form, an Excel import or the assistant — keep the pool intact;
+    names show as you wrote them. An Excel import whose "Also secures" names a property that isn't in the book says
+    so before you apply.
+- **2.9.14 — "At the Reset" (A1):** for a hybrid with a stated payment ("Fixed P&I"): **Keep the stated payment** (as
+  before) or **Recalculate over the remaining amortization** — from the first reset payment, a new constant payment:
+  what you owe then, over the amortization months left, at the reset rate, sized the way the bank sizes it (an
+  Actual/360 annuity, rate × 365.25/360 ÷ 12 a month — it gives both Customers Bank notes' stated payments to within
+  $18.21 and $1.52). Set to recalculate on **1222 Commerce St** (Note ¶2(D), from 5/1/2031) and **The Botanic
+  (Carteret)** (§2(D), from 1/1/2031) — on an existing book once, never over a choice you made; **Living Lofts** is
+  left as it is (its ARM rider isn't known). At today's 5-yr Treasury (4.16% + 2.50% = 6.66%): 1222 Commerce
+  $148,062.35 → **$156,266.98**; The Botanic $384,807.04 → **$412,625.78** (projections — the real 2031 rate isn't
+  known). The loan form now also shows the **Fixed Amortization Payment** field for these loans (it was hidden).
+- **2.9.14 — a rename from the loan form keeps the property's profile.** Before, renaming a property on the loan form
+  could replace its profile with a blank one (its NOI override and every other profile field were lost); the
+  property page and the assistant were not affected.
 
 ### 4.3 The Property Profile
 - The property's own facts: name, address, residential / commercial units, rentable sq ft, year built,
@@ -276,6 +313,19 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   penalty → Refinance; (4) lower rate but it doesn't pay the penalty, and the extra cash is more than 20% of what
   you owe → **your decision** ("Refinance now — with $X cash" or "Wait until [maturity]"); (5) anything else →
   Don't refinance. In the decision case the amount can't be lowered below that 20%.
+- **2.9.14 (R1) — a refinance that loses money is never proposed.** Rule (4) also needs the new loan to be more than
+  what you owe **plus the early-payoff penalty**; when the penalty eats the extra cash it's **Don't refinance — "the
+  $P early-payoff penalty is more than the extra cash ($C, N% of what you owe) — you'd lose $X"**. Closing costs don't
+  count (by design). **"Refinance now — with $X cash"** = the new loan − what you owe − the penalty (before, cash
+  after closing, floored at $0 — a loss could read "$0.00"). In the decision case the amount can't be lowered into a
+  loss either. Example: today 4.50%, proposed 4.40%, a 23% penalty — 21% extra cash → Don't refinance, you'd lose
+  ≈$206K; 25% → your decision.
+- **2.9.14 — refinance several properties together:** Home → **Refinance several properties together…** lists every
+  property with what it owes (or "no loan yet") and counts what you tick ("3 ticked · 2 loans to pay off ($…) · 1
+  with no loan yet · NOI $…"). The refinance screen names the properties and the loans it pays off; payoff = every
+  loan on them; NOI = all of theirs. Properties with no loan (new ones) can join — at least one ticked property must
+  have a loan to pay off. **Save** pays the old loans off (refinanced) and saves **one pooled loan** on all of them.
+  A pooled loan's own refinance works the same way; the assistant can open one (refinance_together).
 - The proposed rate: Fixed / Floating / **Hybrid** — a hybrid shows both periods (the fixed period over the
   matching Treasury, then today's index + margin "if the index stays at today's level"); spreads start at 0.
 - The NOI the refinance is sized on: **In-place T12 NOI**, **Underwritten NOI**, or the **entered** NOI (your
@@ -415,6 +465,10 @@ title is the question as typed. **Compact** shrinks only what is sent — the sa
 said it. Errors are in plain words with the next step; when the Claude sign-in has expired and an API key is
 saved, the key is used.
 
+- **2.9.14 — pooled loans:** the assistant sees which properties a loan secures, and can **make a loan pooled**
+  (set_pool, with allocated amounts), **release a property** (release_from_pool) and **open one refinance for several
+  properties** (refinance_together) — each behind a card you approve.
+
 ### 4.15 Reading scanned documents (OCR)
 - **Per page:** a page with real text keeps its line breaks; a page that is mostly a picture is read by OCR — even
   when it carries a short real line (an e-signature stamp, a fax header), and both are kept (2.9.7).
@@ -463,8 +517,9 @@ saved, the key is used.
 ## 6. Testing
 
 - **19 unit-test files** (pure modules) — `npm test`.
-- **73 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
-  stand-in, never a real model) — `npm run test:e2e`.
+- **82 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
+  stand-in, never a real model) — `npm run test:e2e`. 2.9.14 adds five: pooled loans (core; refinance + stacks; two
+  parts covering the picker, new properties, releases, renames, Excel, the assistant, 40 properties) and R1 + A1.
 - CI runs the unit tests before every build.
 
 ---
@@ -488,21 +543,28 @@ saved, the key is used.
 - **2.9.10** — the fixes from testing the installed 2.9.9.
 - **2.9.11** — the fixes from testing the installed 2.9.10.
 - **2.9.12** — the fixes from testing the installed 2.9.11.
-- **2.9.13** — *(this stage)* the fix from testing the installed 2.9.12 (see §8).
+- **2.9.13** — the fix from testing the installed 2.9.12.
+- **2.9.14** — *(this stage)* pooled loans, R1 and A1 (see §8).
 
 ---
 
-## 8. Stage 2.9.13 — what shipped, and what still needs checking
+## 8. Stage 2.9.14 — what shipped, and what still needs checking
 
-**What shipped** — from testing the installed 2.9.12 (check list Part 6: 6 of 6 passed):
-1. **The page of a property with no loan has everything about the property** that a loan property's page has: its
-   NOI box (NOI and how it was worked out, value at a cap rate, "Debt: None", Open in Underwriting), its Rent roll
-   summary (Import / Update, the Answer prompt, "to check"), and its removed / paid-off loans with Restore. Before,
-   it had only the profile and the documents — no rent roll section, so no way to see or import its rent roll there.
+**What shipped** — the pooled-loan plan's option 15 (15 ways were built and tested; this one passed every check), and
+the two fixes approved after testing 2.9.13 (check list Part 7: 6 of 6 passed):
+1. **Pooled loans** (§4.1, §4.2, §4.8, §4.14): one loan on any number of properties, picked from a list on the loan
+   form, with allocated amounts; new properties added to a loan in the same Save; one row per pool / stack on Home;
+   the pool panel on every member's page; release with a paydown; one refinance for several properties, with or
+   without loans of their own; renames every way; the Excel warning; the assistant.
+2. **R1** — a refinance that loses money is never proposed; "with $X cash" = new loan − owed − penalty (§4.8).
+3. **A1** — "At the Reset": keep or recalculate a stated payment; recalculated on 1222 Commerce St and The Botanic (§4.2).
+4. Found while building it: a **rename from the loan form** no longer wipes the property's profile; a **senior + mezz
+   page** shows the two loans' real balance and P&I (it showed a re-amortized figure); the loan form shows the
+   **Fixed Amortization Payment** field.
 
-The 2.9.12 stage is in the git history and its pull request.
+The 2.9.13 stage is in the git history and its pull request.
 
-**Check on the real installed 2.9.13 (Windows)** — Part 7 of the check list.
+**Check on the real installed 2.9.14 (Windows)** — Part 8 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -511,19 +573,27 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 ## 9. What's next (planned stages)
 
-### 2.9.14 — One shared database (+ the pooled loan, moved here from 2.9.7)
-- **One shared database** so the team works off the same data: sign-in and users, per-group data separation,
-  a daily backup, every edit stamped (who / when) as an audit trail — with reasons —, the last-opened state saved,
-  and the user's local files untouched. Open decision (Azriel): managed hosting vs self-hosted, and where it is
-  hosted (see `QUESTIONS-FOR-AZRIEL.md`).
-- **Pooled / cross-collateralized loans** — one loan secured by several properties (one balance, one payment),
-  analyzed as one credit position: combined coverage, combined sizing, release / substitution across the pool. Its
-  documents can already be linked to all its properties (2.9.11); the loan itself is this stage.
+*(Order set by the operator, 2026-10-07.)*
 
-### 2.9.15 — Automated Yardi ingestion
-Pull operating data and rent rolls from Yardi directly instead of manual file drops.
+### 3.0.0 — One shared database
+So the team works off the same data: sign-in and users, per-group data separation, a daily backup, every edit
+stamped (who / when / why) as an audit trail, the last-opened state saved, the user's local files untouched.
+Hosting: the plan names **Supabase**.
 
----
+### After 3.0.0 — Yardi ingestion (to be defined)
+The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
+database (Supabase) reads that mailbox and updates each property's data. It needs the shared database (3.0.0)
+first; the details (mailbox, file matching, what is updated, how a mismatch is reported) are still to be defined.
+
+### Pooled loans — not built yet
+- **Substitution** (swap one property for another) is a release plus an add; there is no one-step version.
+- A release that also changes the loan's rate, maturity or terms isn't modelled — edit the loan.
+- In the shared database (3.0.0) the "Also secures" list and the releases become tables of their own.
+
+### By design for now (not planned)
+- Phases that come as **separate files** are not combined (phases as sheets / sections of ONE file are).
+- **No code signing** (Windows SmartScreen shows "More info → Run anyway" once).
+- **Installer size** (~260 MB, the two OCR engines).
 
 ## 10. Known caveats
 
@@ -537,4 +607,4 @@ Pull operating data and rent rolls from Yardi directly instead of manual file dr
 
 ---
 
-*Last updated for version 2.9.13.*
+*Last updated for version 2.9.14.*
