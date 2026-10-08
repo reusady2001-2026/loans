@@ -6226,7 +6226,8 @@ tr.flagged:hover td{background:#fee2e2}
     var t12GateQueued = {};        // propKey → true while a background gate is queued for it
     var t12GateChain = Promise.resolve();   // one reading at a time (the AI can take minutes)
     var t12PopupChain = Promise.resolve();  // one pop-up at a time
-    function t12Entries(key){ var gd = gdFullCache[key]; return (gd && Array.isArray(gd.t12Readings)) ? gd.t12Readings : []; }
+    var t12LastKnown = {};   // the readings last seen per property — while the general-data cache is being reloaded
+    function t12Entries(key){ var gd = gdFullCache[key]; if(gd){ var l = Array.isArray(gd.t12Readings) ? gd.t12Readings : []; t12LastKnown[key] = l; return l; } return t12LastKnown[key] || []; }
     function t12EntryFor(key, sig){ return t12Entries(key).filter(function(e){ return e && e.sig === sig; })[0] || null; }
     function t12EntrySave(key, entry){
       return gdSerial(key, async function(){
@@ -6347,9 +6348,10 @@ tr.flagged:hover td{background:#fee2e2}
         entry.at = new Date().toISOString();
         await t12EntrySave(key, entry);
       } finally { delete t12GateBusy[key]; t12Refresh(key); }
-      if(T12_USED[entry.status] && (!wasUsed || pass || opts.migrate)){ try{ await t12AfterAccepted(key, f, parts, entry, { quiet: !!opts.migrate || wasUsed }); }catch(e){} }
+      var accd = null;
+      if(T12_USED[entry.status] && (!wasUsed || pass || opts.migrate)){ try{ accd = await t12AfterAccepted(key, f, parts, entry, { quiet: !!opts.migrate || wasUsed, lead: "was checked by the reader and the AI — every check passes and they agree. " }); }catch(e){} }
       if(!pass && !opts.migrate && opts.interactive !== false) t12Popup(key, sig);
-      else if(pass && !opts.migrate && !wasUsed) toast(opPropDisplayName(key) + ": “" + f.name + "” checked by the reader and the AI — every check passes and they agree" + (entry.reader && entry.reader.noi != null ? " · NOI " + fmtMoney(entry.reader.noi) : "") + ".", "check");
+      else if(pass && !opts.migrate && !wasUsed && !(accd && accd.older)) toast(opPropDisplayName(key) + ": “" + f.name + "” checked by the reader and the AI — every check passes and they agree" + (entry.reader && entry.reader.noi != null ? " · NOI " + fmtMoney(entry.reader.noi) : "") + ".", "check");
       else if(pass && opts.force && !opts.migrate) toast(opPropDisplayName(key) + ": read again — every check passes and the AI agrees.", "check");
       if(!pass && !opts.migrate && wasUsed && entry.reader && entry.reader.ok && entry.ai && (entry.ai.status === "unavailable" || entry.ai.status === "error")) toast(opPropDisplayName(key) + ": every check of the reader passes, but " + (entry.ai.status === "error" ? "the AI’s reading failed" : "Claude isn’t connected") + " — the AI didn’t read it. It stays in use as it was.", "info");
       return entry;
@@ -6363,7 +6365,11 @@ tr.flagged:hover td{background:#fee2e2}
         var cur = await opReadPropT12(key);
         if(cur && cur.sha && f.sha && cur.sha !== f.sha && parts.length === 1){
           var rd = await opPartsInfoForFile(key, f), g = rd ? opT12GridFromPart(rd.bytes, parts[0]) : null;
-          if(g){ await opMergeT12History(key, g, t12OverridesFor(entry, parts[0].sheet)); if(!o.quiet) toast(opPropDisplayName(key) + ": “" + f.name + "” is an older statement — it was added to the history; the newer one stays in use.", "info"); }
+          if(g){ await opMergeT12History(key, g, t12OverridesFor(entry, parts[0].sheet));
+            var ms = opGridMonths(cur.grid), rng = ms.length ? (ymShort(ms[Math.max(0, ms.length - 12)]) + " – " + ymShort(ms[ms.length - 1])) : cur.name;
+            if(!o.quiet) toast(opPropDisplayName(key) + ": “" + f.name + "” " + (o.lead || "") + "Using " + rng + " (newest). The older file was added to history.", "info");
+            try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}
+            return { older: true }; }
         }
       }catch(e){}
       try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}
@@ -6420,10 +6426,11 @@ tr.flagged:hover td{background:#fee2e2}
       await t12EntrySave(key, e);
       var list = null; try{ list = await ldsShell.docList(key); }catch(x){}
       var f = list && list.ok ? (list.files || []).filter(function(x){ return x.id === e.fileId; })[0] || (list.files || []).filter(function(x){ return x.sha === e.sha; })[0] : null;
-      if(f){ var r = await opResolvePart(key, f, "t12"); var parts = (r && r.parts && r.parts.length) ? r.parts : (r && r.part ? [r.part] : []); await t12AfterAccepted(key, f, parts, e); }
+      var accd = null;
+      if(f){ var r = await opResolvePart(key, f, "t12"); var parts = (r && r.parts && r.parts.length) ? r.parts : (r && r.part ? [r.part] : []); accd = await t12AfterAccepted(key, f, parts, e, { lead: o.status === "reader-only" ? "is used as the reader read it. " : "is saved as you reviewed it. " }); }
       else await opAfterT12Change(key);
       var gd = gdNOICache[key];
-      toast(opPropDisplayName(key) + ": “" + (e.fileName || "") + "” " + (o.status === "reader-only" ? "is used as the reader read it" : "is saved as you reviewed it") + (gd && gd.inPlace != null ? " — NOI " + fmtMoney(gd.inPlace) : "") + ".", "check");
+      if(!(accd && accd.older)) toast(opPropDisplayName(key) + ": “" + (e.fileName || "") + "” " + (o.status === "reader-only" ? "is used as the reader read it" : "is saved as you reviewed it") + (gd && gd.inPlace != null ? " — NOI " + fmtMoney(gd.inPlace) : "") + ".", "check");
       t12Refresh(key);
       return e;
     }
@@ -6487,20 +6494,26 @@ tr.flagged:hover td{background:#fee2e2}
       if(x && x.grid && res){
         var nCols = 0; x.grid.forEach(function(rw){ if(Array.isArray(rw)) for(var c = rw.length - 1; c >= 0; c--){ if(rw[c] != null && String(rw[c]).trim() !== ""){ if(c + 1 > nCols) nCols = c + 1; break; } } });
         var cols = []; for(var c = 0; c < nCols; c++) cols.push(c);
-        var th = '<tr><th class="sticky left-0 z-[2] bg-slate-50 px-2 py-1 text-right">Row</th>' + cols.map(function(c){ return '<th class="px-2 py-1 text-left">' + T12Read.colName(c) + '</th>'; }).join("") +
-          '<th class="px-2 py-1 text-left">What the reader made of it</th><th class="px-2 py-1 text-left">Side</th><th class="px-2 py-1 text-left">Category</th><th class="px-2 py-1 text-right">Amount used</th><th class="px-2 py-1 text-left">Your note</th><th class="px-2 py-1 text-left">Check</th></tr>';
+        // the file's name columns, then what the reader made of each row, then the months and the Total — so a row's name
+        // and the reader's decision are side by side
+        var rc = x.reading.columns || {}, split = Math.min.apply(null, (rc.months || []).map(function(m){ return m.col; }).concat([rc.total >= 0 ? rc.total : nCols, nCols]));
+        var lead = cols.filter(function(c){ return c < split; }), rest = cols.filter(function(c){ return c >= split; });
+        var thc = function(c){ return '<th class="px-2 py-1 text-left">' + T12Read.colName(c) + '</th>'; };
+        var th = '<tr><th class="sticky left-0 z-[2] bg-slate-50 px-2 py-1 text-right">Row</th>' + lead.map(thc).join("") +
+          '<th class="px-2 py-1 text-left">What the reader made of it</th><th class="px-2 py-1 text-left">Side</th><th class="px-2 py-1 text-left">Category</th><th class="px-2 py-1 text-right">Amount used</th><th class="px-2 py-1 text-left">Your note</th><th class="px-2 py-1 text-left">Check</th>' + rest.map(thc).join("") + '</tr>';
         var body = res.rows.map(function(rw){
-          var cells = Array.isArray(x.grid[rw.row]) ? x.grid[rw.row] : [], ov = ovAt[rw.excel] || null, flist = failAt[rw.excel] || [], alist = aiAt[rw.excel] || [];
-          var tone = flist.length ? 'bg-rose-50' : (alist.length ? 'bg-amber-50' : (rw.role === "account" ? '' : (rw.role === "total" || /total|noi/.test(rw.role) ? 'bg-sky-50/60' : (rw.role === "heading" ? 'bg-slate-50' : 'text-slate-400'))));
-          var editable = rw.row > x.reading.headerRow;
+          var cells = Array.isArray(x.grid[rw.row]) ? x.grid[rw.row] : [], tdc = function(c){ var v = cells[c]; return '<td class="whitespace-nowrap px-2 py-1 text-[11px] ' + (typeof v === "number" ? 'text-right tabular-nums' : '') + '">' + escapeHtml(t12RvCell(v)) + '</td>'; }, ov = ovAt[rw.excel] || null, flist = failAt[rw.excel] || [], alist = aiAt[rw.excel] || [];
+          var isTot = rw.role === "total" || rw.role === "income-total" || rw.role === "expense-total" || rw.role === "noi";
+          var tone = flist.length ? 'bg-rose-50' : (alist.length ? 'bg-amber-50' : (rw.role === "account" ? '' : (isTot ? 'bg-sky-50/60' : (rw.role === "heading" ? 'bg-slate-50' : 'text-slate-400'))));
+          var editable = rw.row > x.reading.headerRow && rw.role !== "blank";
           var roleSel = editable ? '<select data-t12rv-role="' + rw.excel + '" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' +
               (T12Read.EDITABLE_ROLES.indexOf(rw.role) < 0 ? '<option value="" selected>' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</option>' : '') +
               T12Read.EDITABLE_ROLES.map(function(rl){ return '<option value="' + rl + '"' + (rl === rw.role ? ' selected' : '') + '>' + escapeHtml(T12Read.ROLES[rl]) + '</option>'; }).join("") + '</select>' + (ov && ov.role ? ' <span class="text-[10px] font-bold text-brand-700">yours</span>' : '') + (rw.role === "total" && rw.totalKind && rw.totalKind !== "unmatched" ? '<div class="text-[10px] text-slate-500">' + (rw.totalKind === "group" ? 'total of ' + escapeHtml((rw.totalOf || []).join(" + ")) : 'total of rows ' + (rw.totalOf || [])[0] + '–' + (rw.totalOf || [])[(rw.totalOf || []).length - 1]) + '</div>' : '')
-            : '<span class="text-[11px] text-slate-500">' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</span>';
+            : (rw.role === "blank" ? '' : '<span class="text-[11px] text-slate-500">' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</span>');
           var isAcc = rw.role === "account";
           var sideSel = isAcc ? '<select data-t12rv-side="' + rw.excel + '" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]"><option value="income"' + (rw.side === "income" ? ' selected' : '') + '>Income</option><option value="expense"' + (rw.side === "expense" ? ' selected' : '') + '>Expense</option></select>' : '';
           var catSel = isAcc ? '<select data-t12rv-cat="' + rw.excel + '" class="max-w-[170px] rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' + t12CatOptions(rw.side, rw.cat) + '</select>' : '';
-          var canAmt = editable && (isAcc || rw.role === "total" || /income-total|expense-total|noi/.test(rw.role));
+          var canAmt = editable && (isAcc || isTot);
           var amtIn = canAmt ? '<input data-t12rv-amt="' + rw.excel + '" inputmode="decimal" class="w-28 rounded border ' + (ov && ov.amount != null ? 'border-brand-400 bg-brand-50' : 'border-slate-300') + ' px-1 py-0.5 text-right text-[11px] tabular-nums" placeholder="' + escapeHtml(rw.amountYours ? t12RvCell(rw.printed) : t12RvCell(rw.amount)) + '" value="' + (ov && ov.amount != null ? escapeHtml(String(ov.amount)) : '') + '">' : '';
           var noteIn = editable && (ov || canAmt) ? '<input data-t12rv-note="' + rw.excel + '" class="w-40 rounded border ' + (ov && ov.amount != null && !ov.note ? 'border-rose-400' : 'border-slate-300') + ' px-1 py-0.5 text-[11px]" placeholder="' + (ov && ov.amount != null ? 'why (needed)' : 'note') + '" value="' + escapeHtml((ov && ov.note) || '') + '">' : '';
           var chk = flist.map(function(c){ return '<div class="text-[10px] font-semibold text-rose-700">✗ ' + escapeHtml(c.msg) + '</div>'; }).join("") +
@@ -6508,8 +6521,9 @@ tr.flagged:hover td{background:#fee2e2}
                     (!flist.length && rw.check && rw.check.ok && !rw.check.yours ? '<div class="text-[10px] text-emerald-700">✓ = its months</div>' : '') +
                     (rw.role === "total" && rw.totalKind && rw.totalKind !== "unmatched" ? '<div class="text-[10px] text-emerald-700">✓ adds up</div>' : '');
           return '<tr data-t12rv-row="' + rw.excel + '" class="border-t border-slate-100 align-top ' + tone + '"><td class="sticky left-0 z-[1] bg-inherit px-2 py-1 text-right text-[11px] font-semibold text-slate-500">' + rw.excel + '</td>' +
-            cols.map(function(c){ var v = cells[c]; return '<td class="whitespace-nowrap px-2 py-1 text-[11px] ' + (typeof v === "number" ? 'text-right tabular-nums' : '') + '">' + escapeHtml(t12RvCell(v)) + '</td>'; }).join("") +
-            '<td class="px-2 py-1">' + roleSel + '</td><td class="px-2 py-1">' + sideSel + '</td><td class="px-2 py-1">' + catSel + '</td><td class="px-2 py-1 text-right">' + amtIn + '</td><td class="px-2 py-1">' + noteIn + '</td><td class="min-w-[220px] px-2 py-1">' + chk + '</td></tr>';
+            lead.map(tdc).join("") +
+            '<td class="px-2 py-1">' + roleSel + '</td><td class="px-2 py-1">' + sideSel + '</td><td class="px-2 py-1">' + catSel + '</td><td class="px-2 py-1 text-right">' + amtIn + '</td><td class="px-2 py-1">' + noteIn + '</td><td class="min-w-[220px] px-2 py-1">' + chk + '</td>' +
+            rest.map(tdc).join("") + '</tr>';
         }).join("");
         table = '<div class="max-h-[56vh] overflow-auto rounded-xl border border-slate-200" data-t12rv-scroll><table class="min-w-full border-collapse text-left"><thead class="sticky top-0 z-[3] bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">' + th + '</thead><tbody>' + body + '</tbody></table></div>';
       }
@@ -11772,7 +11786,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
       "FILES WITH SEVERAL PARTS (a workbook with several sheets, or a rent roll with several properties' sections on one sheet): the app never decides by itself which part is whose. A card lists every part with a list of the operator's properties: in a property chat this property is set on its part(s) when the app can tell (or the section(s) you name), the other parts start unticked, and \"Add as a new property\" is never set — only the operator picks it. Full freedom (2.9.11): any part can go to any property; SEVERAL parts can go to ONE property (a property in phases — \"Heritage Key Villas Phase 1 … 4\"), and the app COMBINES them: a rent roll unit by unit (units, occupied, average rents, sq ft are the whole property's), T12 sheets line by line, month by month; one part can also go to several properties. Each property keeps the answer (sheet numbers, sections) in its general-data.json and reads ONLY its own parts. In the text you get, a multi-part file of this property holds only its own parts; a part not answered yet is left out — never use another part's figures for this property, and when one isn't answered say so and point to the card (Documents → Answer). Saving, importing, copying or moving such a file always goes through that card.",
-      "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, the T12 review decisions, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json — or, when it leaves them empty, on the senior loan's record, and the Profile tab shows them from there: when you read profile.json the app puts \"What the Profile tab shows\" on top, with where each value comes from — use it, and never say a value is stored nowhere when it is on the loan.",
+      "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, each T12's reading — by the reader and the AI, its status (checked, reviewed, waiting for the operator) and the operator's changes with their notes, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json — or, when it leaves them empty, on the senior loan's record, and the Profile tab shows them from there: when you read profile.json the app puts \"What the Profile tab shows\" on top, with where each value comes from — use it, and never say a value is stored nowhere when it is on the loan.",
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, sections?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card; sections: a list of names when the property is SEVERAL sections (its phases) — they are combined. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
@@ -14066,7 +14080,7 @@ tr.flagged:hover td{background:#fee2e2}
     var AI_PLAN_CHARS = Math.round(AI_ONE_MESSAGE_CHARS / 4);
     var AI_PLAN_SYSTEM = "You decide, BEFORE anything is read, which of the files below must be read to answer the operator's message — the fewest that can answer it. Rules: a message that asks the app to DO something (import, save, link, approve, delete, change…) and needs no figure from a file reads none; a message the conversation or the notes already answer reads none; rents, units or occupancy → the rent roll; income, expenses or NOI → the T12; loan terms (rate, maturity, prepayment, reserves, covenants) → the loan agreement; read every file only when the operator explicitly asks to read all of them. Reply with JSON only, no prose: {\"read\":[\"exact file names, most useful first\"],\"readAll\":false,\"why\":\"one short sentence\"}";
     // 2.9.10 — what each of the app's own records holds (the assistant's list of a property's files)
-    var AI_RECORD_HOLDS = { profile: "the Profile tab — units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes, each with where it came from", general: "the property's numbers — both NOIs, the month-by-month T12 line history, what to push, the T12 review decisions, which part of each multi-part file is its own", assumptions: "its Underwriting assumptions", history: "the history of its assumption changes" };
+    var AI_RECORD_HOLDS = { profile: "the Profile tab — units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes, each with where it came from", general: "the property's numbers — both NOIs, the month-by-month T12 line history, what to push, each T12's reading — by the reader and the AI, its status (checked, reviewed, waiting for the operator) and the operator's changes with their notes, which part of each multi-part file is its own", assumptions: "its Underwriting assumptions", history: "the history of its assumption changes" };
     // 2.9.11 — the message names one of the property's own records (profile.json, general-data.json, …)
     function aiAsstNamesRecord(q){ return /\b(profile|general-data|assumptions|history)\.json\b/i.test(String(q || "")); }
     function aiAsstWantsAll(q){ q=String(q||"").toLowerCase();
