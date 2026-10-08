@@ -5456,15 +5456,23 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The bridge the modules compute through — the app's own engine, never re-implemented.
     function opHooks(){
+      // 2.9.15 — one roll-up build asks for the same loan's schedule several times (debt service, balance, rate, maturity,
+      // the row's value and coverage): a hooks object computes each loan once, each row's position once and the property
+      // list and the loans' grouping once. A hooks object serves one build and is dropped (opRenderPortfolio, the
+      // LDS_OPERATING_HOOKS getter).
+      const cmemo = new Map(), cmp = l => { let c = cmemo.get(l); if(!c){ c = compute(l); cmemo.set(l, c); } return c; };
+      let plist = null; const props = () => plist || (plist = opProperties());
+      let gmap = null; const groupOf = k => { if(!gmap){ gmap = {}; activeLoans().forEach(l => { const sk = stackKeyOf(l); (gmap[sk] = gmap[sk] || []).push(l); }); } return gmap[k] || []; };
+      const pmemo = {}, pos = k => (Object.prototype.hasOwnProperty.call(pmemo, k) ? pmemo[k] : (pmemo[k] = positionOfKey(k, cmp, props(), groupOf(k))));
       return { propertyKey: l => stackKeyOf(l), loansForProperty: l => { const sk = stackKeyOf(l); return sk.slice(0, 6) === "stack:" ? loans.filter(x => loanIsActive(x) && stackKeyOf(x) === sk) : loansForProperty(l); }, loans: () => loans, today: () => new Date(),
-        annualDebtService: l => annualDebtService(compute(l).derived),
-        currentBalance: l => compute(l).derived.currentBalance,
+        annualDebtService: l => annualDebtService(cmp(l).derived),
+        currentBalance: l => cmp(l).derived.currentBalance,
         capRate: l => loanCapRate(l),
         marketRate: l => { try{ const p = refiMarketParts(l); return (p && isFinite(p.marketRate)) ? p.marketRate : null; }catch(e){ return null; } },
         // The rate in effect TODAY (a floater = live index + spread), the yardstick the app's own refi scan uses — not the origination rate.
-        currentRate: l => { try{ const d = compute(l).derived; return (d && isFinite(d.currentRate)) ? d.currentRate : ((l && isFinite(l.annualRate)) ? l.annualRate : null); }catch(e){ return (l && isFinite(l.annualRate)) ? l.annualRate : null; } },
+        currentRate: l => { try{ const d = cmp(l).derived; return (d && isFinite(d.currentRate)) ? d.currentRate : ((l && isFinite(l.annualRate)) ? l.annualRate : null); }catch(e){ return (l && isFinite(l.annualRate)) ? l.annualRate : null; } },
         // The maturity the app itself uses — derived from first payment + term when the field is blank — as "YYYY-MM-DD".
-        maturity: l => { try{ const d = compute(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
+        maturity: l => { try{ const d = cmp(l).derived, m = d && d.maturityDate; return (typeof m === "string" && /^\d{4}-\d{2}-\d{2}/.test(m)) ? m.slice(0, 10) : ((l && l.maturityDate) || null); }catch(e){ return (l && l.maturityDate) || null; } },
         // The loan's status when it needs a maturity decision (Matured / Extension undecided), else "" — the roll-up flags it on the row.
         maturityFlag: l => { try{ return loanNeedsMaturityDecision(l) ? loanStatusOf(l) : ""; }catch(e){ return ""; } },
         globalDefaults: () => uwState.input.bench,
@@ -5473,11 +5481,11 @@ tr.flagged:hover td{background:#fee2e2}
         propertyNOI: k => { if(String(k).slice(0, 6) === "stack:"){ const n = poolNOIOfKeys(stackKeys(k)); return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the stack's properties" }; } if(String(k).slice(0, 5) === "pool:"){ const pl = loans.find(x => x._id === String(k).slice(5)); const n = pl ? poolNOI(pl) : null; return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the pool's properties" }; } const one = propOneNOI(k); if(one) return one;
           // 2.9.15 (C1) — the rest of Home's NOI chain (the loan's own NOI, the property's entered NOI, a removed loan's NOI),
           // so a property counts with the same NOI on both screens; the operating model's NOI stays the record's own read.
-          try{ const p = opProperties().find(x => x.key === k); if(!p) return null; const op = p.loans.length ? opNOI(p.loans[0]) : null; if(op != null) return null;
+          try{ const p = props().find(x => x.key === k); if(!p) return null; const op = p.loans.length ? opNOI(p.loans[0]) : null; if(op != null) return null;
             const n = p.loans.length ? propertyNOI(p.loans) : propNOIByKey(k, p.inactive || []); return (n != null && isFinite(n)) ? { inPlace: n, underwritten: null, from: "app", method: "the NOI the app shows for this property" } : null; }catch(e){ return null; } },
         // 2.9.15 (C1) — the value and the coverage Home counts for the row, so the portfolio LTV and the "with no NOI" count match Home.
-        propertyValue: k => { const cp = positionOfKey(k); return cp ? cp.value : null; },
-        rowCoverage: k => { const cp = positionOfKey(k); return cp ? { props: cp.props, noNOI: cp.noNOI, noNOIDebt: cp.noNOIDebt } : null; } };
+        propertyValue: k => { const cp = pos(k); return cp ? cp.value : null; },
+        rowCoverage: k => { const cp = pos(k); return cp ? { props: cp.props, noNOI: cp.noNOI, noNOIDebt: cp.noNOIDebt } : null; } };
     }
     // 2.9.12 — a property's NOI as the whole app reads it, with where it came from: your override, else the T12
     // rule's NOI (general-data.json — annualized when the rule says so), else null (the caller falls back to the
@@ -9325,10 +9333,10 @@ tr.flagged:hover td{background:#fee2e2}
       const pe = (list && list.length) ? propEnteredNOI(propertyKey(list[0])) : null;   // 2.9.7 (#46) — the property's own entered NOI
       return pe;
     }
-    function combinedPosition(list){
+    function combinedPosition(list, cmp){   // cmp: a caller's memoized compute (one roll-up build), else compute
       let balTot = 0, origTot = 0, piMoTot = 0, dsMoTot = 0, rateWt = 0, dsAnnTot = 0;
       list.forEach(l => {
-        const d = compute(l).derived;
+        const d = (cmp || compute)(l).derived;
         origTot += l.originalAmount || 0; balTot += d.currentBalance || 0;
         piMoTot += d.monthlyPI || 0; dsMoTot += d.totalDebtService || 0;
         dsAnnTot += annualDebtService(d);   // the level-P&I basis loanDSCR sizes to (an IO period's interest-only payment would overstate coverage)
@@ -9380,10 +9388,10 @@ tr.flagged:hover td{background:#fee2e2}
       return { props: ks.length, noNOI, noNOIDebt: debt };
     }
     // The position Home shows for one roll-up key (a property, a stack of pooled loans, or a property with no loan).
-    function positionOfKey(k){
-      const list = activeLoans().filter(l => stackKeyOf(l) === k);
-      if(list.length){ const cp = combinedPosition(list); return Object.assign({}, cp, positionCoverage(list, cp)); }
-      const p = opProperties().find(x => x.key === k); if(!p) return null;
+    function positionOfKey(k, cmp, plist, list){
+      list = list || activeLoans().filter(l => stackKeyOf(l) === k);
+      if(list.length){ const cp = combinedPosition(list, cmp); return Object.assign({}, cp, positionCoverage(list, cp)); }
+      const p = (plist || opProperties()).find(x => x.key === k); if(!p) return null;
       const cp = loanlessPosition(p); return Object.assign({}, cp, { props: 1, noNOI: cp.entered ? 0 : 1, noNOIDebt: 0 });
     }
     // A synthetic single loan representing a whole property's combined debt, so the
