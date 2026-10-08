@@ -1910,7 +1910,8 @@
       // payment is then recalculated over the remaining amortization (or kept, when the release says so).
       const pdAt = {};
       if(loan.poolReleases && fpParts){ poolReleases(loan).forEach(r => { let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= r.date) k = i; else break; } (pdAt[k] = pdAt[k] || []).push(r); }); }
-      if(pdAt[-1]){ pdAt[-1].forEach(r => { balance = Math.max(0, balance - r.amount); }); if(!isFixedAmort){ currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0)); segments[0].payment = currentPayment; } }
+      const openingPaydowns = [];                            // 2.9.15 (P1) — releases dated before the first payment, as applied
+      if(pdAt[-1]){ pdAt[-1].forEach(r => { const amt = Math.min(balance, r.amount); balance -= amt; openingPaydowns.push({ date: r.date, amount: amt }); }); if(!isFixedAmort){ currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0)); segments[0].payment = currentPayment; } }
 
       for(let m=0; m<term; m++){
         // 2.9.7 (#221) — every hybrid's reset month is marked (calendar, schedule tag, reset warning), whatever
@@ -1966,20 +1967,20 @@
         }
         totalInterest += interest; totalPaid += payment;
         rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src });
-        if(pdAt[m] && m < term - 1){ let amt = 0; pdAt[m].forEach(r => { amt += Math.min(balance - amt, r.amount); }); balance = Math.max(0, balance - amt);
-          const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; totalPaid += amt;
+        if(pdAt[m] && m < term - 1){ let amt = 0; const each = []; pdAt[m].forEach(r => { const a = Math.min(balance - amt, r.amount); amt += a; each.push({ date: r.date, amount: a }); }); balance = Math.max(0, balance - amt);
+          const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; row.paydowns = each; totalPaid += amt;
           if(!isFixedAmort && pdAt[m].some(r => r.reamortize)){ currentPayment = solveSegmentPayment(loan, balance, m + 1, rateForMonth(loan, m + 1)); segments.push({ startMonth: m + 1, rate: rateForMonth(loan, m + 1), payment: currentPayment }); } }
       }
       // Surface a representative amortizing payment (the first amortizing month's total)
       // so the "then $X/mo" display and the DSCR calc use the real figure, not 0, on a
       // fixed-amortization loan still in its interest-only phase.
       if(isFixedAmort){ const fa = rows.find(r => r.type === "amort"); if(fa) segments[0].payment = fa.payment; }
-      return { rows, totalInterest, totalPaid, segments };
+      return { rows, totalInterest, totalPaid, segments, openingPaydowns };
     }
 
     // Full computation: schedule + all computed fields.
     function compute(loan){
-      const { rows, totalInterest, totalPaid, segments } = buildSchedule(loan);
+      const { rows, totalInterest, totalPaid, segments, openingPaydowns } = buildSchedule(loan);
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const fp = firstPayParts(loan);                        // real first payment (origination-anchored)
       const now = todayParts();
@@ -1993,9 +1994,15 @@
       }
       // Current balance from the schedule position.
       let currentBalance;
-      if(paymentsMade <= 0) currentBalance = loan.originalAmount || 0;
+      // 2.9.15 (P1) — before the first payment it is the schedule's opening balance, so a pool release dated before the
+      // first payment already counts; any paydown dated after today has not happened yet and is added back.
+      if(paymentsMade <= 0) currentBalance = rows.length ? rows[0].startingBalance : (loan.originalAmount || 0);
       else if(paymentsMade >= rows.length) currentBalance = 0;
       else currentBalance = rows[paymentsMade-1].endingBalance;
+      if(paymentsMade < rows.length){
+        const todayIso = partsToISO(now.y, now.mo, now.d);
+        (paymentsMade <= 0 ? (openingPaydowns || []) : (rows[paymentsMade-1].paydowns || [])).forEach(p => { if(p.date > todayIso) currentBalance += p.amount; });
+      }
 
       // Maturity is the given input; display it as-is (the schedule is anchored to
       // it, so the final payment lands here). Derive it only if none was entered.
