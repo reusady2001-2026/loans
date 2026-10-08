@@ -1296,6 +1296,8 @@
       { sec:"Loan Identification", key:"propertyType",    label:"Property Type",            type:"select", kind:"input", options:["Office","Retail","Industrial","Multifamily","Mixed-Use","Other"] },
       { sec:"Loan Identification", key:"lenderName",      label:"Lender Name",              type:"text",   kind:"input" },
       { sec:"Loan Identification", key:"loanNumber",      label:"Loan Number",              type:"text",   kind:"input" },
+      { sec:"Loan Identification", key:"poolReleases",    label:"Pool releases (paydowns)", type:"text", kind:"input", hint:"properties released from this pooled loan: date = amount paid down = property = its allocated amount = re-amortize / keep payment" },
+      { sec:"Loan Identification", key:"alsoSecures",     label:"Also secures (pooled loan)", type:"text", kind:"input", hint:"the other properties this one loan is secured by — names separated by ;" + " (optional allocated amount: Name = 10000000)" },
 
       // ---- Loan Terms (inputs the app trusts) ----
       { sec:"Loan Terms", key:"originalAmount",     label:"Original Loan Amount ($)",     type:"money",  kind:"input", required:true },
@@ -1311,6 +1313,8 @@
       { sec:"Loan Terms", key:"amortMethod",        label:"Interest Accrual / Day-Count", type:"select", kind:"input", options:["Actual/360","30/360"], hint:"per the loan docs: Actual/360 = interest varies with the days in each month; 30/360 = flat monthly. The level payment amortizes 30/360 over the amortization term, which starts AFTER any interest-only period.", aliases:["Interest Accrual Method","Day-Count","Accrual Method","Amortization Method"] },
       { sec:"Loan Terms", key:"amortType",          label:"Amortization Type",            type:"select", kind:"input", options:["Level","Fixed Principal","Fixed P&I"], hint:"Level = standard solved annuity (default). Fixed Principal = interest + a flat principal amount stated in the loan docs (declining total payment). Fixed P&I = a flat total payment stated in the docs.", aliases:["Amortization Structure","Amortization Method Type"] },
       { sec:"Loan Terms", key:"fixedAmortAmount",   label:"Fixed Amortization Payment ($/mo)", type:"money", kind:"input", cond:(l)=>l.amortType==="Fixed Principal"||l.amortType==="Fixed P&I", hint:"the lender-specified monthly amortization amount (principal for Fixed Principal, or total P&I for Fixed P&I) that applies after the IO period", aliases:["Required Amortization Payment","Fixed Principal Payment"] },
+      // 2.9.14 (A1) — what a stated payment does when a hybrid's rate resets: the note decides.
+      { sec:"Loan Terms", key:"armResetPayment",    label:"At the Reset",                 type:"select", kind:"input", options:["Keep the stated payment","Recalculate over the remaining amortization"], cond:(l)=>l.amortType==="Fixed P&I" && l.rateType==="Hybrid ARM", hint:"per the note: keep the stated P&I across the rate reset, or set a new constant payment — what you owe then, amortized over the amortization months left, at the reset rate (sized as the bank does: an Actual/360 annuity)" },
       { sec:"Loan Terms", key:"interestOnly",       label:"Interest-Only for Full Term? (Y/N)", type:"yn",    kind:"computed" },   // 2.9.7 (#66) — "Y" only when interest-only for the whole term
       { sec:"Loan Terms", key:"ioMonths",           label:"Interest-Only Period (Months)", type:"int",   kind:"input", hint:"0 if none — e.g. 60 for 5 years", aliases:["IO Period Remaining (Months)","IO Period (Months)","Original IO Period (Mo)","Interest-Only Months"] },
       { sec:"Loan Terms", key:"index",              label:"Index",                        type:"index",  kind:"input", hint:"a fixed rate is this index + your spread", cond:(l)=>!(l.rateType==="Fixed" && l.isHistorical), aliases:["Floating Rate Index","Index (if Floating)","Index (if Floating/ARM)"] },
@@ -1863,6 +1867,18 @@
       return c > 0 ? (balance * c) / (1 - Math.pow(1 + c, -n)) : balance / n;
     }
 
+    // 2.9.14 (A1) — the new constant payment at a reset for a stated (Fixed P&I) payment the note recalculates: what you
+    // owe then, amortized over the amortizing months left at the reset rate, sized the way the bank sizes its own stated
+    // payment — an Actual/360 annuity, a monthly rate of rate × 365.25/360 ÷ 12 (30/360: rate ÷ 12). Checked against both
+    // Customers Bank notes: it gives their stated $148,062.35 and $384,807.04 to within $18.21 and $1.52.
+    function armResetRecalc(loan){ return loan.amortType === "Fixed P&I" && /^recalc/i.test(String(loan.armResetPayment || "")); }
+    function solveResetPayment(loan, balance, startM, rate){
+      const io = Math.max(0, loan.ioMonths || 0), n = io + (loan.amortizationMonths || 0) - Math.max(startM, io);
+      if(n <= 0 || !balance) return 0;
+      const c = rate * (loan.amortMethod === "30/360" ? 1 : 365.25 / 360) / 12;
+      return c > 0 ? (balance * c) / (1 - Math.pow(1 + c, -n)) : balance / n;
+    }
+
     // Build the displayed schedule across all rate phases; cut off at the loan
     // term with a balloon that lands the ending balance at exactly $0.00.
     function buildSchedule(loan){
@@ -1883,11 +1899,18 @@
       const fixedPrincipal = (loan.amortType === "Fixed Principal") ? (Number(loan.fixedAmortAmount)||0) : 0;
       const fixedPI        = (loan.amortType === "Fixed P&I")        ? (Number(loan.fixedAmortAmount)||0) : 0;
       const isFixedAmort   = fixedPrincipal > 0 || fixedPI > 0;
+      const resetRecalc    = fixedPI > 0 && armResetRecalc(loan);   // 2.9.14 (A1)
+      let statedPI = fixedPI;
 
       // Initial segment payment, solved over the full amortization at month 0
       // (skipped for a fixed-amortization loan — its payment comes straight from the docs).
       let currentPayment = isFixedAmort ? 0 : solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0));
       segments.push({ startMonth:0, rate:rateForMonth(loan,0), payment:currentPayment });
+      // 2.9.14 — pool releases: each paydown comes off the balance right after the last payment on or before its date; the
+      // payment is then recalculated over the remaining amortization (or kept, when the release says so).
+      const pdAt = {};
+      if(loan.poolReleases && fpParts){ poolReleases(loan).forEach(r => { let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= r.date) k = i; else break; } (pdAt[k] = pdAt[k] || []).push(r); }); }
+      if(pdAt[-1]){ pdAt[-1].forEach(r => { balance = Math.max(0, balance - r.amount); }); if(!isFixedAmort){ currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0)); segments[0].payment = currentPayment; } }
 
       for(let m=0; m<term; m++){
         // 2.9.7 (#221) — every hybrid's reset month is marked (calendar, schedule tag, reset warning), whatever
@@ -1910,6 +1933,7 @@
         }
         const rInfo = effectiveRateInfo(loan, m, { y, mo }, resetParts), rate = rInfo.rate;   // 2.9.7 (#130) — and where it comes from
         const startingBalance = balance;
+        if(isReset && resetRecalc && m >= io){ statedPI = solveResetPayment(loan, startingBalance, m, rate); segments.push({ startMonth:m, rate, payment:statedPI }); }   // 2.9.14 (A1)
         // Interest accrual basis is per-loan: Actual/360 (varies with the month's
         // days, the default) or 30/360 (a flat 30-day month, i.e. rate ÷ 12).
         const dcDays = (loan.amortMethod === "30/360") ? 30 : days;
@@ -1934,7 +1958,7 @@
           balance = startingBalance - principalPaid; type = "amort";
         } else if(fixedPI > 0){
           // a flat total P&I per the docs; principal is whatever is left after interest
-          payment = fixedPI; principalPaid = Math.max(0, payment - interest);
+          payment = statedPI; principalPaid = Math.max(0, payment - interest);
           balance = startingBalance - principalPaid; type = "amort";
         } else {
           payment = currentPayment; principalPaid = payment - interest;
@@ -1942,6 +1966,9 @@
         }
         totalInterest += interest; totalPaid += payment;
         rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src });
+        if(pdAt[m] && m < term - 1){ let amt = 0; pdAt[m].forEach(r => { amt += Math.min(balance - amt, r.amount); }); balance = Math.max(0, balance - amt);
+          const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; totalPaid += amt;
+          if(!isFixedAmort && pdAt[m].some(r => r.reamortize)){ currentPayment = solveSegmentPayment(loan, balance, m + 1, rateForMonth(loan, m + 1)); segments.push({ startMonth: m + 1, rate: rateForMonth(loan, m + 1), payment: currentPayment }); } }
       }
       // Surface a representative amortizing payment (the first amortizing month's total)
       // so the "then $X/mo" display and the DSCR calc use the real figure, not 0, on a
@@ -2025,6 +2052,7 @@
       return l;
     }
     function loanLabel(l){
+      if(l && !l._combined && l.propertyName && isPoolLoan(l)) return l.propertyName + " + " + (poolKeys(l).length - 1) + " (pooled loan)";
       return l.propertyName || l.loanNumber || (l.lenderName ? l.lenderName+" loan" : "Untitled loan");
     }
 
@@ -2107,7 +2135,7 @@
     // from the refresh — pending documents from Azriel, they must not change yet.
     // The Pepper Building is pulled from the book entirely (SYNC_REMOVE) — Yuval
     // has not confirmed it belongs on the app.
-    const PORTFOLIO_REV = "2026-09-14.1";               // bump when the manifest below changes
+    const PORTFOLIO_REV = "2026-10-08.1";               // bump when the manifest below changes
     const PORTFOLIO_REV_KEY = "ldsHub.portfolioRev";
     const SYNC_ADD = [                                   // add only if the book lacks this loan (by name)
       "The Botanic (Carteret)",
@@ -2132,12 +2160,19 @@
       "1395 Washington (Project Loan)",
       "The Pepper Building",   // pulled entirely — Yuval hasn't confirmed it belongs on the app
     ];
+    // 2.9.14 (A1) — one field set on an existing loan, only where it is still blank (never over your own choice):
+    // both Customers Bank notes (¶2(D) / §2(D)) set a new 26-year payment at the 2031 reset. Living Lofts is left as
+    // it is — its ARM rider isn't known.
+    const SYNC_SET = [
+      { name:"1222 Commerce St",       field:"armResetPayment", value:"Recalculate over the remaining amortization", label:"At the reset: recalculate the payment (Note ¶2(D))" },
+      { name:"The Botanic (Carteret)", field:"armResetPayment", value:"Recalculate over the remaining amortization", label:"At the reset: recalculate the payment (Note §2(D))" },
+    ];
     function normName(s){ return String(s||"").toLowerCase().replace(/\s+/g," ").trim(); }
-    // Returns { loans, changed, added:[], refreshed:[], removed:[] }. Pure — writes nothing.
+    // Returns { loans, changed, added:[], refreshed:[], removed:[], set:[] }. Pure — writes nothing.
     function syncPortfolio(existing){
       let doneRev = null;
       try { doneRev = localStorage.getItem(PORTFOLIO_REV_KEY); } catch(e){}
-      if(doneRev === PORTFOLIO_REV) return { loans: existing, changed:false, added:[], refreshed:[], removed:[] };
+      if(doneRev === PORTFOLIO_REV) return { loans: existing, changed:false, added:[], refreshed:[], removed:[], set:[] };
       const seeded = seed();
       const seedByName = {}; seeded.forEach(s => { seedByName[normName(s.propertyName)] = s; });
       const have = {}; existing.forEach(l => { have[normName(l.propertyName)] = true; });
@@ -2174,7 +2209,13 @@
         if(removeSet[k]){ removed.push(removeSet[k]); return false; }
         return true;
       });
-      return { loans, changed: added.length>0 || refreshed.length>0 || removed.length>0, added, refreshed, removed };
+      const set = [];
+      SYNC_SET.forEach(u => {
+        const i = loans.findIndex(l => normName(l.propertyName) === normName(u.name));
+        if(i < 0 || (loans[i][u.field] != null && loans[i][u.field] !== "")) return;
+        loans[i] = Object.assign({}, loans[i], { [u.field]: u.value }); set.push(u.name + " — " + u.label);
+      });
+      return { loans, changed: added.length>0 || refreshed.length>0 || removed.length>0 || set.length>0, added, refreshed, removed, set };
     }
 
     // Ensure every loan carries a unique _id. Missing or duplicated ids (from older books,
@@ -2252,8 +2293,8 @@
         mk({ propertyName:"Avalon White Plains", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1613", originalAmount:96000000, annualRate:0.0536, rateType:"Floating", index:"sofr", spread:0.0175, rateFloor:0.048, originationDate:"2026-02-10", firstPaymentDate:"2026-03-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, replacementReserve:8480, prepayType:"Yield Maintenance", prepayConfirmed:true }),
         mk({ propertyName:"Avalon WP (Mezz)", propertyAddress:"White Plains, NY", propertyType:"Multifamily", lenderName:"New York Life Insurance Co.", loanNumber:"374-1614", originalAmount:24000000, annualRate:0.0686, rateType:"Floating", index:"sofr", spread:0.0325, rateFloor:0.048, lienPosition:"Mezzanine", originationDate:"2026-02-10", firstPaymentDate:"2026-03-10", maturityDate:"2029-02-10", loanTermMonths:36, ioMonths:36, prepayType:"Yield Maintenance", prepayConfirmed:true }),
         mk({ propertyName:"Woodmont Forge at Hopewell", propertyAddress:"100 Forge Circle, Pennington, NJ 08534", propertyType:"Multifamily", lenderName:"TIAA (Nuveen)", loanNumber:"AAA-8638 / Inv 42148", originalAmount:74700000, annualRate:0.0575, rateType:"Fixed", originationDate:"2026-02-19", firstPaymentDate:"2026-04-10", maturityDate:"2033-03-10", loanTermMonths:84, amortizationMonths:360, ioMonths:60, amortMethod:"30/360", prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),
-        mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2026-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:148062.35, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "Manor House" — Customers Bank Note ¶2(C): fixed-period P&I $148,062.35 (Actual/360, 30-yr amort). Sister to Carteret: Fixed P&I holds the stated $148,062.35; the 2031 reset payment (¶2(D), future-UST-dependent) is approximated (held).
-        mk({ propertyName:"The Botanic (Carteret)", propertyAddress:"36 Washington Avenue, Carteret, NJ", propertyType:"Multifamily", lenderName:"Customers Bank", originalAmount:64000000, annualRate:0.0594, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.0594, originationDate:"2025-11-07", firstPaymentDate:"2026-01-01", maturityDate:"2035-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:384807.04, prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "The Botanic" per the Rent Roll; borrower Living Carteret Urban Renewal LLC. Note: IO Jan–Dec 2026, then $384,807.04 P&I (30-yr amort), rate resets Jan 2031 (UST5Y+2.50%, floor 5.94%, 26-yr amort). Fixed P&I holds the stated $384,807.04; the 2031 reset payment (future-UST-dependent) is approximated.
+        mk({ propertyName:"1222 Commerce St", propertyAddress:"1222 Commerce St, Dallas, TX", propertyType:"Mixed-Use", lenderName:"Customers Bank", loanNumber:"D22-0002", originalAmount:24200000, annualRate:0.061, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.061, originationDate:"2026-03-30", firstPaymentDate:"2026-05-01", maturityDate:"2036-04-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:148062.35, armResetPayment:"Recalculate over the remaining amortization", prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "Manor House" — Customers Bank Note ¶2(C): fixed-period P&I $148,062.35 (Actual/360, 30-yr amort). ¶2(D): from May 1, 2031 a new constant payment over a 26-year schedule at the reset rate (2.9.14 — recalculated at the reset).
+        mk({ propertyName:"The Botanic (Carteret)", propertyAddress:"36 Washington Avenue, Carteret, NJ", propertyType:"Multifamily", lenderName:"Customers Bank", originalAmount:64000000, annualRate:0.0594, rateType:"Hybrid ARM", index:"ust5y", spread:0.025, rateFloor:0.0594, originationDate:"2025-11-07", firstPaymentDate:"2026-01-01", maturityDate:"2035-12-01", loanTermMonths:120, amortizationMonths:360, ioMonths:12, armInitialFixedMonths:60, armAdjustFreqMonths:60, amortMethod:"Actual/360", amortType:"Fixed P&I", fixedAmortAmount:384807.04, armResetPayment:"Recalculate over the remaining amortization", prepayType:"Step-down", stepDownPct:0.01, prepayConfirmed:true }),   // "The Botanic" per the Rent Roll; borrower Living Carteret Urban Renewal LLC. Note: IO Jan–Dec 2026, then $384,807.04 P&I (30-yr amort), rate resets Jan 2031 (UST5Y+2.50%, floor 5.94%). §2(D): from Jan 1, 2031 a new constant payment over a 26-year schedule at the reset rate (2.9.14 — recalculated at the reset).
         mk({ propertyName:"K2 Sweetwater (FIU Residences)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"AIG (National Union Fire Ins.)", originalAmount:127000000, annualRate:0.0375, rateType:"Floating", index:"sofr", spread:0.0375, rateFloor:0.0375, originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60, noRateHistory:true }),   // real index was LIBOR (dead) — no rate history; ask Azriel
         mk({ propertyName:"K2 Sweetwater (Mezz)", propertyAddress:"10726 SW 7th Street, Miami, FL", propertyType:"Multifamily", lenderName:"MSD Capital (MSD Partners)", originalAmount:20000000, annualRate:0.135, rateType:"Fixed", lienPosition:"Mezzanine", originationDate:"2021-12-20", firstPaymentDate:"2022-02-01", maturityDate:"2027-01-01", loanTermMonths:60, ioMonths:60 }),
         // The Pepper Building is deliberately NOT in the portfolio. Yuval has not decided whether it
@@ -2275,6 +2316,11 @@
       });
     }
     function getLoan(id){
+      if(typeof id === "string" && id.slice(0,6) === "multi:"){
+        const ms = multiMembers(id); if(!ms.length) return null;
+        const c = combinedRefiLoan(ms), keys = multiKeys(id); c._id = id; c._poolKeys = keys; c.noi = poolNOIOfKeys(keys);
+        c.propertyName = keys.map(poolNameOfKey).join(" + "); return c;
+      }
       if(typeof id === "string" && id.slice(0,6) === "combo:"){
         const members = loans.filter(l => propertyKey(l) === id.slice(6) && !loanIsInactiveSelf(l));   // 2.9.7 — active loans only
         return members.length > 1 ? combinedRefiLoan(members) : (members[0] || null);
@@ -2330,7 +2376,7 @@
     function renderSelect(){
       const props = opProperties();
       dom.loanSelect.innerHTML = props.map(p =>
-        '<option value="'+escapeHtml(positionIdForProperty(p))+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  "+propStackLabel(p.loans) : (!p.loans.length ? "  &middot;  no loan yet" : ""))+'</option>'
+        '<option value="'+escapeHtml(positionIdForProperty(p))+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  "+propStackLabel(p.loans) : (!p.loans.length ? (p.pledged && p.pledged.length ? "  &middot;  in a pooled loan" : "  &middot;  no loan yet") : ""))+'</option>'
       ).join("");
       const av = activePositionId();
       if(av) dom.loanSelect.value = av;
@@ -2353,6 +2399,10 @@
     }
 
     function renderKPIs(loan, result){
+      if(loan && loan._combined){ const ms = comboMembers(loan._id).filter(m => m && !m._combined); if(ms.length){   // 2.9.14 — the stack's real figures, not the synthetic loan re-amortized
+        const sum = (f) => ms.reduce((a, m) => a + (Number(compute(m).derived[f]) || 0), 0);
+        result = { derived: Object.assign({}, result.derived, { currentBalance: sum("currentBalance"), monthlyPI: sum("monthlyPI"), totalDebtService: sum("totalDebtService"), amortizingPI: sum("amortizingPI") }) };
+        loan = Object.assign({}, loan, { originalAmount: ms.reduce((a, m) => a + (Number(m.originalAmount) || 0), 0) }); } }
       const d = result.derived;
       const termTxt = termLabel(loan.amortizationMonths) + " / " + termLabel(loan.loanTermMonths);
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
@@ -2781,6 +2831,7 @@
       dom.loanForm.innerHTML = buildFormFieldsets("f_");
       injectHistoricalControls(dom.loanForm, "f_", state.draft);
       INPUT_FIELDS.forEach(f => setFieldValue("f_"+f.key, f.type, state.draft[f.key]));
+      try{ poolFormEnhance(); }catch(e){}
       dom.loanForm.addEventListener("input", onFormChange);
       dom.loanForm.addEventListener("change", onFormChange);
       applyConditionalVisibility();
@@ -3280,7 +3331,8 @@
       const rateType = (el(prefix+"rateType")||{}).value;
       const isHistorical = !!(el(prefix+"isHistorical")||{}).checked;
       const index = (el(prefix+"index")||{}).value;
-      const ctx = { rateType, isHistorical, index };
+      const amortType = (el(prefix+"amortType")||{}).value;   // 2.9.14 — the stated-payment fields depend on it (they were never shown)
+      const ctx = { rateType, isHistorical, index, amortType };
       INPUT_FIELDS.forEach(f => {
         if(!f.cond) return;
         const wrap = container.querySelector('[data-fieldwrap="'+f.key+'"]');
@@ -3294,7 +3346,7 @@
     function applyConditionalVisibility(){ applyVisibility(dom.loanForm, "f_"); }
     function onFormChange(e){
       const id = e.target && e.target.id;
-      if(id==="f_rateType" || id==="f_isHistorical" || id==="f_index") applyConditionalVisibility();
+      if(id==="f_rateType" || id==="f_isHistorical" || id==="f_index" || id==="f_amortType") applyConditionalVisibility();
       else updateRatePreview("f_");
     }
 
@@ -5397,7 +5449,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // The bridge the modules compute through — the app's own engine, never re-implemented.
     function opHooks(){
-      return { propertyKey, loansForProperty, loans: () => loans, today: () => new Date(),
+      return { propertyKey: l => stackKeyOf(l), loansForProperty: l => { const sk = stackKeyOf(l); return sk.slice(0, 6) === "stack:" ? loans.filter(x => loanIsActive(x) && stackKeyOf(x) === sk) : loansForProperty(l); }, loans: () => loans, today: () => new Date(),
         annualDebtService: l => annualDebtService(compute(l).derived),
         currentBalance: l => compute(l).derived.currentBalance,
         capRate: l => loanCapRate(l),
@@ -5411,7 +5463,7 @@ tr.flagged:hover td{background:#fee2e2}
         globalDefaults: () => uwState.input.bench,
         // 2.9.12 — the property's ONE NOI for the roll-up: the same in-place and underwritten figures Underwriting,
         // the property page and the portfolio show (your override, else the T12 rule's NOI from general-data).
-        propertyNOI: k => propOneNOI(k) };
+        propertyNOI: k => { if(String(k).slice(0, 6) === "stack:"){ const n = poolNOIOfKeys(stackKeys(k)); return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the stack's properties" }; } if(String(k).slice(0, 5) === "pool:"){ const pl = loans.find(x => x._id === String(k).slice(5)); const n = pl ? poolNOI(pl) : null; return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the pool's properties" }; } return propOneNOI(k); } };
     }
     // 2.9.12 — a property's NOI as the whole app reads it, with where it came from: your override, else the T12
     // rule's NOI (general-data.json — annualized when the rule says so), else null (the caller falls back to the
@@ -5432,7 +5484,14 @@ tr.flagged:hover td{background:#fee2e2}
       loans.forEach(l => { const k = propertyKey(l); if(!seen.has(k)) seen.set(k, { key:k, name: clean(l.propertyName) || k, loans:[], inactive:[] }); if(loanIsInactiveSelf(l)) seen.get(k).inactive.push(l); else seen.get(k).loans.push(l); });
       // 2.9.1 — standalone properties: a profile with no loan (Add Property with a name only).
       for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && !seen.has(sk)) seen.set(sk, { key:sk, name: standaloneProps[sk].name || sk, loans:[], inactive:[] }); }
+      // every property a pooled loan secures is a property in its own right — also after that loan is removed or paid off
+      // (it is then listed under each of them, to restore)
+      loans.forEach(l => { if(!isPoolLoan(l)) return; const own = propertyKey(l); poolKeys(l).forEach(k => { if(!k) return; if(!seen.has(k)) seen.set(k, { key:k, name: clean(poolNameOfKey(k)) || k, loans:[], inactive:[] }); if(k !== own && loanIsInactiveSelf(l) && seen.get(k).inactive.indexOf(l) < 0) seen.get(k).inactive.push(l); }); });
+      seen.forEach((p, k) => { if(p.loans.length || standaloneProps[k] || !loans.some(l => isPoolLoan(l) && poolKeys(l).indexOf(k) >= 0)) return;
+        standaloneProps[k] = { key: k, name: p.name };   // 2.9.14 — a property you put on a pooled loan is a property of its own, with its folder
+        if(!poolFoldered.has(k)){ poolFoldered.add(k); try{ opCreatePropertyFolder(k, p.name); }catch(e){} } });
       let arr = Array.from(seen.values());
+      arr.forEach(p => { p.pledged = poolLoansForKey(p.key); });
       arr.forEach(p => { if(p.loans.length){ p.loans = loansForProperty(p.loans[0]); const sr = p.loans[0]; if(sr && sr.propertyName) p.name = clean(sr.propertyName); } });
       // 2.9.1 — archived properties leave every list, the roll-up and the count (profile stays on disk).
       arr = arr.filter(p => !opIsArchived(p.key));
@@ -5479,6 +5538,7 @@ tr.flagged:hover td{background:#fee2e2}
     // puts them together); nothing is ever left behind silently.
     async function propRenameFiles(loan, keyBefore, keyAfter, opts){
       opts = opts || {};
+      try{ poolFollowRename(keyBefore, keyAfter, opts.name || (loan && loan.propertyName) || ""); }catch(e){}   // 2.9.14 — the pool follows every rename
       if(!keyBefore || !keyAfter || keyBefore === keyAfter || !(window.ldsShell && ldsShell.docMove)) return { moved:false };
       if(loan && loans.some(l => l !== loan && propertyKey(l) === keyBefore)) return { moved:false, stays:true };   // other loans still at the old name → files stay with them
       const p = opProp(keyAfter), name = (p && p.name) || opts.name || "";
@@ -5492,6 +5552,10 @@ tr.flagged:hover td{background:#fee2e2}
       [gdFullCache, gdNOICache, propHistCache].forEach(m => { try{ delete m[keyBefore]; delete m[keyAfter]; }catch(e){} });
       if(t12ReviewLive[keyBefore]){ t12ReviewLive[keyAfter] = t12ReviewLive[keyBefore]; delete t12ReviewLive[keyBefore]; }
       if(assumptionBase[keyBefore] && !assumptionBase[keyAfter]){ assumptionBase[keyAfter] = assumptionBase[keyBefore]; } delete assumptionBase[keyBefore];
+      // 2.9.14 — the loan form renames while the screen redraws: the redraw can cache a BLANK profile under the new name
+      // before the folder moves, and that blank then overwrote the real profile (NOI override and all). It never wins now.
+      const blankPr = (p) => !p || !p.fields || !Object.keys(p.fields).length;
+      if(profileCache[keyAfter] && blankPr(profileCache[keyAfter]) && (profileCache[keyBefore] || moved)) delete profileCache[keyAfter];
       if(profileCache[keyBefore] && (!profileCache[keyAfter] || moved)){ const pr = profileCache[keyBefore]; if(!profileCache[keyAfter]){ pr.propKey = keyAfter; profileCache[keyAfter] = pr; } }
       delete profileCache[keyBefore];
       if(standaloneProps[keyBefore]){ standaloneProps[keyAfter] = { key: keyAfter, name: name || standaloneProps[keyBefore].name }; delete standaloneProps[keyBefore]; }
@@ -5646,7 +5710,7 @@ tr.flagged:hover td{background:#fee2e2}
     function propNOIOverride(key){ return propProfileNOI(key, "noiOverride"); }
     function propEnteredNOI(key){ return propProfileNOI(key, "noi"); }
     function folderNOI(loan){ if(!loan) return null; const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov; const g = gdNOICache[k]; return (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null; }
-    function loanNOI(loan){ const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); if(o != null) return o; if(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))) return loan.noi; const pe = loan ? propEnteredNOI(propertyKey(loan)) : null; return (pe != null) ? pe : (loan ? loan.noi : null); }
+    function loanNOI(loan){ if(isPoolLoan(loan)) return poolNOI(loan); const g = folderNOI(loan); if(g != null) return g; const o = opNOI(loan); if(o != null) return o; if(loan && loan.noi != null && loan.noi !== "" && isFinite(Number(loan.noi))) return loan.noi; const pe = loan ? propEnteredNOI(propertyKey(loan)) : null; return (pe != null) ? pe : (loan ? loan.noi : null); }
     // ── 2.9.0 — loan & property status ──────────────────────────────────────────
     // Loan status is manual (loan.loanStatus) when set, else derived: Matured once the maturity date
     // has passed, otherwise Active. Matured / Extension undecided need a decision, so they are flagged
@@ -5688,7 +5752,7 @@ tr.flagged:hover td{background:#fee2e2}
       const gd = gdNOICache[propKey]; return !!(gd && gd.inPlace != null);   // General Data implies its T12 was read
     }
     function propertyStatusOf(propKey){
-      if(!loans.some(l => propertyKey(l) === propKey && !loanIsInactiveSelf(l))) return "No loan data yet";
+      if(!loans.some(l => propertyKey(l) === propKey && !loanIsInactiveSelf(l)) && !poolLoansForKey(propKey).length) return "No loan data yet";
       if(!propertyHasT12(propKey)) return "No T12 yet";
       return "Stabilized";
     }
@@ -6537,7 +6601,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(!_allProfilesLoaded && !_loadingAllProfiles){ opLoadAllProfiles().then(function(ch){ if(Object.keys(profileCache).some(function(k){ return propNOIOverride(k) != null || propEnteredNOI(k) != null; })){ try{ redrawAll(); }catch(e){} } else if(ch) opRenderPortfolio(); }); }   // 2.9.7 (#45) — a property NOI moves every figure
       const hooks = opHooks(), gd = uwState.input.bench, records = Object.assign({}, OperatingStore.all());
       // 2.9.1 — include standalone (loan-less) properties so they show in the roll-up as an explained blank.
-      opProperties().forEach(function(p){ if(!p.loans.length && !records[p.key]) records[p.key] = opRecordFor(p.key); });
+      opProperties().forEach(function(p){ if(!p.loans.length && !(p.pledged && p.pledged.length) && !records[p.key]) records[p.key] = opRecordFor(p.key); });
+      loans.forEach(function(l){ if(!loanIsActive(l)) return; var sk = stackKeyOf(l); if(sk.slice(0, 6) !== "stack:") return; stackKeys(sk).forEach(function(k){ delete records[k]; }); records[sk] = { propKey: sk, propertyName: "Pool: " + (function(ns){ return ns.length > 5 ? ns.slice(0, 3).join(" · ") + " + " + (ns.length - 3) + " more" : ns.join(" · "); })(stackKeys(sk).map(poolNameOfKey)), lines: {}, meta: {} }; });
       const open = (k) => { opSelectProperty(k); };
       try{ PortfolioRollup.render(rm, PortfolioRollup.buildRows(records, activeLoans(), hooks, gd), { onOpen: open }); }catch(e){ rm.innerHTML = '<p class="text-sm text-rose-600">The portfolio roll-up couldn’t be computed: '+escapeHtml(String((e && e.message) || e).slice(0, 200))+'</p>'; }
       // The roll-up covers the whole book. It shows the properties whose T12 has been read from disk;
@@ -6566,9 +6631,11 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
     try{ window.LDS_propertyStatus=(k)=>propertyStatusOf(k); window.LDS_loanStatus=(l)=>loanStatusOf(l); }catch(e){}   // diagnostics: derived property status + loan status
-    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_indexCatalog=()=>INDEX_CATALOG.map(c=>({id:c.id,label:c.label,live:!!c.live,fallback:c.fallback})); window.LDS_gdPersistExtras=(k,extras)=>{ delete gdFullCache[k]; return opPersistGeneralExtras(k, extras); }; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
+    try{ window.LDS_scheduleRows=(id)=>{ const l=getLoan(id); return l?compute(l).rows.map(r=>({label:r.label,rate:r.rate,isReset:!!r.isReset,payment:r.payment,paymentDate:r.paymentDate,startingBalance:r.startingBalance,type:r.type,tag:r.rateSrc&&r.rateSrc.tag,text:r.rateSrc&&r.rateSrc.text})):null; }; window.LDS_scheduleCsv=(id)=>{ const l=getLoan(id); return l?scheduleCsvText(l, compute(l)):null; }; window.LDS_describeRate=(id)=>{ const l=getLoan(id); return l?describeRate(l):null; }; window.LDS_indexCache=(id)=>INDEX_CACHE[id]||null; window.LDS_indexCatalog=()=>INDEX_CATALOG.map(c=>({id:c.id,label:c.label,live:!!c.live,fallback:c.fallback})); window.LDS_gdPersistExtras=(k,extras)=>{ delete gdFullCache[k]; return opPersistGeneralExtras(k, extras); }; window.LDS_rateHist=()=>RATE_HIST; }catch(e){}   // diagnostics: 2.9.7 (#130, #255, #256)
     try{ window.LDS_exportXlsxB64=(ids)=>XLSX.write(exportWorkbook(activeLoans().filter(l=>!ids||ids.includes(l._id))),{type:"base64",bookType:"xlsx"}); window.LDS_importXlsxB64=(b64)=>importReadBytes(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))); window.LDS_importCounts=()=>importState?importCounts():null; }catch(e){}   // diagnostics: 2.9.7 (#71, #146) Excel round trip
     try{ window.LDS_aiAsstOpenConv=(sc,id)=>aiAsstOpenConv(sc,id); window.LDS_aiAsstSystem=()=>AI_ASST_SYSTEM; }catch(e){}   // 2.9.8 diagnostics
+    try{ window.LDS_poolRelease=(id,key,price,date,re)=>{ const l=loans.find(x=>x._id===id); return l?poolRelease(l,key,price,date,re!==false):false; }; window.LDS_poolReleaseDefault=(id,key)=>{ const l=loans.find(x=>x._id===id); return l?poolReleaseDefault(l,key):null; }; window.LDS_poolAlloc=(id)=>{ const l=loans.find(x=>x._id===id); return l?poolAlloc(l):null; }; }catch(e){}
+    try{ window.LDS_poolKeys=(id)=>{ const l=getLoan(id); return l?poolKeys(l):null; }; window.LDS_isPoolLoan=(id)=>isPoolLoan(getLoan(id)); }catch(e){}
     try{ window.LDS_aiAsstSnapshot=()=>aiAsstSnapshot(); window.LDS_calendarDocHtml=()=>calendarDocHtml(); window.LDS_loanNOI=(l)=>loanNOI(l); window.LDS_setGDNOI=(k,noi)=>{ gdNOICache[k]=opGDCache(noi); }; window.LDS_syncPortfolio=(b)=>syncPortfolio(b); window.LDS_asstAction=(obj)=>aiAsstRunAction(obj); window.LDS_asstActionNames=()=>Object.keys(aiAsstActions); window.LDS_asstSystem=()=>AI_ASST_SYSTEM; window.LDS_readFileBytes=(name,b64,stopAfterPage)=>{ const c={stopped:false}; return fileTextFromBytes(name, opB64ToBytes(b64), { cancel:c, onProgress:(o)=>{ if(stopAfterPage && o.page>=stopAfterPage && !o.pct) c.stopped=true; } }); }; window.LDS_resumeReadingQueue=()=>resumeReadingQueue(); window.LDS_asstSplitCount=(text)=>aiAsstSplitParts([{name:'x',label:'',text:text}]).length; }catch(e){}   // diagnostics: 2.9.0.1 assistant NOI snapshot + calendar highlight + SYNC_REMOVE + 2.9.4 assistant action runner
     try{ window.LDS_dupCandidates=()=>healthDuplicateCandidates(opProperties()).map(g=>g.props.map(p=>p.key)); window.LDS_maturityDecisions=()=>activeLoans().filter(loanNeedsMaturityDecision).map(l=>l._id); window.LDS_renderPortfolio=()=>opRenderPortfolio(); window.LDS_renderSettingsPortfolio=()=>renderSettingsPortfolio(); }catch(e){}   // diagnostics: 2.9.0 Data Health duplicate + maturity checks + roll-up re-render
     try{ window.LDS_uwSetupHtml=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return uwSetupOutputHtml(b); }catch(e){ return "ERR:"+(e&&e.message); } }; window.LDS_uwSetupNoi=(sums,units,ov)=>{ try{ uwState.input.units=units; if(ov!==undefined) uwState.input.bench.lineOverrides=ov||{}; var b=SetupBuilder.buildSetup({categorySums:sums,units:units,benchmarks:uwState.input.bench}); return b.result.underwritten.noi; }catch(e){ return null; } }; window.LDS_benchStatus=(c,t,u,bm)=>opBenchStatus(c,t,u,bm); window.LDS_benchUnitFor=(c,bm)=>opBenchUnitFor(c,bm); window.LDS_rentRoll=(k)=>opReadPropRentRoll(k); window.LDS_rentRollParse=(g)=>window.RentRoll&&RentRoll.parse(g); window.LDS_rentRollBlock=(k)=>opRentRollBlockFor(k); window.LDS_unitStatsHtml=(b,o)=>rrUnitStatsHtml(b,o); window.LDS_fileTargets=(n,t,g,fb)=>opFileTargets(n,t,g,fb); }catch(e){}   // diagnostics: per-unit setup + line overrides + per-property benchmarks + rent roll + unit stats + file routing
@@ -6622,6 +6689,7 @@ tr.flagged:hover td{background:#fee2e2}
       const loan = getLoan(state.activeId);
       if(!loan || !opReady()){ host.innerHTML = ""; return; }
       opInit();
+      if(isPoolLoan(loan)){ opNeedPageNOI(propertyKey(loan)); host.innerHTML = poolPanelHtml(loan, propertyKey(loan)); return; }
       const key = propertyKey(loan), members = loansForProperty(loan), rec = OperatingStore.get(key);
       const hasModel = !!(rec && rec.lines && Object.keys(rec.lines).length);
       // 2.9.12 — ONE NOI: the property's NOI here is the one Underwriting, the portfolio and the refinance use
@@ -6650,6 +6718,7 @@ tr.flagged:hover td{background:#fee2e2}
           '</div>'+
         '</div>';
     }
+    document.addEventListener("click", (e) => { const t = e.target; if(t && t.closest && t.closest("#poolRefiBtn")) poolPickerOpen(); });
     document.addEventListener("click", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#loanOpOpen")) return; const loan = getLoan(state.activeId); if(loan) opOpenProperty(loan); });
     // 2.9.13 — the NOI box on the page of a property with NO loan: the same NOI as everywhere else (your override, else
     // the T12 rule's, else its operating lines, else the last loan's / your entered NOI — Home's loanlessPosition),
@@ -6660,6 +6729,7 @@ tr.flagged:hover td{background:#fee2e2}
       const key = propViewKey(); if(!key){ host.innerHTML = ""; return; }
       try{ opInit(); }catch(e){}
       opNeedPageNOI(key);
+      { const pls = poolLoansForKey(key); if(pls.length){ host.innerHTML = pls.map(l => poolPanelHtml(l, key)).join(""); return; } }
       const inact = loans.filter(l => propertyKey(l) === key && loanIsInactiveSelf(l)).sort(loanRank);
       const pos = loanlessPosition({ key: key, inactive: inact }), noi = pos.noi, one = propOneNOI(key);
       const sr = inact.find(l => !isMezz(l)) || inact[0] || null, cr = sr ? loanCapRate(sr) : defaultCapRate(null);
@@ -6743,10 +6813,10 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="flex flex-wrap items-start justify-between gap-3">'+
             '<div class="min-w-0"><h2 class="text-lg font-extrabold text-slate-900">'+escapeHtml(name)+' '+
               (archived ? '<span class="ml-1 align-middle rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">archived</span>'
-                        : '<span class="ml-1 align-middle rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span>')+'</h2>'+
+                        : (poolLoansForKey(key).length ? '<span class="ml-1 align-middle rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">In a pooled loan</span>' : '<span class="ml-1 align-middle rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span>'))+'</h2>'+
               '<p class="mt-1 text-xs text-slate-500">'+(archived
                 ? 'Archived — out of Home, the totals and the assistant. Un-archive it to bring it back, or delete it permanently.'
-                : 'This property has no active loan'+(removed ? ' ('+removed+' removed or paid-off loan'+(removed>1?'s':'')+' below, to restore)' : '')+'. Its NOI, profile, rent roll and documents are below.')+'</p></div>'+
+                : (poolLoansForKey(key).length ? 'This property is security for a pooled loan (below) together with other properties' : 'This property has no active loan')+(removed ? ' ('+removed+' removed or paid-off loan'+(removed>1?'s':'')+' below, to restore)' : '')+'. Its NOI, profile, rent roll and documents are below.')+'</p></div>'+
             '<div class="flex flex-wrap items-center gap-2 shrink-0" id="propPageActions">'+
               (archived
                 ? btn('data-propunarchive', 'Un-archive', 'border border-amber-300 bg-white text-amber-700 hover:bg-amber-50')+
@@ -6837,12 +6907,13 @@ tr.flagged:hover td{background:#fee2e2}
       opts = opts || {};
       const from = opts.from || "typed";
       const all = loans.filter(l => propertyKey(l) === key);
+      const poolFollow = (fk === "propertyName" && val) ? POOL_SRC.prepareRename(key) : null;
       if(fk === "propertyName" && !val){ toast("A property needs a name — not saved.", "info"); profilePanelRedraw(); return; }
       if(!all.length){   // a property with no loan: its name is its key
         if(fk === "address"){ await opProfileSetField(key, fk, val, opts.fieldOpts); profilePanelRedraw(); return; }
         const ka = propertyKey({ propertyName: val, propertyAddress: "" });
         if(ka !== key){ const a = await propRenameAsk(null, key, ka, val); if(!a.go){ profilePanelRedraw(); return; }
-          await opProfileSetField(key, fk, val, opts.fieldOpts); await propRenameFiles(null, key, ka, { merge: a.merge, from, name: val }); }
+          await opProfileSetField(key, fk, val, opts.fieldOpts); await propRenameFiles(null, key, ka, { merge: a.merge, from, name: val }); if(poolFollow) poolFollow(val); }
         else await opProfileSetField(key, fk, val, opts.fieldOpts);
         profilePanelRedraw(); toast("Renamed to “" + val + "”.", "check"); return;
       }
@@ -6860,7 +6931,7 @@ tr.flagged:hover td{background:#fee2e2}
       all.forEach(l => { Object.keys(change[l._id]).forEach(f => { const was = l[f]; if(was !== change[l._id][f]){ l[f] = change[l._id][f]; try{ loanHistoryAdd(l, f, was, l[f], from); }catch(e){} } }); });
       save();
       await opProfileSetField(key, fk, val, opts.fieldOpts);
-      if(kAll !== key){ try{ opFollowRename(sr, key, kAll); }catch(e){} await propRenameFiles(null, key, kAll, { merge: ans.merge, from, name: fk === "propertyName" ? val : "" }); }
+      if(kAll !== key){ try{ opFollowRename(sr, key, kAll); }catch(e){} await propRenameFiles(null, key, kAll, { merge: ans.merge, from, name: fk === "propertyName" ? val : "" }); if(poolFollow) poolFollow(val); }
       else { try{ redrawAll(); }catch(e){} }
       profilePanelRedraw();
       toast(fk === "address" ? "Address changed on " + all.length + " loan" + (all.length === 1 ? "" : "s") + "." : "Renamed to “" + val + "” on " + all.length + " loan" + (all.length === 1 ? "" : "s") + ".", "check");
@@ -7567,7 +7638,7 @@ tr.flagged:hover td{background:#fee2e2}
       const wAvg=totalBal>0?rateWB/totalBal:0;
       const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,name:sr.propertyName||loanLabel(sr)}; });
       // 2.9.8 (problem 4) — properties with no active loan stay in: their NOI counts, with no debt.
-      try{ opProperties().filter(p=>!(p.loans&&p.loans.length)).forEach(p=>{ items.push({ sr:null, key:p.key, name:p.name, combo:false, count:0, cp:loanlessPosition(p), noLoan:true }); }); }catch(e){}
+      try{ opProperties().filter(p=>!(p.loans&&p.loans.length)&&!(p.pledged&&p.pledged.length)).forEach(p=>{ items.push({ sr:null, key:p.key, name:p.name, combo:false, count:0, cp:loanlessPosition(p), noLoan:true }); }); }catch(e){}
       let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0, dyNoi=0, dyBal=0, nNoLoan=0;
       // Every property with a positive NOI counts toward the portfolio coverage. A property with NOI ≤ 0 has no
       // meaningful ratio and is simply not counted. 2.9.7 (#119) — Portfolio DSCR = total NOI ÷ total yearly loan
@@ -7626,7 +7697,7 @@ tr.flagged:hover td{background:#fee2e2}
             '<td class="px-3 py-2"><div class="flex items-center justify-between gap-2">'+(entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">NOI counted · no debt</span>':'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>')+
               '<button type="button" data-openprop="'+escapeHtml(it.key)+'" class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Open</button></div></td>'+
           '</tr>'; }
-        const nameCell=escapeHtml(it.sr.propertyName||loanLabel(it.sr))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
+        const nameCell=(isPoolLoan(it.sr)?escapeHtml(poolTitle(it.sr))+' <span class="rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-bold uppercase text-indigo-700">pool &middot; '+poolKeys(it.sr).length+' properties</span>':escapeHtml(it.sr.propertyName||loanLabel(it.sr)))+(it.combo?' <span class="rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase text-brand-700">'+it.count+' loans</span>':'');
         const status=!entered?'<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">needs T12/NOI</span>'
           :(!covered?'<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">NOI ≤ 0</span>'
           :((cp.dscr!=null&&cp.dscr>=COV_DSCR_FLOOR&&cp.debtYield!=null&&cp.debtYield>=COV_DY_FLOOR&&(cp.ltv==null||cp.ltv<=COV_LTV_MAX))?'<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">clears</span>':'<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">off target</span>'));
@@ -7646,7 +7717,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</tr>'; }).join('');
       const head='<tr>'+thc("Property")+thc("NOI",'text-right')+thc("DSCR",'text-right')+thc("Debt Yield",'text-right')+thc("LTV",'text-right')+thc("Current",'text-right')+thc("Market",'text-right')+thc("Gap",'text-right')+thc("")+'</tr>';
       const covTable='<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift">'+
-        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><p class="text-xs text-slate-500">per property, on the combined position, vs the '+fmtX(COV_DSCR_FLOOR)+' DSCR, '+fmtPct(COV_LTV_MAX)+' LTV and '+fmtPct(COV_DY_FLOOR)+' debt-yield targets, with current rate vs today’s market — worst first</p></div>'+
+        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><button type="button" id="poolRefiBtn" class="mt-1 rounded-md border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Refinance several properties together…</button><p class="text-xs text-slate-500">per property, on the combined position, vs the '+fmtX(COV_DSCR_FLOOR)+' DSCR, '+fmtPct(COV_LTV_MAX)+' LTV and '+fmtPct(COV_DY_FLOOR)+' debt-yield targets, with current rate vs today’s market — worst first</p></div>'+
         '<div class="overflow-x-auto"><table class="w-full min-w-[860px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+tbody+'</tbody></table></div>'+
       '</div>';
 
@@ -7776,7 +7847,7 @@ tr.flagged:hover td{background:#fee2e2}
       // down its loans, click again to close. Single-loan properties are one plain
       // row. Sort by combined balance.
       const propGroups = {};
-      rows.forEach(r => { const k = propertyKey(r.loan); (propGroups[k] = propGroups[k] || []).push(r); });
+      rows.forEach(r => { const k = stackKeyOf(r.loan); (propGroups[k] = propGroups[k] || []).push(r); });
       const groupList = Object.keys(propGroups).map(k => {
         const members = propGroups[k].slice().sort((a,b)=> (isMezz(a.loan)?1:0)-(isMezz(b.loan)?1:0));
         return { members, cp: combinedPosition(members.map(m=>m.loan)) };
@@ -7812,7 +7883,7 @@ tr.flagged:hover td{background:#fee2e2}
       // 2.9.6 — properties with NO loan still belong on the overview (Add Property with a name
       // only, or a profile awaiting its loan). They sit at the bottom with a badge; clicking
       // opens the property in Underwriting, where its profile and Add-loan flow live.
-      const loanlessRows = opProperties().filter(p => !propGroups[p.key]).map(p =>
+      const loanlessRows = opProperties().filter(p => !propGroups[p.key] && !(p.pledged && p.pledged.length)).map(p =>
         '<tr data-openprop="'+escapeHtml(p.key)+'" class="cursor-pointer hover:bg-slate-50">'+
           td('<span class="inline-flex items-center gap-1.5"><span class="font-medium text-slate-900">'+escapeHtml(p.name)+'</span> <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">No loan yet</span></span>')+
           td('&mdash;','text-slate-400')+ td('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+ tdR('&mdash;','text-slate-400')+
@@ -8542,6 +8613,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<span class="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 font-semibold">'+c.un+' unchanged</span>'+
         (c.att?'<span class="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700 font-semibold">'+c.att+' need attention</span>':'<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-600 font-semibold">ready</span>');
       const btn = el("importApplyBtn");
+      try{ const unk = poolImportUnknown(); if(s && unk.length) s.innerHTML += '<span id="importPoolNote" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800 font-semibold">“Also secures” names '+unk.length+' propert'+(unk.length === 1 ? 'y' : 'ies')+' not in your book yet — '+(unk.length === 1 ? 'it' : 'they')+' will be added as new: '+escapeHtml(unk.join(", "))+'. Check the spelling before you apply.</span>'; }catch(e){}
       if(btn){ const total=c.nw+c.up; btn.disabled = c.att>0 || total===0; btn.textContent = c.att>0 ? ("Resolve "+c.att+" to import") : ("Apply import"+(total?" ("+total+")":"")); }
       const un = el("importUnrecognized"); const list = (importState.unrecognized)||[];
       if(un) un.innerHTML = list.length ? '<span class="text-amber-600">Ignored '+list.length+' unrecognized column'+(list.length>1?'s':'')+':</span> '+list.slice(0,10).map(escapeHtml).join(', ')+(list.length>10?'…':'') : '';
@@ -8660,6 +8732,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-4 text-sm text-slate-700">'+
             (res.added.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Added ('+res.added.length+')</div><ul class="space-y-1">'+li(res.added)+'</ul></div>' : "")+
             (res.refreshed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Corrected terms refreshed ('+res.refreshed.length+')</div><ul class="space-y-1">'+li(res.refreshed)+'</ul></div>' : "")+
+            (res.set && res.set.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Set from the loan documents ('+res.set.length+')</div><ul class="space-y-1">'+li(res.set)+'</ul></div>' : "")+
             (res.removed && res.removed.length ? '<div><div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Removed ('+res.removed.length+')</div><ul class="space-y-1">'+liR(res.removed)+'</ul><p class="mt-1.5 text-[11px] text-slate-400">Removed pending confirmation — not yet certain these belong in the portfolio.</p></div>' : "")+
             '<p class="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-snug text-slate-500">Left unchanged on purpose (awaiting documents): <b>Living Lofts</b>, <b>Village at Bridgewater</b>.</p>'+
           '</div>'+
@@ -9240,10 +9313,12 @@ tr.flagged:hover td{background:#fee2e2}
         dsAnnTot += annualDebtService(d);   // the level-P&I basis loanDSCR sizes to (an IO period's interest-only payment would overstate coverage)
         rateWt += (d.currentRate || 0) * (d.currentBalance || 0);
       });
-      const noi = propertyNOI(list);
-      const entered = list.some(noiEntered);   // an NOI figure has been entered (any sign), even if not positive-valuable
+      const stkKs = []; list.forEach(l => poolKeys(l).forEach(k => { if(stkKs.indexOf(k) < 0) stkKs.push(k); }));
+      const poolL = stkKs.length > 1 ? (list.find(isPoolLoan) || list[0]) : null;   // a stack over several properties: each property's NOI once
+      const noi = poolL ? poolNOIOfKeys(stkKs) : propertyNOI(list);
+      const entered = list.some(noiEntered) || (!!poolL && noi != null);   // an NOI figure has been entered (any sign), even if not positive-valuable
       const sr = list.find(l => !isMezz(l)) || list[0];
-      const cr = loanCapRate(sr), value = (noi > 0 && cr > 0) ? noi / cr : null;
+      const cr = loanCapRate(sr), value = poolL ? (function(){ let v = 0, any = false; stkKs.forEach(k => { const n = poolKeyNOI(k); if(n > 0 && cr > 0){ v += n / cr; any = true; } }); return any ? v : null; })() : ((noi > 0 && cr > 0) ? noi / cr : null);
       return {
         count: list.length, origTot, balTot, piMoTot, dsMoTot, noi, entered, value, annualDS: dsAnnTot,
         blended: balTot > 0 ? rateWt / balTot : 0,
@@ -9301,7 +9376,216 @@ tr.flagged:hover td{background:#fee2e2}
       return combo;
     }
     // Members of the property that a combined-refi id points at.
-    function comboMembers(id){ return (typeof id === "string" && id.slice(0,6) === "combo:") ? loans.filter(l => propertyKey(l) === id.slice(6) && !loanIsInactiveSelf(l)) : []; }
+
+    // ---- 2.9.14 — POOLED LOANS ----------------------------------------------------------------------------
+    // ONE loan record that secures several properties. Its own name / address is the LEAD property (so its files
+    // stay keyed exactly as today); POOL_SRC lists every other property it secures. Every total reads the loan
+    // once; the pool's NOI is the sum of its properties' own NOIs; each property keeps its own page and files.
+    var poolTyped = {}, poolFoldered = new Set();   // 2.9.14 — each member's name as you wrote it; members made into properties once
+    function poolSplitNames(s){ return String(s || "").split(/[;\n]+/).map(x => x.trim()).filter(Boolean); }
+    function poolKeyForName(n){
+      const nn = normPropName(n); if(!nn) return "";
+      for(const l of loans){ if(normPropName(l.propertyName) === nn) return propertyKey(l); }
+      for(const sk in standaloneProps){ if(Object.prototype.hasOwnProperty.call(standaloneProps, sk) && normPropName(standaloneProps[sk].name) === nn) return sk; }
+      for(const pk in profileCache){ try{ if(normPropName(Profile.value(profileCache[pk], "propertyName")) === nn) return pk; }catch(e){} }
+      return "name:" + nn;
+    }
+    function poolNameOfKey(k){
+      try{ const pr = profileCache[k]; const v = pr && Profile.value(pr, "propertyName"); if(v) return String(v); }catch(e){}
+      if(standaloneProps[k] && standaloneProps[k].name) return standaloneProps[k].name;
+      const l = loans.find(x => propertyKey(x) === k); if(l && l.propertyName) return String(l.propertyName).replace(/\s*\(\s*mezz[^)]*\)/i, "").trim();
+      if(poolTyped[k]) return poolTyped[k];
+      return String(k).replace(/^name:/, "").replace(/\|addr:.*$/, "");
+    }
+
+    // Membership lives ON THE LOAN: "alsoSecures" = the other properties' names, ";"-separated (an Excel row too).
+    const POOL_SRC = {
+      names(l){ return poolSplitNames(l && l.alsoSecures).map(x => x.replace(/\s*=\s*\$?[\d,.]+\s*$/, "").trim()); },
+      keysOf(l){ const ns = POOL_SRC.names(l); if(!ns.length) return null; const ks = [propertyKey(l)]; ns.forEach(n => { const k = poolKeyForName(n); if(k && !poolTyped[k]) poolTyped[k] = n; if(ks.indexOf(k) < 0) ks.push(k); }); return ks; },
+      setKeys(l, keys){ const own = propertyKey(l); l.alsoSecures = keys.filter(k => k !== own).map(poolNameOfKey).join("; "); },
+      // a member property renamed: rewrite its name in every pooled loan that lists it (call BEFORE the rename lands)
+      prepareRename(oldKey){ const hits = []; loans.forEach(l => { const ns = poolSplitNames(l.alsoSecures); ns.forEach((n, i) => { if(poolKeyForName(n.replace(/\s*=\s*\$?[\d,.]+\s*$/, "").trim()) === oldKey) hits.push({ l, i }); }); });
+        return function(newName){ let ch = false; hits.forEach(h => { const ns = poolSplitNames(h.l.alsoSecures); const m = ns[h.i].match(/(\s*=\s*\$?[\d,.]+\s*)$/); ns[h.i] = newName + (m ? m[1] : ""); h.l.alsoSecures = ns.join("; "); ch = true; }); if(ch) save(); }; },
+      alloc(l){ const out = {}; poolSplitNames(l && l.alsoSecures).forEach(x => { const m = x.match(/^(.*?)\s*=\s*\$?([\d,.]+)\s*$/); if(m) out[poolKeyForName(m[1].trim())] = Number(m[2].replace(/,/g, "")); }); return out; },
+    };
+    function isPoolLoan(l){ if(!l || l._combined) return false; const k = POOL_SRC.keysOf(l); return !!(k && k.length > 1); }
+    function poolKeys(l){ if(l && l._poolKeys) return l._poolKeys.slice(); return (l && !l._combined && POOL_SRC.keysOf(l)) || (l ? [propertyKey(l)] : []); }
+    function poolLoansForKey(key){ return loans.filter(l => isPoolLoan(l) && loanIsActive(l) && poolKeys(l).indexOf(key) >= 0); }
+    function poolKeyNOI(k){ return propNOIByKey(k, loans.filter(l => propertyKey(l) === k && loanIsInactiveSelf(l))); }
+    function poolNOIOfKeys(keys){ let t = 0, any = false; keys.forEach(k => { const n = poolKeyNOI(k); if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
+    function poolNOI(l){ return poolNOIOfKeys(poolKeys(l)); }
+    function poolValue(l){ const cr = loanCapRate(l); let v = 0, any = false; poolKeys(l).forEach(k => { const n = poolKeyNOI(k); if(n > 0 && cr > 0){ v += n / cr; any = true; } }); return any ? v : null; }
+    function poolTitle(l){ const ns = poolKeys(l).map(poolNameOfKey); return ns.length > 5 ? ns.slice(0, 3).join(" · ") + " + " + (ns.length - 3) + " more" : ns.join(" · "); }
+    // releases: "date = amount paid down = property = its allocated amount = re-amortize / keep payment", ";"-separated
+    function poolReleases(l){ return poolSplitNames(l && l.poolReleases).map(x => { const p = x.split("=").map(t => t.trim());
+        return { date: p[0] || "", amount: Number(String(p[1] || "").replace(/[$,]/g, "")) || 0, property: p[2] || "", alloc: Number(String(p[3] || "").replace(/[$,]/g, "")) || 0, reamortize: !/keep/i.test(p[4] || "") }; })
+      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.amount > 0); }
+    // allocated amounts: the lead gets what the others don't (less what released properties carried)
+    function poolAlloc(l){ const ks = poolKeys(l), a = POOL_SRC.alloc(l) || {}, out = {}; let rest = (Number(l.originalAmount) || 0) - poolReleases(l).reduce((t, r) => t + (r.alloc || 0), 0), open = [];
+      ks.forEach(k => { if(a[k] != null && isFinite(a[k])){ out[k] = a[k]; rest -= a[k]; } else open.push(k); });
+      if(!Object.keys(out).length) return null; open.forEach(k => { out[k] = open.length ? Math.max(0, rest) / open.length : 0; }); return out; }
+    function poolAllocSum(al){ return al ? Object.keys(al).reduce((t, k) => t + (al[k] || 0), 0) : 0; }
+    function poolPanelHtml(l, focusKey){
+      const d = compute(l).derived, ads = annualDebtService(d), ks = poolKeys(l), noi = poolNOI(l), val = poolValue(l), al = poolAlloc(l), alSum = poolAllocSum(al), rel = poolReleases(l);
+      const dscr = (noi > 0 && ads > 0) ? noi / ads : null, dy = (noi > 0 && d.currentBalance > 0) ? noi / d.currentBalance : null, ltv = (val > 0 && d.currentBalance > 0) ? d.currentBalance / val : null;
+      const tile = (t, v, sub) => '<div><div class="text-[10px] uppercase tracking-wide text-slate-400">'+t+'</div><div class="text-sm font-bold text-slate-900 tabular-nums">'+v+'</div>'+(sub ? '<div class="text-[10px] text-slate-400">'+sub+'</div>' : '')+'</div>';
+      const rows = ks.map(k => { const n = poolKeyNOI(k), share = (al && al[k] != null && alSum > 0) ? al[k] / alSum : null, aDS = share != null ? ads * share : null;
+        return '<tr class="border-t border-slate-100'+(k === focusKey ? ' bg-brand-50/50 font-semibold' : '')+'" data-poolmember="'+escapeHtml(k)+'"><td class="py-1 pr-3 text-sm text-slate-800">'+escapeHtml(poolNameOfKey(k))+(k === focusKey ? ' <span class="text-[10px] text-brand-700">(this property)</span>' : '')+'</td>'+
+          '<td class="py-1 px-2 text-sm text-right tabular-nums">'+(n != null ? fmtMoney(n) : '&mdash;')+'</td>'+
+          (al ? '<td class="py-1 px-2 text-sm text-right tabular-nums">'+(al[k] != null ? fmtMoney(al[k]) : '&mdash;')+'</td><td class="py-1 px-2 text-sm text-right tabular-nums">'+(share != null ? fmtMoney(d.currentBalance * share) : '&mdash;')+'</td><td class="py-1 px-2 text-sm text-right tabular-nums">'+((n > 0 && aDS > 0) ? (n / aDS).toFixed(2) + '&times;' : '&mdash;')+'</td>' : '')+
+          '<td class="py-1 pl-2 text-right">'+(ks.length > 1 ? '<button type="button" data-poolrelease="'+escapeHtml(l._id)+'|'+escapeHtml(k)+'" class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Release…</button>' : '')+'</td></tr>'; }).join("");
+      const relHtml = rel.length ? '<p class="mt-2 text-[11px] text-slate-500" data-poolreleases>Released: '+rel.map(r => '<b>'+escapeHtml(r.property)+'</b> on '+fmtDateUS(r.date)+' &mdash; '+fmtMoney(r.amount)+' paid down'+(r.reamortize ? ', payment recalculated' : ', payment kept')).join(' &middot; ')+'</p>' : '';
+      return '<div class="boxline rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm" data-poolpanel="'+escapeHtml(l._id)+'">'+
+        '<div class="flex items-center justify-between gap-2"><h3 class="text-sm font-bold text-slate-900">Pooled loan &mdash; secures '+ks.length+' propert'+(ks.length === 1 ? 'y' : 'ies')+'</h3><span class="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-indigo-700">pool</span></div>'+
+        '<p class="mt-0.5 text-xs text-slate-500">'+escapeHtml((l.lenderName || "Lender") + (l.loanNumber ? " · " + l.loanNumber : ""))+' &middot; one loan, one payment &mdash; coverage is read on the whole pool.</p>'+
+        '<div class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-4">'+tile("Current balance", fmtMoney(d.currentBalance))+tile("Monthly P&amp;I", fmtMoney(d.monthlyPI))+tile("Pool NOI", noi != null ? fmtMoney(noi) : "&mdash;")+
+          tile("DSCR (pool)", dscr != null ? dscr.toFixed(2) + "&times;" : "&mdash;")+tile("Debt yield / LTV", (dy != null ? fmtPct(dy) : "&mdash;") + " / " + (ltv != null ? fmtPct(ltv) : "&mdash;"))+'</div>'+
+        '<div class="mt-3 max-h-96 overflow-auto thin-scroll"><table class="w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th>Property</th><th class="px-2 text-right">NOI</th>'+(al ? '<th class="px-2 text-right">Allocated</th><th class="px-2 text-right">Alloc. balance</th><th class="px-2 text-right">Alloc. DSCR</th>' : '')+'<th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+relHtml+
+      '</div>';
+    }
+    // 2.9.14 — release one property from a pool: its release price is paid down on the loan, it leaves the pool and keeps its NOI.
+    function poolReleaseDefault(l, key){ const d = compute(l).derived, al = poolAlloc(l), alSum = poolAllocSum(al), ks = poolKeys(l), nS = ks.reduce((t, k) => t + Math.max(0, poolKeyNOI(k) || 0), 0);
+      const share = (al && al[key] != null && alSum > 0) ? al[key] / alSum : (nS > 0 ? Math.max(0, poolKeyNOI(key) || 0) / nS : 1 / ks.length);
+      return { price: Math.round(d.currentBalance * share * 100) / 100, share: share, alloc: al && al[key] != null ? al[key] : null }; }
+    function poolReleaseOpen(loanId, key){
+      const l = loans.find(x => x._id === loanId); if(!l) return; const df = poolReleaseDefault(l, key), t = todayParts(), iso = partsToISO(t.y, t.mo, t.d), nm = poolNameOfKey(key);
+      let m = document.getElementById("poolRelModal"); if(m) m.remove();
+      m = document.createElement("div"); m.id = "poolRelModal"; m.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40";
+      m.innerHTML = '<div class="w-[460px] rounded-2xl bg-white p-5 shadow-xl"><h3 class="text-base font-bold text-slate-900">Release '+escapeHtml(nm)+' from the pool</h3>'+
+        '<p class="mt-1 text-xs text-slate-500">The release price is paid down on '+escapeHtml(loanLabel(l))+'. '+escapeHtml(nm)+' leaves the pool and keeps its NOI, with no loan. Its share of today&rsquo;s balance is '+fmtMoney(df.price)+' ('+(df.share * 100).toFixed(1)+'%'+(df.alloc != null ? ' &middot; allocated '+fmtMoney(df.alloc) : ' &middot; by NOI')+') &mdash; your lender may ask for more (often 105&ndash;125%).</p>'+
+        '<div class="mt-3 grid grid-cols-2 gap-3"><label class="text-xs text-slate-600">Release price ($)<input id="poolRelPrice" type="number" step="any" value="'+df.price.toFixed(2)+'" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>'+
+        '<label class="text-xs text-slate-600">Date<input id="poolRelDate" type="date" value="'+iso+'" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm"></label></div>'+
+        '<label class="mt-3 block text-xs text-slate-600">After the paydown<select id="poolRelMode" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm"><option value="reamortize">Recalculate the payment over the remaining amortization</option><option value="keep">Keep the payment (the loan pays down faster)</option></select></label>'+
+        '<div class="mt-4 flex justify-end gap-2"><button type="button" id="poolRelCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="poolRelGo" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white">Release</button></div></div>';
+      document.body.appendChild(m);
+      m.querySelector("#poolRelCancel").addEventListener("click", () => m.remove());
+      m.querySelector("#poolRelGo").addEventListener("click", () => { const pr = Number(m.querySelector("#poolRelPrice").value), dt = m.querySelector("#poolRelDate").value;
+        if(!(pr > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(dt)){ toast("Enter a release price and a date", "info"); return; }
+        m.remove(); poolRelease(l, key, pr, dt, m.querySelector("#poolRelMode").value !== "keep"); });
+    }
+    function poolRelease(l, key, price, date, reamortize){
+      const ks = poolKeys(l); if(ks.indexOf(key) < 0 || ks.length < 2) return false;
+      const al = poolAlloc(l), relName = poolNameOfKey(key), own = propertyKey(l), wasList = l.alsoSecures || "", wasRel = l.poolReleases || "";
+      const nameOf = (e) => e.replace(/\s*=\s*\$?[\d,.]+\s*$/, "").trim(), keyOf = (e) => poolKeyForName(nameOf(e));
+      let es = poolSplitNames(l.alsoSecures);
+      if(al && al[own] != null && !es.some(e => keyOf(e) === own)) es.unshift(poolNameOfKey(own) + " = " + Math.round(al[own]));   // the lead's share stays put
+      if(key === own){   // the lead leaves: the loan moves to the member with the largest share
+        const nk = ks.filter(k => k !== own).sort((a, b) => ((al && al[b]) || poolKeyNOI(b) || 0) - ((al && al[a]) || poolKeyNOI(a) || 0))[0], pr = profileCache[nk];
+        const was = l.propertyName; l.propertyName = poolNameOfKey(nk); l.propertyAddress = (pr && Profile.value(pr, "propertyAddress")) || "";
+        try{ loanHistoryAdd(l, "propertyName", was, l.propertyName, "typed"); }catch(e){}
+      }
+      es = es.filter(e => keyOf(e) !== key);
+      l.alsoSecures = es.join("; ");
+      if(!loans.some(x => !loanIsInactiveSelf(x) && propertyKey(x) === key)){ standaloneProps[key] = standaloneProps[key] || { key: key, name: relName }; try{ opCreatePropertyFolder(key, relName); }catch(e){} }
+      const rel = poolSplitNames(l.poolReleases); rel.push(date + " = " + (Math.round(price * 100) / 100).toFixed(2) + " = " + relName + " = " + Math.round((al && al[key]) || 0) + " = " + (reamortize ? "re-amortize" : "keep payment"));
+      l.poolReleases = rel.join("; ");
+      try{ loanHistoryAdd(l, "alsoSecures", wasList, l.alsoSecures, "typed"); loanHistoryAdd(l, "poolReleases", wasRel, l.poolReleases, "typed", { note: relName + " released — " + fmtMoney(price) + " paid down" }); }catch(e){}
+      save(); try{ redrawAll(); }catch(e){}
+      toast("Released “" + relName + "” — " + fmtMoney(price) + " paid down on the loan.", "check");
+      return true;
+    }
+    document.addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest("[data-poolrelease]"); if(!b) return; const v = b.getAttribute("data-poolrelease"), i = v.indexOf("|"); poolReleaseOpen(v.slice(0, i), v.slice(i + 1)); });
+    // Refinance several properties as ONE package: "multi:<key>|<key>|..." — every active loan on them (and any pooled
+    // loan that covers them) is paid off; the NOI is the sum of the properties' own NOIs.
+    function multiMembers(id){ if(typeof id !== "string" || id.slice(0, 6) !== "multi:") return []; const keys = id.slice(6).split("|");
+      return loans.filter(l => !loanIsInactiveSelf(l) && (keys.indexOf(propertyKey(l)) >= 0 || (isPoolLoan(l) && poolKeys(l).some(k => keys.indexOf(k) >= 0)))); }
+    function multiKeys(id){ const keys = id.slice(6).split("|"); multiMembers(id).forEach(l => { if(isPoolLoan(l)) poolKeys(l).forEach(k => { if(keys.indexOf(k) < 0) keys.push(k); }); }); return keys; }
+    function poolRefiNOI(keys, basis){ let t = 0, any = false; keys.forEach(k => { const g = gdNOICache[k], ov = propNOIOverride(k);
+        let n = basis === "underwritten" ? (ov != null ? ov : (g && g.underwritten != null ? g.underwritten : (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k))))
+              : basis === "inplace" ? (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k)) : poolKeyNOI(k);
+        if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
+    // Stacks: the unit of coverage is every property tied together by any loan — a senior + mezz on one property
+    // (as today), a pooled loan's properties, a pooled mezz over the same pool, a member's own extra loan. Each property's
+    // NOI is counted once per stack; every loan's debt service in it is counted.
+    var _stkMemo = { sig: null, val: null };
+    function poolStacks(){
+      const act = loans.filter(l => loanIsActive(l)), sig = act.map(l => l._id + "|" + (l.alsoSecures || "") + "|" + propertyKey(l)).join(";");
+      if(_stkMemo.sig === sig) return _stkMemo.val;
+      const parent = {}, find = (k) => { while(parent[k] !== k) k = parent[k]; return k; }, uni = (a, b) => { a = find(a); b = find(b); if(a !== b) parent[b] = a; };
+      act.forEach(l => { const ks = poolKeys(l); ks.forEach(k => { if(!(k in parent)) parent[k] = k; }); for(let i = 1; i < ks.length; i++) uni(ks[0], ks[i]); });
+      const comp = {}; Object.keys(parent).forEach(k => { const r = find(k); (comp[r] = comp[r] || []).push(k); });
+      const byLoan = {}; act.forEach(l => { const c = comp[find(poolKeys(l)[0])]; byLoan[l._id] = c.length > 1 ? ("stack:" + c.slice().sort().join("|")) : propertyKey(l); });
+      _stkMemo = { sig, val: { byLoan } }; return _stkMemo.val;
+    }
+    function stackKeyOf(l){ return (l && poolStacks().byLoan[l._id]) || propertyKey(l); }
+    function stackKeys(sk){ return String(sk).slice(0, 6) === "stack:" ? String(sk).slice(6).split("|") : [sk]; }
+    function poolFormEnhance(){
+      const inp = el("f_alsoSecures"); if(!inp || inp.dataset.poolPicker) return; inp.dataset.poolPicker = "1"; inp.type = "hidden";
+      const box = document.createElement("div"); box.id = "poolFormPicker"; box.className = "mt-1 rounded-lg border border-slate-200 bg-white p-2"; inp.parentElement.appendChild(box);
+      const ownKey = () => { const n = (el("f_propertyName") || {}).value || ""; return n ? propertyKey({ propertyName: n, propertyAddress: (el("f_propertyAddress") || {}).value || "" }) : ""; };
+      const parse = () => { const cur = {}, order = []; poolSplitNames(inp.value).forEach(e => { const m = e.match(/^(.*?)\s*=\s*\$?([\d,.]+)\s*$/), nm = (m ? m[1] : e).trim(), k = poolKeyForName(nm); if(!k) return; cur[k] = { name: nm, amt: m ? m[2].replace(/,/g, "") : "" }; order.push(k); }); return { cur, order }; };
+      const write = () => { const parts = []; box.querySelectorAll("[data-poolform]").forEach(cb => { if(!cb.checked) return; const k = cb.getAttribute("data-poolform"), a = box.querySelector('[data-poolformamt="' + CSS.escape(k) + '"]'), v = a && a.value ? Number(String(a.value).replace(/[$,\s]/g, "")) : null;
+          parts.push(cb.getAttribute("data-poolname") + (v > 0 ? " = " + Math.round(v) : "")); });
+        inp.value = parts.join("; "); inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); sumLine();
+        const c = el("poolFormCount"); if(c) c.textContent = parts.length ? ("This loan also secures " + parts.length + " other propert" + (parts.length === 1 ? "y" : "ies")) : "A loan on one property — tick others to make it a pooled loan"; };
+      const money0 = (v) => { const n = Number(String(v || "").replace(/[$,\s]/g, "")); return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : ""; };
+      const sumLine = () => { const sl = el("poolFormAllocSum"); if(!sl) return; let t = 0, n = 0; box.querySelectorAll("[data-poolform]").forEach(cb => { if(!cb.checked) return; const a = box.querySelector('[data-poolformamt="' + CSS.escape(cb.getAttribute("data-poolform")) + '"]'), v = a ? Number(String(a.value || "").replace(/[$,\s]/g, "")) : 0; if(v > 0){ t += v; n++; } });
+        const L = Number(String((el("f_originalAmount") || {}).value || "").replace(/[$,\s]/g, "")) || 0;
+        sl.textContent = n ? ("Allocated to the partners: " + fmtMoney(t) + (L > 0 ? " of the " + fmtMoney(L) + " loan" + (L - t > 0.5 ? " — the other " + fmtMoney(L - t) + " is this loan's own property" : "") : "")) : "Allocated amounts are optional: without them each property's share follows its NOI."; };
+      const draw = () => {
+        const { cur } = parse(), ok = ownKey(), props = opProperties().filter(p => p.key !== ok).map(p => ({ key: p.key, name: p.name, has: (p.loans || []).length > 0, isNew: false }));
+        Object.keys(cur).forEach(k => { if(k !== ok && !props.some(p => p.key === k)) props.push({ key: k, name: cur[k].name, has: false, isNew: true }); });
+        const n = Object.keys(cur).length;
+        box.innerHTML = '<div class="mb-1 flex flex-wrap items-center justify-between gap-2"><span class="text-[11px] font-semibold text-slate-700" id="poolFormCount">'+(n ? ("This loan also secures " + n + " other propert" + (n === 1 ? "y" : "ies")) : "A loan on one property — tick others to make it a pooled loan")+'</span>'+
+          '<input id="poolFormSearch" type="search" placeholder="Find a property" class="w-44 rounded border border-slate-300 px-2 py-0.5 text-xs"></div>'+
+          '<div class="max-h-56 overflow-auto thin-scroll" id="poolFormList">'+props.map(p => { const c = cur[p.key]; return '<label class="flex items-center gap-2 py-0.5 text-sm" data-poolformrow="'+escapeHtml(p.name.toLowerCase())+'">'+
+            '<input type="checkbox" data-poolform="'+escapeHtml(p.key)+'" data-poolname="'+escapeHtml(p.name)+'"'+(c ? ' checked' : '')+'><span class="flex-1">'+escapeHtml(p.name)+
+            (p.isNew ? ' <span class="rounded bg-indigo-50 px-1 text-[10px] font-semibold text-indigo-700">new — added when you save</span>' : p.has ? ' <span class="text-[10px] text-slate-400">has its own loan</span>' : '')+'</span>'+
+            '<input type="text" inputmode="decimal" placeholder="allocated $ (optional)" data-poolformamt="'+escapeHtml(p.key)+'" value="'+(c && c.amt ? money0(c.amt) : '')+'" class="w-40 rounded border border-slate-300 px-2 py-0.5 text-xs text-right"></label>'; }).join("")+'</div>'+
+          '<div class="mt-1 flex gap-2"><input id="poolFormNew" type="text" placeholder="New property (not in the app yet)" class="flex-1 rounded border border-slate-300 px-2 py-0.5 text-xs"><button type="button" id="poolFormAdd" class="rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">Add to this loan</button></div><p id="poolFormAllocSum" class="mt-1 text-[11px] text-slate-500"></p>';
+        box.querySelectorAll("[data-poolformamt]").forEach(x => x.addEventListener("change", () => { x.value = money0(x.value); }));
+        box.querySelectorAll("[data-poolform],[data-poolformamt]").forEach(x => x.addEventListener("change", write));
+        sumLine();
+        const sb = el("poolFormSearch"); if(sb) sb.addEventListener("input", () => { const q = sb.value.trim().toLowerCase(); box.querySelectorAll("[data-poolformrow]").forEach(r => { r.hidden = !!q && r.getAttribute("data-poolformrow").indexOf(q) < 0; }); });
+        const ad = el("poolFormAdd"); if(ad) ad.addEventListener("click", () => { const ne = el("poolFormNew"), nm = (ne.value || "").trim(); if(!nm) return; const k = poolKeyForName(nm);
+          const es = poolSplitNames(inp.value); if(k !== ownKey() && !es.some(e => poolKeyForName(e.replace(/\s*=\s*\$?[\d,.]+\s*$/, "").trim()) === k)) es.push(nm);
+          inp.value = es.join("; "); inp.dispatchEvent(new Event("change", { bubbles: true })); draw(); const nn = el("poolFormNew"); if(nn) nn.focus(); });
+      };
+      draw();
+      const rel = el("f_poolReleases"); if(rel && !rel.dataset.poolRel){ rel.dataset.poolRel = "1"; rel.type = "hidden"; const p = document.createElement("p"); p.className = "mt-1 text-xs text-slate-500"; p.id = "poolFormReleases";
+        const rs = poolReleases({ poolReleases: rel.value }); p.textContent = rs.length ? rs.map(r => r.property + " released " + r.date + " — " + fmtMoney(r.amount) + " paid down").join(" · ") : "None. A property is released from the pool panel on the loan's page."; rel.parentElement.appendChild(p); }
+    }
+    function poolFollowRename(kb, ka, newName){
+      if(!kb || !ka || kb === ka) return false;
+      const nn = String(newName || "").replace(/\s*\(\s*mezz[^)]*\)/i, "").trim() || poolNameOfKey(ka); let ch = false;
+      loans.forEach(l => { const es = poolSplitNames(l.alsoSecures); if(!es.length) return; let c = false;
+        const out = es.map(e => { const m = e.match(/^(.*?)(\s*=\s*\$?[\d,.]+\s*)$/), nm = (m ? m[1] : e).trim(); if(("name:" + normPropName(nm)) === kb || poolKeyForName(nm) === kb){ c = true; return nn + (m ? m[2] : ""); } return e; });
+        if(c){ const was = l.alsoSecures; l.alsoSecures = out.join("; "); ch = true; try{ loanHistoryAdd(l, "alsoSecures", was, l.alsoSecures, "rename"); }catch(e){} } });
+      if(poolTyped[kb]){ poolTyped[ka] = nn; delete poolTyped[kb]; }
+      if(ch) save(); return ch;
+    }
+    function poolImportUnknown(){
+      if(!importState) return [];
+      const known = new Set(); opProperties().forEach(p => known.add(normPropName(p.name))); Object.keys(standaloneProps).forEach(k => known.add(normPropName(standaloneProps[k].name)));
+      importState.drafts.forEach(d => known.add(normPropName(d.propertyName)));
+      const out = []; importState.drafts.forEach(d => poolSplitNames(d.alsoSecures).forEach(e => { const nm = e.replace(/\s*=\s*\$?[\d,.]+\s*$/, "").trim(), n = normPropName(nm); if(n && !known.has(n) && out.indexOf(nm) < 0) out.push(nm); }));
+      return out;
+    }
+    function poolPickerOpen(){
+      const props = opProperties(); let m = document.getElementById("poolPicker"); if(m) m.remove();
+      m = document.createElement("div"); m.id = "poolPicker"; m.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40";
+      const owes = (p) => (p.loans || []).reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0);
+      m.innerHTML = '<div class="w-[540px] max-h-[85vh] overflow-auto rounded-2xl bg-white p-5 shadow-xl"><h3 class="text-base font-bold text-slate-900">Refinance several properties together</h3>'+
+        '<p class="mb-2 text-xs text-slate-500">Tick every property the one new loan will secure &mdash; as many as you like. Every loan on them is paid off. A property with no loan yet (one you have just added) joins the new loan with its NOI.</p>'+
+        '<input id="poolPickSearch" type="search" placeholder="Find a property" class="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-sm">'+
+        '<div id="poolPickList" class="max-h-[45vh] overflow-auto thin-scroll">'+props.map(p => { const o = owes(p), inPool = (p.pledged || []).length && !(p.loans || []).length;
+          return '<label class="flex items-center gap-2 py-1 text-sm" data-poolpickrow="'+escapeHtml(p.name.toLowerCase())+'"><input type="checkbox" data-poolpick="'+escapeHtml(p.key)+'"> <span class="flex-1">'+escapeHtml(p.name)+'</span><span class="text-[11px] text-slate-400">'+(o > 0 ? 'owes '+fmtMoney(o) : inPool ? 'in a pooled loan' : 'no loan yet')+'</span></label>'; }).join("")+'</div>'+
+        '<p id="poolPickNote" class="mt-2 text-xs font-semibold text-slate-600">Nothing ticked yet</p>'+
+        '<div class="mt-3 flex justify-end gap-2"><button type="button" id="poolPickCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="poolPickGo" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white">Refinance together</button></div></div>';
+      document.body.appendChild(m);
+      const picked = () => [...m.querySelectorAll("[data-poolpick]:checked")].map(x => x.getAttribute("data-poolpick"));
+      const upd = () => { const ks = picked(), id = "multi:" + ks.join("|"), ms = ks.length ? multiMembers(id) : [], owe = ms.reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0), nn = poolNOIOfKeys(ks), fresh = ks.filter(k => !ms.some(l => poolKeys(l).indexOf(k) >= 0 || propertyKey(l) === k)).length;
+        m.querySelector("#poolPickNote").textContent = ks.length ? (ks.length + " ticked · " + ms.length + " loan" + (ms.length === 1 ? "" : "s") + " to pay off (" + fmtMoney(owe) + ")" + (fresh ? " · " + fresh + " with no loan yet" : "") + " · NOI " + (nn != null ? fmtMoney(nn) : "—")) : "Nothing ticked yet"; };
+      m.querySelectorAll("[data-poolpick]").forEach(cb => cb.addEventListener("change", upd));
+      const sb = m.querySelector("#poolPickSearch"); sb.addEventListener("input", () => { const q = sb.value.trim().toLowerCase(); m.querySelectorAll("[data-poolpickrow]").forEach(r => { r.hidden = !!q && r.getAttribute("data-poolpickrow").indexOf(q) < 0; }); });
+      m.querySelector("#poolPickCancel").addEventListener("click", () => m.remove());
+      m.querySelector("#poolPickGo").addEventListener("click", () => { const keys = picked();
+        if(keys.length < 2){ toast("Tick at least two properties", "info"); return; }
+        const id = "multi:" + keys.join("|");
+        if(!multiMembers(id).length){ toast("None of these has a loan to pay off. To put one new loan on them, add the loan and tick them under “Also secures”.", "info"); return; }
+        m.remove(); activateTab("home"); state.activeId = id; refiDraftsKey = ""; startRefi(); });
+    }
+    function comboMembers(id){ if(typeof id === "string" && id.slice(0,6) === "multi:") return multiMembers(id); return (typeof id === "string" && id.slice(0,6) === "combo:") ? loans.filter(l => propertyKey(l) === id.slice(6) && !loanIsInactiveSelf(l)) : []; }
     // A panel shown on the loan record when the property carries more than one
     // loan: the stack, plus leverage read on the combined debt.
     function combinedPositionHtml(loan){
@@ -9667,19 +9951,23 @@ tr.flagged:hover td{background:#fee2e2}
     // (default = underwritten when we have it — the figure the loan is sized on).
     var refiBasisByKey = {};
     function refiNOIOptions(loan){
+      if(loan && (loan._poolKeys || isPoolLoan(loan))){ const ks = poolKeys(loan), all = (f) => ks.every(k => gdNOICache[k] && gdNOICache[k][f] != null && isFinite(gdNOICache[k][f]));
+        const ip = all("inPlace") ? ks.reduce((a, k) => a + gdNOICache[k].inPlace, 0) : null, uw = all("underwritten") ? ks.reduce((a, k) => a + gdNOICache[k].underwritten, 0) : null;
+        return { inPlace: ip, underwritten: uw, hasBoth: ip != null && uw != null, period: null }; }
       const g = loan ? gdNOICache[propertyKey(loan)] : null;
       const inPlace = (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null;
       const underwritten = (g && g.underwritten != null && isFinite(g.underwritten)) ? g.underwritten : null;
       return { inPlace: inPlace, underwritten: underwritten, hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
     }
     // 2.9.7 (#28) — the NOI typed on the property's loan (senior first), when there is one.
-    function refiEnteredNOI(loan){ if(!loan) return null; const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov;   // 2.9.7 (#45) — your override first
+    function refiEnteredNOI(loan){ if(!loan) return null; if(loan._poolKeys || isPoolLoan(loan)) return poolRefiNOI(poolKeys(loan), "entered"); const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov;   // 2.9.7 (#45) — your override first
       const ms = refiMembers(loan).slice().sort(loanRank); for(const m of ms){ if(m && m.noi != null && m.noi !== "" && isFinite(Number(m.noi))) return Number(m.noi); } return propEnteredNOI(k); }
     function refiBasis(loan){
       const o = refiNOIOptions(loan), b = loan ? refiBasisByKey[propertyKey(loan)] : null;
       if(b === "entered" && refiEnteredNOI(loan) != null) return "entered";
       if(b === "inplace" && o.inPlace != null) return "inplace";
       if(b === "underwritten" && o.underwritten != null) return "underwritten";
+      if(loan && (loan._poolKeys || isPoolLoan(loan)) && poolKeys(loan).some(k => propNOIOverride(k) != null)) return "entered";
       if(loan && propNOIOverride(propertyKey(loan)) != null) return "entered";   // 2.9.7 (#45) — your override replaces the T12 unless you pick another basis
       if(o.underwritten != null) return "underwritten";   // default: the sized-to figure
       if(o.inPlace != null) return "inplace";
@@ -10046,6 +10334,9 @@ tr.flagged:hover td{background:#fee2e2}
     //      loan ends ≥ the penalty; closing costs don't count — they come either way) → Refinance, even with cash out;
     //  (4) the rate is lower but doesn't pay for the penalty, and the extra cash is more than 20% of what you
     //      owe → your decision: "Refinance now — with $X cash" or "Wait until <maturity>";
+    //      2.9.14 (R1) — only while the new loan is more than what you owe + the penalty. If the penalty eats the extra
+    //      cash, it's a loss: Don't refinance — "you'd lose $X". Closing costs don't count (your rule), and $X cash on
+    //      the "Refinance now" choice is the new loan − what you owe − the penalty;
     //  (5) anything else → Don't refinance — including a higher new rate, whatever the cash.
     const REFI_DECISION_CASH = 0.20;
     function refiShouldStage(loan, draft){
@@ -10060,14 +10351,15 @@ tr.flagged:hover td{background:#fee2e2}
       const penalty = refiPenalty(loan), saved = cheaper ? refiInterestSaved(loan, newRate) : 0;
       const closingPct = (draft._closingPct != null ? draft._closingPct : loanClosingPct(loan)), closing = closingPct * newAmt;
       const cashPct = payoff > 0 ? cashOut / payoff : 0;
-      const cashAfterCosts = cashOut - penalty - closing;
+      const cashNet = cashOut - penalty;   // 2.9.14 (R1) — the new loan − what you owe − the penalty
       let kind, why;
       if(maturityYes){ kind = "yes"; why = "maturity"; }
       else if(cheaper && saved >= penalty - EPS_MONEY){ kind = "yes"; why = "saves"; }
-      else if(cheaper && cashPct > REFI_DECISION_CASH){ kind = "decision"; why = "cash"; }
+      else if(cheaper && cashPct > REFI_DECISION_CASH && cashNet > EPS_MONEY){ kind = "decision"; why = "cash"; }
+      else if(cheaper && cashPct > REFI_DECISION_CASH){ kind = "no"; why = "loses"; }
       else { kind = "no"; why = !cheaper ? (pricier ? "pricier" : "same") : "penalty"; }
       return { should: kind === "yes", kind: kind, why: why, cheaper: cheaper, pricier: pricier,
-               cashOut: cashOut, cashOutYes: cashOut > EPS_MONEY, cashPct: cashPct, cashAfterCosts: cashAfterCosts,
+               cashOut: cashOut, cashOutYes: cashOut > EPS_MONEY, cashPct: cashPct, cashNet: cashNet, loss: Math.max(0, -cashNet),
                maturityYes: maturityYes, monthsToMat: monthsToMat, maturityDate: ends.date, curRate: curRate, newRate: newRate,
                payoff: payoff, newAmt: newAmt, penalty: penalty, saved: saved, closing: closing, execCost: penalty + closing };
     }
@@ -10101,6 +10393,9 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="space-y-1">'+rows+'</div>'+margin+
       '</div>';
     }
+    function refiGroupInfo(loan){ if(!loan) return null; const ks = loan._poolKeys || (isPoolLoan(loan) ? poolKeys(loan) : null); if(!ks || ks.length < 2) return null;
+      const ns = ks.map(poolNameOfKey); return { n: ks.length, names: ns.length > 5 ? ns.slice(0, 3).join(" · ") + " + " + (ns.length - 3) + " more" : ns.join(" · "), loans: loan._poolKeys ? multiMembers(loan._id).length : 1 }; }
+    function refiGroupLabel(loan){ const g = refiGroupInfo(loan); return g ? "All " + g.n + " properties (" + escapeHtml(g.names) + ")" + (loan._poolKeys ? ", " + g.loans + (g.loans === 1 ? " loan" : " loans") + " paid off" : "") : null; }
     function refiVerdictHtml(loan, v){
       v = v || refiVerdict(loan, refiDrafts[1]);
       const can = v.can, should = v.should, yes = v.refi, decision = v.decision;
@@ -10126,10 +10421,10 @@ tr.flagged:hover td{background:#fee2e2}
 
       // Stage 1 line.
       const canLine = can.can
-        ? ("This property supports up to <strong>"+fmtMoney(can.maxLoan)+"</strong> &mdash; "+
+        ? ((refiGroupInfo(loan) ? "These "+refiGroupInfo(loan).n+" properties support" : "This property supports")+" up to <strong>"+fmtMoney(can.maxLoan)+"</strong> &mdash; "+
            (can.gap > 1 ? fmtMoney(can.gap)+" more than" : "enough to cover")+" the <strong>"+fmtMoney(can.payoff)+"</strong> you owe. "+
            "Its "+refiBindingWord(can.binding)+" is the limit that sets that ceiling.")
-        : ("The most this property supports today is <strong>"+fmtMoney(can.maxLoan)+"</strong>, but you owe <strong>"+fmtMoney(can.payoff)+"</strong> &mdash; a <strong>"+fmtMoney(-can.gap)+"</strong> shortfall. "+
+        : ((refiGroupInfo(loan) ? "The most these "+refiGroupInfo(loan).n+" properties support" : "The most this property supports")+" today is <strong>"+fmtMoney(can.maxLoan)+"</strong>, but you owe <strong>"+fmtMoney(can.payoff)+"</strong> &mdash; a <strong>"+fmtMoney(-can.gap)+"</strong> shortfall. "+
            "Its "+refiBindingWord(can.binding)+" is what caps it. You can&rsquo;t refinance the whole balance until NOI rises, the rate falls, or you pay that gap down.");
 
       // Stage 2 (only when Stage 1 clears) — your rule, in order.
@@ -10142,7 +10437,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(s.kind === "decision"){
           // 2.9.7 (#181, #184) — your decision: two options and the full proposed loan, no explanation.
           sLine = '<div class="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2" data-refidecision>'+
-            '<div class="rounded-lg border-2 border-emerald-300 bg-white px-3 py-2"><p class="text-sm font-bold text-emerald-800">Refinance now &mdash; with '+fmtMoney(Math.max(0, s.cashAfterCosts))+' cash</p><p class="text-[11px] text-slate-500">after the early-payoff penalty and closing &middot; Save the proposed loan below</p></div>'+
+            '<div class="rounded-lg border-2 border-emerald-300 bg-white px-3 py-2"><p class="text-sm font-bold text-emerald-800">Refinance now &mdash; with '+fmtMoney(s.cashNet)+' cash</p><p class="text-[11px] text-slate-500">after paying off what you owe and the early-payoff penalty &middot; Save the proposed loan below</p></div>'+
             '<div class="rounded-lg border-2 border-slate-300 bg-white px-3 py-2"><p class="text-sm font-bold text-slate-800">Wait until '+(s.maturityDate ? fmtDateLong(s.maturityDate) : "today&rsquo;s loan ends")+'</p><p class="text-[11px] text-slate-500">nothing changes</p></div>'+
           '</div>';
         } else if(s.why === "maturity"){
@@ -10150,6 +10445,9 @@ tr.flagged:hover td{background:#fee2e2}
         } else if(s.why === "saves"){
           sLine = rateMove+" on the money you owe &mdash; it saves <strong>"+fmtMoney(s.saved)+"</strong> of interest until today&rsquo;s loan ends"+endsTxt+", "+(s.penalty > 0 ? "more than the <strong>"+fmtMoney(s.penalty)+"</strong> early-payoff penalty" : "with no early-payoff penalty")+"."+
             (s.cashOutYes ? " You&rsquo;d also take <strong>"+fmtMoney(s.cashOut)+"</strong> out." : "");
+        } else if(s.why === "loses"){
+          // 2.9.14 (R1) — the extra cash doesn't cover the penalty: a refinance that loses money is never proposed.
+          sLine = rateMove+", but the <strong>"+fmtMoney(s.penalty)+"</strong> early-payoff penalty is more than the extra cash (<strong>"+fmtMoney(s.cashOut)+"</strong>, "+Math.round(s.cashPct*100)+"% of what you owe) &mdash; you&rsquo;d lose <strong>"+fmtMoney(s.loss)+"</strong>. Don&rsquo;t refinance.";
         } else if(s.why === "penalty"){
           sLine = rateMove+", but it saves only <strong>"+fmtMoney(s.saved)+"</strong> of interest until today&rsquo;s loan ends"+endsTxt+" &mdash; less than the <strong>"+fmtMoney(s.penalty)+"</strong> early-payoff penalty"+
             (s.cashOutYes ? ", and the extra cash ("+fmtMoney(s.cashOut)+", "+Math.round(s.cashPct*100)+"% of what you owe) is not more than 20%" : "")+". Don&rsquo;t refinance.";
@@ -10171,11 +10469,11 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex items-center gap-3">'+
           '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":"&#10007;")+'</span>'+
           '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">'+(loan._combined?"The whole property":"This property")+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
+          '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You owe (payoff)", fmtMoney(can.payoff))+
-          refiStat("Property supports", fmtMoney(can.maxLoan))+
+          refiStat(refiGroupInfo(loan) ? "Properties support" : "Property supports", fmtMoney(can.maxLoan))+
           refiStat("Your rate today", fmtPct(curRate))+
           refiStat("Proposed rate", fmtPct(can.rate))+
         '</dl>'+
@@ -10477,7 +10775,8 @@ tr.flagged:hover td{background:#fee2e2}
             // 2.9.7 (#22) — never more than the property supports.
             if(max > 0 && v > max + 0.5){ draft.originalAmount = Math.floor(max); toast("The property supports up to " + fmtMoney(max) + " — the amount stops there.", "info"); renderRefi(loan); return; }
             // 2.9.7 (#185) — in the "your decision" case, never so low that the extra cash drops to 20% or less.
-            if(vd.decision){ const payoff = vd.should.payoff; if(payoff > 0 && (v - payoff) / payoff <= REFI_DECISION_CASH){ refiNotice("You can’t do that", "You can’t do that — if you do, you won’t be able to refinance."); renderRefi(loan); return; } }
+            // 2.9.14 (R1) — nor so low that it loses money (the new loan must stay above what you owe + the penalty).
+            if(vd.decision){ const payoff = vd.should.payoff; if(payoff > 0 && ((v - payoff) / payoff <= REFI_DECISION_CASH || v - payoff - vd.should.penalty <= 1)){ refiNotice("You can’t do that", "You can’t do that — if you do, you won’t be able to refinance."); renderRefi(loan); return; } }
             draft.originalAmount = v;
           }
           else if(field === "spread"){ draft._baseSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }   // bps → decimal; tier re-applied
@@ -10521,9 +10820,10 @@ tr.flagged:hover td{background:#fee2e2}
       if(!v.can.sized) return name + ": I can’t judge this yet — the property has no NOI (upload its T12 or enter the NOI).";
       let s = name + " — you owe " + fmtMoney(v.can.payoff) + (n > 1 ? " on " + n + " loans together" : "") + ". Can you? " + (v.can.can ? "Yes — it supports up to " + fmtMoney(v.can.maxLoan) + "." : "No — it supports only " + fmtMoney(v.can.maxLoan) + ".");
       if(v.can.can){ const w = v.should;
-        s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(Math.max(0, w.cashAfterCosts)) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
+        s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(w.cashNet) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
           : w.kind === "yes" ? (w.why === "maturity" ? "Yes — today’s loan ends within 12 months." : "Yes — it saves " + fmtMoney(w.saved) + " of interest until today’s loan ends, against a " + fmtMoney(w.penalty) + " early-payoff penalty.")
-          : "No — " + (w.why === "penalty" ? "the interest saved (" + fmtMoney(w.saved) + ") doesn’t pay the " + fmtMoney(w.penalty) + " penalty." : "the new rate isn’t lower.")); }
+          : "No — " + (w.why === "loses" ? "the " + fmtMoney(w.penalty) + " penalty is more than the extra cash (" + fmtMoney(w.cashOut) + ") — you’d lose " + fmtMoney(w.loss) + "."
+            : w.why === "penalty" ? "the interest saved (" + fmtMoney(w.saved) + ") doesn’t pay the " + fmtMoney(w.penalty) + " penalty." : "the new rate isn’t lower.")); }
       if(d) s += " Proposed: " + fmtMoney(d.originalAmount) + " at " + fmtPct(compute(d).derived.currentRate) + " (" + (d.rateType === "Hybrid ARM" ? "hybrid" : String(d.rateType || "").toLowerCase()) + ", " + Math.round((d.loanTermMonths || 0) / 12) + "-year term).";
       return s;
     }
@@ -10550,6 +10850,8 @@ tr.flagged:hover td{background:#fee2e2}
       nl.propertyName = (sr && sr.propertyName) || opPropDisplayName(propertyKey(loan));
       nl.propertyAddress = (sr && sr.propertyAddress) || nl.propertyAddress || "";
       nl.lienPosition = "Senior"; nl.loanStatus = ""; nl.lenderName = ""; nl.loanNumber = "";
+      delete nl._poolKeys; delete nl.alsoSecures;
+      const poolKs = (loan._poolKeys && loan._poolKeys.length > 1) ? loan._poolKeys : (isPoolLoan(loan) ? poolKeys(loan) : null);
       ["_closingPct","_tenor","_years","_combined","_members","_seniorId","_rateTypeLabel","_rateTypeSub","_history","_fixedIndex","_fixedSpread","_baseSpread","_tierDelta","_effSpread","archived","archivedAt","paidOffReason","paidOffAt"].forEach(k => delete nl[k]);
       const err = validateLoan(nl);
       if(err){ toast(err, "info"); return { ok:false, error: err }; }
@@ -10561,6 +10863,7 @@ tr.flagged:hover td{background:#fee2e2}
         try{ loanHistoryAdd(l, "loanStatus", was, "Paid off (refinanced)", from === "assistant" ? "assistant" : "refinance", { note: "replaced by the new " + fmtMoney(nl.originalAmount) + " loan" }); }catch(e){}
       });
       try{ loanHistoryAdd(nl, "created", null, "added", from === "assistant" ? "assistant" : "refinance", { file: "refinanced " + olds.map(loanLabel).join(" + ") }); }catch(e){}
+      if(poolKs){ const lead = propertyKey(nl); nl._id = nl._id || uid(); POOL_SRC.setKeys(nl, [lead].concat(poolKs.filter(k => k !== lead))); }
       loans.push(nl); state.activeId = nl._id; refiDraftsKey = ""; save();
       toast("Saved — " + olds.map(loanLabel).join(" and ") + (olds.length === 1 ? " is" : " are") + " now Paid off (refinanced).", "check");
       setMode("view"); try{ redrawAll(); }catch(e){}
@@ -10874,7 +11177,7 @@ tr.flagged:hover td{background:#fee2e2}
         var pk = propertyKey(l), gnoi = gdNOICache[pk], hasGD = !!(gnoi && gnoi.inPlace != null);
         var noiVal = loanNOI(l);
         var o = {
-          property: keep(l.propertyName) || loanLabel(l),
+          property: keep(l.propertyName) || loanLabel(l), securesProperties: isPoolLoan(l) ? poolKeys(l).map(poolNameOfKey) : undefined,
           lender: keep(l.lenderName), propertyType: keep(l.propertyType), lienPosition: keep(l.lienPosition),
           rateType: keep(l.rateType),
           noteRate: (l.annualRate!=null && l.annualRate!=="") ? l.annualRate : undefined,
@@ -10927,6 +11230,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- propose_profile_change {name, changes, sources?}: a PROPERTY's own facts: propertyName, address, residentialUnits, commercialUnits, rentableSqFt, yearBuilt, acquisitionDate, manager, dataSource, yardiCode, notes, and noi (the entered NOI of a property with no loan). You can never set noiOverride — that is the operator's own.",
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
+      "- POOLED LOANS (one loan secured by several properties): set_pool {name, properties:[names], allocations?:{name: amount}} makes the named loan one loan secured by its own property plus those listed (a name not in the app yet becomes a new property; allocations are each property's allocated amount). release_from_pool {name, property, price?, date?, keepPayment?}: take one property out of a pooled loan with a paydown (default price: its share of today's balance; the payment is recalculated unless keepPayment). refinance_together {properties:[names]}: open ONE refinance for several properties — every loan on them is paid off and the NOI is all of theirs; properties with no loan yet can be included.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
       "FILES WITH SEVERAL PARTS (a workbook with several sheets, or a rent roll with several properties' sections on one sheet): the app never decides by itself which part is whose. A card lists every part with a list of the operator's properties: in a property chat this property is set on its part(s) when the app can tell (or the section(s) you name), the other parts start unticked, and \"Add as a new property\" is never set — only the operator picks it. Full freedom (2.9.11): any part can go to any property; SEVERAL parts can go to ONE property (a property in phases — \"Heritage Key Villas Phase 1 … 4\"), and the app COMBINES them: a rent roll unit by unit (units, occupied, average rents, sq ft are the whole property's), T12 sheets line by line, month by month; one part can also go to several properties. Each property keeps the answer (sheet numbers, sections) in its general-data.json and reads ONLY its own parts. In the text you get, a multi-part file of this property holds only its own parts; a part not answered yet is left out — never use another part's figures for this property, and when one isn't answered say so and point to the card (Documents → Answer). Saving, importing, copying or moving such a file always goes through that card.",
@@ -11221,6 +11525,27 @@ tr.flagged:hover td{background:#fee2e2}
     }
 
     var aiAsstActions = {
+      // 2.9.14 — pooled loans
+      set_pool: function(a){ var rl=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), bad=aiAsstLoanMiss(rl, a&&a.name); if(bad) return bad; var l=rl.loan;
+        var props=(a&&a.properties)||[], alloc=(a&&a.allocations)||{}; if(!Array.isArray(props)) props=[props];
+        var own=propertyKey(l), parts=props.map(function(n){ return String(n).trim(); }).filter(function(n){ return n && poolKeyForName(n)!==own; }).map(function(n){ var v=Number(alloc[n]); return n+(v>0?" = "+Math.round(v):""); });
+        var nv=parts.join("; "), ov=l.alsoSecures||"";
+        return aiAsstApprovalCard('Make <b>'+escapeHtml(loanLabel(l))+'</b> one loan secured by '+(parts.length+1)+' properties:', aiAsstRow("alsoSecures","Also secures", ov||"—", nv||"—"), function(){
+          var was=l.alsoSecures; l.alsoSecures=nv; try{ loanHistoryAdd(l,"alsoSecures",was,nv,"assistant"); }catch(e){} save(); try{ redrawAll(); }catch(e){}
+          return {ok:true, html:'✓ '+escapeHtml(loanLabel(l))+' now secures '+escapeHtml(poolKeys(l).map(poolNameOfKey).join(", "))+'.', toast:'Pool saved'}; });
+      },
+      release_from_pool: function(a){ var rl=aiAsstResolveLoan(a&&a.name, {exactLoan:true}), bad=aiAsstLoanMiss(rl, a&&a.name); if(bad) return bad; var l=rl.loan, k=poolKeyForName(String((a&&a.property)||""));
+        if(!isPoolLoan(l) || poolKeys(l).indexOf(k)<0) return {ok:false,msg:String((a&&a.property)||"That property")+" isn’t on "+loanLabel(l)+"’s pool."};
+        var df=poolReleaseDefault(l,k), t=todayParts(), price=(a&&Number(a.price)>0)?Number(a.price):df.price, date=(a&&a.date)||partsToISO(t.y,t.mo,t.d), re=!(a&&a.keepPayment);
+        return aiAsstApprovalCard('Release <b>'+escapeHtml(poolNameOfKey(k))+'</b> from '+escapeHtml(loanLabel(l))+': '+fmtMoney(price)+' paid down on '+escapeHtml(date)+(re?', payment recalculated':', payment kept')+'.', "", function(){
+          poolRelease(l,k,price,date,re); return {ok:true, html:'✓ Released '+escapeHtml(poolNameOfKey(k))+' — '+fmtMoney(price)+' paid down.', toast:'Released'}; });
+      },
+      refinance_together: function(a){ var ns=(a&&a.properties)||[]; if(!Array.isArray(ns)) ns=[ns]; var ks=[]; ns.forEach(function(n){ var k=aiAsstFindPropKey(n)||poolKeyForName(n); if(k&&ks.indexOf(k)<0) ks.push(k); });
+        if(ks.length<2) return {ok:false,msg:"Name at least two properties to refinance together."};
+        var id="multi:"+ks.join("|"); if(!multiMembers(id).length) return {ok:false,msg:"None of those properties has a loan to pay off. To put one new loan on them, add the loan and list them under “Also secures” (set_pool)."};
+        var t=getLoan(id); activateTab("home"); state.activeId=id; refiDraftsKey=""; try{ startRefi(); }catch(e){}
+        return {ok:true, msg: refiSummaryText(t)};
+      },
       // 2.9.7 (#50, #88, #89) — "open …" runs only when the operator asks, and brings that tab to the front.
       open_loan: function(a){ var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan, k=propertyKey(l), p=opProp(k);
         activateTab("home"); selectLoan((rl.sameProperty && p && p.loans.length>1) ? "combo:"+k : l._id); return {ok:true,close:true,msg:"Opened "+((rl.sameProperty&&p)?p.name:loanLabel(l))+"."}; },
@@ -11621,7 +11946,7 @@ tr.flagged:hover td{background:#fee2e2}
           rows.push(aiAsstRow("spread","Spread (your lender’s quote)", fmtPct(d._baseSpread||0), fmtPct(sp))); ops.push(function(dd){ dd._baseSpread=sp; }); }
         if(c.amount!=null && isFinite(Number(c.amount))){ var amt=Number(c.amount);   // 2.9.7 (#22, #185) — the same limits as the screen
           if(vd.can && vd.can.maxLoan>0 && amt>vd.can.maxLoan+0.5) return {ok:false,msg:"The property supports up to "+fmtMoney(vd.can.maxLoan)+" — the amount can’t go above that."};
-          if(vd.decision && vd.should.payoff>0 && (amt-vd.should.payoff)/vd.should.payoff<=REFI_DECISION_CASH) return {ok:false,msg:"You can’t do that — if you do, you won’t be able to refinance."};
+          if(vd.decision && vd.should.payoff>0 && ((amt-vd.should.payoff)/vd.should.payoff<=REFI_DECISION_CASH || amt-vd.should.payoff-vd.should.penalty<=1)) return {ok:false,msg:"You can’t do that — if you do, you won’t be able to refinance."};
           rows.push(aiAsstRow("amount","Loan amount", fmtMoney(d.originalAmount), fmtMoney(amt))); ops.push(function(dd){ dd.originalAmount=amt; }); }
         if(c.termYears!=null && isFinite(Number(c.termYears))){ var tm=Math.max(1,Math.round(Number(c.termYears)*12)); rows.push(aiAsstRow("term","Term", Math.round((d.loanTermMonths||0)/12)+" years", c.termYears+" years"));
           ops.push(function(dd){ dd.loanTermMonths=tm; var tp=todayParts(),fp=addMonths(tp,1),nm2=addMonths(fp,tm-1); dd.maturityDate=partsToISO(nm2.y,nm2.mo,1); }); }
