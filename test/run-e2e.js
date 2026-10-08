@@ -14,7 +14,8 @@ const useXvfb = process.platform === 'linux' && !env.DISPLAY;
 const failed = [];
 for (const f of files) {
   const t0 = Date.now();
-  const cmd = useXvfb ? 'xvfb-run' : process.execPath, args = useXvfb ? ['-a', process.execPath, path.join(dir, f)] : [path.join(dir, f)];
+  const pre = ['-r', path.join(dir, '_t12auto.js')];   // 2.9.16 — answers the T12 gate's pop-ups in tests written before it (not in LDS_T12_MANUAL ones)
+  const cmd = useXvfb ? 'xvfb-run' : process.execPath, args = useXvfb ? ['-a', process.execPath].concat(pre, [path.join(dir, f)]) : pre.concat([path.join(dir, f)]);
   const r = spawnSync(cmd, args, { encoding: 'utf8', env, cwd: path.join(__dirname, '..'), timeout: 10 * 60 * 1000 });
   const out = ((r.stdout || '') + (r.stderr || '')).trim().split('\n');
   const ok = r.status === 0;

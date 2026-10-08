@@ -68,6 +68,32 @@ ok(resN.noi.row === otherE && resN.rows.filter(function (e){ return e.excel === 
 var resNo = R.check(rd, [{ row: acc[1].excel, role: "not-operating" }]);
 ok(resNo.parsed.rows.length === acc.length - 1 && resNo.parsed.belowLine.length === 1, "a row you mark not operating leaves the accounts");
 
+console.log("— your changes make the figures");
+near(res.parsed.totals.noi, st.noi, "no changes → the statement's printed NOI");
+var acctE = acc.filter(function (e){ return e.side === "expense"; })[0], resY = R.check(rd, [{ row: acctE.excel, amount: acctE.amount + 600, note: "per the GL" }]);
+near(resY.parsed.totals.noi, st.noi - 600, "an expense amount you set $600 higher → the NOI is $600 lower (your reading, not the printed total)");
+near(SB.fromParse(resY.parsed).inPlaceNOI, st.noi - 600, "…in the figures every screen uses too");
+var pY = resY.parsed.rows.filter(function (r){ return r.row === acctE.row; })[0], mSum = Object.keys(pY.monthly).reduce(function (t, k){ return t + pY.monthly[k]; }, 0);
+near(mSum, acctE.amount + 600, "…and its months carry your amount (spread in the file's proportions)");
+var noiM = resY.parsed.totalsMonthly.noi, noiMSum = Object.keys(noiM).reduce(function (t, k){ return t + noiM[k]; }, 0);
+near(noiMSum, st.noi - 600, "…so the monthly NOI adds up to it");
+var incE = acc.filter(function (e){ return e.side === "income"; })[1], resZ = R.check(rd, [{ row: incE.excel, side: "expense" }]);
+near(resZ.parsed.totals.noi, st.noi - 2 * incE.amount, "an income account you move to expenses lowers the NOI by twice its amount");
+var resC2 = R.check(rd, [{ row: incE.excel, cat: "OTH" }]);
+near(resC2.parsed.totals.noi, st.noi, "a category alone changes no total");
+
+console.log("— a T12 in two sheets: your changes reach the combined statement");
+var FP = require("../file-parts.js"), T12Parse = require("../t12-parse.js");
+var MM = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map(function (m){ return m + " 2026"; });
+var ln = function (l, v){ return [l].concat(MM.map(function (){ return v; })).concat([12 * v]); };
+var ph = function (rent, rm){ return [["Phase"], [], ["Account"].concat(MM).concat(["Total"]), ["INCOME"], ln("Rent", rent), ln("TOTAL INCOME", rent), ["EXPENSES"], ln("Repairs", rm), ln("TOTAL EXPENSES", rm), ln("NET OPERATING INCOME", rent - rm)]; };
+var g1 = ph(1000, 100), g2 = ph(500, 50), cm = FP.combineT12Grids([g1, g2], { T12Parse: T12Parse }, { title: "QG" });
+var cov = R.combineOverrides([{ grid: g1, overrides: [{ row: 8, amount: 1260, note: "GL p1" }] }, { grid: g2, overrides: [{ row: 8, amount: 630, note: "GL p2" }, { row: 5, cat: "GPR" }] }], cm.grid);
+var cRep = cov.filter(function (o){ return cm.grid[o.row - 1][0] === "Repairs"; })[0], cRent = cov.filter(function (o){ return cm.grid[o.row - 1][0] === "Rent"; })[0];
+ok(cRep && cRep.amount === 1890 && /GL p1/.test(cRep.note) && /GL p2/.test(cRep.note), "the two sheets' repairs amounts of yours add up on the combined line (1,260 + 630 = 1,890), both notes kept");
+ok(cRent && cRent.cat === "GPR" && cRent.amount == null, "a category set on one sheet's row reaches the combined line");
+near(R.check(R.read(cm.grid), cov).parsed.totals.noi, 12 * 1500 - 1890, "the combined NOI follows them");
+
 console.log("— the AI's answer, compared at every level");
 function aiFrom(res2){ return { accounts: res2.rows.filter(function (e){ return e.role === "account"; }).map(function (e){ return { row: e.excel, label: e.label, role: e.side, category: e.cat, annual: e.amount, monthly: Object.keys(e.monthly).map(function (k){ return { month: k, amount: e.monthly[k] }; }) }; }),
   boxes: res2.boxes.map(function (b){ var t = res2.rows.filter(function (e){ return e.excel === b.totalRow; })[0]; return { name: b.name, nameRow: b.headingRow, totalRow: b.totalRow, total: t ? t.amount : null }; }),
@@ -87,6 +113,9 @@ ok(R.compare(res, ai3).items.some(function (i){ return i.kind === "box"; }), "th
 console.log("— what the AI is given");
 var inp = R.aiInput(g, { fileName: "x.xlsx", sheet: "T12" }).split("\n");
 ok(/^Row 1: \(empty\)$/.test(inp[1]) && /^Row 3: Income Statement/.test(inp[3]), "the AI gets every row from Excel row 1, empty ones included, numbered as in Excel");
+var serial = [["Description"].concat([46023, 46054, 46082]).concat(["Total"]), ["INCOME"], ["Rent", 100, 100, 100, 300], ["TOTAL INCOME", 100, 100, 100, 300], ["NET OPERATING INCOME", 100, 100, 100, 300]];
+var sIn = R.aiInput(serial).split("\n");
+ok(/^Row 1: Description \| Jan 2026 \| Feb 2026 \| Mar 2026 \| Total$/.test(sIn[0]), "month headings Excel keeps as dates are shown to the AI as the months they are (" + sIn[0] + ")");
 ok(/from Excel row 1/.test(R.aiInstruction()) && /Stop at the Net Operating Income row/.test(R.aiInstruction()), "…and is told to read from row 1 and stop at the NOI");
 
 console.log("\n" + (fails ? fails + " FAILED, " : "") + "all " + passes + " t12-read checks " + (fails ? "run" : "passed"));

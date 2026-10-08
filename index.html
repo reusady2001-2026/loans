@@ -29,6 +29,7 @@
   <script src="./file-parts.js"></script>
   <script src="./rent-roll.js"></script>
   <script src="./t12-check.js"></script>
+  <script src="./t12-read.js"></script>
   <script src="./rate-history.js"></script>
   <script src="./ocr.js"></script>
   <script src="./vendor/paddleocr/paddle-engine.js"></script>
@@ -993,7 +994,7 @@
   </div>
 
   <!-- Confirm modal -->
-  <div id="confirmModal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+  <div id="confirmModal" class="fixed inset-0 z-[99] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
     <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
       <h3 id="confirmTitle" class="text-base font-bold text-slate-900">Are you sure?</h3>
       <p id="confirmText" class="mt-2 text-sm text-slate-500">This action cannot be undone.</p>
@@ -3802,32 +3803,13 @@ tr.flagged:hover td{background:#fee2e2}
       try{
         const r = await opDiskSaveT12(key, file, sheets.length ? sheets[0].sheet : "");
         if(!r || !r.ok){ toast("Couldn’t save the T12 to the property folder"+(r && r.error ? " ("+r.error+")" : "")+".","error"); return; }
-        await opSelectProperty(key, { skipAutoPush: true });   // re-read + re-parse from the file just saved (don't auto-push yet — the record is about to be rebuilt)
-        var gd = null; try{ gd = await opUpdateGeneralData(key); }catch(e){}   // roll this T12's months into General Data (history + both NOIs); the rebuild drops the now-stale push
-        try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}   // 2.9.7 (#78) — re-run "what to push" only if the statement in use really changed (its checksum), never for a duplicate or an older year
-        try{ opT12Check(key); }catch(e){}   // 2.9.7 (#108) — the AI double-reads a NEW T12 in the background (once per file; skipped for a duplicate or an older year)
-        if(opFocusKey === key) renderUnderwriting();
-        if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); return; }   // same bytes → not re-saved (checksum)
-        // 2.9.7 (#14) — an older year's T12: the newer statement stays in use; this one joins the history.
-        try{
-          const cur = await opReadPropT12(key), savedId = r.file && r.file.id;
-          if(cur && savedId && cur.id !== savedId){
-            const upGrid = opGridFromWorkbook(new Uint8Array(await file.arrayBuffer()));
-            if(upGrid) await opMergeT12History(key, upGrid);
-            const ms = opGridMonths(cur.grid), rng = ms.length ? (ymShort(ms[Math.max(0, ms.length - 12)]) + " – " + ymShort(ms[ms.length - 1])) : cur.name;
-            if(opFocusKey === key) renderUnderwriting();
-            toast("Using " + rng + " (newest). The older file was added to history.", "info");
-            return;
-          }
-        }catch(e){}
-        // Report the app's RULE-BASED in-place NOI (annualized last-3-months × 4 when the rule fires) —
-        // never the raw printed footing, which would show the 12-month figure on a lease-up property.
-        const noi = (gd && gd.noi && gd.noi.inPlace != null) ? gd.noi.inPlace : null;
-        const annualized = !!(gd && gd.noi && gd.noi.inPlaceBasis === "annualized");
-        const tie = gd && gd.noi && gd.noi.tie, lastN = gd && gd.noi && gd.noi.inPlaceBasis === "last12" ? gd.noi.monthsInFile : null;
-        const tieBad = !!(tie && tie.printed != null && !tie.ok);
-        toast(who + ": T12 saved to the property folder"+(noi!=null ? " — NOI "+uwFmt(noi)+(annualized ? " (annualized · last 3 mo × 4)" : "")+(lastN ? " (last 12 of "+lastN+" months)" : "") : "")+
-              (tieBad ? " — but it doesn’t tie: statement says "+fmtMoney(tie.printed)+", lines add to "+fmtMoney(tie.built)+" (gap "+fmtMoney(Math.abs(tie.gap))+")" : "")+".", tieBad ? "error" : "check");   // 2.9.7 (#10, #257)
+        // 2.9.16 — THE GATE: the reader and the AI read the file before anything from it is used. Both agree and every
+        // check passes → used at once (an older year joins the history); otherwise a pop-up shows you the file's own rows
+        // and you decide — until then it waits in Documents, unused.
+        if(r.duplicate){ toast(who + ": that exact T12 is already on file — nothing changed.","info"); try{ await t12GatePending(key, { fileId: r.file && r.file.id, interactive: true }); }catch(e){} return; }   // same bytes → not re-saved (checksum)
+        if(opFocusKey === key){ try{ await opSelectProperty(key, { skipAutoPush: true }); }catch(e){} renderUnderwriting(); }
+        toast(who + ": T12 saved to the property folder — the reader and the AI are reading it. Nothing from it is used until both are done.", "info");
+        if(r.file) await t12Gate(key, r.file, { interactive: true });
       }catch(err){ toast("Couldn’t read that file.","error"); }
     }
     // Parse the stored grid at the chosen period basis and rebuild the Setup.
@@ -3835,7 +3817,7 @@ tr.flagged:hover td{background:#fee2e2}
     // an annualized statement (income that ramped over the year) can be spotted and annualized.
     function uwApplyParse(opts){
       const i = uwState.input; if(!i.t12Grid || !window.T12Parse) return;
-      const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis || "total" });
+      const d = (i.basis || "total") === "total" ? t12Parsed(i.t12Grid, i.t12Overrides || []) : T12Parse.parseGrid(i.t12Grid, { basis: i.basis });   // 2.9.16 — the checked reading, with your changes
       i.t12Rows = d.rows;
       const gl = (x)=> x<0 ? "—" : String.fromCharCode(65+x);
       const labels = { total:"12-mo Total", t6:"Trailing 6-mo (ann.)", t3:"Trailing 3-mo (ann.)", t1:"Trailing 1-mo (ann.)" };
@@ -3897,7 +3879,7 @@ tr.flagged:hover td{background:#fee2e2}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, bench: i.bench, review: opT12ReviewFor(opFocusKey, i.fileSha) }).setup;   // 2.9.7 (#108) — with the user's T12 review decisions
+          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, bench: i.bench, overrides: i.t12Overrides || [] }).setup;   // 2.9.16 — with your changes from the T12 review
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
@@ -3952,6 +3934,7 @@ tr.flagged:hover td{background:#fee2e2}
           // 2.9.9 (fix 1) — a saved workbook with several T12 sheets and no answer: its numbers aren't used until you say
           (function(){ const w = opFocusKey ? opPartsWaitingFor(opFocusKey, "t12") : []; return w.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800" data-uwpartswait>'+
             w.map(function(fn){ return '“'+escapeHtml(fn)+'” has several T12 sheets — which one is this property’s? Its numbers aren’t used until you say. '+opPartsAnswerBtn(opFocusKey, fn, "Answer"); }).join('<br>')+'</div>' : ''; })()+
+          (opFocusKey ? t12StatusHtml(opFocusKey) : '')+   // 2.9.16 — the T12 gate: what the T12 in use is, what waits for you, Review / Read again
           (i.t12Meta ? '<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500">'+
             '<span>'+(i.t12Combined ? '<b class="text-slate-700" data-uwsheet data-uwcombined>'+escapeHtml(i.t12PartsLabel || i.t12Sheet)+'</b> — added together, line by line, month by month'+(i.t12MonthsDiffer ? ' <span class="text-amber-700" data-uwmonthsdiffer>(the sheets cover different months — check them)</span>' : '')+' &middot; '   // 2.9.11
               : (i.t12Sheet && i.t12SheetsCount > 1 ? 'Sheet <b class="text-slate-700" data-uwsheet>'+(i.t12SheetNo || '?')+' of '+i.t12SheetsCount+' · '+escapeHtml(i.t12Sheet)+'</b> &middot; ' : ''))+'Description col <b class="text-slate-700">'+i.t12Meta.descCol+'</b> &middot; '+(i.t12Rows?i.t12Rows.length:0)+' lines read'+
@@ -4106,7 +4089,7 @@ tr.flagged:hover td{background:#fee2e2}
         : (gdRec && gdRec.noi && gdRec.noi.inPlaceBasis === "last12") ? '<div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] text-sky-900">'+
           '<span class="font-bold uppercase tracking-wide">Last 12 months</span> &mdash; this file covers '+(gdRec.noi.monthsInFile||'more than 12')+' months; the NOI uses only the last 12 ('+escapeHtml(ymRange(gdRec.noi.months))+'): <strong>'+fmtMoney(gdRec.noi.inPlace)+'</strong>. The earlier months are kept in the history below.</div>'
         : '';
-      return opT12ReviewHtml(opFocusKey) + review + annualizedBanner +
+      return review + annualizedBanner +
         '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'+
           '<div class="rounded-xl border border-slate-200 bg-white p-3"><div class="text-[10px] uppercase tracking-wide text-slate-400">In-place NOI</div><div class="text-lg font-bold text-slate-900 tabular-nums" id="uwInPlaceNoi">'+uwFmt(r.inPlace.noi)+'</div>'+
             (noiMethod ? '<div class="text-[10px] text-slate-400" id="uwInPlaceMethod">'+escapeHtml(noiMethod)+'</div>' : '')+
@@ -4375,7 +4358,9 @@ tr.flagged:hover td{background:#fee2e2}
         if(!t12s.length) t12s = files.filter(f => (f.role || "") === "" && opIsSheetFile(f.name) && !/^(profile|general-data|assumptions)/i.test(f.name || ""));
         if(!t12s.length){ opPartsWaitSet(key, "t12", []); return null; }
         const cands = [], waiting = [];
-        for(const f of t12s){ const r = await opResolvePart(key, f, "t12"); if(r.part) cands.push({ f: f, r: r }); else if(r.status === "unknown") waiting.push(f.name); }
+        for(const f of t12s){ const r = await opResolvePart(key, f, "t12");
+          if(r.part){ const us = t12UseStatus(key, f, (r.parts && r.parts.length) ? r.parts : [r.part]); if(us === "use") cands.push({ f: f, r: r }); else if(us === "new") t12GateLater(key); }   // 2.9.16 — the gate: a T12 not read by the reader AND the AI yet (or waiting for you) is never used
+          else if(r.status === "unknown") waiting.push(f.name); }
         opPartsWaitSet(key, "t12", waiting);
         if(!cands.length) return null;
         let pick = cands.slice().sort((a, b) => b.f.savedAt - a.f.savedAt)[0];
@@ -4387,14 +4372,18 @@ tr.flagged:hover td{background:#fee2e2}
         }
         // 2.9.11 — several T12 sheets of this property (it comes in phases): added together, line by line, month by month
         const parts = (pick.r.parts && pick.r.parts.length) ? pick.r.parts : [pick.r.part];
-        let grid = null, monthsDiffer = false;
-        if(parts.length > 1){ const cm = FileParts.combineT12Grids(parts.map(p => opGridFromPart(pick.r.bytes, p)), { T12Parse: T12Parse }, { title: (opProp(key) || {}).name || "" });
-          if(!cm){ opT12CombineFail[key] = pick.f.name; return null; } grid = cm.grid; monthsDiffer = cm.monthsDiffer; }
-        else grid = opGridFromPart(pick.r.bytes, pick.r.part);
+        let grid = null, monthsDiffer = false, combOv = [];
+        const pickEntry = t12EntryFor(key, opPartSig(pick.f.sha, parts)), pickOv = pickEntry ? (pickEntry.overrides || []) : [];   // 2.9.16 — your changes to its reading
+        if(parts.length > 1){ const pg = parts.map(p => opT12GridFromPart(pick.r.bytes, p));
+          const cm = FileParts.combineT12Grids(pg, { T12Parse: T12Parse }, { title: (opProp(key) || {}).name || "" });
+          if(!cm){ opT12CombineFail[key] = pick.f.name; return null; } grid = cm.grid; monthsDiffer = cm.monthsDiffer;
+          try{ combOv = T12Read.combineOverrides(parts.map((p, i) => ({ grid: pg[i], overrides: t12OverridesFor(pickEntry, p.sheet) })), grid); }catch(e){ combOv = []; } }   // 2.9.16 — your changes, sheet by sheet, on the combined lines
+        else grid = opT12GridFromPart(pick.r.bytes, pick.r.part);
         delete opT12CombineFail[key];
         if(!grid || T12Parse.findHeader(grid).headerRow < 0) return null;
         opT12Cur[key] = { sha: pick.f.sha || "", partSig: opPartSig(pick.f.sha, parts), sheet: grid._sheet || pick.r.part.sheet, multi: !!pick.r.info.multi, combined: parts.length > 1 };   // 2.9.11
-        return { grid: grid, parsed: T12Parse.parseGrid(grid, { basis: "total" }), name: pick.f.name, id: pick.f.id, sha: pick.f.sha || "", lastMonth: opGridLastMonth(grid),
+        const ovUse = parts.length > 1 ? combOv : pickOv;
+        return { grid: grid, parsed: t12Parsed(grid, ovUse), overrides: ovUse, reading: pickEntry, name: pick.f.name, id: pick.f.id, sha: pick.f.sha || "", lastMonth: opGridLastMonth(grid),
           sheet: grid._sheet || pick.r.part.sheet, sheetNo: parts.length > 1 ? null : pick.r.part.sheetNo, sheets: pick.r.info.sheetsCount, partStatus: pick.r.status, multi: pick.r.info.multi,
           parts: parts, combined: parts.length > 1, monthsDiffer: monthsDiffer, partSig: opPartSig(pick.f.sha, parts), partsLabel: FileParts.partsLabel(parts, pick.r.info.sheetsCount) };
       }catch(e){ return null; }
@@ -4425,15 +4414,15 @@ tr.flagged:hover td{background:#fee2e2}
       const parts = (r.parts && r.parts.length) ? r.parts : [r.part];
       const ck = key + "|" + f.id + "|" + parts.map(p => p.sheetNo).join(",");
       if(Object.prototype.hasOwnProperty.call(opT12LastCache, ck)) return opT12LastCache[ck];
-      try{ parts.forEach(p => { const g = opGridFromPart(r.bytes, p); const m = g ? opGridLastMonth(g) : ""; if(m > lm) lm = m; }); }catch(e){}
+      try{ parts.forEach(p => { const g = opT12GridFromPart(r.bytes, p); const m = g ? opGridLastMonth(g) : ""; if(m > lm) lm = m; }); }catch(e){}
       opT12LastCache[ck] = lm; return lm;
     }
     // An OLDER T12 goes into the property's history only: its months fill gaps, never overwrite newer ones.
-    function opMergeT12History(key, grid){ return gdSerial(key, () => opMergeT12HistoryNow(key, grid)); }
-    async function opMergeT12HistoryNow(key, grid){
+    function opMergeT12History(key, grid, overrides){ return gdSerial(key, () => opMergeT12HistoryNow(key, grid, overrides)); }
+    async function opMergeT12HistoryNow(key, grid, overrides){
       try{
         if(!window.GeneralData) return false;
-        const parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
+        const parsedM = t12Parsed(grid, overrides || []);   // 2.9.16 — the checked reading, with your changes
         const series = GeneralData.monthlySeries(parsedM, opClassifyLine);
         const existing = await opLoadGeneralData(key); if(!existing) return false;
         const gd = GeneralData.merge(existing, series, { propKey: key, noi: existing.noi, now: new Date().toISOString(), keepExisting: true });
@@ -4470,8 +4459,10 @@ tr.flagged:hover td{background:#fee2e2}
         { const rt = i.bench.rentTyped || {}; i.avgRentUnit = (rt.avgRentUnit != null) ? rt.avgRentUnit : null; i.rrGPR = (rt.rrGPR != null) ? rt.rrGPR : null; }   // a rent typed for THIS property
         try{ assumptionBaseline(key, i.bench); propHistoryLoad(key).then(() => { if(opFocusKey === key) uwRefreshHistoryLinks(); }); }catch(e){}   // 2.9.7 (#253)
         const r = await opReadPropT12(key);
+        i.t12Overrides = [];
         if(r){ i.t12Grid = r.grid; i.t12Sheet = r.grid._sheet || ""; i.t12SheetNo = r.sheetNo || null; i.t12SheetsCount = r.sheets || null; i.t12RowOffset = r.grid._r0 || 0; i.fileName = r.name; i.fileSha = r.sha || ""; i.basis = "total";
           i.t12PartSig = r.partSig || ""; i.t12Combined = !!r.combined; i.t12PartsLabel = r.partsLabel || ""; i.t12MonthsDiffer = !!r.monthsDiffer;   // 2.9.11
+          i.t12Overrides = r.overrides || [];   // 2.9.16 — your changes from its review
           uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
         delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
@@ -4485,7 +4476,6 @@ tr.flagged:hover td{background:#fee2e2}
       // The upload path passes skipAutoPush and runs it once itself AFTER rebuilding General Data (so the
       // stale push is dropped first) — otherwise the fresh statement would trigger two overlapping runs.
       if(key && !(opts && opts.skipAutoPush)){ try{ opMaybeAutoPush(key); }catch(e){} }
-      if(key && !(opts && opts.skipAutoPush)){ try{ const rv0 = opT12ReviewFor(key, uwState.input.fileSha); if(rv0 && rv0.status === "unavailable") opT12Check(key, { force: true }); }catch(e){} }   // 2.9.7 (#108)
     }
     // The roll-up / scan cover the WHOLE book, so pull every property's T12 from disk once (guarded,
     // so it re-reads only after an upload), then refresh those two panels. Reading, not storing.
@@ -5206,10 +5196,9 @@ tr.flagged:hover td{background:#fee2e2}
     // footing, kept only as a reconciliation reference alongside the annualized figure.
     function uwBuildSetupFromGrid(grid, opt){
       opt = opt || {};
-      var parsedM = T12Parse.parseGrid(grid, { basis: "total", monthly: true });
-      // 2.9.7 (#108) — the user's decisions from the T12 double reading re-book the decided lines (side,
-      // category, amounts) before anything is built, so every figure follows them.
-      if(opt.review && window.T12Check){ try{ parsedM = T12Check.applyDecisions(parsedM, opt.review); }catch(e){} }
+      // 2.9.16 — the reading the gate checked (the sheet from Excel row 1, a box per category), with YOUR changes from
+      // its review: what a row is, its side, its category, an amount with a note. Every figure follows them.
+      var parsedM = t12Parsed(grid, opt.overrides || []);
       var statementNOI = null, fpReconcile = null;
       try{ var fp0 = SetupBuilder.fromParse({ rows: parsedM.rows, categories: parsedM.categories, totals: parsedM.totals, summaryMismatch: parsedM.summaryMismatch, summaryTotals: parsedM.summaryTotals }); statementNOI = fp0.inPlaceNOI; fpReconcile = fp0.reconcile; }catch(e){}
       // 2.9.7 — the T12 rule (#11, #257): last 3 months × 4 when the file covers fewer than 12 months or
@@ -5299,11 +5288,7 @@ tr.flagged:hover td{background:#fee2e2}
       var rrRead = await opPropRentRoll(key);            // its rent roll, read once
       var rrGPR = await opPropGPR(key, bench, units, rrRead || null);   // 2.9.8 (problem 5) — THIS property's rent, open or not
       var rrCom = opRRCommercialOf(rrRead);              // 2.9.12 — its commercial leases, lease by lease
-      var rv = null;
-      try{ var gdr = gdFullCache[key] || await opLoadGeneralData(key); rv = gdr && gdr.t12Review; }catch(e){}
-      if(rv && rv.fileSha && r.sha && rv.fileSha !== r.sha) rv = null;   // decisions belong to the file they were made on
-      if(rv && !opT12ReviewFits(rv, opT12Cur[key])) rv = null;   // 2.9.11 — … and to the part(s) they were made on
-      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, rrCommercial: rrCom ? rrCom.annual : null, bench: bench, review: rv });
+      var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, rrCommercial: rrCom ? rrCom.annual : null, bench: bench, overrides: r.overrides || [] });   // 2.9.16 — with your changes from its review
       return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
@@ -5802,14 +5787,8 @@ tr.flagged:hover td{background:#fee2e2}
         try{ await opRecomputeAll('manual'); }catch(e){}
         renderDataHealth();
       });
-      const tc = view.querySelector('[data-health-t12check]');
-      if(tc) tc.addEventListener('click', async () => {
-        tc.disabled = true; tc.textContent = 'Checking…';
-        const note = el('healthT12CheckNote');
-        const res = await opT12CheckAll((d, n, ran) => { if(note) note.textContent = 'Checked ' + d + ' of ' + n + ' T12s…'; });
-        if(note && res) note.textContent = res.checked ? ('Checked ' + res.checked + ' T12' + (res.checked === 1 ? '' : 's') + ' with AI — open a property in Underwriting to see its result.') : 'Every T12 was already checked.';
-        tc.disabled = false; tc.textContent = 'Check all T12s with AI';
-      });
+      try{ const anchor = view.querySelector('.space-y-4'); if(anchor){ const d = document.createElement('div'); d.innerHTML = t12HealthHtml(); anchor.insertBefore(d.firstChild, anchor.children[1] || null); } }catch(e){}   // 2.9.16 — T12s that need your review
+      try{ t12MigrateAll(); }catch(e){}   // resumes the AI re-check of T12s read before 2.9.16 once Claude is connected
       view.querySelectorAll('[data-health-open]').forEach(b => b.addEventListener('click', () => {
         uwOpenFor(b.getAttribute('data-health-open'));
       }));
@@ -6030,7 +6009,6 @@ tr.flagged:hover td{background:#fee2e2}
           '<div><h2 class="text-lg font-bold text-slate-900">Data Health</h2>'+
             '<p class="text-sm text-slate-500">What the app knows about each property — and what’s missing. Running app v'+escapeHtml(ver)+'.</p></div>'+
           '<div class="text-right"><button type="button" data-health-recompute class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100">Recompute all figures</button>'+
-            ' <button type="button" data-health-t12check class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100" title="Have the AI double-read every T12 that hasn’t been checked yet (one time, for T12s saved before 2.9.7)">Check all T12s with AI</button>'+   // 2.9.7 (#108)
             '<div class="mt-1 text-[11px] text-slate-400">'+escapeHtml(lastLine)+'</div><div class="mt-0.5 text-[11px] text-slate-500" id="healthT12CheckNote"></div></div>'+
         '</div>';
       const kpis = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">'+
@@ -6223,6 +6201,519 @@ tr.flagged:hover td{background:#fee2e2}
         t12: { income: t.income, expense: t.expense },
         appNOI: appNOI };
     }
+    // ── 2.9.16 — THE T12 GATE: the reader AND the AI read a T12 before anything from it is used ─────────────────
+    // A T12 that comes in — Underwriting, Documents, the assistant, a file-parts answer — is read by the regular reader
+    // (T12Read: the sheet from Excel row 1, a box per category and every check) and by the AI at the same time, each on
+    // its own. Nothing from it is used until both are done:
+    //   • every check passes and the AI agrees      → used at once ("✓ checked by the reader and the AI");
+    //   • a check fails or the AI disagrees         → a pop-up shows the file's own rows and you decide; until then the
+    //                                                 file waits in Documents ("waiting for your review"), unused;
+    //   • Claude isn't connected / the AI failed    → a pop-up says so; you review it yourself, or use the reader's
+    //                                                 reading (only when every check passes), or leave it waiting.
+    // Your changes (what a row is, its side, its category, an amount with a note) are kept with the property
+    // (general-data.json → t12Readings) and flow into every figure. Each reading is per file AND part(s).
+    var T12_USED = { checked: 1, reviewed: 1, "reader-only": 1, legacy: 1, "legacy-review": 1, "recheck-review": 1 };
+    var T12_STATUS = {
+      reading: "Being read by the reader and the AI", waiting: "Waiting for your review", checked: "Checked by the reader and the AI",
+      reviewed: "Reviewed by you", "reader-only": "Read by the reader only (Claude wasn’t connected)",
+      legacy: "Read before 2.9.16 — the AI re-check is pending", "legacy-review": "Read before 2.9.16 — needs your review (still in use)",
+      "recheck-review": "Read again — needs your review (still in use)"
+    };
+    // The moment this version first ran: a T12 saved after it is read by the gate before it is used; one saved before
+    // it is a file the app already used (it is re-checked once in the background, see t12MigrateAll).
+    var T12_GATE_SINCE = (function(){ try{ var v = +localStorage.getItem("lds.t12GateSince"); if(!v){ v = Date.now(); localStorage.setItem("lds.t12GateSince", String(v)); } return v; }catch(e){ return Date.now(); } })();
+    var t12GateBusy = {};          // propKey → { sig, fileName, since } while a reading runs
+    var t12GateQueued = {};        // propKey → true while a background gate is queued for it
+    var t12GateChain = Promise.resolve();   // one reading at a time (the AI can take minutes)
+    var t12PopupChain = Promise.resolve();  // one pop-up at a time
+    function t12Entries(key){ var gd = gdFullCache[key]; return (gd && Array.isArray(gd.t12Readings)) ? gd.t12Readings : []; }
+    function t12EntryFor(key, sig){ return t12Entries(key).filter(function(e){ return e && e.sig === sig; })[0] || null; }
+    function t12EntrySave(key, entry){
+      return gdSerial(key, async function(){
+        var gd = await opLoadGeneralData(key); if(!gd) gd = { propKey: key, noT12: true, note: "no T12 yet" };
+        var list = Array.isArray(gd.t12Readings) ? gd.t12Readings.filter(function(e){ return e && e.sig !== entry.sig; }) : [];
+        list.push(entry); gd.t12Readings = list.slice(-40); gd.updatedAt = new Date().toISOString();
+        await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd; return entry;
+      });
+    }
+    function t12OverridesFor(entry, sheet){ return ((entry && entry.overrides) || []).filter(function(o){ return o && (!o.sheet || !sheet || o.sheet === sheet); }); }
+    // The T12 files of a property (the same rule opReadPropT12 picks from).
+    function opT12Candidates(key, files){
+      var t = (files || []).filter(function(f){ return f.role === "t12" || (opIsSheetFile(f.name) && !APP_DOC_ROLES[f.role || ""] && opRecordHasKind(key, f, "t12")); });
+      if(!t.length) t = (files || []).filter(function(f){ return (f.role || "") === "" && opIsSheetFile(f.name) && !/^(profile|general-data|assumptions)/i.test(f.name || ""); });
+      return t;
+    }
+    // May a file's numbers be used? "use" · "wait" (being read / waiting for you) · "new" (not read by the gate yet).
+    function t12UseStatus(key, f, parts){
+      var e = t12EntryFor(key, opPartSig(f.sha, parts));
+      if(e){ if(T12_USED[e.status]) return "use";
+        if(e.status === "reading" && !t12GateBusy[key] && !t12GateInflight[key + "|" + (f.id || f.sha || f.name)]) return "new";   // a reading cut short (the app closed while it ran) is read again
+        return "wait"; }
+      var gd = gdFullCache[key];
+      if((gd && gd.t12GateDone) || (f.savedAt && f.savedAt > T12_GATE_SINCE)) return "new";
+      return "use";   // a file the app already used before 2.9.16 (re-checked once in the background)
+    }
+    // One part of a saved workbook as a T12 grid, read from Excel row 1 (row and column numbers are Excel's).
+    function opT12GridFromPart(bytes, part){
+      try{ var wb = XLSX.read(bytes, { type: "array" }), nm = (part && wb.Sheets[part.sheet]) ? part.sheet : (part && wb.SheetNames[part.sheetNo - 1]); if(!nm || !wb.Sheets[nm]) return null;
+        var g = T12Read.gridFromSheet(XLSX, wb.Sheets[nm]); g._sheet = nm; g._r0 = 0; return g; }catch(e){ return null; }
+    }
+    // The figures every screen uses, from a grid and a reading's changes (the T12Read reading; t12-parse if it can't).
+    function t12Parsed(grid, overrides){
+      try{ var res = T12Read.check(T12Read.read(grid), overrides || []); if(res && res.parsed) return res.parsed; }catch(e){}
+      return T12Parse.parseGrid(grid, { basis: "total", monthly: true });
+    }
+    function t12Refresh(key){
+      try{ if(el("uwView") && !el("uwView").hidden && (!key || opFocusKey === key)) uwRerenderStatus(); }catch(e){}
+      try{ if(el("healthView") && !el("healthView").hidden) t12HealthRefresh(); }catch(e){}
+    }
+    // Queue the gate for every T12 file of a property that hasn't been read by it yet.
+    async function t12GatePending(key, opts){
+      opts = opts || {};
+      if(!key || !(window.ldsShell && ldsShell.docList)) return [];
+      key = opCurrentKey(key);
+      var list = null; try{ list = await ldsShell.docList(key); }catch(e){ list = null; } if(!list || !list.ok) return [];
+      await gdRecordsLoad(key);
+      var out = [];
+      for(var f of opT12Candidates(key, list.files || [])){
+        if(opts.fileId && f.id !== opts.fileId) continue;
+        var r = null; try{ r = await opResolvePart(key, f, "t12"); }catch(e){ r = null; }
+        if(!r || !r.part) continue;
+        var parts = (r.parts && r.parts.length) ? r.parts : [r.part], e = t12EntryFor(key, opPartSig(f.sha, parts));
+        if(e && !opts.force && (T12_USED[e.status] || e.status === "waiting")){ if(e.status === "waiting" && opts.interactive) t12Popup(key, e.sig); continue; }
+        if(!e && !opts.force && t12UseStatus(key, f, parts) === "use") continue;   // a file used before 2.9.16 — the background re-check covers it
+        out.push(t12Gate(key, f, { interactive: opts.interactive !== false, force: !!opts.force }));
+      }
+      return Promise.all(out);
+    }
+    function t12GateLater(key){ if(t12GateQueued[key]) return; t12GateQueued[key] = true; setTimeout(function(){ delete t12GateQueued[key]; t12GatePending(key, { interactive: true }).catch(function(){}); }, 50); }
+    var t12GateInflight = {};   // one reading per file at a time: asking again while it is queued or running gets the same one
+    function t12Gate(key, f, opts){
+      opts = opts || {}; var k = key + "|" + (f.id || f.sha || f.name) + (opts.force ? "|again" : "") + (opts.migrate ? "|migrate" : "");
+      if(t12GateInflight[k]) return t12GateInflight[k];
+      var run = function(){ return t12GateNow(key, f, opts); }; var p = t12GateChain.then(run, run); t12GateChain = p.catch(function(){});
+      t12GateInflight[k] = p; var clr = function(){ delete t12GateInflight[k]; }; p.then(clr, clr); return p;
+    }
+    async function t12GateNow(key, f, opts){
+      key = opCurrentKey(key);
+      if(!window.T12Read) return null;
+      await gdRecordsLoad(key);
+      var r = null; try{ r = await opResolvePart(key, f, "t12"); }catch(e){ r = null; }
+      if(!r || !r.part) return { status: (r && r.status === "unknown") ? "parts" : "none" };   // which part is this property's? — the parts card answers first
+      var parts = (r.parts && r.parts.length) ? r.parts : [r.part], sig = opPartSig(f.sha, parts), prev = t12EntryFor(key, sig);
+      if(prev && !opts.force && !opts.migrate){
+        if(T12_USED[prev.status]) return prev;
+        if(prev.status === "waiting"){ if(opts.interactive) t12Popup(key, sig); return prev; }
+      }
+      var legacyUse = !prev && t12UseStatus(key, f, parts) === "use";   // a file used before 2.9.16 with no reading yet stays in use while it is read
+      var wasUsed = !!(prev && T12_USED[prev.status]) || legacyUse;
+      var entry = Object.assign({ sig: sig, sha: f.sha || "", fileId: f.id, fileName: f.name, parts: parts.map(function(p){ return { sheet: p.sheet, sheetNo: p.sheetNo }; }), overrides: [], savedAt: f.savedAt || null }, prev || {});
+      entry.fileId = f.id; entry.fileName = f.name;
+      if(legacyUse){ entry.status = "legacy"; entry.legacy = true; entry.at = new Date().toISOString(); await t12EntrySave(key, entry); }
+      if(!wasUsed){ entry.status = "reading"; entry.at = new Date().toISOString(); await t12EntrySave(key, entry); }   // never used while it is read
+      t12GateBusy[key] = { sig: sig, fileName: f.name, since: Date.now() }; t12Refresh(key);
+      var pass = false;
+      try{
+        var pr = parts.map(function(p){ var g = opT12GridFromPart(r.bytes, p), res = null; try{ res = g ? T12Read.check(T12Read.read(g), t12OverridesFor(entry, p.sheet)) : null; }catch(e){ res = null; } return { part: p, grid: g, res: res }; });
+        var readerOk = pr.every(function(x){ return x.res && x.res.ok; });
+        var ai = { status: "unavailable", items: [] };
+        if(await claudeReady()){
+          ai = { status: "agree", items: [] };
+          for(var x of pr){
+            if(!x.grid){ ai = { status: "error", error: "The sheet couldn’t be read.", items: [] }; break; }
+            var a = null;
+            try{ a = await ldsShell.aiExtract({ instruction: T12Read.aiInstruction(), schema: T12Read.aiSchema(), input: T12Read.aiInput(x.grid, { fileName: f.name, sheet: x.part.sheet }), timeoutMs: 300000 }); }catch(e){ a = { ok: false, error: String((e && e.message) || e) }; }
+            if(!a || !a.ok){ ai = { status: "error", error: (a && a.error) || "Claude could not read the file.", items: [] }; break; }
+            var cmp = T12Read.compare(x.res, a.data || {}); cmp.items.forEach(function(it){ it.sheet = x.part.sheet; }); ai.items = ai.items.concat(cmp.items);
+          }
+          if(ai.status === "agree" && ai.items.length) ai.status = "disagree";
+        }
+        entry.reader = { ok: readerOk, failures: pr.reduce(function(n, x){ return n + (x.res ? x.res.failures.length : 1); }, 0),
+          msgs: [].concat.apply([], pr.map(function(x){ return x.res ? x.res.failures.map(function(fl){ return { sheet: x.part.sheet, row: fl.row, msg: fl.msg }; }) : [{ sheet: x.part.sheet, row: null, msg: "No T12 header (a Total column and month columns) was found on this sheet." }]; })).slice(0, 60),
+          noi: pr.length === 1 && pr[0].res ? (pr[0].res.parsed && pr[0].res.parsed.totals ? pr[0].res.parsed.totals.noi : null) : null };
+        entry.ai = { status: ai.status, error: ai.error || "", items: (ai.items || []).slice(0, 300), at: new Date().toISOString() };
+        pass = readerOk && ai.status === "agree";
+        if(opts.migrate){
+          if(pass && !entry.droppedDecisions) entry.status = "checked";
+          else if(readerOk && !entry.droppedDecisions && (ai.status === "unavailable" || ai.status === "error")){ entry.status = "legacy"; entry.aiPending = true; }
+          else entry.status = "legacy-review";
+          if(pass) delete entry.aiPending;
+        } else if(pass){ entry.status = (prev && prev.status === "reviewed" && (entry.overrides || []).length) ? "reviewed" : "checked"; delete entry.aiPending; }
+        else if(!wasUsed) entry.status = "waiting";
+        else if(entry.status === "legacy" || entry.status === "legacy-review"){
+          if(readerOk && !entry.droppedDecisions && (ai.status === "unavailable" || ai.status === "error")){ entry.status = "legacy"; entry.aiPending = true; } else entry.status = "legacy-review";
+        }
+        else if(!readerOk || ai.status === "disagree") entry.status = "recheck-review";   // read again and something no longer fits: still in use, until you decide
+        entry.at = new Date().toISOString();
+        await t12EntrySave(key, entry);
+      } finally { delete t12GateBusy[key]; t12Refresh(key); }
+      if(T12_USED[entry.status] && (!wasUsed || pass || opts.migrate)){ try{ await t12AfterAccepted(key, f, parts, entry, { quiet: !!opts.migrate || wasUsed }); }catch(e){} }
+      if(!pass && !opts.migrate && opts.interactive !== false) t12Popup(key, sig);
+      else if(pass && !opts.migrate && !wasUsed) toast(opPropDisplayName(key) + ": “" + f.name + "” checked by the reader and the AI — every check passes and they agree" + (entry.reader && entry.reader.noi != null ? " · NOI " + fmtMoney(entry.reader.noi) : "") + ".", "check");
+      else if(pass && opts.force && !opts.migrate) toast(opPropDisplayName(key) + ": read again — every check passes and the AI agrees.", "check");
+      if(!pass && !opts.migrate && wasUsed && entry.reader && entry.reader.ok && entry.ai && (entry.ai.status === "unavailable" || entry.ai.status === "error")) toast(opPropDisplayName(key) + ": every check of the reader passes, but " + (entry.ai.status === "error" ? "the AI’s reading failed" : "Claude isn’t connected") + " — the AI didn’t read it. It stays in use as it was.", "info");
+      return entry;
+    }
+    // A reading was accepted (checked, reviewed, or the reader's alone): its figures go everywhere; an older year's
+    // statement joins the history instead of replacing the newer one.
+    async function t12AfterAccepted(key, f, parts, entry, o){
+      o = o || {};
+      await opAfterT12Change(key);
+      try{
+        var cur = await opReadPropT12(key);
+        if(cur && cur.sha && f.sha && cur.sha !== f.sha && parts.length === 1){
+          var rd = await opPartsInfoForFile(key, f), g = rd ? opT12GridFromPart(rd.bytes, parts[0]) : null;
+          if(g){ await opMergeT12History(key, g, t12OverridesFor(entry, parts[0].sheet)); if(!o.quiet) toast(opPropDisplayName(key) + ": “" + f.name + "” is an older statement — it was added to the history; the newer one stays in use.", "info"); }
+        }
+      }catch(e){}
+      try{ if(opFocusKey === key) opMaybeAutoPush(key); }catch(e){}
+    }
+
+    // ── the pop-ups ────────────────────────────────────────────────────────────────────────────────────────────
+    var t12PopupPending = {};   // a reading whose pop-up is queued or open is never asked twice
+    function t12Popup(key, sig){
+      if(t12PopupPending[sig] || (t12Rv && t12Rv.sig === sig)) return t12PopupPending[sig] || Promise.resolve();
+      var run = function(){ return t12PopupNow(key, sig); };
+      var p = t12PopupChain.then(run, run); t12PopupChain = p.catch(function(){});
+      t12PopupPending[sig] = p; var clr = function(){ delete t12PopupPending[sig]; }; p.then(clr, clr); return p;
+    }
+    async function t12PopupNow(key, sig){
+      await gdRecordsLoad(key);
+      var e = t12EntryFor(key, sig); if(!e) return;
+      if(e.status !== "waiting" && !(e.reader && !e.reader.ok) && !(e.ai && e.ai.status === "disagree")) return;
+      var ai = e.ai || {};
+      if(ai.status === "unavailable" || ai.status === "error"){ await t12NotConnectedAsk(key, e); return; }
+      await t12ReviewOpen(key, sig);
+    }
+    function t12NotConnectedAsk(key, e){
+      return new Promise(function(resolve){
+        var ai = e.ai || {}, ok = !!(e.reader && e.reader.ok), n = (e.reader && e.reader.failures) || 0;
+        var box = document.createElement("div");
+        box.setAttribute("data-t12nc", "1");
+        box.className = "fixed inset-0 z-[97] flex items-center justify-center bg-slate-900/40 p-4";
+        box.innerHTML = '<div class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">' +
+          '<h3 class="text-base font-bold text-slate-900">' + (ai.status === "error" ? "The AI couldn’t read this T12" : "Claude isn’t connected") + '</h3>' +
+          '<p class="mt-2 text-sm text-slate-600">' + escapeHtml(opPropDisplayName(key)) + ' · “' + escapeHtml(e.fileName || "") + '”. ' +
+            (ai.status === "error" ? "The AI’s reading failed" + (ai.error ? " (" + escapeHtml(String(ai.error).slice(0, 160)) + ")" : "") + ", " : "The AI can’t read it right now, ") +
+            'so it hasn’t been checked against the reader. Nothing from it is used yet.</p>' +
+          '<p class="mt-2 text-sm font-semibold ' + (ok ? 'text-emerald-700' : 'text-rose-700') + '">' + (ok ? "The reader’s checks all pass." : n + " of the reader’s checks fail.") + '</p>' +
+          '<div class="mt-4 flex flex-wrap justify-end gap-2">' +
+            '<button type="button" data-t12nc-wait class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600">Keep it waiting</button>' +
+            (ok ? '<button type="button" data-t12nc-use class="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700">Use the reader’s reading</button>' : '') +
+            '<button type="button" data-t12nc-review class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white">Review it myself</button>' +
+          '</div></div>';
+        document.body.appendChild(box);
+        var done = function(v){ try{ box.remove(); }catch(x){} resolve(v); };
+        box.querySelector("[data-t12nc-wait]").onclick = function(){ toast("“" + (e.fileName || "") + "” is waiting for your review — nothing from it is used until you decide.", "info"); done("wait"); };
+        var use = box.querySelector("[data-t12nc-use]");
+        if(use) use.onclick = async function(){ done("use"); await t12Accept(key, e.sig, { status: "reader-only", overrides: e.overrides || [] }); };
+        box.querySelector("[data-t12nc-review]").onclick = async function(){ done("review"); await t12ReviewOpen(key, e.sig); };
+      });
+    }
+    // Save a reading as decided (your changes, or the reader's alone) and send its figures everywhere.
+    async function t12Accept(key, sig, o){
+      await gdRecordsLoad(key);
+      var e = t12EntryFor(key, sig); if(!e) return null;
+      e = Object.assign({}, e, { status: o.status, overrides: o.overrides || [], decidedAt: new Date().toISOString(), decidedBy: "You" });
+      if(o.reader) e.reader = o.reader;
+      delete e.aiPending;
+      await t12EntrySave(key, e);
+      var list = null; try{ list = await ldsShell.docList(key); }catch(x){}
+      var f = list && list.ok ? (list.files || []).filter(function(x){ return x.id === e.fileId; })[0] || (list.files || []).filter(function(x){ return x.sha === e.sha; })[0] : null;
+      if(f){ var r = await opResolvePart(key, f, "t12"); var parts = (r && r.parts && r.parts.length) ? r.parts : (r && r.part ? [r.part] : []); await t12AfterAccepted(key, f, parts, e); }
+      else await opAfterT12Change(key);
+      var gd = gdNOICache[key];
+      toast(opPropDisplayName(key) + ": “" + (e.fileName || "") + "” " + (o.status === "reader-only" ? "is used as the reader read it" : "is saved as you reviewed it") + (gd && gd.inPlace != null ? " — NOI " + fmtMoney(gd.inPlace) : "") + ".", "check");
+      t12Refresh(key);
+      return e;
+    }
+
+    // ── the review: the file's own rows, what the reader made of each, the checks, the AI's disagreements ─────────
+    var t12Rv = null;   // the open review: { key, sig, entry, file, parts:[{part, grid, reading}], tab, overrides }
+    async function t12ReviewOpen(key, sig){
+      key = opCurrentKey(key);
+      await gdRecordsLoad(key);
+      var e = t12EntryFor(key, sig); if(!e){ toast("That T12 reading isn’t on file any more.", "info"); return; }
+      var list = null; try{ list = await ldsShell.docList(key); }catch(x){}
+      var f = list && list.ok ? ((list.files || []).filter(function(x){ return x.id === e.fileId; })[0] || (list.files || []).filter(function(x){ return x.sha === e.sha; })[0]) : null;
+      if(!f){ toast("“" + (e.fileName || "") + "” isn’t in the property’s Documents any more.", "info"); return; }
+      var r = await opResolvePart(key, f, "t12"), parts = (r && r.parts && r.parts.length) ? r.parts : (r && r.part ? [r.part] : []);
+      if(!parts.length){ toast("Which part of “" + f.name + "” is this property’s? Answer that first (Data Health or Documents).", "info"); return; }
+      t12Rv = { key: key, sig: sig, entry: e, file: f, tab: 0, overrides: JSON.parse(JSON.stringify(e.overrides || [])),
+                parts: parts.map(function(p){ var g = opT12GridFromPart(r.bytes, p); return { part: p, grid: g, reading: g ? T12Read.read(g) : null }; }) };
+      var old = document.querySelector("[data-t12rv]"); if(old) old.remove();
+      var box = document.createElement("div");
+      box.setAttribute("data-t12rv", "1");
+      box.className = "fixed inset-0 z-[96] flex items-stretch justify-center bg-slate-900/50 p-3";
+      document.body.appendChild(box);
+      t12RvRender();
+      return new Promise(function(resolve){ t12Rv.resolve = resolve; });
+    }
+    function t12RvClose(v){ var b = document.querySelector("[data-t12rv]"); if(b) b.remove(); var rs = t12Rv && t12Rv.resolve; t12Rv = null; if(rs) rs(v); }
+    function t12RvSheet(){ var x = t12Rv.parts[t12Rv.tab]; return x && x.part ? x.part.sheet : ""; }
+    function t12RvOverrides(sheet){ return t12Rv.overrides.filter(function(o){ return !o.sheet || o.sheet === sheet; }); }
+    function t12RvCheck(i){ var x = t12Rv.parts[i]; if(!x || !x.reading) return null; return T12Read.check(x.reading, t12RvOverrides(x.part.sheet)); }
+    function t12RvCell(v){ if(v == null) return ""; if(typeof v === "number") return isFinite(v) ? (Math.abs(v) >= 1000 || v % 1 ? v.toLocaleString("en-US", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }) : String(v)) : ""; if(v instanceof Date) return v.toISOString().slice(0, 10); return String(v); }
+    function t12CatOptions(side, cur){
+      var codes = (side === "expense" ? T12Check.EXPENSE_CODES : T12Check.INCOME_CODES).slice();
+      return codes.map(function(c){ return '<option value="' + escapeHtml(c) + '"' + (c === cur ? " selected" : "") + '>' + escapeHtml(t12CodeLabel(c)) + '</option>'; }).join("");
+    }
+    function t12RvRender(){
+      var box = document.querySelector("[data-t12rv]"); if(!box || !t12Rv) return;
+      var key = t12Rv.key, e = t12Rv.entry, ai = e.ai || {}, sheet = t12RvSheet();
+      var x = t12Rv.parts[t12Rv.tab], res = t12RvCheck(t12Rv.tab), allRes = t12Rv.parts.map(function(_, i){ return t12RvCheck(i); });
+      var fails = allRes.reduce(function(n, rr){ return n + (rr ? rr.failures.length : 1); }, 0);
+      var aiItems = (ai.items || []).filter(function(it){ return !it.sheet || it.sheet === sheet; });
+      var aiAt = {}; aiItems.forEach(function(it){ if(it.row != null) (aiAt[it.row] = aiAt[it.row] || []).push(it); });
+      var failAt = {}; (res ? res.failures : []).forEach(function(c){ if(c.row != null) (failAt[c.row] = failAt[c.row] || []).push(c); });
+      var ovAt = {}; t12RvOverrides(sheet).forEach(function(o){ ovAt[o.row] = o; });
+      var aiLine = ai.status === "agree" ? '<span class="text-emerald-700">the AI agrees with the reader</span>'
+        : ai.status === "disagree" ? '<span class="text-amber-700">the AI disagrees on ' + (ai.items || []).length + ' point' + ((ai.items || []).length === 1 ? '' : 's') + '</span>'
+        : ai.status === "error" ? '<span class="text-rose-700">the AI’s reading failed</span>' : '<span class="text-rose-700">Claude wasn’t connected — the AI didn’t read it</span>';
+      var head = '<div class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">' +
+        '<div class="min-w-0"><h3 class="text-base font-bold text-slate-900">Review the T12 reading — ' + escapeHtml(opPropDisplayName(key)) + '</h3>' +
+        '<p class="text-xs text-slate-500">“' + escapeHtml(e.fileName || "") + '”' + (sheet ? ' · sheet “' + escapeHtml(sheet) + '”' : '') + ' · rows and columns as Excel numbers them · nothing is saved until you click Save</p>' +
+        '<p class="mt-1 text-sm font-semibold" data-t12rv-status>' + (fails ? '<span class="text-rose-700">' + fails + ' check' + (fails === 1 ? '' : 's') + ' fail' + (fails === 1 ? 's' : '') + '</span>' : '<span class="text-emerald-700">every check passes</span>') + ' · ' + aiLine + '</p></div>' +
+        '<button type="button" data-t12rv-x class="rounded-md px-2 text-xl leading-none text-slate-400 hover:text-slate-700" title="Close (keep it as it is)">×</button></div>';
+      var sum = res ? ('<div class="grid gap-2 sm:grid-cols-3" data-t12rv-sum>' +
+        t12RvSumCard("Income", res.income.row, res.income.printed, res.income.sum, res.income.accounts + " income accounts") +
+        t12RvSumCard("Expenses", res.expense.row, res.expense.printed, res.expense.sum, res.expense.accounts + " expense accounts") +
+        t12RvSumCard("Net Operating Income", res.noi.row, res.noi.printed, res.noi.computed, "income − expenses") + '</div>') : '<p class="text-sm text-rose-700">This sheet has no T12 header (a Total column and month columns).</p>';
+      var issues = [];
+      (res ? res.failures : []).forEach(function(c){ issues.push('<li class="text-rose-700">' + (c.row ? '<button type="button" data-t12rv-go="' + c.row + '" class="mr-1 rounded bg-rose-100 px-1.5 text-[11px] font-bold">Row ' + c.row + '</button>' : '') + escapeHtml(c.msg) + '</li>'); });
+      aiItems.forEach(function(it){ issues.push('<li class="text-amber-800">' + (it.row ? '<button type="button" data-t12rv-go="' + it.row + '" class="mr-1 rounded bg-amber-100 px-1.5 text-[11px] font-bold">Row ' + it.row + '</button>' : '') + 'AI: ' + escapeHtml(it.msg) + '</li>'); });
+      var tabs = t12Rv.parts.length > 1 ? '<div class="flex flex-wrap gap-1">' + t12Rv.parts.map(function(p, i){ return '<button type="button" data-t12rv-tab="' + i + '" class="rounded-md border px-2 py-0.5 text-xs font-semibold ' + (i === t12Rv.tab ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600') + '">' + escapeHtml(p.part.sheet || ("Part " + (i + 1))) + '</button>'; }).join("") + '</div>' : '';
+      var table = '';
+      if(x && x.grid && res){
+        var nCols = 0; x.grid.forEach(function(rw){ if(Array.isArray(rw)) for(var c = rw.length - 1; c >= 0; c--){ if(rw[c] != null && String(rw[c]).trim() !== ""){ if(c + 1 > nCols) nCols = c + 1; break; } } });
+        var cols = []; for(var c = 0; c < nCols; c++) cols.push(c);
+        var th = '<tr><th class="sticky left-0 z-[2] bg-slate-50 px-2 py-1 text-right">Row</th>' + cols.map(function(c){ return '<th class="px-2 py-1 text-left">' + T12Read.colName(c) + '</th>'; }).join("") +
+          '<th class="px-2 py-1 text-left">What the reader made of it</th><th class="px-2 py-1 text-left">Side</th><th class="px-2 py-1 text-left">Category</th><th class="px-2 py-1 text-right">Amount used</th><th class="px-2 py-1 text-left">Your note</th><th class="px-2 py-1 text-left">Check</th></tr>';
+        var body = res.rows.map(function(rw){
+          var cells = Array.isArray(x.grid[rw.row]) ? x.grid[rw.row] : [], ov = ovAt[rw.excel] || null, flist = failAt[rw.excel] || [], alist = aiAt[rw.excel] || [];
+          var tone = flist.length ? 'bg-rose-50' : (alist.length ? 'bg-amber-50' : (rw.role === "account" ? '' : (rw.role === "total" || /total|noi/.test(rw.role) ? 'bg-sky-50/60' : (rw.role === "heading" ? 'bg-slate-50' : 'text-slate-400'))));
+          var editable = rw.row > x.reading.headerRow;
+          var roleSel = editable ? '<select data-t12rv-role="' + rw.excel + '" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' +
+              (T12Read.EDITABLE_ROLES.indexOf(rw.role) < 0 ? '<option value="" selected>' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</option>' : '') +
+              T12Read.EDITABLE_ROLES.map(function(rl){ return '<option value="' + rl + '"' + (rl === rw.role ? ' selected' : '') + '>' + escapeHtml(T12Read.ROLES[rl]) + '</option>'; }).join("") + '</select>' + (ov && ov.role ? ' <span class="text-[10px] font-bold text-brand-700">yours</span>' : '') + (rw.role === "total" && rw.totalKind && rw.totalKind !== "unmatched" ? '<div class="text-[10px] text-slate-500">' + (rw.totalKind === "group" ? 'total of ' + escapeHtml((rw.totalOf || []).join(" + ")) : 'total of rows ' + (rw.totalOf || [])[0] + '–' + (rw.totalOf || [])[(rw.totalOf || []).length - 1]) + '</div>' : '')
+            : '<span class="text-[11px] text-slate-500">' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</span>';
+          var isAcc = rw.role === "account";
+          var sideSel = isAcc ? '<select data-t12rv-side="' + rw.excel + '" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]"><option value="income"' + (rw.side === "income" ? ' selected' : '') + '>Income</option><option value="expense"' + (rw.side === "expense" ? ' selected' : '') + '>Expense</option></select>' : '';
+          var catSel = isAcc ? '<select data-t12rv-cat="' + rw.excel + '" class="max-w-[170px] rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' + t12CatOptions(rw.side, rw.cat) + '</select>' : '';
+          var canAmt = editable && (isAcc || rw.role === "total" || /income-total|expense-total|noi/.test(rw.role));
+          var amtIn = canAmt ? '<input data-t12rv-amt="' + rw.excel + '" inputmode="decimal" class="w-28 rounded border ' + (ov && ov.amount != null ? 'border-brand-400 bg-brand-50' : 'border-slate-300') + ' px-1 py-0.5 text-right text-[11px] tabular-nums" placeholder="' + escapeHtml(rw.amountYours ? t12RvCell(rw.printed) : t12RvCell(rw.amount)) + '" value="' + (ov && ov.amount != null ? escapeHtml(String(ov.amount)) : '') + '">' : '';
+          var noteIn = editable && (ov || canAmt) ? '<input data-t12rv-note="' + rw.excel + '" class="w-40 rounded border ' + (ov && ov.amount != null && !ov.note ? 'border-rose-400' : 'border-slate-300') + ' px-1 py-0.5 text-[11px]" placeholder="' + (ov && ov.amount != null ? 'why (needed)' : 'note') + '" value="' + escapeHtml((ov && ov.note) || '') + '">' : '';
+          var chk = flist.map(function(c){ return '<div class="text-[10px] font-semibold text-rose-700">✗ ' + escapeHtml(c.msg) + '</div>'; }).join("") +
+                    alist.map(function(it){ return '<div class="text-[10px] font-semibold text-amber-800">AI: ' + escapeHtml(it.msg) + '</div>'; }).join("") +
+                    (!flist.length && rw.check && rw.check.ok && !rw.check.yours ? '<div class="text-[10px] text-emerald-700">✓ = its months</div>' : '') +
+                    (rw.role === "total" && rw.totalKind && rw.totalKind !== "unmatched" ? '<div class="text-[10px] text-emerald-700">✓ adds up</div>' : '');
+          return '<tr data-t12rv-row="' + rw.excel + '" class="border-t border-slate-100 align-top ' + tone + '"><td class="sticky left-0 z-[1] bg-inherit px-2 py-1 text-right text-[11px] font-semibold text-slate-500">' + rw.excel + '</td>' +
+            cols.map(function(c){ var v = cells[c]; return '<td class="whitespace-nowrap px-2 py-1 text-[11px] ' + (typeof v === "number" ? 'text-right tabular-nums' : '') + '">' + escapeHtml(t12RvCell(v)) + '</td>'; }).join("") +
+            '<td class="px-2 py-1">' + roleSel + '</td><td class="px-2 py-1">' + sideSel + '</td><td class="px-2 py-1">' + catSel + '</td><td class="px-2 py-1 text-right">' + amtIn + '</td><td class="px-2 py-1">' + noteIn + '</td><td class="min-w-[220px] px-2 py-1">' + chk + '</td></tr>';
+        }).join("");
+        table = '<div class="max-h-[56vh] overflow-auto rounded-xl border border-slate-200" data-t12rv-scroll><table class="min-w-full border-collapse text-left"><thead class="sticky top-0 z-[3] bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">' + th + '</thead><tbody>' + body + '</tbody></table></div>';
+      }
+      var nChanges = t12Rv.overrides.length;
+      var foot = '<div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-5 py-3">' +
+        '<div class="text-xs text-slate-500">' + (nChanges ? nChanges + ' change' + (nChanges === 1 ? '' : 's') + ' of yours · <button type="button" data-t12rv-clear class="font-semibold text-slate-600 underline">clear my changes</button>' : 'No changes of yours') + '</div>' +
+        '<div class="flex flex-wrap gap-2"><button type="button" data-t12rv-wait class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600">' + (T12_USED[e.status] ? 'Close without saving' : 'Keep it waiting') + '</button>' +
+        '<button type="button" data-t12rv-save class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white">Save this reading</button></div></div>';
+      var scrollTop = 0; var sc = box.querySelector("[data-t12rv-scroll]"); if(sc) scrollTop = sc.scrollTop;
+      box.innerHTML = '<div class="flex w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">' + head +
+        '<div class="flex-1 space-y-3 overflow-y-auto px-5 py-3">' + sum + (issues.length ? '<ul class="space-y-1 text-xs" data-t12rv-issues>' + issues.join("") + '</ul>' : '<p class="text-xs font-semibold text-emerald-700">Nothing to look at: every check passes' + (ai.status === "agree" ? ' and the AI agrees' : '') + '.</p>') + tabs + table + '</div>' + foot + '</div>';
+      var sc2 = box.querySelector("[data-t12rv-scroll]"); if(sc2) sc2.scrollTop = scrollTop;
+    }
+    function t12RvSumCard(title, row, printed, sum, what){
+      var has = printed != null && isFinite(printed), ok = has && Math.abs(printed - sum) < T12Read.TOL;
+      return '<div class="rounded-xl border ' + (has ? (ok ? 'border-emerald-200 bg-emerald-50/50' : 'border-rose-200 bg-rose-50/60') : 'border-slate-200') + ' px-3 py-2">' +
+        '<div class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">' + escapeHtml(title) + '</div>' +
+        '<div class="text-sm tabular-nums"><b>' + fmtMoney(sum) + '</b> <span class="text-xs text-slate-500">' + escapeHtml(what) + '</span></div>' +
+        '<div class="text-xs tabular-nums ' + (has ? (ok ? 'text-emerald-700' : 'text-rose-700') : 'text-slate-500') + '">' + (has ? (ok ? '✓ ' : '✗ ') + 'row ' + row + ' prints ' + fmtMoney(printed) : 'no printed row') + '</div></div>';
+    }
+    function t12RvSet(row, field, value){
+      if(!t12Rv) return;
+      var sheet = t12RvSheet(), x = t12Rv.parts[t12Rv.tab], base = x && x.reading ? x.reading.rows.filter(function(r){ return r.excel === row; })[0] : null;
+      var o = t12Rv.overrides.filter(function(q){ return q.row === row && (!q.sheet || q.sheet === sheet); })[0];
+      if(!o){ o = { row: row, sheet: sheet }; t12Rv.overrides.push(o); }
+      if(field === "amount"){ if(value === "" || value == null) delete o.amount; else o.amount = value; }
+      else if(field === "note"){ if(value) o.note = value; else delete o.note; }
+      else if(field === "role"){ if(!value || (base && base.role === value)) delete o.role; else o.role = value; }
+      else if(field === "side"){ if(base && base.side === value && !o.role) delete o.side; else o.side = value; }
+      else if(field === "cat"){ o.cat = value; }
+      o.by = "You"; o.at = new Date().toISOString();
+      if(!o.role && !o.side && !o.cat && o.amount == null && !o.note) t12Rv.overrides = t12Rv.overrides.filter(function(q){ return q !== o; });
+      t12RvRender();
+    }
+    async function t12RvSave(){
+      if(!t12Rv) return;
+      var missing = t12Rv.overrides.filter(function(o){ return o.amount != null && !o.note; });
+      if(missing.length){ toast("Add a note saying why for row" + (missing.length === 1 ? " " : "s ") + missing.map(function(o){ return o.row; }).join(", ") + " — an amount that differs from the file needs one.", "error"); return; }
+      var res = t12Rv.parts.map(function(_, i){ return t12RvCheck(i); }), fails = res.reduce(function(n, rr){ return n + (rr ? rr.failures.length : 1); }, 0);
+      var go = async function(){
+        var st = t12Rv, key = st.key, sig = st.sig;
+        var reader = { ok: fails === 0, failures: fails, msgs: [].concat.apply([], res.map(function(rr, i){ return rr ? rr.failures.map(function(fl){ return { sheet: st.parts[i].part.sheet, row: fl.row, msg: fl.msg }; }) : []; })).slice(0, 60),
+          noi: res.length === 1 && res[0] ? res[0].parsed.totals.noi : null };
+        var ovs = st.overrides.map(function(o){ return Object.assign({}, o); });
+        t12RvClose("saved");
+        try{ ovs.forEach(function(o){ assumptionHistoryAdd && assumptionHistoryAdd(key, "T12 row " + o.row + (o.sheet ? " (" + o.sheet + ")" : ""), "the reader’s reading", [o.role ? (T12Read.ROLES[o.role] || o.role) : "", o.side || "", o.cat ? t12CodeLabel(o.cat) : "", o.amount != null ? fmtMoney(o.amount) : ""].filter(Boolean).join(" · ") || "unchanged", o.note || ""); }); }catch(e){}
+        await t12Accept(key, sig, { status: ovs.length ? "reviewed" : (st.entry.ai && st.entry.ai.status === "agree" && fails === 0 ? "checked" : "reviewed"), overrides: ovs, reader: reader });
+      };
+      var yoursFig = res.some(function(rr){ return rr && rr.parsed && rr.parsed.checked && rr.parsed.checked.yours; });
+      if(fails) confirmDialog("Some checks still fail", fails + " check" + (fails === 1 ? " still fails" : "s still fail") + ". Save this reading anyway? " + (yoursFig
+        ? "Your reading is used: income, expenses and the NOI are the accounts as you set them (the statement’s printed totals are not)."
+        : "The statement’s printed totals are used; what the accounts don’t add up to goes into Other income or General & administrative, and Underwriting shows the gap."), go, "Save anyway");
+      else await go();
+    }
+    document.addEventListener("click", function(ev){
+      var t = ev.target; if(!t || !t.closest || !t.closest("[data-t12rv]")) return;
+      if(t.closest("[data-t12rv-x]") || t.closest("[data-t12rv-wait]")){ var w = t12Rv && !T12_USED[t12Rv.entry.status]; var nm = t12Rv && t12Rv.entry.fileName; t12RvClose("wait"); if(w) toast("“" + (nm || "") + "” is waiting for your review — nothing from it is used until you decide.", "info"); return; }
+      if(t.closest("[data-t12rv-save]")){ t12RvSave(); return; }
+      if(t.closest("[data-t12rv-clear]")){ if(t12Rv){ t12Rv.overrides = []; t12RvRender(); } return; }
+      var tb = t.closest("[data-t12rv-tab]"); if(tb){ t12Rv.tab = +tb.getAttribute("data-t12rv-tab"); t12RvRender(); return; }
+      var go = t.closest("[data-t12rv-go]"); if(go){ var tr = document.querySelector('[data-t12rv] [data-t12rv-row="' + go.getAttribute("data-t12rv-go") + '"]'); if(tr){ tr.scrollIntoView({ block: "center" }); tr.classList.add("ring-2", "ring-brand-400"); setTimeout(function(){ tr.classList.remove("ring-2", "ring-brand-400"); }, 1600); } return; }
+    });
+    document.addEventListener("change", function(ev){
+      var t = ev.target; if(!t || !t.closest || !t.closest("[data-t12rv]")) return;
+      var a;
+      if((a = t.getAttribute("data-t12rv-role")) != null) t12RvSet(+a, "role", t.value);
+      else if((a = t.getAttribute("data-t12rv-side")) != null) t12RvSet(+a, "side", t.value);
+      else if((a = t.getAttribute("data-t12rv-cat")) != null) t12RvSet(+a, "cat", t.value);
+      else if((a = t.getAttribute("data-t12rv-amt")) != null){ var v = t.value.trim(); if(v === ""){ t12RvSet(+a, "amount", null); return; } var n = parseFloat(v.replace(/[^0-9.\-]/g, "")); if(/^\(.*\)$/.test(v)) n = -Math.abs(n); if(!isFinite(n)){ toast("Type the amount as a number.", "error"); return; } t12RvSet(+a, "amount", n); }
+      else if((a = t.getAttribute("data-t12rv-note")) != null) t12RvSet(+a, "note", t.value.trim());
+    });
+    document.addEventListener("keydown", function(ev){ if(ev.key === "Escape" && document.querySelector("[data-t12rv]") && !document.querySelector("#confirmModal:not(.hidden)")) t12RvClose("wait"); });
+
+    // ── Underwriting: what the T12 in use is, and the two buttons ────────────────────────────────────────────────
+    function t12StatusHtml(key){
+      if(!key) return "";
+      var busy = t12GateBusy[key], i = uwState.input, cur = i.fileSha ? t12EntryFor(key, i.t12PartSig || opPartSig(i.fileSha, [])) : null;
+      if(!cur && i.fileSha) cur = t12Entries(key).filter(function(e){ return e.sha === i.fileSha; })[0] || null;
+      var waiting = t12Entries(key).filter(function(e){ return e.status === "waiting"; });
+      var out = '<div id="t12Gate" class="space-y-2">';
+      if(busy) out += '<div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-[12px] text-sky-900" data-t12busy><b>Reading “' + escapeHtml(busy.fileName || "") + '”</b> with the reader and the AI — the AI can take a few minutes. Nothing from it is used until both are done.</div>';
+      waiting.forEach(function(e){ out += '<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[12px] text-amber-900" data-t12waiting="' + escapeHtml(e.sig) + '"><span><b>“' + escapeHtml(e.fileName || "") + '” is waiting for your review</b> — ' + escapeHtml(t12WhyText(e)) + '. Nothing from it is used yet.</span>' +
+        '<button type="button" data-t12open="' + escapeHtml(e.sig) + '" class="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white">Review</button></div>'; });
+      if(i.fileSha){
+        var st = cur ? cur.status : "legacy", good = st === "checked" || st === "reviewed";
+        out += '<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border ' + (good ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50') + ' px-4 py-2 text-[12px]" data-t12inuse="' + escapeHtml(st) + '">' +
+          '<span class="' + (good ? 'text-emerald-800' : 'text-slate-700') + '"><b>' + (good ? '✓ ' : '') + escapeHtml(T12_STATUS[st] || st) + '</b>' + (cur && cur.status === "reviewed" && cur.decidedAt ? ' on ' + escapeHtml(fmtDateUS(String(cur.decidedAt).slice(0, 10))) + ((cur.overrides || []).length ? ' (' + cur.overrides.length + ' change' + (cur.overrides.length === 1 ? '' : 's') + ')' : '') : '') + ' · “' + escapeHtml(i.fileName || "") + '”</span>' +
+          '<span class="flex gap-1.5"><button type="button" data-t12open="' + escapeHtml(cur ? cur.sig : "") + '" data-t12openfile="1" class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">Review the reading</button>' +
+          '<button type="button" data-t12again="1" class="rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">Read again</button></span></div>';
+      }
+      return out + '</div>';
+    }
+    function t12WhyText(e){
+      var a = [], r = e.reader || {}, ai = e.ai || {};
+      if(r.failures) a.push(r.failures + " check" + (r.failures === 1 ? " fails" : "s fail"));
+      if(ai.status === "disagree") a.push("the AI disagrees on " + (ai.items || []).length + " point" + ((ai.items || []).length === 1 ? "" : "s"));
+      if(ai.status === "unavailable") a.push("Claude wasn’t connected");
+      if(ai.status === "error") a.push("the AI’s reading failed");
+      if(e.droppedDecisions) a.push(e.droppedDecisions + " of your earlier decisions no longer fit the file");
+      return a.join(" · ") || "it needs your look";
+    }
+    function uwRerenderStatus(){ var h = el("t12Gate"); if(h && opFocusKey) h.outerHTML = t12StatusHtml(opFocusKey); }
+    document.addEventListener("click", async function(ev){
+      var t = ev.target; if(!t || !t.closest) return;
+      var o = t.closest("[data-t12open]");
+      if(o){
+        var key = o.getAttribute("data-t12key") || opFocusKey, sig = o.getAttribute("data-t12open");
+        if(!sig && o.getAttribute("data-t12openfile")){   // the T12 in use was read before 2.9.16 and has no reading yet: read it now
+          var cur = await opReadPropT12(key); if(cur){ var f = { id: cur.id, sha: cur.sha, name: cur.name }; var e = await t12Gate(key, f, { force: true, interactive: false }); if(e && e.sig) sig = e.sig; }
+        }
+        if(sig) t12ReviewOpen(key, sig);
+        return;
+      }
+      if(t.closest("[data-t12again]")){
+        var k2 = opFocusKey; if(!k2) return;
+        var c2 = await opReadPropT12(k2);
+        var ids = c2 ? [c2.id] : [];
+        t12Entries(k2).filter(function(e){ return e.status === "waiting"; }).forEach(function(e){ if(ids.indexOf(e.fileId) < 0) ids.push(e.fileId); });
+        if(!ids.length){ toast("This property has no T12 to read.", "info"); return; }
+        toast("Reading the T12 again with the reader and the AI…", "info");
+        for(var id of ids) await t12GatePending(k2, { fileId: id, force: true, interactive: true });
+      }
+    });
+
+    // ── Data Health: every T12 that needs your look, and the one-time re-check ───────────────────────────────────
+    var t12MigrateState = { running: false, done: 0, total: 0 };
+    function t12HealthRows(){
+      var rows = [];
+      opProperties().forEach(function(p){ t12Entries(p.key).forEach(function(e){ if(e.status === "waiting" || e.status === "legacy-review" || e.status === "recheck-review" || e.status === "reading" || (e.status === "legacy" && e.aiPending)) rows.push({ key: p.key, name: p.name, e: e }); }); });
+      return rows;
+    }
+    function t12HealthHtml(){
+      var rows = t12HealthRows(), need = rows.filter(function(r){ return r.e.status === "waiting" || r.e.status === "legacy-review" || r.e.status === "recheck-review"; }), pend = rows.filter(function(r){ return r.e.status === "legacy" && r.e.aiPending; });
+      var m = t12MigrateState;
+      return '<div class="rounded-xl border px-4 py-2 text-sm ' + (need.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800') + '" data-health-t12="' + need.length + '">' +
+        '<div class="flex flex-wrap items-center justify-between gap-2"><div class="font-semibold">T12s that need your review: ' + need.length + '</div>' +
+        '<button type="button" data-health-t12recheck class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">' + (m.running ? 'Re-checking… ' + m.done + ' of ' + m.total : 'Re-check every T12 now') + '</button></div>' +
+        (need.length ? '<ul class="mt-1 space-y-1">' + need.map(function(r){ return '<li data-health-t12row>' + escapeHtml(r.name) + ' · “' + escapeHtml(r.e.fileName || "") + '” — ' + escapeHtml(T12_STATUS[r.e.status] || r.e.status) + ': ' + escapeHtml(t12WhyText(r.e)) +
+          ' <button type="button" data-t12open="' + escapeHtml(r.e.sig) + '" data-t12key="' + escapeHtml(r.key) + '" class="ml-1 rounded border border-amber-400 bg-white px-1.5 text-[11px] font-semibold text-amber-800">Review</button></li>'; }).join("") + '</ul>' : '<div class="text-xs">Every T12 in use was checked by the reader and the AI, or reviewed by you.</div>') +
+        (pend.length ? '<div class="mt-1 text-xs text-slate-600" data-health-t12pending="' + pend.length + '">' + pend.length + ' T12' + (pend.length === 1 ? '' : 's') + ' read before 2.9.16 pass every check but wait for the AI (Claude wasn’t connected) — they are checked as soon as it is.</div>' : '') +
+      '</div>';
+    }
+    function t12HealthRefresh(){ var h = document.querySelector("[data-health-t12]"); if(h) h.outerHTML = t12HealthHtml(); }
+    document.addEventListener("click", function(ev){ var t = ev.target; if(t && t.closest && t.closest("[data-health-t12recheck]")){ if(!t12MigrateState.running){ t12MigrateAll({ force: true }).then(function(){ t12HealthRefresh(); }); t12HealthRefresh(); } } });
+
+    // ── After the update: every T12 already in use is re-read once by the new reader and the AI ──────────────────
+    // Passes and agrees → left alone ("checked"). Otherwise it is listed in Data Health ("needs your review") and its
+    // numbers stay in use until you decide. Your earlier decisions (2.9.7–2.9.15) are kept where the row they were made
+    // on is still an account in the new reading; any that no longer fit are dropped and the T12 is listed for review.
+    function t12ConvertOldDecisions(reading, rv){
+      var out = { overrides: [], dropped: 0 };
+      if(!rv || !Array.isArray(rv.cards)) return out;
+      var norm = function(s){ return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); };
+      rv.cards.forEach(function(c){
+        if(!c || !c.decision) return;
+        var reg = c.regular || {}, r1 = reg.row != null ? reg.row : c.row, excel = (rv.combined || r1 == null) ? null : r1 + (rv.rowOffset || 0);   // the old reader's row (1 = the used area's first row) + where that area started
+        var rw = excel != null && reading ? reading.rows.filter(function(r){ return r.excel === excel; })[0] : null;
+        if(!rw || rw.role !== "account" || norm(rw.label) !== norm(c.label)){ out.dropped++; return; }
+        var d = c.decision, o = { row: excel, by: d.by || "You", at: d.at || new Date().toISOString(), note: (d.note ? d.note + " — " : "") + "kept from your earlier T12 review" };
+        if(d.role === "other") o.role = "not-operating";
+        else { if(d.role && d.role !== rw.side) o.side = d.role; if(d.code) o.cat = d.code; }
+        if(typeof d.annual === "number" && isFinite(d.annual) && rw.amount != null && Math.abs(d.annual - rw.amount) >= 0.005) o.amount = d.annual;
+        out.overrides.push(o);
+      });
+      return out;
+    }
+    async function t12MigrateProperty(key, opts){
+      opts = opts || {};
+      await gdRecordsLoad(key);
+      var gd = gdFullCache[key];
+      if(gd && gd.t12GateDone && !opts.force){
+        var pend = t12Entries(key).filter(function(e){ return e.status === "legacy" && e.aiPending; });
+        if(pend.length && await claudeReady()){ for(var e0 of pend){ var f0 = { id: e0.fileId, sha: e0.sha, name: e0.fileName }; await t12Gate(key, f0, { migrate: true }); } }
+        return;
+      }
+      var list = null; try{ list = await ldsShell.docList(key); }catch(x){} if(!list || !list.ok) return;
+      var cur = null; try{ cur = await opReadPropT12(key); }catch(x){ cur = null; }
+      // every T12 file on record gets its reading entry (history files stay as they were)
+      for(var f of opT12Candidates(key, list.files || [])){
+        var r = null; try{ r = await opResolvePart(key, f, "t12"); }catch(x){ r = null; } if(!r || !r.part) continue;
+        var parts = (r.parts && r.parts.length) ? r.parts : [r.part], sig = opPartSig(f.sha, parts), had = t12EntryFor(key, sig);
+        if(had && !opts.force) continue;
+        var entry = had ? Object.assign({}, had) : { sig: sig, sha: f.sha || "", fileId: f.id, fileName: f.name, parts: parts.map(function(p){ return { sheet: p.sheet, sheetNo: p.sheetNo }; }), overrides: [], status: "legacy", savedAt: f.savedAt || null, at: new Date().toISOString(), legacy: true };
+        if(!had && cur && cur.sha === f.sha && gd && gd.t12Review && parts.length === 1){
+          var g = opT12GridFromPart(r.bytes, parts[0]), rd = g ? T12Read.read(g) : null, conv = t12ConvertOldDecisions(rd, gd.t12Review);
+          entry.overrides = conv.overrides; entry.droppedDecisions = conv.dropped;
+        }
+        await t12EntrySave(key, entry);
+        if(cur && cur.sha === f.sha) await t12Gate(key, f, { migrate: true });   // the one in use: re-read by the reader and the AI
+      }
+      await gdSerial(key, async function(){ var g2 = await opLoadGeneralData(key); if(!g2) g2 = { propKey: key, noT12: true, note: "no T12 yet" }; g2.t12GateDone = new Date().toISOString(); await opWriteGeneralDataFile(key, g2); gdFullCache[key] = g2; });
+    }
+    var t12Migrating = null;
+    function t12MigrateAll(opts){
+      if(t12Migrating) return t12Migrating;
+      t12Migrating = (async function(){
+        var props = opProperties(); t12MigrateState = { running: true, done: 0, total: props.length };
+        for(var p of props){ try{ await t12MigrateProperty(p.key, opts); }catch(e){} t12MigrateState.done++; t12Refresh(null); }
+        t12MigrateState.running = false; t12Refresh(null);
+      })();
+      var done = function(){ t12Migrating = null; }; t12Migrating.then(done, done);
+      return t12Migrating;
+    }
+
     // ── 2.9.7 (#108) — T12 DOUBLE READING ──────────────────────────────────────────────────────────────
     // Every new T12: the regular reader's numbers show at once; the AI reads the same file in the background
     // ("Checking with AI…"); the two readings are compared line by line (where each line belongs, its year
@@ -6253,7 +6744,7 @@ tr.flagged:hover td{background:#fee2e2}
     // in backups). One you added can be removed while no line uses it.
     var CUSTOM_CATS_KEY = "lds.customCategories";
     function customCats(){ try{ const v = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || "[]"); return Array.isArray(v) ? v.filter(c => c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense")) : []; }catch(e){ return []; } }
-    function customCatsApply(){ const l = customCats(); try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
+    function customCatsApply(){ const l = customCats(); try{ window.T12Read && T12Read.setCustom && T12Read.setCustom(l); }catch(e){} try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
     function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} customCatsApply(); }
     const catNorm = (x) => String(x || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
     function customCatAdd(name, role){
@@ -6273,7 +6764,7 @@ tr.flagged:hover td{background:#fee2e2}
       const used = [];
       for(const p of opProperties().concat(opArchivedProps())){
         let gd = null; try{ gd = await opLoadGeneralData(p.key); }catch(e){ gd = null; }
-        const inReview = !!(gd && gd.t12Review && (gd.t12Review.cards || []).some(c => c && c.decision && c.decision.code === code));
+        const inReview = !!(gd && gd.t12Review && (gd.t12Review.cards || []).some(c => c && c.decision && c.decision.code === code)) || !!(gd && Array.isArray(gd.t12Readings) && gd.t12Readings.some(e => (e.overrides || []).some(o => o && o.cat === code)));   // 2.9.16
         const inLines = !!(gd && gd.lines && Object.prototype.hasOwnProperty.call(gd.lines, code));
         let inStore = false; try{ opInit(); const r = OperatingStore.get(p.key); inStore = !!(r && r.lines && r.lines[code] != null); }catch(e){}
         if(inReview || inLines || inStore) used.push(p.name);
@@ -6681,6 +7172,7 @@ tr.flagged:hover td{background:#fee2e2}
     // Per-property Import/Update rent-roll button (property view) — imports for that property (Fix #1 safety net).
     try{ if(!document._rrImportForBound){ document._rrImportForBound = true; document.addEventListener("click", function(e){ var b = e.target && e.target.closest && e.target.closest("[data-rrimportfor]"); if(b){ e.preventDefault(); opRentRollImportPickFor(b.getAttribute("data-rrimportfor")); } }); } }catch(e){}
     try{ window.LDS_rentRollImportRead=(f)=>opRentRollImportRead(f); window.LDS_rentRollImportState=()=>rrImportState; window.LDS_rentRollImportApply=()=>opRentRollImportApply(); }catch(e){}
+    try{ window.LDS_t12Entries=(k)=>t12Entries(k); window.LDS_t12Busy=()=>Object.keys(t12GateBusy); window.LDS_t12Migrate=(o)=>t12MigrateAll(o); window.LDS_t12MigrateState=()=>t12MigrateState; window.LDS_t12Review=(k,sig)=>{ t12ReviewOpen(k,sig); return true; }; }catch(e){}   // 2.9.16 diagnostics
     try{ window.LDS_readT12=async(k)=>{ const r=await opReadPropT12(k); return r?{ sheet:r.sheet, sheetNo:r.sheetNo, sheets:r.sheets, noi:r.parsed&&r.parsed.totals?r.parsed.totals.noi:null, name:r.name, status:r.partStatus, combined:!!r.combined, partSig:r.partSig, partsLabel:r.partsLabel, monthsDiffer:!!r.monthsDiffer }:null; }; window.LDS_partsWaiting=(k)=>opPartsWaiting[k]||null; window.LDS_gdRecords=async(k)=>{ const gd=await opLoadGeneralData(k); return (gd&&gd.fileParts)||[]; }; window.LDS_rrBlockFresh=async(k)=>{ try{ delete loanRRCache[k]; }catch(e){} const r=await opRentRollBlockFor(k); return r?(r.block?{ name:r.block.name, units:r.block.residentialUnits, occupied:r.block.occupiedUnits, vacant:r.block.vacantUnits, sqft:r.block.residentialSqft, gpr:r.block.gprAnnual, avgMarket:r.block.avgMarketRent, nonRevenue:r.block.nonRevenueUnits, commercial:r.block.commercialUnits, commercialAnnual:r.block.commercialAnnual, commercialLeases:(r.block.commercialLeases||[]).length, avgMarketOccupied:r.block.avgMarketRentOccupied, section:r.part&&r.part.section, combined:!!r.combined, label:r.block.fullName||"", parts:(r.parts||[]).length }:{ waiting:r.waiting||null }):null; };
       window.LDS_rrImportFor=(k)=>{ rrImportPreferKey=k||null; };
       window.LDS_partsInfo=(bytes,name)=>opPartsInfo(bytes,name); window.LDS_partsDefaults=(info,k,name,sha,mode)=>opPartsDefaults(info,k,name,sha||"",mode||"page");
@@ -11284,7 +11776,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, sections?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card; sections: a list of names when the property is SEVERAL sections (its phases) — they are combined. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
       "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
-      "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). split_document {file, name?, parts:[{from, to, title?, names:[property names]}]}: a PDF holding several agreements (or one agreement for several properties) — propose its page ranges and which property each belongs to, from the pages you READ (where each agreement starts and which property it names); a card shows them, the operator changes anything and approves; each property then reads only its own pages (one part can name several properties). Never guess a range you haven't read. check_t12 {name}: re-run the AI's double reading of the property's T12 (its own sheet(s) only) — the lines that differ become \"Needs review\" cards the operator decides; it changes no number. fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
+      "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). split_document {file, name?, parts:[{from, to, title?, names:[property names]}]}: a PDF holding several agreements (or one agreement for several properties) — propose its page ranges and which property each belongs to, from the pages you READ (where each agreement starts and which property it names); a card shows them, the operator changes anything and approves; each property then reads only its own pages (one part can name several properties). Never guess a range you haven't read. check_t12 {name}: read the property's T12 again with the reader AND the AI — the whole reading process (its own sheet(s) only); a failed check or a disagreement opens the review where the operator decides; it changes no number. fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
       "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
       "Action rules: (1) Act only when the operator asked you to do something — a plain question gets a plain answer, no action block (reading actions are the exception: use them whenever you need to look something up). (2) A reply may hold several actions; they run in order, a change waits for the operator's Approve card, and the results of every action (and every Approve / Cancel) come back to you in the next message under \"App (results of your actions)\". Keep going — more actions if needed — until the request is finished, then report plainly what was done and what was not. Never repeat an action that already succeeded, and never re-propose a card the operator cancelled: ask what they want instead. (3) When the request is not one action on the list, do it as a COMBINATION of listed actions (e.g. create a property, then add its loan): say the plan in one line, then run the steps, each change behind its own Approve card. If no combination does exactly what was asked, say so BEFORE doing anything and offer the closest option (e.g. \"I can't delete it permanently — I can archive it. Want that?\"); never swap in a different action silently. (4) Data changes happen in the background and never switch the operator's screen; open a screen (open_loan, open_calendar …) only when the operator asks to see it. (5) NEVER claim you already saved, added, edited or deleted anything until a result says it was approved and done; describe what happened ONLY as the result says it (e.g. a result that says \"Created a new property\" means the app created it — never call it an existing property); never predict what the app or a card will do beyond what this prompt says, and never offer a way to fix something that the actions here can't do; a cancelled or failed result means it did NOT happen — say so. When the operator NAMES a file (a document, or one of the property's records such as profile.json), read it before you answer — it is in your text, or use read_files — and answer once, from what it says now; never answer from notes or an earlier chat first.",
@@ -11797,19 +12289,19 @@ tr.flagged:hover td{background:#fee2e2}
           });
         });
       },
-      // 2.9.11 — re-run the AI's double reading of a property's T12 (its own sheet(s) only). It only CHECKS: the
-      // lines where the two readings differ become "Needs review" cards in Underwriting — the operator decides them.
+      // 2.9.16 — read a property's T12 again with the reader AND the AI (its own sheet(s) only), the whole reading
+      // process. It only CHECKS: a failed check or a disagreement opens the review for the operator — they decide.
       check_t12: function(a){
         var rp=aiAsstResolveProp(a&&a.name, {archived:false}), badp=aiAsstPropMiss(rp, a&&a.name); if(badp) return badp; var key=rp.key;
         if(!aiAvailable()) return {ok:false,msg:"The T12 check needs Claude connected."};
         return opReadPropT12(key).then(function(r){
           if(!r) return {ok:false,msg:rp.name+" has no T12 the app can read"+(opPartsWaitingFor(key,"t12").length ? " — its T12 file has several parts and no answer yet (Documents → Answer)" : "")+". Nothing was checked."};
-          return opT12Check(key, { force:true }).then(function(rv){
-            if(!rv) return {ok:false,msg:"The T12 check of "+rp.name+" didn’t run."};
-            var open=(rv.cards||[]).filter(function(c){ return c && !c.decision; }).length, where=r.combined ? r.partsLabel : (r.sheet ? "sheet “"+r.sheet+"”" : r.name);
-            if(rv.status==="agree") return {ok:true,msg:"Checked "+rp.name+"’s T12 ("+r.name+", "+where+") with AI — both readings agree.",data:{status:"agree",file:r.name,part:where}};
-            if(rv.status==="needs-review") return {ok:true,msg:"Checked "+rp.name+"’s T12 ("+r.name+", "+where+") with AI — "+open+" line"+(open===1?"":"s")+" to review in Underwriting (Needs review). Nothing was changed: the operator decides each one.",data:{status:"needs-review",toReview:open,file:r.name,part:where}};
-            return {ok:false,msg:"The T12 check of "+rp.name+" couldn’t finish: "+(rv.error||rv.status)+"."};
+          return t12GatePending(key, { fileId: r.id, force: true, interactive: true }).then(function(list){
+            var e=(list||[])[0];
+            if(!e||!e.status) return {ok:false,msg:"The T12 check of "+rp.name+" didn’t run."};
+            var where=r.combined ? r.partsLabel : (r.sheet ? "sheet “"+r.sheet+"”" : r.name), why=t12WhyText(e);
+            if(e.status==="checked"||(e.reader&&e.reader.ok&&e.ai&&e.ai.status==="agree")) return {ok:true,msg:"Read "+rp.name+"’s T12 ("+r.name+", "+where+") again with the reader and the AI — every check passes and they agree.",data:{status:"checked",file:r.name,part:where}};
+            return {ok:true,msg:"Read "+rp.name+"’s T12 ("+r.name+", "+where+") again — "+why+". The review opened for the operator; nothing was changed by me.",data:{status:e.status,file:r.name,part:where,why:why}};
           });
         });
       },
@@ -12518,7 +13010,7 @@ tr.flagged:hover td{background:#fee2e2}
           else out.ambiguous.push({ name: name || "this file", role: null, keys: hits.map(function(x){ return x.key; }), found: hits.map(function(x){ return x.found; }) });
         }
       }
-      if(!out.keys.length && !out.ambiguous.length && fallbackKey) add(fallbackKey, null, "(where you dropped it)");
+      if(!out.keys.length && !out.ambiguous.length && fallbackKey && !(out.detected === "t12" && out.sheets.length)) add(fallbackKey, null, "(where you dropped it)");   // 2.9.16 — a T12 naming no property: fileRouteKeys asks which sheet is this property's (it was filed as a plain document)
       if(out.detected === "t12" && out.sheets.length === 1) out.keys.forEach(function(k){ if(!out.sheetByKey[k]) out.sheetByKey[k] = out.sheets[0]; });
       // 2.9.8 (d4) — a loan agreement / note is recognised from its words (scanned ones too, once read), not left as "Other".
       if(out.detected === "other" && text && looksLikeLoanAgreement(text)){ out.detected = "agreement"; out.keys.forEach(function(k){ if(!out.roleByKey[k]) out.roleByKey[k] = "agreement"; }); }
@@ -12913,11 +13405,11 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function newSaveAcc(){ return { touched:{}, unmatched:[], dup:[], failed:[], noText:[], renamed:[], textFiled:[], skipped:[], read:[], stopped:[], t12:{}, unmatchedSheets:[] }; }
     // 2.9.8 (problem 1) — every property that just received a T12 (one file can feed six) reads it now: its figures
-    // and General Data are rebuilt from its own sheet, and the AI double-reads it in the background.
+    // and General Data are rebuilt from its own sheet, and (2.9.16) the reader and the AI read it before it is used.
     function opAfterT12Saved(keys){
       return keys.reduce(function(pr, k){ return pr.then(function(){
         try{ OperatingStore.remove(k); }catch(e){}
-        return opAfterT12Change(k).catch(function(){}).then(function(){ try{ opT12Check(k); }catch(e){} });
+        return opAfterT12Change(k).catch(function(){}).then(function(){ return t12GatePending(k, { interactive: true }).catch(function(){}); });   // 2.9.16 — the gate
       }); }, Promise.resolve()).then(function(){ try{ redrawAll(); }catch(e){} });
     }
     function saveAccSummary(acc){
@@ -12954,7 +13446,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(t.via==="text" && keys[0] && keys[0]!==fallbackKey) acc.textFiled.push({ name:name, key:keys[0], found:(t.matched[0]||{}).name });
       var ask = t.ambiguous.length ? t.ambiguous.reduce(function(pr, amb){ return pr.then(function(){ return askWhichProperty(amb.name && amb.name!=="this file" ? amb.name+(amb.sheet ? " — sheet “"+amb.sheet+"”" : "")+" ("+name+")" : name, amb.keys, amb.found).then(function(k){ if(k){ if(keys.indexOf(k)<0) keys.push(k); if(amb.role && !roleByKey[k]) roleByKey[k]=amb.role; if(amb.sheet && !sheetByKey[k]) sheetByKey[k]=amb.sheet; } }); }); }, Promise.resolve()) : Promise.resolve();
       return ask.then(function(){
-        if(!keys.length && !t.ambiguous.length && fallbackKey) keys=[fallbackKey];
+        if(!keys.length && !t.ambiguous.length && fallbackKey && !(t.detected==="t12" && t.sheets.length)) keys=[fallbackKey];   // 2.9.16 — a T12 that names no property is asked about below (it was filed as a plain document)
         // 2.9.8 (problem 1) — a T12 you dropped on a property (or attached in its chat) always reaches it: when the
         // workbook doesn't name that property, the app asks which sheet is its own (or keeps it as a document). Other
         // files still go only where their content says (2.9.7, #39) — a rent roll or an agreement naming another
@@ -12992,11 +13484,14 @@ tr.flagged:hover td{background:#fee2e2}
           if(fileReadMemo && file) fileReadMemo.set(file, Promise.resolve(res));
           if((res.ocrPages&&res.ocrPages.length) || res.ocrPictures || (res.failedPages&&res.failedPages.length)) acc.read.push({ name:job.name, label:res.label });
           if(!res.text) acc.noText.push({ name:job.name, note:res.note||"" });
-          return fileRouteKeys(job.name, res.text, null, job.fallbackKey, job.role, acc).then(function(rt){
+          // 2.9.16 — a workbook read from the queue is looked at as a sheet too, so a T12 (or a rent roll) added in
+          // Documents is recognised as one (it was filed as a plain document) — and a T12 goes through the reading
+          var qGrid = /\.(xlsx|xls|csv)$/i.test(job.name||"") ? opDetectGrid(bytes) : null;
+          return fileRouteKeys(job.name, res.text, qGrid, job.fallbackKey, job.role, acc).then(function(rt){
             if(!rt.keys.length){ acc.skipped.push(job.name); return ldsShell.readqDone(job.id); }
             return Promise.all(rt.keys.map(function(k){ var p=opProp(k);
               return ldsShell.docSaveQueued({ id:job.id, propKey:k, propName:(p&&p.name)||job.fallbackName||k, name:job.name, text:res.text||"", type:job.type||"", role:(rt.roleByKey[k]||"other"), label:res.label||"", sheet:(rt.sheetByKey&&rt.sheetByKey[k])||"" })
-                .then(function(r){ if(!r||!r.ok){ acc.failed.push(job.name); return; } if(r.duplicate){ acc.dup.push(job.name); return; } acc.touched[k]=1; if(r.renamed) acc.renamed.push({ from:job.name, to:r.renamed }); }).catch(function(){ acc.failed.push(job.name); }); }))
+                .then(function(r){ if(!r||!r.ok){ acc.failed.push(job.name); return; } if(r.duplicate){ acc.dup.push(job.name); return; } acc.touched[k]=1; if((rt.roleByKey[k]||"other")==="t12") acc.t12[k]=(rt.sheetByKey&&rt.sheetByKey[k])||true; if(r.renamed) acc.renamed.push({ from:job.name, to:r.renamed }); }).catch(function(){ acc.failed.push(job.name); }); }))
               .then(function(){ return ldsShell.readqDone(job.id); });
           });
         });
@@ -13076,6 +13571,7 @@ tr.flagged:hover td{background:#fee2e2}
               '<div class="text-[11px] text-slate-400">'+fmtBytes(f.size)+' · saved '+escapeHtml(new Date(f.savedAt).toLocaleDateString())+(f.textLen?'':' · <span class="text-amber-600">no readable text</span>')+'</div>'+
               (f.readLabel ? '<div class="text-[11px] '+(/OCR|couldn/i.test(f.readLabel)?'text-amber-700':'text-slate-500')+'" data-docread>'+escapeHtml(f.readLabel)+'</div>' : '')+   // 2.9.8 (d4) — how it was read
               (opIsSheetFile(f.name) ? '<div class="text-[11px] text-slate-500" data-docpart="'+escapeHtml(f.id)+'"></div>' : '')+   // 2.9.9 — which part of the file is this property's (filled in below)
+              (function(){ var te = t12Entries(propKey).filter(function(x){ return x.fileId === f.id || (x.sha && x.sha === f.sha); })[0]; if(!te) return ''; return '<div class="text-[11px] '+(te.status === "waiting" || te.status === "legacy-review" || te.status === "recheck-review" ? 'font-semibold text-amber-700' : (te.status === "reading" ? 'text-sky-700' : 'text-emerald-700'))+'" data-doct12="'+escapeHtml(te.status)+'">T12: '+escapeHtml(T12_STATUS[te.status] || te.status)+(te.status === "waiting" || te.status === "legacy-review" || te.status === "recheck-review" ? ' · <button type="button" data-t12open="'+escapeHtml(te.sig)+'" data-t12key="'+escapeHtml(propKey)+'" class="underline">Review</button>' : '')+'</div>'; })()+   // 2.9.16 — the gate
               (opIsPdf(f.name) && !APP_DOC_ROLES[f.role||""] ? '<div class="text-[11px] text-slate-500" data-docpages="'+escapeHtml(f.id)+'"></div>' : '')+'</div>'+   // 2.9.11 — which pages are this property's
             (opIsPdf(f.name) && !APP_DOC_ROLES[f.role||""] ? '<button type="button" data-pdfparts="'+escapeHtml(f.id)+'" data-pdfpartskey="'+escapeHtml(propKey)+'" title="Split it by pages, or link it to several properties" class="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Pages &amp; properties</button>' : '')+
             '<select data-doctype="'+escapeHtml(f.id)+'" title="What this document is" class="shrink-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11px] text-slate-600">'+typeOpts(f.role||"other")+'</select>'+
@@ -13115,7 +13611,7 @@ tr.flagged:hover td{background:#fee2e2}
           ldsShell.docSetRole(propKey, id, sel.value).then(function(rr){
             if(!rr||!rr.ok){ toast("Couldn’t change its type"+(rr&&rr.error?" ("+rr.error+")":"")+".","error"); renderDocsPanel(); return; }
             toast("“"+(f?f.name:"The file")+"” is now "+profileDocLabel(sel.value)+".","check");
-            if(was==="t12"||sel.value==="t12"){ opAfterT12Change(propKey); }   // a T12 added or taken away by its type
+            if(was==="t12"||sel.value==="t12"){ opAfterT12Change(propKey).then(function(){ if(sel.value==="t12") return t12GatePending(propKey, { fileId: id, interactive: true }); }); }   // a T12 added or taken away by its type — 2.9.16: a new one goes through the gate
             try{ delete loanRRCache[propKey]; }catch(e){} try{ renderLoanUnitStats(); }catch(e){} aiAsstUpdatePropDocs(); renderDocsPanel();
           }); }); });
         host.querySelectorAll('[data-docsave]').forEach(function(b){ b.addEventListener('click', function(){ ldsShell.docRead(propKey, b.getAttribute('data-docsave')).then(function(rr){ if(rr&&rr.ok){ var ext=(String(rr.name).split('.').pop()||'bin'); ldsShell.saveBinary(rr.base64, rr.name, ext, 'Document'); } }); }); });
@@ -13169,7 +13665,7 @@ tr.flagged:hover td{background:#fee2e2}
       else {
         try{ opInit(); if(OperatingStore.get(key)) OperatingStore.remove(key); }catch(e){}
         await gdSerial(key, async () => { const gd = await opLoadGeneralData(key); if(gd){ gd.noi = null; gd.t12Review = null; gd.push = null; gd.updatedAt = new Date().toISOString(); await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd; } gdNOICache[key] = null; });
-        try{ toast(opPropDisplayName(key) + " has no T12 now — no NOI yet.", "info"); }catch(e){}
+        try{ if(!(t12GateBusy[key] || t12GateQueued[key] || t12Entries(key).some(function(e){ return e.status === "waiting" || e.status === "reading"; }))) toast(opPropDisplayName(key) + " has no T12 now — no NOI yet.", "info"); }catch(e){}   // 2.9.16 — not while a T12 is being read or waits for you
       }
       try{ if(opFocusKey === key) await opSelectProperty(key, { skipAutoPush: true }); }catch(e){}
       try{ redrawAll(); }catch(e){}
@@ -14255,6 +14751,7 @@ tr.flagged:hover td{background:#fee2e2}
         try{ await opRecomputeOnVersionChange(); }catch(e){}
         try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
         appBooting = false;
+        setTimeout(function(){ try{ t12MigrateAll(); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
         try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))){ const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
         redrawAll();
       })();

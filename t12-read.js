@@ -129,6 +129,7 @@
         if (o.role === "income-total") moved.income = true;
         if (o.role === "noi") moved.noi = e.row;
         e.role = o.role; e.yours = true;
+        if (o.role === "account" || o.role === "not-operating" || o.role === "total" || o.role === "heading") e.figYours = true;   // which rows count changes
       }
     });
     // a NOI row you set moves where the reading stops: rows after it are below the NOI; rows that were below the
@@ -143,9 +144,9 @@
     if (moved.income && incAt >= 0) rows.forEach(function (x){ if (x.row > reading.headerRow) x.side = x.row <= incAt ? "income" : "expense"; });
     ov.forEach(function (o){
       var e = byExcel[o.row];
-      if (o.side === "income" || o.side === "expense"){ e.side = o.side; e.yours = true; }
+      if (o.side === "income" || o.side === "expense"){ if (e.side !== o.side) e.figYours = true; e.side = o.side; e.yours = true; }
       if (o.cat){ e.cat = o.cat; e.catYours = true; e.yours = true; }
-      if (isNum(o.amount)){ e.printed = e.amount; e.amount = o.amount; e.amountYours = true; e.note = o.note || ""; e.yours = true; }
+      if (isNum(o.amount)){ e.printed = e.amount; e.amount = o.amount; e.amountYours = true; e.note = o.note || ""; e.yours = true; e.figYours = true; }
       if (o.note && !e.note) e.note = o.note;
     });
     // headings: each account sits under the last category name above it
@@ -241,12 +242,24 @@
   }
 
   // ---- the figures every screen uses (the shape t12-parse returns) ----------------------------------------------
+  // The figures every screen uses. Without your changes they are the statement's: its accounts and its printed income,
+  // expense and NOI rows. Once you change what counts (a row's role, an account's side, an amount), the figures are YOUR
+  // reading: income = your income accounts, expenses = your expense accounts, NOI = income − expenses (month by month too;
+  // an amount you set spreads over its months in the file's proportions, evenly when its months are empty).
+  function scaleMonths(m, amount){
+    var keys = Object.keys(m || {}), sum = 0; keys.forEach(function (k){ sum += m[k] || 0; });
+    var out = {}; if (!keys.length) return out;
+    keys.forEach(function (k){ out[k] = Math.abs(sum) >= 0.005 ? r2((m[k] || 0) * amount / sum) : r2(amount / keys.length); });
+    var s2 = 0; keys.forEach(function (k){ s2 += out[k]; }); out[keys[keys.length - 1]] = r2(out[keys[keys.length - 1]] + amount - s2);   // cents land on the last month
+    return out;
+  }
   function toParsed(reading, res){
     var p = reading.parse || {}, rows = [], subtotals = [], belowLine = [];
+    var yoursFig = res.rows.some(function (e){ return e.figYours; });
     var foot = { incomeRow: -1, expenseRow: -1, noiRow: -1 }, totals = { income: null, expense: null, noi: null };
     res.rows.forEach(function (e){
       if (e.role === "account") rows.push({ name: e.label, amount: isNum(e.amount) ? e.amount : 0, section: e.side === "expense" ? "EXPENSE" : "INCOME", sub: e.sub || "", row: e.row,
-        monthly: clone(e.monthly) || {}, forceCode: e.catYours ? e.cat : undefined, decided: !!e.yours });
+        monthly: e.amountYours ? scaleMonths(e.monthly, e.amount) : (clone(e.monthly) || {}), forceCode: e.catYours ? e.cat : undefined, decided: !!e.yours });
       else if (e.role === "total" && e.totalKind !== "group") subtotals.push({ name: e.label, amount: e.amount, section: e.side === "expense" ? "EXPENSE" : "INCOME", row: e.row });
       else if (e.role === "not-operating") belowLine.push({ name: e.label, amount: e.amount, row: e.row });
       else if (e.role === "income-total"){ foot.incomeRow = e.row; totals.income = e.amount; }
@@ -258,21 +271,39 @@
     if (totals.noi == null) totals.noi = res.noi.computed;
     var totalsMonthly = {};
     ["income", "expense", "noi"].forEach(function (k){ var ri = foot[k + "Row"]; if (ri >= 0){ var e = res.rows[ri]; totalsMonthly[k] = clone(e.monthly) || {}; } });
+    if (yoursFig){
+      totals = { income: r2(res.income.sum), expense: r2(res.expense.sum), noi: r2(res.noi.computed) };
+      var tm = { income: {}, expense: {}, noi: {} };
+      rows.forEach(function (r){ var k = r.section === "EXPENSE" ? "expense" : "income"; Object.keys(r.monthly || {}).forEach(function (ym){ tm[k][ym] = r2((tm[k][ym] || 0) + (r.monthly[ym] || 0)); }); });
+      Object.keys(tm.income).concat(Object.keys(tm.expense)).forEach(function (ym){ tm.noi[ym] = r2((tm.income[ym] || 0) - (tm.expense[ym] || 0)); });
+      totalsMonthly = tm;
+    }
     var cats = res.groups.map(function (g){ return { name: g.label, amount: g.amount, row: g.row - 1 }; });
     return { headerRow: reading.headerRow, descCol: reading.descCol, amountCol: reading.amountCol, codeCol: reading.codeCol, cols: p.cols, months: p.months, monthCols: p.monthCols,
       totalsMonthly: totalsMonthly, basis: "total", basisUsed: "total", periodsAvailable: p.periodsAvailable, rows: rows, categories: cats, totals: totals, footing: foot,
       belowLine: belowLine, subtotals: subtotals, summaryTotals: p.summaryTotals || null, summaryFooting: p.summaryFooting || null, summaryMismatch: !!p.summaryMismatch, warnings: p.warnings || [],
-      checked: { ok: res.ok, failures: res.failures.length } };
+      checked: { ok: res.ok, failures: res.failures.length, yours: yoursFig } };
   }
 
   // grid → the checked reading in one call (your overrides applied)
   function readAndCheck(grid, overrides){ return check(read(grid), overrides); }
 
   // ---- what the AI is given, how it answers, and the comparison at every level ------------------------------
+  var MON3 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   function aiInput(grid, opts){
     opts = opts || {}; var out = [];
+    // a month heading Excel stores as a date (a serial number, or a Date) is shown as the month it is ("Jan 2026"), so the
+    // AI sees the months the reader sees; every other cell is given exactly as it is
+    var hdr = -1, mcol = {};
+    try { var p = T12Parse.parseGrid(grid || [], { basis: "total", monthly: true }); hdr = p.headerRow; (p.monthCols || []).forEach(function (mc){ if (mc && mc.ym) mcol[mc.col] = mc.ym; }); } catch (e) { hdr = -1; }
+    var cellText = function (c, i, j){
+      if (c == null) return "";
+      if (i === hdr && mcol[j] && (typeof c === "number" || c instanceof Date)){ var ym = mcol[j].split("-"); return MON3[+ym[1] - 1] + " " + ym[0]; }
+      if (c instanceof Date) return isNaN(c) ? "" : c.toISOString().slice(0, 10);
+      return String(c).trim();
+    };
     (grid || []).forEach(function (row, i){
-      var cells = Array.isArray(row) ? row.map(function (c){ return c == null ? "" : String(c).trim(); }) : [];
+      var cells = Array.isArray(row) ? row.map(function (c, j){ return cellText(c, i, j); }) : [];
       out.push("Row " + (i + 1) + ": " + (cells.some(function (c){ return c !== ""; }) ? cells.join(" | ") : "(empty)"));
     });
     return (opts.fileName ? "File: " + opts.fileName + (opts.sheet ? " · sheet " + opts.sheet : "") + "\n" : "") + out.join("\n");
@@ -371,7 +402,50 @@
     return { agree: items.length === 0, items: items, compared: readerAcc.length };
   }
 
+  // ---- a T12 in several sheets (a property in phases): your changes, made sheet by sheet, on the combined statement ----
+  // FileParts.combineT12Grids adds the sheets line by line (a line is its name — the cells left of the months — and
+  // which time that name occurs). Each change you made on a sheet's row goes to the same line of the combined
+  // statement: what the row is, its side and category (the first sheet that sets one wins), and an amount as the
+  // difference it makes (the combined line = the sheets' amounts with yours in place of the file's).
+  function lineKeys(grid){
+    var h = T12Parse.findHeader(grid || [], { loose: true }); if (h.headerRow < 0 || h.cols.total < 0) return null;
+    var mcs = T12Parse.resolveMonthCols(grid[h.headerRow], h.months || []);
+    var firstNum = mcs.length ? Math.min.apply(null, mcs.map(function (m){ return m.col; })) : h.cols.total;
+    var seen = {}, keys = {};
+    for (var r = h.headerRow + 1; r < grid.length; r++){
+      var row = grid[r] || [], pre = [];
+      for (var c = 0; c < firstNum; c++) pre.push(str(row[c]));
+      var label = pre.filter(Boolean).join(" ").toLowerCase().replace(/\s+/g, " ");
+      var any = toNum(row[h.cols.total]) != null || mcs.some(function (m){ return toNum(row[m.col]) != null; });
+      if (!label && !any) continue;
+      var n = seen[label] = (seen[label] || 0) + 1; keys[r + 1] = label + "#" + n;
+    }
+    return { keys: keys, totalCol: h.cols.total };
+  }
+  function combineOverrides(parts, combined){
+    var ck = lineKeys(combined); if (!ck) return [];
+    var at = {}; Object.keys(ck.keys).forEach(function (ex){ at[ck.keys[ex]] = +ex; });
+    var acc = {}, order = [];
+    (parts || []).forEach(function (pt){
+      var pk = pt && pt.grid ? lineKeys(pt.grid) : null; if (!pk) return;
+      (pt.overrides || []).forEach(function (o){
+        var cr = o && at[pk.keys[o.row]]; if (!cr) return;
+        var c = acc[cr]; if (!c){ c = acc[cr] = { row: cr, by: o.by, at: o.at, notes: [], delta: 0, amt: false }; order.push(cr); }
+        if (o.role && !c.role) c.role = o.role; if (o.side && !c.side) c.side = o.side; if (o.cat && !c.cat) c.cat = o.cat;
+        if (isNum(o.amount)){ c.delta = r2(c.delta + o.amount - (toNum((pt.grid[o.row - 1] || [])[pk.totalCol]) || 0)); c.amt = true; }
+        if (o.note) c.notes.push(o.note);
+      });
+    });
+    return order.map(function (cr){
+      var c = acc[cr], o = { row: cr, by: c.by, at: c.at };
+      if (c.role) o.role = c.role; if (c.side) o.side = c.side; if (c.cat) o.cat = c.cat;
+      if (c.amt) o.amount = r2((toNum((combined[cr - 1] || [])[ck.totalCol]) || 0) + c.delta);
+      if (c.notes.length) o.note = c.notes.join(" · ");
+      return o;
+    });
+  }
+
   return { TOL: TOL, ROLES: ROLES, EDITABLE_ROLES: EDITABLE_ROLES, gridFromSheet: gridFromSheet, read: read, check: check, readAndCheck: readAndCheck, applyOverrides: applyOverrides,
            categoryOf: categoryOf, toParsed: toParsed, aiInput: aiInput, aiInstruction: aiInstruction, aiSchema: aiSchema, setCustom: setCustom, compare: compare,
-           colName: colName, money: money };
+           colName: colName, money: money, combineOverrides: combineOverrides };
 });
