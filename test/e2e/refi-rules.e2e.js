@@ -4,6 +4,7 @@
              the penalty, extra cash > 20% → your decision; anything else → Don't refinance (a higher rate
              whatever the cash)
    #184/#185 the decision case shows the two options and the proposal; the amount can't go to ≤ 20% extra cash
+             (2.9.14 R1 — and never so low that the extra cash doesn't cover the penalty: refi-arm-2914)
    #22/#23   the amount stops at what the property supports; "at this loan (…): DSCR · LTV · DY" under it
    #258      the proposed-rate row is in the verdict card whatever the verdict
    #25       a senior + mezz payoff = each loan at its own balance
@@ -31,13 +32,15 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const verdict=(patch)=>page.evaluate(({lid,patch})=>{ const l=window.LDS_loans().find(x=>x._id===lid); const v=window.LDS_refiVerdictWith(l,patch||{}); const s=v.should||{};
     return { can:v.can.can, max:v.can.maxLoan, refi:v.refi, decision:v.decision, kind:s.kind, why:s.why, saved:s.saved, penalty:s.penalty, cashPct:s.cashPct, newRate:s.newRate, curRate:s.curRate, payoff:s.payoff }; },{lid:LID,patch});
 
+  // 2.9.14 (R1): "your decision" also needs the extra cash to cover the penalty — so today's rate is 4.50% (the
+  // proposal is lower, the saving small): a penalty of twice the saving stays well under 25% extra cash.
   // (3) the lower rate pays for a zero penalty → Refinance
-  const payoff=await setup(0.0600,'Open / at par',0);
+  const payoff=await setup(0.0450,'Open / at par',0);
   const v1=await verdict();
   ok(v1.can&&v1.kind==='yes'&&v1.why==='saves'&&v1.saved>0&&v1.penalty===0,'lower rate, no penalty → Refinance (saves '+Math.round(v1.saved)+')');
   // penalty twice the saving → Don't refinance (no extra cash)
   const step=(2*v1.saved)/payoff;
-  await setup(0.0600,'Step-down',step);
+  await setup(0.0450,'Step-down',step);
   const v2=await verdict();
   ok(v2.kind==='no'&&v2.why==='penalty'&&v2.penalty>v2.saved,'the saving ('+Math.round(v2.saved)+') doesn\'t pay the penalty ('+Math.round(v2.penalty)+') → Don\'t refinance');
   // (4) …but with extra cash above 20% of what you owe → your decision; 15% → Don't
@@ -55,7 +58,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(v6.kind==='yes'&&v6.why==='maturity','today\'s loan ends within 12 months → Refinance (even at a higher rate)');
 
   // ---- the screen in the decision case ----
-  await setup(0.0600,'Step-down',step);
+  await setup(0.0450,'Step-down',step);
   await page.evaluate((lid)=>{ document.getElementById('scopeLoanBtn').click(); const s=document.getElementById('loanSelect'); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); window.LDS_resetRefiDraft(); },LID);
   await page.waitForTimeout(400); await page.click('#refiBtn'); await page.waitForTimeout(600);
   let S=await page.evaluate(()=>({ v:document.querySelector('[data-refiverdict]').getAttribute('data-refiverdict'), pricing:!!document.querySelector('[data-refiverdict] #refiPricing #o1_spread'), amount:!!document.querySelector('#refiPricing #o1_amount'), atloan:(document.querySelector('[data-refiatloan]')||{}).textContent||'' }));
