@@ -10,7 +10,7 @@ const FAKE=path.join(APP,'test','fixtures','fake-claude-push.js'), T12=path.join
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-push1-')), CALLS=path.join(UDATA,'calls.txt');
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
-const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').filter(l=>l&&!/T12-CHECK/.test(l)).length; }catch(e){ return 0; } };   // "what to push" calls only (the T12 double reading is counted separately)
+const calls=()=>{ try{ return fs.readFileSync(CALLS,'utf8').trim().split('\n').filter(l=>l&&!/T12-(CHECK|READ)/.test(l)).length; }catch(e){ return 0; } };   // "what to push" calls only (the T12 reading — 2.9.16: by the reader and the AI — is counted separately)
 // an older year's T12 (Jul 2024 → Jun 2025)
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], ms=[]; for(let i=0;i<12;i++){ const y=2024+Math.floor((i+6)/12); ms.push(MON[(i+6)%12]+" "+y); }
 const g=Array(12).fill(50000), t=Array(12).fill(5000), sum=a=>a.reduce((x,y)=>x+y,0);

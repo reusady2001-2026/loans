@@ -41,7 +41,10 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.evaluate(()=>window.LDS_clearGDCache());
 
   // ---- the fix: opEnsureGeneralData backfills general-data.json from the T12 ----
-  const rec=await page.evaluate(async(k)=>{ await window.LDS_opEnsureGeneralData(k); return window.LDS_gdNOICache()[k]; },KEY);
+  // 2.9.16 — general-data.json also held the T12's reading (the reader + the AI); with it gone the T12 is read again
+  // before its numbers are used (Claude is off here: "Use the reader's reading" is answered by _t12auto.js)
+  await page.evaluate(async(k)=>{ await window.LDS_opEnsureGeneralData(k); },KEY);
+  let rec=null; for(let i=0;i<60;i++){ rec=await page.evaluate((k)=>window.LDS_gdNOICache()[k],KEY); if(rec&&rec.inPlace!=null&&rec.underwritten!=null) break; await page.waitForTimeout(500); }
   ok(rec!=null && rec.inPlace!=null && rec.underwritten!=null, 'the refi backfills BOTH NOIs from the folder T12 (in-place '+(rec&&rec.inPlace)+', underwritten '+(rec&&rec.underwritten)+')');
 
   // ---- general-data.json is written back to the folder (so it persists next launch) ----

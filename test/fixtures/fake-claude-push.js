@@ -19,6 +19,11 @@ process.stdin.on('end', () => {
   // ($LDS_FAKE_T12 = "agree"), or with two deliberate disagreements ("disagree": a reimbursement line read as a
   // utility expense, and one repairs month read $600 higher).
   if (/checking a property's trailing-twelve-month operating statement/i.test(a[1] || '')) { answerT12(raw); return; }
+  // 2.9.16 — the T12 read by the reader AND the AI before it is used: answer with the reader's own reading of the rows
+  // it was sent (every account, every category box, the income / expense totals and the NOI) — "agree"; or with two
+  // deliberate disagreements ("disagree": a reimbursement read as an expense, and a repairs account $600 higher);
+  // "error": the AI fails.
+  if (/You are reading a property's trailing-twelve-month operating statement/i.test(a[1] || '')) { answerT12Read(raw); return; }
   // 2.9.7 — the assistant chat: answers come, in order, from the JSON array in $LDS_FAKE_CHAT_FILE (a string,
   // or {error:"…"}); every prompt it was sent is appended to $LDS_FAKE_CHAT_LOG (one JSON line each).
   if (/Respond to the request provided on standard input/i.test(a[1] || '')) { answerChat(raw); return; }
@@ -72,6 +77,28 @@ function answerT12(raw){
     const rm = lines.find((l) => /repair/i.test(l.label)); if (rm && rm.monthly[4]){ rm.monthly[4].amount += 600; rm.annual += 600; }
   }
   const data = { lines: lines, totals: {} };
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
+}
+
+function answerT12Read(raw){
+  if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' T12-READ\n'); } catch (e) {} }
+  if (process.env.LDS_FAKE_T12_INPUT) { try { fs.appendFileSync(process.env.LDS_FAKE_T12_INPUT, raw + '\n=====\n'); } catch (e) {} }   // what the AI was given
+  const mode = process.env.LDS_FAKE_T12 || 'agree';
+  if (mode === 'error') { console.log(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'FAKE-ERROR the AI could not read it' })); return; }
+  const R = require(path.join(__dirname, '..', '..', 't12-read.js'));
+  const grid = [];
+  String(raw).split('\n').forEach((l) => { const m = l.match(/^Row (\d+): (.*)$/); if (!m) return;
+    grid[+m[1] - 1] = m[2] === '(empty)' ? [] : m[2].split(' | ').map((c) => (c === '' ? null : (/^-?\d+(\.\d+)?(e-?\d+)?$/i.test(c) ? +c : c))); });
+  for (let i = 0; i < grid.length; i++) if (!grid[i]) grid[i] = [];
+  const res = R.check(R.read(grid));
+  const acc = res.rows.filter((e) => e.role === 'account').map((e) => ({ row: e.excel, label: e.label, role: e.side, category: e.cat, annual: e.amount,
+    monthly: Object.keys(e.monthly || {}).map((k) => ({ month: k, amount: e.monthly[k] })) }));
+  const boxes = res.boxes.map((b) => { const t = res.rows.filter((e) => e.excel === b.totalRow)[0]; return { name: b.name, nameRow: b.headingRow, totalRow: b.totalRow, total: t ? t.amount : null }; });
+  if (mode === 'disagree') {
+    const re = acc.find((x) => /reimburs/i.test(x.label)); if (re) { re.role = 'expense'; re.category = 'UTIL'; }
+    const rm = acc.find((x) => /repair/i.test(x.label)) || acc.filter((x) => x.role === 'expense')[0]; if (rm) { rm.annual += 600; if (rm.monthly[4]) rm.monthly[4].amount += 600; }
+  }
+  const data = { accounts: acc, boxes: boxes, totals: { income: { row: res.income.row, amount: res.income.printed }, expense: { row: res.expense.row, amount: res.expense.printed }, noi: { row: res.noi.row, amount: res.noi.printed } } };
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
 }
 
