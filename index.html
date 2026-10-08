@@ -5470,7 +5470,14 @@ tr.flagged:hover td{background:#fee2e2}
         globalDefaults: () => uwState.input.bench,
         // 2.9.12 — the property's ONE NOI for the roll-up: the same in-place and underwritten figures Underwriting,
         // the property page and the portfolio show (your override, else the T12 rule's NOI from general-data).
-        propertyNOI: k => { if(String(k).slice(0, 6) === "stack:"){ const n = poolNOIOfKeys(stackKeys(k)); return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the stack's properties" }; } if(String(k).slice(0, 5) === "pool:"){ const pl = loans.find(x => x._id === String(k).slice(5)); const n = pl ? poolNOI(pl) : null; return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the pool's properties" }; } return propOneNOI(k); } };
+        propertyNOI: k => { if(String(k).slice(0, 6) === "stack:"){ const n = poolNOIOfKeys(stackKeys(k)); return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the stack's properties" }; } if(String(k).slice(0, 5) === "pool:"){ const pl = loans.find(x => x._id === String(k).slice(5)); const n = pl ? poolNOI(pl) : null; return n == null ? null : { inPlace: n, underwritten: null, from: "pool", method: "sum of the pool's properties" }; } const one = propOneNOI(k); if(one) return one;
+          // 2.9.15 (C1) — the rest of Home's NOI chain (the loan's own NOI, the property's entered NOI, a removed loan's NOI),
+          // so a property counts with the same NOI on both screens; the operating model's NOI stays the record's own read.
+          try{ const p = opProperties().find(x => x.key === k); if(!p) return null; const op = p.loans.length ? opNOI(p.loans[0]) : null; if(op != null) return null;
+            const n = p.loans.length ? propertyNOI(p.loans) : propNOIByKey(k, p.inactive || []); return (n != null && isFinite(n)) ? { inPlace: n, underwritten: null, from: "app", method: "the NOI the app shows for this property" } : null; }catch(e){ return null; } },
+        // 2.9.15 (C1) — the value and the coverage Home counts for the row, so the portfolio LTV and the "with no NOI" count match Home.
+        propertyValue: k => { const cp = positionOfKey(k); return cp ? cp.value : null; },
+        rowCoverage: k => { const cp = positionOfKey(k); return cp ? { props: cp.props, noNOI: cp.noNOI, noNOIDebt: cp.noNOIDebt } : null; } };
     }
     // 2.9.12 — a property's NOI as the whole app reads it, with where it came from: your override, else the T12
     // rule's NOI (general-data.json — annualized when the rule says so), else null (the caller falls back to the
@@ -7643,27 +7650,33 @@ tr.flagged:hover td{background:#fee2e2}
         byType[loan.rateType]=(byType[loan.rateType]||0)+(d.currentBalance||0);
         const y=d.maturityDate?+String(d.maturityDate).slice(0,4):null; if(y)matByYear[y]=(matByYear[y]||0)+(d.currentBalance||0); });
       const wAvg=totalBal>0?rateWB/totalBal:0;
-      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan; return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,name:sr.propertyName||loanLabel(sr)}; });
+      const items=groupList.map(g=>{ const sr=(g.members.find(m=>!isMezz(m.loan))||g.members[0]).loan, list=g.members.map(m=>m.loan); return {sr,combo:g.members.length>1,count:g.members.length,cp:g.cp,cov:positionCoverage(list,g.cp),name:sr.propertyName||loanLabel(sr)}; });
       // 2.9.8 (problem 4) — properties with no active loan stay in: their NOI counts, with no debt.
-      try{ opProperties().filter(p=>!(p.loans&&p.loans.length)&&!(p.pledged&&p.pledged.length)).forEach(p=>{ items.push({ sr:null, key:p.key, name:p.name, combo:false, count:0, cp:loanlessPosition(p), noLoan:true }); }); }catch(e){}
-      let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0, dyNoi=0, dyBal=0, nNoLoan=0;
-      // Every property with a positive NOI counts toward the portfolio coverage. A property with NOI ≤ 0 has no
-      // meaningful ratio and is simply not counted. 2.9.7 (#119) — Portfolio DSCR = total NOI ÷ total yearly loan
-      // payments over those properties (the Underwriting overview's formula, so both screens show one number);
-      // Portfolio LTV (#165) = their total balance ÷ total value.
-      // 2.9.8 — a property with no loan adds its NOI to DSCR's and debt yield's numerators and its value to LTV's
-      // denominator, with no debt: removing a loan raises DSCR and debt yield and lowers LTV, as it should.
-      items.forEach(it=>{const cp=it.cp; if(!(cp.noi>0)) return; nCov++;
-        if(it.noLoan){ nNoLoan++; sumNOI+=cp.noi; dyNoi+=cp.noi; if(cp.value>0) sumValue+=cp.value; return; }
-        covBal+=cp.balTot||0; sumNOI+=cp.noi; sumDS+=cp.annualDS||0; if(cp.dscr!=null&&cp.dscr<COV_DSCR_FLOOR)nBelowD++; if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); dyNoi+=cp.noi; dyBal+=cp.balTot||0; if(cp.debtYield<COV_DY_FLOOR)nBelowY++;} if(cp.value>0){ sumValue+=cp.value; sumBalV+=cp.balTot||0; if(cp.ltv!=null&&cp.ltv>COV_LTV_MAX)nAboveL++; }});
-      const wDscr=sumDS>0?sumNOI/sumDS:null, wDy=dyBal>0?dyNoi/dyBal:null, wLtv=(sumValue>0&&(sumBalV>0||nNoLoan))?sumBalV/sumValue:null, nUncov=items.filter(it=>!it.cp.entered).length;   // "awaiting NOI" = none entered (an entered-but-negative NOI is not awaiting)
-      try{ window.LDS_lastHomeCoverage = { wDscr: wDscr, wDy: wDy, wLtv: wLtv, sumNOI: sumNOI, sumDS: sumDS, sumBal: dyBal, sumValue: sumValue, nCov: nCov, nNoLoan: nNoLoan, targets: portfolioTargets() }; }catch(e){}   // diagnostics
+      try{ opProperties().filter(p=>!(p.loans&&p.loans.length)&&!(p.pledged&&p.pledged.length)).forEach(p=>{ const cp=loanlessPosition(p); items.push({ sr:null, key:p.key, name:p.name, combo:false, count:0, cp, cov:{ props:1, noNOI:cp.entered?0:1, noNOIDebt:0 }, noLoan:true }); }); }catch(e){}
+      let covBal=0,dyW=0,nCov=0,nBelowD=0,nBelowY=0,nAboveL=0, sumNOI=0, sumDS=0, sumBalV=0, sumValue=0, dyNoi=0, dyBal=0, nNoLoan=0, nProps=0, nNoNOI=0, noNOIDebt=0, nNeg=0;
+      // 2.9.15 (C1) — EVERY property counts in the portfolio, whatever its state, so Home shows where the whole book
+      // stands. Its NOI as it is: none entered counts as $0, a negative NOI as it is. Every loan's yearly payments and
+      // balance count — a property with debt and no NOI pulls DSCR, debt yield and LTV down, as it should. A pool or a
+      // stack counts once, with all its properties. A property with no loan adds its NOI and its value, with no debt.
+      // Value (LTV's denominator) comes from a positive NOI only; the balance always counts. Portfolio DSCR = total NOI ÷
+      // total yearly loan payments, debt yield = total NOI ÷ total balance, LTV = total balance ÷ total value — the
+      // Underwriting roll-up's totals use the same rule and the same figures, so both screens show one number.
+      items.forEach(it=>{const cp=it.cp, noi=(cp.entered&&isFinite(cp.noi))?cp.noi:0; nCov++;
+        nProps+=it.cov.props; nNoNOI+=it.cov.noNOI; noNOIDebt+=it.cov.noNOIDebt; if(cp.entered&&noi<=0) nNeg++;
+        sumNOI+=noi; dyNoi+=noi; if(cp.value>0) sumValue+=cp.value;
+        if(it.noLoan){ nNoLoan++; return; }
+        covBal+=cp.balTot||0; sumDS+=cp.annualDS||0; dyBal+=cp.balTot||0; sumBalV+=cp.balTot||0;
+        if(cp.dscr!=null&&cp.dscr<COV_DSCR_FLOOR)nBelowD++; if(cp.debtYield!=null){dyW+=cp.debtYield*(cp.balTot||0); if(cp.debtYield<COV_DY_FLOOR)nBelowY++;} if(cp.ltv!=null&&cp.ltv>COV_LTV_MAX)nAboveL++; });
+      const wDscr=sumDS>0?sumNOI/sumDS:null, wDy=dyBal>0?dyNoi/dyBal:null, wLtv=sumValue>0?sumBalV/sumValue:null;
+      // "N of N properties", and how many of them have no NOI (counted at $0) with the debt on them
+      const covScope=nProps+" of "+nProps+(nProps===1?" property":" properties"), covNoNOI=nNoNOI?(nNoNOI+" with no NOI ("+moneyShort(noNOIDebt)+" debt)"):"";
+      try{ window.LDS_lastHomeCoverage = { wDscr: wDscr, wDy: wDy, wLtv: wLtv, sumNOI: sumNOI, sumDS: sumDS, sumBal: dyBal, sumValue: sumValue, nCov: nCov, nNoLoan: nNoLoan, nProps: nProps, nNoNOI: nNoNOI, noNOIDebt: noNOIDebt, nNeg: nNeg, targets: portfolioTargets() }; }catch(e){}   // diagnostics
 
       const hero='<div class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4">'+
         kpiCard("Total Debt Outstanding", fmtMoney(totalBal), {highlight:true, sub: rows.length+" loans · "+moneyShort(totalOrig)+" originated"})+
         kpiCard("Weighted-Avg Rate", fmtPct(wAvg), {sub: fmtMoney(totalDS)+"/mo debt service"})+
-        kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the "+fmtX(COV_DSCR_FLOOR)+" target":"below the "+fmtX(COV_DSCR_FLOOR)+" target"):(nCov+" of "+items.length+" covered")})+
-        kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: wDy!=null?(wDy>=COV_DY_FLOOR?"clears the "+fmtPct(COV_DY_FLOOR)+" target":"below the "+fmtPct(COV_DY_FLOOR)+" target"):"awaiting NOI"})+
+        kpiCard("Portfolio DSCR", wDscr!=null?wDscr.toFixed(2)+"×":"—", {sub: (wDscr!=null?(wDscr>=COV_DSCR_FLOOR?"clears the "+fmtX(COV_DSCR_FLOOR)+" target":"below the "+fmtX(COV_DSCR_FLOOR)+" target")+" · ":"no debt service · ")+covScope+(covNoNOI?" · "+covNoNOI:"")})+
+        kpiCard("Portfolio Debt Yield", wDy!=null?fmtPct(wDy):"—", {sub: (wDy!=null?(wDy>=COV_DY_FLOOR?"clears the "+fmtPct(COV_DY_FLOOR)+" target":"below the "+fmtPct(COV_DY_FLOOR)+" target")+" · ":"no debt · ")+covScope+(covNoNOI?" · "+covNoNOI:"")})+
       '</div>';
 
       const donut=chartCard("Debt by rate type","current balance by structure",
@@ -7675,15 +7688,16 @@ tr.flagged:hover td{background:#fee2e2}
       const yrs=Object.keys(matByYear).map(Number).sort((a,b)=>a-b);
       const ladder=chartCard("Debt maturing by year","balloon / payoff by maturity — amber = next 2 years",
         dashBars(yrs.map(y=>({label:"’"+String(y).slice(2), value:matByYear[y], tip:moneyShort(matByYear[y]), color: y<=nowY+2?DASH_C.amber:DASH_C.green}))));
-      const covChips = items.filter(it=>it.cp.noi>0 && ((it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)||(it.cp.ltv!=null&&it.cp.ltv>COV_LTV_MAX)))
-        .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.name)+'</span>').join(' ');
-      const coverageViz=chartCard("Coverage vs targets", nCov+" of "+items.length+" properties valued · "+nUncov+" awaiting NOI",
+      // 2.9.15 (C1) — a loan on a property with no NOI, or with NOI at or below $0, is off every target: it is named here too
+      const covChips = items.filter(it=>!it.noLoan ? (!(it.cp.noi>0) || (it.cp.dscr!=null&&it.cp.dscr<COV_DSCR_FLOOR)||(it.cp.debtYield!=null&&it.cp.debtYield<COV_DY_FLOOR)||(it.cp.ltv!=null&&it.cp.ltv>COV_LTV_MAX)) : (it.cp.entered&&!(it.cp.noi>0)))
+        .map(it=>'<span class="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">'+escapeHtml(it.sr&&isPoolLoan(it.sr)?poolTitle(it.sr):it.name)+(!it.cp.entered?' · no NOI':(!(it.cp.noi>0)?' · NOI ≤ 0':''))+'</span>').join(' ');
+      const coverageViz=chartCard("Coverage vs targets", "every property counted · "+covScope+(nNoNOI?" · "+nNoNOI+" with no NOI, counted at $0 ("+moneyShort(noNOIDebt)+" debt)":""),
         dashGauge(wDscr, COV_DSCR_FLOOR, Math.max(1.6,(wDscr||1.4)*1.25), {label:"Portfolio DSCR", fmt:v=>v.toFixed(2)+"×"})+
         '<div class="h-3"></div>'+
         dashGauge(wLtv, COV_LTV_MAX, Math.max(1,(wLtv||0.6)*1.4), {label:"Portfolio LTV", fmt:v=>fmtPct(v), lowerIsBetter:true, id:"gaugeLtv"})+   // 2.9.7 (#165) — at or under the maximum is good
         '<div class="h-3"></div>'+
         dashGauge(wDy, COV_DY_FLOOR, Math.max(0.14,(wDy||0.09)*1.5), {label:"Portfolio Debt Yield", fmt:v=>fmtPct(v)})+
-        (covChips?'<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Off a target</div><div class="flex flex-wrap gap-1.5">'+covChips+'</div></div>':(nCov?'<p class="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-600">All valued properties meet the three targets.</p>':'')));
+        (covChips?'<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Off a target</div><div class="flex flex-wrap gap-1.5">'+covChips+'</div></div>':(nCov?'<p class="mt-3 pt-3 border-t border-slate-100 text-[11px] font-medium text-emerald-600">Every property meets the three targets.</p>':'')));
       const charts='<div class="grid gap-4 lg:grid-cols-3">'+donut+ladder+coverageViz+'</div>';
 
       const dCls=v=>v==null?'text-slate-400':v>=COV_DSCR_FLOOR?'text-emerald-700':v>=1.10?'text-amber-600':'text-rose-600';
@@ -9354,6 +9368,23 @@ tr.flagged:hover td{background:#fee2e2}
       const cr = sr ? loanCapRate(sr) : defaultCapRate(null), value = (noi > 0 && cr > 0) ? noi / cr : null;
       return { count: 0, origTot: 0, balTot: 0, piMoTot: 0, dsMoTot: 0, noi, entered: noi != null, value, annualDS: 0,
                blended: 0, dscr: null, debtYield: null, ltv: null, noLoan: true };
+    }
+    // 2.9.15 (C1) — what one Home item / roll-up row holds: how many properties (a pool or stack has several), how many
+    // of them have no NOI, and the debt on those (a pool member's share of the balance by its allocation).
+    function positionCoverage(list, cp){
+      const ks = []; (list || []).forEach(l => poolKeys(l).forEach(k => { if(ks.indexOf(k) < 0) ks.push(k); }));
+      if(ks.length <= 1) return { props: 1, noNOI: cp.entered ? 0 : 1, noNOIDebt: cp.entered ? 0 : (cp.balTot || 0) };
+      const pl = list.find(isPoolLoan) || list[0], al = poolAlloc(pl), aSum = poolAllocSum(al);
+      let noNOI = 0, debt = 0;
+      ks.forEach(k => { const n = poolKeyNOI(k); if(n != null && isFinite(n)) return; noNOI++; debt += (cp.balTot || 0) * (aSum > 0 ? (al[k] || 0) / aSum : 1 / ks.length); });
+      return { props: ks.length, noNOI, noNOIDebt: debt };
+    }
+    // The position Home shows for one roll-up key (a property, a stack of pooled loans, or a property with no loan).
+    function positionOfKey(k){
+      const list = activeLoans().filter(l => stackKeyOf(l) === k);
+      if(list.length){ const cp = combinedPosition(list); return Object.assign({}, cp, positionCoverage(list, cp)); }
+      const p = opProperties().find(x => x.key === k); if(!p) return null;
+      const cp = loanlessPosition(p); return Object.assign({}, cp, { props: 1, noNOI: cp.entered ? 0 : 1, noNOIDebt: 0 });
     }
     // A synthetic single loan representing a whole property's combined debt, so the
     // property can be refinanced as ONE package (you refinance the property, not the

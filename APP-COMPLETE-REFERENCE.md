@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.14 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.15 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.14
+**Current version:** 2.9.15
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -16,7 +16,8 @@ Windows install, and what comes next.*
 > the app (marked "2.9.7" below); 2.9.8 is the fixes from testing the installed 2.9.7 (marked "2.9.8"); 2.9.9 the
 > fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10"); 2.9.11 the
 > fixes from testing 2.9.10 (marked "2.9.11"); 2.9.12 the fixes from testing 2.9.11 (marked "2.9.12"); 2.9.13 the fix from testing 2.9.12
-> (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14").
+> (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14"); 2.9.15 the three fixes
+> from testing 2.9.14, T1, P1 and C1 (marked "2.9.15").
 
 ---
 
@@ -142,6 +143,20 @@ files, the app asks first ("Put them together").
   property values. A property with no loan stays in the Coverage table with its NOI and "no loan". Total debt and
   the weighted-average rate cover loans only. Underwriting's Portfolio roll-up uses the same rule. A sold property
   must be **archived** (not just its loan removed), or its NOI keeps counting.
+- **2.9.15 (C1) — every property counts, whatever its state.** Before, a property with no NOI or a negative NOI was
+  left out of the portfolio DSCR, debt yield and LTV, debt and all, so the tiles looked better than the book. Now:
+  - a property with a loan and **no NOI** counts as **$0 NOI with all its debt** (its yearly payments in DSCR, its
+    balance in debt yield and LTV);
+  - a **negative NOI** counts as it is (the portfolio DSCR can fall below zero);
+  - a property with **no loan** counts its NOI (and its value), with no debt, whatever its NOI;
+  - a **pool** or **stack** counts once, with all its properties.
+  Value (for LTV) comes from a positive NOI only; the balance always counts. The DSCR and debt-yield tiles say
+  **"N of N properties"** and how many have **no NOI** and how much debt sits on them ("K with no NOI ($… debt)");
+  the coverage chart says "every property counted"; a loan with no NOI or NOI ≤ 0 is named under **Off a target**.
+  Each row in the Coverage table keeps its own state ("needs T12/NOI", "NOI ≤ 0"). Underwriting's
+  **Portfolio roll-up** totals use the same rule and the same NOI, value and debt for each row, so both screens show
+  one DSCR, one debt yield and one LTV; its total row now shows the portfolio LTV, and the line under it reads
+  "N of N properties counted — DSCR … · DY … · LTV … · K with no NOI, counted at $0 ($… debt)".
 - **Properties with no loan** are listed with a **"No loan yet"** badge; choosing one opens **its own page**
   (profile, documents, Add the first loan, Open in Underwriting, Archive / Un-archive / Delete permanently).
   **2.9.13:** that page carries everything about the **property** a loan property's page has:
@@ -194,6 +209,9 @@ files, the app asks first ("Put them together").
     date; the property leaves the pool and keeps its NOI with no loan; a "Released:" line and the loan's history keep
     it. Releasing the lead moves the loan to the member with the largest allocated amount. Stored on the loan as
     **Pool releases** (an Excel row).
+    **2.9.15 (P1):** a release dated **before the loan's first payment** now lowers today's **Current balance** (before,
+    the balance stayed at the original amount until the first payment, although the schedule already started lower).
+    A paydown counts in today's balance once its date has passed; one dated after today does not count yet.
   - **Renames** — from the property page, the loan form, an Excel import or the assistant — keep the pool intact;
     names show as you wrote them. An Excel import whose "Also secures" names a property that isn't in the book says
     so before you apply.
@@ -300,6 +318,15 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   statement's review cards show no Excel row (the lines are added from several sheets).
 - A **tie check** badge shows whether the statement's own totals tie to its lines; an older-year T12 goes to the
   history instead of replacing the current one.
+- **2.9.15 (T1) — section sums printed without "Total" are not lines.** Some statements print each section's sum
+  under its lines with no "Total" — repeating the section's name ("Utilities" under the utility lines), or naming it
+  differently ("Gross Potential Rent" under "Residential Rent") — and close the expenses with a plain "Operating
+  Expenses" row. Read as lines, those sums doubled income and expenses (Terrazul's T12). Now a row whose amount — in
+  the year column **and every month column** — is the sum of the lines just above it is a subtotal. A one-line
+  section needs one more sign: the row repeats its section's name, or the statement numbers its lines (account
+  numbers) and this row has none. A plain "Operating Expenses" row equal to every expense line is the expense total.
+  The NOI is the statement's **Net Operating Income** (rows below it — interest, depreciation, Net Income — are not
+  operating). Terrazul's T12 now reads 129 lines and ties.
 
 ### 4.7 General data / history
 - Monthly series per line, merged across statements, with how each line moved (vs the prior year).
@@ -516,10 +543,13 @@ saved, the key is used.
 
 ## 6. Testing
 
-- **19 unit-test files** (pure modules) — `npm test`.
-- **82 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
+- **20 unit-test files** (pure modules) — `npm test`. 2.9.15 adds the T12 subtotal test (a made-up statement in
+  Terrazul's layout, with and without account numbers, and lines that only look like sums).
+- **85 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
   stand-in, never a real model) — `npm run test:e2e`. 2.9.14 adds five: pooled loans (core; refinance + stacks; two
   parts covering the picker, new properties, releases, renames, Excel, the assistant, 40 properties) and R1 + A1.
+  2.9.15 adds three: the T12 subtotals (T1), a pool release before the first payment (P1) and every property counted
+  on Home and in the roll-up (C1).
 - CI runs the unit tests before every build.
 
 ---
@@ -544,27 +574,24 @@ saved, the key is used.
 - **2.9.11** — the fixes from testing the installed 2.9.10.
 - **2.9.12** — the fixes from testing the installed 2.9.11.
 - **2.9.13** — the fix from testing the installed 2.9.12.
-- **2.9.14** — *(this stage)* pooled loans, R1 and A1 (see §8).
+- **2.9.14** — pooled loans, R1 and A1.
+- **2.9.15** — *(this stage)* the fixes from testing the installed 2.9.14: T1, P1 and C1 (see §8).
 
 ---
 
-## 8. Stage 2.9.14 — what shipped, and what still needs checking
+## 8. Stage 2.9.15 — what shipped, and what still needs checking
 
-**What shipped** — the pooled-loan plan's option 15 (15 ways were built and tested; this one passed every check), and
-the two fixes approved after testing 2.9.13 (check list Part 7: 6 of 6 passed):
-1. **Pooled loans** (§4.1, §4.2, §4.8, §4.14): one loan on any number of properties, picked from a list on the loan
-   form, with allocated amounts; new properties added to a loan in the same Save; one row per pool / stack on Home;
-   the pool panel on every member's page; release with a paydown; one refinance for several properties, with or
-   without loans of their own; renames every way; the Excel warning; the assistant.
-2. **R1** — a refinance that loses money is never proposed; "with $X cash" = new loan − owed − penalty (§4.8).
-3. **A1** — "At the Reset": keep or recalculate a stated payment; recalculated on 1222 Commerce St and The Botanic (§4.2).
-4. Found while building it: a **rename from the loan form** no longer wipes the property's profile; a **senior + mezz
-   page** shows the two loans' real balance and P&I (it showed a re-amortized figure); the loan form shows the
-   **Fixed Amortization Payment** field.
+**What shipped** — the three fixes approved after testing 2.9.14 (check list Part 8):
+1. **T1** — a T12 whose section sums carry no "Total" (Terrazul) is read right: only the detail lines, the statement's
+   Net Operating Income, and the NOI ties (§4.6).
+2. **P1** — a pool release dated before the loan's first payment lowers today's Current balance (§4.2).
+3. **C1** — every property counts in the portfolio, whatever its state: no NOI = $0 with all its debt, a negative NOI
+   as it is, no loan = its NOI with no debt, a pool once with all its properties; Home and the roll-up show one number
+   and say how many properties have no NOI and how much debt that is (§4.1).
 
-The 2.9.13 stage is in the git history and its pull request.
+Dropped by the operator after Part 8: F1, F2, F4, F5. The 2.9.14 stage is in the git history and its pull request.
 
-**Check on the real installed 2.9.14 (Windows)** — Part 8 of the check list.
+**Check on the real installed 2.9.15 (Windows)** — Part 9 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -607,4 +634,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 2.9.14.*
+*Last updated for version 2.9.15.*

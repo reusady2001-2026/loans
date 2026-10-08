@@ -139,46 +139,55 @@
       }
       row.dscr = fin(st.dscr); row.dy = fin(st.dy); row.ltv = fin(st.ltv);
       row.balance = fin(st.balance); row.annualDS = fin(st.annualDS);
+      // 2.9.15 (C1) — the property value the portfolio LTV adds up (hooks.propertyValue: the same value Home uses, a
+      // property with no loan included), and what the row holds: how many properties (a pool or stack is ONE row with
+      // all its properties), how many of them have no NOI, and the debt on those.
+      row.value = fin(st.value);
+      if (typeof hooks.propertyValue === "function") { try { row.value = fin(hooks.propertyValue(key)); } catch (e) { row.value = null; } }
+      var cv = null;
+      if (typeof hooks.rowCoverage === "function") { try { cv = hooks.rowCoverage(key); } catch (e) { cv = null; } }
+      row.props = (cv && cv.props > 0) ? cv.props : 1;
+      row.noNOIProps = cv ? (fin(cv.noNOI) || 0) : (row.noi == null ? 1 : 0);
+      row.noNOIDebt = cv ? (fin(cv.noNOIDebt) || 0) : (row.noi == null ? (row.balance || 0) : 0);
     } catch (e) {
       row.error = String((e && e.message) || e);
-      row.noi = row.uwNoi = row.dscr = row.dy = row.ltv = row.balance = row.annualDS = null;   // half-computed figures are worse than none
+      row.noi = row.uwNoi = row.dscr = row.dy = row.ltv = row.balance = row.annualDS = row.value = null;   // half-computed figures are worse than none
+      row.props = 1; row.noNOIProps = 1; row.noNOIDebt = 0;
       if (row.name == null) { try { row.name = loanName(group) || key; } catch (e2) { row.name = key; } }
     }
     return row;
   }
 
-  // Portfolio totals. Dollar columns (NOI, UW NOI, balance, DS) are summed over
-  // ALL properties — NOI only where a property has one: "unknown" is not zero, so
-  // with no NOI anywhere the total stays null. Each coverage ratio is read over
-  // its OWN scope, mirroring the row rule that nulls a ratio whose denominator is
-  // not positive: DSCR = ΣNOI / ΣDS over the NOI'd properties with DS > 0
-  // (dscrProps, dscrNoi, dsCovered); DY = ΣNOI / Σbalance over the NOI'd
-  // properties with balance > 0 (dyProps, dyNoi, balanceCovered). A property is
-  // never on one side of a ratio only: a matured loan (balance 0, DS > 0) counts
-  // in DSCR but not in DY, so its NOI cannot lift the portfolio debt yield above
-  // every row's own. noiProps counts every property with an NOI; a ratio is
-  // null, never 0 or NaN, unless both of its sums are positive. 2.9.8: a property with no loan is on the
-  // NOI side of both ratios (noLoanProps) — its income is the portfolio's, it just carries no debt.
+  // Portfolio totals. 2.9.15 (C1) — EVERY property counts, whatever its state: a property with no NOI counts as $0 NOI
+  // with all its debt, a negative NOI counts as it is, a property with no loan adds its NOI (and its value) with no debt,
+  // and a pool or stack is one row with all its properties. So DSCR = ΣNOI ÷ Σ yearly debt service and DY = ΣNOI ÷
+  // Σ balance over the WHOLE book, and LTV = Σ balance ÷ Σ value (value comes from a positive NOI only, so a loan on a
+  // property with no NOI still adds its balance). A ratio is null only when its denominator is not positive; it is
+  // below zero when the book's NOI is. The NOI column total stays null while no property has an NOI at all.
+  // properties / noNOIProps / noNOIDebt say how many properties the totals cover, how many have no NOI and their debt.
   function totalsOf(rows){
-    var t = { properties: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0, noiProps: 0,
-              dscrProps: 0, dscrNoi: 0, dsCovered: 0, dyProps: 0, dyNoi: 0, balanceCovered: 0, noLoanProps: 0, dscr: null, dy: null };
+    var t = { properties: 0, rows: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0, value: 0, noiProps: 0,
+              noNOIProps: 0, noNOIDebt: 0, negativeProps: 0, noLoanProps: 0, dscrNoi: 0, dyNoi: 0, dscr: null, dy: null, ltv: null };
     rows.forEach(function (r){
+      var props = r.props > 0 ? r.props : 1;
+      t.properties += props;
       t.loans += r.loans || 0;
       if (r.balance != null)  t.balance  += r.balance;
       if (r.annualDS != null) t.annualDS += r.annualDS;
       if (r.uwNoi != null) t.uwNoi = (t.uwNoi == null ? 0 : t.uwNoi) + r.uwNoi;
-      if (r.noi == null) return;
+      if (r.value > 0) t.value += r.value;
+      if (!(r.loans > 0)) t.noLoanProps += props;
+      t.noNOIProps += (r.noNOIProps != null ? r.noNOIProps : (r.noi == null ? props : 0));
+      t.noNOIDebt += (r.noNOIDebt != null ? r.noNOIDebt : (r.noi == null ? (r.balance || 0) : 0));
+      if (r.noi == null) return;                                // no NOI: $0 on the NOI side; its debt is already counted above
       t.noi = (t.noi == null ? 0 : t.noi) + r.noi;
-      t.noiProps++;
-      // 2.9.8 — a property with NO loan still earns its NOI: it counts on the NOI side of both ratios
-      // (owned free and clear, it adds income and no debt), so removing a loan raises the portfolio's
-      // DSCR and debt yield instead of dropping the property's income.
-      if (!(r.loans > 0)) { t.noLoanProps++; t.dscrProps++; t.dscrNoi += r.noi; t.dyProps++; t.dyNoi += r.noi; return; }
-      if (r.annualDS > 0) { t.dscrProps++; t.dscrNoi += r.noi; t.dsCovered += r.annualDS; }
-      if (r.balance > 0)  { t.dyProps++;   t.dyNoi   += r.noi; t.balanceCovered += r.balance; }
+      t.noiProps += props - (r.noNOIProps || 0);
+      if (r.noi <= 0) t.negativeProps++;
+      t.dscrNoi += r.noi; t.dyNoi += r.noi;
     });
-    t.dscr = (t.dscrNoi > 0 && t.dsCovered > 0) ? t.dscrNoi / t.dsCovered : null;
-    t.dy   = (t.dyNoi > 0 && t.balanceCovered > 0) ? t.dyNoi / t.balanceCovered : null;
+    t.dscr = t.annualDS > 0 ? t.dscrNoi / t.annualDS : null;
+    t.dy   = t.balance  > 0 ? t.dyNoi / t.balance : null;
+    t.ltv  = t.value    > 0 ? t.balance / t.value : null;
     return t;
   }
 
@@ -240,16 +249,15 @@
     if (parseFloat(s) >= 1000 && i < UNITS.length - 1) { i++; s = (a / UNITS[i][0]).toFixed(UNITS[i][2]); }
     return ((v < 0 && parseFloat(s) !== 0) ? "-$" : "$") + s + UNITS[i][1];
   }
-  // What each totals ratio covers, spelled out next to it — the two scopes can
-  // differ (a matured loan sits in DSCR, not in DY), so each one is named.
+  // 2.9.15 (C1) — what the totals cover: always every property; how many have no NOI (counted at $0) and the debt on them.
   function scopeText(t){
     t = t || {};
-    var N = t.properties || 0, k = t.noiProps || 0;
-    var of = function (n){ return n + " of " + N + (N === 1 ? " property" : " properties"); };
-    if (!k) return "NOI on " + of(0) + " — enter operating lines to get a portfolio DSCR / debt yield";
-    var part = function (label, r, n, covered, what){ return label + " " + r + " (" + of(n) + (n ? ", " + short(covered) + " " + what : "") + ")"; };
-    return part("DSCR", ratio(t.dscr), t.dscrProps || 0, t.dsCovered, "DS") + " · " + part("DY", pct(t.dy), t.dyProps || 0, t.balanceCovered, "balance") + " · NOI on " + of(k) +
-      (t.noLoanProps ? " · " + t.noLoanProps + " with no loan (NOI counted, no debt)" : "");
+    var N = t.properties || 0;
+    var s = N + " of " + N + (N === 1 ? " property" : " properties") + " counted — DSCR " + ratio(t.dscr) + " · DY " + pct(t.dy) + " · LTV " + pct(t.ltv);
+    if (t.noNOIProps) s += " · " + t.noNOIProps + " with no NOI, counted at $0 (" + short(t.noNOIDebt) + " debt)";
+    if (t.negativeProps) s += " · " + t.negativeProps + " with NOI at or below $0";
+    if (t.noLoanProps) s += " · " + t.noLoanProps + " with no loan (no debt)";
+    return s;
   }
   function day(iso){ var m = (typeof iso === "string") && iso.match(ISO_DAY); return m ? (m[2] + "/" + m[3] + "/" + m[1]) : DASH; }
   // Maturity cell: normally the date; when a loan on the row has matured or its extension is undecided,
@@ -291,7 +299,7 @@
       '<td class="py-1 pr-3 text-sm font-bold text-slate-900">Total &mdash; ' + t.properties + (t.properties === 1 ? ' property' : ' properties') + '</td>' +
       td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") +
       td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold", scope) + td(pct(t.dy), "text-slate-900 font-bold", scope) +
-      td("", "text-slate-900") + td("", "text-slate-900") + '</tr>' +
+      td(pct(t.ltv), "text-slate-900 font-bold", scope) + td("", "text-slate-900") + '</tr>' +
       '<tr data-op-scope><td colspan="' + COLS.length + '" class="pt-1 text-[11px] text-slate-500">' + esc(scope) + '</td></tr>';
     // Just the table: the host mount (#opRollupMount) already sits inside the
     // app's card with its own heading and horizontal scroll.
@@ -313,6 +321,6 @@
     }
   }
 
-  return { buildRows: buildRows, render: render, COLS: COLS, scopeText: scopeText,
+  return { buildRows: buildRows, render: render, COLS: COLS, scopeText: scopeText, totalsOf: totalsOf,
            fmt: { money: money, pct: pct, ratio: ratio, int: int, day: day, short: short } };
 });
