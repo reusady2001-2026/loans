@@ -1,0 +1,62 @@
+name: Test build (Windows, not published)
+
+# A Windows installer of the version being built, for trying it before it ships. It is a SEPARATE app next to the
+# real one ("Loan Debt Service Hub TEST": its own name, folder, shortcuts and data), it never updates itself, and
+# nothing is published: no release, no tag. The installer is kept for 14 days as a download on the run's page
+# (Actions → this run → Artifacts). The real app's builds and releases are build-windows.yml, untouched.
+
+on:
+  push:
+    branches: ["claude/hopeful-knuth-fbvvpy"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read      # read only: this workflow can't make a release
+
+jobs:
+  test-build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run the unit tests
+        run: npm test
+
+      - name: Bundle the latest Claude Code CLI
+        run: npm install @anthropic-ai/claude-code@latest --no-save
+
+      # The same build as the real one, under another name: its own app id (installs next to the real app), its own
+      # name (its own data folder), "test" in its version, and no update feed.
+      - name: Build the TEST installer (NSIS)
+        shell: bash
+        run: |
+          VER="$(node -p "require('./package.json').version")-test.${GITHUB_RUN_NUMBER}"
+          npx electron-builder --win nsis --publish never \
+            -c.appId=il.co.bsi.loandebtservice.test \
+            -c.productName="Loan Debt Service Hub TEST" \
+            -c.artifactName='LoanDebtServiceHub-TEST-Setup-${version}.${ext}' \
+            -c.extraMetadata.name=loan-debt-service-hub-test \
+            -c.extraMetadata.productName="Loan Debt Service Hub TEST" \
+            -c.extraMetadata.version="$VER" \
+            -c.extraMetadata.ldsTestBuild=true
+
+      - name: Show build output
+        shell: bash
+        run: ls -la release || true
+
+      - name: Keep the installer as a download (14 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loan-Debt-Service-Hub-TEST-Windows
+          path: release/*.exe
+          retention-days: 14
+          if-no-files-found: error

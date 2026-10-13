@@ -12,6 +12,18 @@ const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const ai = require('./ai');   // AI bridge: Claude Code CLI (subscription) or Anthropic API
 const CloudSync = require('./cloud-sync');   // 3.0.0 — the shared database (Supabase)
+// The test build (.github/workflows/test-build.yml): a separate app next to the real one, for trying a version before
+// it ships. It never updates itself (an update would fetch the real app), and its first upload reads the real app's
+// data folder (read only) — its own folder starts empty.
+const TEST_BUILD = (() => { try { return !!require('./package.json').ldsTestBuild; } catch (e) { return false; } })();
+function uploadRoot() {
+  if (!TEST_BUILD) return app.getPath('userData');
+  for (const n of ['Loan Debt Service Hub', 'loan-debt-service-hub']) {
+    const d = path.join(app.getPath('appData'), n);
+    if (fs.existsSync(path.join(d, 'loans.json'))) return d;
+  }
+  return app.getPath('userData');
+}
 const SIGNIN_URL = 'lds://app/signin.html';
 let cloud = null, cloudReady = Promise.resolve({ mode: 'local' });
 // 3.0.0 — where the data lives: today's folder, or (signed in to the shared database) the group's picture of it.
@@ -1086,11 +1098,11 @@ function setupAutoUpdates() {
   autoUpdater.on('error',               (e) => sendUpdate({ state: 'error', message: String((e && e.message) || e).slice(0, 200) }));
   // First check a few seconds after launch — only in the packaged app (dev has no
   // update feed). Offline failures surface as an 'error' event and are ignored.
-  if (app.isPackaged) setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 3000);
+  if (app.isPackaged && !TEST_BUILD) setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 3000);
 }
 ipcMain.handle('lds:app-version', () => app.getVersion());
 ipcMain.on('lds:update-check', () => {
-  if (!app.isPackaged) { sendUpdate({ state: 'current', version: app.getVersion() }); return; }
+  if (!app.isPackaged || TEST_BUILD) { sendUpdate({ state: 'current', version: app.getVersion() }); return; }
   autoUpdater.checkForUpdates().catch((e) => sendUpdate({ state: 'error', message: String((e && e.message) || e).slice(0, 200) }));
 });
 ipcMain.on('lds:update-install', () => { try { autoUpdater.quitAndInstall(); } catch (e) {} });
@@ -1121,7 +1133,7 @@ ipcMain.handle('lds:cloud-rpc', async (e, o) => {
   return r;
 });
 // the first upload: this computer's own data (today's folder, only read) becomes the group's starting copy
-ipcMain.handle('lds:cloud-upload-start', (e, o) => cloud.uploadStart({ root: app.getPath('userData'), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data'));
+ipcMain.handle('lds:cloud-upload-start', (e, o) => cloud.uploadStart({ root: uploadRoot(), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data'));
 ipcMain.handle('lds:cloud-signin', async (e, o) => {
   const r = await cloud.signIn(o && o.email, o && o.password);
   if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }
