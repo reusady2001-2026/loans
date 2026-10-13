@@ -221,7 +221,7 @@ async function setRow(page, attr, row, value){
   // Florence and Burlington become "read before the update": no reading on record, the update ran after they were
   // saved. Burlington also carries decisions from the old review: one on a row that is still an account (kept), one
   // on a row that is now the income total (dropped).
-  await page.evaluate(async ({ FLO, BUR }) => {
+  await page.evaluate(async ({ FLO, BUR, WW }) => {
     const save = async (k, gd) => { const json = JSON.stringify(gd), bytes = new TextEncoder().encode(json); let s = ''; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
       await window.ldsShell.docSave({ propKey: k, propName: k, name: 'general-data.json', base64: btoa(s), text: '', type: 'application/json', role: 'general' }); };
     for (const k of [FLO, BUR]){
@@ -232,8 +232,14 @@ async function setRow(page, attr, row, value){
         { id: 'r5', type: 'belongs', row: 5, label: 'TOTAL INCOME', regular: { row: 5, role: 'income', code: 'OTH', annual: 1260000 }, decision: { role: 'income', code: 'OTH', annual: 1260000, by: 'You', at: '2026-05-01T00:00:00Z' } } ] };
       await save(k, gd);
     }
+    // 2.9.17 — Whitewater waits for review only because the two readers named an account's category differently (as
+    // 2.9.16 compared them): after the update that is no disagreement at all
+    const gw = await window.LDS_gdDisk(WW), ew = gw.t12Readings[gw.t12Readings.length - 1];
+    ew.status = 'recheck-review'; ew.ai = { status: 'disagree', items: [{ id: 'r10', level: 'account', row: 10, label: 'Repairs and Maintenance', kind: 'differs',
+      reader: { role: 'account', side: 'expense', cat: 'RM', amount: 48000 }, ai: { side: 'expense', cat: 'CS', amount: 48000 }, months: [], msg: 'Row 10 “Repairs and Maintenance”: the AI files it under CS (the reader: RM).' }] };
+    delete gw.t12CatRule; await save(WW, gw);
     localStorage.setItem('lds.t12GateSince', String(Date.now()));
-  }, { FLO, BUR });
+  }, { FLO, BUR, WW });
   await app.close();
   ({ app, page, errors } = await launch({ LDS_CLAUDE_BIN: '/nonexistent' }));
   await page.waitForFunction(() => window.LDS_t12MigrateState && !window.LDS_t12MigrateState().running && window.LDS_t12MigrateState().done > 0, null, { timeout: 60000 }).catch(() => {});
@@ -243,6 +249,8 @@ async function setRow(page, attr, row, value){
   ok(Math.abs((await t12Noi(page, FLO)) - 1092000) < 0.01, '…its numbers are used as before');
   e = await entryOf(page, BUR);
   ok(e && e.status === 'legacy-review' && e.droppedDecisions === 1 && e.overrides.length === 1 && e.overrides[0].row === 10 && e.overrides[0].amount === 48600, 'old decisions: the one on a row that is still an account is kept (row 10, $48,600); the one on the income total is dropped → "needs your review" (' + (e && e.status) + ')');
+  e = await entryOf(page, WW);
+  ok(e && e.status === 'checked' && e.ai.status === 'agree' && e.ai.items.length === 0, '2.9.17: a T12 that waited only because the readers named an account’s category differently is checked — that is no disagreement any more (' + (e && e.status) + ')');
   ok(Math.abs((await t12Noi(page, BUR)) - 1091400) < 0.01, '…still in use, with the kept decision ($1,091,400; got ' + (await t12Noi(page, BUR)) + ')');
   await app.close();
   ({ app, page, errors } = await launch({ LDS_CLAUDE_BIN: FAKE, LDS_FAKE_T12: 'agree' }));

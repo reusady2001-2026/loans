@@ -6500,7 +6500,7 @@ tr.flagged:hover td{background:#fee2e2}
         var lead = cols.filter(function(c){ return c < split; }), rest = cols.filter(function(c){ return c >= split; });
         var thc = function(c){ return '<th class="px-2 py-1 text-left">' + T12Read.colName(c) + '</th>'; };
         var th = '<tr><th class="sticky left-0 z-[2] bg-slate-50 px-2 py-1 text-right">Row</th>' + lead.map(thc).join("") +
-          '<th class="px-2 py-1 text-left">What the reader made of it</th><th class="px-2 py-1 text-left">Side</th><th class="px-2 py-1 text-left">Category</th><th class="px-2 py-1 text-right">Amount used</th><th class="px-2 py-1 text-left">Your note</th><th class="px-2 py-1 text-left">Check</th>' + rest.map(thc).join("") + '</tr>';
+          '<th class="px-2 py-1 text-left">What the reader made of it</th><th class="px-2 py-1 text-left">Side</th><th class="px-2 py-1 text-left">Category (in the file)</th><th class="px-2 py-1 text-left">Underwriting line</th><th class="px-2 py-1 text-right">Amount used</th><th class="px-2 py-1 text-left">Your note</th><th class="px-2 py-1 text-left">Check</th>' + rest.map(thc).join("") + '</tr>';
         var body = res.rows.map(function(rw){
           var cells = Array.isArray(x.grid[rw.row]) ? x.grid[rw.row] : [], tdc = function(c){ var v = cells[c]; return '<td class="whitespace-nowrap px-2 py-1 text-[11px] ' + (typeof v === "number" ? 'text-right tabular-nums' : '') + '">' + escapeHtml(t12RvCell(v)) + '</td>'; }, ov = ovAt[rw.excel] || null, flist = failAt[rw.excel] || [], alist = aiAt[rw.excel] || [];
           var isTot = rw.role === "total" || rw.role === "income-total" || rw.role === "expense-total" || rw.role === "noi";
@@ -6512,7 +6512,10 @@ tr.flagged:hover td{background:#fee2e2}
             : (rw.role === "blank" ? '' : '<span class="text-[11px] text-slate-500">' + escapeHtml(T12Read.ROLES[rw.role] || rw.role) + '</span>');
           var isAcc = rw.role === "account";
           var sideSel = isAcc ? '<select data-t12rv-side="' + rw.excel + '" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]"><option value="income"' + (rw.side === "income" ? ' selected' : '') + '>Income</option><option value="expense"' + (rw.side === "expense" ? ' selected' : '') + '>Expense</option></select>' : '';
-          var catSel = isAcc ? '<select data-t12rv-cat="' + rw.excel + '" class="max-w-[170px] rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' + t12CatOptions(rw.side, rw.cat) + '</select>' : '';
+          // 2.9.17 — an account belongs to the file's category it sits in (never one made up from its name); the Underwriting
+          // table takes it on the line shown — its category's line, or the item the table needs on its own (vacancy, concessions …)
+          var fileCatTd = isAcc ? (rw.fileCat ? '<span class="whitespace-nowrap text-[11px] text-slate-700">' + escapeHtml(rw.fileCat) + '</span>' : '<span class="text-[11px] text-slate-400" title="It sits under no category in the file">—</span>') : '';
+          var catSel = isAcc ? '<select data-t12rv-cat="' + rw.excel + '" class="max-w-[170px] rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">' + t12CatOptions(rw.side, rw.line) + '</select>' + (rw.item && !rw.catYours ? '<div class="text-[10px] text-slate-500">the ' + escapeHtml(T12Read.ITEM[rw.item] || "") + '</div>' : '') + (rw.catYours ? ' <span class="text-[10px] font-bold text-brand-700">yours</span>' : '') : '';
           var canAmt = editable && (isAcc || isTot);
           var amtIn = canAmt ? '<input data-t12rv-amt="' + rw.excel + '" inputmode="decimal" class="w-28 rounded border ' + (ov && ov.amount != null ? 'border-brand-400 bg-brand-50' : 'border-slate-300') + ' px-1 py-0.5 text-right text-[11px] tabular-nums" placeholder="' + escapeHtml(rw.amountYours ? t12RvCell(rw.printed) : t12RvCell(rw.amount)) + '" value="' + (ov && ov.amount != null ? escapeHtml(String(ov.amount)) : '') + '">' : '';
           var noteIn = editable && (ov || canAmt) ? '<input data-t12rv-note="' + rw.excel + '" class="w-40 rounded border ' + (ov && ov.amount != null && !ov.note ? 'border-rose-400' : 'border-slate-300') + ' px-1 py-0.5 text-[11px]" placeholder="' + (ov && ov.amount != null ? 'why (needed)' : 'note') + '" value="' + escapeHtml((ov && ov.note) || '') + '">' : '';
@@ -6522,7 +6525,7 @@ tr.flagged:hover td{background:#fee2e2}
                     (rw.role === "total" && rw.totalKind && rw.totalKind !== "unmatched" ? '<div class="text-[10px] text-emerald-700">✓ adds up</div>' : '');
           return '<tr data-t12rv-row="' + rw.excel + '" class="border-t border-slate-100 align-top ' + tone + '"><td class="sticky left-0 z-[1] bg-inherit px-2 py-1 text-right text-[11px] font-semibold text-slate-500">' + rw.excel + '</td>' +
             lead.map(tdc).join("") +
-            '<td class="px-2 py-1">' + roleSel + '</td><td class="px-2 py-1">' + sideSel + '</td><td class="px-2 py-1">' + catSel + '</td><td class="px-2 py-1 text-right">' + amtIn + '</td><td class="px-2 py-1">' + noteIn + '</td><td class="min-w-[220px] px-2 py-1">' + chk + '</td>' +
+            '<td class="px-2 py-1">' + roleSel + '</td><td class="px-2 py-1">' + sideSel + '</td><td class="px-2 py-1">' + fileCatTd + '</td><td class="px-2 py-1">' + catSel + '</td><td class="px-2 py-1 text-right">' + amtIn + '</td><td class="px-2 py-1">' + noteIn + '</td><td class="min-w-[220px] px-2 py-1">' + chk + '</td>' +
             rest.map(tdc).join("") + '</tr>';
         }).join("");
         table = '<div class="max-h-[56vh] overflow-auto rounded-xl border border-slate-200" data-t12rv-scroll><table class="min-w-full border-collapse text-left"><thead class="sticky top-0 z-[3] bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">' + th + '</thead><tbody>' + body + '</tbody></table></div>';
@@ -6717,11 +6720,41 @@ tr.flagged:hover td{background:#fee2e2}
       await gdSerial(key, async function(){ var g2 = await opLoadGeneralData(key); if(!g2) g2 = { propKey: key, noT12: true, note: "no T12 yet" }; g2.t12GateDone = new Date().toISOString(); await opWriteGeneralDataFile(key, g2); gdFullCache[key] = g2; });
     }
     var t12Migrating = null;
+    // 2.9.17 — once: a disagreement that was only about an account's category (the readers used to give each account a
+    // category from its own name) is no longer one — an account belongs to the file's category it sits in. Those are
+    // dropped from the readings on record; a T12 that waited only for them is checked and used.
+    function t12CategoryOnly(it){ return !!(it && it.kind === "differs" && it.reader && it.ai && it.reader.side === it.ai.side && Math.abs((+it.reader.amount || 0) - (+it.ai.amount || 0)) < T12Read.TOL && !(it.months || []).length); }
+    async function t12CatRuleProperty(key){
+      await gdRecordsLoad(key);
+      var gd0 = gdFullCache[key]; if(!gd0 || gd0.t12CatRule || !Array.isArray(gd0.t12Readings) || !gd0.t12Readings.length) return;
+      var nowUsed = [];
+      await gdSerial(key, async function(){
+        var gd = await opLoadGeneralData(key); if(!gd) return;
+        (gd.t12Readings || []).forEach(function(e){
+          var ai = e && e.ai; if(!ai || !Array.isArray(ai.items)) return;
+          var n0 = ai.items.length; ai.items = ai.items.filter(function(it){ return !t12CategoryOnly(it); }); if(ai.items.length === n0) return;
+          if(ai.status === "disagree" && !ai.items.length) ai.status = "agree";
+          if(e.reader && e.reader.ok && ai.status === "agree" && !e.droppedDecisions && (e.status === "waiting" || e.status === "recheck-review" || e.status === "legacy-review")){
+            if(e.status === "waiting") nowUsed.push(e);
+            e.status = "checked"; delete e.aiPending; e.at = new Date().toISOString(); }
+        });
+        gd.t12CatRule = new Date().toISOString(); await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd;
+      });
+      if(!nowUsed.length) return;
+      var list = null; try{ list = await ldsShell.docList(key); }catch(x){}
+      for(var e of nowUsed){
+        var f = list && list.ok ? (list.files || []).filter(function(x){ return x.id === e.fileId || (e.sha && x.sha === e.sha); })[0] : null;
+        if(!f){ try{ await opAfterT12Change(key); }catch(x){} continue; }
+        var r = null; try{ r = await opResolvePart(key, f, "t12"); }catch(x){}
+        var parts = (r && r.parts && r.parts.length) ? r.parts : (r && r.part ? [r.part] : []);
+        try{ await t12AfterAccepted(key, f, parts, e, { quiet: true }); }catch(x){}
+      }
+    }
     function t12MigrateAll(opts){
       if(t12Migrating) return t12Migrating;
       t12Migrating = (async function(){
         var props = opProperties(); t12MigrateState = { running: true, done: 0, total: props.length };
-        for(var p of props){ try{ await t12MigrateProperty(p.key, opts); }catch(e){} t12MigrateState.done++; t12Refresh(null); }
+        for(var p of props){ try{ await t12CatRuleProperty(p.key); }catch(e){} try{ await t12MigrateProperty(p.key, opts); }catch(e){} t12MigrateState.done++; t12Refresh(null); }
         t12MigrateState.running = false; t12Refresh(null);
       })();
       var done = function(){ t12Migrating = null; }; t12Migrating.then(done, done);
@@ -6758,7 +6791,7 @@ tr.flagged:hover td{background:#fee2e2}
     // in backups). One you added can be removed while no line uses it.
     var CUSTOM_CATS_KEY = "lds.customCategories";
     function customCats(){ try{ const v = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || "[]"); return Array.isArray(v) ? v.filter(c => c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense")) : []; }catch(e){ return []; } }
-    function customCatsApply(){ const l = customCats(); try{ window.T12Read && T12Read.setCustom && T12Read.setCustom(l); }catch(e){} try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
+    function customCatsApply(){ const l = customCats(); try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
     function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} customCatsApply(); }
     const catNorm = (x) => String(x || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
     function customCatAdd(name, role){

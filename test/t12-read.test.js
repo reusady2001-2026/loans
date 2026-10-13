@@ -95,7 +95,7 @@ ok(cRent && cRent.cat === "GPR" && cRent.amount == null, "a category set on one 
 near(R.check(R.read(cm.grid), cov).parsed.totals.noi, 12 * 1500 - 1890, "the combined NOI follows them");
 
 console.log("— the AI's answer, compared at every level");
-function aiFrom(res2){ return { accounts: res2.rows.filter(function (e){ return e.role === "account"; }).map(function (e){ return { row: e.excel, label: e.label, role: e.side, category: e.cat, annual: e.amount, monthly: Object.keys(e.monthly).map(function (k){ return { month: k, amount: e.monthly[k] }; }) }; }),
+function aiFrom(res2){ return { accounts: res2.rows.filter(function (e){ return e.role === "account"; }).map(function (e){ return { row: e.excel, label: e.label, role: e.side, item: e.item ? R.ITEM[e.item] : undefined, annual: e.amount, monthly: Object.keys(e.monthly).map(function (k){ return { month: k, amount: e.monthly[k] }; }) }; }),
   boxes: res2.boxes.map(function (b){ var t = res2.rows.filter(function (e){ return e.excel === b.totalRow; })[0]; return { name: b.name, nameRow: b.headingRow, totalRow: b.totalRow, total: t ? t.amount : null }; }),
   totals: { income: { row: res2.income.row, amount: res2.income.printed }, expense: { row: res2.expense.row, amount: res2.expense.printed }, noi: { row: res2.noi.row, amount: res2.noi.printed } } }; }
 var same = R.compare(res, aiFrom(res));
@@ -110,12 +110,50 @@ ok(cmp.items.every(function (i){ return i.msg && /row \d+|Row \d+/.test(i.msg); 
 var ai3 = aiFrom(res); ai3.boxes[0].totalRow = acc[0].excel;
 ok(R.compare(res, ai3).items.some(function (i){ return i.kind === "box"; }), "the AI calling an account row a category total is a disagreement");
 
+console.log("— 2.9.17: an account belongs to the file's category it sits in; the table takes its rows from the reading");
+var MM2 = ["Aug 2025","Sep 2025","Oct 2025","Nov 2025","Dec 2025","Jan 2026","Feb 2026","Mar 2026","Apr 2026","May 2026","Jun 2026","Jul 2026"];
+var L = function (code, name, v){ return [code, name].concat(MM2.map(function (){ return v; })).concat([12 * v]); };
+var T = function (name, v){ return [null, name].concat(MM2.map(function (){ return v; })).concat([12 * v]); };
+// Terrazul's layout (synthetic amounts): a category's name, its accounts, its total
+var tz = [["Account", "Account Name"].concat(MM2).concat(["Total"]),
+  ["Residential Rent"], L("41010001", "Rent - Potential", 1000), L("41020001", "Rent - G/L to Lease", -20), L("41020002", "Rent - Vacancy", -50), L("41020007", "Rent - Admin/Guest", -5), T("Gross Potential Rent", 925), [],
+  ["Rent Adjustments"], L("41020003", "Rent - Team Conces / Employee Units", -3), L("41020006", "Rent - Concessions", -40), L("41020103", "Rent - Model Concessions", -2), T("Rent Adjustments", -45), [], T("TOTAL RENT", 880), [],
+  ["Residential Fees"], L("42010001", "Application Fees", 10), L("42010004", "Late Fees", 20), L("42010009", "Pet Rent", 5), T("Residential Fees", 35), [],
+  T("Total Income", 915), [],
+  ["Utilities"], L("63010001", "Electricity", 30), L("63010005", "Waste Management", 8), T("Utilities", 38), [],
+  ["Service Contracts"], L("64010001", "Pest Control", 4), L("64010009", "Property Inspections", 6), T("Service Contracts", 10), [],
+  L("65010001", "Real Estate Taxes", 50), [],
+  T("Operating Expenses", 98), [], T("Net Operating Income", 817)];
+var rz = R.check(R.read(tz)), byL = function (l){ return rz.rows.filter(function (e){ return e.label === l; })[0] || {}; };
+ok(rz.ok, "the layout reads and every check passes (" + rz.failures.map(function (f){ return f.msg; }).join(" | ") + ")");
+ok(byL("Rent - Vacancy").fileCat === "Residential Rent" && byL("Rent - G/L to Lease").fileCat === "Residential Rent" && byL("Rent - Admin/Guest").fileCat === "Residential Rent", "Rent - Vacancy, G/L to Lease and Admin/Guest are accounts of Residential Rent");
+ok(byL("Rent - Concessions").fileCat === "Rent Adjustments" && byL("Late Fees").fileCat === "Residential Fees" && byL("Waste Management").fileCat === "Utilities" && byL("Property Inspections").fileCat === "Service Contracts", "every account is in the category it sits in (Concessions → Rent Adjustments, Late Fees → Residential Fees, Waste Management → Utilities)");
+var cats = {}; rz.rows.forEach(function (e){ if (e.role === "heading") cats[e.label] = 1; });
+ok(rz.rows.filter(function (e){ return e.role === "account"; }).every(function (e){ return !e.fileCat || cats[e.fileCat]; }), "no account gets a category the file does not print");
+ok(byL("Real Estate Taxes").fileCat === "", "an account under no category (after a category's total) gets none");
+ok(byL("Rent - G/L to Lease").line === "GPR" && byL("Rent - Admin/Guest").line === "GPR", "the table takes G/L to Lease and Admin/Guest with their category: Gross Potential Rent");
+ok(byL("Rent - Vacancy").line === "VAC" && byL("Rent - Team Conces / Employee Units").line === "EMPL" && byL("Rent - Concessions").line === "CONC", "…and takes the vacancy, employee units and concessions from the rows the reader found them on");
+ok(byL("Waste Management").line === "UTIL" && byL("Property Inspections").line === "CS" && byL("Late Fees").line === "OTH" && byL("Pet Rent").line === "OTH", "Waste Management stays with Utilities, Property Inspections with Service Contracts, Late Fees and Pet Rent with Residential Fees (other income)");
+ok(byL("Real Estate Taxes").line === "RET", "…an account under no category is placed by its own name (there is nothing else to go on)");
+ok(rz.parsed.rows.every(function (r){ return !!r.forceCode; }), "every account carries its line into the figures — the table takes the reading, it never guesses");
+var fz = SB.fromParse(rz.parsed);
+near(fz.inPlaceNOI, 12 * 817, "the NOI is the statement's");
+ok(fz.sums.UTIL === 12 * 38 && !fz.sums.TRSH && fz.sums.CS === 12 * 10 && fz.sums.VAC === -12 * 50, "the table: Utilities includes Waste Management (no Trash Removal line), Contract Services includes Property Inspections, vacancy on its own line");
+var aiZ = aiFrom(rz); aiZ.accounts.forEach(function (a){ a.category = "UTIL"; });
+ok(R.compare(rz, aiZ).agree, "the AI gives no category per account — a stray one is ignored, so there is nothing to disagree about");
+var aiV = aiFrom(rz); aiV.accounts.filter(function (a){ return a.label === "Rent - Vacancy"; })[0].item = undefined;
+var cV = R.compare(rz, aiV);
+ok(!cV.agree && cV.items.length === 1 && /Row \d+ “Rent - Vacancy”: the AI takes it as an account of its category \(the reader: the vacancy\)/.test(cV.items[0].msg), "where the vacancy is IS compared: the AI not taking row " + byL("Rent - Vacancy").excel + " as the vacancy is a disagreement you settle (" + (cV.items[0] && cV.items[0].msg) + ")");
+var rzY = R.check(R.read(tz), [{ row: byL("Waste Management").excel, cat: "TRSH" }]);
+ok(rzY.rows.filter(function (e){ return e.label === "Waste Management"; })[0].line === "TRSH" && rzY.parsed.rows.filter(function (r){ return r.name === "Waste Management"; })[0].forceCode === "TRSH", "a line you set in the review wins");
+
 console.log("— what the AI is given");
 var inp = R.aiInput(g, { fileName: "x.xlsx", sheet: "T12" }).split("\n");
 ok(/^Row 1: \(empty\)$/.test(inp[1]) && /^Row 3: Income Statement/.test(inp[3]), "the AI gets every row from Excel row 1, empty ones included, numbered as in Excel");
 var serial = [["Description"].concat([46023, 46054, 46082]).concat(["Total"]), ["INCOME"], ["Rent", 100, 100, 100, 300], ["TOTAL INCOME", 100, 100, 100, 300], ["NET OPERATING INCOME", 100, 100, 100, 300]];
 var sIn = R.aiInput(serial).split("\n");
 ok(/^Row 1: Description \| Jan 2026 \| Feb 2026 \| Mar 2026 \| Total$/.test(sIn[0]), "month headings Excel keeps as dates are shown to the AI as the months they are (" + sIn[0] + ")");
+ok(/never make up a category/.test(R.aiInstruction()) && /Never put an account in a category because of its own name/.test(R.aiInstruction()) && !("category" in R.aiSchema().properties.accounts.items.properties), "the AI is told an account belongs to the category it sits in, and gives no category per account");
 ok(/from Excel row 1/.test(R.aiInstruction()) && /Stop at the Net Operating Income row/.test(R.aiInstruction()), "…and is told to read from row 1 and stop at the NOI");
 
 console.log("\n" + (fails ? fails + " FAILED, " : "") + "all " + passes + " t12-read checks " + (fails ? "run" : "passed"));
