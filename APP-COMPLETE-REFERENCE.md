@@ -728,9 +728,14 @@ open `docs/decide.html` and `docs/confirm.html` on the app's GitHub Pages site. 
 search, approve in the app and by email, turn down, existing accounts, header injection, Gmail down, too many
 waiting) and `cloud-join.e2e.js` (the real windows and the real pages in a browser).
 
-**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`): deploying the `lds-join` function
-and its Gmail secrets; a real sign-up with the real emails; the first upload of the real book with its documents; two
-computers at once; offline on a real machine; the daily backup running.
+**Checked on the real Supabase project (2026-10-13):** the updated setup; the organization search (start of the name,
+any case); the `lds-join` function deployed with Verify JWT off (it answers with no key, refuses a forged sign-in);
+the Gmail secrets (a real request's email reached the admin); approving from the email's page; the confirmation
+email and its page ("Your email is confirmed"). The first group is Living Residential.
+
+**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`): the "turned down" email; signing up
+and approving in the app itself (needs a Windows build of this version); the first upload of the real book with its
+documents; two computers at once; offline on a real machine; the daily backup running.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
