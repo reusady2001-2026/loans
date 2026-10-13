@@ -176,8 +176,10 @@ alter table app.backups     enable row level security;
 
 -- ---- helpers (not reachable from the app) -------------------------------------------------------------------------------
 
-create or replace function app.my_email() returns text language sql stable as $$
-  select lower(nullif(auth.jwt() ->> 'email', ''))
+-- The signed-in person's email — from Supabase's own user record, and only once it is confirmed, so an email an
+-- admin added gets nobody into the group until its owner has proven it (even if "Confirm email" were turned off).
+create or replace function app.my_email() returns text language sql stable security definer set search_path = '' as $$
+  select lower(u.email) from auth.users u where u.id = auth.uid() and u.email_confirmed_at is not null
 $$;
 
 -- The signed-in person's membership: linked by their id, or by their (proven) email until lds_hello links the id.

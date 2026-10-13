@@ -23,7 +23,8 @@ const folderOf = (key) => crypto.createHash('sha1').update(String(key || '')).di
 function cloudRefuse(e){
   if(!cloud || !cloud.active) return null;
   const w = cloud.canWrite(); if(w.ok) return null;
-  try { e.sender.send('lds:cloud-refused', { why: w.why, message: w.message }); } catch (x) {}
+  // the app's own work is refused quietly; a person is told why (and the page puts back what it holds)
+  if (!cloud.isAuto(e.sender)) { try { e.sender.send('lds:cloud-refused', { why: w.why, message: w.message }); } catch (x) {} }
   return { ok: false, error: w.message, why: w.why, refused: true };
 }
 // After a write: the change is staged for the shared database (a person's waits for its reason).

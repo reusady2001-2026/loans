@@ -26,7 +26,7 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
   const db = await PG.start(), si = await startStandin(db);
   process.env.LDS_CLOUD_URL = si.url; process.env.LDS_CLOUD_ANON_KEY = si.anonKey;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lds-sync-"));
-  const engines = [];
+  const engines = [], extra = [];
   function computer(name){ const ud = path.join(tmp, name); fs.mkdirSync(ud, { recursive: true }); const e = Sync.create({ userData: ud, appVersion: "3.0.0", chatMeta: c => ({ id: c.id, title: c.title || "", msgCount: (c.messages || []).length, scope: c.scope }) }); engines.push(e); return { e, ud }; }
   async function account(email){ const c = createClient({ url: si.url, anonKey: si.anonKey }); await c.signUp(email, "secret-pw-1"); await si.confirm(email); return c; }
   try{
@@ -178,6 +178,28 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       ok(c.length === 1 && c[0].kind === "offline", "recorded as the admin's offline change");
     });
 
+    await section("the admin's offline changes keep what others changed meanwhile", async () => {
+      // the editor reaches the database another way while the admin's connection is down
+      const si2 = await startStandin(db); extra.push(si2);
+      const save = [process.env.LDS_CLOUD_URL, process.env.LDS_CLOUD_ANON_KEY];
+      process.env.LDS_CLOUD_URL = si2.url; process.env.LDS_CLOUD_ANON_KEY = si2.anonKey;
+      const X = computer("editor-pc-2"); await X.e.init(); await X.e.signIn("ed@co.com", "secret-pw-1");
+      process.env.LDS_CLOUD_URL = save[0]; process.env.LDS_CLOUD_ANON_KEY = save[1];
+      si.setDown(true); await A.pullNow();
+      ok(!A.status().online && A.unlockOffline("offline-123").ok, "the admin is offline, with the offline code");
+      const fa = path.join(A.dataRoot(), "loans.json"), La = rd(fa); La[1].annualRate = 8.5; La[0].lenderName = "Admin Bank"; wr(fa, La);
+      A.markInput(PERSON); A.noteWrite(PERSON, { loans: true });
+      ok((await A.commit("Rate from the lender's letter")).queued, "the admin's change waits for the connection");
+      const fx = path.join(X.e.dataRoot(), "loans.json"), Lx = rd(fx); Lx[0].propertyName = "Alpha Tower East"; Lx[0].lenderName = "Editor Bank"; wr(fx, Lx);
+      X.e.markInput(PERSON); X.e.noteWrite(PERSON, { loans: true });
+      ok((await X.e.commit("The property's new name")).ok, "meanwhile an editor changes the same record");
+      si.setDown(false); await A.pullNow(); await sleep(300); await A.pullNow();
+      const row = (await si.sql("select content from app.records where path = 'loans.json'")).rows[0].content;
+      ok(row[1].annualRate === 8.5 && row[0].propertyName === "Alpha Tower East", "back online: both are in — the admin's rate and the editor's name");
+      ok(row[0].lenderName === "Admin Bank", "on the field both changed, the admin's wins");
+      ok(A.status().queued === 0, "nothing left waiting");
+    });
+
     await section("a restart drops what wasn't saved", async () => {
       const fe = path.join(E.dataRoot(), "loans.json"), Le = rd(fe); Le[1].annualRate = 99; wr(fe, Le);
       E.markInput(PERSON); E.noteWrite(PERSON, { loans: true });
@@ -186,7 +208,7 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       const E2 = Sync.create({ userData: ED.ud, appVersion: "3.0.0" }); engines.push(E2);
       const r = await E2.init();
       ok(r.mode === "cloud" && E2.status().signedIn, "opens signed in");
-      ok(rd(path.join(E2.dataRoot(), "loans.json"))[1].annualRate === 7 && E2.pending().length === 0, "the unsaved change is gone");
+      ok(rd(path.join(E2.dataRoot(), "loans.json"))[1].annualRate !== 99 && E2.pending().length === 0, "the unsaved change is gone");
       E = E2;
     });
 
@@ -211,6 +233,7 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
     });
   } finally {
     engines.forEach(e => { try{ e.close(); }catch(x){} });
+    for(const x of extra){ try{ await x.stop(); }catch(e){} }
     await si.stop(); await db.stop();
     fs.rmSync(tmp, { recursive: true, force: true });
   }

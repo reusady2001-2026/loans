@@ -1263,6 +1263,8 @@
     }
     // The app's own work (start-up checks, recomputing, repricing): its writes go up by themselves, stamped as the
     // app, instead of waiting for a person's reason.
+    // a view-only member's app (or an app offline) writes nothing, so it skips the app's own start-up work
+    function cloudCanWrite(){ if(!LDS_CLOUD) return true; try{ const st = (typeof cloudUI !== "undefined" && cloudUI.st) || ldsShell.cloudInfo || {}; return st.canWrite !== false; }catch(e){ return true; } }
     async function cloudAutoRun(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return await fn(); } finally { if(c) c.auto(false); } }
     function cloudAutoSync(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return fn(); } finally { if(c) c.auto(false); } }
     // Bumped v6 -> v7: the seed now carries a given Maturity Date per loan and the
@@ -15186,7 +15188,7 @@ tr.flagged:hover td{background:#fee2e2}
       const c = ldsShell.cloud;
       c.on("status", st => cloudPaint(Object.assign({}, cloudUI.st || {}, st)));
       c.on("changed", info => cloudRefresh(info));
-      c.on("refused", info => { toast(info.message || "Not saved", "info"); cloudRefresh({ reload: true, now: true }); });
+      c.on("refused", info => { toast(info.message || "Not saved", "info"); clearTimeout(cloudUI.refusedT); cloudUI.refusedT = setTimeout(() => cloudRefresh({ reload: true, now: true }), 300); });
       c.on("requests", () => cloudShowRequests(false));
       c.on("removed", () => { cloudModal("You're no longer in this group", "", "<p>The group's admin removed you. The app shows the last picture of the data until you sign out.</p>", [{ label: "Sign out", primary: true, onClick: () => ldsShell.cloud.signOut() }]); });
       c.on("signin", () => toast("Your sign-in has expired — sign out and sign in again", "info"));
@@ -15208,12 +15210,12 @@ tr.flagged:hover td{background:#fee2e2}
     if(appBooting){
       (async function bootLoad(){ await cloudAutoRun("start-up check", async function(){   // 3.0.0 — the app's own work, not a person's change
         try{ await opLoadAllProfiles(); }catch(e){}
-        try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8) — every property shown has its folder
-        try{ await opRecomputeOnVersionChange(); }catch(e){}
+        if(cloudCanWrite()){ try{ await opEnsureAllFolders(); }catch(e){} }   // 2.9.8 (problem 8) — every property shown has its folder
+        if(cloudCanWrite()){ try{ await opRecomputeOnVersionChange(); }catch(e){} }
         try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
         });
         appBooting = false;
-        setTimeout(function(){ try{ cloudAutoRun("T12 re-read by the new reader", function(){ return t12MigrateAll(); }); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
+        setTimeout(function(){ try{ if(cloudCanWrite()) cloudAutoRun("T12 re-read by the new reader", function(){ return t12MigrateAll(); }); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
         try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))){ const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
         redrawAll();
       })();

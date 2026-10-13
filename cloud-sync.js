@@ -71,6 +71,9 @@ function create(opts){
   const dirty = new Map();     // path -> { kind: 'person'|'app', label, at }
   const winState = new Map();  // webContents id -> { auto: 0, label, input: 0 }
   let autoTimer = null, lastError = null, downloads = 0;
+  // pulls, saves, approvals and the first upload take turns (each reads and writes the same records)
+  let chain = Promise.resolve();
+  function serial(fn){ const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; }
 
   // ---- configuration and the saved sign-in ------------------------------------------------------------------------------
   function loadConfig(){
@@ -276,7 +279,8 @@ function create(opts){
   }
 
   function scheduleAuto(){ clearTimeout(autoTimer); autoTimer = setTimeout(() => { flushAuto().catch(e => log("cloud: auto save failed: " + e.message)); }, autoDelayMs); }
-  async function flushAuto(){
+  function flushAuto(){ return serial(flushAutoNow); }
+  async function flushAutoNow(){
     const auto = [...dirty.entries()].filter(([, d]) => d.kind === "app");
     if(!auto.length || !online) return;
     const labels = [...new Set(auto.map(([, d]) => d.label))].slice(0, 3).join("; ");
@@ -344,7 +348,8 @@ function create(opts){
   }
 
   // ---- the person saves (with a reason) or drops their pending changes ------------------------------------------------------------------
-  async function commit(reason, o){
+  function commit(reason, o){ return serial(() => commitNow(reason, o)); }
+  async function commitNow(reason, o){
     o = o || {};
     reason = String(reason || "").trim();
     if(!reason) return { ok: false, error: "Type why you made this change." };
@@ -353,7 +358,7 @@ function create(opts){
     if(!paths.length) return { ok: true, nothing: true };
     if(!online){
       // the admin, offline, with the offline code: the change is kept and goes up when the connection is back
-      const q = readQueue(); q.push({ reason, at: new Date().toISOString(), items: buildItems(paths) }); writeQueue(q);
+      const q = readQueue(); q.push({ reason, at: new Date().toISOString(), items: buildItems(paths).map(it => Object.assign(it, { base: mirror(it.path) })) }); writeQueue(q);
       paths.forEach(p => dirty.set(p, { kind: "queued" })); tell();
       return { ok: true, queued: true };
     }
@@ -451,14 +456,15 @@ function create(opts){
     if(online === v) return;
     online = v; if(!v) offlineUnlocked = offlineUnlocked && role() === "admin";
     tell();
-    if(v) flushQueue().catch(e => log("cloud: offline changes not sent: " + e.message));
+    if(v) serial(flushQueue).catch(e => log("cloud: offline changes not sent: " + e.message));
   }
   async function flushQueue(){
     const q = readQueue(); if(!q.length || !online) return;
     while(q.length){
       const b = q[0];
       const paths = b.items.map(it => it.path), contents = {};
-      b.items.forEach(it => contents[it.path] = it.content);
+      // laid over what is there now: someone else's change to another field stays; on a field both changed, the admin's wins
+      b.items.forEach(it => contents[it.path] = it.base === undefined ? it.content : M.merge3(it.base, it.content, mirror(it.path)));
       // each batch goes up as it was saved, with its own reason (later batches carry their own changes)
       const r = await send(paths, b.reason, { kind: "offline", contents });
       if(!r.ok) { lastError = r.error || "The changes made offline couldn't be sent."; tell(); return; }
@@ -470,7 +476,7 @@ function create(opts){
 
   async function tick(){
     if(pollBusy || closed) return; pollBusy = true;
-    try{ await pull(); lastError = null; setOnline(true); }
+    try{ await serial(pull); lastError = null; setOnline(true); }
     catch(e){
       if(e instanceof CloudError && (e.code === "offline")) setOnline(false);
       else if(e instanceof CloudError && e.code === "not_member"){ me = Object.assign({}, me, { member: false }); lastError = e.message; tell(); broadcast("lds:cloud-removed", {}); }
@@ -570,6 +576,7 @@ function create(opts){
     // ---- writes from the app ---------------------------------------------------------------------------------------------------------
     noteWrite,
     markInput(sender){ ws(sender).input = Date.now(); },
+    isAuto(sender){ return kindOf(sender).kind === "app"; },
     autoBegin(sender, label){ const w = ws(sender); w.auto++; w.label = String(label || w.label || "automatic update").slice(0, 80); },
     autoEnd(sender){ const w = ws(sender); w.auto = Math.max(0, w.auto - 1); },
     commit, discard,
@@ -615,7 +622,8 @@ function create(opts){
       if(!checkOfflineCode(String(code || ""), me.offline_hash)) return { ok: false, error: "Wrong offline code." };
       offlineUnlocked = true; tell(); return { ok: true };
     },
-    async approve(id){
+    approve(id){ return serial(() => this._approve(id)); },
+    async _approve(id){
       const q = requests.find(r => r.id === id); if(!q) return { ok: false, error: "That request is gone." };
       try{
         await pull();
@@ -641,10 +649,12 @@ function create(opts){
         tell(); return { ok: true };
       }catch(e){ return errorResult(e); }
     },
-    async reject(id, note){ try{ await client.rpc("lds_reject", { request_id: id, note: note || null }); await pull().catch(() => {}); return { ok: true }; }catch(e){ return errorResult(e); } },
+    reject(id, note){ return serial(() => this._reject(id, note)); },
+    async _reject(id, note){ try{ await client.rpc("lds_reject", { request_id: id, note: note || null }); await pull().catch(() => {}); return { ok: true }; }catch(e){ return errorResult(e); } },
 
     // ---- the first upload: this computer's own data becomes the group's starting copy (the local files are only read) ------------------
-    async uploadStart(local, reason){
+    uploadStart(local, reason){ return serial(() => this._uploadStart(local, reason)); },
+    async _uploadStart(local, reason){
       if(role() !== "admin") return { ok: false, error: "Only the group's admin uploads the starting data." };
       if(!online) return { ok: false, error: "You're offline." };
       try{
