@@ -77,10 +77,11 @@ const personEdit = (page, idx, field, value) => page.evaluate(([i, f, v]) => { d
     ok(fs.readFileSync(path.join(OP, 'loans.json'), 'utf8') === localLoans, 'today’s loans file on this computer is untouched');
     ok(Number((await si.sql("select count(*) n from app.records where path like 'props/%/profile.json'")).rows[0].n) > 20, 'the properties’ records are in the shared database');
     ok(Number((await si.sql("select count(*) n from app.locks")).rows[0].n) === 0, 'the starting data locks nothing');
-    // the admin adds the people
+    // people the admin let in (asking to join and approving: cloud-join.e2e.js)
     const AC = await acct('op@co.com');
-    await AC.rpc('lds_member_set', { email: 'ed@co.com', name: 'Eddie', role: 'editor' });
-    await AC.rpc('lds_member_set', { email: 'view@co.com', name: 'Vera', role: 'viewer' });
+    const GID = (await si.sql("select group_id from app.members where email = 'op@co.com'")).rows[0].group_id;
+    await si.addMember('ed@co.com', GID, 'Eddie', 'editor'); await si.addMember('view@co.com', GID, 'Vera', 'editor');
+    await AC.rpc('lds_member_set', { email: 'view@co.com', name: null, role: 'viewer' });
 
     console.log('\nan editor on another computer');
     const E = await launch(ud('editor'), CLOUD); apps.push(E);

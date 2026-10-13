@@ -11,6 +11,12 @@ check list) waits on the real Supabase project — see `SUPABASE-SETUP.md`.
 ## 1. The operator's rules
 
 1. **Groups.** The company that maintains the app (the *maintainer*) creates a group and names its admin.
+   **Joining (the operator, 2026-10-13):** a person opens the app → Create an account → types the organization's name
+   (after 3 letters, up to 5 names that start with it appear to pick from — not a dropdown) → full name, email,
+   password → Sign up → waits. The group's admin gets a pop-up in the app **and** an email, and approves or turns it
+   down in either. Approved: the person gets an email to confirm their address, then joins as an editor (the admin
+   can change anyone's status in Members and codes). Turned down: an email says so. The admin never types an email
+   or makes an account. The confirmation link ends on a page "your email is confirmed — go back to the app".
 2. **People in a group.** One admin. Everyone else is an **editor** or **view-only**; the admin decides who is which.
    Every member sees everything in the group — nothing in the app is hidden from a member.
 3. **Groups are separate.** Nobody sees another group's data.
@@ -45,8 +51,16 @@ check list) waits on the real Supabase project — see `SUPABASE-SETUP.md`.
 - **Chats are not changes** — no reason is asked to talk to the assistant.
 - **One person belongs to one group.**
 - **The maintainer manages groups and admins**, not a group's data.
-- **Email is proven at sign-up.** Admins add people by email, so the person must confirm the email; otherwise anyone
-  could sign up with an email an admin added and get in.
+- **Email is proven before anyone gets in.** The confirmation email goes out only after the admin approves; nobody
+  signs in with an email they haven't confirmed.
+- **The emails go through the app's own Gmail account** (the Gmail API, permission to send only), from a small
+  function on Supabase (`supabase/functions/lds-join`). The admin's email buttons open a web page on the app's GitHub
+  Pages site that asks for one more click: email scanners open links by themselves, and a link that approved on
+  opening would let a scanner approve anyone.
+- **Asking to join never changes an existing account's password.** If the email already has an account, the
+  password typed must be its password (or use "Forgot your password?"); otherwise anyone could take over an account
+  by asking to join with its email.
+- **At most 20 requests wait per group**, and one per email, so nobody can flood an admin's mailbox.
 - **Live refresh = the app asks the server "anything new?" every few seconds.** Supabase's own library needs a newer
   Electron than the app runs (it requires Node 22; the app's Electron has Node 20), so the app talks to Supabase
   through a small client of its own.
@@ -118,7 +132,7 @@ Underwriting tab's working copy, the AI settings and Claude sign-in, the local b
 | **A** | The server: groups, members and roles, maintainers, the records, the change record (who / when / why / old → new), the admin's lock, approval requests, chats, file rules, the daily backup. One SQL file for Supabase. A local test bed: a real PostgreSQL and a stand-in for Supabase's sign-in, functions and file storage. | Every rule on the real database: a group can't read another group; a viewer can't write; no reason, no save; the admin's lock; the approval code; a request and its answer; only a chat's owner continues it; the daily backup. |
 | **B** | Sign-in. The picture per group, live refresh, offline detection and the offline banner. | The app against the test bed: sign in, data appears; a change made elsewhere shows up; the server stops → offline banner, last picture shown, saving off. |
 | **C** | Saving with a reason: the pending bar, sending only what changed, later save wins, view-only for viewers and offline, automatic app work stamped as the app. | Two app windows as two people: different fields both kept; same field, later wins; a viewer can't change anything; no reason, nothing saved. |
-| **D** | The admin: members (add by email, role, remove), the approval code, approval requests popping up for the admin, the answer back to the requester, the offline code. | A member changes what the admin changed → asked for the code or a request; the admin opens the app → the request pops up; offline admin changes go up on reconnect. |
+| **D** | The admin: members (status, remove; people join by asking — the admin approves in the app or by email), the approval code, approval requests popping up for the admin, the answer back to the requester, the offline code. | A member changes what the admin changed → asked for the code or a request; the admin opens the app → the request pops up; offline admin changes go up on reconnect. |
 | **E** | Shared chats (owner can continue, others read) and shared files (documents and the text read from them). | Person B sees A's chat but can't type in it; a file A uploads opens on B's computer. |
 | **F** | The maintainer screen (create a group, name its admin), the first upload (this computer's data → a group's starting copy, local files untouched), the daily backup, a change-history screen (who / when / why). | Create a group, upload the starting data, compare every number with the local app; the history lists each change with its reason. |
 | **G** | Version 3.0.0, the reference doc, the full test suite, the draft PR — **not merged**. The check list part for the real installed app needs the real Supabase project. | Full unit + e2e suite. |
@@ -128,8 +142,8 @@ Underwriting tab's working copy, the AI settings and Claude sign-in, the local b
 - **Create the Supabase project** and send its address and its public key (the "anon" key — it is meant to be in the
   app). Never send the "service_role" key.
 - **Run the setup SQL** in Supabase's SQL editor (step-by-step instructions come with it).
-- **Email:** keep "Confirm email" on. Supabase's built-in email sender only sends a few emails an hour; for many
-  users, the company's own email sender (SMTP) goes in Supabase's settings.
+- **Email:** Gmail for Supabase's own emails (the password code) and the Gmail API for the joining emails, and the
+  joining function — step by step in `SUPABASE-SETUP.md`.
 - **Add the maintainer** (one line in the SQL editor, with the maintainer's email).
 
 ## 7. Not in 3.0.0

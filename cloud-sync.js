@@ -67,7 +67,7 @@ function create(opts){
   let groupDir = null;         // userData/cloud/<group>
   let st = null;               // { seq, versions:{path:version}, chats:{id:{owner_id,owner_name,scope}} }
   let online = false, offlineUnlocked = false, polling = null, pollBusy = false, closed = false;
-  let members = [], requests = [];
+  let members = [], requests = [], joins = [];   // joins: people asking to join (the admin's list)
   const dirty = new Map();     // path -> { kind: 'person'|'app', label, at }
   const winState = new Map();  // webContents id -> { auto: 0, label, input: 0 }
   let autoTimer = null, lastError = null, downloads = 0;
@@ -222,7 +222,7 @@ function create(opts){
       email: me && me.email || (client && client.user && client.user.email) || "", name: me && me.name || "", userId: me && me.user_id || "",
       role: role(), group: me && me.group_name || "", adminName: me && me.admin_name || "", maintainer: !!(me && me.maintainer),
       online, offlineUnlocked, canWrite: canWrite().ok, pending: pendingList(), queued: readQueue().length,
-      requests: requests.filter(r => r.status === "waiting").length, lastError, downloads, appVersion,
+      requests: requests.filter(r => r.status === "waiting").length, joins: joins.filter(j => j.status === "waiting").length, lastError, downloads, appVersion,
       hasOfflineCode: !!(me && me.offline_hash), hasApprovalCode: !!(me && me.has_approval_code),
       groupEmpty: groupEmpty()
     };
@@ -390,7 +390,7 @@ function create(opts){
   // ---- live: anything new since the last answer ---------------------------------------------------------------------------------------
   async function pull(){
     if(!client || !groupDir) return;
-    const changed = { loans: false, settings: false, props: new Set(), chats: false, requests: false };
+    const changed = { loans: false, settings: false, props: new Set(), chats: false, requests: false, joins: false };
     let more = true, rounds = 0;
     while(more && rounds++ < 200){
       const res = await client.rpc("lds_pull", { since: st.seq || 0, max_rows: 500 });
@@ -416,13 +416,16 @@ function create(opts){
         writePictureChat(row); changed.chats = true;
       });
       (res.requests || []).forEach(q => { requests = requests.filter(x => x.id !== q.id).concat([q]); changed.requests = true; });
+      (res.joins || []).forEach(j => { joins = joins.filter(x => x.id !== j.id).concat([j]); changed.joins = true; });
       st.seq = res.seq; more = !!res.more;
     }
     saveState();
     if(changed.loans || changed.settings || changed.props.size || changed.chats) broadcast("lds:cloud-changed", { loans: changed.loans, settings: changed.settings, props: [...changed.props], chats: changed.chats });
     if(changed.requests) broadcast("lds:cloud-requests", requestsFor());
+    if(changed.joins){ broadcast("lds:cloud-joins", joinsFor()); tell(); }
     fetchMissingFiles().catch(e => log("cloud: file fetch: " + e.message));
   }
+  function joinsFor(){ return { joins: joins.filter(j => j.status === "waiting").sort((a, b) => (a.seq || 0) - (b.seq || 0)), role: role() }; }
   function requestsFor(){ return { requests: requests.slice().sort((a, b) => (b.seq || 0) - (a.seq || 0)), role: role(), me: me && me.user_id }; }
 
   // download every stored file the picture lists but doesn't have (so it can be read offline)
@@ -564,7 +567,7 @@ function create(opts){
     async signOut(){
       stopPolling();
       try{ await client.signOut(); }catch(e){}
-      me = null; groupDir = null; st = null; dirty.clear(); requests = []; members = [];
+      me = null; groupDir = null; st = null; dirty.clear(); requests = []; members = []; joins = [];
       rm(path.join(cloudDir, "last.json"));
       return { ok: true };
     },
@@ -573,6 +576,42 @@ function create(opts){
       try{ const h = await client.rpc("lds_hello"); online = true; me = h; if(!h.member) return { ok: true, member: false, maintainer: !!h.maintainer, email: h.email }; await openGroup(h); return { ok: true, member: true }; }
       catch(e){ return errorResult(e); }
     },
+    // ---- joining a group (the "lds-join" function sends the emails) ------------------------------------------------------------------
+    // the organization's name as it is typed: after 3 letters, up to 5 groups whose name starts with it
+    async groupSearch(q){
+      if(!client) return { ok: false, error: "No shared database is set up for this app." };
+      const t = String(q || "").trim(); if(t.length < 3) return { ok: true, groups: [] };
+      try{ return { ok: true, groups: await client.rpcAnon("lds_group_search", { q: t }) }; }catch(e){ return errorResult(e); }
+    },
+    // ask to join: with an email and a password (a new account), or signed in already (no group yet)
+    async join(o){
+      if(!client) return { ok: false, error: "No shared database is set up for this app." };
+      o = o || {};
+      const signed = !o.email;
+      if(signed && !client.session) return { ok: false, error: "Please sign in." };
+      if(!signed && String(o.password || "").length < 8) return { ok: false, error: "The password needs at least 8 characters." };
+      try{
+        const body = { action: "join", group_id: o.groupId, name: String(o.name || "").trim() };
+        if(!signed){ body.email = String(o.email).trim(); body.password = String(o.password); }
+        const r = await client.fn("lds-join", body, { anon: !signed });
+        return r.ok ? r : { ok: false, error: r.message || "That didn't work.", why: r.error };
+      }catch(e){ return errorResult(e); }
+    },
+    joins(){ return joinsFor(); },
+    // the admin approves (the person gets an email to confirm their address, then joins as an editor) or turns down
+    decideJoin(id, approve){ return serial(async () => {
+      if(role() !== "admin") return { ok: false, error: "Only the group's admin decides who joins." };
+      try{
+        const r = await client.fn("lds-join", { action: "decide", id, approve: !!approve });
+        await pull().catch(() => {});
+        if(r.ok) return r;
+        if(r.status) return Object.assign({ already: true }, r, { ok: false, error: r.status === "approved" ? r.name + " was already approved" + (r.decided_by ? " by " + r.decided_by : "") + "."
+                                                                    : r.status === "turned_down" ? r.name + "'s request was already turned down" + (r.decided_by ? " by " + r.decided_by : "") + "."
+                                                                    : r.name + " no longer asks to join." });
+        return { ok: false, error: r.message || "That didn't work.", why: r.error };
+      }catch(e){ return errorResult(e); }
+    }); },
+
     async hello(){ try{ const h = await client.rpc("lds_hello"); online = true; return Object.assign({ ok: true }, h); }catch(e){ return errorResult(e); } },
 
     // ---- writes from the app ---------------------------------------------------------------------------------------------------------

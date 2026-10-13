@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Loan Debt Service Hub — Sign in</title>
 <!-- 3.0.0 — the shared database's sign-in. Shown when a shared database is set up for this app and nobody is signed in
-     (or the person signed in isn't in a group yet). The maintainer also manages the groups here. -->
+     (or the person signed in isn't in a group yet). "Create an account" asks to join the organization's group: its admin
+     approves, the person confirms their email, then signs in here. The maintainer also manages the groups here. -->
 <style>
   :root{ --brand:#639420; --brand-d:#4c721b; --brand-l:#f4fae8; --ink:#1f231f; --mut:#565d56; --line:#e6e8e6; --bg:#f1f5f9; --bad:#b42318; --badbg:#fef3f2; }
   *{ box-sizing:border-box; }
@@ -33,6 +34,14 @@
   .grid{ display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:8px; align-items:end; }
   .grid label{ margin-top:0; }
   .muted{ color:var(--mut); font-size:12px; }
+  /* the organization's name as it is typed: the matching groups appear under it to pick from */
+  .sugg{ margin-top:6px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .sugg:empty{ display:none; }
+  .sugg button{ display:block; width:100%; text-align:left; border:0; border-bottom:1px solid var(--line); background:#fff; padding:9px 12px; font:inherit; cursor:pointer; }
+  .sugg button:last-child{ border-bottom:0; } .sugg button:hover, .sugg button:focus{ background:var(--brand-l); outline:none; }
+  .sugg .none{ padding:9px 12px; color:var(--mut); font-size:13px; }
+  .picked{ margin-top:6px; font-size:13px; color:var(--brand-d); font-weight:600; }
+  .note{ margin:0 0 14px; padding:10px 12px; border-radius:10px; background:var(--brand-l); color:var(--brand-d); font-size:13px; }
 </style>
 </head>
 <body>
@@ -42,6 +51,7 @@
   <section class="card" id="vSignin">
     <h1>Sign in</h1>
     <p class="sub">Your team's loans, properties and files are in the shared database.</p>
+    <p class="note hidden" id="siWaiting"></p>
     <form id="fSignin">
       <label for="siEmail">Email</label><input id="siEmail" type="email" autocomplete="username" required>
       <label for="siPw">Password</label><input id="siPw" type="password" autocomplete="current-password" required>
@@ -68,26 +78,44 @@
     <div class="msg" id="fgMsg"></div>
   </section>
 
-  <!-- creating an account -->
+  <!-- creating an account: asking to join the organization's group -->
   <section class="card hidden" id="vSignup">
     <h1>Create an account</h1>
-    <p class="sub">Use the email your group's admin added. You'll get an email to confirm it.</p>
-    <form id="fSignup">
+    <p class="sub">Ask to join your organization. Its admin approves you; then you confirm your email and sign in.</p>
+    <form id="fSignup" autocomplete="off">
+      <label for="suOrg">Organization</label><input id="suOrg" autocomplete="off" placeholder="Type the first 3 letters of its name" required>
+      <div class="sugg" id="suSugg"></div><div class="picked hidden" id="suPicked"></div>
+      <label for="suName">Full name</label><input id="suName" autocomplete="name" required>
       <label for="suEmail">Email</label><input id="suEmail" type="email" autocomplete="username" required>
       <label for="suPw">Password (at least 8 characters)</label><input id="suPw" type="password" autocomplete="new-password" minlength="8" required>
       <label for="suPw2">The password again</label><input id="suPw2" type="password" autocomplete="new-password" minlength="8" required>
-      <div class="row"><button class="btn" id="suGo" type="submit">Create the account</button><button class="btn ghost" type="button" id="toSignin">I have an account</button></div>
+      <div class="row"><button class="btn" id="suGo" type="submit">Sign up</button><button class="btn ghost" type="button" id="toSignin">I have an account</button></div>
     </form>
     <div class="msg" id="suMsg"></div>
+  </section>
+
+  <!-- asked to join: what happens next -->
+  <section class="card hidden" id="vWaiting">
+    <h1 id="wtTitle">Waiting for approval</h1>
+    <p class="sub" id="wtText"></p>
+    <div class="row"><button class="btn" id="wtSignin" type="button">Back to sign in</button></div>
   </section>
 
   <!-- signed in, but in no group (yet); the maintainer manages the groups here -->
   <section class="card wide hidden" id="vNoGroup">
     <h1 id="ngTitle">You're not in a group yet</h1>
     <p class="sub" id="ngText"></p>
+    <form id="fAsk" autocomplete="off">
+      <h1 style="font-size:16px;margin-top:8px">Ask to join a group</h1>
+      <label for="akOrg">Organization</label><input id="akOrg" autocomplete="off" placeholder="Type the first 3 letters of its name" required>
+      <div class="sugg" id="akSugg"></div><div class="picked hidden" id="akPicked"></div>
+      <label for="akName">Full name</label><input id="akName" autocomplete="name" required>
+      <div class="row"><button class="btn" id="akGo" type="submit">Ask to join</button></div>
+      <div class="msg" id="akMsg"></div>
+    </form>
     <div id="maint" class="hidden">
       <h1 style="font-size:16px;margin-top:8px">Groups</h1>
-      <p class="muted">Each company is a group with one admin. The admin adds the group's people.</p>
+      <p class="muted">Each company is a group with one admin. People ask to join it from "Create an account"; its admin approves them.</p>
       <table><thead><tr><th>Group</th><th>Admin</th><th>People</th><th></th></tr></thead><tbody id="gList"></tbody></table>
       <form id="fGroup" style="margin-top:16px">
         <div class="grid">
@@ -106,11 +134,11 @@
 (function(){
   const S = window.ldsShell, C = S && S.cloud;
   const $ = id => document.getElementById(id);
-  const show = v => ["vSignin", "vSignup", "vNoGroup", "vForgot"].forEach(x => $(x).classList.toggle("hidden", x !== v));
+  const show = v => ["vSignin", "vSignup", "vNoGroup", "vForgot", "vWaiting"].forEach(x => $(x).classList.toggle("hidden", x !== v));
   const msg = (id, text, good) => { const m = $(id); m.textContent = text || ""; m.className = "msg" + (text ? (good ? " ok" : " bad") : ""); };
   $("wMin").onclick = () => S && S.winMinimize && S.winMinimize();
   $("wClose").onclick = () => S && S.winClose && S.winClose();
-  $("toSignup").onclick = () => { show("vSignup"); $("suEmail").value = $("siEmail").value; $("suEmail").focus(); };
+  $("toSignup").onclick = () => { show("vSignup"); $("suEmail").value = $("siEmail").value; msg("suMsg", ""); $("suOrg").focus(); };
   $("toSignin").onclick = () => { show("vSignin"); $("siEmail").focus(); };
   $("toForgot").onclick = () => { show("vForgot"); $("fgEmail").value = $("siEmail").value; $("fReset").classList.add("hidden"); $("fForgot").classList.remove("hidden"); msg("fgMsg", ""); $("fgEmail").focus(); };
   $("fgBack").onclick = () => { show("vSignin"); };
@@ -134,7 +162,7 @@
   async function noGroup(email, maintainer){
     show("vNoGroup");
     $("ngTitle").textContent = maintainer ? "Signed in as the maintainer" : "You're not in a group yet";
-    $("ngText").textContent = maintainer ? ("Signed in as " + email + ".") : ("You're signed in as " + email + ". Ask your group's admin to add this email, then check again.");
+    $("ngText").textContent = maintainer ? ("Signed in as " + email + ".") : ("You're signed in as " + email + ". Ask to join your organization below; once its admin approves, press Check again.");
     $("maint").classList.toggle("hidden", !maintainer);
     if(maintainer) await listGroups();
   }
@@ -158,7 +186,7 @@
   $("fGroup").onsubmit = async ev => {
     ev.preventDefault();
     const r = await C.rpc("lds_group_create", { name: $("gName").value, admin_email: $("gAdmin").value, admin_name: $("gAdminName").value || null });
-    msg("gMsg", r.ok ? "Group created. Its admin signs in with " + $("gAdmin").value + "." : r.error, r.ok);
+    msg("gMsg", r.ok ? "Group created. Its admin creates an account in the app with " + $("gAdmin").value + " (Create an account \u2192 " + $("gName").value + ") \u2014 no approval needed, only confirming the email." : r.error, r.ok);
     if(r.ok){ $("gName").value = $("gAdmin").value = $("gAdminName").value = ""; listGroups(); }
   };
 
@@ -168,16 +196,104 @@
       const r = await C.signIn($("siEmail").value, $("siPw").value);
       if(!r.ok){ msg("siMsg", r.why === "offline" ? "The shared database can't be reached. Check the connection and try again." : r.error); return; }
       if(!r.member) return noGroup(r.email || $("siEmail").value, r.maintainer);
+      try{ localStorage.removeItem("lds.joinWaiting"); }catch(e){}
       msg("siMsg", "Signed in — opening your group's data…", true);   // the app opens by itself
     } finally { $("siGo").disabled = false; $("siGo").textContent = "Sign in"; }
   };
+  // the organization: after 3 letters, up to 5 groups whose name starts with them; one is picked
+  function orgPicker(inputId, listId, pickedId){
+    const inp = $(inputId), list = $(listId), picked = $(pickedId);
+    let chosen = null, timer = null, asked = 0;
+    function pick(g){
+      chosen = g; inp.value = g.name; list.innerHTML = "";
+      picked.textContent = "\u2713 " + g.name; picked.classList.remove("hidden");
+    }
+    function render(groups, q){
+      list.innerHTML = "";
+      if(!groups.length){ const d = document.createElement("div"); d.className = "none"; d.textContent = "No organization starts with \u201c" + q + "\u201d."; list.appendChild(d); return; }
+      groups.slice(0, 5).forEach(g => {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = g.name; b.dataset.id = g.id;
+        b.onclick = () => { pick(g); inp.focus(); };
+        b.onkeydown = ev => { if(ev.key === "ArrowDown" && b.nextSibling){ ev.preventDefault(); b.nextSibling.focus(); } if(ev.key === "ArrowUp"){ ev.preventDefault(); (b.previousSibling || inp).focus(); } };
+        list.appendChild(b);
+      });
+    }
+    inp.addEventListener("input", () => {
+      chosen = null; picked.classList.add("hidden"); clearTimeout(timer);
+      const q = inp.value.trim();
+      if(q.length < 3){ list.innerHTML = ""; return; }
+      timer = setTimeout(async () => {
+        const n = ++asked, r = await C.groupSearch(q);
+        if(n !== asked || inp.value.trim() !== q) return;          // typed on meanwhile
+        if(!r.ok){ list.innerHTML = '<div class="none"></div>'; list.firstChild.textContent = r.why === "offline" ? "The shared database can't be reached." : r.error; return; }
+        render(r.groups || [], q);
+      }, 200);
+    });
+    inp.addEventListener("keydown", ev => {
+      const first = list.querySelector("button");
+      if(ev.key === "ArrowDown" && first){ ev.preventDefault(); first.focus(); }
+      if(ev.key === "Enter" && first && !chosen){ ev.preventDefault(); first.click(); }
+    });
+    return { get: () => chosen, reset(){ chosen = null; inp.value = ""; list.innerHTML = ""; picked.classList.add("hidden"); } };
+  }
+  const suOrg = orgPicker("suOrg", "suSugg", "suPicked"), akOrg = orgPicker("akOrg", "akSugg", "akPicked");
+
+  // what happens after asking (and the sign-in screen remembers a request that waits)
+  function waitingNote(){
+    let w = null; try{ w = JSON.parse(localStorage.getItem("lds.joinWaiting") || "null"); }catch(e){}
+    $("siWaiting").classList.toggle("hidden", !w);
+    if(w){ $("siWaiting").textContent = "Your request to join " + w.group + " (" + w.email + ") is with its admin. Once approved, confirm your email with the link you get, then sign in."; if(!$("siEmail").value) $("siEmail").value = w.email; }
+  }
+  function asked(r, email){
+    const g = r.group_name || "the group";
+    try{ if(r.status === "waiting") localStorage.setItem("lds.joinWaiting", JSON.stringify({ group: g, email })); else localStorage.removeItem("lds.joinWaiting"); }catch(e){}
+    $("siEmail").value = email || $("siEmail").value;
+    if(r.status === "waiting"){
+      $("wtTitle").textContent = "Waiting for approval";
+      $("wtText").textContent = "Your request to join " + g + " is with its admin" + (r.admin_name ? ", " + r.admin_name : "") + ". When they approve it, you'll get an email to confirm your address \u2014 open it, then come back here and sign in." +
+        (r.mailed === false ? " (The email to the admin couldn't be sent; they'll see your request when they open the app.)" : "");
+    } else if(r.status === "confirm"){
+      $("wtTitle").textContent = "Confirm your email";
+      $("wtText").textContent = "You're on " + g + "'s list already. We emailed " + email + " a link to confirm the address \u2014 open it, then come back here and sign in." +
+        (r.mailed === false ? " (The email couldn't be sent right now. Try Sign up again in a few minutes.)" : "");
+    } else {
+      $("wtTitle").textContent = "Your account is ready";
+      $("wtText").textContent = "You're on " + g + "'s list. Sign in with " + email + " and your password.";
+    }
+    show("vWaiting");
+  }
+  $("wtSignin").onclick = () => { waitingNote(); show("vSignin"); ($("siEmail").value ? $("siPw") : $("siEmail")).focus(); };
+
   $("fSignup").onsubmit = async ev => {
     ev.preventDefault(); msg("suMsg", "");
+    const g = suOrg.get();
+    if(!g) return msg("suMsg", "Pick your organization from the names that appear as you type it.");
+    if($("suName").value.trim().length < 2) return msg("suMsg", "Type your full name.");
+    if($("suPw").value.length < 8) return msg("suMsg", "The password needs at least 8 characters.");
     if($("suPw").value !== $("suPw2").value) return msg("suMsg", "The two passwords aren't the same.");
-    const r = await C.signUp($("suEmail").value, $("suPw").value);
-    if(!r.ok) return msg("suMsg", r.error);
-    if(r.confirm){ msg("suMsg", "Done. Open the link in the email sent to " + $("suEmail").value + ", then sign in.", true); $("siEmail").value = $("suEmail").value; }
-    else { msg("suMsg", "Account created. Signing in…", true); }
+    $("suGo").disabled = true; $("suGo").textContent = "Sending…";
+    try{
+      const email = $("suEmail").value.trim();
+      const r = await C.join({ groupId: g.id, name: $("suName").value, email, password: $("suPw").value });
+      if(!r.ok) return msg("suMsg", r.why === "offline" ? "The shared database can't be reached. Check the connection and try again." : r.error);
+      $("suPw").value = $("suPw2").value = "";
+      asked(r, email);
+    } finally { $("suGo").disabled = false; $("suGo").textContent = "Sign up"; }
+  };
+  // signed in, in no group: ask with this account
+  $("fAsk").onsubmit = async ev => {
+    ev.preventDefault(); msg("akMsg", "");
+    const g = akOrg.get();
+    if(!g) return msg("akMsg", "Pick your organization from the names that appear as you type it.");
+    if($("akName").value.trim().length < 2) return msg("akMsg", "Type your full name.");
+    $("akGo").disabled = true;
+    try{
+      const r = await C.join({ groupId: g.id, name: $("akName").value });
+      if(!r.ok) return msg("akMsg", r.why === "offline" ? "The shared database can't be reached." : r.error);
+      if(r.status === "ready") return $("ngRetry").click();
+      msg("akMsg", "Asked. " + g.name + "'s admin" + (r.admin_name ? ", " + r.admin_name + "," : "") + " approves it in the app or by email; then press Check again.", true);
+      akOrg.reset();
+    } finally { $("akGo").disabled = false; }
   };
   $("ngRetry").onclick = async () => {
     const r = await C.openIfMember();          // the admin has added this email: the group opens
@@ -193,7 +309,7 @@
       if(r.ok && r.data && !r.data.member) return noGroup(r.data.email, r.data.maintainer);
       if(!r.ok && r.why === "offline") msg("siMsg", "The shared database can't be reached. Check the connection and try again.");
     }
-    show("vSignin"); $("siEmail").focus();
+    waitingNote(); show("vSignin"); $("siEmail").focus();
   })();
 })();
 </script>

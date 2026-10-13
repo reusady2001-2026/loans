@@ -14840,9 +14840,10 @@ tr.flagged:hover td{background:#fee2e2}
        12c. 3.0.0 — THE SHARED DATABASE (the screens)
        The chip in the title bar (who, the group, online / offline) and its menu; the bar of changes not saved yet,
        with the reason box; the admin's approval (code on the spot, or a request); the admin's requests pop-up;
-       members and codes; the change history; the daily backups; the first upload; the offline code.
+       people asking to join (the admin's pop-up); members and codes; the change history; the daily backups; the first
+       upload; the offline code; the maintainer's groups.
        ================================================================ */
-    const cloudUI = { st: null, shownReq: {}, answered: {}, refreshWait: null };
+    const cloudUI = { st: null, shownReq: {}, shownJoin: {}, answered: {}, refreshWait: null };
     const CLOUD_ROLE = { admin: "Admin", editor: "Editor", viewer: "View only" };
     function cloudModal(title, sub, body, buttons, opts){
       opts = opts || {};
@@ -14910,10 +14911,11 @@ tr.flagged:hover td{background:#fee2e2}
       const dd = el("cloudDD"); if(dd) dd.classList.remove("hidden");
       const dot = el("cloudDot"), txt = el("cloudChipText");
       if(dot) dot.className = "h-2 w-2 rounded-full " + (!st.online ? "bg-amber-500" : st.pending && st.pending.length ? "bg-sky-500" : "bg-emerald-500");
-      if(txt) txt.textContent = (st.name || st.email || "") + " · " + (CLOUD_ROLE[st.role] || "") + (st.online ? "" : " · offline") + (st.requests && st.role === "admin" ? " · " + st.requests + " waiting" : "");
+      if(txt) txt.textContent = (st.name || st.email || "") + " · " + (CLOUD_ROLE[st.role] || "") + (st.online ? "" : " · offline") + (st.requests && st.role === "admin" ? " · " + st.requests + " waiting" : "") + (st.joins && st.role === "admin" ? " · " + st.joins + " asking to join" : "");
       cloudMenuPaint(st); cloudBannerPaint(st); cloudBarPaint(st);
       document.body.classList.toggle("lds-viewonly", !st.canWrite);
       if(st.role === "admin" && st.requests > 0) cloudShowRequests(false);
+      if(st.role === "admin" && st.joins > 0) cloudShowJoins(false);
     }
     function cloudMenuPaint(st){
       const m = el("cloudMenu"); if(!m) return;
@@ -14923,12 +14925,14 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="text-[11px] mt-0.5 ' + (st.online ? "text-emerald-600" : "text-amber-600") + '">' + (st.online ? "Online — live with the group" : "Offline — the last picture of the data") + (st.downloads ? " · fetching files…" : "") + '</div></div>';
       if(st.role === "admin"){
         h += item("requests", "Requests" + (st.requests ? " (" + st.requests + " waiting)" : ""), "Changes members asked you to approve");
+        h += item("joins", "Asking to join" + (st.joins ? " (" + st.joins + ")" : ""), "People who asked to join the group");
         h += item("members", "Members and codes", "Who is in the group, who can edit; your approval and offline codes");
         h += item("backups", "Daily backups", "Put the group's data back as it was on a day");
         if(st.groupEmpty) h += item("upload", "Upload this computer's data", "The group's starting data — nothing on this computer changes");
         if(!st.online && !st.offlineUnlocked) h += item("offline", "Use my offline code", "Keep changing data while offline");
       }
       h += item("history", "Change history", "Every change: who, when, why");
+      if(st.maintainer) h += item("groups", "Groups", "The maintainer: every group and its admin");
       h += item("signout", "Sign out", "");
       m.innerHTML = h;
       m.querySelectorAll("[data-cloud]").forEach(b => b.addEventListener("click", () => { const dd = el("cloudDD"); if(dd) dd.open = false; cloudMenuAction(b.getAttribute("data-cloud")); }));
@@ -14936,6 +14940,8 @@ tr.flagged:hover td{background:#fee2e2}
     function cloudMenuAction(a){
       if(a === "requests") return cloudShowRequests(true);
       if(a === "members") return cloudMembersScreen();
+      if(a === "joins") return cloudShowJoins(true);
+      if(a === "groups") return cloudGroupsScreen();
       if(a === "backups") return cloudBackupsScreen();
       if(a === "upload") return cloudUploadScreen();
       if(a === "offline") return cloudOfflineScreen();
@@ -15053,17 +15059,72 @@ tr.flagged:hover td{background:#fee2e2}
       });
     }
 
+    // ---- people asking to join (the admin): pops up when the admin opens the app, and when someone new asks ---------------
+    // The same request also went to the admin by email; deciding in either place decides it.
+    function cloudJoinRows(list){
+      return list.map(j => '<div class="mb-3 rounded-xl border border-slate-200 p-3" data-join="' + escapeHtml(j.id) + '"><div class="flex flex-wrap items-center gap-2">' +
+        '<div class="min-w-0 flex-1"><div class="text-sm font-semibold text-slate-800">' + escapeHtml(j.name || "") + '</div><div class="text-[12px] text-slate-500">' + escapeHtml(j.email || "") + ' · asked ' + escapeHtml(cloudWhen(j.at)) + '</div></div>' +
+        '<button type="button" data-jno class="rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50">Turn down</button>' +
+        '<button type="button" data-jyes class="rounded-lg bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700">Approve</button></div></div>').join("");
+    }
+    function cloudJoinWire(root){
+      root.querySelectorAll("[data-join]").forEach(box => {
+        if(box.__wired) return; box.__wired = true;
+        const id = box.getAttribute("data-join"), name = (box.querySelector(".font-semibold") || {}).textContent || "They";
+        const go = async (approve, btn) => {
+          box.querySelectorAll("button").forEach(b => b.disabled = true);
+          const r = await ldsShell.cloud.decideJoin(id, approve);
+          if(r && r.ok){
+            box.innerHTML = '<p class="text-sm font-semibold ' + (approve ? "text-emerald-700" : "text-slate-600") + '"></p>';
+            box.firstChild.textContent = approve ? "Approved. " + name + " gets an email to confirm their address, then joins as an editor." + (r.mailed === false ? " (The email couldn't be sent — they can ask again from the app to get it.)" : "")
+                                                 : "Turned down. " + name + " gets an email saying so." + (r.mailed === false ? " (The email couldn't be sent.)" : "");
+          } else if(r && r.already){ box.innerHTML = '<p class="text-sm text-slate-600"></p>'; box.firstChild.textContent = r.error; }
+          else { toast((r && r.error) || "That didn't work", "info"); box.querySelectorAll("button").forEach(b => b.disabled = false); }
+        };
+        box.querySelector("[data-jyes]").addEventListener("click", e => go(true, e.target));
+        box.querySelector("[data-jno]").addEventListener("click", e => go(false, e.target));
+      });
+    }
+    async function cloudShowJoins(force){
+      const st = cloudUI.st || {};
+      if(st.role !== "admin") return;
+      const r = await ldsShell.cloud.joins(); const list = (r && r.joins) || [];
+      if(!force && (!list.length || list.every(j => cloudUI.shownJoin[j.id]))) return;
+      if(el("cloudJoinModal")) return;
+      list.forEach(j => cloudUI.shownJoin[j.id] = true);
+      const body = list.length ? '<p class="mb-3 text-[13px] text-slate-500">Approved, a person gets an email to confirm their address and joins as an editor (you can make them view only in Members and codes). Turned down, they get an email saying so.</p>' + cloudJoinRows(list)
+                               : '<p class="text-slate-500">Nobody is asking to join.</p>';
+      const m = cloudModal("Asking to join " + ((cloudUI.st && cloudUI.st.group) || "the group"), list.length ? list.length + " waiting" : "", body, [{ label: "Close" }]);
+      m.root.id = "cloudJoinModal";
+      cloudJoinWire(m.root);
+    }
+    // the list changed while the pop-up is open: requests decided from the email say so, new ones are added; if
+    // everything in it was decided elsewhere, it closes
+    async function cloudJoinsUpdate(){
+      const m = el("cloudJoinModal"); if(!m) return cloudShowJoins(false);
+      const list = ((await ldsShell.cloud.joins()) || {}).joins || [], ids = new Set(list.map(j => j.id));
+      m.querySelectorAll("[data-join]").forEach(box => {
+        const yes = box.querySelector("[data-jyes]");
+        if(yes && !yes.disabled && !ids.has(box.getAttribute("data-join"))){ box.innerHTML = '<p class="text-sm text-slate-600">Already decided (from the email).</p>'; box.dataset.elsewhere = "1"; }
+      });
+      const shown = new Set([...m.querySelectorAll("[data-join]")].map(b => b.getAttribute("data-join")));
+      const fresh = list.filter(j => !shown.has(j.id));
+      if(fresh.length){ m.querySelector("[data-cm-body]").insertAdjacentHTML("beforeend", cloudJoinRows(fresh)); fresh.forEach(j => cloudUI.shownJoin[j.id] = true); cloudJoinWire(m); }
+      const boxes = [...m.querySelectorAll("[data-join]")];
+      if(boxes.length && boxes.every(b => b.dataset.elsewhere)) m.remove();
+    }
+
     // ---- members and codes (the admin) ----------------------------------------------------------------------------------------
     async function cloudMembersScreen(){
       await ldsShell.cloud.pull();
       const list = (await ldsShell.cloud.members()) || [];
-      const row = mm => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(mm.name || "") + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(mm.email || "") + (mm.linked ? "" : ' <span class="text-[11px] text-amber-600">(hasn’t signed in yet)</span>') + '</td><td class="py-1.5 pr-3">' +
+      const joins = ((await ldsShell.cloud.joins()) || {}).joins || [];
+      const row = mm => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(mm.name || "") + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(mm.email || "") + (mm.linked ? "" : ' <span class="text-[11px] text-amber-600">(hasn’t confirmed the email and signed in yet)</span>') + '</td><td class="py-1.5 pr-3">' +
         (mm.role === "admin" ? "Admin" : '<select data-role="' + escapeHtml(mm.email) + '" class="rounded border border-slate-300 px-1 py-0.5 text-sm"><option value="editor"' + (mm.role === "editor" ? " selected" : "") + '>Editor</option><option value="viewer"' + (mm.role === "viewer" ? " selected" : "") + '>View only</option></select>') +
         '</td><td class="py-1.5 text-right">' + (mm.role === "admin" ? "" : '<button type="button" data-rm="' + escapeHtml(mm.email) + '" class="text-rose-600 text-sm font-semibold hover:underline">Remove</button>') + '</td></tr>';
       const body = '<table class="w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1">Name</th><th class="text-left pb-1">Email</th><th class="text-left pb-1">Can</th><th></th></tr></thead><tbody>' + list.map(row).join("") + '</tbody></table>' +
-        '<div class="mt-4 grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">Add a person — email</label>' + cloudInput("cmEmail", "name@company.com", "email") + '</div><div><label class="text-xs font-semibold text-slate-500">Name</label>' + cloudInput("cmName", "Their name") + '</div>' +
-        '<select id="cmRole" class="rounded-lg border border-slate-300 px-2 py-2 text-sm"><option value="editor">Editor</option><option value="viewer">View only</option></select><button type="button" id="cmAdd" class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">Add</button></div>' +
-        '<p class="mt-1 text-[11px] text-slate-400">They create an account with this email in the app’s sign-in screen, confirm it, and they’re in.</p>' +
+        '<p class="mt-2 text-[11px] text-slate-400">People join by asking from the app’s sign-in screen (Create an account → your organization); you approve them here or from the email you get.</p>' +
+        (joins.length ? '<div class="mt-4 border-t border-slate-100 pt-4"><div class="mb-2 text-sm font-bold text-slate-700">Asking to join</div>' + cloudJoinRows(joins) + '</div>' : '') +
         '<div class="mt-5 border-t border-slate-100 pt-4"><div class="text-sm font-bold text-slate-700">Your codes</div>' +
         '<p class="text-[12px] text-slate-500">The <b>approval code</b> is what you type on a member’s screen to approve a change to what you changed. The <b>offline code</b> lets you keep changing data on your own computer with no connection. At least 6 characters; leave a box empty to keep that code as it is.</p>' +
         '<div class="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">Approval code</label>' + cloudInput("cmAppr", (cloudUI.st && cloudUI.st.hasApprovalCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><div><label class="text-xs font-semibold text-slate-500">Offline code</label>' + cloudInput("cmOff", (cloudUI.st && cloudUI.st.hasOfflineCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><button type="button" id="cmCodes" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Save the codes</button></div></div>';
@@ -15071,8 +15132,33 @@ tr.flagged:hover td{background:#fee2e2}
       const again = () => { m.close(); cloudMembersScreen(); };
       m.root.querySelectorAll("[data-role]").forEach(s => s.addEventListener("change", async () => { const mm = list.find(x => x.email === s.getAttribute("data-role")); const r = await ldsShell.cloud.rpc("lds_member_set", { email: mm.email, name: mm.name || null, role: s.value }); toast(r.ok ? "Saved" : r.error, r.ok ? "check" : "info"); }));
       m.root.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", async () => { if(!window.confirm("Remove " + b.getAttribute("data-rm") + " from the group?")) return; const r = await ldsShell.cloud.rpc("lds_member_remove", { email: b.getAttribute("data-rm") }); if(r.ok) again(); else toast(r.error, "info"); }));
-      el("cmAdd").addEventListener("click", async () => { const r = await ldsShell.cloud.rpc("lds_member_set", { email: el("cmEmail").value, name: el("cmName").value || null, role: el("cmRole").value }); if(r.ok){ toast("Added", "check"); again(); } else toast(r.error, "info"); });
+      cloudJoinWire(m.root);
       el("cmCodes").addEventListener("click", async () => { const a = el("cmAppr").value || null, o = el("cmOff").value || null; if(!a && !o) return; const r = await ldsShell.cloud.setCodes(a, o); toast(r.ok ? "The codes are saved" : r.error, r.ok ? "check" : "info"); if(r.ok){ el("cmAppr").value = ""; el("cmOff").value = ""; } });
+    }
+
+    // ---- the maintainer: every group and its admin (also on the sign-in screen, for a maintainer in no group) -------------
+    async function cloudGroupsScreen(){
+      const r = await ldsShell.cloud.rpc("lds_groups", {});
+      if(!r.ok){ toast(r.error || "Couldn't read the groups", "info"); return; }
+      const rows = (r.data || []).map(g => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3 font-semibold">' + escapeHtml(g.name) + '</td><td class="py-1.5 pr-3">' +
+        escapeHtml(g.admin ? (g.admin.name ? g.admin.name + " · " : "") + g.admin.email : "—") + (g.admin && !g.admin.linked ? ' <span class="text-[11px] text-amber-600">(hasn’t signed in yet)</span>' : '') +
+        '</td><td class="py-1.5 pr-3">' + escapeHtml(String(g.members)) + '</td><td class="py-1.5 text-right"><button type="button" data-gadmin="' + escapeHtml(g.id) + '" data-gname="' + escapeHtml(g.name) + '" class="text-brand-700 text-sm font-semibold hover:underline">New admin…</button></td></tr>').join("");
+      const body = '<table class="w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1">Group</th><th class="text-left pb-1">Admin</th><th class="text-left pb-1">People</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" class="py-2 text-slate-500">No groups yet.</td></tr>') + '</tbody></table>' +
+        '<div class="mt-4 grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">New group</label>' + cloudInput("cgName", "Company name") + '</div><div><label class="text-xs font-semibold text-slate-500">Its admin’s email</label>' + cloudInput("cgAdmin", "admin@company.com", "email") + '</div>' +
+        '<div><label class="text-xs font-semibold text-slate-500">Admin’s full name</label>' + cloudInput("cgAdminName", "") + '</div><button type="button" id="cgCreate" class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">Create</button></div>' +
+        '<p class="mt-1 text-[11px] text-slate-400">The admin then creates an account in the app (Create an account → the group’s name): being named here, they need no approval — only to confirm their email.</p>';
+      const m = cloudModal("Groups", "The maintainer: every group and its admin", body, [{ label: "Close" }], { wide: true });
+      const again = () => { m.close(); cloudGroupsScreen(); };
+      el("cgCreate").addEventListener("click", async () => {
+        const x = await ldsShell.cloud.rpc("lds_group_create", { name: el("cgName").value, admin_email: el("cgAdmin").value, admin_name: el("cgAdminName").value || null });
+        if(x.ok){ toast("Group created", "check"); again(); } else toast(x.error, "info");
+      });
+      m.root.querySelectorAll("[data-gadmin]").forEach(b => b.addEventListener("click", async () => {
+        const e = await cloudAsk("A new admin for " + b.getAttribute("data-gname"), "The new admin’s email", { type: "email", ok: "Set", sub: "The old admin stays in the group as an editor.", required: "Type an email" });
+        if(!e) return;
+        const x = await ldsShell.cloud.rpc("lds_group_admin", { group_id: b.getAttribute("data-gadmin"), admin_email: e });
+        if(x.ok){ toast("The new admin is set", "check"); again(); } else toast(x.error, "info");
+      }));
     }
 
     // ---- the change history -----------------------------------------------------------------------------------------------------
@@ -15190,10 +15276,11 @@ tr.flagged:hover td{background:#fee2e2}
       c.on("changed", info => cloudRefresh(info));
       c.on("refused", info => { toast(info.message || "Not saved", "info"); clearTimeout(cloudUI.refusedT); cloudUI.refusedT = setTimeout(() => cloudRefresh({ reload: true, now: true }), 300); });
       c.on("requests", () => cloudShowRequests(false));
+      c.on("joins", () => cloudJoinsUpdate());
       c.on("removed", () => { cloudModal("You're no longer in this group", "", "<p>The group's admin removed you. The app shows the last picture of the data until you sign out.</p>", [{ label: "Sign out", primary: true, onClick: () => ldsShell.cloud.signOut() }]); });
       c.on("signin", () => toast("Your sign-in has expired — sign out and sign in again", "info"));
       document.addEventListener("click", e => { const dd = el("cloudDD"); if(dd && dd.open && !dd.contains(e.target)) dd.open = false; });
-      (async () => { cloudPaint(await c.status()); cloudShowRequests(false); })();
+      (async () => { cloudPaint(await c.status()); cloudShowRequests(false); cloudShowJoins(false); })();
     }
 
     /* ================================================================

@@ -1128,6 +1128,11 @@ ipcMain.handle('lds:cloud-signin', async (e, o) => {
   return r;
 });
 ipcMain.handle('lds:cloud-signup', (e, o) => cloud.signUp(o && o.email, o && o.password));
+// joining a group: the organization's name as typed, asking to join, and the admin's decision
+ipcMain.handle('lds:cloud-group-search', (e, o) => cloud ? cloud.groupSearch(o && o.q) : { ok: false, groups: [] });
+ipcMain.handle('lds:cloud-join', (e, o) => cloud ? cloud.join(o || {}) : { ok: false });
+ipcMain.handle('lds:cloud-joins', () => cloud ? cloud.joins() : { joins: [] });
+ipcMain.handle('lds:cloud-decide-join', (e, o) => cloud ? cloud.decideJoin(o && o.id, !!(o && o.approve)) : { ok: false });
 ipcMain.handle('lds:cloud-forgot', (e, o) => cloud.forgotPassword(o && o.email));
 ipcMain.handle('lds:cloud-reset', async (e, o) => {
   const r = await cloud.resetPassword(o && o.email, o && o.code, o && o.password);

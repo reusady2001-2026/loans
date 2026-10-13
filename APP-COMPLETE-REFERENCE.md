@@ -608,12 +608,21 @@ saved, the key is used.
 
 ### 4.17 The shared database (3.0.0)
 The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
-- **Signing in.** With a shared database set up, the app opens on the sign-in page: sign in, or create an account
-  with the email the admin added (the email is confirmed first). Someone in no group is told to ask their admin.
-  The maintainer (the company that runs the app) creates groups and names each group's one admin there.
+- **Signing in.** With a shared database set up, the app opens on the sign-in page: sign in, or **Create an
+  account**: type the organization's name (after 3 letters, up to 5 names that start with it appear to pick from),
+  full name, email, password → **Sign up**. The request waits for the group's admin, who gets a **pop-up in the app**
+  (and in Members and codes) **and an email** with Approve / Turn down buttons (they open a page with one more click,
+  so an email scanner can't decide). Approved: an email with a link to confirm the address; the link's page says
+  "Your email is confirmed — go back to the app", and the person signs in as an **editor**. Turned down: an email
+  says so (the account made for the request is removed, so they may ask again). The sign-in screen remembers a
+  request that waits; signing in before approval says the account isn't ready yet. Someone signed in but in no group
+  asks from the same screen (no password needed). The group's first admin, named by the maintainer, creates an
+  account the same way and needs no approval — only the confirmation. Nobody is added by typing an email.
+  The maintainer (the company that runs the app) creates groups and names each group's one admin — on the sign-in
+  screen, or from **Groups** in the chip's menu when the maintainer is also in a group.
 - **The chip** in the title bar: who is signed in, their role (Admin, Editor, View only), online / offline. Its
-  menu: the change history; for the admin also requests, members and codes, daily backups, the first upload, the
-  offline code; sign out.
+  menu: the change history; for the admin also requests, people asking to join, members and codes (status Editor /
+  View only, remove), daily backups, the first upload, the offline code; for the maintainer Groups; sign out.
 - **A reason for every change.** A person's change waits in the **"Not saved yet"** bar (what changed) until they
   type why and Save — or Undo. The change record keeps who, when, why and old → new, field by field. The app's own
   work (start-up checks, recomputing, re-reading T12s, repricing a floating rate) goes up by itself, stamped as the
@@ -659,13 +668,16 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
   decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
   every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
-- **3.0.0** adds `cloud-rules.test.js` (80 checks — the server's rules on a real PostgreSQL through the app's own
+- **3.0.0** adds `cloud-rules.test.js` (82 checks — the server's rules on a real PostgreSQL through the app's own
   client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
   history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
-  folding two saves) and `cloud-sync.test.js` (51 — two computers through the whole sync), plus the e2e
-  `cloud-3000.e2e.js` (the real app, three people on three computers). They run where PostgreSQL is installed and are
-  skipped elsewhere (the Windows build). `test/cloud/` holds the throwaway database and a stand-in for Supabase's
-  sign-in / functions / storage API.
+  folding two saves), `cloud-sync.test.js` (60 — two computers through the whole sync) and `cloud-join.test.js` (86 —
+  joining a group through the real `lds-join` function), plus the e2e `cloud-3000.e2e.js` (the real app, three people
+  on three computers), `cloud-3000-admin.e2e.js` (the maintainer, members and codes, documents, chats, history,
+  backups) and `cloud-join.e2e.js` (creating an account, the admin's pop-up, the email pages in a browser). They run
+  where PostgreSQL is installed and are skipped elsewhere (the Windows build). `test/cloud/` holds the throwaway
+  database and a stand-in for Supabase's sign-in / functions / storage / account API, which also answers Google's
+  Gmail API and keeps every email the function sends.
 - CI runs the unit tests before every build.
 
 ---
@@ -708,9 +720,17 @@ page, the chip, the "Not saved yet" bar, the admin's approval and requests, memb
 the daily backups, the first upload, offline (and the admin's offline code), shared chats (read-only for others),
 shared documents. 2.9.17 (2.9.17 check list Part 11: 7 of 7 passed) is unchanged when no shared database is set up.
 
-**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`: the operator creates it and sends
-its address and public key): signing up and the confirmation email; the first upload of the real book with its
-documents; two computers at once; offline on a real machine; the daily backup running.
+**Joining a group** (the operator, 2026-10-13) — built and tested: Create an account → organization picked from
+the names that appear after 3 letters → name, email, password → the admin approves in the app's pop-up or from the
+email's page → the person confirms the email from the link → signs in as an editor; turned down → an email. The
+emails go out through the app's Gmail account (Gmail API) from the `lds-join` function on Supabase; the email links
+open `docs/decide.html` and `docs/confirm.html` on the app's GitHub Pages site. Tests: `cloud-join.test.js` (86 checks:
+search, approve in the app and by email, turn down, existing accounts, header injection, Gmail down, too many
+waiting) and `cloud-join.e2e.js` (the real windows and the real pages in a browser).
+
+**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`): deploying the `lds-join` function
+and its Gmail secrets; a real sign-up with the real emails; the first upload of the real book with its documents; two
+computers at once; offline on a real machine; the daily backup running.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 

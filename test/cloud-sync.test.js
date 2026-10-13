@@ -79,9 +79,10 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       ok(A.settings()["lds.portfolioTargets"].dscrMin === 1.3, "the shared settings went up");
     });
 
-    await section("the admin adds people; an editor's computer gets the same picture", async () => {
-      ok((await A.rpc("lds_member_set", { email: "ed@co.com", name: "Eddie", role: "editor" })).ok, "editor added");
-      ok((await A.rpc("lds_member_set", { email: "view@co.com", name: "Vera", role: "viewer" })).ok, "viewer added");
+    await section("people join (approved by the admin); an editor's computer gets the same picture", async () => {
+      const gid = (await si.sql("select group_id from app.members where email = 'op@co.com'")).rows[0].group_id;
+      await si.addMember("ed@co.com", gid, "Eddie", "editor"); await si.addMember("view@co.com", gid, "Vera", "editor");
+      ok((await A.rpc("lds_member_set", { email: "view@co.com", name: null, role: "viewer" })).ok, "the admin makes Vera view only");
       ED = computer("editor-pc"); E = ED.e; await E.init();
       const r = await E.signIn("ed@co.com", "secret-pw-1");
       ok(r.ok && r.member && E.status().role === "editor", "the editor is in");

@@ -39,15 +39,12 @@ async function saveWith(page, reason){ await until(page, () => !!document.getEle
   const apps = [];
   try {
     await si.sql("insert into app.maintainers(email) values ('maint@co.com')");
-    await acct('op@co.com'); await acct('ed@co.com');
+    // the maintainer's account is made in Supabase's dashboard; the others' accounts (asking to join: cloud-join.e2e.js)
+    await acct('maint@co.com'); await acct('op@co.com'); await acct('ed@co.com');
 
     console.log('\nthe maintainer');
     const M = await launch(ud('maint'), CLOUD); apps.push(M);
-    await M.page.waitForSelector('#toSignup'); await M.page.click('#toSignup');
-    await M.page.fill('#suEmail', 'maint@co.com'); await M.page.fill('#suPw', 'secret-pw-1'); await M.page.fill('#suPw2', 'secret-pw-1'); await M.page.click('#suGo');
-    ok(await until(M.page, () => /Open the link in the email/.test(document.getElementById('suMsg').textContent)), 'creating an account: "open the link in the email"');
-    await si.confirm('maint@co.com');
-    await M.page.click('#toSignin'); await signIn(M.page, 'maint@co.com');
+    await signIn(M.page, 'maint@co.com');
     ok(await until(M.page, () => !document.getElementById('maint').classList.contains('hidden')), 'the maintainer sees Groups');
     await M.page.fill('#gName', 'Living Residential'); await M.page.fill('#gAdmin', 'op@co.com'); await M.page.fill('#gAdminName', 'Operator');
     await M.page.click('#fGroup button[type=submit]');
@@ -56,10 +53,10 @@ async function saveWith(page, reason){ await until(page, () => !!document.getEle
     console.log('\nthe admin: members and codes');
     const A = await launch(ud('admin'), CLOUD); apps.push(A);
     await signIn(A.page, 'op@co.com'); ok(await waitApp(A.page), 'the admin is in');
+    // Eddie asked to join and the admin approved (that flow: cloud-join.e2e.js)
+    await si.addMember('ed@co.com', (await si.sql("select group_id from app.members where email = 'op@co.com'")).rows[0].group_id, 'Eddie', 'editor');
     await menu(A.page, 'members');
-    await A.page.waitForSelector('#cmEmail');
-    await A.page.fill('#cmEmail', 'ed@co.com'); await A.page.fill('#cmName', 'Eddie'); await A.page.click('#cmAdd');
-    ok(await until(A.page, () => /ed@co.com/.test(document.body.innerText) && !!document.querySelector('[data-role="ed@co.com"]')), 'an editor added');
+    ok(await until(A.page, () => /ed@co.com/.test(document.body.innerText) && !!document.querySelector('[data-role="ed@co.com"]')), 'the editor is listed');
     await A.page.selectOption('[data-role="ed@co.com"]', 'viewer');
     await sleep(800);
     ok((await si.sql("select role from app.members where email = 'ed@co.com'")).rows[0].role === 'viewer', 'made view-only');

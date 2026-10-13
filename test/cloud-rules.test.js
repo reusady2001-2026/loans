@@ -55,13 +55,14 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok(h.member && h.role === "admin" && h.group_id === g1 && h.name === "Ann Admin", "the admin signs in and is the group's admin");
     });
 
-    await section("the admin adds people", async () => {
-      await A.rpc("lds_member_set", { email: "ed@g1.com", name: "Eddie", role: "editor" });
-      await A.rpc("lds_member_set", { email: "ed2@g1.com", name: "Edna", role: "editor" });
-      await A.rpc("lds_member_set", { email: "view@g1.com", name: "Vera", role: "viewer" });
-      ok(await fails_with(A.rpc("lds_member_set", { email: "admin@g2.com", name: "X", role: "editor" }), "in_another_group") === true, "someone in another group can't be added");
-      ok(await fails_with(A.rpc("lds_member_set", { email: "z@g1.com", name: "Z", role: "admin" }), "bad_role") === true, "the admin can't make a second admin");
-      ok(await fails_with(E.rpc("lds_member_set", { email: "z@g1.com", name: "Z", role: "viewer" }), "admin_only") === true, "an editor can't add people");
+    await section("people in the group (joining itself: cloud-join.test.js)", async () => {
+      // the admin approved them (what an approved request does)
+      await si.addMember("ed@g1.com", g1, "Eddie", "editor"); await si.addMember("ed2@g1.com", g1, "Edna", "editor"); await si.addMember("view@g1.com", g1, "Vera", "editor");
+      ok((await A.rpc("lds_member_set", { email: "view@g1.com", name: null, role: "viewer" })).ok, "the admin makes Vera view only");
+      ok(await fails_with(A.rpc("lds_member_set", { email: "admin@g2.com", name: "X", role: "editor" }), "not_in_group") === true, "someone in another group can't be changed");
+      ok(await fails_with(A.rpc("lds_member_set", { email: "z@g1.com", name: "Z", role: "editor" }), "not_in_group") === true, "nobody is added by typing an email");
+      ok(await fails_with(A.rpc("lds_member_set", { email: "ed@g1.com", name: "Z", role: "admin" }), "bad_role") === true, "the admin can't make a second admin");
+      ok(await fails_with(E.rpc("lds_member_set", { email: "ed2@g1.com", name: "Z", role: "viewer" }), "admin_only") === true, "an editor can't change people");
       const he = await E.rpc("lds_hello"), hv = await V.rpc("lds_hello");
       ok(he.role === "editor" && hv.role === "viewer" && he.group_id === g1, "the editor and the viewer are in the group with their roles");
       ok(he.offline_hash == null, "a member's app never gets the admin's offline code");

@@ -5,6 +5,7 @@
    app talks to the same web API directly (fetch):
      auth     POST /auth/v1/signup · /auth/v1/token?grant_type=password|refresh_token · /auth/v1/logout
      rpc      POST /rest/v1/rpc/<function>  (every read and write goes through the lds_* functions)
+     joining  POST /functions/v1/lds-join   (asking to join a group; the admin's decision; see supabase/functions)
      storage  POST|GET|DELETE /storage/v1/object/<bucket>/<path>
 
    The session (access + refresh token) is kept by the caller (cloud-sync.js
@@ -52,6 +53,15 @@ function createClient(cfg){
     return { status: res.status, ok: res.ok, data };
   }
 
+  function rpcAnswer(r){
+    if(r.ok) return r.data;
+    const d = r.data || {};
+    if(r.status === 401 && !(d.code === "42501")) throw new CloudError("auth", "Please sign in.", { status: 401 });
+    // a rule on the server: the exception's name is the code, its hint the words to show
+    const code = (d.code === "P0001" && d.message) ? String(d.message) : (d.code || "error");
+    throw new CloudError(code, d.hint || d.message || ("The shared database said no (" + r.status + ")."), { status: r.status, detail: d });
+  }
+
   function authMessage(d){ return (d && (d.msg || d.error_description || d.message || d.error)) || "Sign-in failed."; }
 
   async function refresh(){
@@ -96,7 +106,7 @@ function createClient(cfg){
       const r = await call("POST", "/auth/v1/token?grant_type=password", { auth: false, json: { email, password } });
       if(!r.ok){
         const d = r.data || {}, code = d.error_code || d.code || "";
-        const msg = code === "email_not_confirmed" ? "Confirm your email first — open the link in the email you were sent."
+        const msg = code === "email_not_confirmed" ? "This account isn't ready yet: your group's admin has to approve it, then you confirm your email with the link you get by email."
                   : code === "invalid_credentials" || /invalid login/i.test(authMessage(d)) ? "Wrong email or password."
                   : authMessage(d);
         throw new CloudError("auth", msg, { status: r.status, detail: d });
@@ -127,13 +137,20 @@ function createClient(cfg){
     },
 
     async rpc(fn, args){
-      const r = await authed("POST", "/rest/v1/rpc/" + fn, { json: args || {} });
-      if(r.ok) return r.data;
-      const d = r.data || {};
-      if(r.status === 401) throw new CloudError("auth", "Please sign in.", { status: 401 });
-      // a rule on the server: the exception's name is the code, its hint the words to show
-      const code = (d.code === "P0001" && d.message) ? String(d.message) : (d.code || "error");
-      throw new CloudError(code, d.hint || d.message || ("The shared database said no (" + r.status + ")."), { status: r.status, detail: d });
+      return rpcAnswer(await authed("POST", "/rest/v1/rpc/" + fn, { json: args || {} }));
+    },
+    // before signing in (finding a group by its name)
+    async rpcAnon(fn, args){
+      return rpcAnswer(await call("POST", "/rest/v1/rpc/" + fn, { auth: false, json: args || {} }));
+    },
+    // the joining function (supabase/functions/lds-join): signed in when there is a session, unless anon is asked;
+    // its answer is { ok, ... } or { ok:false, error, message }
+    async fn(name, body, opts){
+      const signed = !(opts && opts.anon) && session;
+      const r = signed ? await authed("POST", "/functions/v1/" + name, { json: body || {} })
+                       : await call("POST", "/functions/v1/" + name, { auth: false, json: body || {} });
+      if(r.data && typeof r.data === "object" && "ok" in r.data) return r.data;
+      throw new CloudError("server", r.status === 404 ? "The joining function isn't set up on the shared database yet." : "The shared database didn't answer properly (" + r.status + ").", { status: r.status, detail: r.data });
     },
 
     // files live at "<group id>/<path>"

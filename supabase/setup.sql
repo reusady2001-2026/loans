@@ -11,7 +11,8 @@
 --   * a field the group's admin changed can be changed by a member only with the admin's approval (the approval
 --     code, or a request the admin approves);
 --   * only the person who started a chat can continue it;
---   * only the maintainer creates groups and names their admin.
+--   * only the maintainer creates groups and names their admin;
+--   * a person joins a group only when its admin approves, and only once they've proven their email.
 -- The app reaches the data only through the lds_* functions below; the tables themselves are closed to it.
 -- =====================================================================================================================
 
@@ -163,6 +164,28 @@ create table if not exists app.backups (
   primary key (group_id, day)
 );
 
+-- A person asking to join a group from the app's "Create an account". Their account is made (not confirmed) when they
+-- ask; the group's admin approves or turns it down, in the app or from the email; once approved, the person confirms
+-- their email and signs in. The links in the emails carry tokens; only their hashes are kept here.
+create table if not exists app.join_requests (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references app.groups(id) on delete cascade,
+  email text not null check (email = lower(email)),
+  name text not null,
+  user_id uuid,                  -- the person's account
+  made_user boolean not null default false,   -- the account was made for this request (removed again if turned down)
+  status text not null default 'waiting' check (status in ('waiting', 'approved', 'turned_down', 'withdrawn')),
+  decide_hash text,              -- the admin's email link
+  confirm_hash text,             -- the person's confirmation link
+  confirmed_at timestamptz,
+  at timestamptz not null default now(),
+  decided_by text,
+  decided_at timestamptz,
+  seq bigint not null
+);
+create index if not exists join_requests_group on app.join_requests(group_id, seq);
+create unique index if not exists join_requests_one_waiting on app.join_requests(email) where status = 'waiting';
+
 alter table app.maintainers enable row level security;
 alter table app.groups      enable row level security;
 alter table app.members     enable row level security;
@@ -173,6 +196,7 @@ alter table app.lock_free   enable row level security;
 alter table app.requests    enable row level security;
 alter table app.chats       enable row level security;
 alter table app.backups     enable row level security;
+alter table app.join_requests enable row level security;
 
 -- ---- helpers (not reachable from the app) -------------------------------------------------------------------------------
 
@@ -313,7 +337,7 @@ end $$;
 
 create or replace function public.lds_pull(since bigint default 0, max_rows int default 500) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
-declare m app.members; recs jsonb; cts jsonb; rqs jsonb; mem jsonb; hi bigint; top bigint; lim int; n int;
+declare m app.members; recs jsonb; cts jsonb; rqs jsonb; mem jsonb; jns jsonb; hi bigint; top bigint; lim int; n int;
 begin
   m := app.need_member();
   since := coalesce(since, 0);
@@ -323,7 +347,8 @@ begin
            (select max(seq) from app.records  where group_id = m.group_id),
            (select max(seq) from app.chats    where group_id = m.group_id),
            (select max(seq) from app.requests where group_id = m.group_id),
-           (select max(seq) from app.members  where group_id = m.group_id)) into hi;
+           (select max(seq) from app.members  where group_id = m.group_id),
+           (select max(seq) from app.join_requests where group_id = m.group_id)) into hi;
   select coalesce(jsonb_agg(to_jsonb(r) order by r.seq), '[]'), count(*), max(r.seq) into recs, n, top from (
     select path, content, version, seq, updated_at, updated_by_name from app.records
      where group_id = m.group_id and seq > since and seq <= hi order by seq limit lim) r;
@@ -339,7 +364,11 @@ begin
   select coalesce(jsonb_agg(jsonb_build_object('name', coalesce(x.name, x.email), 'role', x.role,
             'email', case when m.role = 'admin' then x.email end, 'linked', x.user_id is not null) order by x.role, x.name), '[]')
     into mem from app.members x where x.group_id = m.group_id;
-  return jsonb_build_object('records', recs, 'chats', cts, 'requests', rqs, 'members', mem,
+  -- people asking to join: only the admin sees them (and sees them leave the list once decided, here or by email)
+  select coalesce(jsonb_agg(to_jsonb(j) order by j.seq), '[]') into jns from (
+    select id, name, email, status, at, decided_by, decided_at, seq from app.join_requests
+     where group_id = m.group_id and seq > since and seq <= top and m.role = 'admin' order by seq) j;
+  return jsonb_build_object('records', recs, 'chats', cts, 'requests', rqs, 'members', mem, 'joins', jns,
                             'more', n >= lim, 'seq', top, 'role', m.role);
 end $$;
 
@@ -586,23 +615,20 @@ end $$;
 
 -- ---- the admin --------------------------------------------------------------------------------------------------------------
 
+-- The admin changes a member's status (editor or view only). Nobody is added here: people join by asking from the
+-- app's "Create an account", and the admin approves them.
 create or replace function public.lds_member_set(email text, name text, role text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 #variable_conflict use_column
-declare m app.members; e text := lower(btrim(email)); other app.members;
+declare m app.members; e text := lower(btrim(email));
 begin
   m := app.need_member(); perform app.turn(m.group_id);
   if m.role <> 'admin' then raise exception 'admin_only' using errcode = 'P0001'; end if;
   if role not in ('editor', 'viewer') then raise exception 'bad_role' using errcode = 'P0001', hint = 'A member is an editor or view-only.'; end if;
-  if e = '' or e !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'bad_email' using errcode = 'P0001'; end if;
   if e = m.email then raise exception 'not_yourself' using errcode = 'P0001'; end if;
-  select * into other from app.members x where x.email = e;
-  if other.email is not null and other.group_id <> m.group_id then
-    raise exception 'in_another_group' using errcode = 'P0001', hint = 'This email is already in another group.';
-  end if;
-  insert into app.members as x (email, group_id, name, role, added_by, seq)
-       values (e, m.group_id, nullif(btrim(name), ''), role, m.email, nextval('app.seq'))
-  on conflict (email) do update set name = coalesce(excluded.name, x.name), role = excluded.role, seq = excluded.seq;
+  update app.members x set role = lds_member_set.role, name = coalesce(nullif(btrim(lds_member_set.name), ''), x.name), seq = nextval('app.seq')
+   where x.email = e and x.group_id = m.group_id and x.role <> 'admin';
+  if not found then raise exception 'not_in_group' using errcode = 'P0001', hint = 'This person is not in your group.'; end if;
   return jsonb_build_object('ok', true);
 end $$;
 
@@ -650,20 +676,33 @@ begin
             from app.groups g);
 end $$;
 
-create or replace function public.lds_group_create(name text, admin_email text, admin_name text default null) returns jsonb
-language plpgsql security definer set search_path = '' as $$
+-- A new group with its first admin. The maintainer does it in the app (Groups), or here in the SQL editor:
+--   select app.make_group('Company name', 'admin@company.com', 'Admin''s full name');
+-- The admin then creates their account in the app (Create an account → the company); being on the list, they need
+-- no approval — only to confirm their email.
+create or replace function app.make_group(group_name text, admin_email text, admin_name text default null, by_email text default 'sql editor')
+returns uuid language plpgsql security definer set search_path = '' as $$
 declare e text := lower(btrim(admin_email)); gid uuid;
 begin
-  if not app.is_maintainer() then raise exception 'maintainer_only' using errcode = 'P0001'; end if;
-  if coalesce(btrim(name), '') = '' then raise exception 'name_required' using errcode = 'P0001'; end if;
-  if e = '' or e !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'bad_email' using errcode = 'P0001'; end if;
+  if coalesce(btrim(group_name), '') = '' then raise exception 'name_required' using errcode = 'P0001', hint = 'Type the group''s name.'; end if;
+  if e is null or e !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'bad_email' using errcode = 'P0001'; end if;
+  if exists (select 1 from app.groups g where lower(g.name) = lower(btrim(group_name))) then
+    raise exception 'group_exists' using errcode = 'P0001', hint = 'A group with this name already exists.';
+  end if;
   if exists (select 1 from app.members x where x.email = e) then
     raise exception 'in_another_group' using errcode = 'P0001', hint = 'This email is already in a group.';
   end if;
-  insert into app.groups(name, created_by) values (btrim(name), app.my_email()) returning id into gid;
+  insert into app.groups(name, created_by) values (btrim(group_name), by_email) returning id into gid;
   insert into app.members(email, group_id, name, role, added_by, seq)
-       values (e, gid, nullif(btrim(admin_name), ''), 'admin', app.my_email(), nextval('app.seq'));
-  return jsonb_build_object('ok', true, 'id', gid);
+       values (e, gid, nullif(btrim(admin_name), ''), 'admin', by_email, nextval('app.seq'));
+  return gid;
+end $$;
+
+create or replace function public.lds_group_create(name text, admin_email text, admin_name text default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not app.is_maintainer() then raise exception 'maintainer_only' using errcode = 'P0001'; end if;
+  return jsonb_build_object('ok', true, 'id', app.make_group(name, admin_email, admin_name, app.my_email()));
 end $$;
 
 -- Name a new admin for a group; the old admin stays in the group as an editor.
@@ -684,6 +723,179 @@ begin
        values (e, lds_group_admin.group_id, nullif(btrim(admin_name), ''), 'admin', app.my_email(), nextval('app.seq'))
   on conflict (email) do update set role = 'admin', name = coalesce(excluded.name, x.name), seq = excluded.seq;
   return jsonb_build_object('ok', true);
+end $$;
+
+-- ---- joining a group ---------------------------------------------------------------------------------------------------------
+-- A person picks their organization, types their full name, email and password, and asks to join. The group's admin
+-- approves or turns it down — in the app, or with the buttons in the email they get. Approved, the person gets an
+-- email to confirm their address and joins as an editor; turned down, they get an email saying so.
+-- The emails are sent by the "lds-join" function (supabase/functions/lds-join), which alone may call lds_svc_*.
+
+create or replace function app.hash(t text) returns text language sql immutable as $$
+  select encode(extensions.digest(coalesce(t, ''), 'sha256'), 'hex')
+$$;
+create or replace function app.token() returns text language sql volatile as $$
+  select encode(extensions.gen_random_bytes(24), 'hex')
+$$;
+
+-- "Create an account": after 3 letters, up to 5 groups whose name starts with what was typed. Anyone may ask (the
+-- person has no account yet); it gives names only, and getting in still takes the group's admin.
+create or replace function public.lds_group_search(q text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name) order by lower(g.name)), '[]')
+    from (select x.id, x.name from app.groups x
+           where length(btrim(coalesce(q, ''))) between 3 and 100
+             and lower(x.name) like replace(replace(replace(lower(btrim(q)), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+           order by lower(x.name) limit 5) g
+$$;
+
+-- May this email ask to join this group, and does it have an account already?
+--   listed: the email is already on the group's list (the maintainer named them admin, or the admin approved them
+--           before they confirmed): no approval is needed again.
+create or replace function app.join_state(gid uuid, e text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare g app.groups; mem app.members; w app.join_requests; n int; uid uuid; ucf boolean;
+begin
+  select * into g from app.groups x where x.id = gid;
+  if g.id is null then raise exception 'no_group' using errcode = 'P0001', hint = 'Pick your organization from the list.'; end if;
+  if e is null or length(e) > 254 or e !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    raise exception 'bad_email' using errcode = 'P0001', hint = 'Type a valid email address.';
+  end if;
+  select * into mem from app.members x where x.email = e;
+  if mem.email is not null and mem.group_id <> gid then
+    raise exception 'in_another_group' using errcode = 'P0001', hint = 'This email is already in another group.';
+  end if;
+  if mem.email is not null and mem.user_id is not null then
+    raise exception 'already_member' using errcode = 'P0001', hint = 'This email is already in the group — sign in.';
+  end if;
+  select * into w from app.join_requests x where x.email = e and x.status = 'waiting';
+  if w.id is not null and w.group_id = gid then
+    raise exception 'already_waiting' using errcode = 'P0001', hint = 'Your request is already waiting for the group''s admin.';
+  end if;
+  if mem.email is null then
+    select count(*) into n from app.join_requests x where x.group_id = gid and x.status = 'waiting';
+    if n >= 20 then
+      raise exception 'too_many_waiting' using errcode = 'P0001', hint = 'Too many requests are waiting for this group''s admin. Try again later.';
+    end if;
+    if not exists (select 1 from app.members x where x.group_id = gid and x.role = 'admin') then
+      raise exception 'no_admin' using errcode = 'P0001', hint = 'This group has no admin yet.';
+    end if;
+  end if;
+  select u.id, u.email_confirmed_at is not null into uid, ucf from auth.users u where lower(u.email) = e limit 1;
+  return jsonb_build_object('group_name', g.name, 'listed', mem.email is not null, 'user_id', uid, 'confirmed', coalesce(ucf, false));
+end $$;
+
+create or replace function public.lds_svc_join_check(gid uuid, mail text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select app.join_state(gid, lower(btrim(mail)))
+$$;
+
+-- The request itself (the function has made or checked the account first). A request waiting for another group is
+-- replaced by this one.
+create or replace function public.lds_svc_join_open(gid uuid, mail text, full_name text, uid uuid, made boolean) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare e text := lower(btrim(mail)); nm text := btrim(regexp_replace(coalesce(full_name, ''), '[[:cntrl:]]+', ' ', 'g'));
+        st jsonb; rid uuid; tok text := app.token(); adm app.members;
+begin
+  perform app.turn(gid);
+  if length(nm) < 2 or length(nm) > 80 then raise exception 'bad_name' using errcode = 'P0001', hint = 'Type your full name.'; end if;
+  st := app.join_state(gid, e);
+  update app.join_requests x set status = 'withdrawn', seq = nextval('app.seq') where x.email = e and x.status = 'waiting';
+  if (st ->> 'listed')::boolean then
+    insert into app.join_requests(group_id, email, name, user_id, made_user, status, confirm_hash, decided_by, decided_at, seq)
+         values (gid, e, nm, uid, coalesce(made, false), 'approved', app.hash(tok), 'on the group''s list', now(), nextval('app.seq'))
+      returning id into rid;
+    update app.members x set name = coalesce(x.name, nm) where x.email = e;
+    return jsonb_build_object('id', rid, 'status', 'approved', 'confirm_token', tok, 'group_name', st ->> 'group_name',
+                              'confirmed', (st ->> 'confirmed')::boolean);
+  end if;
+  insert into app.join_requests(group_id, email, name, user_id, made_user, status, decide_hash, seq)
+       values (gid, e, nm, uid, coalesce(made, false), 'waiting', app.hash(tok), nextval('app.seq'))
+    returning id into rid;
+  select * into adm from app.members x where x.group_id = gid and x.role = 'admin';
+  return jsonb_build_object('id', rid, 'status', 'waiting', 'decide_token', tok, 'group_name', st ->> 'group_name',
+                            'admin_email', adm.email, 'admin_name', coalesce(adm.name, adm.email));
+end $$;
+
+-- The admin's email link: who is asking (the page shows it before the admin decides).
+create or replace function public.lds_svc_join_look(rid uuid, token text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare j app.join_requests;
+begin
+  select * into j from app.join_requests x where x.id = rid;
+  if j.id is null or j.decide_hash is null or j.decide_hash <> app.hash(token) then
+    raise exception 'bad_link' using errcode = 'P0001', hint = 'This link isn''t right, or the request is gone.';
+  end if;
+  return jsonb_build_object('name', j.name, 'email', j.email, 'status', j.status, 'decided_by', j.decided_by,
+                            'group_name', (select g.name from app.groups g where g.id = j.group_id));
+end $$;
+
+-- The admin decides: with the email link's token, or signed in to the app (by_user = the admin's account).
+create or replace function public.lds_svc_join_decide(rid uuid, approve boolean, token text default null, by_user uuid default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare j app.join_requests; adm app.members; mem app.members; who text; gname text; tok text; ucf boolean;
+begin
+  select * into j from app.join_requests x where x.id = rid;
+  if j.id is null then raise exception 'bad_link' using errcode = 'P0001', hint = 'This request is gone.'; end if;
+  perform app.turn(j.group_id);
+  select * into j from app.join_requests x where x.id = rid for update;
+  if token is not null then
+    if j.decide_hash is null or j.decide_hash <> app.hash(token) then
+      raise exception 'bad_link' using errcode = 'P0001', hint = 'This link isn''t right, or the request is gone.';
+    end if;
+    select * into adm from app.members x where x.group_id = j.group_id and x.role = 'admin';
+  else
+    select * into adm from app.members x where x.group_id = j.group_id and x.role = 'admin' and by_user is not null and x.user_id = by_user;
+    if adm.email is null then raise exception 'admin_only' using errcode = 'P0001', hint = 'Only the group''s admin decides who joins.'; end if;
+  end if;
+  who := coalesce(adm.name, adm.email, 'the admin');
+  select g.name into gname from app.groups g where g.id = j.group_id;
+  if j.status <> 'waiting' then
+    return jsonb_build_object('ok', false, 'status', j.status, 'decided_by', j.decided_by, 'name', j.name, 'email', j.email, 'group_name', gname);
+  end if;
+  select u.email_confirmed_at is not null into ucf from auth.users u where u.id = j.user_id;
+  if approve then
+    select * into mem from app.members x where x.email = j.email;
+    if mem.email is not null and mem.group_id <> j.group_id then
+      update app.join_requests x set status = 'withdrawn', decided_at = now(), seq = nextval('app.seq') where x.id = rid;
+      return jsonb_build_object('ok', false, 'status', 'withdrawn', 'why', 'in_another_group', 'name', j.name, 'email', j.email, 'group_name', gname);
+    end if;
+    if mem.email is null then
+      insert into app.members(email, group_id, name, role, added_by, seq)
+           values (j.email, j.group_id, j.name, 'editor', adm.email, nextval('app.seq'));
+    end if;
+    tok := app.token();
+    update app.join_requests x set status = 'approved', decided_by = who, decided_at = now(), confirm_hash = app.hash(tok), seq = nextval('app.seq')
+     where x.id = rid;
+    return jsonb_build_object('ok', true, 'status', 'approved', 'confirm_token', tok, 'id', j.id, 'name', j.name, 'email', j.email,
+                              'group_name', gname, 'admin_name', who, 'confirmed', coalesce(ucf, false));
+  end if;
+  update app.join_requests x set status = 'turned_down', decided_by = who, decided_at = now(), seq = nextval('app.seq') where x.id = rid;
+  return jsonb_build_object('ok', true, 'status', 'turned_down', 'id', j.id, 'name', j.name, 'email', j.email, 'group_name', gname,
+                            'admin_name', who, 'user_id', j.user_id,
+                            -- the account made for this request goes again (so the email can ask again later)
+                            'remove_user', j.made_user and j.user_id is not null and not coalesce(ucf, false)
+                                           and not exists (select 1 from app.members x where x.email = j.email)
+                                           and not exists (select 1 from app.join_requests x where x.user_id = j.user_id and x.id <> j.id
+                                                             and x.status in ('waiting', 'approved')));
+end $$;
+
+-- The person's confirmation link: still on the group's list, so the function confirms their account's email.
+create or replace function public.lds_svc_join_confirm(rid uuid, token text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare j app.join_requests;
+begin
+  select * into j from app.join_requests x where x.id = rid for update;
+  if j.id is null or j.confirm_hash is null or j.confirm_hash <> app.hash(token) or j.status <> 'approved' then
+    raise exception 'bad_link' using errcode = 'P0001', hint = 'This link isn''t right. Ask your group''s admin.';
+  end if;
+  if not exists (select 1 from app.members x where x.email = j.email and x.group_id = j.group_id) then
+    raise exception 'not_in_group' using errcode = 'P0001', hint = 'You are no longer on the group''s list. Ask its admin.';
+  end if;
+  update app.join_requests x set confirmed_at = coalesce(x.confirmed_at, now()) where x.id = rid;
+  return jsonb_build_object('ok', true, 'email', j.email, 'already', j.confirmed_at is not null,
+                            'user_id', coalesce(j.user_id, (select u.id from auth.users u where lower(u.email) = j.email limit 1)),
+                            'group_name', (select g.name from app.groups g where g.id = j.group_id));
 end $$;
 
 -- ---- the daily backup -------------------------------------------------------------------------------------------------------------
@@ -755,11 +967,18 @@ end $$;
 -- ---- who may call what ----------------------------------------------------------------------------------------------------------
 
 revoke all on all functions in schema app from public, anon, authenticated;
+-- the app (signed in) calls lds_*; lds_group_search also before signing in; lds_svc_* only the lds-join function
 do $$ declare f record; begin
-  for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  for f in select p.oid::regprocedure as sig, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname like 'lds\_%' loop
-    execute format('revoke all on function %s from public, anon', f.sig);
-    execute format('grant execute on function %s to authenticated', f.sig);
+    execute format('revoke all on function %s from public, anon, authenticated', f.sig);
+    if f.proname like 'lds\_svc\_%' then
+      execute format('grant execute on function %s to service_role', f.sig);
+    elsif f.proname = 'lds_group_search' then
+      execute format('grant execute on function %s to anon, authenticated', f.sig);
+    else
+      execute format('grant execute on function %s to authenticated', f.sig);
+    end if;
   end loop;
 end $$;
 -- the storage rules run as the signed-in person and call this one helper
