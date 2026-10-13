@@ -202,6 +202,8 @@ contextBridge.exposeInMainWorld('ldsShell', {
     signIn: (email, password) => ipcRenderer.invoke('lds:cloud-signin', { email, password }),
     signUp: (email, password) => ipcRenderer.invoke('lds:cloud-signup', { email, password }),
     openIfMember: () => ipcRenderer.invoke('lds:cloud-open'),
+    forgotPassword: (email) => ipcRenderer.invoke('lds:cloud-forgot', { email }),
+    resetPassword: (email, code, password) => ipcRenderer.invoke('lds:cloud-reset', { email, code, password }),
     signOut: () => ipcRenderer.invoke('lds:cloud-signout'),
     on: (name, cb) => { const ch = { status: 'lds:cloud-status', changed: 'lds:cloud-changed', refused: 'lds:cloud-refused', requests: 'lds:cloud-requests', signin: 'lds:cloud-signin', removed: 'lds:cloud-removed' }[name];
       if (!ch) return () => {}; const fn = (_e, p) => { try { cb(p || {}); } catch (x) {} }; ipcRenderer.on(ch, fn); return () => { try { ipcRenderer.removeListener(ch, fn); } catch (x) {} }; },

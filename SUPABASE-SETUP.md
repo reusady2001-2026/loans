@@ -28,7 +28,10 @@ insert into app.maintainers(email) values ('you@company.com');
    email has to be proven before it gets anyone into a group.
 2. **Authentication → URL Configuration → Site URL**: the company's web site. The confirmation link opens it after
    confirming (the app itself has no web page).
-3. **Authentication → Emails → SMTP Settings**: the company's email sender. Supabase's own sender only sends a
+3. **Authentication → Emails → Templates → Reset Password**: put the code in the email, e.g.
+   `Your code to set a new password: {{ .Token }}`. The app's "Forgot your password?" asks for that 6-digit code
+   (a desktop app can't open the email's link).
+4. **Authentication → Emails → SMTP Settings**: the company's email sender. Supabase's own sender only sends a
    handful of emails an hour — enough to test, not for a team.
 
 ## 5. Files

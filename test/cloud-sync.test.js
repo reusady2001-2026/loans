@@ -190,6 +190,18 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       E = E2;
     });
 
+    await section("a forgotten password", async () => {
+      const X = computer("forgot-pc"); await X.e.init();
+      ok((await X.e.forgotPassword("view@co.com")).ok, "asking for a code");
+      const code = si.recoveryCode("view@co.com");
+      ok(!(await X.e.resetPassword("view@co.com", "000000", "brand-new-pw")).ok || code === "000000", "a wrong code is refused");
+      await X.e.forgotPassword("view@co.com");
+      const r = await X.e.resetPassword("view@co.com", si.recoveryCode("view@co.com"), "brand-new-pw");
+      ok(r.ok && r.member && X.e.status().role === "viewer", "the code and a new password: signed in, in the group");
+      const c = createClient({ url: si.url, anonKey: si.anonKey });
+      ok(!!(await c.signIn("view@co.com", "brand-new-pw")).access_token, "the new password works");
+    });
+
     await section("chats", async () => {
       await E.chatSaved({ id: "c9", scope: kA, scopeName: "Alpha Tower", title: "Units", messages: [{ role: "user", text: "how many units?" }] });
       await A.pullNow();

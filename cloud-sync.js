@@ -533,6 +533,21 @@ function create(opts){
         return { ok: true, member: true };
       }catch(e){ return errorResult(e); }
     },
+    async forgotPassword(email){
+      if(!client) return { ok: false, error: "No shared database is set up for this app." };
+      try{ await client.recover(String(email || "").trim()); return { ok: true }; }catch(e){ return errorResult(e); }
+    },
+    async resetPassword(email, code, password){
+      if(!client) return { ok: false, error: "No shared database is set up for this app." };
+      if(String(password || "").length < 8) return { ok: false, error: "The new password needs at least 8 characters." };
+      try{
+        await client.verifyRecovery(String(email || "").trim(), code);
+        await client.setPassword(String(password));
+        const h = await client.rpc("lds_hello"); online = true; me = h;
+        if(!h.member) return { ok: true, member: false, maintainer: !!h.maintainer, email: h.email };
+        await openGroup(h); return { ok: true, member: true };
+      }catch(e){ return errorResult(e); }
+    },
     async signUp(email, password){
       if(!client) return { ok: false, error: "No shared database is set up for this app." };
       try{ const r = await client.signUp(String(email || "").trim(), String(password || "")); return { ok: true, confirm: !r.signedIn }; }

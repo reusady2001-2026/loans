@@ -1,11 +1,12 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.17 still needs checked on a real
-Windows install, and what comes next.*
+*Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
+comes next.*
 
-**Current version:** 2.9.17
+**Current version:** 3.0.0 — being built, not shipped (the installed version is 2.9.17)
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
-**Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
+**Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
+set up for the app. Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
 **Portfolio today:** 29 properties.
 
@@ -19,7 +20,8 @@ Windows install, and what comes next.*
 > (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14"); 2.9.15 the three fixes
 > from testing 2.9.14, T1, P1 and C1 (marked "2.9.15"); 2.9.16 the new T12 reading — the reader and the AI
 > read every T12 before anything from it is used (marked "2.9.16"); 2.9.17 the readers divide a T12 by the file's own
-> categories and the Underwriting table takes its rows from their one answer (marked "2.9.17").
+> categories and the Underwriting table takes its rows from their one answer (marked "2.9.17"); 3.0.0 the shared
+database (marked "3.0.0"; its plan is `PLAN-3.0.0.md`, its setup `SUPABASE-SETUP.md`).
 
 ---
 
@@ -58,6 +60,13 @@ loaded from a file address, which the second OCR engine (PaddleOCR) could not ru
 - `preload.js` — the `ldsShell` bridge that safely exposes those IPC calls to the page.
 - `index.html` — the entire renderer UI and logic.
 - `legacy-storage.html` — an empty page used once, at the first 2.9.7 start, to copy the old settings.
+- **3.0.0** `signin.html` — the shared database's sign-in (and the maintainer's groups), shown when a shared
+  database is set up and nobody is signed in.
+- **3.0.0** `cloud-client.js` (the app's own client for Supabase's web API — Supabase's library needs Node 22, the
+  app's Electron runs Node 20), `cloud-sync.js` (the group's picture of the data on this computer, pending changes,
+  live pulls, offline), `cloud-merge.js` (field paths, "only time stamps changed", folding two saves together) and
+  `supabase/setup.sql` (the server: every rule checked there). `cloud-config.json` holds the project's address and
+  public key (empty = each computer's own data, as before).
 
 **The JavaScript modules (each pure/UMD, unit-tested):**
 
@@ -132,6 +141,14 @@ Everything is stored on disk under the app's user-data folder; the browser stora
 
 A property's files and chats **move with it** when it is renamed or re-addressed; onto a name that already has
 files, the app asks first ("Put them together").
+
+**3.0.0 — signed in to the shared database**, the app reads and writes the same layout in the group's own folder,
+`userData/cloud/<group>/data` — "the picture" — kept in step with the server. `userData/cloud/<group>/server` is the
+server's copy of each record (what unsaved changes are measured from; the picture is rebuilt from it on opening,
+so nothing unsaved survives a restart). Today's `loans.json`, `documents/` and `chats/` are never touched — the
+first upload only reads them. Backups, the OCR cache, the reading queue, the logs and the AI settings stay where
+they are. The team's settings that lived in the window's storage (targets, custom T12 categories, "not a
+duplicate") come from the group; this computer's own values are kept aside, unchanged.
 
 ---
 
@@ -588,6 +605,36 @@ saved, the key is used.
   new, M updated, U unchanged").
 - A restore replaces everything, after saving a safety snapshot of the current data first.
 
+
+### 4.17 The shared database (3.0.0)
+The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
+- **Signing in.** With a shared database set up, the app opens on the sign-in page: sign in, or create an account
+  with the email the admin added (the email is confirmed first). Someone in no group is told to ask their admin.
+  The maintainer (the company that runs the app) creates groups and names each group's one admin there.
+- **The chip** in the title bar: who is signed in, their role (Admin, Editor, View only), online / offline. Its
+  menu: the change history; for the admin also requests, members and codes, daily backups, the first upload, the
+  offline code; sign out.
+- **A reason for every change.** A person's change waits in the **"Not saved yet"** bar (what changed) until they
+  type why and Save — or Undo. The change record keeps who, when, why and old → new, field by field. The app's own
+  work (start-up checks, recomputing, re-reading T12s, repricing a floating rate) goes up by itself, stamped as the
+  app; a save that differs only in time stamps is no change.
+- **Two people at once.** Only what changed is sent, so different changes never undo each other; on the same
+  field the later save wins — except a field the **admin** changed last: then the admin types the **approval code**
+  on the spot, or the change is **sent to the admin** (it pops up when the admin opens the app; the old value stays
+  until approved). The starting data and automatic work lock nothing.
+- **View only** members see everything and change nothing (the app says so and puts the screen back).
+- **Live.** Every few seconds the app asks for anything new and reloads what the screens hold (never under the
+  person's fingers).
+- **Offline.** A banner; the last picture is the data; view-only — except the admin with the **offline code**, whose
+  changes are kept and go up on reconnect. The assistant needs the connection.
+- **Chats** are shared: each says who started it; only that person continues it (others read it), the admin may
+  delete any.
+- **Documents** go to the server's storage before the list naming them; they come down to every computer for
+  offline reading. Removing one takes it off the list; the stored file stays for the backups.
+- **The first upload**: an empty group's admin uploads this computer's data as the group's starting copy.
+- **Daily backups** (kept 30 days) — the admin puts a day back; every change it makes is recorded.
+- **Closing with changes not saved** asks, then drops them; the app always opens on the Portfolio dashboard.
+
 ---
 
 ## 5. Conventions & guardrails
@@ -612,6 +659,13 @@ saved, the key is used.
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
   decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
   every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
+- **3.0.0** adds `cloud-rules.test.js` (80 checks — the server's rules on a real PostgreSQL through the app's own
+  client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
+  history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
+  folding two saves) and `cloud-sync.test.js` (51 — two computers through the whole sync), plus the e2e
+  `cloud-3000.e2e.js` (the real app, three people on three computers). They run where PostgreSQL is installed and are
+  skipped elsewhere (the Windows build). `test/cloud/` holds the throwaway database and a stand-in for Supabase's
+  sign-in / functions / storage API.
 - CI runs the unit tests before every build.
 
 ---
@@ -639,21 +693,24 @@ saved, the key is used.
 - **2.9.14** — pooled loans, R1 and A1.
 - **2.9.15** — the fixes from testing the installed 2.9.14: T1, P1 and C1.
 - **2.9.16** — the T12 read by the reader and the AI before it is used.
-- **2.9.17** — *(this stage)* the file's own categories; the Underwriting table takes its rows from the reading (see §8).
+- **2.9.17** — the file's own categories; the Underwriting table takes its rows from the reading.
+- **3.0.0** — *(being built, not shipped)* one shared database (see §8 and §4.17).
 
 ---
 
-## 8. Stage 2.9.17 — what shipped, and what still needs checking
+## 8. Stage 3.0.0 — what is built, and what still needs checking
 
-**What shipped** — the operator's rule after testing 2.9.16 (check list Part 10: 7 passed, 1 skipped):
-1. **Both readers divide a T12 by the file's own categories** — every account from a category's name to its total belongs
-   to it; vacancy is an account of Residential Rent, never a category; no category is made up from an account's name.
-2. **The AI gives no category per account**, so the reviews that came from the two readers naming categories differently
-   are gone; saved readings that waited only for that are checked, once.
-3. **The Underwriting table takes its rows from the one answer** — each account on its category's line; vacancy,
-   concessions, employee and model units, bad debt and the management fee from the rows the readers found them on.
+**Being built, not shipped** (the operator: "build the whole plan, then start building … do not ship"). The plan,
+with the operator's rules and the decisions taken, is `PLAN-3.0.0.md`; what the app does is §4.17.
 
-**Check on the real installed 2.9.17 (Windows)** — Part 11 of the check list.
+**Built and tested** — the server (every rule, on a real PostgreSQL), the app's client, the sync engine, the sign-in
+page, the chip, the "Not saved yet" bar, the admin's approval and requests, members and codes, the change history,
+the daily backups, the first upload, offline (and the admin's offline code), shared chats (read-only for others),
+shared documents. 2.9.17 (2.9.17 check list Part 11: 7 of 7 passed) is unchanged when no shared database is set up.
+
+**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`: the operator creates it and sends
+its address and public key): signing up and the confirmation email; the first upload of the real book with its
+documents; two computers at once; offline on a real machine; the daily backup running.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
@@ -666,10 +723,11 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 *(Order set by the operator, 2026-10-07.)*
 
-### 3.0.0 — One shared database
-So the team works off the same data: sign-in and users, per-group data separation, a daily backup, every edit
-stamped (who / when / why) as an audit trail, the last-opened state saved, the user's local files untouched.
-Hosting: the plan names **Supabase**.
+### 3.0.0 — One shared database *(being built — §8, §4.17, `PLAN-3.0.0.md`)*
+So the team works off the same data: groups made by the maintainer, each with one admin; editors and view-only
+members; a typed reason on every change (who / when / why, field by field); the admin's changes need the admin's
+approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
+always opening on the Portfolio dashboard; the user's local files untouched. Hosting: **Supabase**.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
@@ -679,7 +737,8 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 ### Pooled loans — not built yet
 - **Substitution** (swap one property for another) is a release plus an add; there is no one-step version.
 - A release that also changes the loan's rate, maturity or terms isn't modelled — edit the loan.
-- In the shared database (3.0.0) the "Also secures" list and the releases become tables of their own.
+- In the shared database (3.0.0) the "Also secures" list and the releases stay inside their loan; each change to
+  them is recorded field by field like any other.
 
 ### By design for now (not planned)
 - Phases that come as **separate files** are not combined (phases as sheets / sections of ONE file are).
@@ -694,8 +753,9 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 - **Installer size** — ~260 MB because of the two vendored OCR engines and their models; auto-update downloads
   mostly the changed blocks.
 - **No signing** — Windows SmartScreen shows a one-time "More info → Run anyway".
-- **Single-user, offline today** — multi-user, groups and the audit trail are the shared-database stage.
+- **One computer's data, unless a shared database is set up** (3.0.0). Supabase's free plan pauses an unused project
+  after a week and keeps no backups of its own — use a paid plan for the team's real data.
 
 ---
 
-*Last updated for version 2.9.15.*
+*Last updated for version 3.0.0 (being built).*

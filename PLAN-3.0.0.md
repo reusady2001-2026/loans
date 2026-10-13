@@ -2,6 +2,10 @@
 
 *Written 2026-10-13 from the operator's answers. Status: being built, not shipped.*
 
+**Progress (2026-10-13):** A–F built and tested against a real PostgreSQL with a stand-in for Supabase's web API
+(unit: rules 80, merge 25, sync 51; e2e: the real app, three people on three computers). G (version, docs, the
+check list) waits on the real Supabase project — see `SUPABASE-SETUP.md`.
+
 ---
 
 ## 1. The operator's rules

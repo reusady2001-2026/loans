@@ -46,8 +46,26 @@
       <label for="siEmail">Email</label><input id="siEmail" type="email" autocomplete="username" required>
       <label for="siPw">Password</label><input id="siPw" type="password" autocomplete="current-password" required>
       <div class="row"><button class="btn" id="siGo" type="submit">Sign in</button><button class="btn ghost" type="button" id="toSignup">Create an account</button></div>
+      <div class="row" style="margin-top:4px"><button class="btn ghost" type="button" id="toForgot">Forgot your password?</button></div>
     </form>
     <div class="msg" id="siMsg"></div>
+  </section>
+
+  <!-- a forgotten password: a code by email, then a new password -->
+  <section class="card hidden" id="vForgot">
+    <h1>A new password</h1>
+    <p class="sub">We'll email you a 6-digit code. Type it here with your new password.</p>
+    <form id="fForgot">
+      <label for="fgEmail">Email</label><input id="fgEmail" type="email" autocomplete="username" required>
+      <div class="row"><button class="btn" id="fgSend" type="submit">Email me a code</button><button class="btn ghost" type="button" id="fgBack">Back to sign in</button></div>
+    </form>
+    <form id="fReset" class="hidden">
+      <label for="fgCode">The code from the email</label><input id="fgCode" inputmode="numeric" autocomplete="one-time-code" required>
+      <label for="fgPw">New password (at least 8 characters)</label><input id="fgPw" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="fgPw2">The new password again</label><input id="fgPw2" type="password" autocomplete="new-password" minlength="8" required>
+      <div class="row"><button class="btn" id="fgGo" type="submit">Set the password and sign in</button></div>
+    </form>
+    <div class="msg" id="fgMsg"></div>
   </section>
 
   <!-- creating an account -->
@@ -88,12 +106,29 @@
 (function(){
   const S = window.ldsShell, C = S && S.cloud;
   const $ = id => document.getElementById(id);
-  const show = v => ["vSignin", "vSignup", "vNoGroup"].forEach(x => $(x).classList.toggle("hidden", x !== v));
+  const show = v => ["vSignin", "vSignup", "vNoGroup", "vForgot"].forEach(x => $(x).classList.toggle("hidden", x !== v));
   const msg = (id, text, good) => { const m = $(id); m.textContent = text || ""; m.className = "msg" + (text ? (good ? " ok" : " bad") : ""); };
   $("wMin").onclick = () => S && S.winMinimize && S.winMinimize();
   $("wClose").onclick = () => S && S.winClose && S.winClose();
   $("toSignup").onclick = () => { show("vSignup"); $("suEmail").value = $("siEmail").value; $("suEmail").focus(); };
   $("toSignin").onclick = () => { show("vSignin"); $("siEmail").focus(); };
+  $("toForgot").onclick = () => { show("vForgot"); $("fgEmail").value = $("siEmail").value; $("fReset").classList.add("hidden"); $("fForgot").classList.remove("hidden"); msg("fgMsg", ""); $("fgEmail").focus(); };
+  $("fgBack").onclick = () => { show("vSignin"); };
+  $("fForgot").onsubmit = async ev => {
+    ev.preventDefault(); msg("fgMsg", "");
+    const r = await C.forgotPassword($("fgEmail").value);
+    if(!r.ok) return msg("fgMsg", r.why === "offline" ? "The shared database can't be reached." : r.error);
+    $("fForgot").classList.add("hidden"); $("fReset").classList.remove("hidden");
+    msg("fgMsg", "If " + $("fgEmail").value + " has an account, a code is on its way.", true); $("fgCode").focus();
+  };
+  $("fReset").onsubmit = async ev => {
+    ev.preventDefault();
+    if($("fgPw").value !== $("fgPw2").value) return msg("fgMsg", "The two passwords aren't the same.");
+    const r = await C.resetPassword($("fgEmail").value, $("fgCode").value, $("fgPw").value);
+    if(!r.ok) return msg("fgMsg", r.error);
+    if(!r.member) return noGroup(r.email || $("fgEmail").value, r.maintainer);
+    msg("fgMsg", "The password is set — opening your group's data…", true);
+  };
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   async function noGroup(email, maintainer){

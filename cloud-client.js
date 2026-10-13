@@ -108,6 +108,23 @@ function createClient(cfg){
       setSession(null);
     },
     refresh,
+    // a forgotten password: an email with a 6-digit code (Supabase's "Reset password" email shows {{ .Token }}); the
+    // code signs the person in once, and they set a new password
+    async recover(email){
+      const r = await call("POST", "/auth/v1/recover", { auth: false, json: { email } });
+      if(!r.ok) throw new CloudError("auth", authMessage(r.data), { status: r.status, detail: r.data });
+      return true;
+    },
+    async verifyRecovery(email, code){
+      const r = await call("POST", "/auth/v1/verify", { auth: false, json: { type: "recovery", email, token: String(code || "").trim() } });
+      if(!r.ok) throw new CloudError("auth", "That code isn't right, or it has expired — ask for a new one.", { status: r.status, detail: r.data });
+      setSession(r.data); return r.data;
+    },
+    async setPassword(password){
+      const r = await authed("PUT", "/auth/v1/user", { json: { password } });
+      if(!r.ok) throw new CloudError("auth", authMessage(r.data), { status: r.status, detail: r.data });
+      return true;
+    },
 
     async rpc(fn, args){
       const r = await authed("POST", "/rest/v1/rpc/" + fn, { json: args || {} });

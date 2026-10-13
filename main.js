@@ -1127,6 +1127,12 @@ ipcMain.handle('lds:cloud-signin', async (e, o) => {
   return r;
 });
 ipcMain.handle('lds:cloud-signup', (e, o) => cloud.signUp(o && o.email, o && o.password));
+ipcMain.handle('lds:cloud-forgot', (e, o) => cloud.forgotPassword(o && o.email));
+ipcMain.handle('lds:cloud-reset', async (e, o) => {
+  const r = await cloud.resetPassword(o && o.email, o && o.code, o && o.password);
+  if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }
+  return r;
+});
 ipcMain.handle('lds:cloud-open', async (e) => {
   const r = await cloud.openIfMember();
   if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }

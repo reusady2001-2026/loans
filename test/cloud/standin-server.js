@@ -24,6 +24,7 @@ async function startStandin(db, opts){
   const anonKey = sign({ role: "anon", iss: "standin" }, secret);
   const store = fs.mkdtempSync(path.join(os.tmpdir(), "lds-store-"));
   const refresh = new Map();     // refresh token -> user id
+  const recovery = new Map();    // email -> the 6-digit code "emailed" for a forgotten password
   const ttl = opts.tokenSeconds || 3600;
   const stats = { rpc: {}, requests: 0 };
   let down = false;              // tests flip this to make the server unreachable (offline)
@@ -108,6 +109,27 @@ async function startStandin(db, opts){
         return authErr(res, 400, "unsupported_grant_type", "unsupported grant type");
       }
       if(u.pathname === "/auth/v1/logout" && req.method === "POST") return send(res, 204);
+      // a forgotten password: the email carries a code (Supabase's template with {{ .Token }}); the code signs in once
+      if(u.pathname === "/auth/v1/recover" && req.method === "POST"){
+        const email = String((JSON.parse(body.toString() || "{}").email) || "").toLowerCase().trim();
+        const ex = await admin("select id from auth.users where email = $1", [email]);
+        if(ex.rows[0]) recovery.set(email, String(Math.floor(100000 + Math.random() * 900000)));
+        return send(res, 200, {});
+      }
+      if(u.pathname === "/auth/v1/verify" && req.method === "POST"){
+        const b = JSON.parse(body.toString() || "{}"), email = String(b.email || "").toLowerCase().trim();
+        if(b.type !== "recovery" || !recovery.has(email) || recovery.get(email) !== String(b.token || "")) return authErr(res, 403, "otp_expired", "Token has expired or is invalid");
+        recovery.delete(email);
+        const r = await admin("update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()) where email = $1 returning *", [email]);
+        return send(res, 200, session(r.rows[0]));
+      }
+      if(u.pathname === "/auth/v1/user" && req.method === "PUT"){
+        const w = who(req); if(!w.claims) return authErr(res, 401, "bad_jwt", "invalid JWT");
+        const b = JSON.parse(body.toString() || "{}");
+        if(String(b.password || "").length < 6) return authErr(res, 422, "weak_password", "Password should be at least 6 characters.");
+        await admin("update auth.users set encrypted_password = extensions.crypt($2, extensions.gen_salt('bf', 4)) where id = $1", [w.claims.sub, String(b.password)]);
+        return send(res, 200, { id: w.claims.sub, email: w.claims.email });
+      }
       if(u.pathname === "/auth/v1/user" && req.method === "GET"){
         const w = who(req); if(!w.claims) return authErr(res, 401, "bad_jwt", "invalid JWT");
         return send(res, 200, { id: w.claims.sub, email: w.claims.email });
@@ -174,6 +196,7 @@ async function startStandin(db, opts){
   const port = server.address().port;
   return {
     url: "http://127.0.0.1:" + port, anonKey, stats,
+    recoveryCode(email){ return recovery.get(String(email).toLowerCase()) || null; },
     async confirm(email){ await admin("update auth.users set email_confirmed_at = now() where email = $1", [String(email).toLowerCase()]); },
     async sql(q, a){ return admin(q, a); },
     setDown(v){ down = !!v; },
