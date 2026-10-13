@@ -616,21 +616,23 @@ begin
 end $$;
 
 -- The admin sets the approval code (typed on a member's screen to approve on the spot) and the offline code (to keep
--- changing data on the admin's own computer with no connection). Either may be left as it is (null).
-create or replace function public.lds_admin_codes(approval_code text default null, offline_code text default null) returns jsonb
+-- changing data on the admin's own computer with no connection). The offline code is checked by the admin's app with
+-- no connection, so the app hashes it and sends only the hash. Either may be left as it is (null).
+drop function if exists public.lds_admin_codes(text, text);
+create or replace function public.lds_admin_codes(approval_code text default null, offline_hash text default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare m app.members;
 begin
   m := app.need_member(); perform app.turn(m.group_id);
   if m.role <> 'admin' then raise exception 'admin_only' using errcode = 'P0001'; end if;
   if approval_code is not null and length(approval_code) < 6 then raise exception 'code_too_short' using errcode = 'P0001', hint = 'At least 6 characters.'; end if;
-  if offline_code is not null and length(offline_code) < 6 then raise exception 'code_too_short' using errcode = 'P0001', hint = 'At least 6 characters.'; end if;
+  if offline_hash is not null and offline_hash !~ '^pbkdf2\$sha256\$[0-9]+\$[0-9a-f]+\$[0-9a-f]+$' then raise exception 'bad_offline_hash' using errcode = 'P0001'; end if;
   update app.members set
     approval_hash = coalesce(case when approval_code is not null then extensions.crypt(approval_code, extensions.gen_salt('bf', 10)) end, approval_hash),
-    offline_hash  = coalesce(case when offline_code  is not null then extensions.crypt(offline_code,  extensions.gen_salt('bf', 10)) end, offline_hash),
+    offline_hash  = coalesce(lds_admin_codes.offline_hash, members.offline_hash),
     seq = nextval('app.seq')
    where email = m.email;
-  return jsonb_build_object('ok', true, 'offline_hash', (select offline_hash from app.members where email = m.email));
+  return jsonb_build_object('ok', true, 'offline_hash', (select x.offline_hash from app.members x where x.email = m.email));
 end $$;
 
 -- ---- the maintainer ------------------------------------------------------------------------------------------------------------

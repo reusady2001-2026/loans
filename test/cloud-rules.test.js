@@ -6,6 +6,7 @@ const path = require("path");
 const PG = require("./cloud/_pg.js");
 const { startStandin } = require("./cloud/standin-server.js");
 const { createClient } = require(path.join(__dirname, "..", "cloud-client.js"));
+const { offlineHash, checkOfflineCode } = require(path.join(__dirname, "..", "cloud-sync.js"));
 
 let fails = 0, count = 0;
 function ok(cond, msg){ count++; console.log((cond ? "  ok   " : "  FAIL ") + msg); if(!cond) fails++; }
@@ -111,7 +112,8 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok(r.ok === false && r.needs_approval.length === 1 && r.needs_approval[0].admin === "Ann Admin" && !r.wrong_code, "a member changing it needs the admin's approval");
       r = await E.rpc("lds_save", { items: [{ path: "loans.json", base_version: ver["loans.json"], content: { loans: [L(5.5, "2031-01-01"), { _id: "ln_2", propertyName: "Beta", annualRate: 6.1 }] } }], reason: "Extension signed" });
       ok(r.ok, "other fields (the maturity, another loan) are free"); ver["loans.json"] = r.results[0].version;
-      await A.rpc("lds_admin_codes", { approval_code: "open-sesame", offline_code: "offline-123" });
+      await A.rpc("lds_admin_codes", { approval_code: "open-sesame", offline_hash: offlineHash("offline-123") });
+      ok(await fails_with(A.rpc("lds_admin_codes", { offline_hash: "plain-text" }), "bad_offline_hash") === true, "the offline code is never stored as typed");
       r = await E.rpc("lds_save", { items: [{ path: "loans.json", base_version: ver["loans.json"], content: { loans: [L(6, "2031-01-01"), { _id: "ln_2", propertyName: "Beta", annualRate: 6.1 }] } }], reason: "Typo", approval_code: "nope" });
       ok(r.ok === false && r.wrong_code === true, "a wrong approval code is refused");
       r = await E.rpc("lds_save", { items: [{ path: "loans.json", base_version: ver["loans.json"], content: { loans: [L(6, "2031-01-01"), { _id: "ln_2", propertyName: "Beta", annualRate: 6.1 }] } }], reason: "Typo", approval_code: "open-sesame" });
@@ -119,7 +121,7 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       const c = (await sql("select * from app.changes where reason = 'Typo'")).rows;
       ok(c.length === 1 && c[0].by_name === "Eddie" && c[0].approved_by === "Ann Admin", "recorded as made by the member, approved by the admin");
       const ho = await A.rpc("lds_hello");
-      ok(typeof ho.offline_hash === "string" && ho.offline_hash.length > 20 && ho.offline_hash.indexOf("offline-123") < 0, "the admin's app gets the offline code's hash (never the code)");
+      ok(typeof ho.offline_hash === "string" && ho.offline_hash.indexOf("offline-123") < 0 && checkOfflineCode("offline-123", ho.offline_hash) && !checkOfflineCode("offline-124", ho.offline_hash), "the admin's app gets the offline code's hash, and checks the code with it");
     });
 
     await section("asking the admin", async () => {
