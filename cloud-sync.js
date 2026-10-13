@@ -214,14 +214,16 @@ function create(opts){
   function status(){
     return {
       configured: !!cfg, signedIn: !!(client && client.session), member: !!(me && me.member), active: !!groupDir,
-      email: me && me.email || (client && client.user && client.user.email) || "", name: me && me.name || "",
+      email: me && me.email || (client && client.user && client.user.email) || "", name: me && me.name || "", userId: me && me.user_id || "",
       role: role(), group: me && me.group_name || "", adminName: me && me.admin_name || "", maintainer: !!(me && me.maintainer),
       online, offlineUnlocked, canWrite: canWrite().ok, pending: pendingList(), queued: readQueue().length,
       requests: requests.filter(r => r.status === "waiting").length, lastError, downloads, appVersion,
-      hasOfflineCode: !!(me && me.offline_hash)
+      hasOfflineCode: !!(me && me.offline_hash), hasApprovalCode: !!(me && me.has_approval_code),
+      groupEmpty: groupEmpty()
     };
   }
   function tell(){ broadcast("lds:cloud-status", status()); }
+  function groupEmpty(){ return !!groupDir && !fs.existsSync(path.join(serverDir(), "records", "loans.json")) && !fs.existsSync(path.join(serverDir(), "records", "props")); }
   function canWrite(){
     if(!groupDir) return { ok: true };
     if(role() === "viewer") return { ok: false, why: "view_only", message: "You can only view this group's data." };
@@ -543,6 +545,11 @@ function create(opts){
       rm(path.join(cloudDir, "last.json"));
       return { ok: true };
     },
+    // signed in, and the admin has just added this person: open the group
+    async openIfMember(){
+      try{ const h = await client.rpc("lds_hello"); online = true; me = h; if(!h.member) return { ok: true, member: false, maintainer: !!h.maintainer, email: h.email }; await openGroup(h); return { ok: true, member: true }; }
+      catch(e){ return errorResult(e); }
+    },
     async hello(){ try{ const h = await client.rpc("lds_hello"); online = true; return Object.assign({ ok: true }, h); }catch(e){ return errorResult(e); } },
 
     // ---- writes from the app ---------------------------------------------------------------------------------------------------------
@@ -614,7 +621,8 @@ function create(opts){
       if((a && a.length < 6) || (o && o.length < 6)) return { ok: false, error: "A code needs at least 6 characters." };
       try{
         const r = await client.rpc("lds_admin_codes", { approval_code: a, offline_hash: o ? offlineHash(o) : null });
-        if(r && r.offline_hash){ me = Object.assign({}, me, { offline_hash: r.offline_hash }); st.me = me; saveState(); writeJSON(path.join(cloudDir, "last.json"), { group_id: me.group_id, me }); }
+        me = Object.assign({}, me, a ? { has_approval_code: true } : {}, r && r.offline_hash ? { offline_hash: r.offline_hash } : {});
+        st.me = me; saveState(); writeJSON(path.join(cloudDir, "last.json"), { group_id: me.group_id, me });
         tell(); return { ok: true };
       }catch(e){ return errorResult(e); }
     },
@@ -665,7 +673,7 @@ function create(opts){
         return { ok: true, records: items.length, files, chats };
       }catch(e){ return errorResult(e); }
     },
-    groupIsEmpty(){ return !!groupDir && !fs.existsSync(path.join(serverDir(), "records", "loans.json")) && !fs.existsSync(path.join(serverDir(), "records", "props")); },
+    groupIsEmpty: groupEmpty,
 
     close(){ closed = true; stopPolling(); clearTimeout(autoTimer); },
     // tests

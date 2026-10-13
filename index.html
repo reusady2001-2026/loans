@@ -571,6 +571,13 @@
         <span class="truncate text-[11px] font-semibold text-ink-500">Living Residential — Loan Debt Service Hub</span>
       </div>
       <div class="flex items-center gap-0.5 pl-2" style="-webkit-app-region:no-drag">
+        <!-- 3.0.0 — the shared database: who is signed in, the group, online / offline; the account's screens -->
+        <details id="cloudDD" class="relative hidden">
+          <summary id="cloudChip" class="list-none [&amp;::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition" title="The shared database">
+            <span id="cloudDot" class="h-2 w-2 rounded-full bg-emerald-500"></span><span id="cloudChipText"></span>
+          </summary>
+          <div id="cloudMenu" class="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-xl"></div>
+        </details>
         <!-- Fetch live rate — global, on every tab (2.9.4). Pulls today's Treasury curve + SOFR into the
              cache so the refinance market rate, coverage rate-gap and loan-form previews are current. -->
         <button type="button" id="fetchRateBtn" class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition disabled:opacity-50" title="Fetch today's live market rates (US Treasury curve + SOFR) for the refinance analysis and rate previews">
@@ -1234,6 +1241,30 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
+    // 3.0.0 — the shared database. Signed in to one, the app reads and writes the group's picture of the data (the
+    // main process keeps it in step with the server); a person's change waits for the reason they type.
+    const LDS_CLOUD = !!(window.ldsShell && ldsShell.cloudMode);
+    // The team's settings kept in the window's storage: targets, custom T12 categories, "not a duplicate" pairs. In the
+    // shared database they come from the group; this computer's own values are kept aside once, never changed (the
+    // first upload sends them).
+    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"];
+    function cloudApplySettings(){
+      if(!LDS_CLOUD) return;
+      try{
+        CLOUD_SHARED_KEYS.forEach(k => { const keep = "lds.localCopy." + k; if(localStorage.getItem(keep) == null) localStorage.setItem(keep, JSON.stringify({ v: localStorage.getItem(k) })); });
+        const sh = (ldsShell.cloud && ldsShell.cloud.settings()) || {};
+        CLOUD_SHARED_KEYS.forEach(k => { const v = sh[k]; if(v !== undefined && v !== null) localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); else localStorage.removeItem(k); });
+      }catch(e){}
+    }
+    cloudApplySettings();
+    function cloudSettingSaved(key){ if(!LDS_CLOUD) return; try{ const r = ldsShell.cloud.setSetting(key, localStorage.getItem(key)); if(r && r.ok === false && r.error){ cloudApplySettings(); } }catch(e){} }
+    function cloudLocalSettings(){
+      const o = {}; CLOUD_SHARED_KEYS.forEach(k => { try{ const keep = JSON.parse(localStorage.getItem("lds.localCopy." + k) || "null"); const v = keep ? keep.v : localStorage.getItem(k); if(v != null) o[k] = JSON.parse(v); }catch(e){} }); return o;
+    }
+    // The app's own work (start-up checks, recomputing, repricing): its writes go up by themselves, stamped as the
+    // app, instead of waiting for a person's reason.
+    async function cloudAutoRun(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return await fn(); } finally { if(c) c.auto(false); } }
+    function cloudAutoSync(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return fn(); } finally { if(c) c.auto(false); } }
     // Bumped v6 -> v7: the seed now carries a given Maturity Date per loan and the
     // schedule is anchored to it. Existing installs saved loans BEFORE that field
     // existed, so they must re-seed the corrected portfolio rather than keep stale
@@ -1707,7 +1738,7 @@
         const t = todayParts(), r0 = indexOnResetDay(loan.index, { y: t.y, mo: t.mo });
         if(r0){
           if(loan.floatIndexValue !== r0.value || loan.floatRepricedOn !== thisFirst || !loan.floatIndexLive || loan.floatResetDate !== r0.date){
-            loan.floatIndexValue = r0.value; loan.floatIndexLive = true; loan.floatRepricedOn = thisFirst; loan.floatResetDate = r0.date; save();
+            loan.floatIndexValue = r0.value; loan.floatIndexLive = true; loan.floatRepricedOn = thisFirst; loan.floatResetDate = r0.date; cloudAutoSync("floating rate repriced", save);
           }
           return;
         }
@@ -1723,7 +1754,7 @@
       } else if(!loan.floatIndexLive && live!=null && (liveNow || loan.floatIndexValue !== live)){     // same month, a live (or saved) value just arrived: upgrade
         loan.floatIndexValue = live; loan.floatIndexLive = liveNow; changed = true;
       }
-      if(changed) save();
+      if(changed) cloudAutoSync("floating rate repriced", save);
     }
     // All-in floating / reset rate = clamp( index + spread, floor, cap ).
     function allInRate(loan){
@@ -2074,6 +2105,7 @@
         if(loansDiskReadFailed) return false;   // never clobber a file we couldn't read
         let r = null; try { r = ldsShell.loansWriteSync(json); } catch(e){ r = { ok:false, error:String(e) }; }
         if(r && r.ok) return true;
+        if(r && r.refused) return false;   // 3.0.0 — view-only / offline: the page was told why and reloads
         if(!loansSaveWarned){ loansSaveWarned = true; try{ toast("Couldn’t save the loans to disk"+(r && r.error ? " ("+r.error+")" : "")+". Your last change may not be kept.", "error"); }catch(e){} }
         return false;
       }
@@ -2240,6 +2272,14 @@
       return changed;
     }
     function load(){
+      // 3.0.0 — in the shared database the loans are the group's: never the built-in portfolio, never a seed
+      if(LDS_CLOUD){
+        let r = null; try { r = ldsShell.loansReadSync(); } catch(e){}
+        let arr = []; try { arr = (r && r.ok && r.exists) ? JSON.parse(r.json) : []; } catch(e){ arr = []; }
+        const out = (Array.isArray(arr) ? arr : []).map(migrateLoan);
+        if(healLoanIds(out)) cloudAutoSync("loan ids repaired", () => persistLoans(out));
+        return out;
+      }
       try {
         let raw = null;
         if(loansOnDisk()){
@@ -5878,6 +5918,7 @@ tr.flagged:hover td{background:#fee2e2}
     function markNotDuplicate(keys){
       const cur = notDupPairs(); for(let i = 0; i < keys.length; i++) for(let j = i + 1; j < keys.length; j++){ const id = dupPairId(keys[i], keys[j]); if(cur.indexOf(id) < 0) cur.push(id); }
       try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify(cur)); }catch(e){}
+      cloudSettingSaved(NOT_DUP_KEY);
       try{ scheduleAutoBackup(true); }catch(e){}
     }
     function propAddressSig(p){
@@ -6792,7 +6833,7 @@ tr.flagged:hover td{background:#fee2e2}
     var CUSTOM_CATS_KEY = "lds.customCategories";
     function customCats(){ try{ const v = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || "[]"); return Array.isArray(v) ? v.filter(c => c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense")) : []; }catch(e){ return []; } }
     function customCatsApply(){ const l = customCats(); try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
-    function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} customCatsApply(); }
+    function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} cloudSettingSaved(CUSTOM_CATS_KEY); customCatsApply(); }
     const catNorm = (x) => String(x || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
     function customCatAdd(name, role){
       name = String(name || "").replace(/\s+/g, " ").trim();
@@ -8122,6 +8163,7 @@ tr.flagged:hover td{background:#fee2e2}
     function savePortfolioTargets(t){
       const cur = portfolioTargets(), next = Object.assign({}, cur, t || {});
       try{ localStorage.setItem(TARGETS_KEY, JSON.stringify(next)); }catch(e){}
+      cloudSettingSaved(TARGETS_KEY);
       try{ scheduleAutoBackup(true); }catch(e){}
       loadPortfolioTargets();
       try{ renderSettingsTargets(); }catch(e){}
@@ -14006,7 +14048,16 @@ tr.flagged:hover td{background:#fee2e2}
     var AI_ASST_MAX_ROUNDS = 8;
     var aiAsstConvFileTexts = [];          // [{name, text}] files attached in this conversation — sent with every later message (#243)
     var AI_ASST_FILES_CAP = 400000;        // when they get very large the oldest is dropped first (and Claude is told which)
+    // 3.0.0 — in the shared database everyone reads every chat; only the person who started one continues it
+    var aiAsstReadOnlyOwner = "";
+    function aiAsstSetReadOnly(owner){
+      aiAsstReadOnlyOwner = owner || "";
+      var inp = el("aiAsstInput"); if(!inp) return;
+      inp.disabled = !!owner;
+      inp.placeholder = owner ? ("Started by " + owner + " — only they can continue it. Start a new chat to ask your own question.") : "Ask me anything, or tell me what to do… (Enter to send, Shift+Enter for a new line)";
+    }
     function aiAsstAsk(question){
+      if(aiAsstReadOnlyOwner){ toast("Only " + aiAsstReadOnlyOwner + " can continue this chat — start a new chat", "info"); return; }
       question=String(question==null?"":question).trim();
       var ready = aiAsstFiles.filter(function(f){ return f.status==="ok" && f.text; });
       var loading = aiAsstFiles.some(function(f){ return f.status==="loading"; });
@@ -14431,7 +14482,9 @@ tr.flagged:hover td{background:#fee2e2}
         aiAsstFocusPropKey=(c.scope && c.scope!=="portfolio") ? c.scope : ""; aiAsstFillProps();   // 2.9.8 — a general chat reopens as general
         aiAsstRenderThread();
         aiAsstToggleHistory(false);
-        toast("Reopened — the assistant has this conversation’s memory","check");
+        var myId = LDS_CLOUD && ldsShell.cloudInfo && ldsShell.cloudInfo.userId, notMine = !!(LDS_CLOUD && c.ownerId && myId && c.ownerId !== myId);
+        aiAsstSetReadOnly(notMine ? (c.ownerName || "someone else") : "");
+        toast(notMine ? "Started by " + (c.ownerName || "someone else") + " — you can read it; only they can continue it" : "Reopened — the assistant has this conversation’s memory","check");
       }).catch(function(){ toast("Couldn’t open that conversation","info"); });
     }
     function aiAsstWhen(ts){
@@ -14498,7 +14551,7 @@ tr.flagged:hover td{background:#fee2e2}
       lister.then(function(r){
         var cs=((r&&r.conversations)||[]).filter(function(c){ return !(aiAsstHistMode==="this" && aiAsstFocusPropKey) || c.scope===aiAsstFocusPropKey; });
         list.innerHTML = cs.length
-          ? aiAsstHistGrouped(cs.map(function(c){ return { scope:c.scope, scopeName:c.scopeName, id:c.id, title:c.title, updatedAt:c.updatedAt, pinned:c.pinned, sub:(c.msgCount?(c.msgCount+" message"+(c.msgCount===1?"":"s")):"") }; }))
+          ? aiAsstHistGrouped(cs.map(function(c){ return { scope:c.scope, scopeName:c.scopeName, id:c.id, title:c.title, updatedAt:c.updatedAt, pinned:c.pinned, sub:(c.msgCount?(c.msgCount+" message"+(c.msgCount===1?"":"s")):"") + (LDS_CLOUD && c.ownerName ? " · " + c.ownerName : "") }; }))
           : '<div class="text-xs text-slate-400 py-8 text-center">'+(aiAsstHistMode==="this"&&aiAsstFocusPropKey ? 'No saved conversations about this property yet.' : 'No saved conversations yet.<br>Ask the assistant something and it’ll be saved here.')+'</div>';
         aiAsstWireHistRows(list);
       }).catch(function(){ list.innerHTML='<div class="text-xs text-rose-500 py-6 text-center">Couldn’t load the conversations.</div>'; });
@@ -14552,6 +14605,7 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[]; aiAsstPartsAsked={};
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
       aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
+      aiAsstSetReadOnly("");
       aiAsstToggleHistory(false);
       aiAsstRenderWelcome();
       if(!(opts && opts.quiet)) toast("Started a new chat","check");
@@ -14781,6 +14835,366 @@ tr.flagged:hover td{background:#fee2e2}
     if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-500"); dom.xlsxDot.classList.add("bg-amber-500"); }
 
     /* ================================================================
+       12c. 3.0.0 — THE SHARED DATABASE (the screens)
+       The chip in the title bar (who, the group, online / offline) and its menu; the bar of changes not saved yet,
+       with the reason box; the admin's approval (code on the spot, or a request); the admin's requests pop-up;
+       members and codes; the change history; the daily backups; the first upload; the offline code.
+       ================================================================ */
+    const cloudUI = { st: null, shownReq: {}, answered: {}, refreshWait: null };
+    const CLOUD_ROLE = { admin: "Admin", editor: "Editor", viewer: "View only" };
+    function cloudModal(title, sub, body, buttons, opts){
+      opts = opts || {};
+      const back = document.createElement("div");
+      back.className = "fixed inset-0 z-[85] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+      back.innerHTML = '<div class="w-full ' + (opts.wide ? "max-w-4xl" : "max-w-lg") + ' rounded-2xl border border-slate-200 bg-white shadow-2xl">' +
+        '<div class="border-b border-slate-100 px-5 py-4"><h3 class="text-base font-bold text-slate-800">' + escapeHtml(title) + '</h3>' +
+        (sub ? '<p class="text-xs text-slate-500 mt-0.5">' + sub + '</p>' : '') + '</div>' +
+        '<div class="max-h-[65vh] overflow-y-auto px-5 py-4 text-sm text-slate-700" data-cm-body>' + (body || "") + '</div>' +
+        '<div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3" data-cm-btns></div></div>';
+      const close = () => { try{ back.remove(); }catch(e){} };
+      const btns = back.querySelector("[data-cm-btns]");
+      (buttons || [{ label: "Close" }]).forEach(b => {
+        const x = document.createElement("button"); x.type = "button"; x.textContent = b.label;
+        x.className = b.primary ? "rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                    : b.danger ? "rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                    : "rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50";
+        if(b.id) x.id = b.id;
+        x.addEventListener("click", async () => { if(b.onClick){ x.disabled = true; let keep = false; try{ keep = await b.onClick(back, x); }finally{ x.disabled = false; } if(keep === true) return; } close(); });
+        btns.appendChild(x);
+      });
+      document.body.appendChild(back);
+      return { root: back, close, body: back.querySelector("[data-cm-body]") };
+    }
+    // Electron has no window.prompt: a box with one field (resolves the text, or null when cancelled)
+    function cloudAsk(title, label, opts){
+      opts = opts || {};
+      return new Promise(res => {
+        let done = false;
+        const m = cloudModal(title, opts.sub || "", '<label class="block text-xs font-semibold text-slate-500">' + escapeHtml(label) + '</label>' + cloudInput("cloudAskIn", opts.placeholder || "", opts.type) + '<p id="cloudAskMsg" class="mt-2 text-xs text-rose-600"></p>', [
+          { label: "Cancel", onClick: () => { done = true; res(null); } },
+          { label: opts.ok || "OK", primary: true, onClick: () => { const v = (el("cloudAskIn").value || "").trim(); if(opts.required && !v){ el("cloudAskMsg").textContent = opts.required; return true; } done = true; res(v); } }
+        ]);
+        setTimeout(() => { const x = el("cloudAskIn"); if(x){ x.focus(); x.addEventListener("keydown", e => { if(e.key === "Enter"){ const b = m.root.querySelectorAll("[data-cm-btns] button"); b[b.length - 1].click(); } }); } }, 30);
+        const obs = new MutationObserver(() => { if(!document.body.contains(m.root)){ obs.disconnect(); if(!done) res(null); } }); obs.observe(document.body, { childList: true });
+      });
+    }
+    const cloudInput = (id, ph, type) => '<input id="' + id + '" type="' + (type || "text") + '" placeholder="' + escapeHtml(ph || "") + '" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">';
+    const cloudWhen = t => { try{ const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString(); }catch(e){ return ""; } };
+    const cloudVal = v => v === null || v === undefined ? "—" : (typeof v === "object" ? JSON.stringify(v).slice(0, 120) : String(v));
+
+    // A field of a record, in words: "Alpha Tower · Interest Rate" rather than "[ln_1].annualRate".
+    function cloudFieldLabel(path, field){
+      try{
+        if(path === "loans.json"){
+          const m = String(field || "").match(/^\[([^\]]+)\]\.?(.*)$/);
+          if(m){ const ln = loans.find(l => String(l._id) === m[1]); const f = FIELDS.find(x => x.key === m[2].split(".")[0]);
+            return (ln ? ln.propertyName : "A loan") + " · " + (f ? f.label : (m[2] || "the whole loan")); }
+          return "Loans";
+        }
+        if(path === "settings.json") return "Settings · " + field;
+        const pm = String(path).match(/^props\/[0-9a-f]+\/(.+)$/);
+        const what = pm ? ({ "index.json": "documents", "profile.json": "profile", "assumptions.json": "assumptions", "general-data.json": "numbers", "history.json": "assumption history" }[pm[1]] || pm[1]) : path;
+        let prop = "";
+        try{ const st = cloudUI.st || {}; const one = (st.pending || []).find(x => x.path === path); if(one && one.propName) prop = one.propName + " · "; }catch(e){}
+        const pf = String(field || "").replace(/^fields\./, "").replace(/\.value$/, "");
+        const f = (window.Profile && Profile.FIELDS || []).find(x => x.key === pf.split(".")[0]);
+        return prop + what + (field ? " · " + (f ? f.label : pf) : "");
+      }catch(e){ return path + " " + field; }
+    }
+
+    function cloudPaint(st){
+      if(!LDS_CLOUD || !st) return;
+      cloudUI.st = st;
+      const dd = el("cloudDD"); if(dd) dd.classList.remove("hidden");
+      const dot = el("cloudDot"), txt = el("cloudChipText");
+      if(dot) dot.className = "h-2 w-2 rounded-full " + (!st.online ? "bg-amber-500" : st.pending && st.pending.length ? "bg-sky-500" : "bg-emerald-500");
+      if(txt) txt.textContent = (st.name || st.email || "") + " · " + (CLOUD_ROLE[st.role] || "") + (st.online ? "" : " · offline") + (st.requests && st.role === "admin" ? " · " + st.requests + " waiting" : "");
+      cloudMenuPaint(st); cloudBannerPaint(st); cloudBarPaint(st);
+      document.body.classList.toggle("lds-viewonly", !st.canWrite);
+      if(st.role === "admin" && st.requests > 0) cloudShowRequests(false);
+    }
+    function cloudMenuPaint(st){
+      const m = el("cloudMenu"); if(!m) return;
+      const item = (id, label, sub) => '<button type="button" data-cloud="' + id + '" class="w-full rounded-lg px-2.5 py-2 text-left hover:bg-slate-50"><div class="text-sm font-semibold text-slate-700">' + label + '</div>' + (sub ? '<div class="text-[11px] text-slate-400">' + sub + '</div>' : '') + '</button>';
+      let h = '<div class="px-2.5 pt-1 pb-2 mb-1 border-b border-slate-100"><div class="text-sm font-bold text-slate-800">' + escapeHtml(st.group || "") + '</div>' +
+        '<div class="text-[11px] text-slate-500">' + escapeHtml(st.name || "") + ' · ' + escapeHtml(st.email || "") + ' · ' + (CLOUD_ROLE[st.role] || "") + '</div>' +
+        '<div class="text-[11px] mt-0.5 ' + (st.online ? "text-emerald-600" : "text-amber-600") + '">' + (st.online ? "Online — live with the group" : "Offline — the last picture of the data") + (st.downloads ? " · fetching files…" : "") + '</div></div>';
+      if(st.role === "admin"){
+        h += item("requests", "Requests" + (st.requests ? " (" + st.requests + " waiting)" : ""), "Changes members asked you to approve");
+        h += item("members", "Members and codes", "Who is in the group, who can edit; your approval and offline codes");
+        h += item("backups", "Daily backups", "Put the group's data back as it was on a day");
+        if(st.groupEmpty) h += item("upload", "Upload this computer's data", "The group's starting data — nothing on this computer changes");
+        if(!st.online && !st.offlineUnlocked) h += item("offline", "Use my offline code", "Keep changing data while offline");
+      }
+      h += item("history", "Change history", "Every change: who, when, why");
+      h += item("signout", "Sign out", "");
+      m.innerHTML = h;
+      m.querySelectorAll("[data-cloud]").forEach(b => b.addEventListener("click", () => { const dd = el("cloudDD"); if(dd) dd.open = false; cloudMenuAction(b.getAttribute("data-cloud")); }));
+    }
+    function cloudMenuAction(a){
+      if(a === "requests") return cloudShowRequests(true);
+      if(a === "members") return cloudMembersScreen();
+      if(a === "backups") return cloudBackupsScreen();
+      if(a === "upload") return cloudUploadScreen();
+      if(a === "offline") return cloudOfflineScreen();
+      if(a === "history") return cloudHistoryScreen();
+      if(a === "signout") return cloudSignOut();
+    }
+    function cloudBannerPaint(st){
+      let b = el("cloudBanner");
+      const need = !st.online || st.role === "viewer" || st.groupEmpty;
+      if(!need){ if(b) b.remove(); return; }
+      if(!b){ b = document.createElement("div"); b.id = "cloudBanner"; const wb = el("winbar"); if(wb && wb.parentNode) wb.parentNode.insertBefore(b, wb.nextSibling); else document.body.prepend(b); }
+      let cls = "bg-amber-50 border-amber-200 text-amber-800", text = "", act = "";
+      if(!st.online){
+        if(st.offlineUnlocked) text = "Offline — your changes are kept on this computer and go up when the connection is back" + (st.queued ? " (" + st.queued + " waiting)" : "") + ".";
+        else { text = "Offline — view only. This is the last picture of the group's data; changes can't be saved until the connection is back."; if(st.role === "admin") act = '<button type="button" data-cloud-banner="offline" class="ml-2 underline font-semibold">Use my offline code</button>'; }
+      } else if(st.role === "viewer"){ cls = "bg-sky-50 border-sky-200 text-sky-800"; text = "View only — you can see everything in the group but not change it."; }
+      else if(st.groupEmpty){ cls = "bg-brand-50 border-brand-200 text-brand-800"; text = st.role === "admin" ? "This group has no data yet." : "This group has no data yet — its admin brings the starting data.";
+        if(st.role === "admin") act = '<button type="button" data-cloud-banner="upload" class="ml-2 underline font-semibold">Upload this computer’s data</button>'; }
+      b.className = "sticky top-8 z-[44] border-b px-4 py-1.5 text-[12px] " + cls;
+      b.innerHTML = escapeHtml(text) + act;
+      b.querySelectorAll("[data-cloud-banner]").forEach(x => x.addEventListener("click", () => cloudMenuAction(x.getAttribute("data-cloud-banner"))));
+    }
+
+    // ---- the changes not saved yet, and the reason box -----------------------------------------------------------------------
+    function cloudBarPaint(st){
+      let bar = el("cloudBar");
+      const pend = (st && st.pending) || [];
+      if(!pend.length){ if(bar) bar.remove(); return; }
+      if(!bar){
+        bar = document.createElement("div"); bar.id = "cloudBar";
+        bar.className = "fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] w-[min(920px,calc(100vw-32px))] rounded-2xl border border-amber-300 bg-amber-50 shadow-2xl px-4 py-3";
+        bar.innerHTML = '<div class="flex items-start gap-3"><div class="min-w-0 flex-1"><div class="text-sm font-bold text-amber-900">Not saved yet</div>' +
+          '<div id="cloudBarWhat" class="text-[12px] text-amber-800 truncate"></div>' +
+          '<div class="mt-2 flex items-center gap-2"><input id="cloudReason" type="text" maxlength="500" placeholder="Why did you make this change?" class="min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm focus:border-amber-500 focus:outline-none">' +
+          '<button type="button" id="cloudSaveBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">Save</button>' +
+          '<button type="button" id="cloudUndoBtn" class="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100">Undo</button></div></div></div>';
+        document.body.appendChild(bar);
+        el("cloudSaveBtn").addEventListener("click", () => cloudSave());
+        el("cloudUndoBtn").addEventListener("click", () => cloudUndo());
+        el("cloudReason").addEventListener("keydown", e => { if(e.key === "Enter") cloudSave(); });
+      }
+      const names = pend.map(p => (p.propName ? p.propName + " · " : "") + p.what);
+      el("cloudBarWhat").textContent = names.slice(0, 4).join(", ") + (names.length > 4 ? " and " + (names.length - 4) + " more" : "");
+      el("cloudBarWhat").title = names.join("\n");
+    }
+    async function cloudSave(o){
+      o = o || {};
+      const inp = el("cloudReason"), btn = el("cloudSaveBtn");
+      const reason = o.reason || (inp && inp.value || "").trim();
+      if(!reason){ if(inp) inp.focus(); toast("Type why you made this change", "info"); return; }
+      if(btn) btn.disabled = true;
+      let r = null;
+      try{ r = await ldsShell.cloud.commit({ reason, approvalCode: o.code || null, request: !!o.request }); }
+      catch(e){ r = { ok: false, error: String(e && e.message || e) }; }
+      finally{ if(btn) btn.disabled = false; }
+      if(r && r.ok){
+        if(inp) inp.value = "";
+        toast(r.queued ? "Saved on this computer — it goes up when the connection is back" : r.requested ? "Sent to the admin for approval — the old value stays until then" : r.approvedBy ? "Saved — approved by " + r.approvedBy : "Saved", "check");
+        if(r.requested) cloudRefresh({ reload: true });
+        return r;
+      }
+      if(r && r.needsApproval) return cloudApprovalScreen(r, reason);
+      toast((r && r.error) || "Not saved", "info");
+      return r;
+    }
+    async function cloudUndo(){
+      const r = await ldsShell.cloud.discard();
+      if(r && r.ok){ const inp = el("cloudReason"); if(inp) inp.value = ""; toast("Your changes were undone", "info"); }
+    }
+
+    // ---- what the admin changed: the approval code on the spot, or a request ------------------------------------------------
+    function cloudApprovalScreen(res, reason){
+      const st = cloudUI.st || {}, admin = (res.needsApproval[0] && res.needsApproval[0].admin) || st.adminName || "the admin";
+      const rows = res.needsApproval.map(n => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(cloudFieldLabel(n.path, n.field)) + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(cloudVal(n.old)) + '</td><td class="py-1.5">' + escapeHtml(cloudVal(n.new)) + '</td></tr>').join("");
+      const body = '<p>' + escapeHtml(admin) + ' made the last change to ' + (res.needsApproval.length === 1 ? "this" : "these") + '. Changing ' + (res.needsApproval.length === 1 ? "it" : "them") + ' needs the admin’s approval.</p>' +
+        '<table class="mt-3 w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left font-semibold pb-1">What</th><th class="text-left font-semibold pb-1">Now</th><th class="text-left font-semibold pb-1">Your change</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<label class="mt-4 block text-xs font-semibold text-slate-500">' + escapeHtml(admin) + ' can type the approval code here</label>' + cloudInput("cloudApproveCode", "Approval code", "password") +
+        (res.wrongCode ? '<p class="mt-2 text-xs font-semibold text-rose-600">That code isn’t right.</p>' : '') +
+        '<p class="mt-3 text-xs text-slate-500">Or send it to ' + escapeHtml(admin) + ': it pops up the next time they open the app. Until they approve, the current value stays in use.</p>';
+      cloudModal("The admin's approval is needed", "Your reason: " + escapeHtml(reason), body, [
+        { label: "Undo my change", onClick: async () => { await cloudUndo(); } },
+        { label: "Send to " + admin, onClick: async () => { await cloudSave({ reason, request: true }); } },
+        { label: "Approve with the code", primary: true, onClick: async () => { const c = (el("cloudApproveCode").value || "").trim(); if(!c){ el("cloudApproveCode").focus(); return true; } await cloudSave({ reason, code: c }); } }
+      ]);
+      setTimeout(() => { const x = el("cloudApproveCode"); if(x) x.focus(); }, 50);
+    }
+
+    // ---- the admin's requests (pop up when the admin opens the app, and when a new one comes in) --------------------------
+    async function cloudShowRequests(force){
+      const r = await ldsShell.cloud.requests(); const list = (r && r.requests) || [];
+      const st = cloudUI.st || {};
+      if(st.role !== "admin"){
+        // a member: say once what the admin answered
+        list.filter(q => q.status !== "waiting" && !cloudUI.answered[q.id]).forEach(q => {
+          cloudUI.answered[q.id] = true;
+          if(Date.now() - Date.parse(q.decided_at || 0) < 7 * 864e5) toast(q.status === "approved" ? "The admin approved your change: " + q.reason : "The admin turned down your change: " + q.reason + (q.note ? " — " + q.note : ""), q.status === "approved" ? "check" : "info");
+        });
+        return;
+      }
+      const waiting = list.filter(q => q.status === "waiting");
+      if(!force && (!waiting.length || waiting.every(q => cloudUI.shownReq[q.id]))) return;
+      if(el("cloudReqModal")) return;
+      waiting.forEach(q => cloudUI.shownReq[q.id] = true);
+      const body = waiting.length ? waiting.map(q => '<div class="mb-4 rounded-xl border border-slate-200 p-3" data-req="' + escapeHtml(q.id) + '">' +
+        '<div class="text-sm"><b>' + escapeHtml(q.by_name || "") + '</b> · ' + escapeHtml(cloudWhen(q.at)) + '</div><div class="text-[13px] text-slate-600">Why: ' + escapeHtml(q.reason || "") + '</div>' +
+        '<table class="mt-2 w-full text-[12px]">' + (q.fields || []).map(f => '<tr class="border-b border-slate-100"><td class="py-1 pr-3">' + escapeHtml(cloudFieldLabel(f.path, f.field)) + '</td><td class="py-1 pr-3 text-slate-500">' + escapeHtml(cloudVal(f.old)) + '</td><td class="py-1">' + escapeHtml(cloudVal(f.new)) + '</td></tr>').join("") + '</table>' +
+        '<div class="mt-2 flex gap-2 justify-end"><button type="button" data-rej class="rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50">Turn down</button><button type="button" data-apr class="rounded-lg bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700">Approve</button></div></div>').join("")
+        : '<p class="text-slate-500">No changes are waiting for you.</p>';
+      const m = cloudModal("Changes waiting for your approval", waiting.length ? waiting.length + " waiting" : "", body, [{ label: "Close" }], { wide: true });
+      m.root.id = "cloudReqModal";
+      m.root.querySelectorAll("[data-req]").forEach(box => {
+        const id = box.getAttribute("data-req");
+        box.querySelector("[data-apr]").addEventListener("click", async (ev) => { ev.target.disabled = true; const r2 = await ldsShell.cloud.approve(id); if(r2 && r2.ok){ box.innerHTML = '<p class="text-emerald-700 font-semibold">Approved.</p>'; } else { toast((r2 && r2.error) || "Not approved", "info"); ev.target.disabled = false; } });
+        box.querySelector("[data-rej]").addEventListener("click", async () => { const note = await cloudAsk("Turn it down", "A note for " + (box.querySelector("b") ? box.querySelector("b").textContent : "them") + " (optional)", { ok: "Turn down" }); if(note === null) return; const r2 = await ldsShell.cloud.reject(id, note || null); if(r2 && r2.ok) box.innerHTML = '<p class="text-slate-600 font-semibold">Turned down.</p>'; });
+      });
+    }
+
+    // ---- members and codes (the admin) ----------------------------------------------------------------------------------------
+    async function cloudMembersScreen(){
+      await ldsShell.cloud.pull();
+      const list = (await ldsShell.cloud.members()) || [];
+      const row = mm => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(mm.name || "") + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(mm.email || "") + (mm.linked ? "" : ' <span class="text-[11px] text-amber-600">(hasn’t signed in yet)</span>') + '</td><td class="py-1.5 pr-3">' +
+        (mm.role === "admin" ? "Admin" : '<select data-role="' + escapeHtml(mm.email) + '" class="rounded border border-slate-300 px-1 py-0.5 text-sm"><option value="editor"' + (mm.role === "editor" ? " selected" : "") + '>Editor</option><option value="viewer"' + (mm.role === "viewer" ? " selected" : "") + '>View only</option></select>') +
+        '</td><td class="py-1.5 text-right">' + (mm.role === "admin" ? "" : '<button type="button" data-rm="' + escapeHtml(mm.email) + '" class="text-rose-600 text-sm font-semibold hover:underline">Remove</button>') + '</td></tr>';
+      const body = '<table class="w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1">Name</th><th class="text-left pb-1">Email</th><th class="text-left pb-1">Can</th><th></th></tr></thead><tbody>' + list.map(row).join("") + '</tbody></table>' +
+        '<div class="mt-4 grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">Add a person — email</label>' + cloudInput("cmEmail", "name@company.com", "email") + '</div><div><label class="text-xs font-semibold text-slate-500">Name</label>' + cloudInput("cmName", "Their name") + '</div>' +
+        '<select id="cmRole" class="rounded-lg border border-slate-300 px-2 py-2 text-sm"><option value="editor">Editor</option><option value="viewer">View only</option></select><button type="button" id="cmAdd" class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">Add</button></div>' +
+        '<p class="mt-1 text-[11px] text-slate-400">They create an account with this email in the app’s sign-in screen, confirm it, and they’re in.</p>' +
+        '<div class="mt-5 border-t border-slate-100 pt-4"><div class="text-sm font-bold text-slate-700">Your codes</div>' +
+        '<p class="text-[12px] text-slate-500">The <b>approval code</b> is what you type on a member’s screen to approve a change to what you changed. The <b>offline code</b> lets you keep changing data on your own computer with no connection. At least 6 characters; leave a box empty to keep that code as it is.</p>' +
+        '<div class="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">Approval code</label>' + cloudInput("cmAppr", (cloudUI.st && cloudUI.st.hasApprovalCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><div><label class="text-xs font-semibold text-slate-500">Offline code</label>' + cloudInput("cmOff", (cloudUI.st && cloudUI.st.hasOfflineCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><button type="button" id="cmCodes" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Save the codes</button></div></div>';
+      const m = cloudModal("Members and codes", escapeHtml((cloudUI.st && cloudUI.st.group) || ""), body, [{ label: "Close" }], { wide: true });
+      const again = () => { m.close(); cloudMembersScreen(); };
+      m.root.querySelectorAll("[data-role]").forEach(s => s.addEventListener("change", async () => { const mm = list.find(x => x.email === s.getAttribute("data-role")); const r = await ldsShell.cloud.rpc("lds_member_set", { email: mm.email, name: mm.name || null, role: s.value }); toast(r.ok ? "Saved" : r.error, r.ok ? "check" : "info"); }));
+      m.root.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", async () => { if(!window.confirm("Remove " + b.getAttribute("data-rm") + " from the group?")) return; const r = await ldsShell.cloud.rpc("lds_member_remove", { email: b.getAttribute("data-rm") }); if(r.ok) again(); else toast(r.error, "info"); }));
+      el("cmAdd").addEventListener("click", async () => { const r = await ldsShell.cloud.rpc("lds_member_set", { email: el("cmEmail").value, name: el("cmName").value || null, role: el("cmRole").value }); if(r.ok){ toast("Added", "check"); again(); } else toast(r.error, "info"); });
+      el("cmCodes").addEventListener("click", async () => { const a = el("cmAppr").value || null, o = el("cmOff").value || null; if(!a && !o) return; const r = await ldsShell.cloud.setCodes(a, o); toast(r.ok ? "The codes are saved" : r.error, r.ok ? "check" : "info"); if(r.ok){ el("cmAppr").value = ""; el("cmOff").value = ""; } });
+    }
+
+    // ---- the change history -----------------------------------------------------------------------------------------------------
+    async function cloudHistoryScreen(){
+      let rows = [], before = null;
+      const m = cloudModal("Change history", "Every change to the group's data: who, when and why", '<input id="chFind" type="search" placeholder="Find (a name, a property, a reason…)" class="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><div id="chList" class="text-[12px]">Loading…</div>', [{ label: "Older changes", onClick: async () => { await more(); return true; } }, { label: "Close" }], { wide: true });
+      const paint = () => {
+        const q = (el("chFind").value || "").toLowerCase();
+        const vis = rows.filter(c => !q || [c.by_name, c.reason, cloudFieldLabel(c.path, c.field), c.approved_by].join(" ").toLowerCase().indexOf(q) >= 0);
+        el("chList").innerHTML = vis.length ? '<table class="w-full"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1 pr-2">When</th><th class="text-left pb-1 pr-2">Who</th><th class="text-left pb-1 pr-2">What</th><th class="text-left pb-1 pr-2">Before</th><th class="text-left pb-1 pr-2">After</th><th class="text-left pb-1">Why</th></tr></thead><tbody>' +
+          vis.map(c => '<tr class="border-b border-slate-100 align-top"><td class="py-1 pr-2 whitespace-nowrap">' + escapeHtml(cloudWhen(c.at)) + '</td><td class="py-1 pr-2">' + escapeHtml(c.kind === "app" ? "The app (" + (c.by_name || "") + ")" : c.by_name || "") + (c.approved_by ? '<div class="text-[11px] text-slate-400">approved by ' + escapeHtml(c.approved_by) + '</div>' : '') +
+            '</td><td class="py-1 pr-2">' + escapeHtml(cloudFieldLabel(c.path, c.field)) + '</td><td class="py-1 pr-2 text-slate-500">' + escapeHtml(cloudVal(c.old)) + '</td><td class="py-1 pr-2">' + escapeHtml(cloudVal(c.new)) + '</td><td class="py-1">' + escapeHtml(c.reason || "") + '</td></tr>').join("") + '</tbody></table>'
+          : '<p class="text-slate-500">No changes found.</p>';
+      };
+      async function more(){
+        const r = await ldsShell.cloud.rpc("lds_history", { path_prefix: "", before_id: before, max_rows: 200 });
+        if(!r.ok){ el("chList").textContent = r.error || "Couldn't read the history."; return; }
+        rows = rows.concat(r.data || []); if(r.data && r.data.length) before = r.data[r.data.length - 1].id; paint();
+      }
+      el("chFind").addEventListener("input", paint);
+      await more();
+      return m;
+    }
+
+    // ---- the daily backups (the admin) ------------------------------------------------------------------------------------------
+    async function cloudBackupsScreen(){
+      const r = await ldsShell.cloud.rpc("lds_backups", {});
+      const list = (r.ok && r.data) || [];
+      const body = (r.ok ? (list.length ? '<table class="w-full text-[13px]"><tbody>' + list.map(b => '<tr class="border-b border-slate-100"><td class="py-1.5">' + escapeHtml(b.day) + '</td><td class="py-1.5 text-slate-500">' + escapeHtml(b.records) + ' records</td><td class="py-1.5 text-right"><button type="button" data-day="' + escapeHtml(b.day) + '" class="text-brand-700 font-semibold hover:underline">Put this day back</button></td></tr>').join("") + '</tbody></table>'
+        : '<p class="text-slate-500">No backup yet — the first is taken tonight.</p>') : '<p class="text-rose-600">' + escapeHtml(r.error || "") + '</p>') +
+        '<p class="mt-3 text-[12px] text-slate-500">A backup is taken every day and kept 30 days. Putting a day back changes the group’s data for everyone, and every change it makes is recorded with your reason.</p>';
+      const m = cloudModal("Daily backups", "", body, [{ label: "Close" }]);
+      m.root.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", async () => {
+        const why = await cloudAsk("Put " + b.getAttribute("data-day") + " back", "Why (kept in the change history)", { sub: "The group's data goes back to how it was that day, for everyone.", ok: "Put it back", required: "Type why." }); if(!why) return;
+        const r2 = await ldsShell.cloud.rpc("lds_backup_restore", { day: b.getAttribute("data-day"), reason: why.trim() });
+        if(r2.ok){ m.close(); toast("The group's data is back as it was on " + b.getAttribute("data-day"), "check"); cloudRefresh({ reload: true }); } else toast(r2.error, "info");
+      }));
+    }
+
+    // ---- the first upload (the admin, into an empty group) --------------------------------------------------------------------
+    function cloudUploadScreen(){
+      const st = cloudUI.st || {};
+      const body = '<p>The loans, properties, their documents and the assistant’s chats <b>on this computer</b> become the group’s starting data. Nothing on this computer changes, and the starting data locks nothing for the members.</p>' +
+        '<label class="mt-4 block text-xs font-semibold text-slate-500">Why (kept in the change history)</label>' + cloudInput("cuWhy", "") + '<p id="cuMsg" class="mt-2 text-xs text-slate-500"></p>';
+      cloudModal("Upload this computer's data", escapeHtml(st.group || ""), body, [
+        { label: "Not now" },
+        { label: "Upload", primary: true, id: "cuGo", onClick: async () => {
+          const why = (el("cuWhy").value || "").trim() || ("Starting data from " + (st.name || "the admin") + "’s computer");
+          el("cuMsg").textContent = "Uploading… (a big book with many files can take a few minutes)";
+          const r = await ldsShell.cloud.uploadStart({ reason: why, settings: cloudLocalSettings() });
+          if(!r || !r.ok){ el("cuMsg").textContent = (r && r.error) || "The upload failed."; return true; }
+          toast("Uploaded: " + r.records + " records, " + r.files + " files, " + r.chats + " chats", "check");
+          cloudApplySettings(); cloudRefresh({ reload: true });
+        } }
+      ]);
+      setTimeout(() => { const x = el("cuWhy"); if(x) x.value = "Starting data from " + (st.name || "the admin") + "’s computer"; }, 0);
+    }
+
+    // ---- the admin's offline code ---------------------------------------------------------------------------------------------
+    function cloudOfflineScreen(){
+      cloudModal("Use my offline code", "", '<p>With your offline code you can keep changing the group’s data on this computer. Each change still needs a reason; they go up when the connection is back, and they take precedence over changes made meanwhile.</p>' + '<div class="mt-3">' + cloudInput("coCode", "Offline code", "password") + '</div><p id="coMsg" class="mt-2 text-xs text-rose-600"></p>', [
+        { label: "Cancel" },
+        { label: "Unlock", primary: true, onClick: async () => { const r = await ldsShell.cloud.unlockOffline(el("coCode").value); if(!r.ok){ el("coMsg").textContent = r.error; return true; } toast("You can change data offline", "check"); } }
+      ]);
+      setTimeout(() => { const x = el("coCode"); if(x) x.focus(); }, 50);
+    }
+
+    async function cloudSignOut(){
+      const st = cloudUI.st || {};
+      if(st.pending && st.pending.length && !confirm("Your changes that aren't saved will be dropped. Sign out?")) return;
+      if(st.pending && st.pending.length) await ldsShell.cloud.discard();
+      await ldsShell.cloud.signOut();
+    }
+
+    // ---- someone else's change came in (or mine were undone / folded together): reload what the screens hold -----------------
+    async function cloudRefresh(info){
+      info = info || {};
+      // never under the person's fingers: wait while they are typing in a field
+      const a = document.activeElement;
+      if(a && a.id !== "cloudReason" && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !info.now){
+        cloudUI.refreshWait = Object.assign(cloudUI.refreshWait || {}, info, { props: [].concat((cloudUI.refreshWait && cloudUI.refreshWait.props) || [], info.props || []) });
+        clearTimeout(cloudRefresh._t); cloudRefresh._t = setTimeout(() => { const w = cloudUI.refreshWait; cloudUI.refreshWait = null; if(w) cloudRefresh(w); }, 1500);
+        return;
+      }
+      if(cloudRefresh.busy){ cloudRefresh.again = Object.assign(cloudRefresh.again || {}, info, { reload: true }); return; }
+      cloudRefresh.busy = true;
+      try{
+        if(info.settings || info.reload){ cloudApplySettings(); try{ customCatsApply(); }catch(e){} try{ loadPortfolioTargets(); }catch(e){} }
+        if(info.loans || info.reload || info.merged){
+          loans = load();
+          if(state.activeId && !getLoan(state.activeId)) state.activeId = loans.length ? loans[0]._id : null;
+        }
+        if((info.props && info.props.length) || info.reload || info.files || info.merged){
+          [profileCache, gdNOICache, gdFullCache, loanRRCache, propHistCache, standaloneProps].forEach(o => Object.keys(o).forEach(k => delete o[k]));
+          try{ opPushCache.clear(); }catch(e){}
+          _allProfilesLoaded = false;
+          await cloudAutoRun("refresh after a change from the group", async () => {
+            try{ await opLoadAllProfiles(); }catch(e){}
+            try{ await Promise.all(opProperties().map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
+            if(opFocusKey && (info.reload || info.merged || (info.props || []).indexOf(opFocusKey) >= 0)){ try{ await opSelectProperty(opFocusKey); }catch(e){} }
+          });
+        }
+        redrawAll();
+      } finally {
+        cloudRefresh.busy = false;
+        if(cloudRefresh.again){ const nx = cloudRefresh.again; cloudRefresh.again = null; cloudRefresh(nx); }
+      }
+    }
+
+    try{ window.LDS_cloudEditLoan = (i, f, v) => { loans[i][f] = v; save(); return loans[i]._id; }; window.LDS_cloudStatus = () => cloudUI.st; }catch(e){}   // tests: a person's edit of a loan
+    function cloudInit(){
+      if(!LDS_CLOUD) return;
+      const c = ldsShell.cloud;
+      c.on("status", st => cloudPaint(Object.assign({}, cloudUI.st || {}, st)));
+      c.on("changed", info => cloudRefresh(info));
+      c.on("refused", info => { toast(info.message || "Not saved", "info"); cloudRefresh({ reload: true, now: true }); });
+      c.on("requests", () => cloudShowRequests(false));
+      c.on("removed", () => { cloudModal("You're no longer in this group", "", "<p>The group's admin removed you. The app shows the last picture of the data until you sign out.</p>", [{ label: "Sign out", primary: true, onClick: () => ldsShell.cloud.signOut() }]); });
+      c.on("signin", () => toast("Your sign-in has expired — sign out and sign in again", "info"));
+      document.addEventListener("click", e => { const dd = el("cloudDD"); if(dd && dd.open && !dd.contains(e.target)) dd.open = false; });
+      (async () => { cloudPaint(await c.status()); cloudShowRequests(false); })();
+    }
+
+    /* ================================================================
        13. INIT
        ================================================================ */
     loans = load();
@@ -14792,19 +15206,21 @@ tr.flagged:hover td{background:#fee2e2}
     appBooting = !!(window.ldsShell && ldsShell.docIndex);
     render();
     if(appBooting){
-      (async function bootLoad(){
+      (async function bootLoad(){ await cloudAutoRun("start-up check", async function(){   // 3.0.0 — the app's own work, not a person's change
         try{ await opLoadAllProfiles(); }catch(e){}
         try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8) — every property shown has its folder
         try{ await opRecomputeOnVersionChange(); }catch(e){}
         try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
+        });
         appBooting = false;
-        setTimeout(function(){ try{ t12MigrateAll(); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
+        setTimeout(function(){ try{ cloudAutoRun("T12 re-read by the new reader", function(){ return t12MigrateAll(); }); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
         try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))){ const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
         redrawAll();
       })();
     }
     renderTabStrip();        // Home tab + tool tabs (Calendar, Underwriting)
     initPanelMode();         // if launched as a torn-off panel (?panel=…), show only that tool
+    cloudInit();             // 3.0.0 — the shared database's chip, bar and screens (when signed in to one)
     if(window.__LDS_SYNC_SUMMARY){ try { notifyPortfolioSync(window.__LDS_SYNC_SUMMARY); } catch(e){} window.__LDS_SYNC_SUMMARY = null; }
 
     // Floating phases re-price on the 1st of each month. If the app is left open

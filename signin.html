@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loan Debt Service Hub — Sign in</title>
+<!-- 3.0.0 — the shared database's sign-in. Shown when a shared database is set up for this app and nobody is signed in
+     (or the person signed in isn't in a group yet). The maintainer also manages the groups here. -->
+<style>
+  :root{ --brand:#639420; --brand-d:#4c721b; --brand-l:#f4fae8; --ink:#1f231f; --mut:#565d56; --line:#e6e8e6; --bg:#f1f5f9; --bad:#b42318; --badbg:#fef3f2; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .bar{ height:36px; display:flex; align-items:center; justify-content:space-between; padding-left:14px; -webkit-app-region:drag; font-size:12px; color:var(--mut); }
+  .bar button{ -webkit-app-region:no-drag; border:0; background:transparent; width:46px; height:36px; font-size:14px; color:var(--mut); cursor:pointer; }
+  .bar button:hover{ background:#e2e8f0; } .bar button.x:hover{ background:#e81123; color:#fff; }
+  main{ display:flex; justify-content:center; padding:48px 16px; }
+  .card{ width:100%; max-width:420px; background:#fff; border:1px solid var(--line); border-radius:16px; padding:28px; box-shadow:0 1px 2px rgba(18,20,18,.04), 0 12px 30px -18px rgba(18,20,18,.25); }
+  .card.wide{ max-width:720px; }
+  h1{ font-size:20px; margin:0 0 4px; } p.sub{ margin:0 0 20px; color:var(--mut); }
+  label{ display:block; font-size:12px; font-weight:600; margin:14px 0 6px; color:var(--mut); }
+  input{ width:100%; padding:10px 12px; border:1px solid #c9cdc9; border-radius:10px; font:inherit; }
+  input:focus{ outline:2px solid #b4db62; border-color:var(--brand); }
+  .btn{ display:inline-block; border:0; border-radius:10px; padding:10px 16px; font:inherit; font-weight:600; cursor:pointer; background:var(--brand); color:#fff; }
+  .btn:hover{ background:var(--brand-d); } .btn[disabled]{ opacity:.6; cursor:default; }
+  .btn.ghost{ background:transparent; color:var(--brand-d); padding:10px 4px; } .btn.ghost:hover{ text-decoration:underline; background:transparent; }
+  .row{ display:flex; gap:10px; align-items:center; justify-content:space-between; margin-top:20px; flex-wrap:wrap; }
+  .msg{ margin-top:14px; padding:10px 12px; border-radius:10px; font-size:13px; display:none; }
+  .msg.bad{ display:block; background:var(--badbg); color:var(--bad); } .msg.ok{ display:block; background:var(--brand-l); color:var(--brand-d); }
+  .hidden{ display:none !important; }
+  table{ width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; }
+  th,td{ text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); }
+  .grid{ display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:8px; align-items:end; }
+  .grid label{ margin-top:0; }
+  .muted{ color:var(--mut); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="bar"><span>Loan Debt Service Hub</span><span><button id="wMin" title="Minimize">&#8211;</button><button id="wClose" class="x" title="Close">&#10005;</button></span></div>
+<main>
+  <!-- signing in -->
+  <section class="card" id="vSignin">
+    <h1>Sign in</h1>
+    <p class="sub">Your team's loans, properties and files are in the shared database.</p>
+    <form id="fSignin">
+      <label for="siEmail">Email</label><input id="siEmail" type="email" autocomplete="username" required>
+      <label for="siPw">Password</label><input id="siPw" type="password" autocomplete="current-password" required>
+      <div class="row"><button class="btn" id="siGo" type="submit">Sign in</button><button class="btn ghost" type="button" id="toSignup">Create an account</button></div>
+    </form>
+    <div class="msg" id="siMsg"></div>
+  </section>
+
+  <!-- creating an account -->
+  <section class="card hidden" id="vSignup">
+    <h1>Create an account</h1>
+    <p class="sub">Use the email your group's admin added. You'll get an email to confirm it.</p>
+    <form id="fSignup">
+      <label for="suEmail">Email</label><input id="suEmail" type="email" autocomplete="username" required>
+      <label for="suPw">Password (at least 8 characters)</label><input id="suPw" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="suPw2">The password again</label><input id="suPw2" type="password" autocomplete="new-password" minlength="8" required>
+      <div class="row"><button class="btn" id="suGo" type="submit">Create the account</button><button class="btn ghost" type="button" id="toSignin">I have an account</button></div>
+    </form>
+    <div class="msg" id="suMsg"></div>
+  </section>
+
+  <!-- signed in, but in no group (yet); the maintainer manages the groups here -->
+  <section class="card wide hidden" id="vNoGroup">
+    <h1 id="ngTitle">You're not in a group yet</h1>
+    <p class="sub" id="ngText"></p>
+    <div id="maint" class="hidden">
+      <h1 style="font-size:16px;margin-top:8px">Groups</h1>
+      <p class="muted">Each company is a group with one admin. The admin adds the group's people.</p>
+      <table><thead><tr><th>Group</th><th>Admin</th><th>People</th><th></th></tr></thead><tbody id="gList"></tbody></table>
+      <form id="fGroup" style="margin-top:16px">
+        <div class="grid">
+          <div><label for="gName">New group</label><input id="gName" placeholder="Company name" required></div>
+          <div><label for="gAdmin">Its admin's email</label><input id="gAdmin" type="email" required></div>
+          <div><label for="gAdminName">Admin's name</label><input id="gAdminName"></div>
+          <div><button class="btn" type="submit">Create</button></div>
+        </div>
+      </form>
+      <div class="msg" id="gMsg"></div>
+    </div>
+    <div class="row"><button class="btn" id="ngRetry" type="button">Check again</button><button class="btn ghost" type="button" id="ngOut">Sign out</button></div>
+  </section>
+</main>
+<script>
+(function(){
+  const S = window.ldsShell, C = S && S.cloud;
+  const $ = id => document.getElementById(id);
+  const show = v => ["vSignin", "vSignup", "vNoGroup"].forEach(x => $(x).classList.toggle("hidden", x !== v));
+  const msg = (id, text, good) => { const m = $(id); m.textContent = text || ""; m.className = "msg" + (text ? (good ? " ok" : " bad") : ""); };
+  $("wMin").onclick = () => S && S.winMinimize && S.winMinimize();
+  $("wClose").onclick = () => S && S.winClose && S.winClose();
+  $("toSignup").onclick = () => { show("vSignup"); $("suEmail").value = $("siEmail").value; $("suEmail").focus(); };
+  $("toSignin").onclick = () => { show("vSignin"); $("siEmail").focus(); };
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  async function noGroup(email, maintainer){
+    show("vNoGroup");
+    $("ngTitle").textContent = maintainer ? "Signed in as the maintainer" : "You're not in a group yet";
+    $("ngText").textContent = maintainer ? ("Signed in as " + email + ".") : ("You're signed in as " + email + ". Ask your group's admin to add this email, then check again.");
+    $("maint").classList.toggle("hidden", !maintainer);
+    if(maintainer) await listGroups();
+  }
+  async function listGroups(){
+    const r = await C.rpc("lds_groups", {});
+    if(!r.ok){ msg("gMsg", r.error); return; }
+    $("gList").innerHTML = (r.data || []).map(g => '<tr><td>' + esc(g.name) + '</td><td>' + esc(g.admin ? (g.admin.name ? g.admin.name + " · " : "") + g.admin.email : "—") +
+      (g.admin && !g.admin.linked ? ' <span class="muted">(hasn’t signed in yet)</span>' : "") + '</td><td>' + esc(g.members) + '</td>' +
+      '<td><button class="btn ghost" data-admin="' + esc(g.id) + '" data-name="' + esc(g.name) + '">New admin…</button></td></tr>').join("") ||
+      '<tr><td colspan="4" class="muted">No groups yet.</td></tr>';
+    $("gList").querySelectorAll("[data-admin]").forEach(b => b.onclick = () => {
+      // a new admin for the group: the email goes in the row (Electron has no prompt box)
+      const td = b.parentNode; td.innerHTML = '<input type="email" placeholder="New admin\u2019s email" style="width:190px;padding:6px 8px;border:1px solid #c9cdc9;border-radius:8px"> <button class="btn" style="padding:6px 10px">Set</button>';
+      const inp = td.querySelector("input"); inp.focus();
+      td.querySelector("button").onclick = async () => {
+        const r2 = await C.rpc("lds_group_admin", { group_id: b.dataset.admin, admin_email: inp.value });
+        msg("gMsg", r2.ok ? "The new admin is set; the old one stays in the group as an editor." : r2.error, r2.ok); listGroups();
+      };
+    });
+  }
+  $("fGroup").onsubmit = async ev => {
+    ev.preventDefault();
+    const r = await C.rpc("lds_group_create", { name: $("gName").value, admin_email: $("gAdmin").value, admin_name: $("gAdminName").value || null });
+    msg("gMsg", r.ok ? "Group created. Its admin signs in with " + $("gAdmin").value + "." : r.error, r.ok);
+    if(r.ok){ $("gName").value = $("gAdmin").value = $("gAdminName").value = ""; listGroups(); }
+  };
+
+  $("fSignin").onsubmit = async ev => {
+    ev.preventDefault(); msg("siMsg", ""); $("siGo").disabled = true; $("siGo").textContent = "Signing in…";
+    try{
+      const r = await C.signIn($("siEmail").value, $("siPw").value);
+      if(!r.ok){ msg("siMsg", r.why === "offline" ? "The shared database can't be reached. Check the connection and try again." : r.error); return; }
+      if(!r.member) return noGroup(r.email || $("siEmail").value, r.maintainer);
+      msg("siMsg", "Signed in — opening your group's data…", true);   // the app opens by itself
+    } finally { $("siGo").disabled = false; $("siGo").textContent = "Sign in"; }
+  };
+  $("fSignup").onsubmit = async ev => {
+    ev.preventDefault(); msg("suMsg", "");
+    if($("suPw").value !== $("suPw2").value) return msg("suMsg", "The two passwords aren't the same.");
+    const r = await C.signUp($("suEmail").value, $("suPw").value);
+    if(!r.ok) return msg("suMsg", r.error);
+    if(r.confirm){ msg("suMsg", "Done. Open the link in the email sent to " + $("suEmail").value + ", then sign in.", true); $("siEmail").value = $("suEmail").value; }
+    else { msg("suMsg", "Account created. Signing in…", true); }
+  };
+  $("ngRetry").onclick = async () => {
+    const r = await C.openIfMember();          // the admin has added this email: the group opens
+    if(r.ok && r.member) return;
+    if(r.ok) noGroup(r.email, r.maintainer); else msg("gMsg", r.error);
+  };
+  $("ngOut").onclick = async () => { await C.signOut(); show("vSignin"); };
+
+  (async function start(){
+    const info = (S && S.cloudInfo) || {};
+    if(info.signedIn && info.email){
+      const r = await C.rpc("lds_hello", {});
+      if(r.ok && r.data && !r.data.member) return noGroup(r.data.email, r.data.maintainer);
+      if(!r.ok && r.why === "offline") msg("siMsg", "The shared database can't be reached. Check the connection and try again.");
+    }
+    show("vSignin"); $("siEmail").focus();
+  })();
+})();
+</script>
+</body>
+</html>

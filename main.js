@@ -1,6 +1,6 @@
 // Electron main process — wraps the offline Loan Debt Service Hub in a desktop
 // window. The whole UI/engine lives in index.html; this just hosts it.
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, net, protocol } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, net, protocol, safeStorage } = require('electron');
 // 2.9.7 (#60) — the app is served from an internal address, lds://app/, instead of a file: the second OCR engine
 // (PaddleOCR) needs a real web address to load its models and engine. Everything is still read from the app's own
 // files on disk; nothing leaves the computer.
@@ -11,6 +11,23 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const ai = require('./ai');   // AI bridge: Claude Code CLI (subscription) or Anthropic API
+const CloudSync = require('./cloud-sync');   // 3.0.0 — the shared database (Supabase)
+const SIGNIN_URL = 'lds://app/signin.html';
+let cloud = null, cloudReady = Promise.resolve({ mode: 'local' });
+// 3.0.0 — where the data lives: today's folder, or (signed in to the shared database) the group's picture of it.
+// Backups, OCR cache, reading queue, logs and the AI settings always stay in today's folder.
+function dataRoot(){ return cloud ? cloud.dataRoot() : app.getPath('userData'); }
+const folderOf = (key) => crypto.createHash('sha1').update(String(key || '')).digest('hex').slice(0, 16);
+// A view-only member — or anyone offline, but the admin with the offline code — can't write: nothing is changed and
+// the page is told why (it shows it and reloads what it holds).
+function cloudRefuse(e){
+  if(!cloud || !cloud.active) return null;
+  const w = cloud.canWrite(); if(w.ok) return null;
+  try { e.sender.send('lds:cloud-refused', { why: w.why, message: w.message }); } catch (x) {}
+  return { ok: false, error: w.message, why: w.why, refused: true };
+}
+// After a write: the change is staged for the shared database (a person's waits for its reason).
+function cloudNote(e, what){ if(cloud && cloud.active){ try { cloud.noteWrite(e.sender, what); } catch (x) { mainLog('cloud: note failed: ' + x.message); } } }
 
 let mainWindow = null;   // the primary window, so background events (updates) can reach its renderer
 
@@ -72,10 +89,12 @@ ipcMain.on('lds:legacy-storage-done', (e, n) => {
   try { fs.writeFileSync(path.join(app.getPath('userData'), 'storage-origin.json'), JSON.stringify({ origin: 'lds://app', migratedAt: new Date().toISOString(), keys: Number(n) || 0 })); } catch (x) {}
   legacyStorage = null;
 });
+// 3.0.0 — the app's page, or (a shared database is set up and nobody is signed in) the sign-in page
+async function startUrl(){ const r = await cloudReady; return (r && r.mode === 'signin') ? SIGNIN_URL : APP_URL; }
 function loadApp(win) {
-  if (storageMigrated()) { win.loadURL(APP_URL); return; }
+  if (storageMigrated()) { startUrl().then(u => { if (!win.isDestroyed()) win.loadURL(u); }); return; }
   let done = false;
-  const go = () => { if (done || win.isDestroyed()) return; done = true; win.loadURL(APP_URL); };
+  const go = () => { if (done || win.isDestroyed()) return; done = true; startUrl().then(u => { if (!win.isDestroyed()) win.loadURL(u); }); };
   win.webContents.once('did-finish-load', () => {
     win.webContents.executeJavaScript('(function(){var o={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);o[k]=localStorage.getItem(k);}}catch(e){}return o;})()')
       .then((o) => { legacyStorage = (o && typeof o === 'object') ? o : {}; }).catch(() => { legacyStorage = {}; }).then(go);
@@ -109,6 +128,17 @@ function createWindow() {
 
   mainWindow = win;
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  // 3.0.0 — closing with changes not saved to the shared database: they are dropped (the operator's rule: nothing
+  // unsaved is kept), after asking
+  win.on('close', (ev) => {
+    if (win.__ldsCloseOk || !cloud || !cloud.active) return;
+    const pend = cloud.pending(); if (!pend.length) return;
+    ev.preventDefault();
+    const what = pend.slice(0, 6).map(p => '• ' + (p.propName ? p.propName + ' — ' : '') + p.what).join('\n') + (pend.length > 6 ? '\n• …' : '');
+    dialog.showMessageBox(win, { type: 'warning', buttons: ['Go back', 'Close without saving'], defaultId: 0, cancelId: 0, title: 'Changes not saved',
+      message: 'These changes aren’t saved to the shared database:', detail: what + '\n\nClosing drops them. To keep them, go back, type why you made them and Save.' })
+      .then(r => { if (r.response === 1) { try { cloud.discard(); } catch (x) {} win.__ldsCloseOk = true; win.close(); } });
+  });
   // Keep the custom title bar's maximize/restore icon in sync when the state
   // changes without a button click (double-click the bar, aero-snap, etc.).
   const sendWinState = () => { try { win.webContents.send('lds:win-state', { maximized: win.isMaximized() }); } catch (e) {} };
@@ -236,7 +266,7 @@ ipcMain.handle('lds:backup-open', async (e) => {
 // folders, not in the window's browser storage. Read and written SYNCHRONOUSLY so a change is on disk
 // before the app moves on (no lost edit on a quick close). Each write goes to a temp file first and the
 // previous version is kept as loans.prev.json, so a failed write can never leave a half-written book.
-function loansFile(){ return path.join(app.getPath('userData'), 'loans.json'); }
+function loansFile(){ return path.join(dataRoot(), 'loans.json'); }
 ipcMain.on('lds:loans-read-sync', (e) => {
   try {
     const f = loansFile();
@@ -245,6 +275,7 @@ ipcMain.on('lds:loans-read-sync', (e) => {
   } catch (err) { e.returnValue = { ok: false, error: String((err && err.message) || err) }; }
 });
 ipcMain.on('lds:loans-write-sync', (e, json) => {
+  const no = cloudRefuse(e); if (no) { e.returnValue = no; return; }
   try {
     if (typeof json !== 'string') throw new Error('nothing to write');
     JSON.parse(json);   // never write something that isn't valid JSON
@@ -253,6 +284,7 @@ ipcMain.on('lds:loans-write-sync', (e, json) => {
     fs.writeFileSync(tmp, json, 'utf8');
     if (fs.existsSync(f)) { try { fs.copyFileSync(f, path.join(path.dirname(f), 'loans.prev.json')); } catch (x) {} }
     fs.renameSync(tmp, f);
+    cloudNote(e, { loans: true });
     e.returnValue = { ok: true };
   } catch (err) { e.returnValue = { ok: false, error: String((err && err.message) || err) }; }
 });
@@ -415,6 +447,7 @@ ipcMain.handle('lds:autobackup-read', async (e, { name }) => {
 // documents/ and chats/ are moved aside, the backup's set is written and checked, and only then are the
 // old ones removed; on any failure the old ones go back exactly as they were.
 ipcMain.handle('lds:fullbackup-restore', async (e, { token }) => {
+  if (cloud && cloud.active) return { ok: false, error: 'In the shared database the admin puts back one of its daily backups (Account › Daily backups).' };
   const job = pendingRestores[token]; delete pendingRestores[token];
   if (!job) return { ok: false, error: 'That backup is no longer open — open it again.' };
   const root = app.getPath('userData'), aside = path.join(root, '.restore-old-' + stamp());
@@ -505,7 +538,7 @@ ipcMain.handle('lds:file-save-binary', async (e, { base64, defaultName, ext, lab
 // (what the assistant actually reads), and an index.json:
 //   { propKey, propName, files: [{ id, stored, name, size, type, savedAt, textLen }] }
 const APP_ROLES = new Set(['profile', 'assumptions', 'general', 'history']);   // the app's own records in a property folder
-function documentsDir(){ return path.join(app.getPath('userData'), 'documents'); }
+function documentsDir(){ return path.join(dataRoot(), 'documents'); }
 function propDir(propKey){ const h = crypto.createHash('sha1').update(String(propKey || '')).digest('hex').slice(0, 16); return path.join(documentsDir(), h); }
 function readDocIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
 function writeDocIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
@@ -537,6 +570,12 @@ ipcMain.handle('lds:doc-save', (e, { propKey, propName, name, base64, text, type
 // 2.9.8 — `sheet`: for a workbook holding several properties' T12s, the sheet that is THIS property's T12.
 // 2.9.9 — `section`: for a rent roll holding several properties, the section (property block) that is THIS property's.
 function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, label, sheet, section }) {
+  const no = cloudRefuse(e); if (no) return no;
+  const r = docSaveBufferNow(e, { propKey, propName, name, buf, text, type, role, label, sheet, section });
+  if (r && r.ok) cloudNote(e, { folders: [folderOf(propKey)] });
+  return r;
+}
+function docSaveBufferNow(e, { propKey, propName, name, buf, text, type, role, label, sheet, section }) {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!propKey || !name || !buf) return { ok: false, error: 'missing fields' };
@@ -551,7 +590,9 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
       if(section && (already.section || '') !== String(section)){ already.section = String(section).slice(0, 160); writeDocIndex(dir, idx); return { ok: true, resectioned: true, file: pubFile(already) }; }   // 2.9.9 — same rent roll, now pointed at this property's own section
       return { ok: true, duplicate: true, file: pubFile(already) };
     }
-    const id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    // 3.0.0 — in the shared database the app's own records keep one file name (rec-<role>), so the picture holds one
+    // copy of each; a document always gets a new name of its own
+    const id = (cloud && cloud.active && APP_ROLES.has(role || '')) ? 'rec-' + role : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const stored = id + docSafeExt(name);
     fs.writeFileSync(path.join(dir, stored), buf);
     const t = String(text || ''); if(t){ try { fs.writeFileSync(path.join(dir, id + '.txt'), t, 'utf8'); } catch (err) {} }
@@ -560,7 +601,7 @@ function docSaveBuffer(e, { propKey, propName, name, buf, text, type, role, labe
     // name is kept as "Loan Agreement (2).pdf".
     let finalName = String(name), renamed = null;
     if (APP_ROLES.has(role || '')) {
-      idx.files.filter(f => f.name === finalName).forEach(f => { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} });
+      idx.files.filter(f => f.name === finalName).forEach(f => { if (f.stored !== stored) { try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} } if (f.id !== id) { try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {} } });
       idx.files = idx.files.filter(f => f.name !== finalName);
     } else if (idx.files.some(f => f.name === finalName)) {
       finalName = docUniqueName(finalName, new Set(idx.files.map(f => f.name))); renamed = finalName;
@@ -585,6 +626,7 @@ ipcMain.handle('lds:doc-copy', (e, { fromKey, id, toKey, toName, role, sheet, se
 });
 // 2.9.9 — point a saved workbook at this property's own T12 sheet / rent-roll section ("" clears it).
 ipcMain.handle('lds:doc-set-meta', (e, { propKey, id, sheet, section }) => {
+  const no = cloudRefuse(e); if (no) return no;
   dataChanged(e);
   try {
     if (!propKey || !id) return { ok: false, error: 'bad request' };
@@ -593,11 +635,13 @@ ipcMain.handle('lds:doc-set-meta', (e, { propKey, id, sheet, section }) => {
     if (sheet != null) { if (sheet) f.sheet = String(sheet).slice(0, 120); else delete f.sheet; }
     if (section != null) { if (section) f.section = String(section).slice(0, 160); else delete f.section; }
     writeDocIndex(dir, idx);
+    cloudNote(e, { folders: [folderOf(propKey)] });
     return { ok: true, file: pubFile(f) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // 2.9.7 (#37) — change a saved document's type (Loan agreement, T12, Rent roll, Unit Statistics, Other).
 ipcMain.handle('lds:doc-set-role', (e, { propKey, id, role }) => {
+  const no = cloudRefuse(e); if (no) return no;
   dataChanged(e);
   try {
     if (!propKey || !id || APP_ROLES.has(role || '')) return { ok: false, error: 'bad request' };
@@ -605,6 +649,7 @@ ipcMain.handle('lds:doc-set-role', (e, { propKey, id, role }) => {
     const f = (idx.files || []).find(x => x.id === id); if (!f) return { ok: false, error: 'not found' };
     if (APP_ROLES.has(f.role || '')) return { ok: false, error: 'that is one of the app’s own records' };
     f.role = String(role || 'other'); writeDocIndex(dir, idx);
+    cloudNote(e, { folders: [folderOf(propKey)] });
     return { ok: true, file: pubFile(f) };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
@@ -732,12 +777,14 @@ ipcMain.handle('lds:doc-read', (e, { propKey, id }) => {
 });
 // Delete one saved file (original + text + index entry).
 ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
+  const no = cloudRefuse(e); if (no) return no;
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     const dir = propDir(propKey), idx = readDocIndex(dir);
     const f = (idx.files || []).find(x => x.id === id); if(!f) return { ok: true };
     try { fs.unlinkSync(path.join(dir, f.stored)); } catch (x) {} try { fs.unlinkSync(path.join(dir, f.id + '.txt')); } catch (x) {}
     idx.files = (idx.files || []).filter(x => x.id !== id); writeDocIndex(dir, idx);
+    cloudNote(e, { folders: [folderOf(propKey)] });
     return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
@@ -745,7 +792,13 @@ ipcMain.handle('lds:doc-delete', (e, { propKey, id }) => {
 // the property). Guarded so a T12 is never lost or clobbered: refuses if the destination already has
 // its own files (kept at the old key), no-ops if the source has none, and carries the index's
 // propKey/propName across. Same parent directory, so a plain rename moves it atomically.
-ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName, merge }) => {
+ipcMain.handle('lds:doc-move', (e, args) => {
+  const no = cloudRefuse(e); if (no) return no;
+  const r = docMoveNow(e, args || {});
+  if (r && r.moved) cloudNote(e, { folders: [folderOf(args.fromKey), folderOf(args.toKey)] });
+  return r;
+});
+function docMoveNow(e, { fromKey, toKey, propName, merge }) {
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!fromKey || !toKey || fromKey === toKey) return { ok: true, moved: false, reason: 'same key' };
@@ -776,7 +829,7 @@ ipcMain.handle('lds:doc-move', (e, { fromKey, toKey, propName, merge }) => {
     srcIdx.propKey = toKey; if(propName) srcIdx.propName = propName; writeDocIndex(dst, srcIdx);
     return { ok: true, moved: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+}
 // Reveal the documents folder in the OS file manager.
 ipcMain.handle('lds:docs-open-folder', async () => {
   try { const d = documentsDir(); fs.mkdirSync(d, { recursive: true }); await shell.openPath(d); return { ok: true, path: d }; }
@@ -796,6 +849,10 @@ function propIsArchivedOnDisk(propKey){
   } catch (e) { return false; }
 }
 ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
+  const no = cloudRefuse(e); if (no) return no;
+  try { return propPurgeNow(e, propKey); } finally { cloudNote(e, { folders: [folderOf(propKey)] }); }
+});
+function propPurgeNow(e, propKey){
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if (!propKey) return { ok: false, error: 'no key' };
@@ -813,7 +870,7 @@ ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
     if (failed.length || left.length) return { ok: false, failed: failed.length || left.length, error: 'Couldn’t delete ' + (failed.length || left.length) + ' file' + ((failed.length || left.length) === 1 ? '' : 's') };
     return { ok: true, removed: dirs.length };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+}
 
 // ---- Assistant chat history (per-property + portfolio) -----------------------
 // Conversations persist under userData/chats/<hash(scope)>/ — same durable, update-safe
@@ -821,11 +878,22 @@ ipcMain.handle('lds:prop-purge', async (e, { propKey }) => {
 // scope is a property's propertyKey, or the literal "portfolio" for general chats. Each scope
 // folder holds an index.json { scope, scopeName, conversations:[meta] } and one <id>.json per
 // conversation with the full messages. Kept indefinitely; deleted only by hand.
-function chatsDir(){ return path.join(app.getPath('userData'), 'chats'); }
+function chatsDir(){ return path.join(dataRoot(), 'chats'); }
 function chatScopeDir(scope){ const h = crypto.createHash('sha1').update(String(scope || '')).digest('hex').slice(0, 16); return path.join(chatsDir(), h); }
 function readChatIndex(dir){ try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; } }
 function writeChatIndex(dir, idx){ try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx)); } catch (e) {} }
-function chatMeta(c){ return { id: c.id, title: c.title || '', createdAt: c.createdAt || 0, updatedAt: c.updatedAt || 0, pinned: !!c.pinned, msgCount: Array.isArray(c.messages) ? c.messages.length : (c.msgCount || 0), scope: c.scope || '', scopeName: c.scopeName || '', fileNames: Array.isArray(c.files) ? c.files.map(f => f && f.name).filter(Boolean) : (Array.isArray(c.fileNames) ? c.fileNames : []) }; }
+function chatMeta(c){ return { id: c.id, title: c.title || '', createdAt: c.createdAt || 0, updatedAt: c.updatedAt || 0, pinned: !!c.pinned, msgCount: Array.isArray(c.messages) ? c.messages.length : (c.msgCount || 0), scope: c.scope || '', scopeName: c.scopeName || '', fileNames: Array.isArray(c.files) ? c.files.map(f => f && f.name).filter(Boolean) : (Array.isArray(c.fileNames) ? c.fileNames : []), ownerId: c.ownerId || '', ownerName: c.ownerName || '' }; }
+// 3.0.0 — in the shared database a chat is continued (renamed, pinned) only by the person who started it; the
+// admin may delete any. Talking to the assistant needs the connection.
+function chatRefuse(e, id, op){
+  if(!cloud || !cloud.active) return null;
+  const st = cloud.status();
+  if(!st.online) return { ok: false, error: 'You’re offline — the assistant and its chats need the connection.', why: 'offline' };
+  if(id && !cloud.chatMine(id) && !(op === 'delete' && st.role === 'admin')){
+    const o = cloud.chatOwner(id); return { ok: false, error: 'Only ' + ((o && o.name) || 'the person who started it') + ' can ' + (op === 'delete' ? 'delete' : 'continue') + ' this chat.', why: 'not_your_chat' };
+  }
+  return null;
+}
 function chatSnippet(text, terms){
   const s = String(text || ''); if(!s) return '';
   const low = s.toLowerCase(); let pos = -1;
@@ -837,6 +905,8 @@ function chatSnippet(text, terms){
 
 // 2.9.7 (#40, #216) — a renamed property's chats move with it (merged into the new name's chats if it has some).
 ipcMain.handle('lds:chat-move', (e, { fromScope, toScope, scopeName }) => {
+  const no = cloudRefuse(e); if (no) return no;
+  if (cloud && cloud.active && fromScope && toScope && fromScope !== toScope) cloud.chatMoved(fromScope, toScope);
   dataChanged(e);
   try {
     if (!fromScope || !toScope || fromScope === toScope) return { ok: true, moved: false };
@@ -859,6 +929,7 @@ ipcMain.handle('lds:chat-move', (e, { fromScope, toScope, scopeName }) => {
 // Create or update one conversation (upsert by id). A blank title is auto-filled from the first
 // user message. Returns the conversation's metadata (with its assigned id).
 ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, files, pinned }) => {
+  const no = chatRefuse(e, id, 'save'); if (no) return no;
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try {
     if(!scope) return { ok: false, error: 'missing scope' };
@@ -876,6 +947,7 @@ ipcMain.handle('lds:chat-save', (e, { scope, scopeName, id, title, messages, fil
       pinned: (pinned != null ? !!pinned : (existing ? !!existing.pinned : false)),
       messages: msgs, files: Array.isArray(files) ? files : [] };
     fs.writeFileSync(path.join(dir, cid + '.json'), JSON.stringify(conv));
+    if (cloud && cloud.active) cloud.chatSaved(conv);
     const meta = chatMeta(conv);
     idx.conversations = idx.conversations.filter(c => c.id !== cid); idx.conversations.push(meta);
     writeChatIndex(dir, idx);
@@ -907,6 +979,8 @@ ipcMain.handle('lds:chat-read', (e, { scope, id }) => {
 });
 // Delete one conversation (file + index entry).
 ipcMain.handle('lds:chat-delete', (e, { scope, id }) => {
+  const no = chatRefuse(e, id, 'delete'); if (no) return no;
+  if (cloud && cloud.active) cloud.chatDeleted(id);
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
     try { fs.unlinkSync(path.join(dir, String(id) + '.json')); } catch (x) {}
@@ -916,13 +990,14 @@ ipcMain.handle('lds:chat-delete', (e, { scope, id }) => {
 });
 // Rename and/or pin one conversation (metadata only — does not bump updatedAt / reorder).
 ipcMain.handle('lds:chat-meta', (e, { scope, id, title, pinned }) => {
+  const no = chatRefuse(e, id, 'meta'); if (no) return no;
   dataChanged(e);   // 2.9.7 (#9) — an automatic snapshot follows any change to the files
   try { const dir = chatScopeDir(scope), idx = readChatIndex(dir);
     const meta = (idx.conversations || []).find(c => c.id === id); if(!meta) return { ok: false, error: 'not found' };
     let full = null; try { full = JSON.parse(fs.readFileSync(path.join(dir, String(id) + '.json'), 'utf8')); } catch (x) {}
     if(title != null){ const t = String(title).trim(); if(t){ meta.title = t; if(full) full.title = t; } }
     if(pinned != null){ meta.pinned = !!pinned; if(full) full.pinned = !!pinned; }
-    if(full){ try { fs.writeFileSync(path.join(dir, String(id) + '.json'), JSON.stringify(full)); } catch (x) {} }
+    if(full){ try { fs.writeFileSync(path.join(dir, String(id) + '.json'), JSON.stringify(full)); } catch (x) {} if (cloud && cloud.active) cloud.chatSaved(full); }
     writeChatIndex(dir, idx);
     return { ok: true, conversation: meta };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
@@ -1019,6 +1094,52 @@ ipcMain.on('lds:update-check', () => {
 });
 ipcMain.on('lds:update-install', () => { try { autoUpdater.quitAndInstall(); } catch (e) {} });
 
+// ---- 3.0.0 — the shared database -------------------------------------------------------------------------------------
+ipcMain.on('lds:cloud-mode', (e) => { try { e.returnValue = cloud ? Object.assign({ cloud: !!cloud.active }, cloud.status()) : { cloud: false }; } catch (x) { e.returnValue = { cloud: false }; } });
+ipcMain.handle('lds:cloud-status', () => cloud ? cloud.status() : { configured: false });
+ipcMain.on('lds:cloud-input', (e) => { if (cloud) cloud.markInput(e.sender); });
+ipcMain.on('lds:cloud-auto', (e, on, label) => { if (!cloud) return; if (on) cloud.autoBegin(e.sender, label); else cloud.autoEnd(e.sender); });
+ipcMain.handle('lds:cloud-commit', (e, o) => cloud ? cloud.commit(o && o.reason, { approvalCode: o && o.approvalCode, request: !!(o && o.request) }) : { ok: false });
+ipcMain.handle('lds:cloud-discard', () => cloud ? cloud.discard() : { ok: false });
+ipcMain.on('lds:cloud-settings', (e) => { e.returnValue = (cloud && cloud.active) ? cloud.settings() : null; });
+ipcMain.on('lds:cloud-setting-set', (e, o) => { e.returnValue = (cloud && cloud.active) ? cloud.setSetting(e.sender, o && o.key, o && o.value) : { ok: false }; });
+ipcMain.handle('lds:cloud-requests', () => cloud ? cloud.requests() : { requests: [] });
+ipcMain.handle('lds:cloud-approve', (e, o) => cloud.approve(o && o.id));
+ipcMain.handle('lds:cloud-reject', (e, o) => cloud.reject(o && o.id, o && o.note));
+ipcMain.handle('lds:cloud-unlock-offline', (e, o) => cloud.unlockOffline(o && o.code));
+ipcMain.handle('lds:cloud-set-codes', (e, o) => cloud.setCodes(o && o.approvalCode, o && o.offlineCode));
+ipcMain.handle('lds:cloud-members', () => cloud ? cloud.members() : []);
+ipcMain.handle('lds:cloud-pull', () => cloud ? cloud.pullNow() : null);
+ipcMain.handle('lds:cloud-group-empty', () => !!(cloud && cloud.groupIsEmpty()));
+// the screens that read or manage the group call the server through this short list only
+const CLOUD_RPC = new Set(['lds_hello', 'lds_member_set', 'lds_member_remove', 'lds_history', 'lds_backups', 'lds_backup_restore', 'lds_groups', 'lds_group_create', 'lds_group_admin']);
+ipcMain.handle('lds:cloud-rpc', async (e, o) => {
+  if (!cloud || !o || !CLOUD_RPC.has(o.fn)) return { ok: false, error: 'not allowed' };
+  const r = await cloud.rpc(o.fn, o.args || {});
+  if (r.ok && o.fn === 'lds_backup_restore') { try { await cloud.pullNow(); } catch (x) {} }
+  return r;
+});
+// the first upload: this computer's own data (today's folder, only read) becomes the group's starting copy
+ipcMain.handle('lds:cloud-upload-start', (e, o) => cloud.uploadStart({ root: app.getPath('userData'), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data'));
+ipcMain.handle('lds:cloud-signin', async (e, o) => {
+  const r = await cloud.signIn(o && o.email, o && o.password);
+  if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }
+  return r;
+});
+ipcMain.handle('lds:cloud-signup', (e, o) => cloud.signUp(o && o.email, o && o.password));
+ipcMain.handle('lds:cloud-open', async (e) => {
+  const r = await cloud.openIfMember();
+  if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }
+  return r;
+});
+ipcMain.handle('lds:cloud-signout', async (e) => {
+  const r = await cloud.signOut();
+  Object.keys(panelWindows).forEach(k => { try { if (panelWindows[k] && !panelWindows[k].isDestroyed()) panelWindows[k].close(); } catch (x) {} });
+  const w = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  if (w && !w.isDestroyed()) { w.__ldsCloseOk = false; setTimeout(() => { if (!w.isDestroyed()) w.loadURL(SIGNIN_URL); }, 50); }
+  return r;
+});
+
 // ---- AI assistant (Claude Code CLI / Anthropic API) --------------------------
 ipcMain.handle('lds:ai-status', () => ai.status());
 ipcMain.handle('lds:ai-set-key', (e, { key }) => ai.setKey(key));
@@ -1038,6 +1159,11 @@ app.whenReady().then(() => {
   setTimeout(pruneOcrCache, 30000);
   Menu.setApplicationMenu(null); // no default menu bar
   ai.init(app);
+  // 3.0.0 — the shared database, when one is set up for this app (cloud-config.json, or the environment for tests)
+  cloud = CloudSync.create({ userData: app.getPath('userData'), appVersion: app.getVersion(), configFile: path.join(__dirname, 'cloud-config.json'),
+    chatMeta, log: mainLog, safeStorage,
+    broadcast: (ch, payload) => { BrowserWindow.getAllWindows().forEach(w => { try { if (!w.isDestroyed()) w.webContents.send(ch, payload); } catch (x) {} }); } });
+  cloudReady = cloud.init().catch(err => { mainLog('cloud: start failed: ' + ((err && err.message) || err)); return { mode: 'local' }; });
   createWindow();
   setupAutoUpdates();
   app.on('activate', () => {
@@ -1045,6 +1171,7 @@ app.whenReady().then(() => {
   });
 });
 
+app.on('before-quit', () => { try { if (cloud) cloud.close(); } catch (e) {} });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
