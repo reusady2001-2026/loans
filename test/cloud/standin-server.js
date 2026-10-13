@@ -34,7 +34,7 @@ async function startStandin(db, opts){
 
   function session(u){
     const now = Math.floor(Date.now() / 1000);
-    const access = sign({ sub: u.id, email: u.email, role: "authenticated", aud: "authenticated", iat: now, exp: now + ttl }, secret);
+    const access = sign({ sub: u.id, email: u.email, role: "authenticated", aud: "authenticated", iat: now, exp: now + ttl, session_id: crypto.randomUUID() }, secret);
     const rt = crypto.randomBytes(24).toString("hex"); refresh.set(rt, u.id);
     return { access_token: access, token_type: "bearer", expires_in: ttl, expires_at: now + ttl, refresh_token: rt,
              user: { id: u.id, email: u.email, email_confirmed_at: u.email_confirmed_at } };
@@ -144,13 +144,13 @@ async function startStandin(db, opts){
           const upsert = req.method === "PUT" || String(req.headers["x-upsert"] || "") === "true";
           try{
             await asUser(claims, async c => {
-              const sql = "insert into storage.objects(bucket_id, name, owner, owner_id, metadata) values ($1, $2, $3, $3::text, $4)" +
+              const sql = "insert into storage.objects(bucket_id, name, owner, owner_id, metadata) values ($1, $2, $3::uuid, $3::text, $4)" +
                           (upsert ? " on conflict (bucket_id, name) do update set updated_at = now(), metadata = excluded.metadata" : "");
               await c.query(sql, [bucket, name, claims.sub || null, JSON.stringify({ size: body.length, mimetype: req.headers["content-type"] || "" })]);
             });
           }catch(e){
             if(e.code === "23505") return send(res, 400, { statusCode: "409", error: "Duplicate", message: "The resource already exists" });
-            return send(res, 400, { statusCode: "403", error: "Unauthorized", message: "new row violates row-level security policy" });
+            return send(res, 400, { statusCode: "403", error: "Unauthorized", message: /row-level security/.test(e.message) ? "new row violates row-level security policy" : e.message });
           }
           fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, body);
           return send(res, 200, { Key: bucket + "/" + name });

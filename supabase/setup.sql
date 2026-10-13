@@ -180,8 +180,11 @@ create or replace function app.my_email() returns text language sql stable as $$
   select lower(nullif(auth.jwt() ->> 'email', ''))
 $$;
 
+-- The signed-in person's membership: linked by their id, or by their (proven) email until lds_hello links the id.
 create or replace function app.me() returns app.members language sql stable security definer set search_path = '' as $$
-  select m.* from app.members m where m.user_id = auth.uid() and auth.uid() is not null limit 1
+  select m.* from app.members m
+   where auth.uid() is not null and (m.user_id = auth.uid() or (m.user_id is null and m.email = app.my_email()))
+   order by (m.user_id = auth.uid()) desc nulls last limit 1
 $$;
 
 create or replace function app.is_maintainer() returns boolean language sql stable security definer set search_path = '' as $$
@@ -212,11 +215,18 @@ create or replace function app.key_part(k text) returns text language sql immuta
   select replace(replace(replace(k, '\', '\\'), '.', '\.'), '[', '\[')
 $$;
 
--- Every leaf of a JSON value with its field path. Lists whose items all carry a distinct "id" are followed item by
--- item (so a change to one loan is that loan's change); any other list is one value.
+-- Every leaf of a JSON value with its field path. Lists whose items all carry a distinct "id" (or "_id", as loans do)
+-- are followed item by item (so a change to one loan is that loan's change); any other list is one value.
+create or replace function app.list_key(j jsonb) returns text language sql immutable as $$
+  select k from (values (1, 'id'), (2, '_id')) v(o, k)
+   where jsonb_array_length(j) > 0
+     and (select bool_and(jsonb_typeof(e) = 'object' and jsonb_typeof(e -> v.k) in ('string', 'number'))
+                 and count(distinct e -> v.k) = count(*) from jsonb_array_elements(j) e)
+   order by o limit 1
+$$;
 create or replace function app.leaves(j jsonb, prefix text default '') returns table(field text, val jsonb)
 language plpgsql immutable as $$
-declare k text; v jsonb; keyed boolean; n int;
+declare k text; v jsonb; lk text;
 begin
   if j is null then return; end if;
   if jsonb_typeof(j) = 'object' and j <> '{}'::jsonb then
@@ -226,17 +236,12 @@ begin
     return;
   end if;
   if jsonb_typeof(j) = 'array' then
-    n := jsonb_array_length(j);
-    if n > 0 then
-      select bool_and(jsonb_typeof(e) = 'object' and jsonb_typeof(e -> 'id') in ('string', 'number'))
-             and count(distinct e -> 'id') = count(*)
-        into keyed from jsonb_array_elements(j) e;
-      if keyed then
-        for v in select e from jsonb_array_elements(j) e loop
-          return query select * from app.leaves(v, prefix || '[' || app.key_part(v ->> 'id') || ']');
-        end loop;
-        return;
-      end if;
+    lk := app.list_key(j);
+    if lk is not null then
+      for v in select e from jsonb_array_elements(j) e loop
+        return query select * from app.leaves(v, prefix || '[' || app.key_part(v ->> lk) || ']');
+      end loop;
+      return;
     end if;
   end if;
   field := prefix; val := j; return next;
@@ -516,6 +521,7 @@ create policy "lds delete" on storage.objects for delete to authenticated using 
 
 create or replace function public.lds_chat_save(id text, scope text, title text, content jsonb) returns jsonb
 language plpgsql security definer set search_path = '' as $$
+#variable_conflict use_column
 declare m app.members; cur app.chats; s bigint;
 begin
   m := app.need_member(); perform app.turn(m.group_id);
@@ -580,6 +586,7 @@ end $$;
 
 create or replace function public.lds_member_set(email text, name text, role text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
+#variable_conflict use_column
 declare m app.members; e text := lower(btrim(email)); other app.members;
 begin
   m := app.need_member(); perform app.turn(m.group_id);
