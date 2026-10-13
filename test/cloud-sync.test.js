@@ -51,10 +51,10 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
 
     let A = PC.e, E, V, ED, VW;
     await section("no shared database set up: the app works as before", async () => {
-      const save = process.env.LDS_CLOUD_URL; delete process.env.LDS_CLOUD_URL;
+      const save = process.env.LDS_CLOUD_URL; delete process.env.LDS_CLOUD_URL; process.env.LDS_CLOUD_OFF = "1";
       const x = computer("plain"); const r = await x.e.init();
       ok(r.mode === "local" && x.e.dataRoot() === x.ud && x.e.canWrite().ok, "local mode, today's folder, writable");
-      process.env.LDS_CLOUD_URL = save;
+      process.env.LDS_CLOUD_URL = save; delete process.env.LDS_CLOUD_OFF;
     });
 
     await section("the operator signs in; the group is empty", async () => {

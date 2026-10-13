@@ -78,10 +78,12 @@ function create(opts){
   // ---- configuration and the saved sign-in ------------------------------------------------------------------------------
   function loadConfig(){
     const env = process.env.LDS_CLOUD_URL ? { url: process.env.LDS_CLOUD_URL, anonKey: process.env.LDS_CLOUD_ANON_KEY || "" } : null;
+    if(!env && process.env.LDS_CLOUD_OFF === "1") return null;   // tests of the app on each computer's own data
     const user = readJSON(path.join(userData, "cloud-server.json"), null);
     const shipped = readJSON(opts.configFile || path.join(__dirname, "cloud-config.json"), null);
     const c = env || (user && user.url ? user : null) || (shipped && shipped.url ? shipped : null);
-    return c && c.url && c.anonKey ? { url: String(c.url), anonKey: String(c.anonKey) } : null;
+    // the project's address as Supabase shows it ("https://<id>.supabase.co", sometimes with "/rest/v1/" after it)
+    return c && c.url && c.anonKey ? { url: String(c.url).trim().replace(/\/+(rest|auth|storage)\/v1\/?$/, "").replace(/\/+$/, ""), anonKey: String(c.anonKey).trim() } : null;
   }
   const sessionFile = () => path.join(cloudDir, "session.bin");
   function saveSession(s){
