@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.16 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.17 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.16
+**Current version:** 2.9.17
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -18,7 +18,8 @@ Windows install, and what comes next.*
 > fixes from testing 2.9.10 (marked "2.9.11"); 2.9.12 the fixes from testing 2.9.11 (marked "2.9.12"); 2.9.13 the fix from testing 2.9.12
 > (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14"); 2.9.15 the three fixes
 > from testing 2.9.14, T1, P1 and C1 (marked "2.9.15"); 2.9.16 the new T12 reading — the reader and the AI
-> read every T12 before anything from it is used (marked "2.9.16").
+> read every T12 before anything from it is used (marked "2.9.16"); 2.9.17 the readers divide a T12 by the file's own
+> categories and the Underwriting table takes its rows from their one answer (marked "2.9.17").
 
 ---
 
@@ -67,7 +68,7 @@ loaded from a file address, which the second OCR engine (PaddleOCR) could not ru
 | `t12-parse.js` | Reads a T12 workbook into structured lines, including per-line **monthly** values (calendar-keyed). |
 | `t12-classify.js` | Classifies each account line into a category (income / expense buckets). |
 | `t12-check.js` | 2.9.7 — compares the regular reading of a T12 with the AI's reading (the double reading; replaced by `t12-read.js` in 2.9.16, its category lists still used). |
-| `t12-read.js` | 2.9.16 — the T12 read the operator's way (§4.6): the sheet from Excel row 1, the columns, a box per category, every check (account Total = its months, category total = its accounts, totals of totals, income / expense totals, income − expenses = the printed NOI); your changes re-checked; what the AI is given and how its answer is compared at every level; your per-sheet changes on a combined statement. |
+| `t12-read.js` | 2.9.16 — the T12 read the operator's way (§4.6): the sheet from Excel row 1, the columns, a box per category, every check (account Total = its months, category total = its accounts, totals of totals, income / expense totals, income − expenses = the printed NOI); your changes re-checked; what the AI is given and how its answer is compared at every level; your per-sheet changes on a combined statement. **2.9.17:** an account belongs to the file's category it sits in; each account's Underwriting line comes from the reading (`lineOf`). |
 | `operating-store.js` / `operating-taxonomy.js` / `operating-calc.js` / `operating-upload.js` | The per-property operating model. |
 | `general-data.js` | Monthly series, merges and deltas; the T12 rule (`noiRule`). |
 | `portfolio-rollup.js` | Rolls every property up into the portfolio view and totals. |
@@ -319,6 +320,20 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
     until you decide. Your 2.9.7–2.9.15 review decisions are kept where the row is still an account; any that no
     longer fit are dropped and the T12 is listed (K2). With Claude off, a T12 that passes every check stays in use and
     is re-checked as soon as Claude is connected.
+- **2.9.17 — the file's own categories, and one answer for the Underwriting table.**
+  - **Both readers divide the statement by its own categories.** Every account from a category's name down to its total
+    belongs to that category, whatever it is called: Rent - Vacancy is an account of Residential Rent, not a "Vacancy"
+    category. No category is ever made up from an account's name; an account under no category (after a category's
+    total, before the next name) has none. The AI gives no category per account, so the readers cannot disagree about one.
+  - **The readers know where each thing is**, and after the review there is one answer — the source of truth. The
+    Underwriting table (its layout unchanged) takes its rows from it, never guessing on its own: each account goes to its
+    category's line (Rent - G/L to Lease and Rent - Admin/Guest → Gross Potential Rent; Waste Management in Utilities →
+    Utilities; Late Fees in Residential Fees → Other income), and the items the table's calculation needs on their own —
+    vacancy, employee units, model units, concessions, bad debt, the management fee — are taken from the rows the readers
+    found them on (both readers say which rows those are, and that is compared). An account under no category is placed
+    by its own name. The review shows **Category (in the file)** and **Underwriting line**; a line you set wins.
+  - **Once after the update:** a saved reading that waited only because the old readers named an account's category
+    differently is no longer a disagreement — if every check passes, it is checked and used.
 - **The 2.9.8 Category list** has **"+ New category…"** — a name you type becomes your own income or expense
   category for every property and every later review (the AI is told about it too); in Underwriting it is its own
   line at its T12 amount. One you added can be removed while no line uses it.
@@ -595,7 +610,8 @@ saved, the key is used.
   2.9.15 adds three: the T12 subtotals (T1), a pool release before the first payment (P1) and every property counted
   on Home and in the roll-up (C1). 2.9.16 replaces the two double-reading tests with `t12-gate-2916` (AI agrees,
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
-  decisions). Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
+  decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
+  every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
 - CI runs the unit tests before every build.
 
 ---
@@ -622,26 +638,24 @@ saved, the key is used.
 - **2.9.13** — the fix from testing the installed 2.9.12.
 - **2.9.14** — pooled loans, R1 and A1.
 - **2.9.15** — the fixes from testing the installed 2.9.14: T1, P1 and C1.
-- **2.9.16** — *(this stage)* the T12 read by the reader and the AI before it is used (see §8).
+- **2.9.16** — the T12 read by the reader and the AI before it is used.
+- **2.9.17** — *(this stage)* the file's own categories; the Underwriting table takes its rows from the reading (see §8).
 
 ---
 
-## 8. Stage 2.9.16 — what shipped, and what still needs checking
+## 8. Stage 2.9.17 — what shipped, and what still needs checking
 
-**What shipped** — the T12 reading redesign the operator set out and approved after testing 2.9.15 (§4.6):
-1. **The reader reads the operator's way** — from Excel row 1, the columns, a box per category, every check, up to the
-   NOI row; income − expenses compared with the printed NOI.
-2. **The AI reads at the same time, before anything is saved as used** — in boxes too; compared at every level.
-3. **Nothing is used until both are done.** Passes + agrees → used, "✓ checked by the reader and the AI". Otherwise a
-   pop-up with the file's own rows where you decide (and can change what the reader did, an amount only with a note);
-   Claude not connected → its own pop-up with "Use the reader's reading" (only when every check passes).
-4. **Review the reading** and **Read again** in Underwriting; **Data Health** lists every T12 that needs you.
-5. **Once after the update** every T12 in use is re-read; the 2.9.7–2.9.15 decisions that no longer fit (K2) are
-   dropped and the T12 is listed for review.
-6. Found on the way: a T12 added to Documents that names no property was filed as a plain document — now it asks which
-   sheet is the property's T12.
+**What shipped** — the operator's rule after testing 2.9.16 (check list Part 10: 7 passed, 1 skipped):
+1. **Both readers divide a T12 by the file's own categories** — every account from a category's name to its total belongs
+   to it; vacancy is an account of Residential Rent, never a category; no category is made up from an account's name.
+2. **The AI gives no category per account**, so the reviews that came from the two readers naming categories differently
+   are gone; saved readings that waited only for that are checked, once.
+3. **The Underwriting table takes its rows from the one answer** — each account on its category's line; vacancy,
+   concessions, employee and model units, bad debt and the management fee from the rows the readers found them on.
 
-**Check on the real installed 2.9.16 (Windows)** — Part 10 of the check list.
+**Check on the real installed 2.9.17 (Windows)** — Part 11 of the check list.
+
+**Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.

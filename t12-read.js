@@ -1,5 +1,7 @@
 /* ============================================================================
    t12-read.js — 2.9.16: the T12 reading, the operator's way. Pure, no I/O.
+   2.9.17: an account belongs to the FILE'S category it sits in — from the category's name down to its total — never
+   to one made up from its own name; and the Underwriting table takes its rows from this reading (see lineOf).
 
    The sheet is read from its FIRST row (Excel row 1, column A), so every row and column number is the one you
    see in Excel. The reader:
@@ -160,13 +162,23 @@
   }
 
   // The category a line falls in (the same rule every figure uses).
-  function categoryOf(e){
-    if (e.cat) return e.cat;
-    var c = T12Classify ? T12Classify.classifyConfident(e.label, e.side === "expense" ? "EXPENSE" : "INCOME", e.sub) : null, code = c && c.code;
-    if (!code) return e.side === "expense" ? "GA" : "OTH";
-    if (e.side === "expense" && !isExpenseCode(code)) code = "GA";
-    if (e.side === "income" && isExpenseCode(code)) code = "OTH";
-    return code;
+  // ---- 2.9.17 — where each account goes in the Underwriting table: from the reading, the one source of truth ----
+  // An account belongs to the file's category it sits in. The table takes, from where the readers found them, the
+  // items its calculation needs on their own: the deductions from rent (vacancy, employee units, model units,
+  // concessions, bad debt — rent from the rent roll may replace the rent, never these) and the management fee (a % of
+  // income). Every other account goes to the table line of its category: Rent - G/L to Lease in Residential Rent →
+  // Gross Potential Rent; Waste Management in Utilities → Utilities. An account under no category at all is placed by
+  // its own name — there is nothing else to go on. A line you set in the review wins.
+  var ITEM = { VAC: "vacancy", EMPL: "employee units", MOD: "model units", CONC: "concessions", BD: "bad debt", MGMT: "management fee" };
+  var ITEM_CODE = {}; Object.keys(ITEM).forEach(function (k){ ITEM_CODE[ITEM[k]] = k; });
+  function codeOf(label, side){ var c = (T12Classify && label) ? T12Classify.classifyConfident(label, side === "expense" ? "EXPENSE" : "INCOME", "") : null; return (c && c.code) || null; }
+  function sideFits(code, side){ return !!code && (side === "expense") === isExpenseCode(code); }
+  function itemOf(e){ var c = codeOf(e.label, e.side); return (c && ITEM[c] && sideFits(c, e.side)) ? c : null; }
+  function lineOf(e){
+    if (e.catYours && e.cat) return e.cat;
+    if (e.item) return e.item;
+    var c = e.fileCat ? codeOf(e.fileCat, e.side) : codeOf(e.label, e.side);
+    return sideFits(c, e.side) ? c : (e.side === "expense" ? "GA" : "OTH");
   }
 
   // ---- 3: the boxes and the checks ------------------------------------------------------------------------
@@ -187,8 +199,9 @@
         return;
       }
       if (e.role === "account"){
-        e.cat = categoryOf(e);
         if (!open) open = { name: "", headingRow: null, side: e.side, accounts: [], sum: 0, months: {} };
+        e.fileCat = open.name || "";   // 2.9.17 — the file's category it sits in ("" under none)
+        e.item = itemOf(e); e.line = lineOf(e);
         open.accounts.push(e.excel); open.sum = r2(open.sum + (e.amount || 0)); open.side = e.side;
         if (e.side === "expense"){ expSum = r2(expSum + (e.amount || 0)); expN++; } else { incSum = r2(incSum + (e.amount || 0)); incN++; }
         if (hasMonths && e.monthsSum != null && isNum(e.amount)){
@@ -259,14 +272,13 @@
     var foot = { incomeRow: -1, expenseRow: -1, noiRow: -1 }, totals = { income: null, expense: null, noi: null };
     res.rows.forEach(function (e){
       if (e.role === "account") rows.push({ name: e.label, amount: isNum(e.amount) ? e.amount : 0, section: e.side === "expense" ? "EXPENSE" : "INCOME", sub: e.sub || "", row: e.row,
-        monthly: e.amountYours ? scaleMonths(e.monthly, e.amount) : (clone(e.monthly) || {}), forceCode: e.catYours ? e.cat : undefined, decided: !!e.yours });
+        monthly: e.amountYours ? scaleMonths(e.monthly, e.amount) : (clone(e.monthly) || {}), forceCode: e.line, fileCat: e.fileCat || "", decided: !!e.yours });   // 2.9.17 — the table takes the reading's line
       else if (e.role === "total" && e.totalKind !== "group") subtotals.push({ name: e.label, amount: e.amount, section: e.side === "expense" ? "EXPENSE" : "INCOME", row: e.row });
       else if (e.role === "not-operating") belowLine.push({ name: e.label, amount: e.amount, row: e.row });
       else if (e.role === "income-total"){ foot.incomeRow = e.row; totals.income = e.amount; }
       else if (e.role === "expense-total"){ foot.expenseRow = e.row; totals.expense = e.amount; }
       else if (e.role === "noi"){ foot.noiRow = e.row; totals.noi = e.amount; }
     });
-    rows.forEach(function (r){ if (r.forceCode === undefined) delete r.forceCode; });
     if (totals.noi == null && totals.income != null && totals.expense != null) totals.noi = r2(totals.income - totals.expense);
     if (totals.noi == null) totals.noi = res.noi.computed;
     var totalsMonthly = {};
@@ -312,34 +324,25 @@
     "You are reading a property's trailing-twelve-month operating statement (T12), given below row by row from Excel row 1 " +
     "(\"Row N: cell | cell | …\"; N is the row number exactly as Excel shows it; cells are the columns from A). Read it from Row 1, " +
     "every row, top to bottom, the way an analyst would: find which column holds the category names, which the account names, which " +
-    "each month, and which the Total. Every category is a box: its accounts, then (usually) the category's total row right after its " +
-    "last account — that row equals the sum of its accounts. A total row is never an account. Then give: every ACCOUNT (row number, " +
-    "label exactly as printed, income or expense — or 'other' when it is not part of the operating statement — its category code from " +
-    "the list, its Total-column amount, and its amount in every month column as {month:'YYYY-MM', amount}); every CATEGORY BOX (its " +
-    "name, the row of its name, the row of its total — null when the statement prints none — and that total); the rows and amounts of " +
-    "the printed TOTAL INCOME, TOTAL EXPENSES and NET OPERATING INCOME. Stop at the Net Operating Income row: nothing below it (interest, " +
-    "depreciation, capital items, net income) is read. Category codes — income: GPR gross potential rent, VAC vacancy, CONC concessions, " +
-    "EMPL employee units, MOD model units, BD bad debt (income side), MTM month-to-month fees, RUBS utility reimbursements, TRSH RUB trash " +
-    "reimbursements, TRSH COL trash collection income, OTH other income, AMEN amenity fees, PET pet fees, LATE late fees, ADM administrative " +
-    "income, APP application fees, PARK parking, COM commercial rent, CAM CAM income, ANT antenna income; expense: RET real estate taxes, INS " +
-    "insurance, UTIL utilities, PAY payroll, GA general & administrative, BDX bad debt expense, MKT marketing, RM repairs & maintenance, CS " +
-    "contract services, MGMT management fee, TRSH trash removal, CAB cable, PLL parking lot lease; NONOP not operating. Copy every number " +
-    "exactly as printed; never estimate, round or fill in a missing month.";
-  var INCOME_CODES = ["GPR","VAC","CONC","EMPL","MOD","BD","MTM","RUBS","TRSH RUB","TRSH COL","OTH","AMEN","PET","LATE","ADM","APP","PARK","COM","CAM","ANT"];
-  var EXP_CODES = ["RET","INS","UTIL","PAY","GA","BDX","MKT","RM","CS","MGMT","TRSH","CAB","PLL"];
-  var CUSTOM = [];
-  function setCustom(list){ CUSTOM = (list || []).filter(function (c){ return c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense"); }); }
-  function aiInstruction(){
-    if (!CUSTOM.length) return AI_INSTRUCTION;
-    return AI_INSTRUCTION + " The operator's own categories (use one when a line is exactly that): " + CUSTOM.map(function (c){ return c.code + " " + c.label + " (" + c.role + ")"; }).join(", ") + ".";
-  }
+    "each month, and which the Total. The statement is divided into ITS OWN CATEGORIES: a category starts at its name and ends at its " +
+    "total row (usually right after its last account; it equals the sum of its accounts). Every account between a category's name and " +
+    "its total belongs to that category, whatever the account is called — \"Rent - Vacancy\" under \"Residential Rent\" is an account of " +
+    "Residential Rent. Never put an account in a category because of its own name, and never make up a category the statement does not " +
+    "print. A total row is never an account. Then give: every ACCOUNT (row number, label exactly as printed, income or expense — or " +
+    "'other' when it is not part of the operating statement — its Total-column amount, its amount in every month column as " +
+    "{month:'YYYY-MM', amount}, and — only when the account IS one of these — item: 'vacancy', 'employee units', 'model units', " +
+    "'concessions', 'bad debt' (income side) or 'management fee'; leave item out for every other account); every CATEGORY (its name " +
+    "exactly as printed, the row of its name, the row of its total — null when the statement prints none — and that total); the rows " +
+    "and amounts of the printed TOTAL INCOME, TOTAL EXPENSES and NET OPERATING INCOME. Stop at the Net Operating Income row: nothing " +
+    "below it (interest, depreciation, capital items, net income) is read. Copy every number exactly as printed; never estimate, round " +
+    "or fill in a missing month.";
+  function aiInstruction(){ return AI_INSTRUCTION; }
   function aiSchema(){
-    var codes = INCOME_CODES.concat(EXP_CODES, CUSTOM.map(function (c){ return c.code; }), ["NONOP"]);
     var rowAmt = { type: "object", properties: { row: { type: "integer" }, amount: { type: "number" } } };
     return { type: "object", properties: {
       accounts: { type: "array", items: { type: "object", properties: {
         row: { type: "integer" }, label: { type: "string" }, role: { type: "string", enum: ["income", "expense", "other"] },
-        category: { type: "string", enum: codes }, annual: { type: "number" },
+        item: { type: "string", enum: ["vacancy", "employee units", "model units", "concessions", "bad debt", "management fee"] }, annual: { type: "number" },
         monthly: { type: "array", items: { type: "object", properties: { month: { type: "string" }, amount: { type: "number" } }, required: ["month", "amount"] } }
       }, required: ["row", "label", "role", "annual"] } },
       boxes: { type: "array", items: { type: "object", properties: { name: { type: "string" }, nameRow: { type: "integer" }, totalRow: { type: ["integer", "null"] }, total: { type: ["number", "null"] } }, required: ["name"] } },
@@ -358,26 +361,26 @@
     function find(e){ var i; for (i = 0; i < acc.length; i++) if (!used[i] && acc[i] && acc[i].row === e.excel){ used[i] = 1; return acc[i]; }
       for (i = 0; i < acc.length; i++) if (!used[i] && acc[i] && norm(acc[i].label) === norm(e.label)){ used[i] = 1; return acc[i]; } return null; }
     readerAcc.forEach(function (e){
-      var a = find(e), side = e.side, cat = e.cat || categoryOf(e);
-      if (!a){ if (isNum(e.amount) && Math.abs(e.amount) >= TOL) items.push({ id: "r" + e.excel, level: "account", row: e.excel, label: e.label, kind: "missing", reader: { role: "account", side: side, cat: cat, amount: e.amount }, ai: null,
+      var a = find(e), side = e.side, item = e.item || null;
+      if (!a){ if (isNum(e.amount) && Math.abs(e.amount) >= TOL) items.push({ id: "r" + e.excel, level: "account", row: e.excel, label: e.label, kind: "missing", reader: { role: "account", side: side, item: item, fileCat: e.fileCat || "", amount: e.amount }, ai: null,
         msg: "The reader counts row " + e.excel + " “" + e.label + "” as an account; the AI does not." }); return; }
-      var aSide = a.role === "expense" ? "expense" : (a.role === "other" ? "other" : "income"), aCat = a.category || (aSide === "expense" ? "GA" : "OTH");
+      var aSide = a.role === "expense" ? "expense" : (a.role === "other" ? "other" : "income"), aItem = ITEM_CODE[String(a.item || "").toLowerCase()] || null;
       var am = aiMonthly(a), months = [];
       Object.keys(e.monthly || {}).concat(Object.keys(am)).forEach(function (ym){ if (months.indexOf(ym) >= 0) return; var x = isNum((e.monthly || {})[ym]) ? e.monthly[ym] : 0, y = isNum(am[ym]) ? am[ym] : 0; if (Math.abs(x - y) >= TOL) months.push(ym); });
       var aAmt = isNum(a.annual) ? a.annual : 0, gap = r2(aAmt - (e.amount || 0));
       var why = [];
       if (aSide !== side) why.push(aSide === "other" ? "the AI says it isn’t part of the operating statement" : "the AI puts it on the " + aSide + " side");
-      else if (aCat !== cat) why.push("the AI files it under " + aCat + " (the reader: " + cat + ")");
+      else if (aItem !== item) why.push(aItem ? "the AI takes it as the " + ITEM[aItem] + " (the reader: " + (item ? "the " + ITEM[item] : "an account of its category") + ")" : "the AI takes it as an account of its category (the reader: the " + ITEM[item] + ")");
       if (Math.abs(gap) >= TOL) why.push("the AI reads the Total as " + money(aAmt) + " (the reader: " + money(e.amount) + ")");
       if (months.length) why.push("the AI reads " + months.length + " month" + (months.length === 1 ? "" : "s") + " differently (" + months.join(", ") + ")");
-      if (why.length) items.push({ id: "r" + e.excel, level: "account", row: e.excel, label: e.label, kind: "differs", reader: { role: "account", side: side, cat: cat, amount: e.amount, monthly: e.monthly },
-        ai: { side: aSide, cat: aCat, amount: aAmt, monthly: am }, months: months, msg: "Row " + e.excel + " “" + e.label + "”: " + why.join("; ") + "." });
+      if (why.length) items.push({ id: "r" + e.excel, level: "account", row: e.excel, label: e.label, kind: "differs", reader: { role: "account", side: side, item: item, fileCat: e.fileCat || "", amount: e.amount, monthly: e.monthly },
+        ai: { side: aSide, item: aItem, amount: aAmt, monthly: am }, months: months, msg: "Row " + e.excel + " “" + e.label + "”: " + why.join("; ") + "." });
     });
     acc.forEach(function (a, i){
       if (used[i] || !a || a.role === "other" || !isNum(a.annual) || Math.abs(a.annual) < TOL) return;
       var re = res.rows.filter(function (e){ return e.excel === a.row; })[0];
       items.push({ id: "a" + a.row, level: "account", row: a.row, label: a.label, kind: "extra", reader: re ? { role: re.role } : null,
-        ai: { side: a.role === "expense" ? "expense" : "income", cat: a.category || (a.role === "expense" ? "GA" : "OTH"), amount: a.annual, monthly: aiMonthly(a) },
+        ai: { side: a.role === "expense" ? "expense" : "income", item: ITEM_CODE[String(a.item || "").toLowerCase()] || null, amount: a.annual, monthly: aiMonthly(a) },
         msg: "The AI counts row " + a.row + " “" + a.label + "” as an account" + (re ? " (the reader: " + (ROLES[re.role] || re.role).toLowerCase() + ")" : "") + "." });
     });
     // category totals: the rows the AI says close a box, against the reader's totals
@@ -446,6 +449,6 @@
   }
 
   return { TOL: TOL, ROLES: ROLES, EDITABLE_ROLES: EDITABLE_ROLES, gridFromSheet: gridFromSheet, read: read, check: check, readAndCheck: readAndCheck, applyOverrides: applyOverrides,
-           categoryOf: categoryOf, toParsed: toParsed, aiInput: aiInput, aiInstruction: aiInstruction, aiSchema: aiSchema, setCustom: setCustom, compare: compare,
+           ITEM: ITEM, toParsed: toParsed, aiInput: aiInput, aiInstruction: aiInstruction, aiSchema: aiSchema, compare: compare,
            colName: colName, money: money, combineOverrides: combineOverrides };
 });
