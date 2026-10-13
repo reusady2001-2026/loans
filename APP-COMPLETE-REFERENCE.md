@@ -1,9 +1,9 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.15 still needs checked on a real
+*Everything this app is, everything it does, how it was built, what stage 2.9.16 still needs checked on a real
 Windows install, and what comes next.*
 
-**Current version:** 2.9.15
+**Current version:** 2.9.16
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
@@ -17,7 +17,8 @@ Windows install, and what comes next.*
 > fixes from testing 2.9.8 (marked "2.9.9"); 2.9.10 the fixes from testing 2.9.9 (marked "2.9.10"); 2.9.11 the
 > fixes from testing 2.9.10 (marked "2.9.11"); 2.9.12 the fixes from testing 2.9.11 (marked "2.9.12"); 2.9.13 the fix from testing 2.9.12
 > (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14"); 2.9.15 the three fixes
-> from testing 2.9.14, T1, P1 and C1 (marked "2.9.15").
+> from testing 2.9.14, T1, P1 and C1 (marked "2.9.15"); 2.9.16 the new T12 reading — the reader and the AI
+> read every T12 before anything from it is used (marked "2.9.16").
 
 ---
 
@@ -65,7 +66,8 @@ loaded from a file address, which the second OCR engine (PaddleOCR) could not ru
 | `setup-builder.js` | `buildSetup()` — turns a T12 + assumptions into the underwriting "setup" (NOI build-up, per-unit, line pins, benchmarks). |
 | `t12-parse.js` | Reads a T12 workbook into structured lines, including per-line **monthly** values (calendar-keyed). |
 | `t12-classify.js` | Classifies each account line into a category (income / expense buckets). |
-| `t12-check.js` | 2.9.7 — compares the regular reading of a T12 with the AI's reading (the double reading, §4.6). |
+| `t12-check.js` | 2.9.7 — compares the regular reading of a T12 with the AI's reading (the double reading; replaced by `t12-read.js` in 2.9.16, its category lists still used). |
+| `t12-read.js` | 2.9.16 — the T12 read the operator's way (§4.6): the sheet from Excel row 1, the columns, a box per category, every check (account Total = its months, category total = its accounts, totals of totals, income / expense totals, income − expenses = the printed NOI); your changes re-checked; what the AI is given and how its answer is compared at every level; your per-sheet changes on a combined statement. |
 | `operating-store.js` / `operating-taxonomy.js` / `operating-calc.js` / `operating-upload.js` | The per-property operating model. |
 | `general-data.js` | Monthly series, merges and deltas; the T12 rule (`noiRule`). |
 | `portfolio-rollup.js` | Rolls every property up into the portfolio view and totals. |
@@ -112,7 +114,9 @@ Everything is stored on disk under the app's user-data folder; the browser stora
   workbook's entry records which sheet is that property's. Holding:
   - `profile.json` — the property's details, each with who / when / where-from history;
   - `assumptions.json` — its Underwriting assumptions (and pinned lines);
-  - `general-data.json` — the monthly operating series, both NOIs, the T12 double reading, "what to push". **2.9.10:**
+  - `general-data.json` — the monthly operating series, both NOIs, each T12's reading (**2.9.16:** `t12Readings` — per
+    file and part(s): the reader's checks, the AI's answer compared, the status, and your changes with their notes),
+    "what to push". **2.9.10:**
     it keeps no copy of the property's name, address or units — those live in `profile.json` only (an old copy is
     dropped the next time the file is saved);
   - `history.json` (2.9.7) — the change history of its assumptions;
@@ -280,10 +284,42 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   the last 3 months × 4 when the statement covers fewer than 12 months, or when its first two months have NOI of
   $0 or less (lease-up). A file with more than 12 months uses only its last 12. Otherwise NOI = the 12-month
   total. The same NOI everywhere. *(The annualization override was removed — your rule is fixed.)*
-- **The double reading (2.9.7):** every T12 is read by the regular reader and by the AI, automatically; lines
-  where they disagree go to **"Needs review"** for you. The AI checks; it never sets a number. **2.9.8:** each
-  card starts with the **real Excel row** and the sheet ("Excel row 147 · sheet “T12”"), and the review lists every
-  row to check; the Category list has **"+ New category…"** — a name you type becomes your own income or expense
+- **2.9.16 — the reader and the AI read a T12 BEFORE anything from it is used** (it replaces the 2.9.7 double
+  reading, which ran after the numbers were already in use). Whichever way a T12 comes in — Underwriting, a
+  property's Documents, the assistant, a parts answer, an older year's statement — it is saved to the folder and then:
+  - **The regular reader** reads the sheet from **Excel row 1** (row numbers are Excel's): it finds the columns (the
+    category names, the account names, every month, the Total), puts each category in a **box** (its accounts, then
+    its total row — the row after its last account that equals their sum), and checks: each account's Total = the sum
+    of its months; each category total = its accounts; a total of totals = its categories (the row equal to all the
+    income boxes marks where income ends); the income and expense totals = their accounts; **income − expenses = the
+    printed Net Operating Income** (it stops at that row). A file with no boxes is checked at the income / expense
+    totals; a row with a label and no amount is a category name; a gap under $1 counts as equal. The T12 rule
+    (annualization) is applied after the checks.
+  - **The AI** reads the same rows (from row 1, as Excel numbers them), in boxes too, and its answer is compared at
+    every level — each account (is it one, its side, category, Total and months), each box, the income / expense
+    totals and the NOI. It may take up to 5 minutes; nothing is used meanwhile ("Reading … with the reader and the
+    AI" in Underwriting).
+  - **Every check passes and the AI agrees** → used at once, no pop-up: "✓ Checked by the reader and the AI".
+  - **A check fails or the AI disagrees** → **the review pops up** with the file's own rows (every row from Excel
+    row 1, every column) and, per row, what the reader made of it, its side, its category, the amount used, a note,
+    and the check / the AI's point on it; "Row N" buttons jump to each issue; a file in parts has a tab per part.
+    **You can change** what a row is (account / category total / heading / not operating / the income total / the
+    expense total / the NOI), an account's side and category, and an amount different from the file — **only with a
+    note** (kept in the history). Everything is re-checked as you change it. **Your changes are the figures:** once
+    you change what counts, income, expenses and the NOI are the accounts as you set them (month by month too).
+    Saving while checks still fail asks first ("Save anyway"). **Keep it waiting** / closing leaves the file in
+    Documents marked "Waiting for your review" — **unused**, with reminders in Underwriting and Data Health.
+  - **Claude isn't connected** (or the AI's reading failed) → a pop-up says so: **Review it myself**, **Use the
+    reader's reading** (only when every check passes; only you press it) or **Keep it waiting**.
+  - Underwriting always has **Review the reading** and **Read again** (the whole process again, reader and AI); a
+    re-read that finds a problem marks it "Read again — needs your review (still in use)". The assistant's
+    `check_t12` reads it again the same way.
+  - **After the update, once:** every T12 already in use is re-read by the new reader and the AI. Passes and agrees →
+    left alone ("checked"); otherwise it is listed in Data Health as "needs your review" and its numbers stay in use
+    until you decide. Your 2.9.7–2.9.15 review decisions are kept where the row is still an account; any that no
+    longer fit are dropped and the T12 is listed (K2). With Claude off, a T12 that passes every check stays in use and
+    is re-checked as soon as Claude is connected.
+- **The 2.9.8 Category list** has **"+ New category…"** — a name you type becomes your own income or expense
   category for every property and every later review (the AI is told about it too); in Underwriting it is its own
   line at its T12 amount. One you added can be removed while no line uses it.
 - **The grey line under the T12 drop (2.9.8)** shows the **NOI used** and how it was worked out ("T3 × 4 · …"),
@@ -312,6 +348,8 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   several properties (one agreement over several properties); Claude can propose the ranges (`split_document`) on the
   same card. Each property then reads only its own pages. *(One loan secured by several properties — a pooled loan —
   is its own later stage.)*
+  **2.9.16:** each part of a file in parts is checked on its own (a tab per part in the review); your changes, made
+  part by part, reach the combined statement's lines.
   **Results tied to the exact parts (2.9.11):** the T12 AI check (and your decisions on it) and "what to push" count
   only for the same file **and the same part(s)** they were made on. One made on another property's sheet of the
   same workbook (40 N Euclid's check was made on Forest Park's sheet in 2.9.8) is dropped and redone; a combined
@@ -400,8 +438,10 @@ with the property, is shown.
 
 ### 4.12 Data Health page
 Properties, T12s, units known, loans needing a maturity decision; duplicates (by address); folders with no
-property (attach or delete); **Recompute all figures**; **Check all T12s with AI**. **2.9.8:** "Properties
-without a folder" — must always read 0.
+property (attach or delete); **Recompute all figures**. **2.9.8:** "Properties
+without a folder" — must always read 0. **2.9.16:** **"T12s that need your review"** — every T12 waiting for you,
+read before 2.9.16 and needing your look, or read again with a problem, each with **Review**; **Re-check every T12
+now** (replaces "Check all T12s with AI").
 
 ### 4.13 Documents
 - Add files from a property's page (**Add files**, or drop them on the Documents panel) — any size, no limit
@@ -415,6 +455,9 @@ without a folder" — must always read 0.
 - **Reading a file (2.9.7):** a small panel shows the progress ("reading scanned page 3 of 40") with **Stop**;
   the message afterwards says what was read ("40 pages · read by OCR — may contain errors · 2 pages couldn't be
   read (pages 7, 12)"). A file being read when the app closes is finished at the next start.
+- **2.9.16:** a T12 shows its reading under its name ("T12: Checked by the reader and the AI", "T12: Waiting for
+  your review · Review"). A T12 added to a property's Documents that names no property asks **"Which sheet is
+  <property>'s T12?"** (it used to be filed as a plain document, so it was never read as the T12).
 
 ### 4.14 The AI assistant (Claude, in the app)
 **Your rules:** the assistant does everything a user can do; every change it makes is approved by you inside the
@@ -543,13 +586,16 @@ saved, the key is used.
 
 ## 6. Testing
 
-- **20 unit-test files** (pure modules) — `npm test`. 2.9.15 adds the T12 subtotal test (a made-up statement in
+- **21 unit-test files** (pure modules) — `npm test`. 2.9.16 adds `t12-read.test.js` (the boxes, every check, your
+  changes and the figures they make, the AI comparison, the AI's input from Excel row 1, per-sheet changes combined). 2.9.15 adds the T12 subtotal test (a made-up statement in
   Terrazul's layout, with and without account numbers, and lines that only look like sums).
-- **85 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
+- **84 end-to-end tests** (Electron under a virtual display — real page, real flows; Claude is a scripted
   stand-in, never a real model) — `npm run test:e2e`. 2.9.14 adds five: pooled loans (core; refinance + stacks; two
   parts covering the picker, new properties, releases, renames, Excel, the assistant, 40 properties) and R1 + A1.
   2.9.15 adds three: the T12 subtotals (T1), a pool release before the first payment (P1) and every property counted
-  on Home and in the roll-up (C1).
+  on Home and in the roll-up (C1). 2.9.16 replaces the two double-reading tests with `t12-gate-2916` (AI agrees,
+  a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
+  decisions). Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
 - CI runs the unit tests before every build.
 
 ---
@@ -575,23 +621,27 @@ saved, the key is used.
 - **2.9.12** — the fixes from testing the installed 2.9.11.
 - **2.9.13** — the fix from testing the installed 2.9.12.
 - **2.9.14** — pooled loans, R1 and A1.
-- **2.9.15** — *(this stage)* the fixes from testing the installed 2.9.14: T1, P1 and C1 (see §8).
+- **2.9.15** — the fixes from testing the installed 2.9.14: T1, P1 and C1.
+- **2.9.16** — *(this stage)* the T12 read by the reader and the AI before it is used (see §8).
 
 ---
 
-## 8. Stage 2.9.15 — what shipped, and what still needs checking
+## 8. Stage 2.9.16 — what shipped, and what still needs checking
 
-**What shipped** — the three fixes approved after testing 2.9.14 (check list Part 8):
-1. **T1** — a T12 whose section sums carry no "Total" (Terrazul) is read right: only the detail lines, the statement's
-   Net Operating Income, and the NOI ties (§4.6).
-2. **P1** — a pool release dated before the loan's first payment lowers today's Current balance (§4.2).
-3. **C1** — every property counts in the portfolio, whatever its state: no NOI = $0 with all its debt, a negative NOI
-   as it is, no loan = its NOI with no debt, a pool once with all its properties; Home and the roll-up show one number
-   and say how many properties have no NOI and how much debt that is (§4.1).
+**What shipped** — the T12 reading redesign the operator set out and approved after testing 2.9.15 (§4.6):
+1. **The reader reads the operator's way** — from Excel row 1, the columns, a box per category, every check, up to the
+   NOI row; income − expenses compared with the printed NOI.
+2. **The AI reads at the same time, before anything is saved as used** — in boxes too; compared at every level.
+3. **Nothing is used until both are done.** Passes + agrees → used, "✓ checked by the reader and the AI". Otherwise a
+   pop-up with the file's own rows where you decide (and can change what the reader did, an amount only with a note);
+   Claude not connected → its own pop-up with "Use the reader's reading" (only when every check passes).
+4. **Review the reading** and **Read again** in Underwriting; **Data Health** lists every T12 that needs you.
+5. **Once after the update** every T12 in use is re-read; the 2.9.7–2.9.15 decisions that no longer fit (K2) are
+   dropped and the T12 is listed for review.
+6. Found on the way: a T12 added to Documents that names no property was filed as a plain document — now it asks which
+   sheet is the property's T12.
 
-Dropped by the operator after Part 8: F1, F2, F4, F5. The 2.9.14 stage is in the git history and its pull request.
-
-**Check on the real installed 2.9.15 (Windows)** — Part 9 of the check list.
+**Check on the real installed 2.9.16 (Windows)** — Part 10 of the check list.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.

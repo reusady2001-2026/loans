@@ -10,7 +10,7 @@
    (A2) A PDF holding two agreements: "Pages & properties" → pages 1–4 to Queens Gate, pages 5–10 to Villages of
         Whitewater AND Villages of Independence (one part, two properties). Each reads only its own pages.
    (A2) split_document (the assistant's proposal) shows the same card and links the pages on Approve.
-   (B)  check_t12 re-runs the AI's double reading of the property's own sheets.
+   (B)  check_t12 reads the property's own sheets again with the reader and the AI (2.9.16).
    Claude is a scripted stand-in (test/fixtures/fake-claude-push.js) — no real model.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/parts-2911.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
@@ -93,9 +93,10 @@ function rentRoll(file){ const lines=['Rent Roll','For Selected Properties - All
 
   // ---- (B) check_t12 re-runs the double reading on the property's own sheets ----
   const ct=await page.evaluate((k)=>Promise.resolve(window.LDS_asstAction({action:'check_t12',args:{name:'Queens Gate Apartments'}})),P.q.key);
-  ok(ct&&ct.ok&&/Checked Queens Gate Apartments’s T12/.test(ct.msg),'check_t12 re-runs the AI check ("'+(ct&&ct.msg)+'")');
-  const rvNow=await page.evaluate(async(k)=>{ const gd=await window.LDS_gdDisk(k); return gd&&gd.t12Review; },P.q.key);
-  ok(rvNow&&rvNow.partSig&&/\|1,2$/.test(rvNow.partSig)&&rvNow.combined===true,'…and the new review records the parts it was made on ('+(rvNow&&rvNow.partSig)+')');
+  // 2.9.16 — check_t12 runs the whole reading again: the reader and the AI, sheet by sheet
+  ok(ct&&ct.ok&&/Read Queens Gate Apartments’s T12 .* again with the reader and the AI — every check passes and they agree/.test(ct.msg),'check_t12 reads it again with the reader and the AI ("'+(ct&&ct.msg)+'")');
+  const rvNow=await page.evaluate((k)=>window.LDS_t12Entries(k).filter(e=>e.fileName==='QG_T12_Phases.xlsx').slice(-1)[0],P.q.key);
+  ok(rvNow&&/\|1,2$/.test(rvNow.sig)&&(rvNow.parts||[]).length===2&&rvNow.status==='checked','…and the reading records the parts it was made on ('+(rvNow&&rvNow.sig)+', '+(rvNow&&rvNow.status)+')');
 
   // ---- (A2) a PDF with two agreements: pages to properties ----
   const pdfText=Array.from({length:10},(_,i)=>'[page '+(i+1)+']\n'+(i<4?'LOAN AGREEMENT A — Queens Gate Apartments, page ':'LOAN AGREEMENT B — Villages portfolio, page ')+(i+1)).join('\n');

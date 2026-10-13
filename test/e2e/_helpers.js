@@ -2,7 +2,7 @@
 // Run:  GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/<x>.e2e.js
 const path = require('path'), fs = require('fs'), os = require('os');
 const APP = path.resolve(__dirname, '..', '..');
-function playwright(){ return require((process.env.GN || '/opt/node22/lib/node_modules') + '/playwright'); }
+function playwright(){ require('./_t12auto.js'); return require((process.env.GN || '/opt/node22/lib/node_modules') + '/playwright'); }   // 2.9.16 — _t12auto answers the T12 gate's pop-ups (unless LDS_T12_MANUAL)
 // Launch the app on a FRESH user-data dir (isolated localStorage), network blocked.
 async function launchApp(opts){
   opts = opts || {};
@@ -16,6 +16,18 @@ async function launchApp(opts){
   await page.waitForSelector('tr[data-goto]', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(500);
   return { app, page, errors, udata };
+}
+// 2.9.16 — the T12 gate's pop-ups are answered as the operator taking the reader's reading would (see _t12auto.js).
+async function t12AutoAccept(page){ await require('./_t12auto.js').install(page); }
+// Wait until no T12 is being read (the gate is idle) — up to ms.
+async function t12Idle(page, ms){
+  const t0 = Date.now();
+  while (Date.now() - t0 < (ms || 20000)){
+    const busy = await page.evaluate(() => (window.LDS_t12Busy ? window.LDS_t12Busy().length : 0) + (document.querySelector('[data-t12nc],[data-t12rv]') && window.__t12Auto ? 1 : 0)).catch(() => 0);
+    if (!busy) return true;
+    await page.waitForTimeout(150);
+  }
+  return false;
 }
 // The Underwriting tab is not open by default: "+" (#tabNewBtn) shows a body-level menu,
 // then [data-tabopen="underwriting"] opens the tab and renders it.
@@ -36,4 +48,4 @@ async function pickProperty(page, name){
   return key;
 }
 const ok = (fails) => (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails.n++; };
-module.exports = { launchApp, openUnderwriting, pickProperty, ok, APP };
+module.exports = { launchApp, openUnderwriting, pickProperty, ok, APP, t12AutoAccept, t12Idle };

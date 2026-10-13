@@ -77,6 +77,8 @@ function rentRoll(file, sections){ const lines=['Rent Roll','Unit,Unit Type,Unit
   ok(r1&&r1.sheet==='12 Month Statement-15169'&&Math.abs(r1.noi-1805004)<1,'…“12 Month Statement-15169”, NOI $1,805,004 — its own sheet (got '+JSON.stringify(r1)+')');
   const rec=await page.evaluate((k)=>window.LDS_gdRecords(k),P.q.key);
   ok(rec.length===1&&rec[0].sheetNo===2&&rec[0].sheet==='12 Month Statement-15169'&&rec[0].sheets===4&&rec[0].file==='Scheduler_Reports.xlsx','general-data.json records it: sheet number 2 of 4, “12 Month Statement-15169” ('+JSON.stringify(rec)+')');
+  // 2.9.16 — each property's sheet is read by the reader (and the AI) in turn before it is used: wait for Whitewater's
+  await until(page,(k)=>window.LDS_readT12(k).then(r=>!!r&&r.sheetNo===3),P.w.key,30000);
   const rw=await page.evaluate((k)=>window.LDS_readT12(k),P.w.key);
   ok(rw&&rw.sheetNo===3&&Math.abs(rw.noi-840000)<1,'Villages of Whitewater got its own sheet (3) and NOI ($840,000)');
   ok(await page.evaluate(()=>!document.querySelector('[data-partsmodal]')),'the card closes');
