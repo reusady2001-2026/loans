@@ -30,6 +30,8 @@ async function upload(page,key,file){
   await page.evaluate((k)=>{const s=document.getElementById('opPropPick');s.value=k;s.dispatchEvent(new Event('change',{bubbles:true}));},key); await page.waitForTimeout(600);
   await page.setInputFiles('#uwFile',file);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:15000}).catch(()=>{});
+  // the tie check is drawn last: wait for it rather than for a fixed time (a busy machine draws slower)
+  await page.waitForFunction(()=>((document.getElementById('uwNoiTie')||{}).innerText||'').trim().length>0,null,{timeout:15000}).catch(()=>{});
   await page.waitForTimeout(1200);
   return page.evaluate((k)=>({ uw:document.getElementById('uwView').innerText, tie:(document.getElementById('uwNoiTie')||{}).innerText||'', tieCls:(document.getElementById('uwNoiTie')||{}).className||'',
     noi:window.LDS_loanNOI(window.LDS_loans().find(l=>window.propertyKey(l)===k)) }),key);

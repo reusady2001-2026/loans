@@ -51,7 +51,7 @@ const personEdit = (page, idx, field, value) => page.evaluate(([i, f, v]) => { d
 
     const OP = ud('operator');
     console.log('\nno shared database set up: today’s app');
-    let L = await launch(OP); apps.push(L);
+    let L = await launch(OP, { LDS_CLOUD_OFF: '1' }); apps.push(L);   // the app's own data (the project's address in cloud-config.json is switched off)
     ok(await until(L.page, () => typeof window.LDS_loans === 'function' && LDS_loans().length > 20 && !!document.querySelector('tr[data-goto]')), 'the app opens on this computer’s own loans');
     ok(await L.page.evaluate(() => document.getElementById('cloudDD').classList.contains('hidden') && !window.ldsShell.cloudMode), 'no shared-database chip');
     await sleep(2500);
