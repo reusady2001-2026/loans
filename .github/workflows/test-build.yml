@@ -8,6 +8,7 @@ name: Test build (Windows, not published)
 on:
   push:
     branches: ["claude/hopeful-knuth-fbvvpy"]
+    paths-ignore: ["**.md", "docs/**"]   # notes and the web pages don't change the app
   workflow_dispatch: {}
 
 permissions:
@@ -35,7 +36,9 @@ jobs:
         run: npm install @anthropic-ai/claude-code@latest --no-save
 
       # The same build as the real one, under another name: its own app id (installs next to the real app), its own
-      # name (its own data folder), "test" in its version, and no update feed.
+      # name (its own data folder), its own shortcuts and entry in Windows' app list (the real app's config names its
+      # shortcuts "Loan Debt Service Hub"; without these two the test build replaced the real app's shortcuts),
+      # "test" in its version, and no update feed.
       - name: Build the TEST installer (NSIS)
         shell: bash
         run: |
@@ -47,7 +50,9 @@ jobs:
             -c.extraMetadata.name=loan-debt-service-hub-test \
             -c.extraMetadata.productName="Loan Debt Service Hub TEST" \
             -c.extraMetadata.version="$VER" \
-            -c.extraMetadata.ldsTestBuild=true
+            -c.extraMetadata.ldsTestBuild=true \
+            -c.nsis.shortcutName="Loan Debt Service Hub TEST" \
+            -c.nsis.uninstallDisplayName="Loan Debt Service Hub TEST"
 
       - name: Show build output
         shell: bash
