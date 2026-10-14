@@ -93,11 +93,13 @@ F2's flags feed F1: "send this line to the pro forma". F1's NOI feeds F4.
 - **The refinance's NOI choices** are In-place / Underwritten / Entered, read from `general-data.json` `noi`.
 
 ### 2.3 What you will see
-1. **Two new columns in Underwriting, "Pro forma" and "Aggressive"**, right of Underwritten, each with its $/unit.
-   - They appear after **"Start a pro forma"** (a property without one looks as it does today).
-   - The NOI row shows all the NOIs side by side.
+1. **One new column in Underwriting, "Pro forma", with a Safe / Aggressive switch** (D2, agreed): right of
+   Underwritten, with its $/unit. Both versions are kept; the switch shows one at a time beside the T12, so the table
+   stays narrow.
+   - It appears after **"Start a pro forma"** (a property without one looks as it does today).
+   - The NOI row shows the version on screen; the other version's NOI is named next to the switch.
    - A changed cell is marked and shows its kind on hover.
-2. **Click any line in the Pro forma or Aggressive column → "Change this line" panel.** It shows:
+2. **Click any line in the Pro forma column → "Change this line" panel.** It shows:
    - the line, its T12 amount, the underwritten amount, $/unit;
    - **every account under the line** with its 12-month amount (on the same basis as the T12 rule), its row in the
      file and a small 12-month strip;
@@ -118,7 +120,7 @@ F2's flags feed F1: "send this line to the pro forma". F1's NOI feeds F4.
      - **Revenue credit**.
    - **Story (required)** — typed. **"Draft it"** asks Claude for a draft from the line's numbers, the kind and what you
      typed; you edit it and it's yours.
-   - **Apply to:** Pro forma · Aggressive · both.
+   - **Apply to:** Safe · Aggressive · both.
    - A change can be edited or removed; each edit keeps the old version in the history.
 3. **Revenue — "Annualize recent months"** (on the revenue lines):
    - pick T3 (default) or T6;
@@ -258,7 +260,8 @@ can't change; the reason bar shows the stories.
 1. **F1a** `proforma.js` + unit tests (the engine alone).
 2. **F1b** accounts by line (a function over `parsed.rows` on the T12-rule basis) + tests.
 3. **F1c** storage in `assumptions.json`, loader checks, history paths, sync merge by id + tests.
-4. **F1d** the two columns and the "Change this line" panel (every how, kind, story, apply to).
+4. **F1d** the Pro forma column with its Safe / Aggressive switch, and the "Change this line" panel (every how, kind,
+   story, apply to).
 5. **F1e** revenue credit (T3/T6) with the monthly view.
 6. **F1f** reconciliation block + the "doesn't reconcile" guard.
 7. **F1g** the lender Excel file.
@@ -302,32 +305,39 @@ can't change; the reason bar shows the stories.
      - extension term (months, e.g. 36);
      - interest-only (the whole term / N months / none);
      - rate: today's index (shown) + the new spread (e.g. 30-day SOFR + 200);
-     - extension / modification fee (% or $; decision **D7**);
+     - **what this lender asks for the early-payoff penalty** (D7, agreed — every lender is different):
+       **the full penalty** (as if paid off) · **on the pay-down only** · **a part** (a typed % of the full penalty, or a
+       typed $ amount) · **none**. Until you pick, it uses the penalty on the pay-down, marked "assumed — confirm with the
+       lender", like today's assumed prepayment type;
+     - extension / modification fee (% or $);
      - the lender's limits (the 3.0.0 legs, with "debt coverage, interest-only").
    - **Shows:**
      - what you owe today;
      - what the lender's limits allow at the new rate;
      - **the pay-down needed** = what you owe − what they allow (or "none needed");
      - at the extended amount: debt coverage amortizing and interest-only, LTV on the appraisal, debt yield;
-     - **cash needed** = pay-down + fee;
-     - no early-payoff penalty (same lender, not a payoff — **D7**).
+     - the penalty as this lender asks it (D7), with how it was worked out;
+     - **cash needed** = pay-down + penalty + fee.
    - **Save the extension** (decision **D10**): today's loan stays the same record with:
      - a new maturity and the new rate terms from the extension date;
      - the pay-down recorded as a principal payment on that date;
      - status "Extended";
      - a history entry for every field ("Extended with Flagstar: 36 months IO at SOFR30 + 200; paid down $4,750,000").
-4. **A loan that must be dealt with** (decision **D1**). When the property can't support what you owe **and** today's
-   loan ends within 12 months, the verdict box no longer says only "Don't refinance". It says:
-   - **"Today's loan ends <date>. To refinance at these limits: pay down $X."**
+4. **A loan that must be dealt with** (decision **D1**, agreed as revised). When the property can't support what you
+   owe **and** today's loan matures **or its rate resets** within 12 months (Queens Gate: its 3.00% fixed period ends
+   Dec 2026), the verdict box no longer says only "Don't refinance". It says:
+   - **"Today's loan ends <date>"** or **"Today's rate resets <date>: 3.00% → <the rate after the reset>"**;
+   - **"To refinance at these limits: pay down $X."**
    - **"To extend with today's lender: pay down $Y"** (when the extension limits are filled in).
    - The banner reads `data-refiverdict="paydown"`.
    - **Save** is allowed at an amount up to what the property supports; the gap is recorded as cash paid in.
-   - Outside the 12 months it stays "Don't refinance", as today.
+   - Outside the 12 months it stays "Don't refinance", as today. The reset date and the rate after it are shown in any
+     case next to "Today's loan rate" (today the refinance never mentions a coming reset).
 5. **Lender presets:**
    - a list kept for the whole group: Fannie Mae, Freddie Mac, a local bank, today's lender's extension — **ships
      empty**, filled only from Azriel's numbers;
    - each preset has: name, limits (amortizing / interest-only coverage, LTV, debt yield), the rate types allowed,
-     longest amortization, notes, source;
+     longest amortization, its usual early-payoff penalty choice on an extension (D7), notes, source;
    - **picking one fills the refinance's limits** (still editable), and the table says "Fannie Mae preset";
    - a rate type the preset doesn't allow is greyed with the reason ("Fannie Mae: no floating").
 6. **Pro forma NOI** (F1): pick "Pro forma" or "Aggressive" as the NOI, named in the table.
@@ -368,7 +378,8 @@ can't change; the reason bar shows the stories.
   - maturity, rate, IO and status change;
   - the schedule shows the principal payment and the balance after it;
   - a history entry per field;
-  - no early-payoff penalty in the numbers.
+  - each of the four penalty choices (full, pay-down only, a part as % and as $, none) gives the expected amount, and
+    "assumed" shows until one is picked.
 - **Presets:**
   - picking one fills the limits;
   - a disallowed rate type is greyed;
@@ -509,8 +520,9 @@ can't change; the reason bar shows the stories.
 ## 6. Decisions for the operator (my recommendation first)
 
 **The operator's answers (2026-10-14, in the "Next Stage Plan" doc):** D3, D4, D5, D6, D8, D9, D10, D11, D12 and D13
-agreed as recommended. **D1 agreed as revised** (below). **D2 and D7: being explained** — not settled; nothing
-that depends on them is built before they are.
+agreed as recommended. **D1 agreed as revised**, **D2: option 2** (one Pro forma column with a Safe / Aggressive
+switch), **D7: every lender's way** (full penalty, on the pay-down only, a part, or none — the lender's choice, picked
+per extension). All 13 decisions are settled.
 
 **D1 as revised and agreed (2026-10-14).** Checked in the app on Queens Gate (built-in data): it says "Don't
 refinance" — you owe $47,098,514.48, at 30-day SOFR + 200 it supports $32,139,344.24 — and already names the
@@ -518,9 +530,10 @@ $14,959,170.25 shortfall under "Can you? No". But Queens Gate doesn't mature unt
 3.00% fixed period (Dec 2026), and the refinance never mentions the reset. So the "must act" verdict fires when the
 loan **matures or its rate resets** within 12 months; it shows today's rate, the rate after the reset, and "pay down
 $X to refinance" (and "$Y to extend" once extension limits are typed).
-1. **D1 — a loan that must be dealt with.** Recommend: can't cover what you owe **and** ends within 12 months → the
-   pay-down verdict instead of "Don't refinance".
-2. **D2 — the columns.** Recommend two, Pro forma and Aggressive, with Aggressive = Pro forma + its own changes.
+1. **D1 — a loan that must be dealt with.** *Agreed as revised:* can't cover what you owe **and** it matures **or its
+   rate resets** within 12 months → the pay-down verdict instead of "Don't refinance".
+2. **D2 — the columns.** *Agreed: one Pro forma column with a Safe / Aggressive switch* (both versions kept; Aggressive
+   = Safe + its own changes). (First recommended: two columns side by side — too wide.)
 3. **D3 — revenue from recent months.** Recommend allowing it only inside the pro forma (T3 / T6, with a story). The
    T12 rule (#109) stays as it is for the in-place NOI.
 4. **D4 — bad debt % of revenue.** Removed from the assumptions in 2.9.3 (#104). Recommend it only as a pro forma line
@@ -528,7 +541,9 @@ $X to refinance" (and "$Y to extend" once extension limits are typed).
 5. **D5 — one benchmark library.** Contract services and turnover were removed in 2.9.3 (#107). Recommend one library
    for every line Azriel gives a number for; today's Payroll / R&M become the property's own overrides.
 6. **D6 — the lender file.** Recommend Excel first; PDF only if asked.
-7. **D7 — extension with today's lender.** Recommend no early-payoff penalty, with a fee box (% or $).
+7. **D7 — extension with today's lender.** *Agreed (the operator): the app supports every lender's way* — the full
+   penalty, the penalty on the pay-down only, a part of it (% or $), or none — picked per extension, plus a fee (% or $).
+   A lender preset can carry its usual choice. (First recommended: no penalty at all.)
 8. **D8 — where the pro forma starts.** Recommend the **T12** column (as Azriel presents it). The other choice is the
    Underwritten column, which would add "assumptions" as a reconciliation step.
 9. **D9 — refinance inputs.** Recommend moving limits, appraisal and deal terms from each computer's browser into the
