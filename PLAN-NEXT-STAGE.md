@@ -509,8 +509,15 @@ can't change; the reason bar shows the stories.
 ## 6. Decisions for the operator (my recommendation first)
 
 **The operator's answers (2026-10-14, in the "Next Stage Plan" doc):** D3, D4, D5, D6, D8, D9, D10, D11, D12 and D13
-agreed as recommended. **D1, D2 and D7: to talk through** — not settled; nothing that depends on them is built
-before they are.
+agreed as recommended. **D1 agreed as revised** (below). **D2 and D7: being explained** — not settled; nothing
+that depends on them is built before they are.
+
+**D1 as revised and agreed (2026-10-14).** Checked in the app on Queens Gate (built-in data): it says "Don't
+refinance" — you owe $47,098,514.48, at 30-day SOFR + 200 it supports $32,139,344.24 — and already names the
+$14,959,170.25 shortfall under "Can you? No". But Queens Gate doesn't mature until 1 Nov 2031: what is ending is its
+3.00% fixed period (Dec 2026), and the refinance never mentions the reset. So the "must act" verdict fires when the
+loan **matures or its rate resets** within 12 months; it shows today's rate, the rate after the reset, and "pay down
+$X to refinance" (and "$Y to extend" once extension limits are typed).
 1. **D1 — a loan that must be dealt with.** Recommend: can't cover what you owe **and** ends within 12 months → the
    pay-down verdict instead of "Don't refinance".
 2. **D2 — the columns.** Recommend two, Pro forma and Aggressive, with Aggressive = Pro forma + its own changes.
