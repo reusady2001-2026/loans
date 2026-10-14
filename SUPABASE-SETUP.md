@@ -110,6 +110,11 @@ is up to date (setup version N)". A red cross means it didn't run (GitHub also e
 that run → **Re-run jobs**. If the database is ever behind, the app tells the admin and the maintainer (a red line
 under the title bar) until it's up to date.
 
+If the login fails, the run's summary has **"Why the database login failed"**: what the secret looks like (the
+username, the address, and only the password's length and kinds of characters — never the password), any plain
+mistake in it (brackets left around the password, another project, the Direct connection), and one more login to
+tell a wrong password from Supabase's pooler still holding an older one after a password reset.
+
 ## Plan notes
 - The free plan pauses a project that isn't used for a week and has no daily backups of its own; for the team's real
   data use a paid plan. The app's own daily backup (step 2) works on both.

@@ -8,7 +8,10 @@ name: Update the shared database (Supabase)
 # it (SUPABASE-SETUP.md, step 9). It is kept in the GitHub environment "supabase", which only workflows running on
 # the release branch may use — not other branches, not pull requests, never the release files. GitHub never shows
 # it again once saved and hides it in the logs. If it is missing or wrong, this run fails and says so; after fixing
-# the secret, re-run the failed run (Actions -> this run -> "Re-run jobs").
+# the secret, re-run the failed run (Actions -> this run -> "Re-run jobs"). When the login fails, the step after it
+# (supabase/db-url-check.js) shows what the secret looks like — the username, address, the password's length and the
+# kinds of characters in it, never the password — names plain mistakes, and tries the login once more to tell a wrong
+# password from Supabase's pooler still holding an older one.
 
 on:
   push:
@@ -46,10 +49,17 @@ jobs:
           psql --version
 
       - name: Run supabase/setup.sql
+        id: setup
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PGCONNECT_TIMEOUT: "30"
         run: psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f supabase/setup.sql
+
+      - name: If the login failed, say why (the password itself is never shown)
+        if: failure() && steps.setup.outcome == 'failure'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node supabase/db-url-check.js --login
 
       - name: Check the database has this setup's version
         env:
