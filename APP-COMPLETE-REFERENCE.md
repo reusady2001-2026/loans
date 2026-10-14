@@ -752,6 +752,9 @@ waiting) and `cloud-join.e2e.js` (the real windows and the real pages in a brows
 any case); the `lds-join` function deployed with Verify JWT off (it answers with no key, refuses a forged sign-in);
 the Gmail secrets (a real request's email reached the admin); approving from the email's page; the confirmation
 email and its page ("Your email is confirmed"). The first group is Living Residential.
+**2026-10-14:** the first upload of the operator's real data (big files in pieces); comparing it with the operator's own
+app found three rows different (saved market rates and custom categories were per computer); after the fix the group
+was started over and uploaded again from a backup file — **every tile and every row matches the operator's app.**
 
 **Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`): the "turned down" email; signing up
 and approving in the app itself (needs a Windows build of this version); the first upload of the real book with its
