@@ -800,7 +800,8 @@ only tester, with one computer): offline, and two computers at once.
 (`app.setup_version()`, raised with every change to the file, the same number as `SETUP_NEEDED` in `cloud-sync.js`);
 `lds_pull` reports it, and the admin and the maintainer see a red line under the title bar while the database is
 older than the app. Tests: `cloud-rules` (setup.sql run again over a group's data: nothing lost) and `cloud-sync`
-(an older server noticed, then not).
+(an older server noticed, then not). **The operator added the secret on 2026-10-14** in the GitHub environment
+`supabase`, limited to the release branch; its first real run is the 3.0.0 release.
 
 **Refinance fixes from Azriel's meeting (2026-10-13), built 2026-10-14** — §4.8: no property counted as $0 in a
 portfolio; today's vs proposed labels, sized on the proposed rate only; starting spreads never 0; how "supports $X"
