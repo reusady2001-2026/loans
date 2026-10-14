@@ -864,6 +864,48 @@ From the meeting with Azriel on 2026-10-13, in this order:
 The plan, the operator's decisions D1–D13 and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Version numbers are the
 operator's to choose.
 
+#### F1 — the pro forma: built as a DRAFT on the development branch (2026-10-14) — not shipped, no version, no release
+Built for the operator to see and test; it is not merged into the release branch, so no installed app has it. The
+test installer that the development branch builds ("Loan Debt Service Hub TEST") carries it.
+- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 38 checks). Input: the Setup's T12 lines, the accounts
+  under each line (`SetupBuilder.accountLine` + `ProForma.accountsFrom`, on the T12 rule's basis — an annualized
+  statement's account is its own last 3 months × 4; anything a line holds beyond its accounts is shown as
+  "Difference to the statement's printed total"), each line's month-by-month total, the units and the saved pro
+  forma. Order: revenue credit (each income line = last 3 or 6 months × 12/N) → account changes (take out, spread
+  1/N, new amount for one account) → whole-line changes (new total, per unit, a whole line spread) → % of revenue
+  (an expense = % of the version's own EGI; a rental deduction = −% of gross potential rent). Every step's effect is
+  measured on the NOI; T12 NOI + the effects must equal the pro forma NOI to the cent ("reconciles"), worked out twice.
+  Reserves are not in it (it starts from the T12 NOI, which has none); the lender file adds them on both sides.
+- **Two versions:** Safe and Aggressive. Aggressive = Safe + its own changes; an Aggressive change on the same line
+  (whole line) or account wins. One whole-line change per line per version; a whole-line change closes the account
+  changes on that line (the panel warns). A change without a kind or a story is never counted.
+- **Underwriting:** "Start a pro forma" → a **Pro forma** column right of Underwritten with its $/unit and a
+  **Safe / Aggressive** switch; a changed cell is marked and names its kind on hover; a line the T12 doesn't have can be
+  added ("+ Add a line"). Clicking a figure opens **"Change this line"**: T12 / Underwritten / Safe / Aggressive, the
+  changes on the line (Edit, Remove, who and when), the accounts with their row in the file and a 12-month strip, then
+  How (New total · Take out accounts · New amount for one account · Spread over years · % of revenue · Per unit), Kind,
+  Story (required; "Draft it with Claude"), Apply to (Safe · Aggressive · Both), and a live before → after preview.
+  **Revenue credit…** (T3 / T6, the revenue lines month by month with the months used, today's occupancy from the rent
+  roll, story required); **How it adds up** under the table for both versions; changes not counted are listed with
+  "fix or remove"; **History**; **Remove** (the history keeps every change). The column needs the 12-month basis.
+- **Kept:** `assumptions.json` → `proForma: {started, revenue:{base, aggressive}, changes:[{id, column, line, how,
+  value|pct|years|perUnit, accounts:[{name, sheet?, row}], kind, story, by, at, from}]}` (ids → the shared database
+  merges change by change). Every change, edit and removal goes to `history.json` with its story; in the shared
+  database the story starts the "Not saved yet" reason. View-only members see it read-only.
+- **General Data / refinance:** `noi.proForma = {base, aggressive, baseOk, aggressiveOk, aggressiveOwn, changes,
+  changesAggressive, lastBy, lastAt}`. The refinance's NOI choice gains **Pro forma · Safe** and **Pro forma ·
+  Aggressive** (only when it reconciles; Aggressive only when it has changes of its own); "How 'supports $X' is worked
+  out" names it ("pro forma · Safe (N changes; last by …)"). Pools add each property's.
+- **Lender file:** "For the lender…" → Safe only, or Safe and Aggressive → "<property> — Pro forma — <date>.xlsx":
+  *Pro forma* (line, T12, $/unit, pro forma, $/unit, [Aggressive, $/unit], change, kind, story; EGI, expenses, NOI,
+  reserves, NOI after reserves), *Reconciliation*, *Monthly* (the months used for the revenue credit marked).
+- **Assistant:** `propose_pro_forma_change` (an Approve card: the line and the NOI before → after, the kind, the story;
+  never an invented number); `read_property` returns the pro forma; `set_refi_noi_basis` takes "pro forma" / "aggressive".
+- **Tests:** `test/e2e/proforma.e2e.js` (42 checks, on the made-up `test/fixtures/proforma-t12.js`).
+- **Not in the draft yet:** listing changes that aren't counted in Data Health, the pro forma as context for "What to
+  push", and the cloud test-bed checks (two computers, view-only). Real-file check against Azriel's Queens Gate
+  $3.34M waits for his file.
+
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
 database (Supabase) reads that mailbox and updates each property's data. It needs the shared database (3.0.0)

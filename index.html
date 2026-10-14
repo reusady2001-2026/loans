@@ -16,6 +16,7 @@
   <script src="./underwriting.js"></script>
   <script src="./t12-classify.js"></script>
   <script src="./setup-builder.js"></script>
+  <script src="./proforma.js"></script>
   <script src="./t12-parse.js"></script>
   <!-- Per-property operating model (SPEC-v2.3.0): store → taxonomy → calc → upload → sheet/assumptions → roll-up/scan -->
   <script src="./operating-store.js"></script>
@@ -3942,6 +3943,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     let uwState = (function(){ try{ const s = JSON.parse(localStorage.getItem(UW_KEY)); if(s && s.input && s.input.bench){ delete s.input.t12Grid; delete s.input.t12Rows; delete s.input.t12Meta; delete s.input.aiParsed; delete s.input.aiT12; delete s.input.fileName; return s; } }catch(e){} return { input: uwDefaults() }; })();
     let uwLastBuilt = null;
+    let uwLastFull = null;     // the whole uwBuildSetupFromGrid result of the last build (the pro forma reads its accounts)
     try{ window.LDS_uwLines = () => (uwLastBuilt && uwLastBuilt.worksheet ? uwLastBuilt.worksheet.lines.map(l => ({ key: l.key, label: l.label, t12: l.t12, uw: l.uw })) : []); }catch(e){}   // 2.9.8 diagnostics
     // The T12 itself lives on disk in the property folder — NEVER in browser storage. uwState keeps
     // only the benchmarks / units / sizing prefs; the T12 grid + parsed meta are transient mirrors of
@@ -3980,6 +3982,7 @@ tr.flagged:hover td{background:#fee2e2}
     function uwBuild(){
       const i = uwState.input;
       const com = opRRCommercialSync(opFocusKey), rrCom = com ? com.annual : null; uwBuiltCom = rrCom;
+      uwLastFull = null;
       if(!window.SetupBuilder){ uwLastBuilt = null; return; }
       // The parsed statement. In-place income/expense/NOI are read
       // from the statement's own printed footing (t12-parse totals), so the Setup's
@@ -3990,7 +3993,8 @@ tr.flagged:hover td{background:#fee2e2}
         // — the same figures written to general-data.json and read by the refinance calculator. An
         // explicit trailing-period pick (t6/t3/t1, a column the statement prints) is honored as-is.
         if((i.basis || "total") === "total"){
-          uwLastBuilt = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, bench: i.bench, overrides: i.t12Overrides || [] }).setup;   // 2.9.16 — with your changes from the T12 review
+          uwLastFull = uwBuildSetupFromGrid(i.t12Grid, { units: uwNum(i.units), rrGPR: uwNum(i.rrGPR), rrCommercial: rrCom, bench: i.bench, overrides: i.t12Overrides || [] });
+          uwLastBuilt = uwLastFull.setup;   // 2.9.16 — with your changes from the T12 review
         } else {
           const d = T12Parse.parseGrid(i.t12Grid, { basis: i.basis });
           uwLastBuilt = SetupBuilder.buildSetup({ parsed: { rows:d.rows, categories:d.categories, totals:d.totals },
@@ -4108,6 +4112,20 @@ tr.flagged:hover td{background:#fee2e2}
       const uUnits = uwNum(uwState.input.units), unitsOk = (uUnits != null && uUnits > 0);
       const puVal = (v)=> (unitsOk && v != null) ? uwFmt(v / uUnits) : "&mdash;";
       const puCell = (v, c)=> '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+(c||'')+'">'+puVal(v)+'</td>';
+      // Next stage (F1, draft) — the Pro forma column, with its Safe / Aggressive switch, right of Underwritten.
+      const pfR = pfCompute(), pfV = pfR ? (pfR.res[pfShow] || pfR.res.base) : null, pfCols = !!pfV;
+      const pfCell = (key, opt)=>{
+        opt = opt || {};
+        if(!pfCols) return '';
+        if(opt.reserve) return '<td class="py-1 px-2 text-right text-[11px] text-slate-300 border-l border-teal-100" title="Reserves are not part of the pro forma NOI — it starts from the T12 NOI, which has none">&mdash;</td><td class="py-1 pr-2"></td>';
+        const l = pfV.byKey[key]; if(!l) return '<td class="border-l border-teal-100"></td><td></td>';
+        const n = l.changes.length, kinds = n ? pfKinds(l.kinds) : '';
+        const cls = n ? 'border border-teal-300 bg-teal-50 font-semibold text-teal-800' : 'border border-transparent text-slate-700 hover:border-teal-300 hover:bg-teal-50/60';
+        const tip = n ? kinds+' — '+n+' change'+(n===1?'':'s')+' · click to see or change' : 'Click to change this line in the pro forma';
+        return '<td class="py-1 px-1 text-right whitespace-nowrap border-l border-teal-100">'+(n ? '<span class="mr-0.5 inline-block h-1.5 w-1.5 rounded-full bg-teal-500 align-middle" data-pfchanged="'+escapeHtml(key)+'"></span>' : '')+
+          '<button type="button" data-pfline="'+escapeHtml(key)+'" class="min-w-[6.5rem] whitespace-nowrap rounded px-1.5 py-0.5 text-right text-sm tabular-nums '+cls+'" title="'+escapeHtml(tip)+'">'+uwFmt(l.value)+'</button></td>'+
+          (opt.comm ? '<td class="py-1 pr-2 text-right text-[10px] text-slate-300">&mdash;</td>' : puCell(l.value));
+      };
       // The underwritten column is EDITABLE: type a total to pin that line; the NOI recomputes from it and the
       // edit is stored with who/when (an "edited" tag + reset). The $/unit columns are DERIVED, not editable.
       const ovMap = bench.lineOverrides || {};
@@ -4126,14 +4144,18 @@ tr.flagged:hover td{background:#fee2e2}
         const uwPerCell = isComm ? commDash : puCell(uwv);
         const ovRec = ovOn ? ovMap[ln.key] : null, ovWhen = (ovRec && ovRec.at) ? fmtWhenShort(ovRec.at) : "";
         return '<tr class="'+rowCls+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(ln.label)+(ovOn?' <span class="text-[9px] font-semibold text-brand-500 uppercase tracking-wide cursor-help" data-uwedited="'+ln.key+'" title="edited'+(ovWhen?' · '+escapeHtml(ovWhen):'')+'">edited</span>':'')+benchTag+commTag+'</td>'+   // 2.9.7 (#76) — hover shows when; who comes with sign-in (2.9.8)
-          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ ipPerCell + totCell + uwPerCell +'</tr>';
+          '<td class="py-1 px-2 text-right text-sm tabular-nums text-slate-600">'+uwFmt(ln.t12)+'</td>'+ ipPerCell + totCell + uwPerCell + pfCell(ln.key, { reserve: ln.section === "reserve", comm: isComm }) +'</tr>';
       };
+      // a line the pro forma added (the T12 has none)
+      const pfAddedRow = (l)=> '<tr class="border-t border-teal-100 bg-teal-50/40" data-pfadded="'+escapeHtml(l.key)+'"><td class="py-1 pr-3 text-sm text-slate-700">'+escapeHtml(l.label)+' <span class="text-[9px] font-semibold uppercase tracking-wide text-teal-600">added in the pro forma</span></td>'+
+        '<td class="py-1 px-2 text-right text-sm text-slate-300">&mdash;</td><td class="py-1 pr-2 text-right text-[11px] text-slate-300">&mdash;</td><td class="py-1 px-2 text-right text-sm text-slate-300">&mdash;</td><td class="py-1 pr-2 text-right text-[11px] text-slate-300">&mdash;</td>'+pfCell(l.key)+'</tr>';
       // pu: optional per-unit override { ip, uw } (values already per unit), or "dash" for no per-unit figure.
-      const sub = (label,ip,uw,strong,pu,id)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
+      const sub = (label,ip,uw,strong,pu,id,pfv)=>{ const c = strong?"font-bold text-slate-900":"font-semibold text-slate-700";
         const puC = (v, which) => pu === "dash" ? '<td class="py-1 pr-2 text-right text-[11px] text-slate-300">&mdash;</td>'
           : (pu && pu[which] !== undefined) ? '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+c+'">'+(pu[which]==null?'&mdash;':uwFmt(pu[which]))+'</td>' : puCell(v, c);
+        const pfC = !pfCols ? '' : '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums text-teal-800 border-l border-teal-100"'+(id?' id="'+id+'Pf"':'')+'>'+uwFmt(pfv)+'</td>'+ puC(pfv, "pf");
         return '<tr class="border-t-2 border-slate-200 bg-slate-50/70"'+(id?' id="'+id+'"':'')+'><td class="py-1 pr-3 text-sm '+c+'">'+label+'</td>'+
-          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puC(ip, "ip") +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puC(uw, "uw") +'</tr>'; };
+          '<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(ip)+'</td>'+ puC(ip, "ip") +'<td class="py-1 px-2 text-right text-sm '+c+' tabular-nums">'+uwFmt(uw)+'</td>'+ puC(uw, "uw") + pfC +'</tr>'; };
       // 2.9.7 (#77) — commercial income (ground-floor retail / restaurants) carries none of the shared expenses
       // and is never a residential $/unit: EGI $/unit shows apartments only, and the NOI splits into apartments
       // (carries all shared expenses, ÷ apartment units), commercial (its rent, ÷ commercial units) and total
@@ -4144,25 +4166,33 @@ tr.flagged:hover td{background:#fee2e2}
       const cUnits = hasCom ? propCommercialUnits(opFocusKey) : null;
       // 2.9.12 — the underwritten Commercial Rent is the rent roll's leases, lease by lease (a vacant unit at $0)
       const comRR = opRRCommercialSync(opFocusKey);
-      const comLeasesRow = comRR ? '<tr data-uwcomleases><td colspan="5" class="pb-1.5 pl-4 text-[10px] leading-snug text-violet-600">Underwritten lease by lease from the rent roll: '+
+      const comLeasesRow = comRR ? '<tr data-uwcomleases><td colspan="'+(pfCols ? 7 : 5)+'" class="pb-1.5 pl-4 text-[10px] leading-snug text-violet-600">Underwritten lease by lease from the rent roll: '+
         comRR.leases.map(l => 'unit '+escapeHtml(String(l.unit || "?"))+(l.tenant ? ' &middot; '+escapeHtml(l.tenant) : '')+(l.sqft ? ' &middot; '+Math.round(l.sqft).toLocaleString()+' sf' : '')+' &middot; '+(l.occupied ? fmtMoney(l.monthly)+'/mo' : '$0 (vacant)')).join('; ')+
         ' &rarr; <strong>'+fmtMoney(comRR.annual)+'/yr</strong>. The in-place column is the statement&rsquo;s own figure.</td></tr>' : '';
       const perA = v => (unitsOk && v != null) ? v / uUnits : null, perC = v => (cUnits && v != null) ? v / cUnits : null;
+      // the pro forma's figures for the subtotals (the version on screen)
+      const pfSum = (sec)=> pfCols ? pfV.lines.filter(l => l.section === sec).reduce((a, l) => a + l.value, 0) : null;
+      const pfCom = pfCols && pfV.byKey.COM ? pfV.byKey.COM.value : 0;
+      const pfEgi = pfCols ? pfV.egi : null, pfOpex = pfCols ? pfV.opex : null, pfNoi = pfCols ? pfV.noi : null;
+      const pfAdd = {}; if(pfCols) pfV.lines.forEach(l => { if(l.added) (pfAdd[l.section] || (pfAdd[l.section] = [])).push(l); });
+      const pfFlush = (sec)=>{ const list = pfAdd[sec]; if(!list) return ""; delete pfAdd[sec]; return list.map(pfAddedRow).join(""); };
       let rows = "", prev = null;
       b.worksheet.lines.forEach(ln => {
-        if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri);
-        if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true, hasCom ? { ip: perA(r.inPlace.egi - comIP), uw: perA(r.underwritten.egi - comUW) } : null);
-        if(prev==="expense" && ln.section!=="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
+        if(prev && prev !== ln.section){ rows += pfFlush(prev); if(ln.section === "expense"){ rows += pfFlush("rental") + pfFlush("other"); } }
+        if(prev==="rental"  && ln.section!=="rental")  rows += sub("Effective Rental Income", r.inPlace.eri, r.underwritten.eri, false, null, null, pfSum("rental"));
+        if(prev==="other"   && ln.section!=="other")   rows += sub("Effective Gross Income", r.inPlace.egi, r.underwritten.egi, true, hasCom ? { ip: perA(r.inPlace.egi - comIP), uw: perA(r.underwritten.egi - comUW), pf: perA(pfEgi - pfCom) } : null, null, pfEgi);
+        if(prev==="expense" && ln.section!=="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex, false, null, null, pfOpex);
         rows += line(ln); prev = ln.section;
         if(ln.key === "COM" && comRR && !(ovMap.COM != null)) rows += comLeasesRow;   // 2.9.12 — the leases the underwritten figure is built from
       });
-      if(prev==="expense") rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex);
+      if(prev==="expense"){ rows += pfFlush("expense"); rows += sub("Total Operating Expenses", r.inPlace.opex, r.underwritten.opex, false, null, null, pfOpex); }
+      rows += pfFlush("rental") + pfFlush("other") + pfFlush("expense");
       if(hasCom){
-        rows += sub('NOI — apartments <span class="text-[10px] font-normal text-slate-400">carries shared expenses</span>', r.inPlace.noi - comIP, r.underwritten.noi - comUW, false, { ip: perA(r.inPlace.noi - comIP), uw: perA(r.underwritten.noi - comUW) }, "uwNoiApts");
-        rows += sub('NOI — commercial <span class="text-[10px] font-normal text-slate-400">rent, no shared expenses'+(cUnits?' · '+cUnits+' unit'+(cUnits===1?'':'s'):' · commercial units not set')+'</span>', comIP, comUW, false, { ip: perC(comIP), uw: perC(comUW) }, "uwNoiComm");
-        rows += sub("NOI — total", r.inPlace.noi, r.underwritten.noi, true, "dash", "uwNoiTotal");
+        rows += sub('NOI — apartments <span class="text-[10px] font-normal text-slate-400">carries shared expenses</span>', r.inPlace.noi - comIP, r.underwritten.noi - comUW, false, { ip: perA(r.inPlace.noi - comIP), uw: perA(r.underwritten.noi - comUW), pf: perA(pfNoi - pfCom) }, "uwNoiApts", pfCols ? pfNoi - pfCom : null);
+        rows += sub('NOI — commercial <span class="text-[10px] font-normal text-slate-400">rent, no shared expenses'+(cUnits?' · '+cUnits+' unit'+(cUnits===1?'':'s'):' · commercial units not set')+'</span>', comIP, comUW, false, { ip: perC(comIP), uw: perC(comUW), pf: perC(pfCom) }, "uwNoiComm", pfCols ? pfCom : null);
+        rows += sub("NOI — total", r.inPlace.noi, r.underwritten.noi, true, "dash", "uwNoiTotal", pfNoi);
       } else {
-        rows += sub("Net Operating Income", r.inPlace.noi, r.underwritten.noi, true);
+        rows += sub("Net Operating Income", r.inPlace.noi, r.underwritten.noi, true, null, "uwNoiRow", pfNoi);
       }
       const review = b.review.length ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">'+
         '<span class="font-bold uppercase tracking-wide">Review &mdash; '+b.review.length+' low-confidence line'+(b.review.length>1?'s':'')+'</span>'+
@@ -4211,7 +4241,10 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">'+
           '<div class="mb-2 text-[11px] text-slate-400">'+(unitsOk ? 'Per unit on '+uUnits+' residential units' : '<span class="font-semibold text-amber-600">Units missing</span> — set the Units field above to see $/unit <button type="button" data-uwopenprofile class="font-semibold text-brand-700 underline">or set it in the property profile</button>')+'</div>'+   // 2.9.7 (#75)
-          '<table class="w-full min-w-[560px] border-collapse"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th><th class="pb-2 px-2 text-right">Underwritten</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          pfBarHtml(pfR)+
+          '<table class="w-full '+(pfCols ? 'min-w-[780px]' : 'min-w-[560px]')+' border-collapse" id="uwSetupTable"><thead><tr class="text-left text-[11px] uppercase tracking-wide text-slate-500"><th class="pb-2">Line (auto-classified from your T12)</th><th class="pb-2 px-2 text-right">In-Place (T12)</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th><th class="pb-2 px-2 text-right">Underwritten</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>'+
+            (pfCols ? '<th class="pb-2 px-2 text-right text-teal-700 border-l border-teal-100" data-pfhead>Pro forma &middot; '+PF_COL[pfShow]+'</th><th class="pb-2 pr-2 text-right text-[10px] normal-case text-slate-400">$/unit</th>' : '')+'</tr></thead><tbody>'+rows+'</tbody></table>'+
+          pfReconHtml(pfR)+
           '<div class="mt-3 border-t border-slate-100 pt-3">'+
             '<div class="mb-3 flex flex-wrap items-center justify-between gap-2">'+
               '<div class="text-[11px] text-slate-400">The <span class="font-semibold text-slate-500">Underwritten</span> column is editable — type a line to pin it; its $/unit is that column &divide; units.</div>'+
@@ -4238,6 +4271,482 @@ tr.flagged:hover td{background:#fee2e2}
           '</div></div>'+
         '</div>';
     }
+    // ===== Pro forma (next stage, F1 — a DRAFT: not shipped) ===================================================
+    // The NOI a lender is asked to accept: the T12 with changes, each with a kind and a story, adding up from the T12 NOI
+    // to the pro forma NOI to the dollar. proforma.js works it out (pure); here: its input from the Setup this tab just
+    // built, the column with its Safe / Aggressive switch, the "Change this line" panel, the revenue credit, the
+    // reconciliation and the lender file. Kept in the property's assumptions.json (bench.proForma), every change with
+    // its story in the property's history.
+    let pfShow = "base";     // the version the column shows: "base" (Safe) or "aggressive"
+    let pfLast = null;       // { input, res } of the last build
+    let pfDraft = null;      // the change being made in the "Change this line" panel
+    let pfRev = null;        // the revenue credit being set in its panel
+    let pfPanel = null;      // which panel is open
+    const PF_COL = { base: "Safe", aggressive: "Aggressive", both: "Safe and Aggressive" };
+    try{ window.LDS_pfLast = () => pfLast; window.LDS_pfLenderBook = (both) => { const R = pfLast || pfCompute(); return R ? pfLenderBook(R, !!both) : null; }; }catch(e){}   // diagnostics + tests
+    function pfStarted(b){ return !!(b && b.proForma && b.proForma.started); }
+    function pfAggrOwn(pf){ return !!(pf && ((pf.changes || []).some(c => c && c.column === "aggressive") || (pf.revenue && pf.revenue.aggressive))); }
+    function pfNewId(){ return "pf" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+    function pfCatalog(){
+      const out = {}; try{ const SB = SetupBuilder;
+        (SB.RENTAL || []).forEach(k => { out[k] = { label: SB.LABEL[k] || k, section: "rental" }; });
+        (SB.OTHER || []).forEach(k => { out[k] = { label: SB.LABEL[k] || k, section: "other" }; });
+        (SB.EXPENSE || []).forEach(k => { out[k] = { label: SB.LABEL[k] || k, section: "expense" }; }); }catch(e){}
+      return out;
+    }
+    // The engine's input from a Setup build (uwBuildSetupFromGrid's result): the T12 lines, the accounts under each line on
+    // the same basis as the line (the T12 rule), each line's month-by-month total, the units and the saved pro forma.
+    function pfInputFrom(full, bench, units){
+      if(!full || !full.setup || !full.setup.worksheet || !window.ProForma || !window.SetupBuilder) return null;
+      const ruled = !!(full.annualized || full.trimmed), lines = full.setup.worksheet.lines || [];
+      const rows = (full.parsedM && full.parsedM.rows) || [];
+      const accounts = ProForma.accountsFrom(rows, r => SetupBuilder.accountLine(r, !ruled), ruled ? (full.lu || null) : null);
+      // what a line holds beyond its accounts (the gap a section needed to foot to the statement's printed total) is
+      // shown as its own row, so the accounts always add up to the line
+      lines.forEach(ln => { if(!ln || ln.section === "reserve") return; let s = 0; accounts.forEach(a => { if(a.line === ln.key) s += a.amount; });
+        const gap = Math.round(((ln.t12 || 0) - s) * 100) / 100;
+        if(Math.abs(gap) >= 0.01) accounts.push({ id: "gap-" + ln.key, name: "Difference to the statement’s printed total", line: ln.key, amount: gap, monthly: null, sheet: null, row: null, gap: true }); });
+      const monthly = {};
+      accounts.forEach(a => { if(!a.monthly) return; const m = monthly[a.line] || (monthly[a.line] = {});
+        Object.keys(a.monthly).forEach(ym => { const v = a.monthly[ym]; if(!/^\d{4}-\d{2}$/.test(ym) || typeof v !== "number" || !isFinite(v)) return; m[ym] = Math.round(((m[ym] || 0) + v) * 100) / 100; }); });
+      return { lines: lines, catalog: pfCatalog(), accounts: accounts, monthly: monthly, months: (full.months || []).slice().sort(), units: units, pf: (bench && bench.proForma) || {} };
+    }
+    function pfReady(){ return !!(window.ProForma && uwLastFull && uwLastBuilt && uwLastFull.setup === uwLastBuilt && (uwState.input.basis || "total") === "total"); }
+    function pfCompute(){
+      pfLast = null;
+      const b = uwState.input.bench; if(!pfReady() || !pfStarted(b)) return null;
+      const input = pfInputFrom(uwLastFull, b, uwNum(uwState.input.units)); if(!input) return null;
+      pfLast = { input: input, res: ProForma.compute(input) };
+      return pfLast;
+    }
+    // The two NOIs for General Data (the refinance, the roll-up, the assistant) — from the same build the NOIs come from.
+    function pfNoiOf(full, bench, units){
+      try{ if(!pfStarted(bench) || !window.ProForma) return null;
+        const input = pfInputFrom(full, bench, units); if(!input) return null;
+        const res = ProForma.compute(input), pf = bench.proForma, ch = pf.changes || [];
+        let last = null; ch.concat([pf.revenue && pf.revenue.base, pf.revenue && pf.revenue.aggressive]).forEach(c => { if(c && c.at && (!last || c.at > last.at)) last = c; });
+        return { base: res.base.noi, aggressive: res.aggressive.noi, baseOk: res.base.reconciles, aggressiveOk: res.aggressive.reconciles, aggressiveOwn: pfAggrOwn(pf),
+                 changes: res.base.steps.length, changesAggressive: res.aggressive.steps.length, problems: res.base.problems.length + res.aggressive.problems.length,
+                 lastBy: last ? (last.by || null) : null, lastAt: last ? last.at : null };
+      }catch(e){ return null; }
+    }
+    // The pro forma for the assistant's read_property: both versions, how each adds up, and the lines it changes.
+    function pfReadOf(ctx){
+      try{ if(!pfStarted(ctx.bench)) return null; const input = pfInputFrom(ctx, ctx.bench, ctx.units); if(!input) return null;
+        const res = ProForma.compute(input), r0 = (x) => Math.round(x * 100) / 100;
+        const ver = (v) => ({ noi: r0(res[v].noi), reconcilesToTheDollar: res[v].reconciles, t12Noi: r0(res[v].t12Noi),
+          reconciliation: res[v].groups.map(g => ({ kind: g.label, total: r0(g.total), items: g.items.map(s => ({ line: s.label, change: s.what || undefined, story: s.story, effect: r0(s.effect) })) })),
+          notCounted: res[v].problems.length ? res[v].problems.map(p => ({ change: p.id, why: p.reason })) : undefined });
+        return { note: "Draft feature (next stage). Starts from the T12 NOI; before reserves.", safe: ver("base"), aggressive: pfAggrOwn(ctx.bench.proForma) ? ver("aggressive") : "the same as Safe (no changes of its own)",
+          changedLines: res.base.lines.concat(res.aggressive.lines.filter(l => !res.base.byKey[l.key])).filter(l => l.changes.length || (res.aggressive.byKey[l.key] && res.aggressive.byKey[l.key].changes.length))
+            .map(l => ({ line: l.label, t12: r0(l.t12), safe: res.base.byKey[l.key] ? r0(res.base.byKey[l.key].value) : undefined, aggressive: res.aggressive.byKey[l.key] ? r0(res.aggressive.byKey[l.key].value) : undefined })) };
+      }catch(e){ return null; }
+    }
+    function pfKinds(kinds){ const seen = {}; return (kinds || []).filter(k => !seen[k] && (seen[k] = 1)).map(k => (ProForma.KIND[k] || {}).label || k).join(", "); }
+    function pfSigned(v){ return (v == null || !isFinite(v)) ? "&mdash;" : (v >= 0 ? "+" : "&minus;") + fmtMoney(Math.abs(v)); }
+    function pfWho(c){ return c ? [c.by || "", c.at ? fmtWhenShort(c.at) : ""].filter(Boolean).join(" · ") : ""; }
+
+    // ---- the bar over the table: start, the switch, the two NOIs, the tools ------------------------------------------
+    function pfBarHtml(R){
+      if(!window.ProForma) return "";
+      const can = cloudCanWrite(), b = uwState.input.bench;
+      if((uwState.input.basis || "total") !== "total") return pfStarted(b) ? '<div class="mb-3 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2 text-[12px] text-teal-900" data-pfbar>The pro forma works on the 12-month basis (the T12 rule). Set <b>Period basis</b> back to 12-mo Total to see it.</div>' : "";
+      if(!pfStarted(b)) return '<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-teal-300 bg-teal-50/40 px-4 py-3" data-pfbar>'+
+        '<div class="min-w-0 text-[12px] leading-snug text-teal-900"><span class="font-bold">Pro forma</span> &mdash; the NOI you show the lender: the T12 with your changes, each with its reason, adding up to the dollar. <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">draft</span></div>'+
+        '<button type="button" data-pfstart'+(can ? '' : ' disabled title="View only"')+' class="shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-teal-500 disabled:opacity-50">Start a pro forma</button></div>';
+      if(!R) return "";
+      const res = R.res, other = pfShow === "aggressive" ? "base" : "aggressive";
+      const sw = (v) => '<button type="button" data-pfshow="'+v+'" class="rounded-md px-3 py-1 text-xs font-semibold '+(pfShow === v ? 'bg-teal-600 text-white shadow-sm' : 'text-teal-800 hover:bg-teal-100')+'">'+PF_COL[v]+'</button>';
+      const tool = (attr, label, dis) => '<button type="button" '+attr+(dis ? ' disabled title="View only"' : '')+' class="rounded-lg border border-teal-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50">'+label+'</button>';
+      const probs = [];
+      ["base", "aggressive"].forEach(v => res[v].problems.forEach(p => { if(probs.some(x => x.id === p.id && x.reason === p.reason)) return; probs.push({ id: p.id, reason: p.reason, v: v, stale: p.stale, soft: p.soft }); }));
+      const pf = b.proForma, chOf = (id) => (pf.changes || []).find(c => c.id === id);
+      const probHtml = probs.length ? '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900" data-pfproblems><b>'+probs.length+' change'+(probs.length === 1 ? '' : 's')+' not counted:</b> '+
+        probs.map(p => { const c = chOf(p.id); return '<span class="block">&bull; '+escapeHtml(c ? (((R.input.catalog[c.line] || {}).label || c.line) + ' — ' + ProForma.describe(c)) : (p.id === "revenue" ? "Revenue credit" : p.id))+': '+escapeHtml(p.reason)+(c ? ' <button type="button" data-pfline="'+escapeHtml(c.line)+'" class="font-semibold text-teal-800 underline">fix or remove</button>' : '')+'</span>'; }).join('')+'</div>' : '';
+      const noiOf = (v) => '<span class="tabular-nums">'+(res[v].reconciles ? uwFmt(res[v].noi) : '<span class="text-rose-700">doesn’t reconcile</span>')+'</span>';
+      return '<div class="mb-3 rounded-xl border border-teal-200 bg-teal-50/50 px-3 py-2.5" data-pfbar>'+
+        '<div class="flex flex-wrap items-center justify-between gap-2">'+
+          '<div class="flex flex-wrap items-center gap-2"><span class="text-[11px] font-bold uppercase tracking-wider text-teal-800">Pro forma</span> <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">draft</span>'+
+            '<span class="inline-flex rounded-lg border border-teal-200 bg-white p-0.5" data-pfswitch>'+sw("base")+sw("aggressive")+'</span>'+
+            '<span class="text-[11px] text-teal-900" data-pfnois>'+PF_COL[pfShow]+' NOI <b>'+noiOf(pfShow)+'</b> &middot; '+PF_COL[other]+' '+noiOf(other)+(pfAggrOwn(pf) ? '' : ' <span class="text-teal-700/70">(no changes of its own yet)</span>')+'</span></div>'+
+          '<div class="flex flex-wrap items-center gap-1.5">'+tool('data-pfrevenue', 'Revenue credit…', !can)+tool('data-pfadd', '+ Add a line', !can)+tool('data-pflender', 'For the lender…')+tool('data-pfhistory', 'History')+tool('data-pfclear', 'Remove', !can)+'</div>'+
+        '</div>'+
+        '<div class="mt-1 text-[10px] text-teal-800/80">Click any figure in the Pro forma column to change that line. It starts from the T12 column; reserves are not part of it (the T12 NOI has none).</div>'+probHtml+'</div>';
+    }
+
+    // ---- the reconciliation under the table: T12 NOI + each change = the pro forma NOI, for both versions ---------------
+    function pfReconHtml(R){
+      if(!R) return "";
+      const g = gdFullCache[opFocusKey], method = (g && g.noi) ? noiMethodLabel(g.noi) : "";
+      const block = (v) => { const ver = R.res[v], on = (v === pfShow);
+        const items = ver.groups.map(gr => '<div class="border-t border-slate-100 py-1" data-pfgroup="'+gr.kind+'"><div class="flex items-baseline justify-between gap-2 text-[12px]"><span class="font-semibold text-slate-700">+ '+escapeHtml(gr.label)+(gr.items.length > 1 ? ' <span class="font-normal text-slate-400">('+gr.items.length+' items)</span>' : '')+'</span><span class="font-semibold tabular-nums '+(gr.total >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(gr.total)+'</span></div>'+
+          gr.items.map(s => '<div class="flex items-baseline justify-between gap-2 pl-3 text-[11px]"><span class="min-w-0 text-slate-500"><span class="text-slate-700">'+escapeHtml(s.label)+'</span>'+(s.what ? ' — '+escapeHtml(s.what) : '')+(s.story ? ' <span class="italic text-slate-500">“'+escapeHtml(s.story)+'”</span>' : '')+'</span><span class="shrink-0 tabular-nums text-slate-600">'+pfSigned(s.effect)+'</span></div>').join('')+'</div>').join('');
+        return '<div class="rounded-xl border '+(on ? 'border-teal-300 bg-white shadow-sm' : 'border-slate-200 bg-slate-50/60')+' p-3" data-pfrecon="'+v+'">'+
+          '<div class="mb-1 flex items-center justify-between gap-2"><span class="text-[11px] font-bold uppercase tracking-wider '+(on ? 'text-teal-800' : 'text-slate-500')+'">'+PF_COL[v]+' &mdash; how it adds up</span>'+
+            (ver.reconciles ? '<span class="text-[10px] font-semibold text-emerald-700" data-pfok>&#10003; reconciles to the dollar</span>' : '<span class="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-pfbad>doesn’t reconcile — '+fmtMoney(Math.abs(ver.gap))+'</span>')+'</div>'+
+          '<div class="flex items-baseline justify-between gap-2 text-[12px]"><span class="text-slate-700">T12 NOI'+(method ? ' <span class="text-slate-400">('+escapeHtml(method)+')</span>' : '')+'</span><span class="tabular-nums text-slate-800">'+uwFmt(ver.t12Noi)+'</span></div>'+
+          (items || '<div class="border-t border-slate-100 py-1 text-[11px] text-slate-400">No changes yet.</div>')+
+          '<div class="flex items-baseline justify-between gap-2 border-t-2 border-slate-200 pt-1 text-[13px] font-bold"><span class="text-slate-900">= Pro forma NOI</span><span class="tabular-nums text-teal-800">'+uwFmt(ver.noi)+'</span></div></div>'; };
+      return '<div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2" data-pfrecons>'+block("base")+block("aggressive")+'</div>';
+    }
+
+    // ---- the panel (a window over the tab) ----------------------------------------------------------------------------
+    function pfModalEl(){
+      let m = el("pfModal");
+      if(!m){
+        m = document.createElement("div"); m.id = "pfModal";
+        m.className = "fixed inset-0 z-[80] hidden items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-8";
+        m.innerHTML = '<div id="pfBox" class="w-full max-w-3xl rounded-2xl bg-white shadow-2xl"><div class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3"><div><div class="text-[10px] font-bold uppercase tracking-wider text-teal-700">Pro forma <span class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-800">draft</span></div><h3 id="pfTitle" class="text-base font-bold text-slate-900"></h3></div>'+
+          '<button type="button" data-pfclose class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">&times;</button></div><div id="pfBody" class="px-5 py-4"></div></div>';
+        document.body.appendChild(m);
+        m.addEventListener("click", (e) => { if(e.target === m) pfClose(); });
+      }
+      return m;
+    }
+    function pfOpen(title, html, wide){ const m = pfModalEl(); el("pfBox").className = "w-full " + (wide ? "max-w-6xl" : "max-w-3xl") + " rounded-2xl bg-white shadow-2xl"; el("pfTitle").textContent = title; el("pfBody").innerHTML = html; m.classList.remove("hidden"); m.classList.add("flex"); }
+    function pfClose(){ const m = el("pfModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } pfDraft = null; pfRev = null; pfPanel = null; }
+    function pfLineOf(R, key){
+      const cat = R.input.catalog[key] || null, lb = R.res.base.byKey[key], la = R.res.aggressive.byKey[key];
+      if(lb || la) return lb || la;
+      return cat && cat.section ? { key: key, label: cat.label, section: cat.section, t12: 0, value: 0, added: true, changes: [], kinds: [], fresh: true } : null;
+    }
+    function pfHowsFor(R, line){
+      const accts = R.input.accounts.filter(a => a.line === line.key && !a.gap), isExp = line.section === "expense", isDed = !!ProForma.DEDUCTIONS[line.key], fresh = !!(line.added || line.fresh) && !line.t12;
+      const out = [["total", "New total"]];
+      if(accts.length){ out.push(["takeOut", "Take out accounts"]); out.push(["accountTotal", "New amount for one account"]); }
+      if(!fresh) out.push(["spread", "Spread over years"]);
+      if(isExp || isDed) out.push(["pctRevenue", "% of revenue"]);
+      out.push(["perUnit", "Per unit"]);
+      return out;
+    }
+    // two changes fight over the same line or account when they count in the same version (an Aggressive one beats a Safe or "both" one)
+    function pfClash(a, b){ const x = a.column || "both", y = b.column || "both"; return x === y || (x === "both" && y === "base") || (x === "base" && y === "both"); }
+    function pfWhole(c){ return c.how === "total" || c.how === "perUnit" || c.how === "pctRevenue" || (c.how === "spread" && !(c.accounts && c.accounts.length)); }
+    function pfDraftChange(){
+      const d = pfDraft, R = pfLast; if(!d || !d.how || !R) return null;
+      const accts = R.input.accounts.filter(a => a.line === d.line && !a.gap);
+      const picked = Object.keys(d.accounts || {}).filter(id => d.accounts[id]).map(id => accts.find(a => a.id === id)).filter(Boolean).map(a => { const o = { name: a.name }; if(a.sheet) o.sheet = a.sheet; if(a.row != null) o.row = a.row; return o; });
+      const c = { id: d.id || pfNewId(), column: d.column || "both", line: d.line, how: d.how, kind: d.kind || "", story: String(d.story || "").trim(), by: opOperator(), at: new Date().toISOString(), from: d.from || "typed" };
+      if(d.how === "total" || d.how === "accountTotal") c.value = uwNum(d.value);
+      if(d.how === "pctRevenue"){ const p = uwNum(d.pct); c.pct = (p == null) ? null : Math.round(p * 1e6) / 1e8; }
+      if(d.how === "spread") c.years = uwNum(d.years);
+      if(d.how === "perUnit") c.perUnit = uwNum(d.perUnit);
+      if(d.how === "takeOut" || d.how === "spread" || d.how === "accountTotal") c.accounts = picked;
+      return c;
+    }
+    // Why the change in the panel can't be saved yet (null = it can), and what it does to each version.
+    function pfDraftCheck(){
+      const R = pfLast, c = pfDraftChange(); if(!R || !c) return { why: "pick how the line changes" };
+      const line = pfLineOf(R, c.line), units = uwNum(uwState.input.units);
+      let why = ProForma.problemOf(c, line, units);
+      const others = (uwState.input.bench.proForma.changes || []).filter(x => x && x.id !== c.id && x.line === c.line);
+      if(!why && pfWhole(c)){ const hit = others.find(x => pfWhole(x) && pfClash(x, c)); if(hit) why = "this line already has “" + ProForma.describe(hit) + "” in " + PF_COL[hit.column || "both"] + " — remove or edit that one first"; }
+      if(!why && !pfWhole(c)){ const names = (c.accounts || []).map(a => a.name.toLowerCase()); const hit = others.find(x => !pfWhole(x) && pfClash(x, c) && (x.accounts || []).some(a => names.indexOf(String(a.name).toLowerCase()) >= 0)); if(hit) why = "an account you ticked is already changed by “" + ProForma.describe(hit) + "” in " + PF_COL[hit.column || "both"]; }
+      const pf = JSON.parse(JSON.stringify(uwState.input.bench.proForma)); pf.changes = (pf.changes || []).filter(x => x.id !== c.id).concat([c]);
+      const after = ProForma.compute(Object.assign({}, R.input, { pf: pf }));
+      return { why: why, c: c, after: after };
+    }
+    function pfStrip(mo, months){
+      if(!mo) return "";
+      const use = months.slice(-12), vals = use.map(m => (typeof mo[m] === "number" ? mo[m] : 0)), mx = Math.max.apply(null, vals.map(Math.abs).concat([1]));
+      return '<span class="inline-flex h-4 items-end gap-px align-middle" title="'+escapeHtml(use.map((m, i) => ymShort(m) + ": " + fmtMoney(vals[i])).join("\n"))+'">'+vals.map(v => '<span class="inline-block w-1 rounded-sm '+(v < 0 ? 'bg-rose-300' : 'bg-teal-400')+'" style="height:'+Math.max(1, Math.round(Math.abs(v) / mx * 16))+'px"></span>').join('')+'</span>';
+    }
+    function pfOpenLine(key){
+      const R = pfLast || pfCompute(); if(!R) return;
+      const line = pfLineOf(R, key); if(!line) return;
+      if(!pfDraft || pfDraft.line !== key) pfDraft = { line: key, how: null, value: "", pct: "", years: "", perUnit: "", accounts: {}, kind: "", story: "", column: pfShow === "aggressive" ? "aggressive" : "both" };
+      pfPanel = { type: "line", key: key };
+      pfOpen(line.label, pfLineHtml(R, line));
+      pfUpdatePreview();
+    }
+    function pfLineHtml(R, line){
+      const can = cloudCanWrite(), key = line.key, units = uwNum(uwState.input.units), pu = (v) => (units > 0 && v != null) ? fmtMoney(v / units) : "&mdash;";
+      const uw = uwLastBuilt && uwLastBuilt.result.underwritten.lines ? uwLastBuilt.result.underwritten.lines[key] : null;
+      const lb = R.res.base.byKey[key], la = R.res.aggressive.byKey[key], d = pfDraft;
+      const fig = (label, v, cls) => '<div class="rounded-lg border border-slate-200 px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div><div class="text-sm font-bold tabular-nums '+(cls || 'text-slate-800')+'">'+(v == null ? "&mdash;" : uwFmt(v))+'</div><div class="text-[10px] tabular-nums text-slate-400">'+pu(v)+' / unit</div></div>';
+      let h = '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">'+fig("T12", line.fresh ? null : line.t12)+fig("Underwritten", uw)+fig("Pro forma · Safe", lb ? lb.value : null, "text-teal-800")+fig("Aggressive", la ? la.value : null, "text-teal-800")+'</div>';
+      if(line.fresh || line.added) h += '<p class="mt-2 text-[11px] text-slate-500">The T12 has no '+escapeHtml(line.label)+' line &mdash; a change here adds it to the pro forma.</p>';
+      // the changes already on this line
+      const pf = uwState.input.bench.proForma, mine = (pf.changes || []).filter(c => c && c.line === key);
+      if(mine.length){
+        const eff = (id) => { const s = R.res.base.steps.find(x => x.id === id) || R.res.aggressive.steps.find(x => x.id === id); return s ? s.effect : null; };
+        const probOf = (id) => { const p = R.res.base.problems.find(x => x.id === id) || R.res.aggressive.problems.find(x => x.id === id); return p ? p.reason : ""; };
+        h += '<div class="mt-4"><div class="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Changes on this line</div>'+mine.map(c => { const pr = probOf(c.id);
+          return '<div class="flex items-start justify-between gap-3 border-t border-slate-100 py-2" data-pfchange="'+escapeHtml(c.id)+'"><div class="min-w-0 text-[12px]"><span class="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800">'+PF_COL[c.column || "both"]+'</span> <b class="text-slate-800">'+escapeHtml(ProForma.describe(c))+'</b> <span class="text-slate-500">&middot; '+escapeHtml((ProForma.KIND[c.kind] || {}).label || c.kind)+'</span>'+
+            '<div class="italic text-slate-600">“'+escapeHtml(c.story || "")+'”</div><div class="text-[10px] text-slate-400">'+escapeHtml(pfWho(c))+(c.from === "assistant" ? ' &middot; proposed by Claude' : '')+'</div>'+(pr ? '<div class="text-[11px] font-semibold text-amber-700">Not counted: '+escapeHtml(pr)+'</div>' : '')+'</div>'+
+            '<div class="shrink-0 text-right"><div class="text-[12px] font-semibold tabular-nums '+((eff(c.id) || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(eff(c.id))+' NOI</div>'+
+            (can ? '<button type="button" data-pfedit="'+escapeHtml(c.id)+'" class="mt-1 text-[11px] font-semibold text-teal-800 underline">Edit</button> <button type="button" data-pfremove="'+escapeHtml(c.id)+'" class="mt-1 text-[11px] font-semibold text-rose-600 underline">Remove</button>' : '')+'</div></div>'; }).join('')+'</div>';
+      }
+      // the accounts under the line
+      const accts = R.input.accounts.filter(a => a.line === key);
+      const tickable = d && (d.how === "takeOut" || d.how === "spread" || d.how === "accountTotal");
+      if(accts.length){
+        h += '<div class="mt-4"><div class="mb-1 flex items-baseline justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Accounts under this line ('+accts.filter(a => !a.gap).length+')</span><span class="text-[10px] text-slate-400">'+(uwLastFull && uwLastFull.annualized ? 'each at its last 3 months × 4 (the T12 rule)' : uwLastFull && uwLastFull.trimmed ? 'each over the last 12 months (the T12 rule)' : 'each at its 12-month total')+'</span></div>'+
+          '<div class="max-h-64 overflow-y-auto rounded-lg border border-slate-200"><table class="w-full text-[12px]"><tbody>'+accts.map(a => {
+            const on = !!(d && d.accounts && d.accounts[a.id]);
+            return '<tr class="border-t border-slate-100 first:border-0 '+(on ? 'bg-teal-50' : '')+'" data-pfacctrow="'+escapeHtml(a.id)+'"><td class="w-6 py-1 pl-2">'+(tickable && can && !a.gap ? '<input type="checkbox" data-pfacct="'+escapeHtml(a.id)+'"'+(on ? ' checked' : '')+' class="h-3.5 w-3.5 accent-teal-600">' : '')+'</td>'+
+              '<td class="py-1 pr-2 '+(a.gap ? 'italic text-slate-400' : 'text-slate-700')+'">'+escapeHtml(a.name)+(a.row != null ? ' <span class="text-[10px] text-slate-400">row '+(a.row + 1)+(a.sheet ? ' · '+escapeHtml(a.sheet) : '')+'</span>' : '')+'</td>'+
+              '<td class="py-1 pr-2">'+pfStrip(a.monthly, R.input.months)+'</td><td class="py-1 pr-2 text-right tabular-nums text-slate-700">'+fmtMoney(a.amount)+'</td></tr>'; }).join('')+'</tbody></table></div></div>';
+      }
+      if(!can) return h + '<p class="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-500">View only &mdash; you can see this property’s pro forma but not change it.</p>';
+      // the form
+      const hows = pfHowsFor(R, line);
+      h += '<div class="mt-4 rounded-xl border border-teal-200 bg-teal-50/30 p-3" data-pfform><div class="mb-2 text-[11px] font-bold uppercase tracking-wider text-teal-800">'+(d && d.id ? 'Edit the change' : 'Add a change')+'</div>'+
+        '<div class="text-[11px] font-semibold text-slate-600">How</div><div class="mt-1 flex flex-wrap gap-1.5">'+hows.map(x => '<button type="button" data-pfhow="'+x[0]+'" class="rounded-full border px-2.5 py-1 text-[11px] font-semibold '+(d && d.how === x[0] ? 'border-teal-600 bg-teal-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-teal-400')+'">'+x[1]+'</button>').join('')+'</div>';
+      if(d && d.how){
+        const inp = (k, ph, pre, suf) => '<span class="inline-flex items-center gap-1">'+(pre ? '<span class="text-[12px] text-slate-400">'+pre+'</span>' : '')+'<input type="text" inputmode="decimal" data-pfin="'+k+'" value="'+escapeHtml(String(d[k] == null ? "" : d[k]))+'" placeholder="'+ph+'" class="w-32 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums">'+(suf ? '<span class="text-[12px] text-slate-500">'+suf+'</span>' : '')+'</span>';
+        let f = "";
+        if(d.how === "total") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">New total for the year '+inp("value", "e.g. 60,000", "$")+'</label>';
+        if(d.how === "takeOut") f = '<p class="text-[12px] text-slate-600">Tick the accounts above to take out of this line.</p>';
+        if(d.how === "accountTotal") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Tick one account above; its new amount for the year '+inp("value", "e.g. 12,000", "$")+'</label>';
+        if(d.how === "spread") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Paid every '+inp("years", "3", "", "years")+'<span class="text-[11px] text-slate-400">— counts 1/N a year. Tick accounts above, or none for the whole line.</span></label>';
+        if(d.how === "pctRevenue") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("pct", "e.g. 1", "", "%")+'<span class="text-[11px] text-slate-400">'+(line.section === "expense" ? 'of the version’s own effective gross income — it moves when revenue moves' : 'of gross potential rent (a deduction)')+'</span></label>';
+        if(d.how === "perUnit") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("perUnit", "e.g. 275", "$", "per unit a year")+'<span class="text-[11px] text-slate-400">&times; '+(units > 0 ? units + ' units' : '<b class="text-amber-700">units missing</b>')+'</span></label>';
+        h += '<div class="mt-3">'+f+'</div>'+
+          '<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-[11px] font-semibold text-slate-600">Kind <span class="text-rose-500">*</span><select data-pfin="kind" class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">Pick one…</option>'+
+            ProForma.KINDS.filter(k => k.id !== "revenue").map(k => '<option value="'+k.id+'"'+(d.kind === k.id ? ' selected' : '')+'>'+escapeHtml(k.label)+'</option>').join('')+'</select>'+
+            (ProForma.KIND[d.kind] ? '<span class="mt-0.5 block text-[10px] font-normal text-slate-400" data-pfkindhint>'+escapeHtml(ProForma.KIND[d.kind].hint)+'</span>' : '')+'</label>'+
+          '<div class="text-[11px] font-semibold text-slate-600">Apply to<div class="mt-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+["base", "aggressive", "both"].map(v => '<button type="button" data-pfcol="'+v+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(d.column === v ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+(v === "both" ? "Both" : PF_COL[v])+'</button>').join('')+'</div></div></div>'+
+          '<label class="mt-3 block text-[11px] font-semibold text-slate-600">Story &mdash; the reason the lender reads <span class="text-rose-500">*</span>'+
+            '<textarea data-pfin="story" rows="2" maxlength="600" placeholder="e.g. Snow removal ran triple a normal winter; normalized to the 3-year average." class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">'+escapeHtml(d.story || "")+'</textarea></label>'+
+          '<div class="mt-1 flex items-center justify-between gap-2">'+(aiAvailable() ? '<button type="button" data-pfdraft class="text-[11px] font-semibold text-teal-800 underline">Draft it with Claude</button>' : '<span class="text-[10px] text-slate-400">Connect Claude in Settings to have it draft the story.</span>')+'</div>'+
+          '<div id="pfPreview" class="mt-3 rounded-lg bg-white px-3 py-2 text-[12px]"></div>'+
+          '<div class="mt-3 flex items-center justify-end gap-2"><button type="button" data-pfclose class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" data-pfsave class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500 disabled:opacity-50">'+(d.id ? 'Save the edit' : 'Add the change')+'</button></div>';
+      }
+      return h + '</div>';
+    }
+    function pfUpdatePreview(){
+      const box = el("pfPreview"); if(!box || !pfDraft) return;
+      const k = pfDraftCheck(), R = pfLast, save = document.querySelector("[data-pfsave]");
+      if(save) save.disabled = !!k.why;
+      if(!k.after){ box.innerHTML = '<span class="text-slate-400">'+escapeHtml(k.why || "")+'</span>'; return; }
+      const row = (v) => { const a = R.res[v], b = k.after[v], l0 = a.byKey[pfDraft.line], l1 = b.byKey[pfDraft.line], p = b.problems.find(x => x.id === k.c.id);
+        return '<div class="flex flex-wrap items-baseline justify-between gap-2"><span class="font-semibold text-slate-700">'+PF_COL[v]+'</span><span class="tabular-nums text-slate-600">line '+uwFmt(l0 ? l0.value : 0)+' &rarr; <b class="text-slate-900">'+uwFmt(l1 ? l1.value : 0)+'</b> &middot; NOI '+uwFmt(a.noi)+' &rarr; <b class="text-teal-800">'+uwFmt(b.noi)+'</b> ('+pfSigned(b.noi - a.noi)+')</span></div>'+(p && !k.why ? '<div class="text-[11px] text-amber-700">Not counted in '+PF_COL[v]+': '+escapeHtml(p.reason)+'</div>' : ''); };
+      // a new total (or per unit, % of revenue, a whole-line spread) stands in for the whole line: the account changes on it stop counting
+      const closes = (!k.why && pfWhole(k.c)) ? (uwState.input.bench.proForma.changes || []).filter(x => x && x.id !== k.c.id && x.line === k.c.line && !pfWhole(x) && pfClash(x, k.c)) : [];
+      box.innerHTML = row("base") + row("aggressive") + (closes.length ? '<div class="mt-1 text-[11px] text-amber-700" data-pfcloses>While it stands, the '+closes.length+' account change'+(closes.length === 1 ? '' : 's')+' on this line ('+closes.map(x => escapeHtml(ProForma.describe(x))).join("; ")+') won’t count.</div>' : '') + (k.why ? '<div class="mt-1 text-[11px] font-semibold text-amber-700" data-pfwhy>To save: '+escapeHtml(k.why)+'</div>' : '<div class="mt-1 text-[11px] font-semibold text-emerald-700" data-pfready>&#10003; ready to save</div>');
+    }
+    function pfSaveDraft(){
+      const k = pfDraftCheck(); if(!k.c) return;
+      if(k.why){ toast(k.why, "info"); return; }
+      const R = pfLast, pf = uwState.input.bench.proForma, c = k.c, line = pfLineOf(R, c.line), prev = (pf.changes || []).find(x => x.id === c.id);
+      const v = (c.column === "aggressive") ? "aggressive" : "base", before = R.res[v].byKey[c.line], after = k.after[v].byKey[c.line];
+      pf.changes = prev ? pf.changes.map(x => x.id === c.id ? c : x) : (pf.changes || []).concat([c]);
+      const kind = (ProForma.KIND[c.kind] || {}).label || c.kind;
+      pfClose();
+      pfPersist([{ label: "Pro forma · " + line.label + (c.column === "both" ? "" : " (" + PF_COL[c.column] + ")"), old: fmtMoney(before ? before.value : 0), new: fmtMoney(after ? after.value : 0),
+        note: (prev ? "edited — " : "") + kind + " — " + ProForma.describe(c) + " — " + c.story, field: "proForma." + c.line, hint: "Pro forma · " + line.label + ": " + c.story }]);
+      toast("Pro forma · " + line.label + " changed", "check");
+    }
+    function pfRemoveChange(id){
+      const R = pfLast || pfCompute(), pf = uwState.input.bench.proForma, c = (pf.changes || []).find(x => x.id === id); if(!c || !R) return;
+      const line = pfLineOf(R, c.line) || { label: c.line };
+      if(!confirm("Remove “" + ProForma.describe(c) + "” from " + line.label + "?")) return;
+      pf.changes = pf.changes.filter(x => x.id !== id);
+      pfClose();
+      pfPersist([{ label: "Pro forma · " + line.label, old: ProForma.describe(c), new: "removed", note: c.story, field: "proForma." + c.line, hint: "Pro forma · removed a change on " + line.label }]);
+    }
+    function pfEditChange(id){
+      const c = (uwState.input.bench.proForma.changes || []).find(x => x.id === id), R = pfLast; if(!c || !R) return;
+      const accts = R.input.accounts.filter(a => a.line === c.line), picked = {};
+      (c.accounts || []).forEach(ref => { const a = accts.find(x => x.name.toLowerCase() === String(ref.name).toLowerCase() && (!ref.sheet || !x.sheet || ref.sheet === x.sheet)); if(a) picked[a.id] = true; });
+      pfDraft = { id: c.id, line: c.line, how: c.how, value: c.value != null ? String(c.value) : "", pct: c.pct != null ? String(Math.round(c.pct * 1e6) / 1e4) : "", years: c.years != null ? String(c.years) : "", perUnit: c.perUnit != null ? String(c.perUnit) : "",
+        accounts: picked, kind: c.kind || "", story: c.story || "", column: c.column || "both", from: c.from };
+      pfOpenLine(c.line);
+    }
+    // Every change is saved to the property's assumptions.json, its history gets the story, and the shared database's
+    // "Not saved yet" bar starts with it as the reason (editable).
+    function pfPersist(entries, from){
+      const key = opFocusKey; saveUW();
+      if(key){ opSaveAssumptions(key, { from: from || "typed" }); (entries || []).forEach(h => { try{ assumptionHistoryAdd(key, h.label, h.old, h.new, h.note, h.field || "proForma", from || "typed"); }catch(e){} }); }
+      try{ const hint = (entries || []).map(h => h.hint).filter(Boolean).join("; "); if(hint) window.ldsReasonHint = hint.slice(0, 480); }catch(e){}
+      uwRerenderSetup();
+    }
+    function pfStart(){
+      if(!cloudCanWrite()){ toast("View only — you can’t change this property", "info"); return; }
+      const b = uwState.input.bench; if(pfStarted(b)) return;
+      b.proForma = { started: { by: opOperator(), at: new Date().toISOString() }, revenue: {}, changes: [] };
+      pfShow = "base";
+      pfPersist([{ label: "Pro forma", old: null, new: "started", note: "", field: "proForma", hint: "Started the pro forma" }]);
+    }
+    function pfClear(){
+      const b = uwState.input.bench; if(!pfStarted(b)) return;
+      const n = (b.proForma.changes || []).length + (b.proForma.revenue && b.proForma.revenue.base ? 1 : 0);
+      if(!confirm("Remove this property’s pro forma" + (n ? " and its " + n + " change" + (n === 1 ? "" : "s") : "") + "? Its history keeps every change.")) return;
+      delete b.proForma; pfShow = "base";
+      pfPersist([{ label: "Pro forma", old: n + " change" + (n === 1 ? "" : "s"), new: "removed", note: "", field: "proForma", hint: "Removed the pro forma" }]);
+    }
+    function pfOpenHistory(){
+      const key = opFocusKey; if(!key) return;
+      propHistoryLoad(key).then(() => { const h = propHistCache[key];
+        openHistoryModal("Pro forma — change history", (h && h.entries || []).filter(x => /^proForma/.test(x.field || "")).map(x => ({ at: x.at, label: x.label, old: x.old, new: x.new, who: x.who, from: historyFromLabel(x.from), note: x.note }))); });
+    }
+
+    // ---- revenue credit: each income line at its last 3 (or 6) months × 12/N -----------------------------------------
+    function pfOpenRevenue(){
+      const R = pfLast || pfCompute(); if(!R) return;
+      const rv = (uwState.input.bench.proForma.revenue) || {};
+      const v = pfShow === "aggressive" && rv.aggressive ? "aggressive" : "base", cur = rv[v] || null;
+      pfRev = { version: v, months: cur ? cur.months : 3, story: cur ? cur.story || "" : "" };
+      pfPanel = { type: "revenue" };
+      pfOpen("Revenue credit — annualize recent months", pfRevenueHtml(R), true);
+    }
+    function pfRevenueHtml(R){
+      const can = cloudCanWrite(), rv = (uwState.input.bench.proForma.revenue) || {}, d = pfRev, months = R.input.months.slice(-12), n = d.months;
+      const use = n ? R.input.months.slice(-n) : [];
+      const inc = R.res.base.lines.filter(l => (l.section === "rental" || l.section === "other") && R.input.monthly[l.key]);
+      const ann = (k) => { const mo = R.input.monthly[k] || {}; let s = 0, got = 0; use.forEach(m => { if(typeof mo[m] === "number"){ s += mo[m]; got++; } }); return got ? Math.round(s * 12 / n * 100) / 100 : null; };
+      let tT = 0, tA = 0;
+      const rows = inc.map(l => { const a = n ? ann(l.key) : null; tT += l.t12; tA += (a != null ? a : l.t12);
+        return '<tr class="border-t border-slate-100"><td class="sticky left-0 bg-white py-1 pl-2 pr-2 text-slate-700 whitespace-nowrap">'+escapeHtml(l.label)+'</td>'+months.map(m => { const x = (R.input.monthly[l.key] || {})[m];
+          return '<td class="px-1.5 py-1 text-right tabular-nums '+(use.indexOf(m) >= 0 ? 'bg-teal-50 font-semibold text-teal-900' : 'text-slate-500')+'">'+(typeof x === "number" ? Math.round(x).toLocaleString("en-US") : "")+'</td>'; }).join('')+
+          '<td class="px-2 py-1 text-right tabular-nums text-slate-600">'+fmtMoney(l.t12)+'</td><td class="px-2 py-1 text-right tabular-nums font-semibold text-teal-800">'+(a != null ? fmtMoney(a) : '&mdash;')+'</td></tr>'; }).join('');
+      const occ = (() => { try{ const rr = loanRRCache[opFocusKey], bk = rr && rr.block; if(bk && bk.residentialUnits > 0 && bk.occupiedUnits != null) return Math.round(bk.occupiedUnits / bk.residentialUnits * 1000) / 10 + "% — " + bk.occupiedUnits + " of " + bk.residentialUnits + " units occupied (the rent roll" + (rr.file && rr.file.name ? ", " + rr.file.name : "") + ")"; }catch(e){} return null; })();
+      const pill = (attr, val, label, on) => '<button type="button" '+attr+'="'+val+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(on ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+label+'</button>';
+      let h = '<p class="text-[12px] text-slate-600">Each revenue line becomes its last '+(n || 'N')+' months &times; '+(n ? 12 / n : '12/N')+'. Use it when the property runs better now than the year shows (it filled up, rents went up). Kind: <b>Revenue credit</b>.</p>'+
+        '<div class="mt-3 flex flex-wrap items-center gap-3"><span class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+pill("data-pfrevver", "base", "Safe", d.version === "base")+pill("data-pfrevver", "aggressive", "Aggressive (its own)", d.version === "aggressive")+'</span>'+
+          '<span class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+pill("data-pfrevmo", "3", "T3 — last 3 months", n === 3)+pill("data-pfrevmo", "6", "T6 — last 6 months", n === 6)+'</span>'+
+          (use.length ? '<span class="text-[11px] text-slate-500">Months used: <b>'+escapeHtml(ymRange(use))+'</b></span>' : '')+'</div>'+
+        (d.version === "aggressive" && !rv.aggressive ? '<p class="mt-1 text-[11px] text-slate-500">Aggressive uses Safe’s revenue credit until you give it its own.</p>' : '')+
+        (occ ? '<p class="mt-2 text-[11px] text-slate-600">Today’s occupancy: <b>'+escapeHtml(occ)+'</b></p>' : '')+
+        '<div class="mt-3 overflow-x-auto rounded-lg border border-slate-200"><table class="w-full text-[11px]"><thead><tr class="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400"><th class="sticky left-0 bg-slate-50 py-1 pl-2 pr-2 text-left">Line</th>'+months.map(m => '<th class="px-1.5 py-1 text-right '+(use.indexOf(m) >= 0 ? 'text-teal-700' : '')+'">'+escapeHtml(ymShort(m).replace(/ (\d\d)(\d\d)$/, " $2"))+'</th>').join('')+'<th class="px-2 py-1 text-right">T12</th><th class="px-2 py-1 text-right text-teal-700">Annualized</th></tr></thead><tbody>'+rows+
+          '<tr class="border-t-2 border-slate-200 font-bold"><td class="sticky left-0 bg-white py-1 pl-2 pr-2">Revenue</td>'+months.map(() => '<td></td>').join('')+'<td class="px-2 py-1 text-right tabular-nums">'+fmtMoney(tT)+'</td><td class="px-2 py-1 text-right tabular-nums text-teal-800">'+fmtMoney(tA)+'</td></tr></tbody></table></div>'+
+        (R.input.months.length < (n || 3) ? '<p class="mt-2 text-[11px] font-semibold text-amber-700">The T12 has only '+R.input.months.length+' dated months.</p>' : '');
+      if(!can) return h + '<p class="mt-3 text-[12px] text-slate-500">View only.</p>';
+      h += '<label class="mt-3 block text-[11px] font-semibold text-slate-600">Story &mdash; the reason the lender reads <span class="text-rose-500">*</span><textarea data-pfrevstory rows="2" maxlength="600" placeholder="e.g. Lease-up finished in May; the last three months show the stabilized run-rate." class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">'+escapeHtml(d.story || "")+'</textarea></label>'+
+        '<div class="mt-1">'+(aiAvailable() ? '<button type="button" data-pfdraft="revenue" class="text-[11px] font-semibold text-teal-800 underline">Draft it with Claude</button>' : '')+'</div>'+
+        '<div class="mt-3 flex items-center justify-between gap-2">'+((rv[d.version]) ? '<button type="button" data-pfrevoff class="text-[11px] font-semibold text-rose-600 underline">Remove this revenue credit</button>' : '<span></span>')+
+          '<div class="flex gap-2"><button type="button" data-pfclose class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" data-pfrevsave class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500">Save the revenue credit</button></div></div>';
+      return h;
+    }
+    function pfSaveRevenue(off){
+      const R = pfLast, d = pfRev; if(!R || !d) return;
+      const pf = uwState.input.bench.proForma, rv = pf.revenue || (pf.revenue = {}), prev = rv[d.version] || null, v = d.version;
+      if(off){ if(!prev) return; delete rv[v]; pfClose();
+        pfPersist([{ label: "Pro forma · Revenue credit (" + PF_COL[v] + ")", old: "T" + prev.months, new: "removed", note: prev.story || "", field: "proForma.revenue", hint: "Pro forma · removed the revenue credit" }]); return; }
+      const story = String(d.story || "").trim();
+      if(!story){ toast("Write the story the lender reads", "info"); const t = document.querySelector("[data-pfrevstory]"); if(t) t.focus(); return; }
+      if(R.input.months.length < d.months){ toast("The T12 has fewer than " + d.months + " dated months", "info"); return; }
+      const before = R.res[v].noi;
+      rv[v] = { months: d.months, story: story, kind: "revenue", by: opOperator(), at: new Date().toISOString() };
+      const after = ProForma.compute(Object.assign({}, R.input, { pf: pf }))[v].noi;
+      pfClose();
+      pfPersist([{ label: "Pro forma · Revenue credit (" + PF_COL[v] + ")", old: prev ? "T" + prev.months : null, new: "T" + d.months + " — NOI " + fmtMoney(before) + " → " + fmtMoney(after), note: story, field: "proForma.revenue", hint: "Pro forma · revenue credit: " + story }]);
+    }
+
+    // ---- add a line the T12 doesn't have ----------------------------------------------------------------------------
+    function pfOpenAdd(){
+      const R = pfLast || pfCompute(); if(!R) return;
+      pfPanel = { type: "add" };
+      const have = {}; R.res.base.lines.forEach(l => { have[l.key] = 1; }); R.res.aggressive.lines.forEach(l => { have[l.key] = 1; });
+      const cat = R.input.catalog, grp = (sec, title) => { const ks = Object.keys(cat).filter(k => cat[k].section === sec && !have[k] && (sec !== "rental" || ProForma.DEDUCTIONS[k])); if(!ks.length) return "";
+        return '<div class="mt-3"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">'+title+'</div><div class="mt-1 flex flex-wrap gap-1.5">'+ks.map(k => '<button type="button" data-pfaddline="'+escapeHtml(k)+'" class="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-400 hover:bg-teal-50">'+escapeHtml(cat[k].label)+'</button>').join('')+'</div></div>'; };
+      pfOpen("Add a line the T12 doesn’t have", '<p class="text-[12px] text-slate-600">For a line the statement has no figure for &mdash; e.g. bad debt at 1% of revenue, or a marketing package. Pick the line; then say how much, its kind and its story.</p>'+
+        grp("rental", "Rental deductions") + grp("other", "Other income") + grp("expense", "Expenses"));
+    }
+
+    // ---- the lender file (Excel): Pro forma, Reconciliation, Monthly --------------------------------------------------
+    function pfOpenLender(){
+      const R = pfLast || pfCompute(); if(!R) return;
+      pfPanel = { type: "lender" };
+      const own = pfAggrOwn(uwState.input.bench.proForma), bad = ["base", "aggressive"].filter(v => !R.res[v].reconciles);
+      pfOpen("For the lender — the Excel file", '<p class="text-[12px] text-slate-600">Three sheets: <b>Pro forma</b> (each line: T12, pro forma, $/unit, the change, its kind and its story), <b>Reconciliation</b> (T12 NOI → each change → pro forma NOI) and <b>Monthly</b> (the T12 by month, the months used for the revenue credit marked).</p>'+
+        '<div class="mt-3 space-y-1.5 text-[13px]"><label class="flex items-center gap-2"><input type="radio" name="pfLenderWhich" value="base" checked class="accent-teal-600"> Safe only</label>'+
+        '<label class="flex items-center gap-2"><input type="radio" name="pfLenderWhich" value="both" class="accent-teal-600"> Safe and Aggressive'+(own ? '' : ' <span class="text-[11px] text-slate-400">(Aggressive has no changes of its own yet)</span>')+'</label></div>'+
+        (bad.length ? '<p class="mt-2 text-[12px] font-semibold text-rose-700">'+bad.map(v => PF_COL[v]).join(" and ")+' doesn’t reconcile — fix it before you send it.</p>' : '')+
+        '<div class="mt-4 flex justify-end gap-2"><button type="button" data-pfclose class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" data-pflenderbuild class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500">Save the Excel file…</button></div>');
+    }
+    function pfLenderBook(R, both){
+      const key = opFocusKey, name = opPropDisplayName(key) || "Property", units = uwNum(uwState.input.units), bench = uwState.input.bench;
+      const months = R.input.months.slice(-12), g = gdFullCache[key];
+      const monthly = {}; R.res.base.lines.forEach(l => { if(R.input.monthly[l.key]) monthly[l.key] = R.input.monthly[l.key]; });
+      const meta = { property: name, units: units, period: (g && g.noi ? noiMethodLabel(g.noi) : ymRange(months)), date: new Date().toISOString().slice(0, 10), by: opOperator(), months: months, monthly: monthly,
+        reserves: (units > 0 && bench.reservePerUnit != null) ? Math.round(units * bench.reservePerUnit * 100) / 100 : null };
+      const sh = ProForma.lenderSheets(R.res, meta, { both: both });
+      const wb = XLSX.utils.book_new();
+      const fmt = (ws, cols) => { Object.keys(ws).forEach(a => { if(a[0] === "!") return; const c = ws[a]; if(c && typeof c.v === "number") c.z = "#,##0"; }); ws["!cols"] = cols.map(w => ({ wch: w })); return ws; };
+      const pfCols = [34, 14, 10, 16, 10].concat(both ? [16, 10] : []).concat([34, 22, 60]);
+      XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.head.concat(sh.proForma)), pfCols), "Pro forma");
+      XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.reconciliation), [30, 46, 70, 16]), "Reconciliation");
+      XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.monthly), [30].concat(months.map(() => 11)).concat([14])), "Monthly");
+      return { wb: wb, file: (name + " — Pro forma — " + meta.date + ".xlsx").replace(/[\\/:*?"<>|]+/g, "-"), sheets: sh };
+    }
+    function pfLenderExport(both){
+      const R = pfLast || pfCompute(); if(!R) return;
+      if(typeof XLSX === "undefined"){ toast("Excel isn’t available here", "info"); return; }
+      const bk = pfLenderBook(R, both);
+      const done = () => { pfClose(); toast("Saved " + bk.file, "download"); };
+      if(desktop() && window.ldsShell.saveBinary){
+        const b64 = XLSX.write(bk.wb, { type: "base64", bookType: "xlsx" });
+        window.ldsShell.saveBinary(b64, bk.file, "xlsx", "Excel workbook").then(res => { if(res && res.ok) done(); else if(!(res && res.canceled)) toast("Not saved" + (res && res.error ? ": " + res.error : ""), "info"); }).catch(() => toast("Not saved", "info"));
+      } else { XLSX.writeFile(bk.wb, bk.file); done(); }
+    }
+
+    // ---- "Draft it": Claude drafts the story from the line's numbers, the kind and what you typed ----------------------
+    const PF_DRAFT_INSTRUCTION = "You write the reason a lender reads next to ONE change in a property's pro forma (the NOI the owner asks the lender to accept, worked out from the T12). One or two plain, factual sentences. Use ONLY the facts and numbers in the input; never invent a number, a date, a vendor, an event or a cause that is not in it — when the operator typed their own words, build on them and keep their meaning. No sales language. Also suggest the kind of change from the list given.";
+    async function pfDraftStory(which){
+      if(!aiAvailable()){ toast("Connect Claude in Settings to draft it", "info"); return; }
+      const R = pfLast; if(!R) return;
+      const btn = document.querySelector("[data-pfdraft]"); if(btn){ btn.disabled = true; btn.textContent = "Drafting…"; }
+      let input;
+      if(which === "revenue"){
+        const d = pfRev, use = R.input.months.slice(-(d.months || 3));
+        input = { property: opPropDisplayName(opFocusKey), change: "revenue credit — each revenue line annualized from its last " + d.months + " months", monthsUsed: ymRange(use),
+          lines: R.res.base.lines.filter(l => (l.section === "rental" || l.section === "other") && R.input.monthly[l.key]).map(l => ({ line: l.label, t12: l.t12, recentMonths: use.map(m => (R.input.monthly[l.key] || {})[m]) })), operatorTyped: d.story || "" };
+      } else {
+        const c = pfDraftChange() || {}, line = pfLineOf(R, pfDraft.line) || {};
+        input = { property: opPropDisplayName(opFocusKey), line: line.label, t12Amount: line.t12, units: uwNum(uwState.input.units), how: ProForma.HOWS[c.how] || c.how, change: c.how ? ProForma.describe(c) : "",
+          accounts: (c.accounts || []).map(ref => { const a = R.input.accounts.find(x => x.line === pfDraft.line && x.name === ref.name); return { name: ref.name, amount: a ? a.amount : null }; }),
+          kindChosen: c.kind ? (ProForma.KIND[c.kind] || {}).label : "", operatorTyped: pfDraft.story || "" };
+      }
+      const kinds = ProForma.KINDS.filter(k => k.id !== "revenue").map(k => k.id);
+      let r = null;
+      try{ r = await ldsShell.aiExtract({ instruction: PF_DRAFT_INSTRUCTION + " Kinds: " + ProForma.KINDS.map(k => k.id + " (" + k.label + ": " + k.hint + ")").join("; ") + ".", schema: { type: "object", properties: { story: { type: "string" }, kind: { type: "string", enum: kinds } }, required: ["story"] }, input: JSON.stringify(input), timeoutMs: 120000 }); }
+      catch(e){ r = { ok: false, error: String((e && e.message) || e) }; }
+      const s = r && r.ok && r.data && String(r.data.story || "").trim();
+      if(!s){ toast("Claude couldn’t draft it" + (r && r.error ? " — " + r.error : ""), "info"); if(btn){ btn.disabled = false; btn.textContent = "Draft it with Claude"; } return; }
+      if(which === "revenue"){ if(pfRev){ pfRev.story = s; const t = document.querySelector("[data-pfrevstory]"); if(t) t.value = s; } }
+      else if(pfDraft){ pfDraft.story = s; if(!pfDraft.kind && r.data.kind && ProForma.KIND[r.data.kind]) pfDraft.kind = r.data.kind; pfOpenLine(pfDraft.line); }
+      if(btn){ btn.disabled = false; btn.textContent = "Draft it with Claude"; }
+    }
+
+    document.addEventListener("click", (e) => { const t = e.target; if(!t || !t.closest) return;
+      if(t.closest("[data-pfstart]")){ pfStart(); return; }
+      const sw = t.closest("[data-pfshow]"); if(sw){ pfShow = sw.getAttribute("data-pfshow") === "aggressive" ? "aggressive" : "base"; uwRerenderSetup(); return; }
+      const ln = t.closest("[data-pfline]"); if(ln){ pfDraft = null; pfOpenLine(ln.getAttribute("data-pfline")); return; }
+      if(t.closest("[data-pfrevenue]")){ pfOpenRevenue(); return; }
+      if(t.closest("[data-pfadd]")){ pfOpenAdd(); return; }
+      if(t.closest("[data-pflender]")){ pfOpenLender(); return; }
+      if(t.closest("[data-pfhistory]")){ pfOpenHistory(); return; }
+      if(t.closest("[data-pfclear]")){ pfClear(); return; }
+      if(!t.closest("#pfModal")) return;
+      if(t.closest("[data-pfclose]")){ pfClose(); return; }
+      const how = t.closest("[data-pfhow]"); if(how && pfDraft){ const h = how.getAttribute("data-pfhow"); if(pfDraft.how !== h){ pfDraft.how = h; pfDraft.accounts = {}; if(!pfDraft.kind && h === "spread") pfDraft.kind = "spread"; } pfOpenLine(pfDraft.line); return; }
+      const col = t.closest("[data-pfcol]"); if(col && pfDraft){ pfDraft.column = col.getAttribute("data-pfcol"); pfOpenLine(pfDraft.line); return; }
+      if(t.closest("[data-pfsave]")){ pfSaveDraft(); return; }
+      const ed = t.closest("[data-pfedit]"); if(ed){ pfEditChange(ed.getAttribute("data-pfedit")); return; }
+      const rm = t.closest("[data-pfremove]"); if(rm){ pfRemoveChange(rm.getAttribute("data-pfremove")); return; }
+      const dr = t.closest("[data-pfdraft]"); if(dr){ pfDraftStory(dr.getAttribute("data-pfdraft") === "revenue" ? "revenue" : "line"); return; }
+      const rvv = t.closest("[data-pfrevver]"); if(rvv && pfRev){ const v = rvv.getAttribute("data-pfrevver"), rv = uwState.input.bench.proForma.revenue || {}, cur = rv[v] || (v === "aggressive" ? rv.base : null);
+        pfRev = { version: v, months: cur ? cur.months : pfRev.months, story: cur ? cur.story || "" : pfRev.story }; el("pfBody").innerHTML = pfRevenueHtml(pfLast); return; }
+      const rvm = t.closest("[data-pfrevmo]"); if(rvm && pfRev){ pfRev.months = Number(rvm.getAttribute("data-pfrevmo")); el("pfBody").innerHTML = pfRevenueHtml(pfLast); return; }
+      if(t.closest("[data-pfrevsave]")){ pfSaveRevenue(false); return; }
+      if(t.closest("[data-pfrevoff]")){ pfSaveRevenue(true); return; }
+      const al = t.closest("[data-pfaddline]"); if(al){ pfDraft = null; pfOpenLine(al.getAttribute("data-pfaddline")); return; }
+      if(t.closest("[data-pflenderbuild]")){ const r = document.querySelector('input[name="pfLenderWhich"]:checked'); pfLenderExport(!!(r && r.value === "both")); return; }
+    });
+    document.addEventListener("input", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#pfModal")) return;
+      if(t.hasAttribute("data-pfin") && pfDraft){ pfDraft[t.getAttribute("data-pfin")] = t.value; pfUpdatePreview(); return; }
+      if(t.hasAttribute("data-pfrevstory") && pfRev){ pfRev.story = t.value; }
+    });
+    document.addEventListener("change", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#pfModal")) return;
+      if(t.hasAttribute("data-pfacct") && pfDraft){ const id = t.getAttribute("data-pfacct");
+        if(pfDraft.how === "accountTotal"){ pfDraft.accounts = {}; document.querySelectorAll("#pfModal [data-pfacct]").forEach(x => { if(x !== t) x.checked = false; }); }
+        pfDraft.accounts[id] = t.checked;
+        document.querySelectorAll("#pfModal [data-pfacctrow]").forEach(r => { r.classList.toggle("bg-teal-50", !!pfDraft.accounts[r.getAttribute("data-pfacctrow")]); });
+        pfUpdatePreview(); return; }
+      if(t.hasAttribute("data-pfin") && pfDraft){ pfDraft[t.getAttribute("data-pfin")] = t.value; if(t.getAttribute("data-pfin") === "kind") pfOpenLine(pfDraft.line); else pfUpdatePreview(); }
+    });
     function recomputeSizing(){
       if(!uwLastBuilt || !window.Underwriting) return;
       const s = Underwriting.sizeLoan(uwLastBuilt.result.underwritten.noi, uwState.input.bench.sizing);
@@ -5400,7 +5909,7 @@ tr.flagged:hover td{background:#fee2e2}
       var rrGPR = await opPropGPR(key, bench, units, rrRead || null);   // 2.9.8 (problem 5) — THIS property's rent, open or not
       var rrCom = opRRCommercialOf(rrRead);              // 2.9.12 — its commercial leases, lease by lease
       var built = uwBuildSetupFromGrid(r.grid, { units: units, rrGPR: rrGPR, rrCommercial: rrCom ? rrCom.annual : null, bench: bench, overrides: r.overrides || [] });   // 2.9.16 — with your changes from its review
-      return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie };
+      return { r: r, parsedM: built.parsedM, bench: bench, p: p, sr: sr, setup: built.setup, lu: built.lu, statementNOI: built.statementNOI, months: built.months, annualized: built.annualized, trimmed: built.trimmed, tie: built.tie, units: units };
     }
     // The property's NOIs for General Data. The in-place NOI is FOLDER-authoritative and honors the
     // annualization rule: when the statement's gross rent doesn't begin in the first or second month, the
@@ -5422,9 +5931,10 @@ tr.flagged:hover td{background:#fee2e2}
                months: (lu.window && lu.window.length) ? lu.window : ((ctx.months && ctx.months.length) ? ctx.months : null),   // the months judged (the last 12 of a longer file), for the NOI method label
                tie: ctx.tie ? { ok: ctx.tie.ok, printed: ctx.tie.printed, built: ctx.tie.built, gap: ctx.tie.gap } : null,
                underwritten: ctx.setup.result.underwritten.noi,
+               proForma: pfNoiOf(ctx, ctx.bench, ctx.units),   // next stage (F1, draft) — the Safe and Aggressive pro forma NOIs, or null
                period: "12-mo Total" + (ctx.r.name ? " · " + ctx.r.name : ""), sourceFile: ctx.r.name || null };
     }
-    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period, ruleWhy: noi.ruleWhy || null, monthsInFile: noi.monthsInFile || null, tie: noi.tie || null }; }
+    function opGDCache(noi){ return { inPlace: noi.inPlace, inPlaceStatement: noi.inPlaceStatement, inPlaceBasis: noi.inPlaceBasis, annualizedMonths: noi.annualizedMonths || null, months: noi.months || null, underwritten: noi.underwritten, period: noi.period, ruleWhy: noi.ruleWhy || null, monthsInFile: noi.monthsInFile || null, tie: noi.tie || null, proForma: noi.proForma || null }; }
     // 2.9.0 — the annualization-method label shown wherever an NOI appears: "T12 · Sep 2025 → Aug 2026"
     // for a full year, or "T3 × 4 · Oct → Dec 2026" for a partial-year statement annualized
     // from its last three months. Reads only what the cache already stores; adds no computation.
@@ -10662,14 +11172,20 @@ tr.flagged:hover td{background:#fee2e2}
     // coverage move with it. The choice is per property, held for the session
     // (default = underwritten when we have it — the figure the loan is sized on).
     var refiBasisByKey = {};
+    // Next stage (F1, draft) — a property's pro forma NOIs (Underwriting → Pro forma), only when it adds up to the dollar.
+    function refiPFOf(k){ const g = gdNOICache[k], p = g && g.proForma; return (p && p.baseOk && p.base != null && isFinite(p.base)) ? p : null; }
+    function refiPFAggr(p){ return (p && p.aggressiveOwn && p.aggressiveOk && p.aggressive != null && isFinite(p.aggressive)) ? p.aggressive : null; }
     function refiNOIOptions(loan){
       if(loan && (loan._poolKeys || isPoolLoan(loan))){ const ks = poolKeys(loan), all = (f) => ks.every(k => gdNOICache[k] && gdNOICache[k][f] != null && isFinite(gdNOICache[k][f]));
         const ip = all("inPlace") ? ks.reduce((a, k) => a + gdNOICache[k].inPlace, 0) : null, uw = all("underwritten") ? ks.reduce((a, k) => a + gdNOICache[k].underwritten, 0) : null;
-        return { inPlace: ip, underwritten: uw, hasBoth: ip != null && uw != null, period: null }; }
+        const pfs = ks.map(refiPFOf), pfAll = pfs.every(Boolean), pf = pfAll ? pfs.reduce((a, p) => a + p.base, 0) : null;
+        const ag = (pfAll && pfs.some(p => p.aggressiveOwn) && pfs.every(p => !p.aggressiveOwn || refiPFAggr(p) != null)) ? pfs.reduce((a, p) => a + (p.aggressiveOwn ? p.aggressive : p.base), 0) : null;
+        return { inPlace: ip, underwritten: uw, proForma: pf, aggressive: ag, hasBoth: ip != null && uw != null, period: null }; }
       const g = loan ? gdNOICache[propertyKey(loan)] : null;
       const inPlace = (g && g.inPlace != null && isFinite(g.inPlace)) ? g.inPlace : null;
       const underwritten = (g && g.underwritten != null && isFinite(g.underwritten)) ? g.underwritten : null;
-      return { inPlace: inPlace, underwritten: underwritten, hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
+      const pf = loan ? refiPFOf(propertyKey(loan)) : null;
+      return { inPlace: inPlace, underwritten: underwritten, proForma: pf ? pf.base : null, aggressive: refiPFAggr(pf), hasBoth: (inPlace != null && underwritten != null), period: g ? g.period : null };
     }
     // 2.9.7 (#28) — the NOI typed on the property's loan (senior first), when there is one.
     function refiEnteredNOI(loan){ if(!loan) return null; if(loan._poolKeys || isPoolLoan(loan)) return poolRefiNOI(poolKeys(loan), "entered"); const k = propertyKey(loan), ov = propNOIOverride(k); if(ov != null) return ov;   // 2.9.7 (#45) — your override first
@@ -10679,6 +11195,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(b === "entered" && refiEnteredNOI(loan) != null) return "entered";
       if(b === "inplace" && o.inPlace != null) return "inplace";
       if(b === "underwritten" && o.underwritten != null) return "underwritten";
+      if(b === "proforma" && o.proForma != null) return "proforma";        // next stage (F1, draft)
+      if(b === "aggressive" && o.aggressive != null) return "aggressive";
       if(loan && (loan._poolKeys || isPoolLoan(loan)) && poolKeys(loan).some(k => propNOIOverride(k) != null)) return "entered";
       if(loan && propNOIOverride(propertyKey(loan)) != null) return "entered";   // 2.9.7 (#45) — your override replaces the T12 unless you pick another basis
       if(o.underwritten != null) return "underwritten";   // default: the sized-to figure
@@ -10695,6 +11213,7 @@ tr.flagged:hover td{background:#fee2e2}
       return ks.map(k => { const g = gdNOICache[k], nm = poolNameOfKey(k);
         if(b === "underwritten") return { key: k, name: nm, noi: g && ok(g.underwritten) ? g.underwritten : null, src: "underwritten · " + (noiMethodLabel(g) || "T12") };
         if(b === "inplace") return { key: k, name: nm, noi: g && ok(g.inPlace) ? g.inPlace : null, src: "in-place " + (noiMethodLabel(g) || "T12") };
+        if(b === "proforma" || b === "aggressive"){ const p = refiPFOf(k), ag = b === "aggressive" && p && p.aggressiveOwn; return { key: k, name: nm, noi: p ? (ag ? refiPFAggr(p) : p.base) : null, src: "pro forma · " + (ag ? "Aggressive" : "Safe") }; }
         const r = poolKeyNOISrc(k); return { key: k, name: nm, noi: ok(r.noi) ? r.noi : null, src: r.src }; });
     }
     function refiPoolMissing(loan){ const ps = refiPoolParts(loan); return ps ? ps.filter(p => p.noi == null) : []; }
@@ -10715,7 +11234,7 @@ tr.flagged:hover td{background:#fee2e2}
     function refiNOI(loan){
       const o = refiNOIOptions(loan), b = refiBasis(loan), parts = refiPoolParts(loan);
       if(parts && parts.some(p => p.noi == null)) return null;   // 3.0.0 — never a silent $0 for a property with no NOI
-      var base = parts ? parts.reduce((a, p) => a + p.noi, 0) : (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
+      var base = parts ? parts.reduce((a, p) => a + p.noi, 0) : (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "proforma") ? o.proForma : (b === "aggressive") ? o.aggressive : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
       if(base == null) return null;
       return base + refiMoveBoost(loan, b);   // + any "what to push" moves ticked below (a live what-if)
     }
@@ -10818,8 +11337,12 @@ tr.flagged:hover td{background:#fee2e2}
           opt("inplace", "In-place T12", o.inPlace, b==="inplace")+
           opt("underwritten", "Underwritten", o.underwritten, b==="underwritten")+
           (refiEnteredNOI(loan) != null ? opt("entered", "Entered", refiEnteredNOI(loan), b==="entered") : '')+   // 2.9.7 (#28)
+          (o.proForma != null ? opt("proforma", "Pro forma &middot; Safe", o.proForma, b==="proforma") : '')+   // next stage (F1, draft)
+          (o.aggressive != null ? opt("aggressive", "Pro forma &middot; Aggressive", o.aggressive, b==="aggressive") : '')+
         '</div>'+
-        '<p class="mt-2 text-[11px] leading-relaxed text-slate-500">'+(b==="underwritten"
+        '<p class="mt-2 text-[11px] leading-relaxed text-slate-500">'+(b==="proforma" || b==="aggressive"
+          ? "Sizing on the <strong>pro forma</strong> NOI ("+(b==="aggressive"?"Aggressive":"Safe")+") &mdash; the T12 with your changes, each with its story (Underwriting &rarr; Pro forma). Like the T12 NOI it starts from, it is before reserves."
+          : b==="underwritten"
           ? "Sizing on the grossed-up <strong>underwritten</strong> NOI &mdash; the figure a lender underwrites to. Switch to in-place to see coverage on the T12 as it runs today."
           : "Sizing on the <strong>in-place</strong> T12 NOI as the property runs today. Switch to underwritten for the grossed-up figure a refinance is sized on.")+
           (o.hasBoth ? ' The gap between the two is the story you tell the lender.' : '')+'</p>'+
@@ -11046,7 +11569,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function refiBasisWord(loan){
       const b = refiBasis(loan);
-      return b === "underwritten" ? "underwritten" : b === "inplace" ? "in-place T12" : "entered";
+      return b === "underwritten" ? "underwritten" : b === "inplace" ? "in-place T12" : b === "proforma" ? "pro forma (Safe)" : b === "aggressive" ? "pro forma (Aggressive)" : "entered";
     }
     // 2.9.7 (#25) — what you owe on the property today: every loan at its own current balance, never
     // re-amortized as one loan. A refinance is always of the property (all its loans together).
@@ -11169,6 +11692,9 @@ tr.flagged:hover td{background:#fee2e2}
       const b = refiBasis(loan), k = propertyKey(loan), g = gdNOICache[k];
       if(b === "underwritten") return "underwritten &middot; " + escapeHtml(noiMethodLabel(g) || "T12");
       if(b === "inplace") return "in-place " + escapeHtml(noiMethodLabel(g) || "T12");
+      if(b === "proforma" || b === "aggressive"){ const p = g && g.proForma;   // next stage (F1, draft)
+        const n = p ? (b === "aggressive" ? (p.changesAggressive != null ? p.changesAggressive : p.changes) : p.changes) : 0;
+        return "pro forma &middot; " + (b === "aggressive" ? "Aggressive" : "Safe") + (p ? " (" + n + " change" + (n === 1 ? "" : "s") + (p.lastAt ? "; last by " + escapeHtml(p.lastBy || "you") + ", " + escapeHtml(fmtWhenShort(p.lastAt)) : "") + ")" : ""); }
       if(b === "entered" && propNOIOverride(k) != null) return "your NOI (override)";
       const r = propNOIWithSource(k, [], refiMembers(loan)); return escapeHtml(r.src || "typed");
     }
@@ -12066,6 +12592,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- propose_profile_change {name, changes, sources?}: a PROPERTY's own facts: propertyName, address, residentialUnits, commercialUnits, rentableSqFt, yearBuilt, acquisitionDate, manager, dataSource, yardiCode, notes, and noi (the entered NOI of a property with no loan). You can never set noiOverride — that is the operator's own.",
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
+      "- propose_pro_forma_change {name, line, how, value?, pct?, years?, perUnit?, accounts?, kind, story, column?} (a DRAFT feature): one change in the property's PRO FORMA (Underwriting → Pro forma: the T12 with changes, each with a kind and a story, adding up to the NOI the lender is asked to accept). line: the line's name (e.g. \"Marketing\"); how: total (value = the new yearly total), takeOut (accounts = the names of the T12 accounts under the line to take out), accountTotal (one account, value = its new yearly amount), spread (years = paid every N years; accounts, or none for the whole line), pctRevenue (pct, a decimal — expense lines and rental deductions only), perUnit (perUnit = dollars per unit a year); kind: partnership, nonRecurring, spread, normalized, operating or marketNorm; story: the reason the lender reads; column: safe, aggressive or both (default both). NEVER invent a number: every amount comes from the T12, the rent roll or what the operator said; you may draft the story and suggest the kind. read_property shows the pro forma (both versions and how each adds up).",
       "- POOLED LOANS (one loan secured by several properties): set_pool {name, properties:[names], allocations?:{name: amount}} makes the named loan one loan secured by its own property plus those listed (a name not in the app yet becomes a new property; allocations are each property's allocated amount). release_from_pool {name, property, price?, date?, keepPayment?}: take one property out of a pooled loan with a paydown (default price: its share of today's balance; the payment is recalculated unless keepPayment). refinance_together {properties:[names]}: open ONE refinance for several properties — every loan on them is paid off and the NOI is all of theirs; properties with no loan yet can be included.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
@@ -12073,7 +12600,7 @@ tr.flagged:hover td{background:#fee2e2}
       "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, each T12's reading — by the reader and the AI, its status (checked, reviewed, waiting for the operator) and the operator's changes with their notes, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json — or, when it leaves them empty, on the senior loan's record, and the Profile tab shows them from there: when you read profile.json the app puts \"What the Profile tab shows\" on top, with where each value comes from — use it, and never say a value is stored nowhere when it is on the loan.",
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, sections?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card; sections: a list of names when the property is SEVERAL sections (its phases) — they are combined. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
-      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\" or \"entered\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
+      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\", \"entered\", or — when the property has a pro forma — \"pro forma\" or \"aggressive\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). split_document {file, name?, parts:[{from, to, title?, names:[property names]}]}: a PDF holding several agreements (or one agreement for several properties) — propose its page ranges and which property each belongs to, from the pages you READ (where each agreement starts and which property it names); a card shows them, the operator changes anything and approves; each property then reads only its own pages (one part can name several properties). Never guess a range you haven't read. check_t12 {name}: read the property's T12 again with the reader AND the AI — the whole reading process (its own sheet(s) only); a failed check or a disagreement opens the review where the operator decides; it changes no number. fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
       "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
@@ -12632,7 +13159,8 @@ tr.flagged:hover td{background:#fee2e2}
         var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
         var t=refiPrepare(l), o=refiNOIOptions(t), avail={}, ent=refiEnteredNOI(t), ov=propNOIOverride(propertyKey(t))!=null;
         if(o.inPlace!=null) avail.inplace="In-place T12 NOI ("+fmtMoney(o.inPlace)+")"; if(o.underwritten!=null) avail.underwritten="Underwritten NOI ("+fmtMoney(o.underwritten)+")"; if(ent!=null) avail.entered=(ov?"Your NOI override (":"Entered NOI (")+fmtMoney(ent)+")";
-        var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered", override:"entered" }, b=map[basis];
+        if(o.proForma!=null) avail.proforma="Pro forma NOI, Safe ("+fmtMoney(o.proForma)+")"; if(o.aggressive!=null) avail.aggressive="Pro forma NOI, Aggressive ("+fmtMoney(o.aggressive)+")";   // next stage (F1, draft)
+        var basis=(a&&a.basis!=null)?String(a.basis).toLowerCase().trim():"", map={ inplace:"inplace", "in-place":"inplace", "in place":"inplace", underwritten:"underwritten", entered:"entered", override:"entered", proforma:"proforma", "pro forma":"proforma", "pro-forma":"proforma", safe:"proforma", aggressive:"aggressive" }, b=map[basis];
         var list=Object.keys(avail).map(function(k){ return avail[k]; }).join(", ")||"none (no T12 and no entered NOI yet)";
         if(!b || !avail[b]) return {ok:false,msg:'This property’s refinance can use: '+list+'.'};
         var key=propertyKey(t), before=refiBasis(t), nm=t._combined?t.propertyName:loanLabel(t);
@@ -12714,6 +13242,59 @@ tr.flagged:hover td{background:#fee2e2}
           var wasSt=loan.loanStatus||""; loan.loanStatus=match; try{ loanHistoryAdd(loan, "loanStatus", wasSt, match, "assistant"); }catch(e){}   // 2.9.7 (#252)
           save(); try{ render(); }catch(e){} try{ opRenderPortfolio(); }catch(e){}
           return {ok:true, html:'✓ Set status to <b>'+escapeHtml(match)+'</b>.', toast:loanLabel(loan)+' → '+match};
+        });
+      },
+      // Next stage (F1, draft) — one change in a property's pro forma, behind an Approve card: the line before → after,
+      // the NOI before → after, the kind and the story. Claude never invents a number (the rules say so); the card shows
+      // exactly what would be saved.
+      propose_pro_forma_change: function(a){
+        var r=aiAsstResolveProp(a&&a.name, {archived:false}), bad=aiAsstPropMiss(r, a&&a.name); if(bad) return bad;
+        var key=r.key;
+        if(!window.ProForma) return {ok:false,msg:"The pro forma isn't available in this build."};
+        return opSetupFromDisk(key).catch(function(){ return null; }).then(function(ctx){
+          if(!ctx) return {ok:false,msg:r.name+" has no T12 in use — a pro forma starts from the T12."};
+          var bench0=JSON.parse(JSON.stringify(ctx.bench)); if(!pfStarted(bench0)) bench0.proForma={ started:null, revenue:{}, changes:[] };
+          var input=pfInputFrom(ctx, bench0, ctx.units); if(!input) return {ok:false,msg:"The pro forma isn't available for "+r.name+"."};
+          var want=String((a&&a.line)||"").trim(), wl=want.toLowerCase(), cat=input.catalog, code=null;
+          if(cat[want.toUpperCase()]) code=want.toUpperCase();
+          if(!code) Object.keys(cat).forEach(function(k){ if(!code && String(cat[k].label).toLowerCase()===wl) code=k; });
+          if(!code) Object.keys(cat).forEach(function(k){ var lb=String(cat[k].label).toLowerCase().replace(/^less:\s*/,""); if(!code && wl && (lb===wl.replace(/^less:\s*/,"") || lb.indexOf(wl)>=0)) code=k; });
+          if(!code) return {ok:false,msg:'There is no line "'+want+'". Its lines: '+input.lines.filter(function(l){ return l.section!=="reserve"; }).map(function(l){ return l.label; }).join(", ")+"."};
+          var how=String((a&&a.how)||"").trim(), hmap={ total:"total", "new total":"total", takeout:"takeOut", "take out":"takeOut", accounttotal:"accountTotal", spread:"spread", "spread over years":"spread", pctrevenue:"pctRevenue", "% of revenue":"pctRevenue", percent:"pctRevenue", perunit:"perUnit", "per unit":"perUnit" };
+          var h=hmap[how.toLowerCase()]; if(!h) return {ok:false,msg:"how must be one of: total, takeOut, accountTotal, spread, pctRevenue, perUnit."};
+          var accts=input.accounts.filter(function(x){ return x.line===code && !x.gap; }), refs=[], miss=[];
+          [].concat((a&&a.accounts)||[]).forEach(function(n){ var nm=String((n&&n.name)||n).trim().toLowerCase(), f=accts.find(function(x){ return x.name.toLowerCase()===nm; }) || accts.find(function(x){ return nm && x.name.toLowerCase().indexOf(nm)>=0; });
+            if(f){ var o={ name:f.name }; if(f.sheet) o.sheet=f.sheet; if(f.row!=null) o.row=f.row; refs.push(o); } else miss.push(String((n&&n.name)||n)); });
+          if(miss.length) return {ok:false,msg:"No account "+miss.map(function(m){ return '"'+m+'"'; }).join(", ")+" under "+cat[code].label+". Its accounts: "+(accts.map(function(x){ return x.name+" ("+fmtMoney(x.amount)+")"; }).join("; ")||"none")+"."};
+          var colIn=String((a&&a.column)||"both").toLowerCase(), col=/aggr/.test(colIn)?"aggressive":(/safe|base/.test(colIn)?"base":"both");
+          var pctV=(a&&a.pct!=null)?Number(a.pct):null; if(pctV!=null && pctV>1) pctV=pctV/100;
+          var c={ id:pfNewId(), column:col, line:code, how:h, kind:String((a&&a.kind)||""), story:String((a&&a.story)||"").trim(), from:"assistant", at:new Date().toISOString() };
+          if(h==="total"||h==="accountTotal") c.value=Number(a&&a.value); if(h==="pctRevenue") c.pct=pctV; if(h==="spread") c.years=Number(a&&a.years); if(h==="perUnit") c.perUnit=Number(a&&a.perUnit);
+          if(h==="takeOut"||h==="spread"||h==="accountTotal") c.accounts=refs;
+          var line=input.lines.find(function(l){ return l.key===code; }) || { key:code, label:cat[code].label, section:cat[code].section, t12:0 };
+          var why=ProForma.problemOf(c, line, ctx.units); if(why) return {ok:false,msg:"Can't propose it: "+why+"."};
+          var others=(bench0.proForma.changes||[]).filter(function(x){ return x.line===code; });
+          if(pfWhole(c)){ var hit=others.find(function(x){ return pfWhole(x) && pfClash(x,c); }); if(hit) return {ok:false,msg:cat[code].label+" already has “"+ProForma.describe(hit)+"” in "+PF_COL[hit.column||"both"]+". The operator removes or edits it in the pro forma panel; or propose it for the other version."}; }
+          var before=ProForma.compute(input), pf1=JSON.parse(JSON.stringify(bench0.proForma)); pf1.changes=(pf1.changes||[]).concat([c]);
+          var after=ProForma.compute(Object.assign({}, input, { pf:pf1 }));
+          var v=col==="aggressive"?"aggressive":"base", lb=before[v].byKey[code], la=after[v].byKey[code], p=after[v].problems.find(function(x){ return x.id===c.id; });
+          if(p) return {ok:false,msg:"It wouldn't count: "+p.reason+"."};
+          var rows=aiAsstRow("line", cat[code].label+" ("+PF_COL[col]+")", fmtMoney(lb?lb.value:0), fmtMoney(la?la.value:0))+
+            aiAsstRow("noi", "Pro forma NOI · "+PF_COL[v], fmtMoney(before[v].noi), fmtMoney(after[v].noi))+
+            aiAsstRow("kind", "Kind", null, escapeHtml((ProForma.KIND[c.kind]||{}).label||c.kind))+
+            aiAsstRow("story", "Story", null, escapeHtml(c.story));
+          return aiAsstApprovalCard('Change <b>'+escapeHtml(cat[code].label)+'</b> in <b>'+escapeHtml(r.name)+'</b>’s pro forma — '+escapeHtml(ProForma.describe(c))+(pfStarted(ctx.bench)?'':' (this starts its pro forma)')+'?', rows, function(){
+            return opLoadAssumptions(key).catch(function(){ return null; }).then(function(cur){
+              var b0=opMergeBench(uwDefaults().bench, cur), b1=JSON.parse(JSON.stringify(b0));
+              if(!pfStarted(b1)) b1.proForma={ started:{ by:historyWhoFor("assistant"), at:new Date().toISOString() }, revenue:{}, changes:[] };
+              c.by=historyWhoFor("assistant"); b1.proForma.changes=(b1.proForma.changes||[]).concat([c]);
+              return opSaveAssumptionsFor(key, b0, b1, "assistant").then(function(){
+                try{ assumptionHistoryAdd(key, "Pro forma · "+cat[code].label+(col==="both"?"":" ("+PF_COL[col]+")"), fmtMoney(lb?lb.value:0), fmtMoney(la?la.value:0), ((ProForma.KIND[c.kind]||{}).label||c.kind)+" — "+ProForma.describe(c)+" — "+c.story, "proForma."+code, "assistant"); }catch(e){}
+                try{ opRenderPortfolio(); }catch(e){}
+                return {ok:true, html:'✓ '+escapeHtml(cat[code].label)+' in '+escapeHtml(r.name)+'’s pro forma: '+fmtMoney(lb?lb.value:0)+' → '+fmtMoney(la?la.value:0)+' ('+PF_COL[col]+'); pro forma NOI '+fmtMoney(after[v].noi)+'.', toast:'Pro forma · '+cat[code].label};
+              });
+            });
+          });
         });
       },
       // 2.9.7 (#238, #50) — before → after for every value; an unusual cap rate is flagged; saved straight to the
@@ -12912,7 +13493,8 @@ tr.flagged:hover td{background:#fee2e2}
             t12: t12, rentRoll: rent, refinance: p&&p.loans.length ? aiAsstRefiRead(p.loans[0]) : undefined,
             documents: dl&&dl.ok ? (dl.files||[]).filter(function(f){ return !APP_DOC_ROLES[f.role||""]; }).map(function(f){ return f.name+(f.textLen?"":" (no readable text)"); }) : undefined,
             appRecords: dl&&dl.ok ? (dl.files||[]).filter(function(f){ return APP_DOC_ROLES[f.role||""]; }).map(function(f){ return f.name; }) : undefined };   // 2.9.10
-          return { ok:true, msg:"Read "+r.name+".", data:data };
+          var pfP=(saved && pfStarted(saved)) ? opSetupFromDisk(key).catch(noop) : Promise.resolve(null);   // next stage (F1, draft) — its pro forma
+          return pfP.then(function(ctx){ if(ctx){ var pr=pfReadOf(ctx); if(pr) data.proForma=pr; } return { ok:true, msg:"Read "+r.name+".", data:data }; });
         });
       },
       // 2.9.9 (fix 6) — a file that was not read for this message, read on request (in parts, stopping at the answer)
@@ -15198,6 +15780,8 @@ tr.flagged:hover td{background:#fee2e2}
       const names = pend.map(p => (p.propName ? p.propName + " · " : "") + p.what);
       el("cloudBarWhat").textContent = names.slice(0, 4).join(", ") + (names.length > 4 ? " and " + (names.length - 4) + " more" : "");
       el("cloudBarWhat").title = names.join("\n");
+      // next stage (F1, draft) — a pro forma change's story starts the reason (it can be edited)
+      try{ const ri = el("cloudReason"); if(ri && !ri.value && window.ldsReasonHint){ ri.value = window.ldsReasonHint; } }catch(e){}
     }
     async function cloudSave(o){
       o = o || {};
@@ -15210,7 +15794,7 @@ tr.flagged:hover td{background:#fee2e2}
       catch(e){ r = { ok: false, error: String(e && e.message || e) }; }
       finally{ if(btn) btn.disabled = false; }
       if(r && r.ok){
-        if(inp) inp.value = "";
+        if(inp) inp.value = ""; window.ldsReasonHint = "";
         toast(r.queued ? "Saved on this computer — it goes up when the connection is back" : r.requested ? "Sent to the admin for approval — the old value stays until then" : r.approvedBy ? "Saved — approved by " + r.approvedBy : "Saved", "check");
         if(r.requested) cloudRefresh({ reload: true });
         return r;
@@ -15221,7 +15805,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     async function cloudUndo(){
       const r = await ldsShell.cloud.discard();
-      if(r && r.ok){ const inp = el("cloudReason"); if(inp) inp.value = ""; toast("Your changes were undone", "info"); }
+      if(r && r.ok){ const inp = el("cloudReason"); if(inp) inp.value = ""; window.ldsReasonHint = ""; toast("Your changes were undone", "info"); }
     }
 
     // ---- what the admin changed: the approval code on the spot, or a request ------------------------------------------------
