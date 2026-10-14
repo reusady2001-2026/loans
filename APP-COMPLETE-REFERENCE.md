@@ -853,12 +853,16 @@ members; a typed reason on every change (who / when / why, field by field); the 
 approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
 always opening on the Portfolio dashboard; the user's local files untouched. Hosting: **Supabase**.
 
-### Next — the pro forma, expense benchmarks and lender scenarios (planned 2026-10-14, not built)
-From the meeting with Azriel on 2026-10-13: a pro forma column with a story on every changed line and a reconciliation
-to the T12 NOI, exported for the lender (F1); a benchmark library that flags expense anomalies by asset type, state,
-building age and features (F2); benchmarks learned from appraisals, OMs and pro formas (F3, later); appraised value,
-extension with today's lender and the pay-down needed, lender presets in the refinance (F4). The plan, its order, the
-operator's decisions and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Its version number is the operator's to choose.
+### Next — the pro forma, lender scenarios and expense benchmarks (planned 2026-10-14, not built)
+From the meeting with Azriel on 2026-10-13, in this order:
+- **F1:** a pro forma (and an aggressive) column in Underwriting, with a kind and a story on every changed line, a
+  reconciliation to the T12 NOI, and an Excel file for the lender.
+- **F4:** in the refinance, an appraised value, an extension with today's lender and the pay-down needed, a pay-down
+  verdict for a loan that must be dealt with, and lender presets.
+- **F2:** a group benchmark library that flags expense anomalies by asset type, state, building age and features.
+
+The plan, the operator's decisions D1–D13 and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Version numbers are the
+operator's to choose.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
