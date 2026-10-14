@@ -3,7 +3,7 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.0.0 — being built, not shipped (the installed version is 2.9.17)
+**Current version:** 3.0.0 — shipped 2026-10-14 (the operator: "ship it")
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
 set up for the app. Used by Azriel's team in the US.
@@ -755,13 +755,13 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
 - **2.9.15** — the fixes from testing the installed 2.9.14: T1, P1 and C1.
 - **2.9.16** — the T12 read by the reader and the AI before it is used.
 - **2.9.17** — the file's own categories; the Underwriting table takes its rows from the reading.
-- **3.0.0** — *(being built, not shipped)* one shared database (see §8 and §4.17).
+- **3.0.0** — *(shipped 2026-10-14)* one shared database (see §8 and §4.17), and the refinance fixes from Azriel's meeting (§4.8).
 
 ---
 
 ## 8. Stage 3.0.0 — what is built, and what still needs checking
 
-**Being built, not shipped** (the operator: "build the whole plan, then start building … do not ship"). The plan,
+**Shipped 2026-10-14** (the operator: "ship it"; before that: "build the whole plan, then start building … do not ship"). The plan,
 with the operator's rules and the decisions taken, is `PLAN-3.0.0.md`; what the app does is §4.17.
 
 **Built and tested** — the server (every rule, on a real PostgreSQL), the app's client, the sync engine, the sign-in
@@ -790,7 +790,9 @@ join turned down from the admin's pop-up, with the "turned down" email. Offline:
 The daily backup runs on the real project (2026-10-14). **Not tested, by the operator's decision** (the operator is the
 only tester, with one computer): offline, and two computers at once.
 
-**Before shipping:** the final data uploaded once more (backup → start over → upload from the backup).
+**After shipping (the operator, in the installed 3.0.0):** sign in → **Start the group over** → **Upload this computer's
+data**; then mark Terrazul Sweetwater **Out of date…**; GitHub Pages pointed at the release branch (the email buttons);
+the TEST app uninstalled. The release's "Update the shared database (Supabase)" run shows a green tick.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
@@ -832,7 +834,7 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 *(Order set by the operator, 2026-10-07.)*
 
-### 3.0.0 — One shared database *(being built — §8, §4.17, `PLAN-3.0.0.md`)*
+### 3.0.0 — One shared database *(shipped 2026-10-14 — §8, §4.17, `PLAN-3.0.0.md`)*
 So the team works off the same data: groups made by the maintainer, each with one admin; editors and view-only
 members; a typed reason on every change (who / when / why, field by field); the admin's changes need the admin's
 approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
@@ -867,4 +869,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.0.0 (being built).*
+*Last updated for version 3.0.0 (shipped 2026-10-14).*
