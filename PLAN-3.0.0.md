@@ -137,6 +137,10 @@ Underwriting tab's working copy, the AI settings and Claude sign-in, the local b
 | **F** | The maintainer screen (create a group, name its admin), the first upload (this computer's data → a group's starting copy, local files untouched), the daily backup, a change-history screen (who / when / why). | Create a group, upload the starting data, compare every number with the local app; the history lists each change with its reason. |
 | **G** | Version 3.0.0, the reference doc, the full test suite, the draft PR — **not merged**. The check list part for the real installed app needs the real Supabase project. | Full unit + e2e suite. |
 
+## 5b. Testing on the real project (the operator, 2026-10-14)
+The operator is the only tester and uses one computer; no other person or computer is used for testing. Offline and
+two computers at once are therefore not tested on the real project (they are covered by the automatic tests only).
+
 ## 6. What the operator will need to do later (not now)
 
 - **Create the Supabase project** and send its address and its public key (the "anon" key — it is meant to be in the

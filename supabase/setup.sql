@@ -964,6 +964,10 @@ begin
   if coalesce(btrim(reason), '') = '' then raise exception 'reason_required' using errcode = 'P0001'; end if;
   select * into b from app.backups x where x.group_id = m.group_id and x.day = lds_backup_restore.day;
   if b.day is null then raise exception 'no_backup' using errcode = 'P0001'; end if;
+  -- a day taken before the group had data: putting it back would remove everything, for everyone
+  if (select count(*) from jsonb_object_keys(coalesce(b.records, '{}'))) = 0 then
+    raise exception 'empty_backup' using errcode = 'P0001', hint = 'That day''s backup is empty — putting it back would remove all the group''s data.';
+  end if;
   for p in select r.path from app.records r where r.group_id = m.group_id and r.content is not null and not (b.records ? r.path)
            union select k from jsonb_object_keys(b.records) k loop
     c := b.records -> p;

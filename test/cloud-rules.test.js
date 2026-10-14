@@ -199,6 +199,9 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       const b = await A.rpc("lds_backups");
       ok(b.length === 1 && Number(b[0].records) >= 3, "taken for the group");
       ok(await fails_with(E.rpc("lds_backups"), "admin_only") === true, "only the admin sees backups");
+      const bx = await X.rpc("lds_backups");
+      ok(bx.length === 1 && Number(bx[0].records) === 0, "a group with no data yet: an empty backup");
+      ok(await fails_with(X.rpc("lds_backup_restore", { day: bx[0].day, reason: "oops" }), "empty_backup") === true, "an empty day can't be put back (it would remove everything)");
       const before = (await A.rpc("lds_pull", { since: 0 })).records.find(x => x.path === "loans.json").content;
       const oops = JSON.parse(JSON.stringify(before)); oops.loans[1].annualRate = 0;
       const ro = await E.rpc("lds_save", { items: [{ path: "loans.json", base_version: ver["loans.json"], content: oops }], reason: "Oops" });

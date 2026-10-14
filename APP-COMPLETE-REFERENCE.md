@@ -659,7 +659,9 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
 - **Big files** go to storage in pieces under the free plan's 50 MB a file, with a note of the pieces; opening the
   file joins them back and checks it is whole (size and fingerprint) — a missing piece is an error, never a cut-off
   file.
-- **Daily backups** (kept 30 days) — the admin puts a day back; every change it makes is recorded.
+- **Daily backups** (kept 30 days) — the admin puts a day back; every change it makes is recorded. A day taken
+  before the group had data shows "empty — nothing to put back" (the server refuses it too: it would remove
+  everything).
 - **Closing with changes not saved** asks, then drops them; the app always opens on the Portfolio dashboard.
 
 ---
@@ -686,7 +688,7 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
   decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
   every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
-- **3.0.0** adds `cloud-rules.test.js` (91 checks — the server's rules on a real PostgreSQL through the app's own
+- **3.0.0** adds `cloud-rules.test.js` (93 checks — the server's rules on a real PostgreSQL through the app's own
   client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
   history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
   folding two saves), `cloud-sync.test.js` (80 — two computers through the whole sync; a file over the size limit named, then stored in
@@ -758,8 +760,10 @@ was started over and uploaded again from a backup file — **every tile and ever
 Also checked there by the operator: a change saved with its reason and shown in the change history; a request to
 join turned down from the admin's pop-up, with the "turned down" email. Offline: not tested (the operator's choice).
 
-**Still needs checking — with the real Supabase project:** two computers at once; the daily backup running; before
-shipping, the final data uploaded once more (backup → start over → upload from the backup).
+The daily backup runs on the real project (2026-10-14). **Not tested, by the operator's decision** (the operator is the
+only tester, with one computer): offline, and two computers at once.
+
+**Before shipping:** the final data uploaded once more (backup → start over → upload from the backup).
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
