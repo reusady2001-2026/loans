@@ -507,6 +507,10 @@ can't change; the reason bar shows the stories.
   release.
 
 ## 6. Decisions for the operator (my recommendation first)
+
+**The operator's answers (2026-10-14, in the "Next Stage Plan" doc):** D3, D4, D5, D6, D8, D9, D10, D11, D12 and D13
+agreed as recommended. **D1, D2 and D7: to talk through** — not settled; nothing that depends on them is built
+before they are.
 1. **D1 — a loan that must be dealt with.** Recommend: can't cover what you owe **and** ends within 12 months → the
    pay-down verdict instead of "Don't refinance".
 2. **D2 — the columns.** Recommend two, Pro forma and Aggressive, with Aggressive = Pro forma + its own changes.
