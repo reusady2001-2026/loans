@@ -195,7 +195,8 @@ duplicate") come from the group; this computer's own values are kept aside, unch
   properties' own NOIs, against its one payment. Coverage is measured per **stack** — every property and every loan
   tied together by any loan: a pooled mezz over the same pool, or one member's own extra loan, joins the pool's row,
   and each property's NOI is counted once. A single property's senior + mezz is a stack of one, exactly as before.
-  Above the Coverage table: **Refinance several properties together…** (§4.8).
+  Above the Coverage table: **Create a portfolio…** — several properties under one new loan (§4.8; called "Refinance
+  several properties together" before 3.0.0).
 
 ### 4.2 Property & loan management
 - **Add a property** — the same checks for the form and the assistant (2.9.7): an archived property of that name
@@ -210,6 +211,10 @@ duplicate") come from the group; this computer's own values are kept aside, unch
 - **Remove a loan = archive it** (recoverable). **2.9.8:** the property stays — its NOI still counts in the
   portfolio (with no debt), so removing a loan raises Portfolio DSCR and debt yield and lowers LTV. A loan record is deleted only from "Removed & paid-off loans",
   behind **Delete permanently**.
+- **Out of date…** (3.0.0, on the Loan Record) — for a loan whose terms are known to be wrong (e.g. it was refinanced
+  and the new loan's documents haven't come yet — Terrazul Sweetwater). With a reason; nothing in the loan changes and
+  nothing is made up. Its page, its refinance and Home's Needs Attention (first) say its figures are out of date until
+  **It's up to date again** clears it (load the new loan, then mark the old one paid off).
 - **Archive / un-archive** a property. **Delete permanently** only an **archived** property, behind a confirm
   that lists exactly what goes; its files are deleted first, and if one can't be (open in Excel) nothing else is.
 - **Duplicates** (Data Health): the full street address + city must match; names are compared only when a
@@ -266,8 +271,9 @@ duplicate") come from the group; this computer's own values are kept aside, unch
 ### 4.4 Underwriting & debt sizing (the engine)
 `underwriting.sizeLoan(noi, params)` returns the max supportable loan and all three constraints (DSCR, LTV, debt
 yield) with the binding one named; each leg of a senior + mezz shows its own implied DSCR / LTV / debt yield.
-**Three sets of limits** (2.9.7): the refinance's "Can you?" is fixed at **1.25× / 75% / 7%**; Underwriting sizing
-starts at the same 1.25× / 75% / 7% and can be changed per property; Home's targets are set in Settings.
+**Three sets of limits** (2.9.7): the refinance's "Can you?" starts at **1.25× / 75% / 7%** and (3.0.0) is typed per
+refinance (below); Underwriting sizing starts at the same 1.25× / 75% / 7% and can be changed per property; Home's
+targets are set in Settings.
 
 ### 4.5 The operating model & assumptions (2.9.7 corrections)
 - **One underwriting case.** *(The Borrower / Lender switch was removed on purpose in 2.9.3 — #103.)*
@@ -404,7 +410,16 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
 ### 4.8 Refinance analysis
 - **A refinance is always of the property** — all its loans together (senior + mezz), against their combined
   payoff (2.9.7).
-- **Can you?** — the property must support a new loan at least as big as what you owe (1.25× / 75% / 7%).
+- **Can you?** — the property must support a new loan at least as big as what you owe, sized **only on the proposed
+  loan's rate** (never today's loan's).
+- **3.0.0 — how "supports $X" is worked out** (under "Can you?"): the NOI and where it comes from; the proposed loan's
+  rate as index + spread; amortizing or interest-only; then every lender limit with **the loan it allows** and the one
+  that **binds** (the smallest). The limits are **this refinance's own**, typed there and kept on this computer:
+  debt coverage on the amortizing payment (starts 1.25×), **debt coverage on the interest-only payment** (used once
+  typed — e.g. Azriel's lender: 1.11× amortizing, 1.35× interest-only), LTV (75%), debt yield (7%); "back to
+  1.25× / 75% / 7%" resets them. The line under the amount shows the proposed loan's DSCR both ways.
+- **3.0.0 — labels:** "Coverage & value — today's loan" (its DSCR, interest-only DSCR, debt yield, LTV are today's);
+  "Today's loan rate" vs "Proposed loan rate"; "Property supports (at the proposed rate)".
 - **Should you? (your stage-2 rule, 2.9.7)** — checked in order: (1) can't support what you owe → Don't
   refinance; (2) today's loan ends within 12 months → Refinance; (3) the lower rate pays for the early-payoff
   penalty → Refinance; (4) lower rate but it doesn't pay the penalty, and the extra cash is more than 20% of what
@@ -417,14 +432,26 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   after closing, floored at $0 — a loss could read "$0.00"). In the decision case the amount can't be lowered into a
   loss either. Example: today 4.50%, proposed 4.40%, a 23% penalty — 21% extra cash → Don't refinance, you'd lose
   ≈$206K; 25% → your decision.
-- **2.9.14 — refinance several properties together:** Home → **Refinance several properties together…** lists every
-  property with what it owes (or "no loan yet") and counts what you tick ("3 ticked · 2 loans to pay off ($…) · 1
-  with no loan yet · NOI $…"). The refinance screen names the properties and the loans it pays off; payoff = every
+- **2.9.14 — refinance several properties together** (3.0.0: **Create a portfolio…**): Home → **Create a
+  portfolio…** lists every property with what it owes (or "no loan yet") **and its NOI with where it comes from**,
+  and counts what you tick ("3 ticked · 2 loans to pay off ($…) · 1 with no loan yet · NOI $…").
+  **3.0.0 — a property with no NOI is never counted as $0:** the picker names it ("no NOI for …"); the refinance shows
+  **NOI by property** (each NOI and its source — your override, the T12, the operating statement, typed on its loan,
+  typed on the property) and sizes nothing until each has one; a missing one can be typed right there (saved on the
+  property; 0 if it truly earns nothing). An NOI typed on a property's own loan now counts too. The refinance screen names the properties and the loans it pays off; payoff = every
   loan on them; NOI = all of theirs. Properties with no loan (new ones) can join — at least one ticked property must
   have a loan to pay off. **Save** pays the old loans off (refinanced) and saves **one pooled loan** on all of them.
   A pooled loan's own refinance works the same way; the assistant can open one (refinance_together).
 - The proposed rate: Fixed / Floating / **Hybrid** — a hybrid shows both periods (the fixed period over the
-  matching Treasury, then today's index + margin "if the index stays at today's level"); spreads start at 0.
+  matching Treasury, then today's index + margin "if the index stays at today's level"). **3.0.0 — the spread never
+  starts at 0** (that made the proposed rate far too low): floating starts at the **30-day Average SOFR + your recent
+  SOFR loans' spread, else 200 bps**; fixed and hybrid at **your recent fixed loans' spread over the matching
+  Treasury, else the property market's multifamily spread** (e.g. Cincinnati 175 bps). It is labelled "starting
+  spread — <where from>; type your lender's quote" until you type one. A 30-day SOFR rate shows the value it is set
+  at (its reset day).
+- **Early-payoff penalty — yield maintenance** (unchanged): the rate gap over the remaining term on today's balance,
+  discounted at the matching Treasury, at least 1%. **Checked against Chatham Financial's calculator (cf.com), 3 real
+  loans, 2026-10-14** — see §8.
 - The NOI the refinance is sized on: **In-place T12 NOI**, **Underwritten NOI**, or the **entered** NOI (your
   override, when you set one).
 - **Save as a loan** replaces all the property's loans: the old ones become **Paid off (refinanced)**, dated, in
@@ -766,6 +793,26 @@ only tester, with one computer): offline, and two computers at once.
 **Before shipping:** the final data uploaded once more (backup → start over → upload from the backup).
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
+
+**Refinance fixes from Azriel's meeting (2026-10-13), built 2026-10-14** — §4.8: no property counted as $0 in a
+portfolio; today's vs proposed labels, sized on the proposed rate only; starting spreads never 0; how "supports $X"
+is worked out; the lender's limits per refinance with interest-only coverage; "Create a portfolio"; a loan marked out
+of date. Test: `refi-portfolio-300.e2e.js` (20 checks).
+
+**Yield maintenance vs Chatham Financial (cf.com, its free calculator), 2026-10-14** — three real loans, prepaid
+1-Nov-2026, Actual/360, 360-month amortization; the app with that day's live Treasury:
+
+| Loan | Balance (app / Chatham) | Penalty at the real rate (app / Chatham) | Penalty with the rate set to 7% (app / Chatham) |
+|---|---|---|---|
+| Villages of Whitewater (4.70%) | $9,490,682 / $9,490,682 | $94,907 / $94,907 (1% minimum) | $961,094 / $922,682 (+4.2%) |
+| Villages of Independence (5.23%) | $12,403,997 / $12,403,997 | $124,040 / $124,040 (1% minimum) | $1,472,893 / $1,355,601 (+8.7%) |
+| Villages of Burlington (4.875%) | $14,050,272 / $14,048,567 | $140,503 / $140,486 (1% minimum) | $1,713,118 / $1,571,255 (+9.0%) |
+
+At the loans' own rates (all below today's 5–5.1% Treasuries) both give the 1% minimum on the same balance. With the
+rate raised to 7%, so the formula itself counts, the app is **4–9% above Chatham**. Chatham's assumptions (which
+Treasury, when the yield-maintenance period ends) are behind its paid sign-up, and no single convention tried matched
+all three, so the formula is **left as it is**; the loan documents' yield-maintenance clause (its end date and
+Treasury) would settle it.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.

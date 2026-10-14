@@ -15,7 +15,7 @@ function make(o) {
     refiFive: async (page, F) => {
       await L.goHome(page);
       const ok = await page.evaluate(() => { const b = document.getElementById('poolRefiBtn'); if (!b) return false; b.click(); return true; });
-      if (!ok) return { unsupported: 'no "refinance several properties" button' };
+      if (!ok) return { unsupported: 'no "Create a portfolio" button' };
       await page.waitForTimeout(400);
       await page.evaluate((names) => { document.querySelectorAll('#poolPicker [data-poolpick]').forEach(cb => { const sp = cb.parentElement.querySelector('span'); const t = (sp ? sp.textContent : cb.parentElement.textContent).trim(); if (names.indexOf(t) >= 0) cb.checked = true; }); document.getElementById('poolPickGo').click(); }, F.PROPS.map(p => p.name));
       await page.waitForTimeout(1500);
