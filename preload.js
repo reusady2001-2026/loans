@@ -15,6 +15,8 @@ try {
   }
 } catch (e) {}
 
+const cloudInfo = (() => { try { return ipcRenderer.sendSync('lds:cloud-mode') || { cloud: false }; } catch (e) { return { cloud: false }; } })();
+
 contextBridge.exposeInMainWorld('ldsShell', {
   // Marks this as the desktop build (the renderer checks it to show/hide the
   // Data menu, which is desktop-only).
@@ -174,4 +176,50 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Browser OAuth sign-in to the Claude subscription (`claude setup-token`) → {ok,error}.
   aiLogin: () => ipcRenderer.invoke('lds:ai-login'),
   aiLogout: () => ipcRenderer.invoke('lds:ai-logout'),
+
+  // ---- 3.0.0 — the shared database ----
+  // How this window started: {cloud:false} (today's local data) or {cloud:true, role, name, group, online, …}.
+  cloudMode: cloudInfo.cloud === true,
+  cloudInfo,
+  cloud: {
+    status: () => ipcRenderer.invoke('lds:cloud-status'),
+    // the app's own work (start-up checks, recomputing): its writes go up by themselves, stamped as the app
+    auto: (on, label) => { try { ipcRenderer.send('lds:cloud-auto', !!on, String(label || '')); } catch (e) {} },
+    commit: (o) => ipcRenderer.invoke('lds:cloud-commit', o || {}),        // {reason, approvalCode?, request?}
+    discard: () => ipcRenderer.invoke('lds:cloud-discard'),
+    settings: () => { try { return ipcRenderer.sendSync('lds:cloud-settings'); } catch (e) { return null; } },
+    setSetting: (key, value) => { try { return ipcRenderer.sendSync('lds:cloud-setting-set', { key, value }); } catch (e) { return { ok: false }; } },
+    requests: () => ipcRenderer.invoke('lds:cloud-requests'),
+    approve: (id) => ipcRenderer.invoke('lds:cloud-approve', { id }),
+    reject: (id, note) => ipcRenderer.invoke('lds:cloud-reject', { id, note }),
+    unlockOffline: (code) => ipcRenderer.invoke('lds:cloud-unlock-offline', { code }),
+    setCodes: (approvalCode, offlineCode) => ipcRenderer.invoke('lds:cloud-set-codes', { approvalCode, offlineCode }),
+    members: () => ipcRenderer.invoke('lds:cloud-members'),
+    rpc: (fn, args) => ipcRenderer.invoke('lds:cloud-rpc', { fn, args }),
+    uploadStart: (o) => ipcRenderer.invoke('lds:cloud-upload-start', o || {}),
+    uploadPreview: () => ipcRenderer.invoke('lds:cloud-upload-preview'),
+    uploadPickBackup: () => ipcRenderer.invoke('lds:cloud-upload-pick-backup'),
+    pull: () => ipcRenderer.invoke('lds:cloud-pull'),
+    groupEmpty: () => ipcRenderer.invoke('lds:cloud-group-empty'),
+    signIn: (email, password) => ipcRenderer.invoke('lds:cloud-signin', { email, password }),
+    signUp: (email, password) => ipcRenderer.invoke('lds:cloud-signup', { email, password }),
+    groupSearch: (q) => ipcRenderer.invoke('lds:cloud-group-search', { q }),
+    join: (o) => ipcRenderer.invoke('lds:cloud-join', o || {}),                // {groupId, name, email?, password?}
+    joins: () => ipcRenderer.invoke('lds:cloud-joins'),
+    decideJoin: (id, approve) => ipcRenderer.invoke('lds:cloud-decide-join', { id, approve }),
+    openIfMember: () => ipcRenderer.invoke('lds:cloud-open'),
+    forgotPassword: (email) => ipcRenderer.invoke('lds:cloud-forgot', { email }),
+    resetPassword: (email, code, password) => ipcRenderer.invoke('lds:cloud-reset', { email, code, password }),
+    signOut: () => ipcRenderer.invoke('lds:cloud-signout'),
+    on: (name, cb) => { const ch = { status: 'lds:cloud-status', changed: 'lds:cloud-changed', refused: 'lds:cloud-refused', requests: 'lds:cloud-requests', joins: 'lds:cloud-joins', progress: 'lds:cloud-progress', signin: 'lds:cloud-signin', removed: 'lds:cloud-removed' }[name];
+      if (!ch) return () => {}; const fn = (_e, p) => { try { cb(p || {}); } catch (x) {} }; ipcRenderer.on(ch, fn); return () => { try { ipcRenderer.removeListener(ch, fn); } catch (x) {} }; },
+  },
 });
+
+// 3.0.0 — the person's own typing and clicking: a write right after it is the person's change (it waits for a reason),
+// never the app's automatic work
+try {
+  let last = 0;
+  const mark = () => { const t = Date.now(); if (t - last < 400) return; last = t; try { ipcRenderer.send('lds:cloud-input'); } catch (e) {} };
+  ['keydown', 'pointerdown', 'mousedown', 'drop', 'paste'].forEach(ev => window.addEventListener(ev, mark, true));
+} catch (e) {}

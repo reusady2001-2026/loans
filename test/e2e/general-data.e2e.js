@@ -40,7 +40,7 @@ const activeBasis=(page)=>page.evaluate(()=>{
 // readout ("DSCR x× · LTV …"). v2.8.5 makes the tier grade on the toggled NOI, so they must match.
 const dscrPair=(page)=>page.evaluate(()=>{
   const rv=document.getElementById('refiView'); const txt=rv?rv.innerText||'':'';
-  const dt=[...(rv?rv.querySelectorAll('dt'):[])].find(d=>/^DSCR$/i.test((d.textContent||'').trim()));
+  const dt=[...(rv?rv.querySelectorAll('dt'):[])].find(d=>/^DSCR( today)?$/i.test((d.textContent||'').trim()));   // 3.0.0 — "DSCR today" (today's loan)
   const panel=dt&&dt.nextElementSibling?parseFloat((dt.nextElementSibling.textContent||'').replace(/[^0-9.]/g,'')):null;
   const m=txt.match(/DSCR\s+([\d.]+)×\s*·\s*LTV/i);   // the tier readout line: "DSCR x× · LTV …"
   return { panel, tier:m?parseFloat(m[1]):null };

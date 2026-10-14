@@ -1,6 +1,6 @@
 {
   "name": "loan-debt-service-hub",
-  "version": "2.9.17",
+  "version": "3.0.0",
   "description": "Commercial Loan Debt Service Hub \u2014 offline desktop app",
   "main": "main.js",
   "author": "BSI",
@@ -41,6 +41,12 @@
       "rate-history.js",
       "ocr.js",
       "ai.js",
+      "cloud-backup.js",
+      "cloud-client.js",
+      "cloud-merge.js",
+      "cloud-sync.js",
+      "cloud-config.json",
+      "signin.html",
       "main.js",
       "preload.js",
       "vendor/**/*",
@@ -82,7 +88,8 @@
   },
   "devDependencies": {
     "electron": "^33.2.1",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "pg": "^8.23.1"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "latest",

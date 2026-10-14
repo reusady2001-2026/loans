@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Join request — Loan Debt Service Hub</title>
+<style>
+  :root { --brand: #4c721b; --ink: #1f231f; --muted: #565d56; --line: #e6e8e6; --bg: #f6f8f2; --bad: #b42318; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 48px 16px 64px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .app { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .who { font-weight: 600; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  button { font: inherit; font-weight: 600; border-radius: 10px; padding: 12px 22px; cursor: pointer; border: 1px solid #c9cdc9; background: #fff; color: var(--ink); }
+  button.main { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button[disabled] { opacity: .6; cursor: default; }
+  .msg { margin-top: 14px; }
+  .bad { color: var(--bad); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <div class="app">Loan Debt Service Hub</div>
+    <h1 id="title">Join request</h1>
+    <p id="text">Loading the request…</p>
+    <div class="row hidden" id="buttons">
+      <button id="approve" type="button">Approve</button>
+      <button id="turnDown" type="button">Turn down</button>
+    </div>
+    <p class="msg" id="msg"></p>
+  </div>
+</main>
+<script src="config.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), id = q.get("r") || "", token = q.get("t") || "", want = q.get("a") || "";
+  var $ = function (x) { return document.getElementById(x); };
+  function say(id, text, bad) { $(id).textContent = text; $(id).className = (id === "msg" ? "msg" : "") + (bad ? " bad" : ""); }
+  function post(body) {
+    var cfg = window.LDS_JOIN || {};
+    return fetch(cfg.url, { method: "POST", headers: { "Content-Type": "application/json", apikey: cfg.key || "" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, message: "The server didn't answer properly (" + r.status + ")." }; }); })
+      .catch(function () { return { ok: false, message: "The server can't be reached. Check the connection and open the link again." }; });
+  }
+  function decided(r) {
+    var by = r.decided_by ? " by " + r.decided_by : "";
+    if (r.status === "approved") return r.name + " was already approved" + by + ".";
+    if (r.status === "turned_down") return r.name + "'s request was already turned down" + by + ".";
+    return r.name + " no longer asks to join (they asked another group, or are in one).";
+  }
+  if (!id || !token) { say("text", "This link isn't complete. Open it again from the email.", true); return; }
+  // the email's button only opens this page; nothing is decided until a button here is pressed (email scanners open
+  // links by themselves)
+  post({ action: "look", id: id, token: token }).then(function (r) {
+    if (!r.ok) { say("text", r.message || "This link isn't right, or the request is gone.", true); return; }
+    $("title").textContent = r.name + " asks to join " + r.group_name;
+    $("text").innerHTML = "";
+    var who = document.createElement("span"); who.className = "who"; who.textContent = r.name + " (" + r.email + ")";
+    $("text").appendChild(who);
+    $("text").appendChild(document.createTextNode(" asked to join " + r.group_name + ". Approved, they join as an editor."));
+    if (r.status !== "waiting") { say("msg", decided(r)); return; }
+    $("buttons").classList.remove("hidden");
+    var first = want === "turn_down" ? $("turnDown") : $("approve");
+    first.classList.add("main"); first.focus();
+    function go(approve) {
+      $("approve").disabled = $("turnDown").disabled = true; say("msg", approve ? "Approving…" : "Turning it down…");
+      post({ action: "decide", id: id, token: token, approve: approve }).then(function (d) {
+        if (d.ok && d.status === "approved") {
+          $("buttons").classList.add("hidden");
+          say("msg", "Approved. " + d.name + " gets an email to confirm their address, then joins " + d.group_name + " as an editor." +
+                     (d.mailed === false ? " (The email couldn't be sent — they can ask again from the app to get it.)" : ""));
+        } else if (d.ok && d.status === "turned_down") {
+          $("buttons").classList.add("hidden");
+          say("msg", "Turned down. " + d.name + " gets an email saying so." + (d.mailed === false ? " (The email couldn't be sent.)" : ""));
+        } else if (d.status) {
+          $("buttons").classList.add("hidden"); say("msg", decided(d));
+        } else {
+          $("approve").disabled = $("turnDown").disabled = false; say("msg", d.message || "That didn't work. Try again.", true);
+        }
+      });
+    }
+    $("approve").onclick = function () { go(true); };
+    $("turnDown").onclick = function () { go(false); };
+  });
+})();
+</script>
+</body>
+</html>

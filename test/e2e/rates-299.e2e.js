@@ -47,9 +47,12 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   for(const [id,short] of [['sofr30','30-day Avg SOFR'],['termsofr1m','1-mo Term SOFR'],['prime','Prime'],['effr','EFFR']]){
     await page.evaluate((id)=>{ const s=document.getElementById('o1_index'); s.value=id; s.dispatchEvent(new Event('change',{bubbles:true})); },id); await page.waitForTimeout(1200);
     const t=await page.evaluate(()=>document.getElementById('refiPricing').innerText);
-    const v=await rate(id);
+    // 3.0.0 — a reset-day index (30-day Avg SOFR) shows the value the loan is priced on: its value on this month's
+    // reset day, i.e. the proposed rate less the spread; any other index, its value today
+    const used=await page.evaluate(()=>{ const d=window.LDS_refiDraft(); return d&&/\(set /.test(document.getElementById('refiPricing').innerText)?(window.LDS_refiDraftRate()-(d._effSpread||0))*100:null; });
+    const v=used!=null?used:await rate(id);
     const m=t.match(new RegExp(short.replace(/[-]/g,'\\-')+' ([0-9.]+)%'));
-    ok(m&&v!=null&&Math.abs(parseFloat(m[1])-v)<0.01,'picking '+short+' prices it from its own rate ('+(m&&m[1])+'% vs the '+id+' rate '+v+'%)');
+    ok(m&&v!=null&&Math.abs(parseFloat(m[1])-v)<0.01,'picking '+short+' prices it from its own rate ('+(m&&m[1])+'% vs the '+id+' rate '+v+'%'+(used!=null?', set on its reset day':'')+')');
   }
   if(fx){ await page.evaluate(()=>document.querySelector('#refiPricing [data-rtype="Hybrid ARM"]').click()); await page.waitForTimeout(600);
     const fxo=await page.evaluate(()=>{ const s=document.getElementById('o1_fxindex'); return s?[...s.options].map(o=>o.textContent):[]; });

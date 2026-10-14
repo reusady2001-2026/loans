@@ -1,11 +1,12 @@
 # Loan Debt Service Hub — Complete Reference
 
-*Everything this app is, everything it does, how it was built, what stage 2.9.17 still needs checked on a real
-Windows install, and what comes next.*
+*Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
+comes next.*
 
-**Current version:** 2.9.17
+**Current version:** 3.0.0 — shipped 2026-10-14 (the operator: "ship it")
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
-**Runs on:** Windows desktop (offline). Used by Azriel's team in the US.
+**Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
+set up for the app. Used by Azriel's team in the US.
 **Repo:** `reusady2001-2026/loans`
 **Portfolio today:** 29 properties.
 
@@ -19,7 +20,8 @@ Windows install, and what comes next.*
 > (marked "2.9.13"); 2.9.14 pooled loans and two approved fixes, R1 and A1 (marked "2.9.14"); 2.9.15 the three fixes
 > from testing 2.9.14, T1, P1 and C1 (marked "2.9.15"); 2.9.16 the new T12 reading — the reader and the AI
 > read every T12 before anything from it is used (marked "2.9.16"); 2.9.17 the readers divide a T12 by the file's own
-> categories and the Underwriting table takes its rows from their one answer (marked "2.9.17").
+> categories and the Underwriting table takes its rows from their one answer (marked "2.9.17"); 3.0.0 the shared
+database (marked "3.0.0"; its plan is `PLAN-3.0.0.md`, its setup `SUPABASE-SETUP.md`).
 
 ---
 
@@ -58,6 +60,13 @@ loaded from a file address, which the second OCR engine (PaddleOCR) could not ru
 - `preload.js` — the `ldsShell` bridge that safely exposes those IPC calls to the page.
 - `index.html` — the entire renderer UI and logic.
 - `legacy-storage.html` — an empty page used once, at the first 2.9.7 start, to copy the old settings.
+- **3.0.0** `signin.html` — the shared database's sign-in (and the maintainer's groups), shown when a shared
+  database is set up and nobody is signed in.
+- **3.0.0** `cloud-client.js` (the app's own client for Supabase's web API — Supabase's library needs Node 22, the
+  app's Electron runs Node 20), `cloud-sync.js` (the group's picture of the data on this computer, pending changes,
+  live pulls, offline), `cloud-merge.js` (field paths, "only time stamps changed", folding two saves together) and
+  `supabase/setup.sql` (the server: every rule checked there). `cloud-config.json` holds the project's address and
+  public key (empty = each computer's own data, as before).
 
 **The JavaScript modules (each pure/UMD, unit-tested):**
 
@@ -133,6 +142,14 @@ Everything is stored on disk under the app's user-data folder; the browser stora
 A property's files and chats **move with it** when it is renamed or re-addressed; onto a name that already has
 files, the app asks first ("Put them together").
 
+**3.0.0 — signed in to the shared database**, the app reads and writes the same layout in the group's own folder,
+`userData/cloud/<group>/data` — "the picture" — kept in step with the server. `userData/cloud/<group>/server` is the
+server's copy of each record (what unsaved changes are measured from; the picture is rebuilt from it on opening,
+so nothing unsaved survives a restart). Today's `loans.json`, `documents/` and `chats/` are never touched — the
+first upload only reads them. Backups, the OCR cache, the reading queue, the logs and the AI settings stay where
+they are. The team's settings that lived in the window's storage (targets, custom T12 categories, "not a
+duplicate") come from the group; this computer's own values are kept aside, unchanged.
+
 ---
 
 ## 4. Every feature, area by area
@@ -178,7 +195,8 @@ files, the app asks first ("Put them together").
   properties' own NOIs, against its one payment. Coverage is measured per **stack** — every property and every loan
   tied together by any loan: a pooled mezz over the same pool, or one member's own extra loan, joins the pool's row,
   and each property's NOI is counted once. A single property's senior + mezz is a stack of one, exactly as before.
-  Above the Coverage table: **Refinance several properties together…** (§4.8).
+  Above the Coverage table: **Create a portfolio…** — several properties under one new loan (§4.8; called "Refinance
+  several properties together" before 3.0.0).
 
 ### 4.2 Property & loan management
 - **Add a property** — the same checks for the form and the assistant (2.9.7): an archived property of that name
@@ -193,6 +211,10 @@ files, the app asks first ("Put them together").
 - **Remove a loan = archive it** (recoverable). **2.9.8:** the property stays — its NOI still counts in the
   portfolio (with no debt), so removing a loan raises Portfolio DSCR and debt yield and lowers LTV. A loan record is deleted only from "Removed & paid-off loans",
   behind **Delete permanently**.
+- **Out of date…** (3.0.0, on the Loan Record) — for a loan whose terms are known to be wrong (e.g. it was refinanced
+  and the new loan's documents haven't come yet — Terrazul Sweetwater). With a reason; nothing in the loan changes and
+  nothing is made up. Its page, its refinance and Home's Needs Attention (first) say its figures are out of date until
+  **It's up to date again** clears it (load the new loan, then mark the old one paid off).
 - **Archive / un-archive** a property. **Delete permanently** only an **archived** property, behind a confirm
   that lists exactly what goes; its files are deleted first, and if one can't be (open in Excel) nothing else is.
 - **Duplicates** (Data Health): the full street address + city must match; names are compared only when a
@@ -249,8 +271,9 @@ files, the app asks first ("Put them together").
 ### 4.4 Underwriting & debt sizing (the engine)
 `underwriting.sizeLoan(noi, params)` returns the max supportable loan and all three constraints (DSCR, LTV, debt
 yield) with the binding one named; each leg of a senior + mezz shows its own implied DSCR / LTV / debt yield.
-**Three sets of limits** (2.9.7): the refinance's "Can you?" is fixed at **1.25× / 75% / 7%**; Underwriting sizing
-starts at the same 1.25× / 75% / 7% and can be changed per property; Home's targets are set in Settings.
+**Three sets of limits** (2.9.7): the refinance's "Can you?" starts at **1.25× / 75% / 7%** and (3.0.0) is typed per
+refinance (below); Underwriting sizing starts at the same 1.25× / 75% / 7% and can be changed per property; Home's
+targets are set in Settings.
 
 ### 4.5 The operating model & assumptions (2.9.7 corrections)
 - **One underwriting case.** *(The Borrower / Lender switch was removed on purpose in 2.9.3 — #103.)*
@@ -387,7 +410,16 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
 ### 4.8 Refinance analysis
 - **A refinance is always of the property** — all its loans together (senior + mezz), against their combined
   payoff (2.9.7).
-- **Can you?** — the property must support a new loan at least as big as what you owe (1.25× / 75% / 7%).
+- **Can you?** — the property must support a new loan at least as big as what you owe, sized **only on the proposed
+  loan's rate** (never today's loan's).
+- **3.0.0 — how "supports $X" is worked out** (under "Can you?"): the NOI and where it comes from; the proposed loan's
+  rate as index + spread; amortizing or interest-only; then every lender limit with **the loan it allows** and the one
+  that **binds** (the smallest). The limits are **this refinance's own**, typed there and kept on this computer:
+  debt coverage on the amortizing payment (starts 1.25×), **debt coverage on the interest-only payment** (used once
+  typed — e.g. Azriel's lender: 1.11× amortizing, 1.35× interest-only), LTV (75%), debt yield (7%); "back to
+  1.25× / 75% / 7%" resets them. The line under the amount shows the proposed loan's DSCR both ways.
+- **3.0.0 — labels:** "Coverage & value — today's loan" (its DSCR, interest-only DSCR, debt yield, LTV are today's);
+  "Today's loan rate" vs "Proposed loan rate"; "Property supports (at the proposed rate)".
 - **Should you? (your stage-2 rule, 2.9.7)** — checked in order: (1) can't support what you owe → Don't
   refinance; (2) today's loan ends within 12 months → Refinance; (3) the lower rate pays for the early-payoff
   penalty → Refinance; (4) lower rate but it doesn't pay the penalty, and the extra cash is more than 20% of what
@@ -400,14 +432,26 @@ starts at the same 1.25× / 75% / 7% and can be changed per property; Home's tar
   after closing, floored at $0 — a loss could read "$0.00"). In the decision case the amount can't be lowered into a
   loss either. Example: today 4.50%, proposed 4.40%, a 23% penalty — 21% extra cash → Don't refinance, you'd lose
   ≈$206K; 25% → your decision.
-- **2.9.14 — refinance several properties together:** Home → **Refinance several properties together…** lists every
-  property with what it owes (or "no loan yet") and counts what you tick ("3 ticked · 2 loans to pay off ($…) · 1
-  with no loan yet · NOI $…"). The refinance screen names the properties and the loans it pays off; payoff = every
+- **2.9.14 — refinance several properties together** (3.0.0: **Create a portfolio…**): Home → **Create a
+  portfolio…** lists every property with what it owes (or "no loan yet") **and its NOI with where it comes from**,
+  and counts what you tick ("3 ticked · 2 loans to pay off ($…) · 1 with no loan yet · NOI $…").
+  **3.0.0 — a property with no NOI is never counted as $0:** the picker names it ("no NOI for …"); the refinance shows
+  **NOI by property** (each NOI and its source — your override, the T12, the operating statement, typed on its loan,
+  typed on the property) and sizes nothing until each has one; a missing one can be typed right there (saved on the
+  property; 0 if it truly earns nothing). An NOI typed on a property's own loan now counts too. The refinance screen names the properties and the loans it pays off; payoff = every
   loan on them; NOI = all of theirs. Properties with no loan (new ones) can join — at least one ticked property must
   have a loan to pay off. **Save** pays the old loans off (refinanced) and saves **one pooled loan** on all of them.
   A pooled loan's own refinance works the same way; the assistant can open one (refinance_together).
 - The proposed rate: Fixed / Floating / **Hybrid** — a hybrid shows both periods (the fixed period over the
-  matching Treasury, then today's index + margin "if the index stays at today's level"); spreads start at 0.
+  matching Treasury, then today's index + margin "if the index stays at today's level"). **3.0.0 — the spread never
+  starts at 0** (that made the proposed rate far too low): floating starts at the **30-day Average SOFR + your recent
+  SOFR loans' spread, else 200 bps**; fixed and hybrid at **your recent fixed loans' spread over the matching
+  Treasury, else the property market's multifamily spread** (e.g. Cincinnati 175 bps). It is labelled "starting
+  spread — <where from>; type your lender's quote" until you type one. A 30-day SOFR rate shows the value it is set
+  at (its reset day).
+- **Early-payoff penalty — yield maintenance** (unchanged): the rate gap over the remaining term on today's balance,
+  discounted at the matching Treasury, at least 1%. **Checked against Chatham Financial's calculator (cf.com), 3 real
+  loans, 2026-10-14** — see §8.
 - The NOI the refinance is sized on: **In-place T12 NOI**, **Underwritten NOI**, or the **entered** NOI (your
   override, when you set one).
 - **Save as a loan** replaces all the property's loans: the old ones become **Paid off (refinanced)**, dated, in
@@ -588,6 +632,65 @@ saved, the key is used.
   new, M updated, U unchanged").
 - A restore replaces everything, after saving a safety snapshot of the current data first.
 
+
+### 4.17 The shared database (3.0.0)
+The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
+- **Signing in.** With a shared database set up, the app opens on the sign-in page: sign in, or **Create an
+  account**: type the organization's name (after 3 letters, up to 5 names that start with it appear to pick from),
+  full name, email, password → **Sign up**. The request waits for the group's admin, who gets a **pop-up in the app**
+  (and in Members and codes) **and an email** with Approve / Turn down buttons (they open a page with one more click,
+  so an email scanner can't decide). Approved: an email with a link to confirm the address; the link's page says
+  "Your email is confirmed — go back to the app", and the person signs in as an **editor**. Turned down: an email
+  says so (the account made for the request is removed, so they may ask again). The sign-in screen remembers a
+  request that waits; signing in before approval says the account isn't ready yet. Someone signed in but in no group
+  asks from the same screen (no password needed). The group's first admin, named by the maintainer, creates an
+  account the same way and needs no approval — only the confirmation. Nobody is added by typing an email.
+  The maintainer (the company that runs the app) creates groups and names each group's one admin — on the sign-in
+  screen, or from **Groups** in the chip's menu when the maintainer is also in a group.
+- **The chip** in the title bar: who is signed in, their role (Admin, Editor, View only), online / offline. Its
+  menu: the change history; for the admin also requests, people asking to join, members and codes (status Editor /
+  View only, remove), daily backups, the first upload, the offline code; for the maintainer Groups; sign out.
+- **A reason for every change.** A person's change waits in the **"Not saved yet"** bar (what changed) until they
+  type why and Save — or Undo. The change record keeps who, when, why and old → new, field by field. The app's own
+  work (start-up checks, recomputing, re-reading T12s, repricing a floating rate) goes up by itself, stamped as the
+  app; a save that differs only in time stamps is no change.
+- **Two people at once.** Only what changed is sent, so different changes never undo each other; on the same
+  field the later save wins — except a field the **admin** changed last: then the admin types the **approval code**
+  on the spot, or the change is **sent to the admin** (it pops up when the admin opens the app; the old value stays
+  until approved). The starting data and automatic work lock nothing.
+- **View only** members see everything and change nothing (the app says so and puts the screen back).
+- **Live.** Every few seconds the app asks for anything new and reloads what the screens hold (never under the
+  person's fingers).
+- **Offline.** A banner; the last picture is the data; view-only — except the admin with the **offline code**, whose
+  changes are kept and go up on reconnect. The assistant needs the connection.
+- **Chats** are shared: each says who started it; only that person continues it (others read it), the admin may
+  delete any.
+- **Documents** go to the server's storage before the list naming them; they come down to every computer for
+  offline reading. Removing one takes it off the list; the stored file stays for the backups.
+- **The first upload**: an empty group's admin uploads this computer's data as the group's starting copy. The pop-up
+  first says what goes up (loans, properties, documents, total size) and then counts the files as they go. A file the
+  server refuses is named with its property, and nothing is saved until every file is up (what already went up is
+  used again on the next try).
+- **Market rates are the group's.** The rates the app has fetched (today's, the daily Term SOFR / 30-day SOFR history,
+  the monthly SOFR / EFFR and Treasury histories) are shared settings like the targets and custom categories: the
+  first upload takes this computer's, a newly fetched rate goes up as the app's own work (no reason asked), and every
+  member calculates a floating loan from the same rates. (Found by comparing the operator's app with the test app:
+  each computer had kept its own rates, so a floating loan's rate and balance differed.)
+- **Starting the group over** (the admin, Account menu): after typing the group's name, everything the group holds
+  is removed — records, chats, requests, the admin's locks, the change history (one line says who started it over);
+  the members, the codes and the daily backups stay. Every member's app rebuilds its picture from nothing; then the
+  admin uploads the starting data again.
+- **The first upload from a backup file** ("Upload from a backup file instead…"): a backup made with Data → Back up
+  to a file… on any computer — its loans, documents, chats, custom categories, targets and saved rates. It is read
+  as a stream (a backup can be bigger than one string), each file checked against its fingerprint.
+- **Big files** go to storage in pieces under the free plan's 50 MB a file, with a note of the pieces; opening the
+  file joins them back and checks it is whole (size and fingerprint) — a missing piece is an error, never a cut-off
+  file.
+- **Daily backups** (kept 30 days) — the admin puts a day back; every change it makes is recorded. A day taken
+  before the group had data shows "empty — nothing to put back" (the server refuses it too: it would remove
+  everything).
+- **Closing with changes not saved** asks, then drops them; the app always opens on the Portfolio dashboard.
+
 ---
 
 ## 5. Conventions & guardrails
@@ -612,6 +715,18 @@ saved, the key is used.
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
   decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
   every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
+- **3.0.0** adds `cloud-rules.test.js` (93 checks — the server's rules on a real PostgreSQL through the app's own
+  client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
+  history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
+  folding two saves), `cloud-sync.test.js` (80 — two computers through the whole sync; a file over the size limit named, then stored in
+  pieces and whole on another computer; starting over; shared rates), `cloud-backup.test.js` (13 — reading a backup
+  file: a 9 MB file across reads, damage, paths outside the folders, snapshots, older backups) and `cloud-join.test.js` (86 —
+  joining a group through the real `lds-join` function), plus the e2e `cloud-3000.e2e.js` (the real app, three people
+  on three computers), `cloud-3000-admin.e2e.js` (the maintainer, members and codes, documents, chats, history,
+  backups), `cloud-startover.e2e.js` (starting the group over; uploading from a backup file with its rates) and `cloud-join.e2e.js` (creating an account, the admin's pop-up, the email pages in a browser). They run
+  where PostgreSQL is installed and are skipped elsewhere (the Windows build). `test/cloud/` holds the throwaway
+  database and a stand-in for Supabase's sign-in / functions / storage / account API, which also answers Google's
+  Gmail API and keeps every email the function sends.
 - CI runs the unit tests before every build.
 
 ---
@@ -639,23 +754,76 @@ saved, the key is used.
 - **2.9.14** — pooled loans, R1 and A1.
 - **2.9.15** — the fixes from testing the installed 2.9.14: T1, P1 and C1.
 - **2.9.16** — the T12 read by the reader and the AI before it is used.
-- **2.9.17** — *(this stage)* the file's own categories; the Underwriting table takes its rows from the reading (see §8).
+- **2.9.17** — the file's own categories; the Underwriting table takes its rows from the reading.
+- **3.0.0** — *(shipped 2026-10-14)* one shared database (see §8 and §4.17), and the refinance fixes from Azriel's meeting (§4.8).
 
 ---
 
-## 8. Stage 2.9.17 — what shipped, and what still needs checking
+## 8. Stage 3.0.0 — what is built, and what still needs checking
 
-**What shipped** — the operator's rule after testing 2.9.16 (check list Part 10: 7 passed, 1 skipped):
-1. **Both readers divide a T12 by the file's own categories** — every account from a category's name to its total belongs
-   to it; vacancy is an account of Residential Rent, never a category; no category is made up from an account's name.
-2. **The AI gives no category per account**, so the reviews that came from the two readers naming categories differently
-   are gone; saved readings that waited only for that are checked, once.
-3. **The Underwriting table takes its rows from the one answer** — each account on its category's line; vacancy,
-   concessions, employee and model units, bad debt and the management fee from the rows the readers found them on.
+**Shipped 2026-10-14** (the operator: "ship it"; before that: "build the whole plan, then start building … do not ship"). The plan,
+with the operator's rules and the decisions taken, is `PLAN-3.0.0.md`; what the app does is §4.17.
 
-**Check on the real installed 2.9.17 (Windows)** — Part 11 of the check list.
+**Built and tested** — the server (every rule, on a real PostgreSQL), the app's client, the sync engine, the sign-in
+page, the chip, the "Not saved yet" bar, the admin's approval and requests, members and codes, the change history,
+the daily backups, the first upload, offline (and the admin's offline code), shared chats (read-only for others),
+shared documents. 2.9.17 (2.9.17 check list Part 11: 7 of 7 passed) is unchanged when no shared database is set up.
+
+**Joining a group** (the operator, 2026-10-13) — built and tested: Create an account → organization picked from
+the names that appear after 3 letters → name, email, password → the admin approves in the app's pop-up or from the
+email's page → the person confirms the email from the link → signs in as an editor; turned down → an email. The
+emails go out through the app's Gmail account (Gmail API) from the `lds-join` function on Supabase; the email links
+open `docs/decide.html` and `docs/confirm.html` on the app's GitHub Pages site. Tests: `cloud-join.test.js` (86 checks:
+search, approve in the app and by email, turn down, existing accounts, header injection, Gmail down, too many
+waiting) and `cloud-join.e2e.js` (the real windows and the real pages in a browser).
+
+**Checked on the real Supabase project (2026-10-13):** the updated setup; the organization search (start of the name,
+any case); the `lds-join` function deployed with Verify JWT off (it answers with no key, refuses a forged sign-in);
+the Gmail secrets (a real request's email reached the admin); approving from the email's page; the confirmation
+email and its page ("Your email is confirmed"). The first group is Living Residential.
+**2026-10-14:** the first upload of the operator's real data (big files in pieces); comparing it with the operator's own
+app found three rows different (saved market rates and custom categories were per computer); after the fix the group
+was started over and uploaded again from a backup file — **every tile and every row matches the operator's app.**
+Also checked there by the operator: a change saved with its reason and shown in the change history; a request to
+join turned down from the admin's pop-up, with the "turned down" email. Offline: not tested (the operator's choice).
+
+The daily backup runs on the real project (2026-10-14). **Not tested, by the operator's decision** (the operator is the
+only tester, with one computer): offline, and two computers at once.
+
+**After shipping (the operator, in the installed 3.0.0):** sign in → **Start the group over** → **Upload this computer's
+data**; then mark Terrazul Sweetwater **Out of date…**; GitHub Pages pointed at the release branch (the email buttons);
+the TEST app uninstalled. The release's "Update the shared database (Supabase)" run shows a green tick.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
+
+**Database updates run by themselves (2026-10-14):** every release runs `supabase/setup.sql` on the Supabase project
+(`.github/workflows/supabase-setup.yml`, on a push to the release branch; one transaction; GitHub secret
+`SUPABASE_DB_URL` = the Session pooler connection string — SUPABASE-SETUP.md step 9). `setup.sql` carries a version
+(`app.setup_version()`, raised with every change to the file, the same number as `SETUP_NEEDED` in `cloud-sync.js`);
+`lds_pull` reports it, and the admin and the maintainer see a red line under the title bar while the database is
+older than the app. Tests: `cloud-rules` (setup.sql run again over a group's data: nothing lost) and `cloud-sync`
+(an older server noticed, then not). **The operator added the secret on 2026-10-14** in the GitHub environment
+`supabase`, limited to the release branch; its first real run is the 3.0.0 release.
+
+**Refinance fixes from Azriel's meeting (2026-10-13), built 2026-10-14** — §4.8: no property counted as $0 in a
+portfolio; today's vs proposed labels, sized on the proposed rate only; starting spreads never 0; how "supports $X"
+is worked out; the lender's limits per refinance with interest-only coverage; "Create a portfolio"; a loan marked out
+of date. Test: `refi-portfolio-300.e2e.js` (20 checks).
+
+**Yield maintenance vs Chatham Financial (cf.com, its free calculator), 2026-10-14** — three real loans, prepaid
+1-Nov-2026, Actual/360, 360-month amortization; the app with that day's live Treasury:
+
+| Loan | Balance (app / Chatham) | Penalty at the real rate (app / Chatham) | Penalty with the rate set to 7% (app / Chatham) |
+|---|---|---|---|
+| Villages of Whitewater (4.70%) | $9,490,682 / $9,490,682 | $94,907 / $94,907 (1% minimum) | $961,094 / $922,682 (+4.2%) |
+| Villages of Independence (5.23%) | $12,403,997 / $12,403,997 | $124,040 / $124,040 (1% minimum) | $1,472,893 / $1,355,601 (+8.7%) |
+| Villages of Burlington (4.875%) | $14,050,272 / $14,048,567 | $140,503 / $140,486 (1% minimum) | $1,713,118 / $1,571,255 (+9.0%) |
+
+At the loans' own rates (all below today's 5–5.1% Treasuries) both give the 1% minimum on the same balance. With the
+rate raised to 7%, so the formula itself counts, the app is **4–9% above Chatham**. Chatham's assumptions (which
+Treasury, when the yield-maintenance period ends) are behind its paid sign-up, and no single convention tried matched
+all three, so the formula is **left as it is**; the loan documents' yield-maintenance clause (its end date and
+Treasury) would settle it.
 
 **Open question (for Azriel):** **K2's LIBOR switch date** — the day its loan moved from 1-month LIBOR to its
 current index. The field exists ("On 1-Month LIBOR Until"); K2's past months need that date.
@@ -666,10 +834,11 @@ current index. The field exists ("On 1-Month LIBOR Until"); K2's past months nee
 
 *(Order set by the operator, 2026-10-07.)*
 
-### 3.0.0 — One shared database
-So the team works off the same data: sign-in and users, per-group data separation, a daily backup, every edit
-stamped (who / when / why) as an audit trail, the last-opened state saved, the user's local files untouched.
-Hosting: the plan names **Supabase**.
+### 3.0.0 — One shared database *(shipped 2026-10-14 — §8, §4.17, `PLAN-3.0.0.md`)*
+So the team works off the same data: groups made by the maintainer, each with one admin; editors and view-only
+members; a typed reason on every change (who / when / why, field by field); the admin's changes need the admin's
+approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
+always opening on the Portfolio dashboard; the user's local files untouched. Hosting: **Supabase**.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
@@ -679,7 +848,8 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 ### Pooled loans — not built yet
 - **Substitution** (swap one property for another) is a release plus an add; there is no one-step version.
 - A release that also changes the loan's rate, maturity or terms isn't modelled — edit the loan.
-- In the shared database (3.0.0) the "Also secures" list and the releases become tables of their own.
+- In the shared database (3.0.0) the "Also secures" list and the releases stay inside their loan; each change to
+  them is recorded field by field like any other.
 
 ### By design for now (not planned)
 - Phases that come as **separate files** are not combined (phases as sheets / sections of ONE file are).
@@ -694,8 +864,9 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 - **Installer size** — ~260 MB because of the two vendored OCR engines and their models; auto-update downloads
   mostly the changed blocks.
 - **No signing** — Windows SmartScreen shows a one-time "More info → Run anyway".
-- **Single-user, offline today** — multi-user, groups and the audit trail are the shared-database stage.
+- **One computer's data, unless a shared database is set up** (3.0.0). Supabase's free plan pauses an unused project
+  after a week and keeps no backups of its own — use a paid plan for the team's real data.
 
 ---
 
-*Last updated for version 2.9.15.*
+*Last updated for version 3.0.0 (shipped 2026-10-14).*

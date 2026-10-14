@@ -1,6 +1,6 @@
 /* e2e for v2.8.3: the proposed loan is priced HONESTLY. A Fixed/Floating/Hybrid
    toggle (defaulting to the refinanced loan's own type), a base-index picker, and an
-   editable spread (0 by default on the fixed side) build the rate as index + spread −
+   editable spread (3.0.0: a usual starting spread, never 0) build the rate as index + spread −
    tier discount. The old auto-machinery — a fabricated calibrated spread, the automatic
    Treasury↔SOFR switch, and an assumed cap cost — is gone.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/refi-pricing.e2e.js */
@@ -44,10 +44,11 @@ const rtxt=(page)=>page.evaluate(()=>(document.getElementById('refiView')||{}).i
   const activeType=await page.evaluate(()=>{const b=[...document.querySelectorAll('#refiView [data-rtype]')].find(x=>/bg-brand-600/.test(x.className));return b?b.getAttribute('data-rtype'):null;});
   ok(activeType==='Fixed','the toggle defaults to the loan’s own type (Fixed)');
 
-  // ---- base-index picker + editable spread; 0 by default on the fixed side ----
+  // ---- base-index picker + editable spread; 3.0.0 — a real starting spread (never 0), labelled with its source ----
   ok((await count(page,'#o1_index'))===1,'the base-index picker is present');
   ok((await count(page,'#o1_spread'))===1,'the spread box is present');
-  ok((await val(page,'o1_spread'))==='0','the fixed-side spread defaults to 0');
+  { const sp=+(await val(page,'o1_spread')), lab=await page.evaluate(()=>(document.querySelector('#refiView [data-refispreadfrom]')||{}).textContent||'');
+    ok(sp>0&&/starting spread/.test(lab)&&/type your lender/.test(lab),'the fixed-side spread starts at a real spread ('+sp+' bps), labelled "'+lab+'" (3.0.0)'); }
   ok((await count(page,'#o1_rate'))===0,'the old free-type rate box is gone (the rate is built up now)');
 
   // ---- the old auto-machinery is gone ----
@@ -73,7 +74,7 @@ const rtxt=(page)=>page.evaluate(()=>(document.getElementById('refiView')||{}).i
   await page.waitForTimeout(400);
   ok((await count(page,'#o1_capcost'))===1,'switching to Floating reveals a cap-cost box');
   ok((await val(page,'o1_capcost'))==='0','the cap cost defaults to 0 (enter the real premium only if you buy a cap)');
-  ok((await val(page,'o1_index'))==='sofr','a floating loan defaults to the SOFR index');
+  ok((await val(page,'o1_index'))==='sofr30','a floating loan defaults to the 30-day average SOFR (3.0.0)');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close();

@@ -571,6 +571,13 @@
         <span class="truncate text-[11px] font-semibold text-ink-500">Living Residential — Loan Debt Service Hub</span>
       </div>
       <div class="flex items-center gap-0.5 pl-2" style="-webkit-app-region:no-drag">
+        <!-- 3.0.0 — the shared database: who is signed in, the group, online / offline; the account's screens -->
+        <details id="cloudDD" class="relative hidden">
+          <summary id="cloudChip" class="list-none [&amp;::-webkit-details-marker]:hidden cursor-pointer select-none inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition" title="The shared database">
+            <span id="cloudDot" class="h-2 w-2 rounded-full bg-emerald-500"></span><span id="cloudChipText"></span>
+          </summary>
+          <div id="cloudMenu" class="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-2 text-left shadow-xl"></div>
+        </details>
         <!-- Fetch live rate — global, on every tab (2.9.4). Pulls today's Treasury curve + SOFR into the
              cache so the refinance market rate, coverage rate-gap and loan-form previews are current. -->
         <button type="button" id="fetchRateBtn" class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 mr-1 text-[11px] font-semibold text-ink-500 hover:bg-black/5 transition disabled:opacity-50" title="Fetch today's live market rates (US Treasury curve + SOFR) for the refinance analysis and rate previews">
@@ -858,6 +865,9 @@
         <!-- Floating-rate monthly re-pricing notice -->
         <div id="floatBanner" hidden></div>
 
+        <!-- 3.0.0 — a loan whose terms are known to be out of date (e.g. refinanced; the new loan's documents not in yet) -->
+        <div id="staleBanner" hidden></div>
+
         <!-- Property operating model entry (this property's NOI / DSCR / DY, opens its sheet) -->
         <div id="loanOpPanel"></div>
         <div id="loanProfilePanel"></div>
@@ -878,6 +888,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 Edit
               </button>
+              <button id="loanRecStale" type="button" hidden class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50" title="This loan's terms are no longer right (e.g. it was refinanced and the new loan's documents haven't come yet)">Out of date…</button>
               <button id="loanRecRemove" type="button" hidden class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50" title="Remove this loan">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
                 Remove
@@ -1234,6 +1245,42 @@
     /* ================================================================
        0. CONSTANTS & FORMATTERS
        ================================================================ */
+    // 3.0.0 — the shared database. Signed in to one, the app reads and writes the group's picture of the data (the
+    // main process keeps it in step with the server); a person's change waits for the reason they type.
+    const LDS_CLOUD = !!(window.ldsShell && ldsShell.cloudMode);
+    // The team's settings kept in the window's storage: targets, custom T12 categories, "not a duplicate" pairs, and the
+    // market rates the app has fetched (today's, the daily history, the monthly SOFR/EFFR and Treasury histories) — so
+    // every member calculates a floating loan from the same rates. In the shared database they come from the group;
+    // this computer's own values are kept aside once, never changed (the first upload sends them).
+    const CLOUD_RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
+    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(CLOUD_RATE_KEYS);
+    function cloudApplySettings(){
+      if(!LDS_CLOUD) return;
+      try{
+        CLOUD_SHARED_KEYS.forEach(k => { const keep = "lds.localCopy." + k; if(localStorage.getItem(keep) == null) localStorage.setItem(keep, JSON.stringify({ v: localStorage.getItem(k) })); });
+        const sh = (ldsShell.cloud && ldsShell.cloud.settings()) || {};
+        CLOUD_SHARED_KEYS.forEach(k => { const v = sh[k]; if(v !== undefined && v !== null) localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); else localStorage.removeItem(k); });
+      }catch(e){}
+    }
+    cloudApplySettings();
+    function cloudSettingSaved(key){ if(!LDS_CLOUD) return; try{ const r = ldsShell.cloud.setSetting(key, localStorage.getItem(key)); if(r && r.ok === false && r.error){ cloudApplySettings(); } }catch(e){} }
+    // A fetched market rate goes to the group as the app's own work (no reason asked); a view-only or offline app keeps
+    // it for this session only. Saves come in bursts while rates are fetched, so they go up together.
+    const cloudRateWait = new Set(); let cloudRateTimer = null;
+    function cloudRatesSaved(key){
+      if(!LDS_CLOUD || !cloudCanWrite()) return;
+      cloudRateWait.add(key); clearTimeout(cloudRateTimer);
+      cloudRateTimer = setTimeout(() => { const keys = [...cloudRateWait]; cloudRateWait.clear(); cloudAutoSync("saved market rates", () => keys.forEach(k => cloudSettingSaved(k))); }, 1500);
+    }
+    function cloudLocalSettings(){
+      const o = {}; CLOUD_SHARED_KEYS.forEach(k => { try{ const keep = JSON.parse(localStorage.getItem("lds.localCopy." + k) || "null"); const v = keep ? keep.v : localStorage.getItem(k); if(v != null) o[k] = JSON.parse(v); }catch(e){} }); return o;
+    }
+    // The app's own work (start-up checks, recomputing, repricing): its writes go up by themselves, stamped as the
+    // app, instead of waiting for a person's reason.
+    // a view-only member's app (or an app offline) writes nothing, so it skips the app's own start-up work
+    function cloudCanWrite(){ if(!LDS_CLOUD) return true; try{ const st = (typeof cloudUI !== "undefined" && cloudUI.st) || ldsShell.cloudInfo || {}; return st.canWrite !== false; }catch(e){ return true; } }
+    async function cloudAutoRun(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return await fn(); } finally { if(c) c.auto(false); } }
+    function cloudAutoSync(label, fn){ const c = LDS_CLOUD && ldsShell.cloud; if(c) c.auto(true, label); try{ return fn(); } finally { if(c) c.auto(false); } }
     // Bumped v6 -> v7: the seed now carries a given Maturity Date per loan and the
     // schedule is anchored to it. Existing installs saved loans BEFORE that field
     // existed, so they must re-seed the corrected portfolio rather than keep stale
@@ -1535,6 +1582,7 @@
       if(r.stale){ INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: null, saved: true }; return; }
       INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: new Date().toISOString(), live: true };
       try{ const all = JSON.parse(localStorage.getItem(LIVE_RATES_KEY) || "{}"); all[id] = { value: r.value, date: r.date || null, fetchedAt: INDEX_CACHE[id].fetchedAt }; localStorage.setItem(LIVE_RATES_KEY, JSON.stringify(all)); }catch(e){}
+      cloudRatesSaved(LIVE_RATES_KEY);
     }
     function fmtDateLong(iso){ try{ const d = new Date(String(iso).length <= 10 ? String(iso) + "T12:00:00" : iso); if(isNaN(d)) return String(iso || ""); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }catch(e){ return String(iso || ""); } }
     // Where an index value comes from, in words.
@@ -1707,7 +1755,7 @@
         const t = todayParts(), r0 = indexOnResetDay(loan.index, { y: t.y, mo: t.mo });
         if(r0){
           if(loan.floatIndexValue !== r0.value || loan.floatRepricedOn !== thisFirst || !loan.floatIndexLive || loan.floatResetDate !== r0.date){
-            loan.floatIndexValue = r0.value; loan.floatIndexLive = true; loan.floatRepricedOn = thisFirst; loan.floatResetDate = r0.date; save();
+            loan.floatIndexValue = r0.value; loan.floatIndexLive = true; loan.floatRepricedOn = thisFirst; loan.floatResetDate = r0.date; cloudAutoSync("floating rate repriced", save);
           }
           return;
         }
@@ -1723,7 +1771,7 @@
       } else if(!loan.floatIndexLive && live!=null && (liveNow || loan.floatIndexValue !== live)){     // same month, a live (or saved) value just arrived: upgrade
         loan.floatIndexValue = live; loan.floatIndexLive = liveNow; changed = true;
       }
-      if(changed) save();
+      if(changed) cloudAutoSync("floating rate repriced", save);
     }
     // All-in floating / reset rate = clamp( index + spread, floor, cap ).
     function allInRate(loan){
@@ -2074,6 +2122,7 @@
         if(loansDiskReadFailed) return false;   // never clobber a file we couldn't read
         let r = null; try { r = ldsShell.loansWriteSync(json); } catch(e){ r = { ok:false, error:String(e) }; }
         if(r && r.ok) return true;
+        if(r && r.refused) return false;   // 3.0.0 — view-only / offline: the page was told why and reloads
         if(!loansSaveWarned){ loansSaveWarned = true; try{ toast("Couldn’t save the loans to disk"+(r && r.error ? " ("+r.error+")" : "")+". Your last change may not be kept.", "error"); }catch(e){} }
         return false;
       }
@@ -2240,6 +2289,14 @@
       return changed;
     }
     function load(){
+      // 3.0.0 — in the shared database the loans are the group's: never the built-in portfolio, never a seed
+      if(LDS_CLOUD){
+        let r = null; try { r = ldsShell.loansReadSync(); } catch(e){}
+        let arr = []; try { arr = (r && r.ok && r.exists) ? JSON.parse(r.json) : []; } catch(e){ arr = []; }
+        const out = (Array.isArray(arr) ? arr : []).map(migrateLoan);
+        if(healLoanIds(out)) cloudAutoSync("loan ids repaired", () => persistLoans(out));
+        return out;
+      }
       try {
         let raw = null;
         if(loansOnDisk()){
@@ -2429,6 +2486,49 @@
         kpiCard("Rate Type", loan.rateType==="Hybrid ARM" ? "Hybrid ARM" : (loan.rateType || "—"), { sub: loan.rateType==="Hybrid ARM" ? (fmtPct(loan.annualRate)+" → "+fmtPct(d.resetRate)) : loan.rateType==="Floating" ? (displayValue("index",loan.index)+" + "+fmtPct(loan.spread)+" = "+fmtPct(d.currentRate)) : "fixed rate" }));
     }
 
+    // 3.0.0 — a loan whose terms are known to be out of date (Terrazul Sweetwater: its construction loan was refinanced
+    // and the new loan's documents haven't come yet). Flagged with a note; shown on its page, on its refinance and in
+    // Needs Attention. Its figures stay the old loan's — nothing is made up — until the new loan is loaded.
+    function loanOutOfDate(l){ return !!(l && typeof l.outOfDate === "string" && l.outOfDate.trim()); }
+    function staleLoansOf(loan){ if(!loan) return []; const ms = loan._combined ? comboMembers(loan._id) : [loan]; return (ms.length ? ms : [loan]).filter(loanOutOfDate); }
+    function staleNoteHtml(l){ return '<strong>'+escapeHtml(loanLabel(l))+'</strong> is out of date'+(l.outOfDateSince ? ' (since '+fmtDateUS(l.outOfDateSince)+')' : '')+': '+escapeHtml(l.outOfDate)+'. Its figures are the old loan&rsquo;s &mdash; don&rsquo;t rely on them until the new loan is loaded.'; }
+    function renderStaleBanner(loan){
+      const box = el("staleBanner"); if(!box) return;
+      const st = staleLoansOf(loan);
+      if(!st.length){ box.hidden = true; box.innerHTML = ""; return; }
+      box.hidden = false;
+      box.innerHTML = st.map(l => '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900" data-stalebanner="'+escapeHtml(l._id)+'">'+staleNoteHtml(l)+
+        ' When the new loan&rsquo;s documents arrive, add the new loan and mark this one paid off (refinanced). <button type="button" data-stalefix="'+escapeHtml(l._id)+'" class="ml-1 rounded border border-amber-400 bg-white px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-100">It&rsquo;s up to date again</button></div>').join("");
+    }
+    function staleMarkOpen(loan){
+      if(!loan || loan._combined) return;
+      if(loanOutOfDate(loan)){ staleClear(loan); return; }
+      let m = document.getElementById("staleModal"); if(m) m.remove();
+      m = document.createElement("div"); m.id = "staleModal"; m.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40";
+      m.innerHTML = '<div class="w-[460px] rounded-2xl bg-white p-5 shadow-xl"><h3 class="text-base font-bold text-slate-900">Mark &ldquo;'+escapeHtml(loanLabel(loan))+'&rdquo; out of date</h3>'+
+        '<p class="mt-1 text-xs text-slate-500">Its figures stay as they are &mdash; nothing is changed or made up &mdash; but its page, its refinance and Needs Attention say they are out of date until you clear it.</p>'+
+        '<label class="mt-3 block text-xs text-slate-600">Why<textarea id="staleNote" rows="3" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm">Refinanced &mdash; waiting for the new loan&rsquo;s documents</textarea></label>'+
+        '<div class="mt-4 flex justify-end gap-2"><button type="button" id="staleCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="staleGo" class="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-bold text-white">Mark out of date</button></div></div>';
+      document.body.appendChild(m);
+      m.querySelector("#staleCancel").addEventListener("click", () => m.remove());
+      m.querySelector("#staleGo").addEventListener("click", () => { const note = m.querySelector("#staleNote").value.trim();
+        if(!note){ toast("Say why it is out of date", "info"); return; }
+        m.remove(); staleSet(loan, note); });
+    }
+    function staleSet(loan, note){
+      const t = todayParts(), was = loan.outOfDate || "";
+      loan.outOfDate = String(note).slice(0, 500); loan.outOfDateSince = partsToISO(t.y, t.mo, t.d);
+      try{ loanHistoryAdd(loan, "outOfDate", was, loan.outOfDate, "typed"); }catch(e){}
+      save(); toast("“" + loanLabel(loan) + "” marked out of date.", "info"); redrawAll();
+    }
+    function staleClear(loan){
+      confirmDialog("Clear “out of date” on “" + loanLabel(loan) + "”?", "Do this once its figures are right again (or once the new loan is loaded and this one is paid off).", () => {
+        const was = loan.outOfDate || ""; delete loan.outOfDate; delete loan.outOfDateSince;
+        try{ loanHistoryAdd(loan, "outOfDate", was, "", "typed"); }catch(e){}
+        save(); toast("“" + loanLabel(loan) + "” is up to date again.", "check"); redrawAll();
+      }, "Clear");
+    }
+    document.addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest("[data-stalefix]"); if(!b) return; const l = loans.find(x => x._id === b.getAttribute("data-stalefix")); if(l) staleClear(l); });
     // Notice that a floating phase re-prices monthly at the live index. Shown for
     // Floating loans (whole life) and Hybrid ARMs (once they pass the fixed term).
     function renderFloatingBanner(loan, result){
@@ -2891,7 +2991,7 @@
     let TREASURY_HIST = {};      // "YYYY-MM" -> { y3,y5,y7,y10 } (percent)
     try { TREASURY_HIST = JSON.parse(localStorage.getItem(TREASURY_HIST_KEY)) || {}; } catch(e){ TREASURY_HIST = {}; }
     const TREASURY_HIST_INFLIGHT = {};
-    function saveTrezHist(){ try { localStorage.setItem(TREASURY_HIST_KEY, JSON.stringify(TREASURY_HIST)); } catch(e){} }
+    function saveTrezHist(){ try { localStorage.setItem(TREASURY_HIST_KEY, JSON.stringify(TREASURY_HIST)); } catch(e){} cloudRatesSaved(TREASURY_HIST_KEY); }
     // Fetch one month's curve (row nearest the 15th) for the 3/5/7/10-yr tenors.
     async function fetchTreasuryMonth(y, mo){
       const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
@@ -2995,7 +3095,7 @@
     let NYFED_HIST = {};        // id -> { "YYYY-MM" -> value(%) }
     try { NYFED_HIST = JSON.parse(localStorage.getItem(NYFED_HIST_KEY)) || {}; } catch(e){ NYFED_HIST = {}; }
     const NYFED_HIST_INFLIGHT = {};
-    function saveNyfedHist(){ try { localStorage.setItem(NYFED_HIST_KEY, JSON.stringify(NYFED_HIST)); } catch(e){} }
+    function saveNyfedHist(){ try { localStorage.setItem(NYFED_HIST_KEY, JSON.stringify(NYFED_HIST)); } catch(e){} cloudRatesSaved(NYFED_HIST_KEY); }
     function ymKey(y, mo){ return y + "-" + String(mo+1).padStart(2,"0"); }
     // One range fetch of a NY Fed rate; keep the observation nearest the 15th per month.
     async function fetchNyFedRange(path, startISO, endISO){
@@ -3024,7 +3124,16 @@
     let RATE_HIST = {};   // { termsofr1m: {date: %}, sofr30: {date: %}, meta: { id: { value, date, fetchedAt } } }
     try { RATE_HIST = JSON.parse(localStorage.getItem(RATE_HIST_KEY)) || {}; } catch(e){ RATE_HIST = {}; }
     if(!RATE_HIST.meta) RATE_HIST.meta = {};
-    function saveRateHist(){ try { localStorage.setItem(RATE_HIST_KEY, JSON.stringify(RATE_HIST)); } catch(e){} }
+    function saveRateHist(){ try { localStorage.setItem(RATE_HIST_KEY, JSON.stringify(RATE_HIST)); } catch(e){} cloudRatesSaved(RATE_HIST_KEY); }
+    // 3.0.0 — the group's rates changed (another member fetched, or the group started over): read them again
+    function ratesReloadFromStorage(){
+      try { TREASURY_HIST = JSON.parse(localStorage.getItem(TREASURY_HIST_KEY)) || {}; } catch(e){ TREASURY_HIST = {}; }
+      try { NYFED_HIST = JSON.parse(localStorage.getItem(NYFED_HIST_KEY)) || {}; } catch(e){ NYFED_HIST = {}; }
+      try { RATE_HIST = JSON.parse(localStorage.getItem(RATE_HIST_KEY)) || {}; } catch(e){ RATE_HIST = {}; }
+      if(!RATE_HIST.meta) RATE_HIST.meta = {};
+      Object.keys(INDEX_CACHE).forEach(k => { if(INDEX_CACHE[k] && !INDEX_CACHE[k].live) delete INDEX_CACHE[k]; });
+      loadSavedRates();
+    }
     const RH = (typeof window !== "undefined" && window.RateHistory) ? window.RateHistory : { LIBOR1M_MONTHLY:{}, LIBOR1M_DAILY:{}, TERMSOFR1M_DAILY:{}, SOFR30_DAILY:{} };
     const DAILY_BUILTIN = { termsofr1m: RH.TERMSOFR1M_DAILY || {}, sofr30: RH.SOFR30_DAILY || {}, libor1m: RH.LIBOR1M_DAILY || {} };
     const INDEX_SHORT = { sofr:"SOFR", sofr30:"30-day Average SOFR", termsofr1m:"1-month Term SOFR", libor1m:"1-month LIBOR", effr:"Fed Funds", prime:"Prime",
@@ -3425,7 +3534,8 @@
       dom.refiBtn.disabled = !loan || state.mode!=="view";
       // 2.9.4 — the single-loan per-loan Edit/Remove live in the Loan Record header; shown only for a real
       // single loan (a stack edits its loans from the Combined-Position rows instead).
-      { const showLoanBtns = !!(loan && !loan._combined && state.mode==="view"); const le = el("loanRecEdit"), lr = el("loanRecRemove"); if(le) le.hidden = !showLoanBtns; if(lr) lr.hidden = !showLoanBtns; }
+      { const showLoanBtns = !!(loan && !loan._combined && state.mode==="view"); const le = el("loanRecEdit"), lr = el("loanRecRemove"), ls = el("loanRecStale"); if(le) le.hidden = !showLoanBtns; if(lr) lr.hidden = !showLoanBtns;
+        if(ls){ ls.hidden = !showLoanBtns; ls.textContent = loanOutOfDate(loan) ? "Up to date again" : "Out of date…"; } }
 
       // Scope: "Whole Portfolio" shows only the dashboard; "Specific Loan" reveals
       // the loan selector + single-loan views.
@@ -3458,6 +3568,7 @@
         renderKPIs(loan, result);
         renderProfile(loan, result);
         renderFloatingBanner(loan, result);
+        renderStaleBanner(loan);
         renderSchedule(loan, result);
         try{ renderDocsPanel(); }catch(e){}
         try{ renderLoanOpPanel(); }catch(e){}
@@ -5878,6 +5989,7 @@ tr.flagged:hover td{background:#fee2e2}
     function markNotDuplicate(keys){
       const cur = notDupPairs(); for(let i = 0; i < keys.length; i++) for(let j = i + 1; j < keys.length; j++){ const id = dupPairId(keys[i], keys[j]); if(cur.indexOf(id) < 0) cur.push(id); }
       try{ localStorage.setItem(NOT_DUP_KEY, JSON.stringify(cur)); }catch(e){}
+      cloudSettingSaved(NOT_DUP_KEY);
       try{ scheduleAutoBackup(true); }catch(e){}
     }
     function propAddressSig(p){
@@ -6792,7 +6904,7 @@ tr.flagged:hover td{background:#fee2e2}
     var CUSTOM_CATS_KEY = "lds.customCategories";
     function customCats(){ try{ const v = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || "[]"); return Array.isArray(v) ? v.filter(c => c && typeof c.code === "string" && c.label && (c.role === "income" || c.role === "expense")) : []; }catch(e){ return []; } }
     function customCatsApply(){ const l = customCats(); try{ window.T12Classify && T12Classify.setCustom && T12Classify.setCustom(l); }catch(e){} try{ window.SetupBuilder && SetupBuilder.setCustom && SetupBuilder.setCustom(l); }catch(e){} try{ window.T12Check && T12Check.setCustom && T12Check.setCustom(l); }catch(e){} }
-    function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} customCatsApply(); }
+    function customCatsSave(l){ try{ localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(l)); }catch(e){} cloudSettingSaved(CUSTOM_CATS_KEY); customCatsApply(); }
     const catNorm = (x) => String(x || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
     function customCatAdd(name, role){
       name = String(name || "").replace(/\s+/g, " ").trim();
@@ -7185,7 +7297,8 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_refiNOIOptions = (l)=>refiNOIOptions(l); window.LDS_refiNOI = (l)=>refiNOI(l); window.LDS_refiBasis = (l)=>refiBasis(l); window.LDS_loans = ()=>loans; }catch(e){}   // diagnostics: the refi NOI basis
     try{ window.LDS_loanTier=(l)=>loanTier(l); window.LDS_loanDSCR=(l)=>loanDSCR(l); window.LDS_loanLTV=(l)=>loanLTV(l); window.LDS_loanDebtYield=(l)=>loanDebtYield(l); window.LDS_activeLoan=()=>getLoan(state.activeId); window.LDS_combinedRefiLoan=(members)=>combinedRefiLoan(members); window.LDS_computeBalance=(l)=>compute(l).derived.currentBalance; }catch(e){}   // diagnostics: the credit tier (3 metrics) + combined-stack refi
     try{ window.LDS_clearGDCache=()=>{ gdNOICache={}; gdFullCache={}; }; window.LDS_gdNOICache=()=>gdNOICache; window.LDS_opEnsureGeneralData=(k)=>opEnsureGeneralData(k); window.LDS_refiNOIOptionsFor=(l)=>refiNOIOptions(l); }catch(e){}   // diagnostics: exercise the cross-session disk read of general-data (the NOI-basis toggle)
-    try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
+    try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_refiCanNow=(l)=>refiCanStage(l, refiDrafts[1]); window.LDS_refiDraftRate=()=>refiDrafts[1]?compute(refiDrafts[1]).derived.currentRate:null; window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_exitCost=(id, shiftBps)=>{ const l=getLoan(id); if(!l) return null; const cs=shiftBps ? [INDEX_CACHE[ymReinvestTenor(l)]].filter(Boolean) : [], was=cs.map(c=>c.value); cs.forEach(c=>{ c.value += shiftBps/100; });   // diagnostics: the Treasury moved by shiftBps (to compare with a calculator's rate shift)
+      try{ const d=compute(l).derived, x=exitCost(l); return { type:x.type, cost:x.cost, ym:x.ym||null, balance:d.currentBalance, rate:d.currentRate, monthsLeft:d.monthsToMaturity, paymentsMade:d.paymentsMade }; } finally { cs.forEach((c,i)=>{ c.value = was[i]; }); } }; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
@@ -7941,6 +8054,7 @@ tr.flagged:hover td{background:#fee2e2}
       const items = [];
       rows.forEach(({loan,comp}) => {
         const d = comp.derived, rs = comp.rows, id = loan._id, name = loanLabel(loan);
+        if(loanOutOfDate(loan)) items.push({ kind:"Out of date", sev:"red", id, iso:loan.outOfDateSince || null, name, ma:-1, line:"Out of date — " + loan.outOfDate, action:"goto" });   // 3.0.0
         if(d.maturityDate){ const ma = mAway(d.maturityDate);
           if(ma>=0 && ma<=24){ const balloon = rs.length ? rs[rs.length-1].startingBalance : (d.currentBalance||0);
             items.push({ kind:"Maturity", sev:"red", id, iso:d.maturityDate, name, ma, line:"Balloon "+fmtMoney(balloon)+" · "+fmtDateUS(d.maturityDate), action:"goto" }); } }
@@ -7951,7 +8065,7 @@ tr.flagged:hover td{background:#fee2e2}
           if(ma>=0 && ma<=12) items.push({ kind:"ARM reset", sev:"amber", id, iso:rs[i].paymentDate, name, ma, line:"Resets to "+fmtPct(rs[i].rate)+" · "+fmtDateUS(rs[i].paymentDate), action:"goto" }); break; } } }
       });
       scan.forEach(s => { if(s.gap>0.0025) items.push({ kind:"Refi", sev:"green", id:s.loan._id, iso:null, name:loanLabel(s.loan), ma:999, gap:s.gap, line:(s.gap*100).toFixed(2)+"% over market → refinance", action:"refi" }); });
-      const ko = { "Maturity":0, "IO step-up":1, "ARM reset":2, "Refi":3 };
+      const ko = { "Out of date":-1, "Maturity":0, "IO step-up":1, "ARM reset":2, "Refi":3 };
       items.sort((a,b) => {
         if(a.kind==="Refi" && b.kind==="Refi") return b.gap-a.gap;
         if(a.kind==="Refi") return 1; if(b.kind==="Refi") return -1;
@@ -8122,6 +8236,7 @@ tr.flagged:hover td{background:#fee2e2}
     function savePortfolioTargets(t){
       const cur = portfolioTargets(), next = Object.assign({}, cur, t || {});
       try{ localStorage.setItem(TARGETS_KEY, JSON.stringify(next)); }catch(e){}
+      cloudSettingSaved(TARGETS_KEY);
       try{ scheduleAutoBackup(true); }catch(e){}
       loadPortfolioTargets();
       try{ renderSettingsTargets(); }catch(e){}
@@ -8285,7 +8400,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</tr>'; }).join('');
       const head='<tr>'+thc("Property")+thc("NOI",'text-right')+thc("DSCR",'text-right')+thc("Debt Yield",'text-right')+thc("LTV",'text-right')+thc("Current",'text-right')+thc("Market",'text-right')+thc("Gap",'text-right')+thc("")+'</tr>';
       const covTable='<div class="boxline rounded-2xl border border-slate-200 bg-white shadow-card lift">'+
-        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><button type="button" id="poolRefiBtn" class="mt-1 rounded-md border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Refinance several properties together…</button><p class="text-xs text-slate-500">per property, on the combined position, vs the '+fmtX(COV_DSCR_FLOOR)+' DSCR, '+fmtPct(COV_LTV_MAX)+' LTV and '+fmtPct(COV_DY_FLOOR)+' debt-yield targets, with current rate vs today’s market — worst first</p></div>'+
+        '<div class="border-b border-slate-200 px-5 py-4"><h3 class="text-base font-bold text-slate-900">Coverage — DSCR, debt yield &amp; LTV</h3><button type="button" id="poolRefiBtn" class="mt-1 rounded-md border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700" title="Put several properties under one new loan — a refinance of them together">Create a portfolio…</button><p class="text-xs text-slate-500">per property, on the combined position, vs the '+fmtX(COV_DSCR_FLOOR)+' DSCR, '+fmtPct(COV_LTV_MAX)+' LTV and '+fmtPct(COV_DY_FLOOR)+' debt-yield targets, with current rate vs today’s market — worst first</p></div>'+
         '<div class="overflow-x-auto"><table class="w-full min-w-[860px]"><thead class="bg-slate-50">'+head+'</thead><tbody class="divide-y divide-slate-100">'+tbody+'</tbody></table></div>'+
       '</div>';
 
@@ -9899,14 +10014,18 @@ tr.flagged:hover td{background:#fee2e2}
     // still earns its NOI: the portfolio counts that income with no debt against it. Its NOI comes from the same
     // places as any property's — your override, its T12, its operating lines, the last loan's own NOI figure,
     // the profile's entered NOI — and its value from that NOI at the last loan's cap rate (else the default).
-    function propNOIByKey(key, inactive){
-      const ov = propNOIOverride(key); if(ov != null) return ov;
-      const g = gdNOICache[key]; if(g && g.inPlace != null && isFinite(g.inPlace)) return g.inPlace;
-      try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return n; } }catch(e){}
+    function propNOIByKey(key, inactive){ return propNOIWithSource(key, inactive).noi; }
+    // 3.0.0 — the same NOI with where it comes from (a refinance of several properties names each one's source).
+    function propNOIWithSource(key, inactive, active){
+      const ov = propNOIOverride(key); if(ov != null) return { noi: ov, src: "your NOI (override)" };
+      const g = gdNOICache[key]; if(g && g.inPlace != null && isFinite(g.inPlace)) return { noi: g.inPlace, src: noiMethodLabel(g) || "T12" };
+      try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return { noi: n, src: "operating statement" }; } }catch(e){}
+      const typed = (active || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi))).sort(loanRank);   // the property's own loan (senior first), as a one-property refinance reads it
+      if(typed.length) return { noi: Number(typed[0].noi), src: "typed on its loan" };
       const old = (inactive || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi)));
-      const pos = old.find(l => Number(l.noi) > 0); if(pos) return Number(pos.noi);
-      if(old.length) return Number(old[0].noi);
-      return propEnteredNOI(key);
+      const pos = old.find(l => Number(l.noi) > 0); if(pos) return { noi: Number(pos.noi), src: "an earlier loan's NOI" };
+      if(old.length) return { noi: Number(old[0].noi), src: "an earlier loan's NOI" };
+      const e = propEnteredNOI(key); return e != null ? { noi: e, src: "typed on the property" } : { noi: null, src: null };
     }
     function loanlessPosition(p){
       const inact = (p.inactive || []).slice().sort(loanRank);
@@ -9997,6 +10116,8 @@ tr.flagged:hover td{background:#fee2e2}
     function poolKeys(l){ if(l && l._poolKeys) return l._poolKeys.slice(); return (l && !l._combined && POOL_SRC.keysOf(l)) || (l ? [propertyKey(l)] : []); }
     function poolLoansForKey(key){ return loans.filter(l => isPoolLoan(l) && loanIsActive(l) && poolKeys(l).indexOf(key) >= 0); }
     function poolKeyNOI(k){ return propNOIByKey(k, loans.filter(l => propertyKey(l) === k && loanIsInactiveSelf(l))); }
+    // 3.0.0 — a refinance of several properties also reads an NOI typed on a property's own (one-property) loan
+    function poolKeyNOISrc(k){ return propNOIWithSource(k, loans.filter(l => propertyKey(l) === k && loanIsInactiveSelf(l)), loans.filter(l => propertyKey(l) === k && !loanIsInactiveSelf(l) && !isPoolLoan(l))); }
     function poolNOIOfKeys(keys){ let t = 0, any = false; keys.forEach(k => { const n = poolKeyNOI(k); if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
     function poolNOI(l){ return poolNOIOfKeys(poolKeys(l)); }
     function poolValue(l){ const cr = loanCapRate(l); let v = 0, any = false; poolKeys(l).forEach(k => { const n = poolKeyNOI(k); if(n > 0 && cr > 0){ v += n / cr; any = true; } }); return any ? v : null; }
@@ -10075,10 +10196,10 @@ tr.flagged:hover td{background:#fee2e2}
     function multiMembers(id){ if(typeof id !== "string" || id.slice(0, 6) !== "multi:") return []; const keys = id.slice(6).split("|");
       return loans.filter(l => !loanIsInactiveSelf(l) && (keys.indexOf(propertyKey(l)) >= 0 || (isPoolLoan(l) && poolKeys(l).some(k => keys.indexOf(k) >= 0)))); }
     function multiKeys(id){ const keys = id.slice(6).split("|"); multiMembers(id).forEach(l => { if(isPoolLoan(l)) poolKeys(l).forEach(k => { if(keys.indexOf(k) < 0) keys.push(k); }); }); return keys; }
-    function poolRefiNOI(keys, basis){ let t = 0, any = false; keys.forEach(k => { const g = gdNOICache[k], ov = propNOIOverride(k);
-        let n = basis === "underwritten" ? (ov != null ? ov : (g && g.underwritten != null ? g.underwritten : (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k))))
-              : basis === "inplace" ? (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k)) : poolKeyNOI(k);
-        if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
+    function poolRefiNOI(keys, basis){ let t = 0, any = false, miss = false; keys.forEach(k => { const g = gdNOICache[k], ov = propNOIOverride(k);
+        let n = basis === "underwritten" ? (ov != null ? ov : (g && g.underwritten != null ? g.underwritten : (g && g.inPlace != null ? g.inPlace : poolKeyNOISrc(k).noi)))
+              : basis === "inplace" ? (g && g.inPlace != null ? g.inPlace : poolKeyNOISrc(k).noi) : poolKeyNOISrc(k).noi;
+        if(n != null && isFinite(n)){ t += n; any = true; } else miss = true; }); return (any && !miss) ? t : null; }   // 3.0.0 — a property with no NOI is never counted as $0
     // Stacks: the unit of coverage is every property tied together by any loan — a senior + mezz on one property
     // (as today), a pooled loan's properties, a pooled mezz over the same pool, a member's own extra loan. Each property's
     // NOI is counted once per stack; every loan's debt service in it is counted.
@@ -10150,17 +10271,23 @@ tr.flagged:hover td{background:#fee2e2}
       const props = opProperties(); let m = document.getElementById("poolPicker"); if(m) m.remove();
       m = document.createElement("div"); m.id = "poolPicker"; m.className = "fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40";
       const owes = (p) => (p.loans || []).reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0);
-      m.innerHTML = '<div class="w-[540px] max-h-[85vh] overflow-auto rounded-2xl bg-white p-5 shadow-xl"><h3 class="text-base font-bold text-slate-900">Refinance several properties together</h3>'+
-        '<p class="mb-2 text-xs text-slate-500">Tick every property the one new loan will secure &mdash; as many as you like. Every loan on them is paid off. A property with no loan yet (one you have just added) joins the new loan with its NOI.</p>'+
+      m.innerHTML = '<div class="w-[540px] max-h-[85vh] overflow-auto rounded-2xl bg-white p-5 shadow-xl"><h3 class="text-base font-bold text-slate-900">Create a portfolio</h3>'+
+        '<p class="mb-2 text-xs text-slate-500">Tick every property the one new loan will secure &mdash; as many as you like. The next screen is the refinance of them together; nothing changes until you save the new loan there. Every loan on them is then paid off. A property with no loan yet (one you have just added) joins the new loan with its NOI.</p>'+
         '<input id="poolPickSearch" type="search" placeholder="Find a property" class="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-sm">'+
         '<div id="poolPickList" class="max-h-[45vh] overflow-auto thin-scroll">'+props.map(p => { const o = owes(p), inPool = (p.pledged || []).length && !(p.loans || []).length;
-          return '<label class="flex items-center gap-2 py-1 text-sm" data-poolpickrow="'+escapeHtml(p.name.toLowerCase())+'"><input type="checkbox" data-poolpick="'+escapeHtml(p.key)+'"> <span class="flex-1">'+escapeHtml(p.name)+'</span><span class="text-[11px] text-slate-400">'+(o > 0 ? 'owes '+fmtMoney(o) : inPool ? 'in a pooled loan' : 'no loan yet')+'</span></label>'; }).join("")+'</div>'+
+          const nr = poolKeyNOISrc(p.key), noiTxt = nr.noi != null && isFinite(nr.noi) ? '<span class="text-slate-500" data-poolpicknoi>NOI '+fmtMoney(nr.noi)+' &middot; '+escapeHtml(nr.src || "")+'</span>' : '<span class="font-semibold text-amber-700" data-poolpicknoi="none">no NOI (no T12)</span>';   // 3.0.0
+          return '<label class="flex items-center gap-2 py-1 text-sm" data-poolpickrow="'+escapeHtml(p.name.toLowerCase())+'"><input type="checkbox" data-poolpick="'+escapeHtml(p.key)+'"> <span class="flex-1">'+escapeHtml(p.name)+'</span><span class="text-right text-[11px] leading-tight text-slate-400">'+(o > 0 ? 'owes '+fmtMoney(o) : inPool ? 'in a pooled loan' : 'no loan yet')+'<br>'+noiTxt+'</span></label>'; }).join("")+'</div>'+
         '<p id="poolPickNote" class="mt-2 text-xs font-semibold text-slate-600">Nothing ticked yet</p>'+
-        '<div class="mt-3 flex justify-end gap-2"><button type="button" id="poolPickCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="poolPickGo" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white">Refinance together</button></div></div>';
+        '<div class="mt-3 flex justify-end gap-2"><button type="button" id="poolPickCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="poolPickGo" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white">Create the portfolio</button></div></div>';
       document.body.appendChild(m);
       const picked = () => [...m.querySelectorAll("[data-poolpick]:checked")].map(x => x.getAttribute("data-poolpick"));
-      const upd = () => { const ks = picked(), id = "multi:" + ks.join("|"), ms = ks.length ? multiMembers(id) : [], owe = ms.reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0), nn = poolNOIOfKeys(ks), fresh = ks.filter(k => !ms.some(l => poolKeys(l).indexOf(k) >= 0 || propertyKey(l) === k)).length;
-        m.querySelector("#poolPickNote").textContent = ks.length ? (ks.length + " ticked · " + ms.length + " loan" + (ms.length === 1 ? "" : "s") + " to pay off (" + fmtMoney(owe) + ")" + (fresh ? " · " + fresh + " with no loan yet" : "") + " · NOI " + (nn != null ? fmtMoney(nn) : "—")) : "Nothing ticked yet"; };
+      const upd = () => { const ks = picked(), id = "multi:" + ks.join("|"), ms = ks.length ? multiMembers(id) : [], owe = ms.reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0), fresh = ks.filter(k => !ms.some(l => poolKeys(l).indexOf(k) >= 0 || propertyKey(l) === k)).length;
+        // 3.0.0 — the NOI is the whole package's only when every ticked property has one; otherwise the ones without are named
+        const all = ks.length ? multiKeys(id) : [], none = all.filter(k => { const n = poolKeyNOISrc(k).noi; return n == null || !isFinite(n); }), nn = none.length ? null : all.reduce((a, k) => a + poolKeyNOISrc(k).noi, 0);
+        const note = m.querySelector("#poolPickNote");
+        note.textContent = ks.length ? (ks.length + " ticked · " + ms.length + " loan" + (ms.length === 1 ? "" : "s") + " to pay off (" + fmtMoney(owe) + ")" + (fresh ? " · " + fresh + " with no loan yet" : "") +
+          (none.length ? " · no NOI for " + none.map(poolNameOfKey).join(", ") + " — upload its T12 or type its NOI before this can be sized" : " · NOI " + (nn != null ? fmtMoney(nn) : "—"))) : "Nothing ticked yet";
+        note.classList.toggle("text-amber-800", none.length > 0); note.classList.toggle("text-slate-600", !none.length); };
       m.querySelectorAll("[data-poolpick]").forEach(cb => cb.addEventListener("change", upd));
       const sb = m.querySelector("#poolPickSearch"); sb.addEventListener("input", () => { const q = sb.value.trim().toLowerCase(); m.querySelectorAll("[data-poolpickrow]").forEach(r => { r.hidden = !!q && r.getAttribute("data-poolpickrow").indexOf(q) < 0; }); });
       m.querySelector("#poolPickCancel").addEventListener("click", () => m.remove());
@@ -10558,9 +10685,37 @@ tr.flagged:hover td{background:#fee2e2}
       if(o.inPlace != null) return "inplace";
       return "manual";                                     // no General Data → today's hand-entered NOI
     }
+    // 3.0.0 — a refinance of several properties together: each property's NOI on the basis in use, and where it
+    // comes from. A property with no NOI is listed with none and never counted as $0 — the package isn't sized
+    // until every property has one.
+    function refiGroupKeys(loan){ if(!loan) return null; const ks = loan._poolKeys || (isPoolLoan(loan) ? poolKeys(loan) : null); return (ks && ks.length > 1) ? ks.slice() : null; }
+    function refiPoolParts(loan){
+      const ks = refiGroupKeys(loan); if(!ks) return null;
+      const b = refiBasis(loan), ok = (v) => v != null && isFinite(v);
+      return ks.map(k => { const g = gdNOICache[k], nm = poolNameOfKey(k);
+        if(b === "underwritten") return { key: k, name: nm, noi: g && ok(g.underwritten) ? g.underwritten : null, src: "underwritten · " + (noiMethodLabel(g) || "T12") };
+        if(b === "inplace") return { key: k, name: nm, noi: g && ok(g.inPlace) ? g.inPlace : null, src: "in-place " + (noiMethodLabel(g) || "T12") };
+        const r = poolKeyNOISrc(k); return { key: k, name: nm, noi: ok(r.noi) ? r.noi : null, src: r.src }; });
+    }
+    function refiPoolMissing(loan){ const ps = refiPoolParts(loan); return ps ? ps.filter(p => p.noi == null) : []; }
+    function refiPoolNOIHtml(loan){
+      const ps = refiPoolParts(loan); if(!ps) return "";
+      const miss = ps.filter(p => p.noi == null), tot = miss.length ? null : ps.reduce((a, p) => a + p.noi, 0);
+      const rows = ps.map(p => { const none = p.noi == null;
+        return '<tr class="border-t border-slate-100'+(none ? ' bg-amber-50' : '')+'" data-refipoolnoi="'+escapeHtml(p.key)+'"><td class="py-1 pr-3 text-sm text-slate-800">'+escapeHtml(p.name)+'</td>'+
+          '<td class="py-1 px-2 text-sm text-right tabular-nums">'+(none ? '<span class="font-semibold text-amber-800">no NOI</span>' : fmtMoney(p.noi))+'</td>'+
+          '<td class="py-1 pl-2 text-[11px] text-slate-500">'+(none ? '<span class="text-amber-800">no T12 and none typed</span> <input type="number" step="any" data-refipooltype="'+escapeHtml(p.key)+'" placeholder="type its NOI" class="ml-1 w-28 rounded border border-amber-300 px-1.5 py-0.5 text-xs text-right">' : escapeHtml(p.src || ""))+'</td></tr>'; }).join("");
+      return '<div class="mb-3 rounded-lg border '+(miss.length ? 'border-amber-300' : 'border-slate-200')+' bg-white p-3" data-refipoolnoitable>'+
+        '<div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">NOI by property</div>'+
+        '<table class="mt-1 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th>Property</th><th class="px-2 text-right">NOI</th><th class="pl-2">From</th></tr></thead><tbody>'+rows+
+        '<tr class="border-t-2 border-slate-200 font-bold"><td class="py-1 pr-3 text-sm text-slate-900">Total &mdash; '+ps.length+' properties</td><td class="py-1 px-2 text-sm text-right tabular-nums" data-refipooltotal>'+(tot != null ? fmtMoney(tot) : '&mdash;')+'</td><td></td></tr></tbody></table>'+
+        (miss.length ? '<p class="mt-2 text-[11px] font-semibold text-amber-800" data-refipoolmissing>'+miss.length+' of '+ps.length+' have no NOI: '+miss.map(p => escapeHtml(p.name)).join(", ")+'. Nothing is sized until each has one &mdash; upload its T12, or type its NOI above (it is saved on the property; type 0 if it truly earns nothing).</p>' : '')+
+      '</div>';
+    }
     function refiNOI(loan){
-      const o = refiNOIOptions(loan), b = refiBasis(loan);
-      var base = (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
+      const o = refiNOIOptions(loan), b = refiBasis(loan), parts = refiPoolParts(loan);
+      if(parts && parts.some(p => p.noi == null)) return null;   // 3.0.0 — never a silent $0 for a property with no NOI
+      var base = parts ? parts.reduce((a, p) => a + p.noi, 0) : (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
       if(base == null) return null;
       return base + refiMoveBoost(loan, b);   // + any "what to push" moves ticked below (a live what-if)
     }
@@ -10674,22 +10829,25 @@ tr.flagged:hover td{background:#fee2e2}
       const d = compute(loan).derived, ads = annualDebtService(d);
       const rn = refiNOI(loan);
       const dscr = loanDSCR(loan, rn), val = loanValue(loan, rn), ltv = loanLTV(loan, rn), cr = loanCapRate(loan), dy = loanDebtYield(loan, rn);
-      const dscrOk = dscr != null && dscr >= 1.25;
+      const lim = refiLimits(loan), dscrOk = dscr != null && dscr >= lim.dscr;
+      const curD = compute(loan).derived, ioCov = (rn != null && curD.currentBalance > 0 && curD.currentRate > 0) ? rn / (curD.currentBalance * curD.currentRate) : null;   // 3.0.0
       return '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
         '<div class="flex items-center justify-between">'+
-          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Coverage &amp; value</h3>'+
-          '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Coverage &amp; value &mdash; today&rsquo;s loan'+(loan._combined ? 's' : '')+'</h3>'+
+          (refiGroupKeys(loan) ? '' : '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>')+
         '</div>'+
         refiNOIBasisHtml(loan)+
+        refiPoolNOIHtml(loan)+
         '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("Annual NOI", rn != null ? fmtMoney(rn) : "&mdash;")+
           refiStat("Cap rate", fmtPct(cr))+
           refiStat("Est. value", val != null ? fmtMoney(val) : "&mdash;")+
-          refiStat("LTV", ltv != null ? fmtPct(ltv) : "&mdash;")+
-          refiStat("Annual debt service", fmtMoney(ads))+
-          refiStat("DSCR", dscr != null ? dscr.toFixed(2)+"&#215;" : "&mdash;")+
-          refiStat("Debt yield", dy != null ? fmtPct(dy) : "&mdash;")+
-          refiStat("Coverage", isMezz(loan) ? "subordinate (mezz)" : (dscr == null ? "&mdash;" : (dscrOk ? "clears 1.25&#215; floor" : "below 1.25&#215; floor")))+
+          refiStat("LTV today", ltv != null ? fmtPct(ltv) : "&mdash;")+
+          refiStat("Debt service today", fmtMoney(ads))+
+          refiStat("DSCR today", dscr != null ? dscr.toFixed(2)+"&#215;" : "&mdash;")+
+          refiStat("Interest-only DSCR today", ioCov != null ? ioCov.toFixed(2)+"&#215;" : "&mdash;")+
+          refiStat("Debt yield today", dy != null ? fmtPct(dy) : "&mdash;")+
+          refiStat("Coverage today", isMezz(loan) ? "subordinate (mezz)" : (dscr == null ? "&mdash;" : (dscrOk ? "clears "+fmtX2(lim.dscr)+" floor" : "below "+fmtX2(lim.dscr)+" floor")))+
         '</dl>'+
         creditAwareSectionHtml(loan)+
         exitCostSectionHtml(loan)+
@@ -10760,17 +10918,26 @@ tr.flagged:hover td{background:#fee2e2}
     function refiTierDelta(loan){ const t = loanTier(loan, refiNOI(loan)); return (t && t.tier > 0) ? (t.delta || 0) : 0; }
     // The default base margin for a FLOATING / hybrid proposal — kept exactly as the
     // app derives it today (calibrated from the borrower's own recent SOFR deals, with
-    // a market fallback). The FIXED side defaults to 0 instead (see applyProposedPricing).
-    function floatingBaseSpread(loan, termMonths){
-      const calib = calibratedSpread(loan, "sofr", termMonths);
-      if(calib && calib.spread > 0) return calib.spread;
-      return (marketBps(detectMarket(loan && loan.propertyAddress)) || 155) / 10000;
+    // a market fallback). 3.0.0 — see refiDefaultSpread for every side.
+    function floatingBaseSpread(loan, termMonths){ return refiDefaultSpread(loan, "Floating", termMonths).spread; }
+    // 3.0.0 — the spread a proposed loan starts at is never 0 (a 0 spread made the proposed rate look far too low):
+    //   floating → the borrower's own recent SOFR loans, else 200 bps (over the 30-day average SOFR);
+    //   fixed / hybrid → the borrower's own recent fixed loans (spread over the matching Treasury when they closed),
+    //   else the multifamily spread for the property's market (the app's market table).
+    // Shown as "default" with where it comes from until the lender's quote is typed over it.
+    const REFI_DEFAULT_FLOAT_BPS = 200, REFI_DEFAULT_FLOAT_INDEX = "sofr30";
+    function refiDefaultSpread(loan, type, termMonths){
+      if(type === "Floating"){ const c = calibratedSpread(loan, "sofr", termMonths); if(c && c.spread > 0) return { spread: c.spread, from: "your recent SOFR loans" };
+        return { spread: REFI_DEFAULT_FLOAT_BPS / 10000, from: "the usual floating spread" }; }
+      const c = calibratedSpread(loan, "ust", termMonths); if(c && c.spread > 0) return { spread: c.spread, from: "your recent fixed loans" };
+      const mk = detectMarket(loan && loan.propertyAddress), bp = marketBps(mk);
+      return { spread: (bp || 155) / 10000, from: (marketLabel(mk) || "National") + " multifamily spread" };
     }
     // Today's value of the chosen base index (live, else catalog fallback).
     function refiIndexVal(draft){ return liveOrFallbackDecimal(draft && draft.index); }
     // Price the proposed loan HONESTLY: rate = chosen index + (base spread − tier
-    // discount), floored at 0. The base spread is the user's — 0 by default on the
-    // fixed side, the comp-derived margin on the floating side. Bakes the effective
+    // discount), floored at 0. The base spread starts at refiDefaultSpread (3.0.0 — never 0)
+    // until the user types the lender's quote. Bakes the effective
     // (post-tier) spread into draft.spread / draft.annualRate so compute() prices the
     // draft as a real loan of its type. No fabricated spread, no auto index switch, no
     // auto cap cost — every input is user-chosen or a live index.
@@ -10791,12 +10958,12 @@ tr.flagged:hover td{background:#fee2e2}
         draft.floatIndexValue = idxVal; draft.floatIndexLive = true; draft.floatRepricedOn = firstOfThisMonthISO();
         if(draft.sofrCapPct == null) draft.sofrCapPct = 0;   // a cap costs nothing here until you actually buy one
         if(type === "Hybrid ARM"){
-          // 2.9.7 (#80) — two periods: the fixed period over the Treasury matching it + its own spread (0 until you
+          // 2.9.7 (#80) — two periods: the fixed period over the Treasury matching it + its own spread (3.0.0: a usual starting spread until you
           // type the lender's quote); after it, draft.index (default 5-yr Treasury) + the margin.
           if(!draft.armInitialFixedMonths) draft.armInitialFixedMonths = loan.armInitialFixedMonths || 60;
           if(!draft.armAdjustFreqMonths)   draft.armAdjustFreqMonths   = loan.armAdjustFreqMonths   || 60;
           if(!draft._fixedIndex) draft._fixedIndex = matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: draft.armInitialFixedMonths });
-          if(draft._fixedSpread == null) draft._fixedSpread = 0;
+          if(draft._fixedSpread == null){ const ds = refiDefaultSpread(loan, "Hybrid ARM", draft.loanTermMonths); draft._fixedSpread = ds.spread; draft._fxSpreadFrom = ds.from; }
           const fx = Math.max(0, (draft._fixedSpread || 0) + tierDelta);
           draft.annualRate = (liveIndexVal(draft._fixedIndex) || 0) + fx;   // the fixed rate, locked at today's matching Treasury + spread
         } else {
@@ -10815,8 +10982,8 @@ tr.flagged:hover td{background:#fee2e2}
       // combined stack (the combo is forced Fixed to represent the current blended position).
       const subj = (loan._combined && loan._seniorId) ? (loans.find(l => l._id === loan._seniorId) || loan) : loan;
       const type = REFI_RATE_TYPES.indexOf(subj.rateType) >= 0 ? subj.rateType : "Fixed";
-      const idx  = (type === "Floating") ? "sofr" : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: opt.term });
-      const baseSpread = (type === "Floating") ? floatingBaseSpread(loan, opt.term) : 0;        // fixed / hybrid → 0 until you type the lender's quote (#80); floating → comp-derived margin
+      const idx  = (type === "Floating") ? REFI_DEFAULT_FLOAT_INDEX : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: opt.term });
+      const dsp = refiDefaultSpread(loan, type, opt.term), baseSpread = dsp.spread;   // 3.0.0 — a real starting spread on every type, until you type the lender's quote
       Object.assign(draft, {
         _id: "refiopt"+n, rateType: type, isHistorical:false, index: idx, _baseSpread: baseSpread, spread: 0,
         armInitialFixedMonths:null, armAdjustFreqMonths:null, rateFloor:null, rateCap:null, sofrCapPct:null,
@@ -10824,7 +10991,8 @@ tr.flagged:hover td{background:#fee2e2}
         originalAmount: refiPayoff(loan), loanTermMonths: opt.term, amortizationMonths: amort, ioMonths: io,   // 2.9.7 (#25) — the property's payoff
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1), maturityDate: partsToISO(newMat.y,newMat.mo,1),
         noi:null, capRate:null, refiIO:null, refiTermMonths:null, stackWith:null, prepayType:null, prepayConfirmed:null,
-        _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years, _fixedIndex: null, _fixedSpread: null,
+        _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years, _fixedIndex: null, _fixedSpread: (type === "Hybrid ARM") ? baseSpread : null,
+        _spreadFrom: dsp.from, _fxSpreadFrom: (type === "Hybrid ARM") ? dsp.from : null,
       });
       if(type === "Hybrid ARM"){ draft.armInitialFixedMonths = subj.armInitialFixedMonths || 60; draft.armAdjustFreqMonths = subj.armAdjustFreqMonths || 60; }
       applyProposedPricing(loan, draft);
@@ -10852,10 +11020,28 @@ tr.flagged:hover td{background:#fee2e2}
     //     never counts as a reason. Pulling cash out (a bigger loan) and a loan that's
     //     about to mature are separate reasons to go ahead, whatever the rate does.
     const REFI_MATURITY_WINDOW_MO = 12;
-    function refiBindingWord(binding){
-      return binding === "Debt Yield" ? "debt yield (income ÷ loan, held at 7%)"
-           : binding === "LTV"        ? "loan-to-value (capped at 75% of value)"
-           : binding === "DSCR"       ? "debt coverage (income ÷ payment, held at 1.25×)"
+    // 3.0.0 — the lender's limits are the analysis's own: typed in "How it is worked out" and kept per refinance (per
+    // loan, property or group), on this computer. The interest-only test is used only once a limit is typed.
+    const REFI_LIMITS_DEFAULT = { dscr: 1.25, dscrIO: null, ltv: 0.75, dy: 0.07 };
+    const REFI_LIMITS_STORE = "ldsHub.refiLimits.v1";
+    var refiLimitsById = (function(){ try{ const o = JSON.parse(localStorage.getItem(REFI_LIMITS_STORE) || "{}"); return (o && typeof o === "object") ? o : {}; }catch(e){ return {}; } })();
+    function refiLimits(loan){
+      const o = (loan && refiLimitsById[loan._id]) || {}, d = REFI_LIMITS_DEFAULT, ok = (v, lo, hi) => typeof v === "number" && isFinite(v) && v > lo && v < hi;
+      return { dscr: ok(o.dscr, 0, 10) ? o.dscr : d.dscr, dscrIO: ok(o.dscrIO, 0, 10) ? o.dscrIO : null, ltv: ok(o.ltv, 0, 1.5) ? o.ltv : d.ltv, dy: ok(o.dy, 0, 1) ? o.dy : d.dy, own: !!(loan && refiLimitsById[loan._id]) };
+    }
+    function refiSetLimits(loan, patch){
+      if(!loan) return; const id = loan._id;
+      if(patch === null) delete refiLimitsById[id];
+      else { const o = Object.assign({}, refiLimitsById[id] || {}, patch); Object.keys(o).forEach(k => { if(o[k] == null) delete o[k]; }); if(Object.keys(o).length) refiLimitsById[id] = o; else delete refiLimitsById[id]; }
+      try{ localStorage.setItem(REFI_LIMITS_STORE, JSON.stringify(refiLimitsById)); }catch(e){}
+    }
+    const fmtX2 = (v) => (v != null && isFinite(v)) ? v.toFixed(2) + "×" : "—";
+    function refiBindingWord(binding, lim){
+      lim = lim || REFI_LIMITS_DEFAULT;
+      return binding === "Debt Yield" ? "debt yield (income ÷ loan, held at " + fmtPct(lim.dy) + ")"
+           : binding === "LTV"        ? "loan-to-value (capped at " + fmtPct(lim.ltv) + " of value)"
+           : binding === "DSCR"       ? "debt coverage on the amortizing payment (income ÷ payment, held at " + fmtX2(lim.dscr) + ")"
+           : binding === "DSCR IO"    ? "debt coverage on the interest-only payment (income ÷ interest, held at " + fmtX2(lim.dscrIO) + ")"
            : "a lender limit";
     }
     function refiBasisWord(loan){
@@ -10886,30 +11072,38 @@ tr.flagged:hover td{background:#fee2e2}
       const nd = draft ? compute(draft).derived : null;
       const rate = nd ? (nd.currentRate || 0) : 0;
       const amortYears = Math.max(0, Math.round(((draft && draft.amortizationMonths) || 360) / 12));
-      const s = Underwriting.sizeLoan(noi, { capRate: loanCapRate(loan), ltvMax: 0.75, dscrMin: 1.25, dyMin: 0.07, intRate: rate, amortYears: amortYears });
+      const lim = refiLimits(loan);   // 3.0.0 — the analysis's own limits
+      const s = Underwriting.sizeLoan(noi, { capRate: loanCapRate(loan), ltvMax: lim.ltv, dscrMin: lim.dscr, dyMin: lim.dy, intRate: rate, amortYears: amortYears });
+      // 3.0.0 — coverage on the interest-only payment (income ÷ interest), a fourth limit once one is typed
+      const ok = noi != null && isFinite(noi) && noi > 0;
+      const loanIO = (ok && lim.dscrIO > 0 && rate > 0) ? noi / (lim.dscrIO * rate) : null;
       const payoff = refiPayoff(loan);   // 2.9.7 (#25)
-      const sized = (noi != null && isFinite(noi) && noi > 0 && s.maxLoan > 0);
-      const can = sized && s.maxLoan >= payoff - 1;
-      // 2.9.4 (#3) — all three sizing caps, smallest first, so the refi can show every leg, mark the binding
+      // 2.9.4 (#3) — every sizing cap, smallest first, so the refi can show every leg, mark the binding
       // one, and quote the margin to the runner-up (how much room before the next constraint would bind).
       const caps = [
-        { key:"DSCR",       label:"Debt coverage (1.25×)", amt: s.loanDSCR },
-        { key:"LTV",        label:"Loan-to-value (75%)",   amt: s.loanLTV },
-        { key:"Debt Yield", label:"Debt yield (7%)",       amt: s.loanDY }
+        { key:"DSCR",       label:"Debt coverage, amortizing (" + fmtX2(lim.dscr) + ")",       amt: s.loanDSCR },
+        { key:"DSCR IO",    label:"Debt coverage, interest-only (" + fmtX2(lim.dscrIO) + ")", amt: loanIO },
+        { key:"LTV",        label:"Loan-to-value (" + fmtPct(lim.ltv) + ")",                   amt: s.loanLTV },
+        { key:"Debt Yield", label:"Debt yield (" + fmtPct(lim.dy) + ")",                       amt: s.loanDY }
       ].filter(c => c.amt != null && isFinite(c.amt) && c.amt > 0).sort((a,b) => a.amt - b.amt);
+      const maxLoan = caps.length ? caps[0].amt : 0, binding = caps.length ? caps[0].key : null;
+      const sized = ok && maxLoan > 0;
+      const can = sized && maxLoan >= payoff - 1;
       // 2.9.6 (G4) — each leg's IMPLIED metrics AT its own sized loan, so the panel is
       // self-evident: the binding (smallest) leg sits at its limit while the others have
       // room. Same math the Sizing tab shows, computed per leg instead of only for the max.
       var _sv = s.value, _smc = s.mortgageConstant;
       caps.forEach(function(c){
         c.impDSCR = (_smc > 0 && c.amt > 0) ? noi / (c.amt * _smc) : null;
+        c.impIO   = (rate > 0 && c.amt > 0) ? noi / (c.amt * rate) : null;
         c.impLTV  = (_sv > 0)               ? c.amt / _sv          : null;
         c.impDY   = (c.amt > 0)             ? noi / c.amt          : null;
       });
       const runnerUp = caps.length > 1 ? caps[1] : null;
       const margin = runnerUp ? (runnerUp.amt - caps[0].amt) : null;
-      return { can: can, sized: sized, maxLoan: s.maxLoan, payoff: payoff, binding: s.binding,
-               gap: s.maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears,
+      return { can: can, sized: sized, maxLoan: maxLoan, payoff: payoff, binding: binding,
+               gap: maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears, value: s.value, constant: _smc, capRate: loanCapRate(loan), limits: lim,
+               legs: { DSCR: s.loanDSCR, "DSCR IO": loanIO, LTV: s.loanLTV, "Debt Yield": s.loanDY },
                caps: caps, runnerUp: runnerUp, margin: margin };
     }
     // Stage 2 — should you? 2.9.7 (#181–#185) YOUR RULE, checked in order:
@@ -10955,27 +11149,62 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // 2.9.4 (#3) — the three loan sizes (DSCR / LTV / debt-yield caps), the binding one marked, and the
     // margin to the runner-up. A display of the sizing the app already computes; no new math.
-    function refiCapsBlock(can){
-      if(!can || !can.caps || can.caps.length < 2) return "";
-      const fmtDscrX = (v)=> (v!=null && isFinite(v)) ? v.toFixed(2)+'×' : '&mdash;';
-      const rows = can.caps.map(c => {
-        const isBind = (c.key === can.binding);
-        const imp = (c.impDSCR!=null || c.impLTV!=null || c.impDY!=null)
-          ? '<div class="mt-0.5 text-[11px] tabular-nums '+(isBind?'text-brand-700':'text-slate-500')+'">at this loan: DSCR '+fmtDscrX(c.impDSCR)+' &middot; LTV '+(c.impLTV!=null?fmtPct(c.impLTV):'&mdash;')+' &middot; DY '+(c.impDY!=null?fmtPct(c.impDY):'&mdash;')+'</div>'
-          : '';
-        return '<div class="rounded-md px-2 py-1 '+(isBind?'bg-brand-50':'')+'">'+
-          '<div class="flex items-center justify-between gap-2">'+
-            '<span class="text-sm '+(isBind?'font-bold text-brand-800':'text-slate-600')+'">'+c.label+(isBind?' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>':'')+'</span>'+
-            '<span class="text-sm tabular-nums '+(isBind?'font-extrabold text-brand-800':'text-slate-700')+'">'+fmtMoney(c.amt)+'</span>'+
-          '</div>'+imp+
-        '</div>';
-      }).join('');
+    // 3.0.0 — how "supports $X" is worked out: the NOI and where it comes from, the proposed loan's rate (index +
+    // spread), amortizing or interest-only, every lender limit (typed per analysis) with the loan it allows, and the
+    // one that binds.
+    // The index level the proposed loan's first month is priced on: a reset-day index (30-day Average SOFR, Term
+    // SOFR) uses its value on this month's reset day, as the loan itself does; any other index, today's value.
+    function refiIndexUsed(draft){
+      if(draft && draft.rateType === "Floating" && isResetDayIndex(draft.index)){ const t = todayParts(), r0 = indexOnResetDay(draft.index, { y: t.y, mo: t.mo }); if(r0) return { value: r0.value, on: r0.how === "daily" ? r0.date : null }; }
+      return { value: refiIndexVal(draft) || 0, on: null };
+    }
+    function refiRateBuild(loan, draft){
+      if(!draft) return "";
+      if(draft.rateType === "Hybrid ARM"){ const fm = draft.armInitialFixedMonths || 60, fx = draft._fixedIndex || matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: fm });
+        return tenorShort(fx) + " " + fmtPct(liveIndexVal(fx) || 0) + " + " + Math.round(Math.max(0, (draft._fixedSpread || 0) + (draft._tierDelta || 0)) * 10000) + " bps, fixed for " + fm + " months"; }
+      const iu = refiIndexUsed(draft);
+      return tenorShort(draft.index) + " " + fmtPct(iu.value) + (iu.on ? " (set " + fmtDateUS(iu.on) + ")" : "") + " + " + Math.round((draft._effSpread != null ? draft._effSpread : (draft.spread || 0)) * 10000) + " bps" + (draft.rateType === "Floating" ? ", floating" : ", fixed");
+    }
+    function refiNOISourceText(loan){
+      const b = refiBasis(loan), k = propertyKey(loan), g = gdNOICache[k];
+      if(b === "underwritten") return "underwritten &middot; " + escapeHtml(noiMethodLabel(g) || "T12");
+      if(b === "inplace") return "in-place " + escapeHtml(noiMethodLabel(g) || "T12");
+      if(b === "entered" && propNOIOverride(k) != null) return "your NOI (override)";
+      const r = propNOIWithSource(k, [], refiMembers(loan)); return escapeHtml(r.src || "typed");
+    }
+    function refiCapsBlock(loan, can, draft){
+      if(!can || !can.sized) return "";
+      const lim = can.limits || refiLimits(loan), parts = refiPoolParts(loan), boost = refiMoveBoost(loan, refiBasis(loan));
+      const io = draft ? (draft.ioMonths || 0) : 0, term = draft ? (draft.loanTermMonths || 0) : 0;
+      const pay = (io > 0 && term > 0 && io >= term) ? "interest-only for the whole term (the amortizing test still uses " + can.amortYears + " years)" : "amortizing over " + can.amortYears + " years" + (io > 0 ? ", after " + io + " months interest-only" : "");
+      const fact = (t, v) => '<div class="flex gap-2 text-[12px]"><span class="w-16 shrink-0 font-semibold text-slate-500">'+t+'</span><span class="text-slate-700">'+v+'</span></div>';
+      const inp = (k, val, unit, ph) => '<span class="inline-flex items-center gap-1"><input type="number" step="any" data-refilim="'+k+'" value="'+(val == null ? '' : val)+'" placeholder="'+(ph || '')+'" class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-right text-xs tabular-nums"><span class="text-[11px] text-slate-500">'+unit+'</span></span>';
+      const legs = [
+        { key: "DSCR",       name: "Debt coverage, amortizing payment",     sign: "&ge;", box: inp("dscr", +lim.dscr.toFixed(3), "&times;"),                              how: "NOI &divide; (" + fmtX2(lim.dscr) + " &times; loan constant " + fmtPct(can.constant) + ")" },
+        { key: "DSCR IO",    name: "Debt coverage, interest-only payment", sign: "&ge;", box: inp("dscrIO", lim.dscrIO != null ? +lim.dscrIO.toFixed(3) : null, "&times;", "not used"), how: lim.dscrIO != null ? "NOI &divide; (" + fmtX2(lim.dscrIO) + " &times; rate " + fmtPct(can.rate) + ")" : "type your lender&rsquo;s limit to use it" },
+        { key: "LTV",        name: "Loan-to-value",                        sign: "&le;", box: inp("ltv", +(lim.ltv * 100).toFixed(2), "%"),                               how: fmtPct(lim.ltv) + " of value " + (can.value != null ? fmtMoney(can.value) : "&mdash;") + " (NOI &divide; " + fmtPct(can.capRate) + " cap rate)" },
+        { key: "Debt Yield", name: "Debt yield",                           sign: "&ge;", box: inp("dy", +(lim.dy * 100).toFixed(2), "%"),                                 how: "NOI &divide; " + fmtPct(lim.dy) }
+      ];
+      const cap = (k) => can.caps.find(c => c.key === k);
+      const rows = legs.map(l => { const c = cap(l.key), amt = can.legs ? can.legs[l.key] : (c && c.amt), bind = l.key === can.binding;
+        const imp = c ? '<div class="text-[10px] tabular-nums '+(bind ? 'text-brand-700' : 'text-slate-400')+'">at '+fmtMoney(c.amt)+': DSCR '+fmtX2(c.impDSCR)+' amortizing &middot; '+fmtX2(c.impIO)+' interest-only &middot; LTV '+(c.impLTV != null ? fmtPct(c.impLTV) : '&mdash;')+' &middot; DY '+(c.impDY != null ? fmtPct(c.impDY) : '&mdash;')+'</div>' : '';
+        return '<tr class="border-t border-slate-100 align-top'+(bind ? ' bg-brand-50' : '')+'" data-refileg="'+l.key+'">'+
+          '<td class="py-1.5 pr-2 text-sm '+(bind ? 'font-bold text-brand-800' : 'text-slate-700')+'">'+l.name+(bind ? ' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>' : '')+'<div class="text-[11px] font-normal text-slate-500">'+l.how+'</div>'+imp+'</td>'+
+          '<td class="py-1.5 px-2 whitespace-nowrap text-sm text-slate-500">'+l.sign+' '+l.box+'</td>'+
+          '<td class="py-1.5 pl-2 text-right text-sm tabular-nums '+(bind ? 'font-extrabold text-brand-800' : 'text-slate-700')+'" data-refilegamt>'+(amt != null && isFinite(amt) && amt > 0 ? fmtMoney(amt) : '<span class="text-slate-400">not used</span>')+'</td></tr>'; }).join('');
       const margin = (can.margin != null && can.runnerUp)
         ? '<p class="mt-1.5 text-[11px] text-slate-500">'+fmtMoney(can.margin)+' of headroom before '+escapeHtml(can.runnerUp.label)+' would bind instead.</p>'
         : '';
-      return '<div class="mt-3 ml-9 border-t border-slate-200/70 pt-3">'+
-        '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Three loan sizes &mdash; the smallest caps the loan</p>'+
-        '<div class="space-y-1">'+rows+'</div>'+margin+
+      return '<div class="mt-3 ml-9 border-t border-slate-200/70 pt-3" data-refibasis>'+
+        '<p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">How &ldquo;supports '+fmtMoney(can.maxLoan)+'&rdquo; is worked out</p>'+
+        '<div class="space-y-0.5">'+
+          fact("NOI", '<strong class="tabular-nums">'+fmtMoney(can.noi)+'</strong> &mdash; '+(parts ? parts.length + ' properties together, each one&rsquo;s NOI and source in <strong>NOI by property</strong> above' : refiNOISourceText(loan))+(boost ? ' (including '+(boost > 0 ? '+' : '&minus;')+fmtMoney(Math.abs(boost))+' from the moves ticked below)' : ''))+
+          fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft)+' (never today&rsquo;s loan&rsquo;s rate)')+
+          fact("Payment", pay)+
+        '</div>'+
+        '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th>Lender limit</th><th class="px-2">Your lender&rsquo;s</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+        '<p class="mt-1.5 text-[12px] text-slate-700">The smallest, <strong>'+fmtMoney(can.maxLoan)+'</strong>, is what '+(parts ? 'these properties support' : 'the property supports')+'.</p>'+margin+
+        '<p class="mt-1 text-[11px] text-slate-400">The limits are this refinance&rsquo;s own, kept on this computer'+(lim.own ? ' &middot; <button type="button" data-refilimreset class="font-semibold text-brand-700 hover:underline">back to 1.25&times; / 75% / 7%</button>' : ' &middot; they start at 1.25&times; / 75% / 7%; type your lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only)')+'.</p>'+
       '</div>';
     }
     function refiGroupInfo(loan){ if(!loan) return null; const ks = loan._poolKeys || (isPoolLoan(loan) ? poolKeys(loan) : null); if(!ks || ks.length < 2) return null;
@@ -10995,7 +11224,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(!can.sized){
         return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">'+
           '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge this yet</p>'+
-          '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>'+
+          (refiPoolMissing(loan).length
+            ? '<p class="mt-1 text-sm text-slate-700" data-refinonoi>No NOI for <strong>'+refiPoolMissing(loan).map(p => escapeHtml(p.name)).join(", ")+'</strong>. Counting '+(refiPoolMissing(loan).length === 1 ? 'it' : 'them')+' as $0 would understate what these properties support, so nothing is sized yet &mdash; upload each one&rsquo;s T12 or type its NOI in <strong>NOI by property</strong> above, then this is sized against the '+fmtMoney(can.payoff)+' you owe.</p>'
+            : '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>')+
           pricing+
         '</div>';
       }
@@ -11008,9 +11239,9 @@ tr.flagged:hover td{background:#fee2e2}
       const canLine = can.can
         ? ((refiGroupInfo(loan) ? "These "+refiGroupInfo(loan).n+" properties support" : "This property supports")+" up to <strong>"+fmtMoney(can.maxLoan)+"</strong> &mdash; "+
            (can.gap > 1 ? fmtMoney(can.gap)+" more than" : "enough to cover")+" the <strong>"+fmtMoney(can.payoff)+"</strong> you owe. "+
-           "Its "+refiBindingWord(can.binding)+" is the limit that sets that ceiling.")
+           "Its "+refiBindingWord(can.binding, can.limits)+" is the limit that sets that ceiling.")
         : ((refiGroupInfo(loan) ? "The most these "+refiGroupInfo(loan).n+" properties support" : "The most this property supports")+" today is <strong>"+fmtMoney(can.maxLoan)+"</strong>, but you owe <strong>"+fmtMoney(can.payoff)+"</strong> &mdash; a <strong>"+fmtMoney(-can.gap)+"</strong> shortfall. "+
-           "Its "+refiBindingWord(can.binding)+" is what caps it. You can&rsquo;t refinance the whole balance until NOI rises, the rate falls, or you pay that gap down.");
+           "Its "+refiBindingWord(can.binding, can.limits)+" is what caps it. You can&rsquo;t refinance the whole balance until NOI rises, the rate falls, or you pay that gap down.");
 
       // Stage 2 (only when Stage 1 clears) — your rule, in order.
       let shouldBlock = "";
@@ -11054,20 +11285,20 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex items-center gap-3">'+
           '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":"&#10007;")+'</span>'+
           '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on the '+refiBasisWord(loan)+' NOI, priced at '+fmtPct(can.rate)+'.</p></div>'+
+          '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on the '+refiBasisWord(loan)+' NOI at the proposed loan&rsquo;s rate, '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You owe (payoff)", fmtMoney(can.payoff))+
-          refiStat(refiGroupInfo(loan) ? "Properties support" : "Property supports", fmtMoney(can.maxLoan))+
-          refiStat("Your rate today", fmtPct(curRate))+
-          refiStat("Proposed rate", fmtPct(can.rate))+
+          refiStat((refiGroupInfo(loan) ? "Properties support" : "Property supports")+" (at the proposed rate)", fmtMoney(can.maxLoan))+
+          refiStat("Today&rsquo;s loan rate", fmtPct(curRate))+
+          refiStat("Proposed loan rate", fmtPct(can.rate))+
         '</dl>'+
         pricing+
         '<div class="mt-4 flex items-start gap-3">'+mark(can.can)+
           '<div><p class="text-sm font-bold text-slate-800">Can you? '+(can.can?"Yes":"No")+'</p>'+
           '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
         '</div>'+
-        refiCapsBlock(can)+
+        refiCapsBlock(loan, can, dft)+
         shouldBlock+
         '<p class="mt-4 text-sm font-semibold text-slate-900">'+bottom+'</p>'+
       '</div>';
@@ -11100,7 +11331,7 @@ tr.flagged:hover td{background:#fee2e2}
     // to INDEX_CATALOG later shows here by itself. "Other / Custom" is not a fetched rate, so it stays out.
     const REFI_INDEX_CHOICES = INDEX_CATALOG.filter(function(c){ return c.live; }).map(function(c){ return c.id; });
     // The honest rate build-up shown at the top of the proposed loan: a rate-type toggle,
-    // the base-index picker, an editable spread (0 by default on the fixed side, the
+    // the base-index picker, an editable spread (3.0.0: a usual starting spread on every side, the
     // comp-derived margin on the floating side), and the resulting rate spelled out —
     // index + spread − tier discount. Floating adds a floor, a cap and a cap cost (default 0).
     function refiPricingRowHtml(loan, n, draft){
@@ -11116,10 +11347,10 @@ tr.flagged:hover td{background:#fee2e2}
           return '<button data-rtype="'+t+'" type="button" class="px-4 py-2 '+(i>0?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">'+lbl+'</button>'; }).join("")+'</div>';
       const head = '<div class="mb-3 flex flex-wrap items-center gap-3">'+
           '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Proposed rate</span>'+typeToggle+
-          '<span class="text-[11px] text-slate-400">starts from your current loan&rsquo;s type; type your lender&rsquo;s quote in the spread &mdash; everything above and below updates at once</span>'+
+          '<span class="text-[11px] text-slate-400">the proposed loan &mdash; starts from your current loan&rsquo;s type and a usual spread; type your lender&rsquo;s quote in the spread &mdash; everything above and below updates at once</span>'+
         '</div>';
       if(hybrid){
-        // 2.9.7 (#80) — both periods: the fixed period over the Treasury matching it (spread 0 until you type the
+        // 2.9.7 (#80) — both periods: the fixed period over the Treasury matching it (3.0.0: a usual starting spread until you type the
         // lender's quote), then today's index + margin "if the index stays at today's level" (no forecasting).
         const fixM = draft.armInitialFixedMonths || 60, fxIdx = draft._fixedIndex || matchedTenorId({ rateType:"Hybrid ARM", armInitialFixedMonths: fixM });
         const fxBps = Math.round((draft._fixedSpread||0)*10000), fxRate = draft.annualRate || 0;
@@ -11132,14 +11363,14 @@ tr.flagged:hover td{background:#fee2e2}
                 '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Index (matches the fixed period)</span><select id="o'+n+'_fxindex" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm">'+idxOpts(fxIdx)+'</select></label>'+
                 refiNumField("o"+n+"_fxspread","Spread (bps) &mdash; type the lender&rsquo;s quote", fxBps)+
               '</div>'+
-              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refirate>'+fmtPct(fxRate)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(fxIdx)+' '+fmtPct(liveIndexVal(fxIdx)||0)+' '+src(fxIdx)+' + '+fxBps+' bps</span></p>'+
+              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refirate>'+fmtPct(fxRate)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(fxIdx)+' '+fmtPct(liveIndexVal(fxIdx)||0)+' '+src(fxIdx)+' + '+fxBps+' bps'+(draft._fxSpreadFrom ? ' <span class="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800" data-refispreadfrom>starting spread &mdash; '+escapeHtml(draft._fxSpreadFrom)+'</span>' : '')+'</span></p>'+
               '<p class="text-[11px] text-slate-500">Monthly payment '+fmtMoney(p1)+' &middot; the verdict uses this rate</p></div>'+
             '<div class="rounded-lg border border-slate-200 bg-white p-3"><p class="text-[11px] font-bold uppercase tracking-wide text-slate-500">After month '+fixM+' &middot; adjustable</p>'+
               '<div class="mt-2 grid grid-cols-2 gap-2">'+
                 '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Index</span><select id="o'+n+'_index" class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm">'+idxOpts(draft.index)+'</select></label>'+
                 refiNumField("o"+n+"_spread","Margin (bps) &mdash; type the lender&rsquo;s quote", baseBps)+
               '</div>'+
-              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900">'+fmtPct(after)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(draft.index)+' '+fmtPct(refiIndexVal(draft)||0)+' '+src(draft.index)+' + '+baseBps+' bps &mdash; if the index stays at today&rsquo;s level</span></p>'+
+              '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900">'+fmtPct(after)+'</span> <span class="text-[11px] text-slate-500">= '+tenorShort(draft.index)+' '+fmtPct(refiIndexVal(draft)||0)+' '+src(draft.index)+' + '+baseBps+' bps &mdash; if the index stays at today&rsquo;s level'+(draft._spreadFrom ? ' <span class="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800">starting margin &mdash; '+escapeHtml(draft._spreadFrom)+'</span>' : '')+'</span></p>'+
               '<p class="text-[11px] text-slate-500">Monthly payment '+(rr ? fmtMoney(rr.payment) : "&mdash;")+' &middot; shown for information</p></div>'+
           '</div>'+
         '</div>';
@@ -11151,8 +11382,9 @@ tr.flagged:hover td{background:#fee2e2}
           refiNumField("o"+n+"_cap","Rate cap (%)", draft.rateCap!=null?+(draft.rateCap*100).toFixed(3):"")+
           refiNumField("o"+n+"_capcost","Cap cost (bps/yr)", Math.round((draft.sofrCapPct||0)*10000));
       }
-      const idxVal = refiIndexVal(draft);
-      const build = '= '+tenorShort(draft.index)+' '+fmtPct(idxVal)+' '+src(draft.index)+' + '+baseBps+' bps spread'+
+      const iu = refiIndexUsed(draft), idxVal = iu.value;
+      const from = (f) => f ? ' <span class="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800" data-refispreadfrom>starting spread &mdash; '+escapeHtml(f)+'; type your lender&rsquo;s quote</span>' : ' <span class="text-[10px] text-slate-400">(your lender&rsquo;s quote)</span>';   // 3.0.0
+      const build = '= '+tenorShort(draft.index)+' '+fmtPct(idxVal)+(iu.on ? ' (set '+fmtDateUS(iu.on)+', its reset day)' : ' '+src(draft.index))+' + '+baseBps+' bps spread'+from(draft._spreadFrom)+
         (showTier?(' &minus; '+Math.abs(tierBps)+' bps ('+(tier?tier.label:"tier")+')'):'')+
         (showTier && (baseBps+tierBps)<0?' (floored at 0)':'');
       return '<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">'+head+
@@ -11172,7 +11404,8 @@ tr.flagged:hover td{background:#fee2e2}
       if(!(amt > 0) || noi == null || !isFinite(noi)) return "";
       const ads = annualDebtService(compute(draft).derived), value = (cr > 0) ? noi / cr : null;
       const dscr = ads > 0 ? noi / ads : null, ltv = value > 0 ? amt / value : null, dy = noi / amt;
-      return '<p class="mt-1 text-[11px] tabular-nums text-slate-500" data-refiatloan>at this loan ('+fmtMoney(amt)+'): DSCR '+(dscr!=null?dscr.toFixed(2)+'&times;':'&mdash;')+' &middot; LTV '+(ltv!=null?fmtPct(ltv):'&mdash;')+' &middot; DY '+fmtPct(dy)+'</p>';
+      const r = compute(draft).derived.currentRate || 0, dscrIO = r > 0 ? noi / (amt * r) : null;   // 3.0.0 — coverage on the interest-only payment too
+      return '<p class="mt-1 text-[11px] tabular-nums text-slate-500" data-refiatloan>the proposed loan ('+fmtMoney(amt)+' at '+fmtPct(r)+'): DSCR '+(dscr!=null?dscr.toFixed(2)+'&times;':'&mdash;')+' amortizing &middot; '+(dscrIO!=null?dscrIO.toFixed(2)+'&times;':'&mdash;')+' interest-only &middot; LTV '+(ltv!=null?fmtPct(ltv):'&mdash;')+' &middot; DY '+fmtPct(dy)+'</p>';
     }
     // The single, full-width detail card for the selected proposed option.
     function refiOptionCardHtml(loan, n){
@@ -11201,6 +11434,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="mt-4"><h4 class="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">Amortization schedule'+(io>0?' &middot; interest-only for '+io+' mo':"")+'</h4>'+refiOptionScheduleHtml(draft)+'</div>'+
       '</div>';
     }
+    var refiGDTried = new Set();
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
@@ -11208,6 +11442,9 @@ tr.flagged:hover td{background:#fee2e2}
       // and the analysis can run off the T12/underwritten NOI without a hand-entered figure.
       const _gk = propertyKey(loan);
       if(!Object.prototype.hasOwnProperty.call(gdNOICache, _gk)) opEnsureGeneralData(_gk).then(() => { if(state.activeId === loan._id || loan._combined) renderRefi(loan); });
+      { const gks = (refiGroupKeys(loan) || []).filter(k => !Object.prototype.hasOwnProperty.call(gdNOICache, k) && !refiGDTried.has(k));   // 3.0.0 — each property of a group (once)
+        gks.forEach(k => refiGDTried.add(k));
+        if(gks.length) Promise.all(gks.map(k => opEnsureGeneralData(k).catch(() => null))).then(() => { if(state.activeId === loan._id && state.mode === "refi") refiReprice(loan); }); }
       ensureRefiDrafts(loan);
       // The two-stage verdict drives what's shown: the proposed loan + its schedule (and the
       // "Save as a loan" button) appear ONLY when the answer is Refinance — you can, and you should.
@@ -11235,6 +11472,7 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
           '<h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">'+(loan._combined?"Current debt &middot; whole property":"Current Loan")+'</h3>'+
+          staleLoansOf(loan).map(l => '<div class="mb-3 rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-refistale>'+staleNoteHtml(l)+' This refinance uses those figures.</div>').join("")+
           (loan._combined ? '<div class="mb-3 rounded-lg border border-brand-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-600">'+loan._members.length+' loans on this property, refinanced as one package (they depend on one another):<br>'+loan._members.map(function(m){return '<strong>'+escapeHtml(m.label)+'</strong> '+fmtMoney(m.bal)+' @ '+fmtPct(m.rate)+' <span class="text-slate-400">'+(m.mezz?'mezz':'senior')+'</span>';}).join(' &nbsp;+&nbsp; ')+'</div>' : '')+
           '<dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">'+
             refiStat("Payoff balance", fmtMoney(refiPayoff(loan)))+   // 2.9.7 (#25) — each loan at its own balance
@@ -11281,6 +11519,18 @@ tr.flagged:hover td{background:#fee2e2}
         refiBasisByKey[propertyKey(loan)] = b.getAttribute("data-noibasis");
         refiReprice(loan);
       }));
+      dom.refiView.querySelectorAll("[data-refipooltype]").forEach(inp => inp.addEventListener("change", () => {   // 3.0.0 — saved on the property, like typing it on its page
+        const raw = String(inp.value || "").replace(/[$,\s]/g, ""); if(raw === "" || !isFinite(+raw)) return;
+        const k = inp.getAttribute("data-refipooltype");
+        opProfileSetField(k, "noi", raw, { source: "typed in a refinance" }).then(() => { try{ redrawAll(); }catch(e){} if(state.mode === "refi" && state.activeId === loan._id) refiReprice(loan); });
+      }));
+      dom.refiView.querySelectorAll("[data-refilim]").forEach(inp => inp.addEventListener("change", () => {   // 3.0.0 — the lender's limits, this refinance's own
+        const k = inp.getAttribute("data-refilim"), raw = String(inp.value || "").trim(), v = parseFloat(raw);
+        if(raw === ""){ refiSetLimits(loan, { [k]: null }); refiReprice(loan); return; }
+        if(!isFinite(v) || v <= 0){ toast("Type a number above 0", "info"); return; }
+        refiSetLimits(loan, { [k]: (k === "ltv" || k === "dy") ? v / 100 : v }); refiReprice(loan);
+      }));
+      dom.refiView.querySelectorAll("[data-refilimreset]").forEach(b => b.addEventListener("click", () => { refiSetLimits(loan, null); refiReprice(loan); }));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => refiReprice(loan)));
 
@@ -11339,9 +11589,10 @@ tr.flagged:hover td{background:#fee2e2}
           const draft = refiDrafts[1]; if(!draft) return;
           const type = b.getAttribute("data-rtype"); if(draft.rateType === type) return;
           draft.rateType = type;
-          draft.index = (type === "Floating") ? "sofr" : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: draft.loanTermMonths });
-          draft._baseSpread = (type === "Floating") ? floatingBaseSpread(loan, draft.loanTermMonths) : 0;
-          draft._fixedIndex = null; draft._fixedSpread = (type === "Hybrid ARM") ? 0 : null;
+          draft.index = (type === "Floating") ? REFI_DEFAULT_FLOAT_INDEX : (type === "Hybrid ARM") ? "ust5y" : matchedTenorId({ rateType:"Fixed", loanTermMonths: draft.loanTermMonths });
+          const ds = refiDefaultSpread(loan, type, draft.loanTermMonths);   // 3.0.0 — the new type's starting spread, never 0
+          draft._baseSpread = ds.spread; draft._spreadFrom = ds.from;
+          draft._fixedIndex = null; draft._fixedSpread = (type === "Hybrid ARM") ? ds.spread : null; draft._fxSpreadFrom = (type === "Hybrid ARM") ? ds.from : null;
           draft.rateFloor = null; draft.rateCap = null; draft.sofrCapPct = (type === "Fixed") ? null : 0;
           applyProposedPricing(loan, draft);
           renderRefi(loan);
@@ -11364,8 +11615,8 @@ tr.flagged:hover td{background:#fee2e2}
             if(vd.decision){ const payoff = vd.should.payoff; if(payoff > 0 && ((v - payoff) / payoff <= REFI_DECISION_CASH || v - payoff - vd.should.penalty <= 1)){ refiNotice("You can’t do that", "You can’t do that — if you do, you won’t be able to refinance."); renderRefi(loan); return; } }
             draft.originalAmount = v;
           }
-          else if(field === "spread"){ draft._baseSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }   // bps → decimal; tier re-applied
-          else if(field === "fxspread"){ draft._fixedSpread = Math.max(0, v)/10000; applyProposedPricing(loan, draft); }
+          else if(field === "spread"){ draft._baseSpread = Math.max(0, v)/10000; draft._spreadFrom = null; applyProposedPricing(loan, draft); }   // bps → decimal; tier re-applied; typed = the lender's quote
+          else if(field === "fxspread"){ draft._fixedSpread = Math.max(0, v)/10000; draft._fxSpreadFrom = null; applyProposedPricing(loan, draft); }
           else if(field === "floor") draft.rateFloor = blank ? null : v/100;
           else if(field === "cap")   draft.rateCap   = blank ? null : v/100;
           else if(field === "capcost") draft.sofrCapPct = Math.max(0, v)/10000;   // bps/yr → decimal; a separate cost, default 0
@@ -14006,7 +14257,16 @@ tr.flagged:hover td{background:#fee2e2}
     var AI_ASST_MAX_ROUNDS = 8;
     var aiAsstConvFileTexts = [];          // [{name, text}] files attached in this conversation — sent with every later message (#243)
     var AI_ASST_FILES_CAP = 400000;        // when they get very large the oldest is dropped first (and Claude is told which)
+    // 3.0.0 — in the shared database everyone reads every chat; only the person who started one continues it
+    var aiAsstReadOnlyOwner = "";
+    function aiAsstSetReadOnly(owner){
+      aiAsstReadOnlyOwner = owner || "";
+      var inp = el("aiAsstInput"); if(!inp) return;
+      inp.disabled = !!owner;
+      inp.placeholder = owner ? ("Started by " + owner + " — only they can continue it. Start a new chat to ask your own question.") : "Ask me anything, or tell me what to do… (Enter to send, Shift+Enter for a new line)";
+    }
     function aiAsstAsk(question){
+      if(aiAsstReadOnlyOwner){ toast("Only " + aiAsstReadOnlyOwner + " can continue this chat — start a new chat", "info"); return; }
       question=String(question==null?"":question).trim();
       var ready = aiAsstFiles.filter(function(f){ return f.status==="ok" && f.text; });
       var loading = aiAsstFiles.some(function(f){ return f.status==="loading"; });
@@ -14431,7 +14691,9 @@ tr.flagged:hover td{background:#fee2e2}
         aiAsstFocusPropKey=(c.scope && c.scope!=="portfolio") ? c.scope : ""; aiAsstFillProps();   // 2.9.8 — a general chat reopens as general
         aiAsstRenderThread();
         aiAsstToggleHistory(false);
-        toast("Reopened — the assistant has this conversation’s memory","check");
+        var myId = LDS_CLOUD && ldsShell.cloudInfo && ldsShell.cloudInfo.userId, notMine = !!(LDS_CLOUD && c.ownerId && myId && c.ownerId !== myId);
+        aiAsstSetReadOnly(notMine ? (c.ownerName || "someone else") : "");
+        toast(notMine ? "Started by " + (c.ownerName || "someone else") + " — you can read it; only they can continue it" : "Reopened — the assistant has this conversation’s memory","check");
       }).catch(function(){ toast("Couldn’t open that conversation","info"); });
     }
     function aiAsstWhen(ts){
@@ -14498,7 +14760,7 @@ tr.flagged:hover td{background:#fee2e2}
       lister.then(function(r){
         var cs=((r&&r.conversations)||[]).filter(function(c){ return !(aiAsstHistMode==="this" && aiAsstFocusPropKey) || c.scope===aiAsstFocusPropKey; });
         list.innerHTML = cs.length
-          ? aiAsstHistGrouped(cs.map(function(c){ return { scope:c.scope, scopeName:c.scopeName, id:c.id, title:c.title, updatedAt:c.updatedAt, pinned:c.pinned, sub:(c.msgCount?(c.msgCount+" message"+(c.msgCount===1?"":"s")):"") }; }))
+          ? aiAsstHistGrouped(cs.map(function(c){ return { scope:c.scope, scopeName:c.scopeName, id:c.id, title:c.title, updatedAt:c.updatedAt, pinned:c.pinned, sub:(c.msgCount?(c.msgCount+" message"+(c.msgCount===1?"":"s")):"") + (LDS_CLOUD && c.ownerName ? " · " + c.ownerName : "") }; }))
           : '<div class="text-xs text-slate-400 py-8 text-center">'+(aiAsstHistMode==="this"&&aiAsstFocusPropKey ? 'No saved conversations about this property yet.' : 'No saved conversations yet.<br>Ask the assistant something and it’ll be saved here.')+'</div>';
         aiAsstWireHistRows(list);
       }).catch(function(){ list.innerHTML='<div class="text-xs text-rose-500 py-6 text-center">Couldn’t load the conversations.</div>'; });
@@ -14552,6 +14814,7 @@ tr.flagged:hover td{background:#fee2e2}
       aiAsstHistory=[]; aiAsstFiles=[]; aiAsstRenderAttach(); aiAsstConvFileTexts=[]; aiAsstPartsAsked={};
       aiAsstThinkingEl=null; aiAsstPendingTurn=null; aiAsstStopped=false; aiAsstToken=null;
       aiAsstConvId=""; aiAsstConvScope=""; aiAsstConvTitle=""; aiAsstConvPinned=false; aiAsstConvFiles=[];   // fresh conversation target
+      aiAsstSetReadOnly("");
       aiAsstToggleHistory(false);
       aiAsstRenderWelcome();
       if(!(opts && opts.quiet)) toast("Started a new chat","check");
@@ -14644,7 +14907,7 @@ tr.flagged:hover td{background:#fee2e2}
     dom.editBtn.addEventListener("click", editProperty);     // 2.9.4 — edits the PROPERTY's info
     dom.removeBtn.addEventListener("click", removeProperty); // 2.9.4 — archives the PROPERTY (+ its loans)
     dom.saveBtn.addEventListener("click", saveForm);
-    (function(){ var le=el("loanRecEdit"), lr=el("loanRecRemove"); if(le) le.addEventListener("click", startEdit); if(lr) lr.addEventListener("click", removeActive); })();   // 2.9.4 — per-loan edit/remove for a single-loan property (Loan Record header)
+    (function(){ var le=el("loanRecEdit"), lr=el("loanRecRemove"), ls=el("loanRecStale"); if(le) le.addEventListener("click", startEdit); if(lr) lr.addEventListener("click", removeActive); if(ls) ls.addEventListener("click", function(){ staleMarkOpen(getLoan(state.activeId)); }); })();   // 2.9.4 — per-loan edit/remove for a single-loan property (Loan Record header)
     // 2.9.4 — Read Agreement modal retired (the AI assistant reads agreements on request).
     // Claude connection from the main Settings menu (desktop app only). Reveals the
     // menu entry and shows a live Connected / Not set badge.
@@ -14781,6 +15044,507 @@ tr.flagged:hover td{background:#fee2e2}
     if(typeof XLSX === "undefined"){ dom.xlsxDot.classList.remove("bg-emerald-500"); dom.xlsxDot.classList.add("bg-amber-500"); }
 
     /* ================================================================
+       12c. 3.0.0 — THE SHARED DATABASE (the screens)
+       The chip in the title bar (who, the group, online / offline) and its menu; the bar of changes not saved yet,
+       with the reason box; the admin's approval (code on the spot, or a request); the admin's requests pop-up;
+       people asking to join (the admin's pop-up); members and codes; the change history; the daily backups; the first
+       upload; the offline code; the maintainer's groups.
+       ================================================================ */
+    const cloudUI = { st: null, shownReq: {}, shownJoin: {}, answered: {}, refreshWait: null };
+    const CLOUD_ROLE = { admin: "Admin", editor: "Editor", viewer: "View only" };
+    function cloudModal(title, sub, body, buttons, opts){
+      opts = opts || {};
+      const back = document.createElement("div");
+      back.className = "fixed inset-0 z-[85] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4";
+      back.innerHTML = '<div class="w-full ' + (opts.wide ? "max-w-4xl" : "max-w-lg") + ' rounded-2xl border border-slate-200 bg-white shadow-2xl">' +
+        '<div class="border-b border-slate-100 px-5 py-4"><h3 class="text-base font-bold text-slate-800">' + escapeHtml(title) + '</h3>' +
+        (sub ? '<p class="text-xs text-slate-500 mt-0.5">' + sub + '</p>' : '') + '</div>' +
+        '<div class="max-h-[65vh] overflow-y-auto px-5 py-4 text-sm text-slate-700" data-cm-body>' + (body || "") + '</div>' +
+        '<div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3" data-cm-btns></div></div>';
+      const close = () => { try{ back.remove(); }catch(e){} };
+      const btns = back.querySelector("[data-cm-btns]");
+      (buttons || [{ label: "Close" }]).forEach(b => {
+        const x = document.createElement("button"); x.type = "button"; x.textContent = b.label;
+        x.className = b.primary ? "rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                    : b.danger ? "rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                    : "rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50";
+        if(b.id) x.id = b.id;
+        x.addEventListener("click", async () => { if(b.onClick){ x.disabled = true; let keep = false; try{ keep = await b.onClick(back, x); }finally{ x.disabled = false; } if(keep === true) return; } close(); });
+        btns.appendChild(x);
+      });
+      document.body.appendChild(back);
+      return { root: back, close, body: back.querySelector("[data-cm-body]") };
+    }
+    // Electron has no window.prompt: a box with one field (resolves the text, or null when cancelled)
+    function cloudAsk(title, label, opts){
+      opts = opts || {};
+      return new Promise(res => {
+        let done = false;
+        const m = cloudModal(title, opts.sub || "", '<label class="block text-xs font-semibold text-slate-500">' + escapeHtml(label) + '</label>' + cloudInput("cloudAskIn", opts.placeholder || "", opts.type) + '<p id="cloudAskMsg" class="mt-2 text-xs text-rose-600"></p>', [
+          { label: "Cancel", onClick: () => { done = true; res(null); } },
+          { label: opts.ok || "OK", primary: true, onClick: () => { const v = (el("cloudAskIn").value || "").trim(); if(opts.required && !v){ el("cloudAskMsg").textContent = opts.required; return true; } done = true; res(v); } }
+        ]);
+        setTimeout(() => { const x = el("cloudAskIn"); if(x){ x.focus(); x.addEventListener("keydown", e => { if(e.key === "Enter"){ const b = m.root.querySelectorAll("[data-cm-btns] button"); b[b.length - 1].click(); } }); } }, 30);
+        const obs = new MutationObserver(() => { if(!document.body.contains(m.root)){ obs.disconnect(); if(!done) res(null); } }); obs.observe(document.body, { childList: true });
+      });
+    }
+    const cloudInput = (id, ph, type) => '<input id="' + id + '" type="' + (type || "text") + '" placeholder="' + escapeHtml(ph || "") + '" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">';
+    const cloudWhen = t => { try{ const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString(); }catch(e){ return ""; } };
+    const cloudVal = v => v === null || v === undefined ? "—" : (typeof v === "object" ? JSON.stringify(v).slice(0, 120) : String(v));
+
+    // A field of a record, in words: "Alpha Tower · Interest Rate" rather than "[ln_1].annualRate".
+    function cloudFieldLabel(path, field){
+      try{
+        if(path === "loans.json"){
+          const m = String(field || "").match(/^\[([^\]]+)\]\.?(.*)$/);
+          if(m){ const ln = loans.find(l => String(l._id) === m[1]); const f = FIELDS.find(x => x.key === m[2].split(".")[0]);
+            return (ln ? ln.propertyName : "A loan") + " · " + (f ? f.label : (m[2] || "the whole loan")); }
+          return "Loans";
+        }
+        if(path === "settings.json") return "Settings · " + field;
+        const pm = String(path).match(/^props\/[0-9a-f]+\/(.+)$/);
+        const what = pm ? ({ "index.json": "documents", "profile.json": "profile", "assumptions.json": "assumptions", "general-data.json": "numbers", "history.json": "assumption history" }[pm[1]] || pm[1]) : path;
+        let prop = "";
+        try{ const st = cloudUI.st || {}; const one = (st.pending || []).find(x => x.path === path); if(one && one.propName) prop = one.propName + " · "; }catch(e){}
+        const pf = String(field || "").replace(/^fields\./, "").replace(/\.value$/, "");
+        const f = (window.Profile && Profile.FIELDS || []).find(x => x.key === pf.split(".")[0]);
+        return prop + what + (field ? " · " + (f ? f.label : pf) : "");
+      }catch(e){ return path + " " + field; }
+    }
+
+    function cloudPaint(st){
+      if(!LDS_CLOUD || !st) return;
+      cloudUI.st = st;
+      const dd = el("cloudDD"); if(dd) dd.classList.remove("hidden");
+      const dot = el("cloudDot"), txt = el("cloudChipText");
+      if(dot) dot.className = "h-2 w-2 rounded-full " + (!st.online ? "bg-amber-500" : st.pending && st.pending.length ? "bg-sky-500" : "bg-emerald-500");
+      if(txt) txt.textContent = (st.name || st.email || "") + " · " + (CLOUD_ROLE[st.role] || "") + (st.online ? "" : " · offline") + (st.requests && st.role === "admin" ? " · " + st.requests + " waiting" : "") + (st.joins && st.role === "admin" ? " · " + st.joins + " asking to join" : "");
+      cloudMenuPaint(st); cloudBannerPaint(st); cloudBarPaint(st);
+      document.body.classList.toggle("lds-viewonly", !st.canWrite);
+      if(st.role === "admin" && st.requests > 0) cloudShowRequests(false);
+      if(st.role === "admin" && st.joins > 0) cloudShowJoins(false);
+    }
+    function cloudMenuPaint(st){
+      const m = el("cloudMenu"); if(!m) return;
+      const item = (id, label, sub) => '<button type="button" data-cloud="' + id + '" class="w-full rounded-lg px-2.5 py-2 text-left hover:bg-slate-50"><div class="text-sm font-semibold text-slate-700">' + label + '</div>' + (sub ? '<div class="text-[11px] text-slate-400">' + sub + '</div>' : '') + '</button>';
+      let h = '<div class="px-2.5 pt-1 pb-2 mb-1 border-b border-slate-100"><div class="text-sm font-bold text-slate-800">' + escapeHtml(st.group || "") + '</div>' +
+        '<div class="text-[11px] text-slate-500">' + escapeHtml(st.name || "") + ' · ' + escapeHtml(st.email || "") + ' · ' + (CLOUD_ROLE[st.role] || "") + '</div>' +
+        '<div class="text-[11px] mt-0.5 ' + (st.online ? "text-emerald-600" : "text-amber-600") + '">' + (st.online ? "Online — live with the group" : "Offline — the last picture of the data") + (st.downloads ? " · fetching files…" : "") + '</div></div>';
+      if(st.role === "admin"){
+        h += item("requests", "Requests" + (st.requests ? " (" + st.requests + " waiting)" : ""), "Changes members asked you to approve");
+        h += item("joins", "Asking to join" + (st.joins ? " (" + st.joins + ")" : ""), "People who asked to join the group");
+        h += item("members", "Members and codes", "Who is in the group, who can edit; your approval and offline codes");
+        h += item("backups", "Daily backups", "Put the group's data back as it was on a day");
+        if(st.groupEmpty) h += item("upload", "Upload this computer's data", "The group's starting data — nothing on this computer changes");
+        else h += item("startover", "Start the group over…", "Remove all the group's data, to upload the starting data again");
+        if(!st.online && !st.offlineUnlocked) h += item("offline", "Use my offline code", "Keep changing data while offline");
+      }
+      h += item("history", "Change history", "Every change: who, when, why");
+      if(st.maintainer) h += item("groups", "Groups", "The maintainer: every group and its admin");
+      h += item("signout", "Sign out", "");
+      m.innerHTML = h;
+      m.querySelectorAll("[data-cloud]").forEach(b => b.addEventListener("click", () => { const dd = el("cloudDD"); if(dd) dd.open = false; cloudMenuAction(b.getAttribute("data-cloud")); }));
+    }
+    function cloudMenuAction(a){
+      if(a === "requests") return cloudShowRequests(true);
+      if(a === "members") return cloudMembersScreen();
+      if(a === "joins") return cloudShowJoins(true);
+      if(a === "startover") return cloudStartOver();
+      if(a === "groups") return cloudGroupsScreen();
+      if(a === "backups") return cloudBackupsScreen();
+      if(a === "upload") return cloudUploadScreen();
+      if(a === "offline") return cloudOfflineScreen();
+      if(a === "history") return cloudHistoryScreen();
+      if(a === "signout") return cloudSignOut();
+    }
+    function cloudBannerPaint(st){
+      let b = el("cloudBanner");
+      const setupWarn = !!st.setupOld && (st.role === "admin" || st.maintainer);   // 3.0.0 — the shared database is behind this app
+      const need = !st.online || setupWarn || st.role === "viewer" || st.groupEmpty;
+      if(!need){ if(b) b.remove(); return; }
+      if(!b){ b = document.createElement("div"); b.id = "cloudBanner"; const wb = el("winbar"); if(wb && wb.parentNode) wb.parentNode.insertBefore(b, wb.nextSibling); else document.body.prepend(b); }
+      let cls = "bg-amber-50 border-amber-200 text-amber-800", text = "", act = "";
+      if(!st.online){
+        if(st.offlineUnlocked) text = "Offline — your changes are kept on this computer and go up when the connection is back" + (st.queued ? " (" + st.queued + " waiting)" : "") + ".";
+        else { text = "Offline — view only. This is the last picture of the group's data; changes can't be saved until the connection is back."; if(st.role === "admin") act = '<button type="button" data-cloud-banner="offline" class="ml-2 underline font-semibold">Use my offline code</button>'; }
+      } else if(setupWarn){ cls = "bg-rose-50 border-rose-200 text-rose-800";
+        text = "The shared database is behind this app (its setup is version " + (st.setupVersion || 0) + "; this app needs " + st.setupNeeded + "). It is brought up to date by itself with each release — if this stays, run supabase/setup.sql once in Supabase's SQL Editor (SUPABASE-SETUP.md, step 2).";
+      } else if(st.role === "viewer"){ cls = "bg-sky-50 border-sky-200 text-sky-800"; text = "View only — you can see everything in the group but not change it."; }
+      else if(st.groupEmpty){ cls = "bg-brand-50 border-brand-200 text-brand-800"; text = st.role === "admin" ? "This group has no data yet." : "This group has no data yet — its admin brings the starting data.";
+        if(st.role === "admin") act = '<button type="button" data-cloud-banner="upload" class="ml-2 underline font-semibold">Upload this computer’s data</button>'; }
+      b.className = "sticky top-8 z-[44] border-b px-4 py-1.5 text-[12px] " + cls;
+      b.innerHTML = escapeHtml(text) + act;
+      b.querySelectorAll("[data-cloud-banner]").forEach(x => x.addEventListener("click", () => cloudMenuAction(x.getAttribute("data-cloud-banner"))));
+    }
+
+    // ---- the changes not saved yet, and the reason box -----------------------------------------------------------------------
+    function cloudBarPaint(st){
+      let bar = el("cloudBar");
+      const pend = (st && st.pending) || [];
+      if(!pend.length){ if(bar) bar.remove(); return; }
+      if(!bar){
+        bar = document.createElement("div"); bar.id = "cloudBar";
+        bar.className = "fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] w-[min(920px,calc(100vw-32px))] rounded-2xl border border-amber-300 bg-amber-50 shadow-2xl px-4 py-3";
+        bar.innerHTML = '<div class="flex items-start gap-3"><div class="min-w-0 flex-1"><div class="text-sm font-bold text-amber-900">Not saved yet</div>' +
+          '<div id="cloudBarWhat" class="text-[12px] text-amber-800 truncate"></div>' +
+          '<div class="mt-2 flex items-center gap-2"><input id="cloudReason" type="text" maxlength="500" placeholder="Why did you make this change?" class="min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm focus:border-amber-500 focus:outline-none">' +
+          '<button type="button" id="cloudSaveBtn" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">Save</button>' +
+          '<button type="button" id="cloudUndoBtn" class="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100">Undo</button></div></div></div>';
+        document.body.appendChild(bar);
+        el("cloudSaveBtn").addEventListener("click", () => cloudSave());
+        el("cloudUndoBtn").addEventListener("click", () => cloudUndo());
+        el("cloudReason").addEventListener("keydown", e => { if(e.key === "Enter") cloudSave(); });
+      }
+      const names = pend.map(p => (p.propName ? p.propName + " · " : "") + p.what);
+      el("cloudBarWhat").textContent = names.slice(0, 4).join(", ") + (names.length > 4 ? " and " + (names.length - 4) + " more" : "");
+      el("cloudBarWhat").title = names.join("\n");
+    }
+    async function cloudSave(o){
+      o = o || {};
+      const inp = el("cloudReason"), btn = el("cloudSaveBtn");
+      const reason = o.reason || (inp && inp.value || "").trim();
+      if(!reason){ if(inp) inp.focus(); toast("Type why you made this change", "info"); return; }
+      if(btn) btn.disabled = true;
+      let r = null;
+      try{ r = await ldsShell.cloud.commit({ reason, approvalCode: o.code || null, request: !!o.request }); }
+      catch(e){ r = { ok: false, error: String(e && e.message || e) }; }
+      finally{ if(btn) btn.disabled = false; }
+      if(r && r.ok){
+        if(inp) inp.value = "";
+        toast(r.queued ? "Saved on this computer — it goes up when the connection is back" : r.requested ? "Sent to the admin for approval — the old value stays until then" : r.approvedBy ? "Saved — approved by " + r.approvedBy : "Saved", "check");
+        if(r.requested) cloudRefresh({ reload: true });
+        return r;
+      }
+      if(r && r.needsApproval) return cloudApprovalScreen(r, reason);
+      toast((r && r.error) || "Not saved", "info");
+      return r;
+    }
+    async function cloudUndo(){
+      const r = await ldsShell.cloud.discard();
+      if(r && r.ok){ const inp = el("cloudReason"); if(inp) inp.value = ""; toast("Your changes were undone", "info"); }
+    }
+
+    // ---- what the admin changed: the approval code on the spot, or a request ------------------------------------------------
+    function cloudApprovalScreen(res, reason){
+      const st = cloudUI.st || {}, admin = (res.needsApproval[0] && res.needsApproval[0].admin) || st.adminName || "the admin";
+      const rows = res.needsApproval.map(n => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(cloudFieldLabel(n.path, n.field)) + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(cloudVal(n.old)) + '</td><td class="py-1.5">' + escapeHtml(cloudVal(n.new)) + '</td></tr>').join("");
+      const body = '<p>' + escapeHtml(admin) + ' made the last change to ' + (res.needsApproval.length === 1 ? "this" : "these") + '. Changing ' + (res.needsApproval.length === 1 ? "it" : "them") + ' needs the admin’s approval.</p>' +
+        '<table class="mt-3 w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left font-semibold pb-1">What</th><th class="text-left font-semibold pb-1">Now</th><th class="text-left font-semibold pb-1">Your change</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<label class="mt-4 block text-xs font-semibold text-slate-500">' + escapeHtml(admin) + ' can type the approval code here</label>' + cloudInput("cloudApproveCode", "Approval code", "password") +
+        (res.wrongCode ? '<p class="mt-2 text-xs font-semibold text-rose-600">That code isn’t right.</p>' : '') +
+        '<p class="mt-3 text-xs text-slate-500">Or send it to ' + escapeHtml(admin) + ': it pops up the next time they open the app. Until they approve, the current value stays in use.</p>';
+      cloudModal("The admin's approval is needed", "Your reason: " + escapeHtml(reason), body, [
+        { label: "Undo my change", onClick: async () => { await cloudUndo(); } },
+        { label: "Send to " + admin, onClick: async () => { await cloudSave({ reason, request: true }); } },
+        { label: "Approve with the code", primary: true, onClick: async () => { const c = (el("cloudApproveCode").value || "").trim(); if(!c){ el("cloudApproveCode").focus(); return true; } await cloudSave({ reason, code: c }); } }
+      ]);
+      setTimeout(() => { const x = el("cloudApproveCode"); if(x) x.focus(); }, 50);
+    }
+
+    // ---- the admin's requests (pop up when the admin opens the app, and when a new one comes in) --------------------------
+    async function cloudShowRequests(force){
+      const r = await ldsShell.cloud.requests(); const list = (r && r.requests) || [];
+      const st = cloudUI.st || {};
+      if(st.role !== "admin"){
+        // a member: say once what the admin answered
+        list.filter(q => q.status !== "waiting" && !cloudUI.answered[q.id]).forEach(q => {
+          cloudUI.answered[q.id] = true;
+          if(Date.now() - Date.parse(q.decided_at || 0) < 7 * 864e5) toast(q.status === "approved" ? "The admin approved your change: " + q.reason : "The admin turned down your change: " + q.reason + (q.note ? " — " + q.note : ""), q.status === "approved" ? "check" : "info");
+        });
+        return;
+      }
+      const waiting = list.filter(q => q.status === "waiting");
+      if(!force && (!waiting.length || waiting.every(q => cloudUI.shownReq[q.id]))) return;
+      if(el("cloudReqModal")) return;
+      waiting.forEach(q => cloudUI.shownReq[q.id] = true);
+      const body = waiting.length ? waiting.map(q => '<div class="mb-4 rounded-xl border border-slate-200 p-3" data-req="' + escapeHtml(q.id) + '">' +
+        '<div class="text-sm"><b>' + escapeHtml(q.by_name || "") + '</b> · ' + escapeHtml(cloudWhen(q.at)) + '</div><div class="text-[13px] text-slate-600">Why: ' + escapeHtml(q.reason || "") + '</div>' +
+        '<table class="mt-2 w-full text-[12px]">' + (q.fields || []).map(f => '<tr class="border-b border-slate-100"><td class="py-1 pr-3">' + escapeHtml(cloudFieldLabel(f.path, f.field)) + '</td><td class="py-1 pr-3 text-slate-500">' + escapeHtml(cloudVal(f.old)) + '</td><td class="py-1">' + escapeHtml(cloudVal(f.new)) + '</td></tr>').join("") + '</table>' +
+        '<div class="mt-2 flex gap-2 justify-end"><button type="button" data-rej class="rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50">Turn down</button><button type="button" data-apr class="rounded-lg bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700">Approve</button></div></div>').join("")
+        : '<p class="text-slate-500">No changes are waiting for you.</p>';
+      const m = cloudModal("Changes waiting for your approval", waiting.length ? waiting.length + " waiting" : "", body, [{ label: "Close" }], { wide: true });
+      m.root.id = "cloudReqModal";
+      m.root.querySelectorAll("[data-req]").forEach(box => {
+        const id = box.getAttribute("data-req");
+        box.querySelector("[data-apr]").addEventListener("click", async (ev) => { ev.target.disabled = true; const r2 = await ldsShell.cloud.approve(id); if(r2 && r2.ok){ box.innerHTML = '<p class="text-emerald-700 font-semibold">Approved.</p>'; } else { toast((r2 && r2.error) || "Not approved", "info"); ev.target.disabled = false; } });
+        box.querySelector("[data-rej]").addEventListener("click", async () => { const note = await cloudAsk("Turn it down", "A note for " + (box.querySelector("b") ? box.querySelector("b").textContent : "them") + " (optional)", { ok: "Turn down" }); if(note === null) return; const r2 = await ldsShell.cloud.reject(id, note || null); if(r2 && r2.ok) box.innerHTML = '<p class="text-slate-600 font-semibold">Turned down.</p>'; });
+      });
+    }
+
+    // ---- people asking to join (the admin): pops up when the admin opens the app, and when someone new asks ---------------
+    // The same request also went to the admin by email; deciding in either place decides it.
+    function cloudJoinRows(list){
+      return list.map(j => '<div class="mb-3 rounded-xl border border-slate-200 p-3" data-join="' + escapeHtml(j.id) + '"><div class="flex flex-wrap items-center gap-2">' +
+        '<div class="min-w-0 flex-1"><div class="text-sm font-semibold text-slate-800">' + escapeHtml(j.name || "") + '</div><div class="text-[12px] text-slate-500">' + escapeHtml(j.email || "") + ' · asked ' + escapeHtml(cloudWhen(j.at)) + '</div></div>' +
+        '<button type="button" data-jno class="rounded-lg border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-50">Turn down</button>' +
+        '<button type="button" data-jyes class="rounded-lg bg-brand-600 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-700">Approve</button></div></div>').join("");
+    }
+    function cloudJoinWire(root){
+      root.querySelectorAll("[data-join]").forEach(box => {
+        if(box.__wired) return; box.__wired = true;
+        const id = box.getAttribute("data-join"), name = (box.querySelector(".font-semibold") || {}).textContent || "They";
+        const go = async (approve, btn) => {
+          box.querySelectorAll("button").forEach(b => b.disabled = true);
+          const r = await ldsShell.cloud.decideJoin(id, approve);
+          if(r && r.ok){
+            box.innerHTML = '<p class="text-sm font-semibold ' + (approve ? "text-emerald-700" : "text-slate-600") + '"></p>';
+            box.firstChild.textContent = approve ? "Approved. " + name + " gets an email to confirm their address, then joins as an editor." + (r.mailed === false ? " (The email couldn't be sent — they can ask again from the app to get it.)" : "")
+                                                 : "Turned down. " + name + " gets an email saying so." + (r.mailed === false ? " (The email couldn't be sent.)" : "");
+          } else if(r && r.already){ box.innerHTML = '<p class="text-sm text-slate-600"></p>'; box.firstChild.textContent = r.error; }
+          else { toast((r && r.error) || "That didn't work", "info"); box.querySelectorAll("button").forEach(b => b.disabled = false); }
+        };
+        box.querySelector("[data-jyes]").addEventListener("click", e => go(true, e.target));
+        box.querySelector("[data-jno]").addEventListener("click", e => go(false, e.target));
+      });
+    }
+    async function cloudShowJoins(force){
+      const st = cloudUI.st || {};
+      if(st.role !== "admin") return;
+      const r = await ldsShell.cloud.joins(); const list = (r && r.joins) || [];
+      if(!force && (!list.length || list.every(j => cloudUI.shownJoin[j.id]))) return;
+      if(el("cloudJoinModal")) return;
+      list.forEach(j => cloudUI.shownJoin[j.id] = true);
+      const body = list.length ? '<p class="mb-3 text-[13px] text-slate-500">Approved, a person gets an email to confirm their address and joins as an editor (you can make them view only in Members and codes). Turned down, they get an email saying so.</p>' + cloudJoinRows(list)
+                               : '<p class="text-slate-500">Nobody is asking to join.</p>';
+      const m = cloudModal("Asking to join " + ((cloudUI.st && cloudUI.st.group) || "the group"), list.length ? list.length + " waiting" : "", body, [{ label: "Close" }]);
+      m.root.id = "cloudJoinModal";
+      cloudJoinWire(m.root);
+    }
+    // the list changed while the pop-up is open: requests decided from the email say so, new ones are added; if
+    // everything in it was decided elsewhere, it closes
+    async function cloudJoinsUpdate(){
+      const m = el("cloudJoinModal"); if(!m) return cloudShowJoins(false);
+      const list = ((await ldsShell.cloud.joins()) || {}).joins || [], ids = new Set(list.map(j => j.id));
+      m.querySelectorAll("[data-join]").forEach(box => {
+        const yes = box.querySelector("[data-jyes]");
+        if(yes && !yes.disabled && !ids.has(box.getAttribute("data-join"))){ box.innerHTML = '<p class="text-sm text-slate-600">Already decided (from the email).</p>'; box.dataset.elsewhere = "1"; }
+      });
+      const shown = new Set([...m.querySelectorAll("[data-join]")].map(b => b.getAttribute("data-join")));
+      const fresh = list.filter(j => !shown.has(j.id));
+      if(fresh.length){ m.querySelector("[data-cm-body]").insertAdjacentHTML("beforeend", cloudJoinRows(fresh)); fresh.forEach(j => cloudUI.shownJoin[j.id] = true); cloudJoinWire(m); }
+      const boxes = [...m.querySelectorAll("[data-join]")];
+      if(boxes.length && boxes.every(b => b.dataset.elsewhere)) m.remove();
+    }
+
+    // ---- members and codes (the admin) ----------------------------------------------------------------------------------------
+    async function cloudMembersScreen(){
+      await ldsShell.cloud.pull();
+      const list = (await ldsShell.cloud.members()) || [];
+      const joins = ((await ldsShell.cloud.joins()) || {}).joins || [];
+      const row = mm => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3">' + escapeHtml(mm.name || "") + '</td><td class="py-1.5 pr-3 text-slate-500">' + escapeHtml(mm.email || "") + (mm.linked ? "" : ' <span class="text-[11px] text-amber-600">(hasn’t confirmed the email and signed in yet)</span>') + '</td><td class="py-1.5 pr-3">' +
+        (mm.role === "admin" ? "Admin" : '<select data-role="' + escapeHtml(mm.email) + '" class="rounded border border-slate-300 px-1 py-0.5 text-sm"><option value="editor"' + (mm.role === "editor" ? " selected" : "") + '>Editor</option><option value="viewer"' + (mm.role === "viewer" ? " selected" : "") + '>View only</option></select>') +
+        '</td><td class="py-1.5 text-right">' + (mm.role === "admin" ? "" : '<button type="button" data-rm="' + escapeHtml(mm.email) + '" class="text-rose-600 text-sm font-semibold hover:underline">Remove</button>') + '</td></tr>';
+      const body = '<table class="w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1">Name</th><th class="text-left pb-1">Email</th><th class="text-left pb-1">Can</th><th></th></tr></thead><tbody>' + list.map(row).join("") + '</tbody></table>' +
+        '<p class="mt-2 text-[11px] text-slate-400">People join by asking from the app’s sign-in screen (Create an account → your organization); you approve them here or from the email you get.</p>' +
+        (joins.length ? '<div class="mt-4 border-t border-slate-100 pt-4"><div class="mb-2 text-sm font-bold text-slate-700">Asking to join</div>' + cloudJoinRows(joins) + '</div>' : '') +
+        '<div class="mt-5 border-t border-slate-100 pt-4"><div class="text-sm font-bold text-slate-700">Your codes</div>' +
+        '<p class="text-[12px] text-slate-500">The <b>approval code</b> is what you type on a member’s screen to approve a change to what you changed. The <b>offline code</b> lets you keep changing data on your own computer with no connection. At least 6 characters; leave a box empty to keep that code as it is.</p>' +
+        '<div class="mt-2 grid grid-cols-[1fr_1fr_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">Approval code</label>' + cloudInput("cmAppr", (cloudUI.st && cloudUI.st.hasApprovalCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><div><label class="text-xs font-semibold text-slate-500">Offline code</label>' + cloudInput("cmOff", (cloudUI.st && cloudUI.st.hasOfflineCode) ? "(set — type to change)" : "Not set yet", "password") + '</div><button type="button" id="cmCodes" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Save the codes</button></div></div>';
+      const m = cloudModal("Members and codes", escapeHtml((cloudUI.st && cloudUI.st.group) || ""), body, [{ label: "Close" }], { wide: true });
+      const again = () => { m.close(); cloudMembersScreen(); };
+      m.root.querySelectorAll("[data-role]").forEach(s => s.addEventListener("change", async () => { const mm = list.find(x => x.email === s.getAttribute("data-role")); const r = await ldsShell.cloud.rpc("lds_member_set", { email: mm.email, name: mm.name || null, role: s.value }); toast(r.ok ? "Saved" : r.error, r.ok ? "check" : "info"); }));
+      m.root.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", async () => { if(!window.confirm("Remove " + b.getAttribute("data-rm") + " from the group?")) return; const r = await ldsShell.cloud.rpc("lds_member_remove", { email: b.getAttribute("data-rm") }); if(r.ok) again(); else toast(r.error, "info"); }));
+      cloudJoinWire(m.root);
+      el("cmCodes").addEventListener("click", async () => { const a = el("cmAppr").value || null, o = el("cmOff").value || null; if(!a && !o) return; const r = await ldsShell.cloud.setCodes(a, o); toast(r.ok ? "The codes are saved" : r.error, r.ok ? "check" : "info"); if(r.ok){ el("cmAppr").value = ""; el("cmOff").value = ""; } });
+    }
+
+    // ---- starting the group over (the admin): everything the group holds goes, then the starting data is uploaded again
+    async function cloudStartOver(){
+      const st = cloudUI.st || {};
+      const name = await cloudAsk("Start the group over", "Type the group’s name to confirm: " + (st.group || ""), { ok: "Remove everything",
+        sub: "All of " + escapeHtml(st.group || "the group") + "’s loans, properties, documents’ lists, chats and change history are removed from the shared database — for every member. The members and your codes stay. Nothing on any computer’s own data changes. Then upload the starting data again.",
+        required: "Type the group’s name" });
+      if(name === null) return;
+      const r = await ldsShell.cloud.rpc("lds_group_reset", { group_name: name });
+      if(!r.ok){ toast(r.error || "Not done", "info"); return; }
+      toast("The group was started over — upload the starting data", "check");
+      cloudRefresh({ reload: true, now: true });
+    }
+
+    // ---- the maintainer: every group and its admin (also on the sign-in screen, for a maintainer in no group) -------------
+    async function cloudGroupsScreen(){
+      const r = await ldsShell.cloud.rpc("lds_groups", {});
+      if(!r.ok){ toast(r.error || "Couldn't read the groups", "info"); return; }
+      const rows = (r.data || []).map(g => '<tr class="border-b border-slate-100"><td class="py-1.5 pr-3 font-semibold">' + escapeHtml(g.name) + '</td><td class="py-1.5 pr-3">' +
+        escapeHtml(g.admin ? (g.admin.name ? g.admin.name + " · " : "") + g.admin.email : "—") + (g.admin && !g.admin.linked ? ' <span class="text-[11px] text-amber-600">(hasn’t signed in yet)</span>' : '') +
+        '</td><td class="py-1.5 pr-3">' + escapeHtml(String(g.members)) + '</td><td class="py-1.5 text-right"><button type="button" data-gadmin="' + escapeHtml(g.id) + '" data-gname="' + escapeHtml(g.name) + '" class="text-brand-700 text-sm font-semibold hover:underline">New admin…</button></td></tr>').join("");
+      const body = '<table class="w-full text-[13px]"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1">Group</th><th class="text-left pb-1">Admin</th><th class="text-left pb-1">People</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" class="py-2 text-slate-500">No groups yet.</td></tr>') + '</tbody></table>' +
+        '<div class="mt-4 grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end"><div><label class="text-xs font-semibold text-slate-500">New group</label>' + cloudInput("cgName", "Company name") + '</div><div><label class="text-xs font-semibold text-slate-500">Its admin’s email</label>' + cloudInput("cgAdmin", "admin@company.com", "email") + '</div>' +
+        '<div><label class="text-xs font-semibold text-slate-500">Admin’s full name</label>' + cloudInput("cgAdminName", "") + '</div><button type="button" id="cgCreate" class="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">Create</button></div>' +
+        '<p class="mt-1 text-[11px] text-slate-400">The admin then creates an account in the app (Create an account → the group’s name): being named here, they need no approval — only to confirm their email.</p>';
+      const m = cloudModal("Groups", "The maintainer: every group and its admin", body, [{ label: "Close" }], { wide: true });
+      const again = () => { m.close(); cloudGroupsScreen(); };
+      el("cgCreate").addEventListener("click", async () => {
+        const x = await ldsShell.cloud.rpc("lds_group_create", { name: el("cgName").value, admin_email: el("cgAdmin").value, admin_name: el("cgAdminName").value || null });
+        if(x.ok){ toast("Group created", "check"); again(); } else toast(x.error, "info");
+      });
+      m.root.querySelectorAll("[data-gadmin]").forEach(b => b.addEventListener("click", async () => {
+        const e = await cloudAsk("A new admin for " + b.getAttribute("data-gname"), "The new admin’s email", { type: "email", ok: "Set", sub: "The old admin stays in the group as an editor.", required: "Type an email" });
+        if(!e) return;
+        const x = await ldsShell.cloud.rpc("lds_group_admin", { group_id: b.getAttribute("data-gadmin"), admin_email: e });
+        if(x.ok){ toast("The new admin is set", "check"); again(); } else toast(x.error, "info");
+      }));
+    }
+
+    // ---- the change history -----------------------------------------------------------------------------------------------------
+    async function cloudHistoryScreen(){
+      let rows = [], before = null;
+      const m = cloudModal("Change history", "Every change to the group's data: who, when and why", '<input id="chFind" type="search" placeholder="Find (a name, a property, a reason…)" class="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><div id="chList" class="text-[12px]">Loading…</div>', [{ label: "Older changes", onClick: async () => { await more(); return true; } }, { label: "Close" }], { wide: true });
+      const paint = () => {
+        const q = (el("chFind").value || "").toLowerCase();
+        const vis = rows.filter(c => !q || [c.by_name, c.reason, cloudFieldLabel(c.path, c.field), c.approved_by].join(" ").toLowerCase().indexOf(q) >= 0);
+        el("chList").innerHTML = vis.length ? '<table class="w-full"><thead><tr class="text-[11px] uppercase text-slate-400"><th class="text-left pb-1 pr-2">When</th><th class="text-left pb-1 pr-2">Who</th><th class="text-left pb-1 pr-2">What</th><th class="text-left pb-1 pr-2">Before</th><th class="text-left pb-1 pr-2">After</th><th class="text-left pb-1">Why</th></tr></thead><tbody>' +
+          vis.map(c => '<tr class="border-b border-slate-100 align-top"><td class="py-1 pr-2 whitespace-nowrap">' + escapeHtml(cloudWhen(c.at)) + '</td><td class="py-1 pr-2">' + escapeHtml(c.kind === "app" ? "The app (" + (c.by_name || "") + ")" : c.by_name || "") + (c.approved_by ? '<div class="text-[11px] text-slate-400">approved by ' + escapeHtml(c.approved_by) + '</div>' : '') +
+            '</td><td class="py-1 pr-2">' + escapeHtml(cloudFieldLabel(c.path, c.field)) + '</td><td class="py-1 pr-2 text-slate-500">' + escapeHtml(cloudVal(c.old)) + '</td><td class="py-1 pr-2">' + escapeHtml(cloudVal(c.new)) + '</td><td class="py-1">' + escapeHtml(c.reason || "") + '</td></tr>').join("") + '</tbody></table>'
+          : '<p class="text-slate-500">No changes found.</p>';
+      };
+      async function more(){
+        const r = await ldsShell.cloud.rpc("lds_history", { path_prefix: "", before_id: before, max_rows: 200 });
+        if(!r.ok){ el("chList").textContent = r.error || "Couldn't read the history."; return; }
+        rows = rows.concat(r.data || []); if(r.data && r.data.length) before = r.data[r.data.length - 1].id; paint();
+      }
+      el("chFind").addEventListener("input", paint);
+      await more();
+      return m;
+    }
+
+    // ---- the daily backups (the admin) ------------------------------------------------------------------------------------------
+    async function cloudBackupsScreen(){
+      const r = await ldsShell.cloud.rpc("lds_backups", {});
+      const list = (r.ok && r.data) || [];
+      const body = (r.ok ? (list.length ? '<table class="w-full text-[13px]"><tbody>' + list.map(b => '<tr class="border-b border-slate-100"><td class="py-1.5">' + escapeHtml(b.day) + '</td><td class="py-1.5 text-slate-500">' + escapeHtml(b.records) + ' records</td><td class="py-1.5 text-right">' + (Number(b.records) > 0
+          ? '<button type="button" data-day="' + escapeHtml(b.day) + '" class="text-brand-700 font-semibold hover:underline">Put this day back</button>'
+          : '<span class="text-[12px] text-slate-400" title="Taken before the group had data">empty — nothing to put back</span>') + '</td></tr>').join("") + '</tbody></table>'
+        : '<p class="text-slate-500">No backup yet — the first is taken tonight.</p>') : '<p class="text-rose-600">' + escapeHtml(r.error || "") + '</p>') +
+        '<p class="mt-3 text-[12px] text-slate-500">A backup is taken every day and kept 30 days. Putting a day back changes the group’s data for everyone, and every change it makes is recorded with your reason.</p>';
+      const m = cloudModal("Daily backups", "", body, [{ label: "Close" }]);
+      m.root.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", async () => {
+        const why = await cloudAsk("Put " + b.getAttribute("data-day") + " back", "Why (kept in the change history)", { sub: "The group's data goes back to how it was that day, for everyone.", ok: "Put it back", required: "Type why." }); if(!why) return;
+        const r2 = await ldsShell.cloud.rpc("lds_backup_restore", { day: b.getAttribute("data-day"), reason: why.trim() });
+        if(r2.ok){ m.close(); toast("The group's data is back as it was on " + b.getAttribute("data-day"), "check"); cloudRefresh({ reload: true }); } else toast(r2.error, "info");
+      }));
+    }
+
+    // ---- the first upload (the admin, into an empty group) --------------------------------------------------------------------
+    const cloudMB = b => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + " GB" : Math.max(0.1, b / 1048576).toFixed(1) + " MB");
+    function cloudUploadScreen(){
+      const st = cloudUI.st || {};
+      const body = '<p>The loans, properties, their documents and the assistant’s chats <b>on this computer</b> become the group’s starting data. Nothing on this computer changes, and the starting data locks nothing for the members.</p>' +
+        '<p id="cuSize" class="mt-3 text-[13px] text-slate-600"></p>' +
+        '<button type="button" id="cuFromBackup" class="mt-1 text-[12px] font-semibold text-brand-700 hover:underline">Upload from a backup file instead…</button>' +
+        '<label class="mt-4 block text-xs font-semibold text-slate-500">Why (kept in the change history)</label>' + cloudInput("cuWhy", "") + '<p id="cuMsg" class="mt-2 text-xs text-slate-500"></p>';
+      let off = null, fromBackup = false;
+      const m = cloudModal("Upload this computer's data", escapeHtml(st.group || ""), body, [
+        { label: "Not now" },
+        { label: "Upload", primary: true, id: "cuGo", onClick: async () => {
+          const why = (el("cuWhy").value || "").trim() || ("Starting data from " + (st.name || "the admin") + "’s computer");
+          el("cuMsg").className = "mt-2 text-xs text-slate-500";
+          el("cuMsg").textContent = "Uploading… (a big book with many files can take a few minutes)";
+          // how far it is: file by file
+          if(off) off();
+          off = ldsShell.cloud.on("progress", p => { const x = el("cuMsg"); if(!x || p.what !== "upload" || !p.total) return;
+            x.textContent = "Uploading file " + Math.min(p.done + 1, p.total) + " of " + p.total + " (" + cloudMB(p.bytesDone) + " of " + cloudMB(p.bytesTotal) + ")" + (p.name ? ": " + p.name : "") + "…"; });
+          let r = null;
+          try{ r = await ldsShell.cloud.uploadStart({ reason: why, settings: cloudLocalSettings(), fromBackup }); } finally { if(off){ off(); off = null; } }
+          if(!r || !r.ok){ el("cuMsg").className = "mt-2 text-xs text-rose-700"; el("cuMsg").textContent = (r && r.error) || "The upload failed."; return true; }
+          toast("Uploaded: " + r.records + " records, " + r.files + " files, " + r.chats + " chats", "check");
+          cloudApplySettings(); cloudRefresh({ reload: true });
+        } }
+      ]);
+      setTimeout(() => { const x = el("cuWhy"); if(x) x.value = "Starting data from " + (st.name || "the admin") + "’s computer"; }, 0);
+      // what it will send
+      const sizeText = (pv, where) => where + pv.loans + " loans, " + pv.properties + " properties, " + pv.documents + " documents — " + cloudMB(pv.bytes) + " of files." +
+          (pv.biggest > 50 * 1048576 ? " Files over 50 MB go up in pieces." : "") +
+          (pv.bytes > 1073741824 ? " Supabase’s free plan holds about 1 GB of files in all, so this may not fit." : "");
+      (async () => {
+        const pv = await ldsShell.cloud.uploadPreview(); const x = el("cuSize"); if(!pv || !x || fromBackup) return;
+        x.textContent = sizeText(pv, "On this computer: ");
+      })();
+      // a backup file made with Data → Back up to a file… (on this computer or another): its loans, documents, chats,
+      // custom categories, targets and saved market rates
+      el("cuFromBackup").addEventListener("click", async () => {
+        const b = el("cuFromBackup"); b.disabled = true;
+        const prog = ldsShell.cloud.on("progress", p => { const x = el("cuSize"); if(x && p.what === "backup" && p.total) x.textContent = "Reading the backup file… " + Math.round(100 * p.done / p.total) + "%"; });
+        let r = null; try{ r = await ldsShell.cloud.uploadPickBackup(); } finally { prog(); b.disabled = false; }
+        if(!r || r.canceled) return;
+        const x = el("cuSize");
+        if(!r.ok){ x.className = "mt-3 text-[13px] text-rose-700"; x.textContent = r.error || "That backup file can't be used."; return; }
+        fromBackup = true; x.className = "mt-3 text-[13px] text-slate-600";
+        x.textContent = sizeText(r, "From the backup file “" + r.name + "”" + (r.exportedAt ? " (made " + cloudWhen(r.exportedAt) + ")" : "") + ": ") +
+          (r.rates ? " Its saved market rates and settings go too." : "");
+        b.textContent = "Choose another backup file…";
+        const w = el("cuWhy"); if(w && /computer’s$/.test(w.value)) w.value = "Starting data from the backup file " + r.name;
+      });
+      return m;
+    }
+
+    // ---- the admin's offline code ---------------------------------------------------------------------------------------------
+    function cloudOfflineScreen(){
+      cloudModal("Use my offline code", "", '<p>With your offline code you can keep changing the group’s data on this computer. Each change still needs a reason; they go up when the connection is back, and they take precedence over changes made meanwhile.</p>' + '<div class="mt-3">' + cloudInput("coCode", "Offline code", "password") + '</div><p id="coMsg" class="mt-2 text-xs text-rose-600"></p>', [
+        { label: "Cancel" },
+        { label: "Unlock", primary: true, onClick: async () => { const r = await ldsShell.cloud.unlockOffline(el("coCode").value); if(!r.ok){ el("coMsg").textContent = r.error; return true; } toast("You can change data offline", "check"); } }
+      ]);
+      setTimeout(() => { const x = el("coCode"); if(x) x.focus(); }, 50);
+    }
+
+    async function cloudSignOut(){
+      const st = cloudUI.st || {};
+      if(st.pending && st.pending.length && !confirm("Your changes that aren't saved will be dropped. Sign out?")) return;
+      if(st.pending && st.pending.length) await ldsShell.cloud.discard();
+      await ldsShell.cloud.signOut();
+    }
+
+    // ---- someone else's change came in (or mine were undone / folded together): reload what the screens hold -----------------
+    async function cloudRefresh(info){
+      info = info || {};
+      // never under the person's fingers: wait while they are typing in a field
+      const a = document.activeElement;
+      if(a && a.id !== "cloudReason" && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !info.now){
+        cloudUI.refreshWait = Object.assign(cloudUI.refreshWait || {}, info, { props: [].concat((cloudUI.refreshWait && cloudUI.refreshWait.props) || [], info.props || []) });
+        clearTimeout(cloudRefresh._t); cloudRefresh._t = setTimeout(() => { const w = cloudUI.refreshWait; cloudUI.refreshWait = null; if(w) cloudRefresh(w); }, 1500);
+        return;
+      }
+      if(cloudRefresh.busy){ cloudRefresh.again = Object.assign(cloudRefresh.again || {}, info, { reload: true }); return; }
+      cloudRefresh.busy = true;
+      try{
+        if(info.settings || info.reload){ cloudApplySettings(); try{ customCatsApply(); }catch(e){} try{ loadPortfolioTargets(); }catch(e){} try{ ratesReloadFromStorage(); }catch(e){} }
+        if(info.loans || info.reload || info.merged){
+          loans = load();
+          if(state.activeId && !getLoan(state.activeId)) state.activeId = loans.length ? loans[0]._id : null;
+        }
+        if((info.props && info.props.length) || info.reload || info.files || info.merged){
+          [profileCache, gdNOICache, gdFullCache, loanRRCache, propHistCache, standaloneProps].forEach(o => Object.keys(o).forEach(k => delete o[k]));
+          try{ opPushCache.clear(); }catch(e){}
+          _allProfilesLoaded = false;
+          await cloudAutoRun("refresh after a change from the group", async () => {
+            try{ await opLoadAllProfiles(); }catch(e){}
+            try{ await Promise.all(opProperties().map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
+            if(opFocusKey && (info.reload || info.merged || (info.props || []).indexOf(opFocusKey) >= 0)){ try{ await opSelectProperty(opFocusKey); }catch(e){} }
+          });
+        }
+        redrawAll();
+      } finally {
+        cloudRefresh.busy = false;
+        if(cloudRefresh.again){ const nx = cloudRefresh.again; cloudRefresh.again = null; cloudRefresh(nx); }
+      }
+    }
+
+    try{ window.LDS_cloudEditLoan = (i, f, v) => { loans[i][f] = v; save(); return loans[i]._id; }; window.LDS_cloudStatus = () => cloudUI.st; }catch(e){}   // tests: a person's edit of a loan
+    function cloudInit(){
+      if(!LDS_CLOUD) return;
+      const c = ldsShell.cloud;
+      c.on("status", st => cloudPaint(Object.assign({}, cloudUI.st || {}, st)));
+      c.on("changed", info => cloudRefresh(info));
+      c.on("refused", info => { toast(info.message || "Not saved", "info"); clearTimeout(cloudUI.refusedT); cloudUI.refusedT = setTimeout(() => cloudRefresh({ reload: true, now: true }), 300); });
+      c.on("requests", () => cloudShowRequests(false));
+      c.on("joins", () => cloudJoinsUpdate());
+      c.on("removed", () => { cloudModal("You're no longer in this group", "", "<p>The group's admin removed you. The app shows the last picture of the data until you sign out.</p>", [{ label: "Sign out", primary: true, onClick: () => ldsShell.cloud.signOut() }]); });
+      c.on("signin", () => toast("Your sign-in has expired — sign out and sign in again", "info"));
+      document.addEventListener("click", e => { const dd = el("cloudDD"); if(dd && dd.open && !dd.contains(e.target)) dd.open = false; });
+      (async () => { cloudPaint(await c.status()); cloudShowRequests(false); cloudShowJoins(false); })();
+    }
+
+    /* ================================================================
        13. INIT
        ================================================================ */
     loans = load();
@@ -14792,19 +15556,21 @@ tr.flagged:hover td{background:#fee2e2}
     appBooting = !!(window.ldsShell && ldsShell.docIndex);
     render();
     if(appBooting){
-      (async function bootLoad(){
+      (async function bootLoad(){ await cloudAutoRun("start-up check", async function(){   // 3.0.0 — the app's own work, not a person's change
         try{ await opLoadAllProfiles(); }catch(e){}
-        try{ await opEnsureAllFolders(); }catch(e){}   // 2.9.8 (problem 8) — every property shown has its folder
-        try{ await opRecomputeOnVersionChange(); }catch(e){}
+        if(cloudCanWrite()){ try{ await opEnsureAllFolders(); }catch(e){} }   // 2.9.8 (problem 8) — every property shown has its folder
+        if(cloudCanWrite()){ try{ await opRecomputeOnVersionChange(); }catch(e){} }
         try{ const props = opProperties(); await Promise.all(props.map(p => opEnsureGeneralData(p.key).catch(() => null))); }catch(e){}
+        });
         appBooting = false;
-        setTimeout(function(){ try{ t12MigrateAll(); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
+        setTimeout(function(){ try{ if(cloudCanWrite()) cloudAutoRun("T12 re-read by the new reader", function(){ return t12MigrateAll(); }); }catch(e){} }, 1500);   // 2.9.16 — every T12 in use is re-read once by the new reader and the AI (in the background)
         try{ if(state.activeId && !loanIsActive(getLoan(state.activeId))){ const rest = opProperties().filter(p => p.loans && p.loans.length); state.activeId = rest.length ? positionIdForProperty(rest[0]) : null; } }catch(e){}
         redrawAll();
       })();
     }
     renderTabStrip();        // Home tab + tool tabs (Calendar, Underwriting)
     initPanelMode();         // if launched as a torn-off panel (?panel=…), show only that tool
+    cloudInit();             // 3.0.0 — the shared database's chip, bar and screens (when signed in to one)
     if(window.__LDS_SYNC_SUMMARY){ try { notifyPortfolioSync(window.__LDS_SYNC_SUMMARY); } catch(e){} window.__LDS_SYNC_SUMMARY = null; }
 
     // Floating phases re-price on the 1st of each month. If the app is left open

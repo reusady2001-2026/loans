@@ -5,7 +5,7 @@
              whatever the cash)
    #184/#185 the decision case shows the two options and the proposal; the amount can't go to ≤ 20% extra cash
              (2.9.14 R1 — and never so low that the extra cash doesn't cover the penalty: refi-arm-2914)
-   #22/#23   the amount stops at what the property supports; "at this loan (…): DSCR · LTV · DY" under it
+   #22/#23   the amount stops at what the property supports; "the proposed loan (… at …%): DSCR … amortizing · … interest-only · LTV · DY" under it
    #258      the proposed-rate row is in the verdict card whatever the verdict
    #25       a senior + mezz payoff = each loan at its own balance
    #24       Save replaces all the property's loans; the old ones read "Paid off (refinanced)"
@@ -29,7 +29,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const setup=(rate,prepay,step)=>page.evaluate(({lid,rate,prepay,step})=>{ const l=window.LDS_loans().find(x=>x._id===lid);
     Object.assign(l,{rateType:'Fixed',isHistorical:true,amortType:'Level',capRate:0.05,loanTermMonths:480,amortizationMonths:480,ioMonths:0,annualRate:rate,rateFloor:null,rateCap:null,prepayType:prepay,prepayConfirmed:true,stepDownPct:step||0,maturityDate:null});
     l.noi=window.LDS_computeBalance(l)*0.20; return window.LDS_computeBalance(l); },{lid:LID,rate,prepay,step});
-  const verdict=(patch)=>page.evaluate(({lid,patch})=>{ const l=window.LDS_loans().find(x=>x._id===lid); const v=window.LDS_refiVerdictWith(l,patch||{}); const s=v.should||{};
+  const verdict=(patch)=>page.evaluate(({lid,patch})=>{ const l=window.LDS_loans().find(x=>x._id===lid); const v=window.LDS_refiVerdictWith(l,Object.assign({_baseSpread:0},patch||{})); const s=v.should||{};   // 3.0.0 — the lender's quote typed as 0 bps, so the proposal is the lower rate these rules need
     return { can:v.can.can, max:v.can.maxLoan, refi:v.refi, decision:v.decision, kind:s.kind, why:s.why, saved:s.saved, penalty:s.penalty, cashPct:s.cashPct, newRate:s.newRate, curRate:s.curRate, payoff:s.payoff }; },{lid:LID,patch});
 
   // 2.9.14 (R1): "your decision" also needs the extra cash to cover the penalty — so today's rate is 4.50% (the
@@ -61,10 +61,11 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await setup(0.0450,'Step-down',step);
   await page.evaluate((lid)=>{ document.getElementById('scopeLoanBtn').click(); const s=document.getElementById('loanSelect'); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); window.LDS_resetRefiDraft(); },LID);
   await page.waitForTimeout(400); await page.click('#refiBtn'); await page.waitForTimeout(600);
+  await page.evaluate(()=>{ const i=document.getElementById('o1_spread'); i.value='0'; i.dispatchEvent(new Event('change',{bubbles:true})); }); await page.waitForTimeout(400);   // 3.0.0 — the lender's quote, 0 bps (the rules below need the lower rate)
   let S=await page.evaluate(()=>({ v:document.querySelector('[data-refiverdict]').getAttribute('data-refiverdict'), pricing:!!document.querySelector('[data-refiverdict] #refiPricing #o1_spread'), amount:!!document.querySelector('#refiPricing #o1_amount'), atloan:(document.querySelector('[data-refiatloan]')||{}).textContent||'' }));
   ok(S.v==='no'&&S.pricing&&S.amount,'on "Don\'t refinance" the rate row and the amount are still in the verdict card (#258)');
-  ok(/^at this loan \(\$[\d,]+(\.\d\d)?\): DSCR \d\.\d\d× · LTV [\d.]+% · DY [\d.]+%$/.test(S.atloan),'the line under the amount: "'+S.atloan+'"');
-  const max=await page.evaluate((lid)=>window.LDS_refiVerdict(window.LDS_loans().find(x=>x._id===lid)).can.maxLoan,LID);
+  ok(/^the proposed loan \(\$[\d,]+(\.\d\d)? at [\d.]+%\): DSCR \d\.\d\d× amortizing · \d\.\d\d× interest-only · LTV [\d.]+% · DY [\d.]+%$/.test(S.atloan),'the line under the amount: "'+S.atloan+'"');
+  const max=await page.evaluate((lid)=>window.LDS_refiCanNow(window.LDS_loans().find(x=>x._id===lid)).maxLoan,LID);   // 3.0.0 — the screen's own proposal (its typed 0 bps quote)
   await page.evaluate((v)=>{ const i=document.getElementById('o1_amount'); i.value=String(v); i.dispatchEvent(new Event('change',{bubbles:true})); },Math.round(max*1.5));
   await page.waitForTimeout(500);
   const clamp=await page.evaluate(()=>({ amt:window.LDS_refiDraft().originalAmount, toast:(document.getElementById('toastText')||{}).textContent||'' }));
@@ -98,7 +99,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   // hybrid proposal: both periods (#80)
   await page.evaluate(()=>document.querySelector('#refiPricing [data-rtype="Hybrid ARM"]').click()); await page.waitForTimeout(500);
   const H=await page.evaluate(()=>{ const t=document.getElementById('refiPricing').innerText; return { t, fx:(document.getElementById('o1_fxspread')||{}).value, mg:(document.getElementById('o1_spread')||{}).value, idx:(document.getElementById('o1_index')||{}).value }; });
-  ok(/Months 1–60 · fixed/i.test(H.t)&&/After month 60 · adjustable/i.test(H.t)&&/if the index stays at today’s level/.test(H.t)&&H.fx==='0'&&H.mg==='0'&&H.idx==='ust5y','a hybrid shows both periods, spreads at 0, then the 5-yr Treasury "if the index stays at today\'s level"');
+  ok(/Months 1–60 · fixed/i.test(H.t)&&/After month 60 · adjustable/i.test(H.t)&&/if the index stays at today’s level/.test(H.t)&&+H.fx>0&&H.fx===H.mg&&/starting spread/.test(H.t)&&H.idx==='ust5y','a hybrid shows both periods, each at a labelled starting spread ('+H.fx+' bps, 3.0.0), then the 5-yr Treasury "if the index stays at today\'s level"');
   ok(/Monthly payment \$[\d,]/.test(H.t),'…with the monthly payment for each period');
   // #27 — the assistant prepares the property's refinance in the background (screen not opened for it)
   await page.click('#refiCloseBtn'); await page.waitForTimeout(300);
