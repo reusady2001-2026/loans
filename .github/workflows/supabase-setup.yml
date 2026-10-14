@@ -5,8 +5,10 @@ name: Update the shared database (Supabase)
 # adds what is missing and replaces the functions — and it runs in one transaction: all of it, or none of it.
 #
 # Needs one secret, SUPABASE_DB_URL: the project's "Session pooler" connection string with the database password in
-# it (SUPABASE-SETUP.md, step 9). If it is missing or wrong, this run fails and says so; after fixing the secret,
-# re-run the failed run (Actions -> this run -> "Re-run jobs").
+# it (SUPABASE-SETUP.md, step 9). It is kept in the GitHub environment "supabase", which only workflows running on
+# the release branch may use — not other branches, not pull requests, never the release files. GitHub never shows
+# it again once saved and hides it in the logs. If it is missing or wrong, this run fails and says so; after fixing
+# the secret, re-run the failed run (Actions -> this run -> "Re-run jobs").
 
 on:
   push:
@@ -23,6 +25,7 @@ concurrency:
 jobs:
   setup:
     runs-on: ubuntu-latest
+    environment: supabase   # the secret lives here; the environment allows the release branch only
     timeout-minutes: 10
     steps:
       - name: Check out the code

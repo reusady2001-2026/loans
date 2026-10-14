@@ -94,8 +94,16 @@ Every release of the app also brings the shared database up to date: GitHub runs
    `postgresql://postgres.<project ref>:[YOUR-PASSWORD]@aws-…pooler.supabase.com:5432/postgres`.
 2. Put the **database password** in place of `[YOUR-PASSWORD]` (the one chosen when the project was made; if it's
    lost: **Project Settings → Database → Reset database password** — the app and the joining function don't use it).
-3. **GitHub** → the repository → **Settings → Secrets and variables → Actions → New repository secret**. Name:
-   **`SUPABASE_DB_URL`**; secret: the connection string from 2. **Add secret.** Don't paste it anywhere else.
+3. **GitHub** → the repository → **Settings → Environments → New environment**, name **`supabase`** →
+   **Configure environment**.
+4. **Deployment branches and tags** → **Selected branches and tags** → **Add deployment branch or tag rule** →
+   `claude/awesome-ptolemy-4s9eez` (the release branch) → **Add rule**. Only the release can use the secret now.
+5. Same page, **Environment secrets → Add environment secret**. Name: **`SUPABASE_DB_URL`**; value: the connection
+   string from 2. **Add secret.** Don't paste it anywhere else.
+
+Who can read it: nobody — GitHub never shows a secret again once saved (not even to the owner; it can only be
+replaced), hides it in the logs, and never puts it in a release (the app doesn't contain it). Only the release
+branch's workflow can use it; a change to that workflow reaches the release branch only through a merge you make.
 
 After each release, **Actions → "Update the shared database (Supabase)"** shows a green tick and "The shared database
 is up to date (setup version N)". A red cross means it didn't run (GitHub also emails it): fix the secret, then open
