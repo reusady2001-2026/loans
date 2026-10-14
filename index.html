@@ -9963,14 +9963,18 @@ tr.flagged:hover td{background:#fee2e2}
     // still earns its NOI: the portfolio counts that income with no debt against it. Its NOI comes from the same
     // places as any property's — your override, its T12, its operating lines, the last loan's own NOI figure,
     // the profile's entered NOI — and its value from that NOI at the last loan's cap rate (else the default).
-    function propNOIByKey(key, inactive){
-      const ov = propNOIOverride(key); if(ov != null) return ov;
-      const g = gdNOICache[key]; if(g && g.inPlace != null && isFinite(g.inPlace)) return g.inPlace;
-      try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return n; } }catch(e){}
+    function propNOIByKey(key, inactive){ return propNOIWithSource(key, inactive).noi; }
+    // 3.0.0 — the same NOI with where it comes from (a refinance of several properties names each one's source).
+    function propNOIWithSource(key, inactive, active){
+      const ov = propNOIOverride(key); if(ov != null) return { noi: ov, src: "your NOI (override)" };
+      const g = gdNOICache[key]; if(g && g.inPlace != null && isFinite(g.inPlace)) return { noi: g.inPlace, src: noiMethodLabel(g) || "T12" };
+      try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return { noi: n, src: "operating statement" }; } }catch(e){}
+      const typed = (active || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi))).sort(loanRank);   // the property's own loan (senior first), as a one-property refinance reads it
+      if(typed.length) return { noi: Number(typed[0].noi), src: "typed on its loan" };
       const old = (inactive || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi)));
-      const pos = old.find(l => Number(l.noi) > 0); if(pos) return Number(pos.noi);
-      if(old.length) return Number(old[0].noi);
-      return propEnteredNOI(key);
+      const pos = old.find(l => Number(l.noi) > 0); if(pos) return { noi: Number(pos.noi), src: "an earlier loan's NOI" };
+      if(old.length) return { noi: Number(old[0].noi), src: "an earlier loan's NOI" };
+      const e = propEnteredNOI(key); return e != null ? { noi: e, src: "typed on the property" } : { noi: null, src: null };
     }
     function loanlessPosition(p){
       const inact = (p.inactive || []).slice().sort(loanRank);
@@ -10061,6 +10065,8 @@ tr.flagged:hover td{background:#fee2e2}
     function poolKeys(l){ if(l && l._poolKeys) return l._poolKeys.slice(); return (l && !l._combined && POOL_SRC.keysOf(l)) || (l ? [propertyKey(l)] : []); }
     function poolLoansForKey(key){ return loans.filter(l => isPoolLoan(l) && loanIsActive(l) && poolKeys(l).indexOf(key) >= 0); }
     function poolKeyNOI(k){ return propNOIByKey(k, loans.filter(l => propertyKey(l) === k && loanIsInactiveSelf(l))); }
+    // 3.0.0 — a refinance of several properties also reads an NOI typed on a property's own (one-property) loan
+    function poolKeyNOISrc(k){ return propNOIWithSource(k, loans.filter(l => propertyKey(l) === k && loanIsInactiveSelf(l)), loans.filter(l => propertyKey(l) === k && !loanIsInactiveSelf(l) && !isPoolLoan(l))); }
     function poolNOIOfKeys(keys){ let t = 0, any = false; keys.forEach(k => { const n = poolKeyNOI(k); if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
     function poolNOI(l){ return poolNOIOfKeys(poolKeys(l)); }
     function poolValue(l){ const cr = loanCapRate(l); let v = 0, any = false; poolKeys(l).forEach(k => { const n = poolKeyNOI(k); if(n > 0 && cr > 0){ v += n / cr; any = true; } }); return any ? v : null; }
@@ -10139,10 +10145,10 @@ tr.flagged:hover td{background:#fee2e2}
     function multiMembers(id){ if(typeof id !== "string" || id.slice(0, 6) !== "multi:") return []; const keys = id.slice(6).split("|");
       return loans.filter(l => !loanIsInactiveSelf(l) && (keys.indexOf(propertyKey(l)) >= 0 || (isPoolLoan(l) && poolKeys(l).some(k => keys.indexOf(k) >= 0)))); }
     function multiKeys(id){ const keys = id.slice(6).split("|"); multiMembers(id).forEach(l => { if(isPoolLoan(l)) poolKeys(l).forEach(k => { if(keys.indexOf(k) < 0) keys.push(k); }); }); return keys; }
-    function poolRefiNOI(keys, basis){ let t = 0, any = false; keys.forEach(k => { const g = gdNOICache[k], ov = propNOIOverride(k);
-        let n = basis === "underwritten" ? (ov != null ? ov : (g && g.underwritten != null ? g.underwritten : (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k))))
-              : basis === "inplace" ? (g && g.inPlace != null ? g.inPlace : poolKeyNOI(k)) : poolKeyNOI(k);
-        if(n != null && isFinite(n)){ t += n; any = true; } }); return any ? t : null; }
+    function poolRefiNOI(keys, basis){ let t = 0, any = false, miss = false; keys.forEach(k => { const g = gdNOICache[k], ov = propNOIOverride(k);
+        let n = basis === "underwritten" ? (ov != null ? ov : (g && g.underwritten != null ? g.underwritten : (g && g.inPlace != null ? g.inPlace : poolKeyNOISrc(k).noi)))
+              : basis === "inplace" ? (g && g.inPlace != null ? g.inPlace : poolKeyNOISrc(k).noi) : poolKeyNOISrc(k).noi;
+        if(n != null && isFinite(n)){ t += n; any = true; } else miss = true; }); return (any && !miss) ? t : null; }   // 3.0.0 — a property with no NOI is never counted as $0
     // Stacks: the unit of coverage is every property tied together by any loan — a senior + mezz on one property
     // (as today), a pooled loan's properties, a pooled mezz over the same pool, a member's own extra loan. Each property's
     // NOI is counted once per stack; every loan's debt service in it is counted.
@@ -10218,13 +10224,19 @@ tr.flagged:hover td{background:#fee2e2}
         '<p class="mb-2 text-xs text-slate-500">Tick every property the one new loan will secure &mdash; as many as you like. Every loan on them is paid off. A property with no loan yet (one you have just added) joins the new loan with its NOI.</p>'+
         '<input id="poolPickSearch" type="search" placeholder="Find a property" class="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-sm">'+
         '<div id="poolPickList" class="max-h-[45vh] overflow-auto thin-scroll">'+props.map(p => { const o = owes(p), inPool = (p.pledged || []).length && !(p.loans || []).length;
-          return '<label class="flex items-center gap-2 py-1 text-sm" data-poolpickrow="'+escapeHtml(p.name.toLowerCase())+'"><input type="checkbox" data-poolpick="'+escapeHtml(p.key)+'"> <span class="flex-1">'+escapeHtml(p.name)+'</span><span class="text-[11px] text-slate-400">'+(o > 0 ? 'owes '+fmtMoney(o) : inPool ? 'in a pooled loan' : 'no loan yet')+'</span></label>'; }).join("")+'</div>'+
+          const nr = poolKeyNOISrc(p.key), noiTxt = nr.noi != null && isFinite(nr.noi) ? '<span class="text-slate-500" data-poolpicknoi>NOI '+fmtMoney(nr.noi)+' &middot; '+escapeHtml(nr.src || "")+'</span>' : '<span class="font-semibold text-amber-700" data-poolpicknoi="none">no NOI (no T12)</span>';   // 3.0.0
+          return '<label class="flex items-center gap-2 py-1 text-sm" data-poolpickrow="'+escapeHtml(p.name.toLowerCase())+'"><input type="checkbox" data-poolpick="'+escapeHtml(p.key)+'"> <span class="flex-1">'+escapeHtml(p.name)+'</span><span class="text-right text-[11px] leading-tight text-slate-400">'+(o > 0 ? 'owes '+fmtMoney(o) : inPool ? 'in a pooled loan' : 'no loan yet')+'<br>'+noiTxt+'</span></label>'; }).join("")+'</div>'+
         '<p id="poolPickNote" class="mt-2 text-xs font-semibold text-slate-600">Nothing ticked yet</p>'+
         '<div class="mt-3 flex justify-end gap-2"><button type="button" id="poolPickCancel" class="rounded-lg border px-3 py-1.5 text-sm">Cancel</button><button type="button" id="poolPickGo" class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white">Refinance together</button></div></div>';
       document.body.appendChild(m);
       const picked = () => [...m.querySelectorAll("[data-poolpick]:checked")].map(x => x.getAttribute("data-poolpick"));
-      const upd = () => { const ks = picked(), id = "multi:" + ks.join("|"), ms = ks.length ? multiMembers(id) : [], owe = ms.reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0), nn = poolNOIOfKeys(ks), fresh = ks.filter(k => !ms.some(l => poolKeys(l).indexOf(k) >= 0 || propertyKey(l) === k)).length;
-        m.querySelector("#poolPickNote").textContent = ks.length ? (ks.length + " ticked · " + ms.length + " loan" + (ms.length === 1 ? "" : "s") + " to pay off (" + fmtMoney(owe) + ")" + (fresh ? " · " + fresh + " with no loan yet" : "") + " · NOI " + (nn != null ? fmtMoney(nn) : "—")) : "Nothing ticked yet"; };
+      const upd = () => { const ks = picked(), id = "multi:" + ks.join("|"), ms = ks.length ? multiMembers(id) : [], owe = ms.reduce((a, l) => a + (compute(l).derived.currentBalance || 0), 0), fresh = ks.filter(k => !ms.some(l => poolKeys(l).indexOf(k) >= 0 || propertyKey(l) === k)).length;
+        // 3.0.0 — the NOI is the whole package's only when every ticked property has one; otherwise the ones without are named
+        const all = ks.length ? multiKeys(id) : [], none = all.filter(k => { const n = poolKeyNOISrc(k).noi; return n == null || !isFinite(n); }), nn = none.length ? null : all.reduce((a, k) => a + poolKeyNOISrc(k).noi, 0);
+        const note = m.querySelector("#poolPickNote");
+        note.textContent = ks.length ? (ks.length + " ticked · " + ms.length + " loan" + (ms.length === 1 ? "" : "s") + " to pay off (" + fmtMoney(owe) + ")" + (fresh ? " · " + fresh + " with no loan yet" : "") +
+          (none.length ? " · no NOI for " + none.map(poolNameOfKey).join(", ") + " — upload its T12 or type its NOI before this can be sized" : " · NOI " + (nn != null ? fmtMoney(nn) : "—"))) : "Nothing ticked yet";
+        note.classList.toggle("text-amber-800", none.length > 0); note.classList.toggle("text-slate-600", !none.length); };
       m.querySelectorAll("[data-poolpick]").forEach(cb => cb.addEventListener("change", upd));
       const sb = m.querySelector("#poolPickSearch"); sb.addEventListener("input", () => { const q = sb.value.trim().toLowerCase(); m.querySelectorAll("[data-poolpickrow]").forEach(r => { r.hidden = !!q && r.getAttribute("data-poolpickrow").indexOf(q) < 0; }); });
       m.querySelector("#poolPickCancel").addEventListener("click", () => m.remove());
@@ -10622,9 +10634,37 @@ tr.flagged:hover td{background:#fee2e2}
       if(o.inPlace != null) return "inplace";
       return "manual";                                     // no General Data → today's hand-entered NOI
     }
+    // 3.0.0 — a refinance of several properties together: each property's NOI on the basis in use, and where it
+    // comes from. A property with no NOI is listed with none and never counted as $0 — the package isn't sized
+    // until every property has one.
+    function refiGroupKeys(loan){ if(!loan) return null; const ks = loan._poolKeys || (isPoolLoan(loan) ? poolKeys(loan) : null); return (ks && ks.length > 1) ? ks.slice() : null; }
+    function refiPoolParts(loan){
+      const ks = refiGroupKeys(loan); if(!ks) return null;
+      const b = refiBasis(loan), ok = (v) => v != null && isFinite(v);
+      return ks.map(k => { const g = gdNOICache[k], nm = poolNameOfKey(k);
+        if(b === "underwritten") return { key: k, name: nm, noi: g && ok(g.underwritten) ? g.underwritten : null, src: "underwritten · " + (noiMethodLabel(g) || "T12") };
+        if(b === "inplace") return { key: k, name: nm, noi: g && ok(g.inPlace) ? g.inPlace : null, src: "in-place " + (noiMethodLabel(g) || "T12") };
+        const r = poolKeyNOISrc(k); return { key: k, name: nm, noi: ok(r.noi) ? r.noi : null, src: r.src }; });
+    }
+    function refiPoolMissing(loan){ const ps = refiPoolParts(loan); return ps ? ps.filter(p => p.noi == null) : []; }
+    function refiPoolNOIHtml(loan){
+      const ps = refiPoolParts(loan); if(!ps) return "";
+      const miss = ps.filter(p => p.noi == null), tot = miss.length ? null : ps.reduce((a, p) => a + p.noi, 0);
+      const rows = ps.map(p => { const none = p.noi == null;
+        return '<tr class="border-t border-slate-100'+(none ? ' bg-amber-50' : '')+'" data-refipoolnoi="'+escapeHtml(p.key)+'"><td class="py-1 pr-3 text-sm text-slate-800">'+escapeHtml(p.name)+'</td>'+
+          '<td class="py-1 px-2 text-sm text-right tabular-nums">'+(none ? '<span class="font-semibold text-amber-800">no NOI</span>' : fmtMoney(p.noi))+'</td>'+
+          '<td class="py-1 pl-2 text-[11px] text-slate-500">'+(none ? '<span class="text-amber-800">no T12 and none typed</span> <input type="number" step="any" data-refipooltype="'+escapeHtml(p.key)+'" placeholder="type its NOI" class="ml-1 w-28 rounded border border-amber-300 px-1.5 py-0.5 text-xs text-right">' : escapeHtml(p.src || ""))+'</td></tr>'; }).join("");
+      return '<div class="mb-3 rounded-lg border '+(miss.length ? 'border-amber-300' : 'border-slate-200')+' bg-white p-3" data-refipoolnoitable>'+
+        '<div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">NOI by property</div>'+
+        '<table class="mt-1 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th>Property</th><th class="px-2 text-right">NOI</th><th class="pl-2">From</th></tr></thead><tbody>'+rows+
+        '<tr class="border-t-2 border-slate-200 font-bold"><td class="py-1 pr-3 text-sm text-slate-900">Total &mdash; '+ps.length+' properties</td><td class="py-1 px-2 text-sm text-right tabular-nums" data-refipooltotal>'+(tot != null ? fmtMoney(tot) : '&mdash;')+'</td><td></td></tr></tbody></table>'+
+        (miss.length ? '<p class="mt-2 text-[11px] font-semibold text-amber-800" data-refipoolmissing>'+miss.length+' of '+ps.length+' have no NOI: '+miss.map(p => escapeHtml(p.name)).join(", ")+'. Nothing is sized until each has one &mdash; upload its T12, or type its NOI above (it is saved on the property; type 0 if it truly earns nothing).</p>' : '')+
+      '</div>';
+    }
     function refiNOI(loan){
-      const o = refiNOIOptions(loan), b = refiBasis(loan);
-      var base = (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
+      const o = refiNOIOptions(loan), b = refiBasis(loan), parts = refiPoolParts(loan);
+      if(parts && parts.some(p => p.noi == null)) return null;   // 3.0.0 — never a silent $0 for a property with no NOI
+      var base = parts ? parts.reduce((a, p) => a + p.noi, 0) : (b === "underwritten") ? o.underwritten : (b === "inplace") ? o.inPlace : (b === "entered") ? refiEnteredNOI(loan) : loanNOI(loan);
       if(base == null) return null;
       return base + refiMoveBoost(loan, b);   // + any "what to push" moves ticked below (a live what-if)
     }
@@ -10742,9 +10782,10 @@ tr.flagged:hover td{background:#fee2e2}
       return '<div class="boxline rounded-2xl border border-brand-200 bg-white p-5 shadow-sm">'+
         '<div class="flex items-center justify-between">'+
           '<h3 class="text-xs font-bold uppercase tracking-wider text-brand-700">Coverage &amp; value</h3>'+
-          '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>'+
+          (refiGroupKeys(loan) ? '' : '<button id="refiNoiEdit" type="button" class="text-[11px] font-semibold text-brand-700 hover:underline">Edit inputs</button>')+
         '</div>'+
         refiNOIBasisHtml(loan)+
+        refiPoolNOIHtml(loan)+
         '<dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("Annual NOI", rn != null ? fmtMoney(rn) : "&mdash;")+
           refiStat("Cap rate", fmtPct(cr))+
@@ -11059,7 +11100,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(!can.sized){
         return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">'+
           '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge this yet</p>'+
-          '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>'+
+          (refiPoolMissing(loan).length
+            ? '<p class="mt-1 text-sm text-slate-700" data-refinonoi>No NOI for <strong>'+refiPoolMissing(loan).map(p => escapeHtml(p.name)).join(", ")+'</strong>. Counting '+(refiPoolMissing(loan).length === 1 ? 'it' : 'them')+' as $0 would understate what these properties support, so nothing is sized yet &mdash; upload each one&rsquo;s T12 or type its NOI in <strong>NOI by property</strong> above, then this is sized against the '+fmtMoney(can.payoff)+' you owe.</p>'
+            : '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>')+
           pricing+
         '</div>';
       }
@@ -11265,6 +11308,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="mt-4"><h4 class="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">Amortization schedule'+(io>0?' &middot; interest-only for '+io+' mo':"")+'</h4>'+refiOptionScheduleHtml(draft)+'</div>'+
       '</div>';
     }
+    var refiGDTried = new Set();
     function renderRefi(loan){
       const cur = compute(loan);
       const d = cur.derived;
@@ -11272,6 +11316,9 @@ tr.flagged:hover td{background:#fee2e2}
       // and the analysis can run off the T12/underwritten NOI without a hand-entered figure.
       const _gk = propertyKey(loan);
       if(!Object.prototype.hasOwnProperty.call(gdNOICache, _gk)) opEnsureGeneralData(_gk).then(() => { if(state.activeId === loan._id || loan._combined) renderRefi(loan); });
+      { const gks = (refiGroupKeys(loan) || []).filter(k => !Object.prototype.hasOwnProperty.call(gdNOICache, k) && !refiGDTried.has(k));   // 3.0.0 — each property of a group (once)
+        gks.forEach(k => refiGDTried.add(k));
+        if(gks.length) Promise.all(gks.map(k => opEnsureGeneralData(k).catch(() => null))).then(() => { if(state.activeId === loan._id && state.mode === "refi") refiReprice(loan); }); }
       ensureRefiDrafts(loan);
       // The two-stage verdict drives what's shown: the proposed loan + its schedule (and the
       // "Save as a loan" button) appear ONLY when the answer is Refinance — you can, and you should.
@@ -11344,6 +11391,11 @@ tr.flagged:hover td{background:#fee2e2}
         if(b.disabled) return;
         refiBasisByKey[propertyKey(loan)] = b.getAttribute("data-noibasis");
         refiReprice(loan);
+      }));
+      dom.refiView.querySelectorAll("[data-refipooltype]").forEach(inp => inp.addEventListener("change", () => {   // 3.0.0 — saved on the property, like typing it on its page
+        const raw = String(inp.value || "").replace(/[$,\s]/g, ""); if(raw === "" || !isFinite(+raw)) return;
+        const k = inp.getAttribute("data-refipooltype");
+        opProfileSetField(k, "noi", raw, { source: "typed in a refinance" }).then(() => { try{ redrawAll(); }catch(e){} if(state.mode === "refi" && state.activeId === loan._id) refiReprice(loan); });
       }));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => refiReprice(loan)));
