@@ -1125,16 +1125,45 @@ ipcMain.handle('lds:cloud-members', () => cloud ? cloud.members() : []);
 ipcMain.handle('lds:cloud-pull', () => cloud ? cloud.pullNow() : null);
 ipcMain.handle('lds:cloud-group-empty', () => !!(cloud && cloud.groupIsEmpty()));
 // the screens that read or manage the group call the server through this short list only
-const CLOUD_RPC = new Set(['lds_hello', 'lds_member_set', 'lds_member_remove', 'lds_history', 'lds_backups', 'lds_backup_restore', 'lds_groups', 'lds_group_create', 'lds_group_admin']);
+const CLOUD_RPC = new Set(['lds_group_reset', 'lds_hello', 'lds_member_set', 'lds_member_remove', 'lds_history', 'lds_backups', 'lds_backup_restore', 'lds_groups', 'lds_group_create', 'lds_group_admin']);
 ipcMain.handle('lds:cloud-rpc', async (e, o) => {
   if (!cloud || !o || !CLOUD_RPC.has(o.fn)) return { ok: false, error: 'not allowed' };
   const r = await cloud.rpc(o.fn, o.args || {});
-  if (r.ok && o.fn === 'lds_backup_restore') { try { await cloud.pullNow(); } catch (x) {} }
+  if (r.ok && (o.fn === 'lds_backup_restore' || o.fn === 'lds_group_reset')) { try { await cloud.pullNow(); } catch (x) {} }
   return r;
 });
 // the first upload: this computer's own data (today's folder, only read) becomes the group's starting copy
 ipcMain.handle('lds:cloud-upload-preview', () => cloud ? cloud.uploadPreview(uploadRoot()) : null);
-ipcMain.handle('lds:cloud-upload-start', (e, o) => cloud.uploadStart({ root: uploadRoot(), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data'));
+// The first upload can also come from a backup file (Data → Back up to a file… on any computer): it is unpacked into a
+// folder laid out like the app's data, and its settings (custom categories, targets, saved market rates) go with it.
+let stagedBackup = null;   // { dir, settings, name, exportedAt }
+const stageDir = () => path.join(app.getPath('userData'), 'cloud', 'upload-from-backup');
+ipcMain.handle('lds:cloud-upload-pick-backup', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const res = await dialog.showOpenDialog(win, { title: 'Upload from a backup file', properties: ['openFile'],
+    filters: [{ name: 'Loan Debt Service Hub backup', extensions: ['json'] }, { name: 'All files', extensions: ['*'] }] });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true };
+  const file = res.filePaths[0];
+  try {
+    const r = await require('./cloud-backup').stageBackup(file, stageDir(), (done, total) => { try { e.sender.send('lds:cloud-progress', { what: 'backup', done, total }); } catch (x) {} });
+    stagedBackup = { dir: stageDir(), settings: r.settings, name: path.basename(file), exportedAt: r.exportedAt };
+    const pv = cloud.uploadPreview(stageDir());
+    return Object.assign({ ok: true, name: stagedBackup.name, exportedAt: r.exportedAt,
+      rates: CloudSync.RATE_KEYS.some(k => r.settings && r.settings[k] != null) }, pv);
+  } catch (err) { stagedBackup = null; return { ok: false, error: String((err && err.message) || err) }; }
+});
+function backupSharedSettings(raw){
+  const out = {};
+  CloudSync.SHARED_KEYS.forEach(k => { if (raw && typeof raw[k] === 'string') { try { out[k] = JSON.parse(raw[k]); } catch (x) {} } });
+  return out;
+}
+ipcMain.handle('lds:cloud-upload-start', async (e, o) => {
+  const fromBackup = !!(o && o.fromBackup && stagedBackup);
+  const r = await cloud.uploadStart(fromBackup ? { root: stagedBackup.dir, settings: backupSharedSettings(stagedBackup.settings) }
+                                               : { root: uploadRoot(), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data');
+  if (r && r.ok && fromBackup) { try { fs.rmSync(stagedBackup.dir, { recursive: true, force: true }); } catch (x) {} stagedBackup = null; }
+  return r;
+});
 ipcMain.handle('lds:cloud-signin', async (e, o) => {
   const r = await cloud.signIn(o && o.email, o && o.password);
   if (r.ok && r.member) { const w = BrowserWindow.fromWebContents(e.sender); if (w) setTimeout(() => { if (!w.isDestroyed()) w.loadURL(APP_URL); }, 50); }

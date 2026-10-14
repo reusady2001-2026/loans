@@ -1244,10 +1244,12 @@
     // 3.0.0 — the shared database. Signed in to one, the app reads and writes the group's picture of the data (the
     // main process keeps it in step with the server); a person's change waits for the reason they type.
     const LDS_CLOUD = !!(window.ldsShell && ldsShell.cloudMode);
-    // The team's settings kept in the window's storage: targets, custom T12 categories, "not a duplicate" pairs. In the
-    // shared database they come from the group; this computer's own values are kept aside once, never changed (the
-    // first upload sends them).
-    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"];
+    // The team's settings kept in the window's storage: targets, custom T12 categories, "not a duplicate" pairs, and the
+    // market rates the app has fetched (today's, the daily history, the monthly SOFR/EFFR and Treasury histories) — so
+    // every member calculates a floating loan from the same rates. In the shared database they come from the group;
+    // this computer's own values are kept aside once, never changed (the first upload sends them).
+    const CLOUD_RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
+    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(CLOUD_RATE_KEYS);
     function cloudApplySettings(){
       if(!LDS_CLOUD) return;
       try{
@@ -1258,6 +1260,14 @@
     }
     cloudApplySettings();
     function cloudSettingSaved(key){ if(!LDS_CLOUD) return; try{ const r = ldsShell.cloud.setSetting(key, localStorage.getItem(key)); if(r && r.ok === false && r.error){ cloudApplySettings(); } }catch(e){} }
+    // A fetched market rate goes to the group as the app's own work (no reason asked); a view-only or offline app keeps
+    // it for this session only. Saves come in bursts while rates are fetched, so they go up together.
+    const cloudRateWait = new Set(); let cloudRateTimer = null;
+    function cloudRatesSaved(key){
+      if(!LDS_CLOUD || !cloudCanWrite()) return;
+      cloudRateWait.add(key); clearTimeout(cloudRateTimer);
+      cloudRateTimer = setTimeout(() => { const keys = [...cloudRateWait]; cloudRateWait.clear(); cloudAutoSync("saved market rates", () => keys.forEach(k => cloudSettingSaved(k))); }, 1500);
+    }
     function cloudLocalSettings(){
       const o = {}; CLOUD_SHARED_KEYS.forEach(k => { try{ const keep = JSON.parse(localStorage.getItem("lds.localCopy." + k) || "null"); const v = keep ? keep.v : localStorage.getItem(k); if(v != null) o[k] = JSON.parse(v); }catch(e){} }); return o;
     }
@@ -1568,6 +1578,7 @@
       if(r.stale){ INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: null, saved: true }; return; }
       INDEX_CACHE[id] = { value: r.value, date: r.date || null, fetchedAt: new Date().toISOString(), live: true };
       try{ const all = JSON.parse(localStorage.getItem(LIVE_RATES_KEY) || "{}"); all[id] = { value: r.value, date: r.date || null, fetchedAt: INDEX_CACHE[id].fetchedAt }; localStorage.setItem(LIVE_RATES_KEY, JSON.stringify(all)); }catch(e){}
+      cloudRatesSaved(LIVE_RATES_KEY);
     }
     function fmtDateLong(iso){ try{ const d = new Date(String(iso).length <= 10 ? String(iso) + "T12:00:00" : iso); if(isNaN(d)) return String(iso || ""); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }catch(e){ return String(iso || ""); } }
     // Where an index value comes from, in words.
@@ -2933,7 +2944,7 @@
     let TREASURY_HIST = {};      // "YYYY-MM" -> { y3,y5,y7,y10 } (percent)
     try { TREASURY_HIST = JSON.parse(localStorage.getItem(TREASURY_HIST_KEY)) || {}; } catch(e){ TREASURY_HIST = {}; }
     const TREASURY_HIST_INFLIGHT = {};
-    function saveTrezHist(){ try { localStorage.setItem(TREASURY_HIST_KEY, JSON.stringify(TREASURY_HIST)); } catch(e){} }
+    function saveTrezHist(){ try { localStorage.setItem(TREASURY_HIST_KEY, JSON.stringify(TREASURY_HIST)); } catch(e){} cloudRatesSaved(TREASURY_HIST_KEY); }
     // Fetch one month's curve (row nearest the 15th) for the 3/5/7/10-yr tenors.
     async function fetchTreasuryMonth(y, mo){
       const base = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value_month=";
@@ -3037,7 +3048,7 @@
     let NYFED_HIST = {};        // id -> { "YYYY-MM" -> value(%) }
     try { NYFED_HIST = JSON.parse(localStorage.getItem(NYFED_HIST_KEY)) || {}; } catch(e){ NYFED_HIST = {}; }
     const NYFED_HIST_INFLIGHT = {};
-    function saveNyfedHist(){ try { localStorage.setItem(NYFED_HIST_KEY, JSON.stringify(NYFED_HIST)); } catch(e){} }
+    function saveNyfedHist(){ try { localStorage.setItem(NYFED_HIST_KEY, JSON.stringify(NYFED_HIST)); } catch(e){} cloudRatesSaved(NYFED_HIST_KEY); }
     function ymKey(y, mo){ return y + "-" + String(mo+1).padStart(2,"0"); }
     // One range fetch of a NY Fed rate; keep the observation nearest the 15th per month.
     async function fetchNyFedRange(path, startISO, endISO){
@@ -3066,7 +3077,16 @@
     let RATE_HIST = {};   // { termsofr1m: {date: %}, sofr30: {date: %}, meta: { id: { value, date, fetchedAt } } }
     try { RATE_HIST = JSON.parse(localStorage.getItem(RATE_HIST_KEY)) || {}; } catch(e){ RATE_HIST = {}; }
     if(!RATE_HIST.meta) RATE_HIST.meta = {};
-    function saveRateHist(){ try { localStorage.setItem(RATE_HIST_KEY, JSON.stringify(RATE_HIST)); } catch(e){} }
+    function saveRateHist(){ try { localStorage.setItem(RATE_HIST_KEY, JSON.stringify(RATE_HIST)); } catch(e){} cloudRatesSaved(RATE_HIST_KEY); }
+    // 3.0.0 — the group's rates changed (another member fetched, or the group started over): read them again
+    function ratesReloadFromStorage(){
+      try { TREASURY_HIST = JSON.parse(localStorage.getItem(TREASURY_HIST_KEY)) || {}; } catch(e){ TREASURY_HIST = {}; }
+      try { NYFED_HIST = JSON.parse(localStorage.getItem(NYFED_HIST_KEY)) || {}; } catch(e){ NYFED_HIST = {}; }
+      try { RATE_HIST = JSON.parse(localStorage.getItem(RATE_HIST_KEY)) || {}; } catch(e){ RATE_HIST = {}; }
+      if(!RATE_HIST.meta) RATE_HIST.meta = {};
+      Object.keys(INDEX_CACHE).forEach(k => { if(INDEX_CACHE[k] && !INDEX_CACHE[k].live) delete INDEX_CACHE[k]; });
+      loadSavedRates();
+    }
     const RH = (typeof window !== "undefined" && window.RateHistory) ? window.RateHistory : { LIBOR1M_MONTHLY:{}, LIBOR1M_DAILY:{}, TERMSOFR1M_DAILY:{}, SOFR30_DAILY:{} };
     const DAILY_BUILTIN = { termsofr1m: RH.TERMSOFR1M_DAILY || {}, sofr30: RH.SOFR30_DAILY || {}, libor1m: RH.LIBOR1M_DAILY || {} };
     const INDEX_SHORT = { sofr:"SOFR", sofr30:"30-day Average SOFR", termsofr1m:"1-month Term SOFR", libor1m:"1-month LIBOR", effr:"Fed Funds", prime:"Prime",
@@ -14929,6 +14949,7 @@ tr.flagged:hover td{background:#fee2e2}
         h += item("members", "Members and codes", "Who is in the group, who can edit; your approval and offline codes");
         h += item("backups", "Daily backups", "Put the group's data back as it was on a day");
         if(st.groupEmpty) h += item("upload", "Upload this computer's data", "The group's starting data — nothing on this computer changes");
+        else h += item("startover", "Start the group over…", "Remove all the group's data, to upload the starting data again");
         if(!st.online && !st.offlineUnlocked) h += item("offline", "Use my offline code", "Keep changing data while offline");
       }
       h += item("history", "Change history", "Every change: who, when, why");
@@ -14941,6 +14962,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(a === "requests") return cloudShowRequests(true);
       if(a === "members") return cloudMembersScreen();
       if(a === "joins") return cloudShowJoins(true);
+      if(a === "startover") return cloudStartOver();
       if(a === "groups") return cloudGroupsScreen();
       if(a === "backups") return cloudBackupsScreen();
       if(a === "upload") return cloudUploadScreen();
@@ -15136,6 +15158,19 @@ tr.flagged:hover td{background:#fee2e2}
       el("cmCodes").addEventListener("click", async () => { const a = el("cmAppr").value || null, o = el("cmOff").value || null; if(!a && !o) return; const r = await ldsShell.cloud.setCodes(a, o); toast(r.ok ? "The codes are saved" : r.error, r.ok ? "check" : "info"); if(r.ok){ el("cmAppr").value = ""; el("cmOff").value = ""; } });
     }
 
+    // ---- starting the group over (the admin): everything the group holds goes, then the starting data is uploaded again
+    async function cloudStartOver(){
+      const st = cloudUI.st || {};
+      const name = await cloudAsk("Start the group over", "Type the group’s name to confirm: " + (st.group || ""), { ok: "Remove everything",
+        sub: "All of " + escapeHtml(st.group || "the group") + "’s loans, properties, documents’ lists, chats and change history are removed from the shared database — for every member. The members and your codes stay. Nothing on any computer’s own data changes. Then upload the starting data again.",
+        required: "Type the group’s name" });
+      if(name === null) return;
+      const r = await ldsShell.cloud.rpc("lds_group_reset", { group_name: name });
+      if(!r.ok){ toast(r.error || "Not done", "info"); return; }
+      toast("The group was started over — upload the starting data", "check");
+      cloudRefresh({ reload: true, now: true });
+    }
+
     // ---- the maintainer: every group and its admin (also on the sign-in screen, for a maintainer in no group) -------------
     async function cloudGroupsScreen(){
       const r = await ldsShell.cloud.rpc("lds_groups", {});
@@ -15204,8 +15239,9 @@ tr.flagged:hover td{background:#fee2e2}
       const st = cloudUI.st || {};
       const body = '<p>The loans, properties, their documents and the assistant’s chats <b>on this computer</b> become the group’s starting data. Nothing on this computer changes, and the starting data locks nothing for the members.</p>' +
         '<p id="cuSize" class="mt-3 text-[13px] text-slate-600"></p>' +
+        '<button type="button" id="cuFromBackup" class="mt-1 text-[12px] font-semibold text-brand-700 hover:underline">Upload from a backup file instead…</button>' +
         '<label class="mt-4 block text-xs font-semibold text-slate-500">Why (kept in the change history)</label>' + cloudInput("cuWhy", "") + '<p id="cuMsg" class="mt-2 text-xs text-slate-500"></p>';
-      let off = null;
+      let off = null, fromBackup = false;
       const m = cloudModal("Upload this computer's data", escapeHtml(st.group || ""), body, [
         { label: "Not now" },
         { label: "Upload", primary: true, id: "cuGo", onClick: async () => {
@@ -15217,7 +15253,7 @@ tr.flagged:hover td{background:#fee2e2}
           off = ldsShell.cloud.on("progress", p => { const x = el("cuMsg"); if(!x || p.what !== "upload" || !p.total) return;
             x.textContent = "Uploading file " + Math.min(p.done + 1, p.total) + " of " + p.total + " (" + cloudMB(p.bytesDone) + " of " + cloudMB(p.bytesTotal) + ")" + (p.name ? ": " + p.name : "") + "…"; });
           let r = null;
-          try{ r = await ldsShell.cloud.uploadStart({ reason: why, settings: cloudLocalSettings() }); } finally { if(off){ off(); off = null; } }
+          try{ r = await ldsShell.cloud.uploadStart({ reason: why, settings: cloudLocalSettings(), fromBackup }); } finally { if(off){ off(); off = null; } }
           if(!r || !r.ok){ el("cuMsg").className = "mt-2 text-xs text-rose-700"; el("cuMsg").textContent = (r && r.error) || "The upload failed."; return true; }
           toast("Uploaded: " + r.records + " records, " + r.files + " files, " + r.chats + " chats", "check");
           cloudApplySettings(); cloudRefresh({ reload: true });
@@ -15225,12 +15261,28 @@ tr.flagged:hover td{background:#fee2e2}
       ]);
       setTimeout(() => { const x = el("cuWhy"); if(x) x.value = "Starting data from " + (st.name || "the admin") + "’s computer"; }, 0);
       // what it will send
-      (async () => {
-        const pv = await ldsShell.cloud.uploadPreview(); const x = el("cuSize"); if(!pv || !x) return;
-        x.textContent = "On this computer: " + pv.loans + " loans, " + pv.properties + " properties, " + pv.documents + " documents — " + cloudMB(pv.bytes) + " of files." +
+      const sizeText = (pv, where) => where + pv.loans + " loans, " + pv.properties + " properties, " + pv.documents + " documents — " + cloudMB(pv.bytes) + " of files." +
           (pv.biggest > 50 * 1048576 ? " Files over 50 MB go up in pieces." : "") +
           (pv.bytes > 1073741824 ? " Supabase’s free plan holds about 1 GB of files in all, so this may not fit." : "");
+      (async () => {
+        const pv = await ldsShell.cloud.uploadPreview(); const x = el("cuSize"); if(!pv || !x || fromBackup) return;
+        x.textContent = sizeText(pv, "On this computer: ");
       })();
+      // a backup file made with Data → Back up to a file… (on this computer or another): its loans, documents, chats,
+      // custom categories, targets and saved market rates
+      el("cuFromBackup").addEventListener("click", async () => {
+        const b = el("cuFromBackup"); b.disabled = true;
+        const prog = ldsShell.cloud.on("progress", p => { const x = el("cuSize"); if(x && p.what === "backup" && p.total) x.textContent = "Reading the backup file… " + Math.round(100 * p.done / p.total) + "%"; });
+        let r = null; try{ r = await ldsShell.cloud.uploadPickBackup(); } finally { prog(); b.disabled = false; }
+        if(!r || r.canceled) return;
+        const x = el("cuSize");
+        if(!r.ok){ x.className = "mt-3 text-[13px] text-rose-700"; x.textContent = r.error || "That backup file can't be used."; return; }
+        fromBackup = true; x.className = "mt-3 text-[13px] text-slate-600";
+        x.textContent = sizeText(r, "From the backup file “" + r.name + "”" + (r.exportedAt ? " (made " + cloudWhen(r.exportedAt) + ")" : "") + ": ") +
+          (r.rates ? " Its saved market rates and settings go too." : "");
+        b.textContent = "Choose another backup file…";
+        const w = el("cuWhy"); if(w && /computer’s$/.test(w.value)) w.value = "Starting data from the backup file " + r.name;
+      });
       return m;
     }
 
@@ -15263,7 +15315,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(cloudRefresh.busy){ cloudRefresh.again = Object.assign(cloudRefresh.again || {}, info, { reload: true }); return; }
       cloudRefresh.busy = true;
       try{
-        if(info.settings || info.reload){ cloudApplySettings(); try{ customCatsApply(); }catch(e){} try{ loadPortfolioTargets(); }catch(e){} }
+        if(info.settings || info.reload){ cloudApplySettings(); try{ customCatsApply(); }catch(e){} try{ loadPortfolioTargets(); }catch(e){} try{ ratesReloadFromStorage(); }catch(e){} }
         if(info.loans || info.reload || info.merged){
           loans = load();
           if(state.activeId && !getLoan(state.activeId)) state.activeId = loans.length ? loans[0]._id : null;

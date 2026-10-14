@@ -37,6 +37,8 @@ create table if not exists app.groups (
 );
 -- the newest app version that has saved in the group: an older app's automatic work isn't taken
 alter table app.groups add column if not exists app_version text;
+-- bumped when the admin starts the group over: every member's app then rebuilds its picture from nothing
+alter table app.groups add column if not exists epoch int not null default 0;
 
 -- One person belongs to one group. One admin per group; everyone else is an editor or view-only.
 create table if not exists app.members (
@@ -115,7 +117,8 @@ create table if not exists app.lock_free (
   pattern text primary key
 );
 insert into app.lock_free(pattern) values
-  ('(^|\.)(updatedAt|savedAt|changedAt|changedBy|modifiedAt|computedAt|lastSaved|ts)$')
+  ('(^|\.)(updatedAt|savedAt|changedAt|changedBy|modifiedAt|computedAt|lastSaved|ts)$'),
+  ('(^|\.)(fetchedAt|failedAt)$')          -- when a market rate was fetched (the shared rates)
 on conflict do nothing;
 
 -- A member's change waiting for the admin.
@@ -369,7 +372,8 @@ begin
     select id, name, email, status, at, decided_by, decided_at, seq from app.join_requests
      where group_id = m.group_id and seq > since and seq <= top and m.role = 'admin' order by seq) j;
   return jsonb_build_object('records', recs, 'chats', cts, 'requests', rqs, 'members', mem, 'joins', jns,
-                            'more', n >= lim, 'seq', top, 'role', m.role);
+                            'more', n >= lim, 'seq', top, 'role', m.role,
+                            'epoch', (select g.epoch from app.groups g where g.id = m.group_id));
 end $$;
 
 -- ---- writing a change ------------------------------------------------------------------------------------------------------
@@ -723,6 +727,32 @@ begin
        values (e, lds_group_admin.group_id, nullif(btrim(admin_name), ''), 'admin', app.my_email(), nextval('app.seq'))
   on conflict (email) do update set role = 'admin', name = coalesce(excluded.name, x.name), seq = excluded.seq;
   return jsonb_build_object('ok', true);
+end $$;
+
+-- ---- starting the group over (the admin) ------------------------------------------------------------------------------
+-- Everything the group holds goes: records, chats, requests, the admin's locks and the change history; the members, the
+-- codes and the daily backups stay. The admin types the group's name to confirm. Every member's app sees the new epoch
+-- and rebuilds its picture from nothing; then the admin uploads the starting data again.
+create or replace function public.lds_group_reset(group_name text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare m app.members; g app.groups;
+begin
+  m := app.need_member(); perform app.turn(m.group_id);
+  if m.role <> 'admin' then raise exception 'admin_only' using errcode = 'P0001', hint = 'Only the group''s admin starts the group over.'; end if;
+  select * into g from app.groups x where x.id = m.group_id;
+  if lower(btrim(coalesce(group_name, ''))) <> lower(btrim(g.name)) then
+    raise exception 'name_mismatch' using errcode = 'P0001', hint = 'Type the group''s name exactly to confirm.';
+  end if;
+  delete from app.records  x where x.group_id = m.group_id;
+  delete from app.chats    x where x.group_id = m.group_id;
+  delete from app.requests x where x.group_id = m.group_id;
+  delete from app.locks    x where x.group_id = m.group_id;
+  delete from app.changes  x where x.group_id = m.group_id;
+  update app.groups x set epoch = x.epoch + 1, app_version = null where x.id = m.group_id;
+  insert into app.changes(group_id, batch, path, field, old, new, by_id, by_name, by_role, kind, reason)
+       values (m.group_id, gen_random_uuid(), '*', '', null, null, auth.uid(), coalesce(m.name, m.email), m.role, 'start',
+               'Started the group over: all its data was removed');
+  return jsonb_build_object('ok', true, 'epoch', g.epoch + 1);
 end $$;
 
 -- ---- joining a group ---------------------------------------------------------------------------------------------------------

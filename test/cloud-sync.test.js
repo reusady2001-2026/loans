@@ -278,6 +278,33 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       const C = createClient({ url: si.url, anonKey: si.anonKey }); await C.signIn("ed2@co.com", "secret-pw-1");
       let caught = null; try{ await C.download(g2 + "/props/" + h2 + "/dbig.pdf"); }catch(e){ caught = e; }
       ok(caught && caught.code === "storage", "a missing piece: an error, never a cut-off file");
+
+      // the admin starts the group over, then uploads again with the saved market rates and custom categories
+      await si.sql("update storage.objects set name = $1 where name = $2", [g2 + "/props/" + h2 + "/dbig.pdf.lds-part-3", g2 + "/props/" + h2 + "/dbig.pdf.lds-part-3-gone"]);
+      const rs = await O2.rpc("lds_group_reset", { group_name: "Second Co" });
+      ok(rs.ok, "the admin starts Second Co over");
+      await O2.pullNow(); await EC.e.pullNow();
+      ok(O2.groupIsEmpty() && EC.e.groupIsEmpty(), "both computers see an empty group");
+      ok(J(rd(path.join(EC.e.dataRoot(), "loans.json"))) === "[]", "the editor's picture is empty (rebuilt from nothing)");
+      const rates = { "ldsHub.rateHist.v2": { sofr30: { "2026-10-05": 4.31 }, meta: { sofr30: { value: 4.31, date: "2026-10-05", fetchedAt: "2026-10-05T09:00:00Z" } } },
+                      "ldsHub.nyfedHist.v1": { effr: { "2026-09": 4.33 } }, "lds.customCategories": { "Parking": "income" } };
+      const r3 = await O2.uploadStart({ root: l2, settings: rates }, "Starting data again");
+      ok(r3.ok && r3.records === 3, "uploaded again: the records and the settings (" + JSON.stringify(r3) + ")");
+      await EC.e.pullNow();
+      const seenRates = EC.e.settings();
+      ok(seenRates["ldsHub.rateHist.v2"].sofr30["2026-10-05"] === 4.31 && seenRates["ldsHub.nyfedHist.v1"].effr["2026-09"] === 4.33 && seenRates["lds.customCategories"].Parking === "income",
+         "the editor's computer gets the same saved rates and custom categories");
+      ok(fs.existsSync(path.join(EC.e.dataRoot(), "documents", h2, "dbig.pdf")), "and the documents again (the stored files were kept)");
+      // a rate fetched later goes up as the app's own work: no reason asked
+      const APP = { id: 77 };
+      O2.autoBegin(APP, "saved market rates");
+      const w = O2.setSetting(APP, "ldsHub.rateHist.v2", JSON.stringify({ sofr30: { "2026-10-05": 4.31, "2026-10-06": 4.30 }, meta: { sofr30: { value: 4.30, date: "2026-10-06", fetchedAt: "2026-10-06T09:00:00Z" } } }));
+      O2.autoEnd(APP);
+      ok(w.ok && O2.pending().length === 0, "a new rate isn't a person's change (nothing waits for a reason)");
+      await O2.flushAuto(); await EC.e.pullNow();
+      ok(EC.e.settings()["ldsHub.rateHist.v2"].sofr30["2026-10-06"] === 4.30, "and reaches the other computer");
+      const ch = (await si.sql("select field, kind from app.changes where group_id = $1 and path = 'settings.json' and kind = 'app'", [g2])).rows;
+      ok(ch.some(c => /sofr30\.2026-10-06$/.test(c.field)), "the change history keeps the new rate, marked as the app's");
     });
   } finally {
     engines.forEach(e => { try{ e.close(); }catch(x){} });

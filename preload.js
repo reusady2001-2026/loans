@@ -198,6 +198,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
     rpc: (fn, args) => ipcRenderer.invoke('lds:cloud-rpc', { fn, args }),
     uploadStart: (o) => ipcRenderer.invoke('lds:cloud-upload-start', o || {}),
     uploadPreview: () => ipcRenderer.invoke('lds:cloud-upload-preview'),
+    uploadPickBackup: () => ipcRenderer.invoke('lds:cloud-upload-pick-backup'),
     pull: () => ipcRenderer.invoke('lds:cloud-pull'),
     groupEmpty: () => ipcRenderer.invoke('lds:cloud-group-empty'),
     signIn: (email, password) => ipcRenderer.invoke('lds:cloud-signin', { email, password }),

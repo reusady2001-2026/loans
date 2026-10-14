@@ -15,7 +15,7 @@
 "use strict";
 
 // time stamps the app writes on every save; a difference in these alone is no change (same list as app.lock_free)
-const STAMP = /(^|\.)(updatedAt|savedAt|changedAt|changedBy|modifiedAt|computedAt|lastSaved|ts)$/;
+const STAMP = /(^|\.)(updatedAt|savedAt|changedAt|changedBy|modifiedAt|computedAt|lastSaved|ts|fetchedAt|failedAt)$/;
 
 const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
 const keyPart = k => String(k).replace(/\\/g, "\\\\").replace(/\./g, "\\.").replace(/\[/g, "\\[");

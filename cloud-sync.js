@@ -31,8 +31,11 @@ const M = require("./cloud-merge");
 
 const APP_RECORDS = { "profile.json": "profile", "assumptions.json": "assumptions", "general-data.json": "general", "history.json": "history" };
 const ROLE_FILE = { profile: "profile.json", assumptions: "assumptions.json", general: "general-data.json", history: "history.json" };
-// the window's settings that are the team's data (kept in localStorage by the page)
-const SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"];
+// the window's settings that are the team's data (kept in localStorage by the page): targets, custom T12 categories,
+// "not a duplicate" pairs, and the market rates the app has fetched (today's, the daily history, the monthly
+// SOFR/EFFR and Treasury histories) — so every member calculates a floating loan from the same rates
+const RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
+const SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(RATE_KEYS);
 const sha1 = s => crypto.createHash("sha1").update(String(s || "")).digest("hex");
 const h16 = s => sha1(s).slice(0, 16);
 
@@ -416,6 +419,9 @@ function create(opts){
     let more = true, rounds = 0;
     while(more && rounds++ < 200){
       const res = await client.rpc("lds_pull", { since: st.seq || 0, max_rows: 500 });
+      // the admin started the group over: this computer's picture goes, and everything comes again from the start
+      if(res.epoch != null && st.epoch == null){ st.epoch = res.epoch; saveState(); }
+      else if(res.epoch != null && res.epoch !== st.epoch){ startOver(res.epoch); changed.reset = true; continue; }
       members = res.members || members;
       if(res.role && me && me.role !== res.role){ me = Object.assign({}, me, { role: res.role }); if(st) st.me = me; setTimeout(tell, 0); }
       (res.records || []).forEach(rec => {
@@ -442,12 +448,19 @@ function create(opts){
       st.seq = res.seq; more = !!res.more;
     }
     saveState();
-    if(changed.loans || changed.settings || changed.props.size || changed.chats) broadcast("lds:cloud-changed", { loans: changed.loans, settings: changed.settings, props: [...changed.props], chats: changed.chats });
+    if(changed.reset) broadcast("lds:cloud-changed", { reload: true, why: "started-over" });
+    else if(changed.loans || changed.settings || changed.props.size || changed.chats) broadcast("lds:cloud-changed", { loans: changed.loans, settings: changed.settings, props: [...changed.props], chats: changed.chats });
     if(changed.requests) broadcast("lds:cloud-requests", requestsFor());
     if(changed.joins){ broadcast("lds:cloud-joins", joinsFor()); tell(); }
     fetchMissingFiles().catch(e => log("cloud: file fetch: " + e.message));
   }
   function joinsFor(){ return { joins: joins.filter(j => j.status === "waiting").sort((a, b) => (a.seq || 0) - (b.seq || 0)), role: role() }; }
+  function startOver(epoch){
+    rm(path.join(serverDir(), "records")); rm(path.join(serverDir(), "chats"));   // stored files stay cached: names are never reused
+    writeQueue([]); dirty.clear(); requests = []; joins = [];
+    st = { seq: 0, versions: {}, chats: {}, epoch, me: st && st.me };
+    saveState(); rebuildPicture(); tell();
+  }
   function requestsFor(){ return { requests: requests.slice().sort((a, b) => (b.seq || 0) - (a.seq || 0)), role: role(), me: me && me.user_id }; }
 
   // download every stored file the picture lists but doesn't have (so it can be read offline)
@@ -773,6 +786,7 @@ function create(opts){
         await pull();
         rebuildPicture();
         broadcast("lds:cloud-changed", { reload: true, why: "start" });
+        tell();   // the group isn't empty any more (the menu offers "Start the group over…" instead of the upload)
         return { ok: true, records: items.length, files, chats };
       }catch(e){ return errorResult(e); }
     },
@@ -790,4 +804,4 @@ function create(opts){
   };
 }
 
-module.exports = { create, SHARED_KEYS, APP_RECORDS, ROLE_FILE, offlineHash, checkOfflineCode };
+module.exports = { create, SHARED_KEYS, RATE_KEYS, APP_RECORDS, ROLE_FILE, offlineHash, checkOfflineCode };

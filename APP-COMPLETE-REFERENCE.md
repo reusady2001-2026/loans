@@ -644,6 +644,18 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
   first says what goes up (loans, properties, documents, total size) and then counts the files as they go. A file the
   server refuses is named with its property, and nothing is saved until every file is up (what already went up is
   used again on the next try).
+- **Market rates are the group's.** The rates the app has fetched (today's, the daily Term SOFR / 30-day SOFR history,
+  the monthly SOFR / EFFR and Treasury histories) are shared settings like the targets and custom categories: the
+  first upload takes this computer's, a newly fetched rate goes up as the app's own work (no reason asked), and every
+  member calculates a floating loan from the same rates. (Found by comparing the operator's app with the test app:
+  each computer had kept its own rates, so a floating loan's rate and balance differed.)
+- **Starting the group over** (the admin, Account menu): after typing the group's name, everything the group holds
+  is removed — records, chats, requests, the admin's locks, the change history (one line says who started it over);
+  the members, the codes and the daily backups stay. Every member's app rebuilds its picture from nothing; then the
+  admin uploads the starting data again.
+- **The first upload from a backup file** ("Upload from a backup file instead…"): a backup made with Data → Back up
+  to a file… on any computer — its loans, documents, chats, custom categories, targets and saved rates. It is read
+  as a stream (a backup can be bigger than one string), each file checked against its fingerprint.
 - **Big files** go to storage in pieces under the free plan's 50 MB a file, with a note of the pieces; opening the
   file joins them back and checks it is whole (size and fingerprint) — a missing piece is an error, never a cut-off
   file.
@@ -674,14 +686,15 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
   a check fails, the AI disagrees, Claude off, Documents, Read again, Data Health, the one-time re-check and old
   decisions; 2.9.17 adds the once-after-the-update clean-up). 2.9.17's unit tests read a statement in Terrazul's layout:
   every account in its category, the lines the table takes. Tests written before the gate take the reader's reading through the real pop-ups (`_t12auto.js`).
-- **3.0.0** adds `cloud-rules.test.js` (82 checks — the server's rules on a real PostgreSQL through the app's own
+- **3.0.0** adds `cloud-rules.test.js` (91 checks — the server's rules on a real PostgreSQL through the app's own
   client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
   history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
-  folding two saves), `cloud-sync.test.js` (71 — two computers through the whole sync; a file over the size limit named, then stored in
-  pieces and whole on another computer) and `cloud-join.test.js` (86 —
+  folding two saves), `cloud-sync.test.js` (80 — two computers through the whole sync; a file over the size limit named, then stored in
+  pieces and whole on another computer; starting over; shared rates), `cloud-backup.test.js` (13 — reading a backup
+  file: a 9 MB file across reads, damage, paths outside the folders, snapshots, older backups) and `cloud-join.test.js` (86 —
   joining a group through the real `lds-join` function), plus the e2e `cloud-3000.e2e.js` (the real app, three people
   on three computers), `cloud-3000-admin.e2e.js` (the maintainer, members and codes, documents, chats, history,
-  backups) and `cloud-join.e2e.js` (creating an account, the admin's pop-up, the email pages in a browser). They run
+  backups), `cloud-startover.e2e.js` (starting the group over; uploading from a backup file with its rates) and `cloud-join.e2e.js` (creating an account, the admin's pop-up, the email pages in a browser). They run
   where PostgreSQL is installed and are skipped elsewhere (the Windows build). `test/cloud/` holds the throwaway
   database and a stand-in for Supabase's sign-in / functions / storage / account API, which also answers Google's
   Gmail API and keeps every email the function sends.

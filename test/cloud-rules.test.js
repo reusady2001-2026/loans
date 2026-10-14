@@ -242,6 +242,23 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok(await fails_with(c.rpc("lds_hello"), "offline") === true, "the server down: the client says offline");
       si.setDown(false);
     });
+
+    await section("starting the group over (E is the admin now)", async () => {
+      const before = await E.rpc("lds_pull", { since: 0 });
+      ok(typeof before.epoch === "number" && before.records.length > 0, "the group has data, at epoch " + before.epoch);
+      ok(await fails_with(A.rpc("lds_group_reset", { group_name: "Group One" }), "admin_only") === true, "an editor can't start the group over");
+      ok(await fails_with(E.rpc("lds_group_reset", { group_name: "Group 1" }), "name_mismatch") === true, "the group's name must be typed exactly");
+      const r = await E.rpc("lds_group_reset", { group_name: "  group one " });
+      ok(r.ok && r.epoch === before.epoch + 1, "the admin starts it over (the name in any case)");
+      const after = await E.rpc("lds_pull", { since: 0 });
+      ok(after.epoch === before.epoch + 1 && after.records.length === 0 && after.chats.length === 0, "nothing left: no records, no chats; a new epoch");
+      ok(Number((await sql("select count(*) n from app.locks where group_id = $1", [g1])).rows[0].n) === 0, "no locks left");
+      const h = await E.rpc("lds_history", {});
+      ok(h.length === 1 && /Started the group over/.test(h[0].reason), "the history keeps one line: who started it over, and when");
+      ok((await A.rpc("lds_hello")).member === true && (await E.rpc("lds_hello")).role === "admin", "the members stay, with their roles");
+      const g2pull = await X.rpc("lds_pull", { since: 0 });
+      ok(g2pull.epoch === 0, "another group is untouched");
+    });
   } finally {
     await si.stop(); await db.stop();
   }
