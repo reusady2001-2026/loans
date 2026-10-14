@@ -7,6 +7,10 @@ name: Build Windows desktop app
 on:
   push:
     branches: ["claude/awesome-ptolemy-4s9eez"]
+    # A push that changes only GitHub's workflows, notes or the web pages is not a new app, so it makes no release
+    # (the same rule as test-build.yml, plus the workflows). The database update (supabase-setup.yml) still runs on
+    # it. To release after such a push anyway, re-run the last "Build Windows desktop app" run.
+    paths-ignore: ["**.md", "docs/**", ".github/**"]
   workflow_dispatch: {}
 
 permissions:
