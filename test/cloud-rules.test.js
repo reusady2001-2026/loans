@@ -6,7 +6,8 @@ const path = require("path");
 const PG = require("./cloud/_pg.js");
 const { startStandin } = require("./cloud/standin-server.js");
 const { createClient } = require(path.join(__dirname, "..", "cloud-client.js"));
-const { offlineHash, checkOfflineCode } = require(path.join(__dirname, "..", "cloud-sync.js"));
+const { offlineHash, checkOfflineCode, SETUP_NEEDED } = require(path.join(__dirname, "..", "cloud-sync.js"));
+const fs = require("fs");
 
 let fails = 0, count = 0;
 function ok(cond, msg){ count++; console.log((cond ? "  ok   " : "  FAIL ") + msg); if(!cond) fails++; }
@@ -84,6 +85,7 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok(pv.records.length === 2 && pv.members.length === 4 && pv.members.every(m => m.email == null), "the viewer sees everything, members by name only");
       const pa = await A.rpc("lds_pull", { since: 0 });
       ok(pa.members.every(m => !!m.email), "the admin sees the members' emails");
+      ok(pa.setup === SETUP_NEEDED && pe.setup === SETUP_NEEDED, "the pull says which setup.sql the server has (" + pa.setup + ", the app needs " + SETUP_NEEDED + ")");
     });
 
     await section("view-only and reasons", async () => {
@@ -261,6 +263,18 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok((await A.rpc("lds_hello")).member === true && (await E.rpc("lds_hello")).role === "admin", "the members stay, with their roles");
       const g2pull = await X.rpc("lds_pull", { since: 0 });
       ok(g2pull.epoch === 0, "another group is untouched");
+    });
+
+    await section("a release runs setup.sql again, in one go (.github/workflows/supabase-setup.yml)", async () => {
+      const count = async () => (await sql("select (select count(*) from app.groups) g, (select count(*) from app.members) m, (select count(*) from app.records) r, (select count(*) from app.changes) c, (select count(*) from app.maintainers) x")).rows[0];
+      const before = await count(), ep = (await X.rpc("lds_pull", { since: 0 })).epoch;
+      await db.admin.query(fs.readFileSync(path.join(__dirname, "..", "supabase", "setup.sql"), "utf8"));   // one query = one transaction, as the workflow's --single-transaction
+      const after = await count();
+      ok(JSON.stringify(before) === JSON.stringify(after), "every group, member, record, change and maintainer is still there (" + JSON.stringify(after) + ")");
+      const p = await X.rpc("lds_pull", { since: 0 });
+      ok(p.epoch === ep && p.setup === SETUP_NEEDED && (await A.rpc("lds_hello")).member === true, "the members still sign in and read, at the same epoch");
+      const fileVer = Number((fs.readFileSync(path.join(__dirname, "..", "supabase", "setup.sql"), "utf8").match(/app\.setup_version\(\) returns int language sql immutable as \$\$ select (\d+) \$\$/) || [])[1]);
+      ok(fileVer === SETUP_NEEDED, "setup.sql's version (" + fileVer + ") is the one the app needs — raise both together");
     });
   } finally {
     await si.stop(); await db.stop();

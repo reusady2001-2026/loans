@@ -2,7 +2,8 @@
 -- Loan Debt Service Hub 3.0.0 — the shared database (Supabase).
 --
 -- Run this whole file once in the Supabase project's SQL editor. It is safe to run again after an update: it only
--- adds what is missing and replaces the functions.
+-- adds what is missing and replaces the functions. After that, every release runs it by itself
+-- (.github/workflows/supabase-setup.yml, with the GitHub secret SUPABASE_DB_URL — SUPABASE-SETUP.md, step 9).
 --
 -- Every rule is checked HERE, on the server, so no copy of the app can get around it:
 --   * a group's data is seen only by its members;
@@ -21,6 +22,10 @@ create extension if not exists pgcrypto with schema extensions;
 
 create schema if not exists app;
 revoke all on schema app from public;
+
+-- The version of this file. Raise it with every change to the file: the app needs at least SETUP_NEEDED
+-- (cloud-sync.js), reads this through lds_pull and tells the group's admin when the shared database is older.
+create or replace function app.setup_version() returns int language sql immutable as $$ select 1 $$;
 
 -- ---- people ----------------------------------------------------------------------------------------------------------
 
@@ -373,7 +378,8 @@ begin
      where group_id = m.group_id and seq > since and seq <= top and m.role = 'admin' order by seq) j;
   return jsonb_build_object('records', recs, 'chats', cts, 'requests', rqs, 'members', mem, 'joins', jns,
                             'more', n >= lim, 'seq', top, 'role', m.role,
-                            'epoch', (select g.epoch from app.groups g where g.id = m.group_id));
+                            'epoch', (select g.epoch from app.groups g where g.id = m.group_id),
+                            'setup', app.setup_version());
 end $$;
 
 -- ---- writing a change ------------------------------------------------------------------------------------------------------

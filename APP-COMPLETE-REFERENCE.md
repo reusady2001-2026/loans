@@ -794,6 +794,14 @@ only tester, with one computer): offline, and two computers at once.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
+**Database updates run by themselves (2026-10-14):** every release runs `supabase/setup.sql` on the Supabase project
+(`.github/workflows/supabase-setup.yml`, on a push to the release branch; one transaction; GitHub secret
+`SUPABASE_DB_URL` = the Session pooler connection string — SUPABASE-SETUP.md step 9). `setup.sql` carries a version
+(`app.setup_version()`, raised with every change to the file, the same number as `SETUP_NEEDED` in `cloud-sync.js`);
+`lds_pull` reports it, and the admin and the maintainer see a red line under the title bar while the database is
+older than the app. Tests: `cloud-rules` (setup.sql run again over a group's data: nothing lost) and `cloud-sync`
+(an older server noticed, then not).
+
 **Refinance fixes from Azriel's meeting (2026-10-13), built 2026-10-14** — §4.8: no property counted as $0 in a
 portfolio; today's vs proposed labels, sized on the proposed rate only; starting spreads never 0; how "supports $X"
 is worked out; the lender's limits per refinance with interest-only coverage; "Create a portfolio"; a loan marked out

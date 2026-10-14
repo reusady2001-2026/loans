@@ -15159,13 +15159,16 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function cloudBannerPaint(st){
       let b = el("cloudBanner");
-      const need = !st.online || st.role === "viewer" || st.groupEmpty;
+      const setupWarn = !!st.setupOld && (st.role === "admin" || st.maintainer);   // 3.0.0 — the shared database is behind this app
+      const need = !st.online || setupWarn || st.role === "viewer" || st.groupEmpty;
       if(!need){ if(b) b.remove(); return; }
       if(!b){ b = document.createElement("div"); b.id = "cloudBanner"; const wb = el("winbar"); if(wb && wb.parentNode) wb.parentNode.insertBefore(b, wb.nextSibling); else document.body.prepend(b); }
       let cls = "bg-amber-50 border-amber-200 text-amber-800", text = "", act = "";
       if(!st.online){
         if(st.offlineUnlocked) text = "Offline — your changes are kept on this computer and go up when the connection is back" + (st.queued ? " (" + st.queued + " waiting)" : "") + ".";
         else { text = "Offline — view only. This is the last picture of the group's data; changes can't be saved until the connection is back."; if(st.role === "admin") act = '<button type="button" data-cloud-banner="offline" class="ml-2 underline font-semibold">Use my offline code</button>'; }
+      } else if(setupWarn){ cls = "bg-rose-50 border-rose-200 text-rose-800";
+        text = "The shared database is behind this app (its setup is version " + (st.setupVersion || 0) + "; this app needs " + st.setupNeeded + "). It is brought up to date by itself with each release — if this stays, run supabase/setup.sql once in Supabase's SQL Editor (SUPABASE-SETUP.md, step 2).";
       } else if(st.role === "viewer"){ cls = "bg-sky-50 border-sky-200 text-sky-800"; text = "View only — you can see everything in the group but not change it."; }
       else if(st.groupEmpty){ cls = "bg-brand-50 border-brand-200 text-brand-800"; text = st.role === "admin" ? "This group has no data yet." : "This group has no data yet — its admin brings the starting data.";
         if(st.role === "admin") act = '<button type="button" data-cloud-banner="upload" class="ml-2 underline font-semibold">Upload this computer’s data</button>'; }

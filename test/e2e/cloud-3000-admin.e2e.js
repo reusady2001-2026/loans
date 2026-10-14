@@ -105,6 +105,14 @@ async function saveWith(page, reason){ await until(page, () => !!document.getEle
     ok(await until(E.page, async (k) => { const l = await window.ldsShell.docList(k); return (l.files || []).some(x => x.name === 'Loan Agreement.pdf'); }, key, 20000), '…on the editor’s computer too');
     const rc = (await si.sql("select count(*) n from app.changes where kind = 'restore' and reason like '%Undo the removal%'")).rows[0].n;
     ok(Number(rc) > 0, 'putting it back is recorded with the reason');
+    console.log('\nthe shared database behind the app (3.0.0)');
+    await si.sql('create or replace function app.setup_version() returns int language sql immutable as $$ select 0 $$');
+    await A.page.evaluate(() => window.ldsShell.cloud.pull()); await E.page.evaluate(() => window.ldsShell.cloud.pull());
+    ok(await until(A.page, () => /shared database is behind this app/.test((document.getElementById('cloudBanner') || {}).textContent || '')), 'the admin sees a red line: the shared database is behind this app');
+    ok(!/behind this app/.test(await E.page.evaluate(() => (document.getElementById('cloudBanner') || {}).textContent || '')), 'an editor doesn’t (it is the admin’s to fix)');
+    await si.sql('create or replace function app.setup_version() returns int language sql immutable as $$ select ' + Number(require('../../cloud-sync.js').SETUP_NEEDED) + ' $$');
+    await A.page.evaluate(() => window.ldsShell.cloud.pull());
+    ok(await until(A.page, () => !/behind this app/.test((document.getElementById('cloudBanner') || {}).textContent || '')), '…and it goes once the database is up to date');
     for (const x of [M, A, E]) ok(x.errors.length === 0, 'no page errors' + (x.errors.length ? ': ' + x.errors[0] : ''));
   } catch (e) { ok(false, 'threw: ' + (e && e.stack || e)); }
   finally {

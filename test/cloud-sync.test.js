@@ -80,6 +80,17 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       ok(A.settings()["lds.portfolioTargets"].dscrMin === 1.3, "the shared settings went up");
     });
 
+    await section("the shared database's setup version (3.0.0)", async () => {
+      await A.pullNow();
+      ok(A.status().setupVersion === Sync.SETUP_NEEDED && A.status().setupOld === false, "the server has the setup this app needs (" + A.status().setupVersion + ")");
+      await si.sql("create or replace function app.setup_version() returns int language sql immutable as $$ select 0 $$");
+      await A.pullNow();
+      ok(A.status().setupOld === true && A.status().setupVersion === 0 && A.status().setupNeeded === Sync.SETUP_NEEDED, "an older server is noticed, so the admin is told");
+      await si.sql("create or replace function app.setup_version() returns int language sql immutable as $$ select " + Number(Sync.SETUP_NEEDED) + " $$");
+      await A.pullNow();
+      ok(A.status().setupOld === false, "…and no longer once it is up to date");
+    });
+
     await section("people join (approved by the admin); an editor's computer gets the same picture", async () => {
       const gid = (await si.sql("select group_id from app.members where email = 'op@co.com'")).rows[0].group_id;
       await si.addMember("ed@co.com", gid, "Eddie", "editor"); await si.addMember("view@co.com", gid, "Vera", "editor");

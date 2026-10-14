@@ -14,8 +14,8 @@ Never send or paste anywhere: Supabase's **secret / service_role** key, the Gmai
 
 ## 2. Run the setup
 1. **SQL Editor → New query**, paste the whole of `supabase/setup.sql`, **Run**. It creates the tables, the rules
-   and the file storage. Running it again later is safe (an update only adds what is missing) — **run it again after
-   every update of the file** (the joining update adds the join requests and the organization search).
+   and the file storage. Running it again later is safe (an update only adds what is missing). Once step 9 is done,
+   **every release runs it by itself** — nothing to paste again.
 2. **Database → Extensions**: turn on **pg_cron**, then run `setup.sql` once more — that schedules the daily backup
    (03:00 UTC, kept 30 days).
 
@@ -85,6 +85,22 @@ goes up: the app stores it in pieces under that size and joins them when it is o
 5. Everyone else: **Create an account** → the organization → name, email, password → **Sign up**. The admin gets a
    pop-up in the app and an email, and approves or turns it down in either. Approved: the person confirms the email
    from the link they get, and signs in as an editor (the admin can make anyone view only in Members and codes).
+
+## 9. Updates run by themselves (once)
+Every release of the app also brings the shared database up to date: GitHub runs `supabase/setup.sql` on the project
+(`.github/workflows/supabase-setup.yml`), in one go — all of it or none of it. It needs one thing, once:
+1. **Supabase** → the project → the **Connect** button at the top → **Session pooler** (the one that works from
+   GitHub) → copy the connection string. It looks like
+   `postgresql://postgres.<project ref>:[YOUR-PASSWORD]@aws-…pooler.supabase.com:5432/postgres`.
+2. Put the **database password** in place of `[YOUR-PASSWORD]` (the one chosen when the project was made; if it's
+   lost: **Project Settings → Database → Reset database password** — the app and the joining function don't use it).
+3. **GitHub** → the repository → **Settings → Secrets and variables → Actions → New repository secret**. Name:
+   **`SUPABASE_DB_URL`**; secret: the connection string from 2. **Add secret.** Don't paste it anywhere else.
+
+After each release, **Actions → "Update the shared database (Supabase)"** shows a green tick and "The shared database
+is up to date (setup version N)". A red cross means it didn't run (GitHub also emails it): fix the secret, then open
+that run → **Re-run jobs**. If the database is ever behind, the app tells the admin and the maintainer (a red line
+under the title bar) until it's up to date.
 
 ## Plan notes
 - The free plan pauses a project that isn't used for a week and has no daily backups of its own; for the team's real

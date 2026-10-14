@@ -34,6 +34,9 @@ const ROLE_FILE = { profile: "profile.json", assumptions: "assumptions.json", ge
 // the window's settings that are the team's data (kept in localStorage by the page): targets, custom T12 categories,
 // "not a duplicate" pairs, and the market rates the app has fetched (today's, the daily history, the monthly
 // SOFR/EFFR and Treasury histories) — so every member calculates a floating loan from the same rates
+// 3.0.0 — the version of supabase/setup.sql this app needs (app.setup_version() on the server, read through lds_pull).
+// Raise it together with the number in setup.sql whenever that file changes; an older server is shown to the admin.
+const SETUP_NEEDED = 1;
 const RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
 const SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(RATE_KEYS);
 const sha1 = s => crypto.createHash("sha1").update(String(s || "")).digest("hex");
@@ -73,7 +76,7 @@ function create(opts){
   let members = [], requests = [], joins = [];   // joins: people asking to join (the admin's list)
   const dirty = new Map();     // path -> { kind: 'person'|'app', label, at }
   const winState = new Map();  // webContents id -> { auto: 0, label, input: 0 }
-  let autoTimer = null, lastError = null, downloads = 0;
+  let autoTimer = null, lastError = null, downloads = 0, setupVersion = null;   // setupVersion: the server's setup.sql version, from lds_pull
   // pulls, saves, approvals and the first upload take turns (each reads and writes the same records)
   let chain = Promise.resolve();
   function serial(fn){ const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; }
@@ -247,6 +250,7 @@ function create(opts){
       role: role(), group: me && me.group_name || "", adminName: me && me.admin_name || "", maintainer: !!(me && me.maintainer),
       online, offlineUnlocked, canWrite: canWrite().ok, pending: pendingList(), queued: readQueue().length,
       requests: requests.filter(r => r.status === "waiting").length, joins: joins.filter(j => j.status === "waiting").length, lastError, downloads, appVersion,
+      setupVersion, setupNeeded: SETUP_NEEDED, setupOld: setupVersion != null && setupVersion < SETUP_NEEDED,
       hasOfflineCode: !!(me && me.offline_hash), hasApprovalCode: !!(me && me.has_approval_code),
       groupEmpty: groupEmpty()
     };
@@ -423,6 +427,7 @@ function create(opts){
       if(res.epoch != null && st.epoch == null){ st.epoch = res.epoch; saveState(); }
       else if(res.epoch != null && res.epoch !== st.epoch){ startOver(res.epoch); changed.reset = true; continue; }
       members = res.members || members;
+      { const sv = Number(res.setup) || 0; if(sv !== setupVersion){ setupVersion = sv; setTimeout(tell, 0); } }   // an older server has no "setup" (0)
       if(res.role && me && me.role !== res.role){ me = Object.assign({}, me, { role: res.role }); if(st) st.me = me; setTimeout(tell, 0); }
       (res.records || []).forEach(rec => {
         const old = mirror(rec.path);
@@ -804,4 +809,4 @@ function create(opts){
   };
 }
 
-module.exports = { create, SHARED_KEYS, RATE_KEYS, APP_RECORDS, ROLE_FILE, offlineHash, checkOfflineCode };
+module.exports = { create, SHARED_KEYS, RATE_KEYS, SETUP_NEEDED, APP_RECORDS, ROLE_FILE, offlineHash, checkOfflineCode };
