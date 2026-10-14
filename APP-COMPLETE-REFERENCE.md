@@ -3,7 +3,7 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.0.0 — shipped 2026-10-14 (the operator: "ship it")
+**Current version:** 3.0.1 — 3.0.0 as shipped 2026-10-14 (the operator: "ship it"), released again under a new number (§8)
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
 set up for the app. Used by Azriel's team in the US.
@@ -756,6 +756,7 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
 - **2.9.16** — the T12 read by the reader and the AI before it is used.
 - **2.9.17** — the file's own categories; the Underwriting table takes its rows from the reading.
 - **3.0.0** — *(shipped 2026-10-14)* one shared database (see §8 and §4.17), and the refinance fixes from Azriel's meeting (§4.8).
+- **3.0.1** — *(2026-10-14)* the same app as 3.0.0, released under a new number (§8, "The release, 2026-10-14").
 
 ---
 
@@ -790,7 +791,7 @@ join turned down from the admin's pop-up, with the "turned down" email. Offline:
 The daily backup runs on the real project (2026-10-14). **Not tested, by the operator's decision** (the operator is the
 only tester, with one computer): offline, and two computers at once.
 
-**After shipping (the operator, in the installed 3.0.0):** sign in → **Start the group over** → **Upload this computer's
+**After shipping (the operator, in the installed 3.0.1):** sign in → **Start the group over** → **Upload this computer's
 data**; then mark Terrazul Sweetwater **Out of date…**; GitHub Pages pointed at the release branch (the email buttons);
 the TEST app uninstalled. The release's "Update the shared database (Supabase)" run shows a green tick.
 
@@ -804,6 +805,15 @@ the TEST app uninstalled. The release's "Update the shared database (Supabase)" 
 older than the app. Tests: `cloud-rules` (setup.sql run again over a group's data: nothing lost) and `cloud-sync`
 (an older server noticed, then not). **The operator added the secret on 2026-10-14** in the GitHub environment
 `supabase`, limited to the release branch; its first real run is the 3.0.0 release.
+
+**The release, 2026-10-14.** Merging 3.0.0 published release v3.0.0 and ran the database update at the same time.
+The update failed on the login, so the operator deleted the release before installed apps took it. When the login
+fails, the run now says why without showing the password (`supabase/db-url-check.js`, unit test
+`db-url-check.test.js`). It found square brackets left around the password in the secret; with them removed the
+database reports setup version 1. A push that changes only workflows or notes no longer makes a release
+(`build-windows.yml`, `paths-ignore`). Re-running 3.0.0's build then built the app but GitHub refused to publish it
+again under the tag `v3.0.0` (HTTP 403 for the workflow's own token, which had published it 30 minutes earlier). So the
+same app went out as **3.0.1**: only the version number changed.
 
 **Refinance fixes from Azriel's meeting (2026-10-13), built 2026-10-14** — §4.8: no property counted as $0 in a
 portfolio; today's vs proposed labels, sized on the proposed rate only; starting spreads never 0; how "supports $X"
@@ -869,4 +879,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.0.0 (shipped 2026-10-14).*
+*Last updated for version 3.0.1 (2026-10-14; 3.0.0 released again under a new number).*
