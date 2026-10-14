@@ -755,10 +755,11 @@ email and its page ("Your email is confirmed"). The first group is Living Reside
 **2026-10-14:** the first upload of the operator's real data (big files in pieces); comparing it with the operator's own
 app found three rows different (saved market rates and custom categories were per computer); after the fix the group
 was started over and uploaded again from a backup file — **every tile and every row matches the operator's app.**
+Also checked there by the operator: a change saved with its reason and shown in the change history; a request to
+join turned down from the admin's pop-up, with the "turned down" email. Offline: not tested (the operator's choice).
 
-**Still needs checking — with the real Supabase project** (`SUPABASE-SETUP.md`): the "turned down" email; signing up
-and approving in the app itself (needs a Windows build of this version); the first upload of the real book with its
-documents; two computers at once; offline on a real machine; the daily backup running.
+**Still needs checking — with the real Supabase project:** two computers at once; the daily backup running; before
+shipping, the final data uploaded once more (backup → start over → upload from the backup).
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
 
