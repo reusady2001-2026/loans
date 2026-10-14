@@ -791,7 +791,7 @@ The daily backup runs on the real project (2026-10-14). **Not tested, by the ope
 only tester, with one computer): offline, and two computers at once.
 
 **After shipping (the operator, in the installed 3.0.0):** sign in → **Start the group over** → **Upload this computer's
-data**; then mark Terrazul Sweetwater **Out of date…**; GitHub Pages pointed at the release branch (the email buttons);
+data**; GitHub Pages pointed at the release branch (the email buttons);
 the TEST app uninstalled. The release's "Update the shared database (Supabase)" run shows a green tick.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
@@ -852,6 +852,13 @@ So the team works off the same data: groups made by the maintainer, each with on
 members; a typed reason on every change (who / when / why, field by field); the admin's changes need the admin's
 approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
 always opening on the Portfolio dashboard; the user's local files untouched. Hosting: **Supabase**.
+
+### Next — the pro forma, expense benchmarks and lender scenarios (planned 2026-10-14, not built)
+From the meeting with Azriel on 2026-10-13: a pro forma column with a story on every changed line and a reconciliation
+to the T12 NOI, exported for the lender (F1); a benchmark library that flags expense anomalies by asset type, state,
+building age and features (F2); benchmarks learned from appraisals, OMs and pro formas (F3, later); appraised value,
+extension with today's lender and the pay-down needed, lender presets in the refinance (F4). The plan, its order, the
+operator's decisions and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Its version number is the operator's to choose.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
