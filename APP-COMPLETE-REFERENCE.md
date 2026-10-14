@@ -640,7 +640,13 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
   delete any.
 - **Documents** go to the server's storage before the list naming them; they come down to every computer for
   offline reading. Removing one takes it off the list; the stored file stays for the backups.
-- **The first upload**: an empty group's admin uploads this computer's data as the group's starting copy.
+- **The first upload**: an empty group's admin uploads this computer's data as the group's starting copy. The pop-up
+  first says what goes up (loans, properties, documents, total size) and then counts the files as they go. A file the
+  server refuses is named with its property, and nothing is saved until every file is up (what already went up is
+  used again on the next try).
+- **Big files** go to storage in pieces under the free plan's 50 MB a file, with a note of the pieces; opening the
+  file joins them back and checks it is whole (size and fingerprint) — a missing piece is an error, never a cut-off
+  file.
 - **Daily backups** (kept 30 days) — the admin puts a day back; every change it makes is recorded.
 - **Closing with changes not saved** asks, then drops them; the app always opens on the Portfolio dashboard.
 
@@ -671,7 +677,8 @@ The operator's rules (`PLAN-3.0.0.md` §1) and how the app carries them:
 - **3.0.0** adds `cloud-rules.test.js` (82 checks — the server's rules on a real PostgreSQL through the app's own
   client: groups apart, view-only, reasons, the admin's lock, approval code, requests, automatic work, chats, storage,
   history, backups, live pulls, offline), `cloud-merge.test.js` (25 — the same field paths as the server, time stamps,
-  folding two saves), `cloud-sync.test.js` (60 — two computers through the whole sync) and `cloud-join.test.js` (86 —
+  folding two saves), `cloud-sync.test.js` (71 — two computers through the whole sync; a file over the size limit named, then stored in
+  pieces and whole on another computer) and `cloud-join.test.js` (86 —
   joining a group through the real `lds-join` function), plus the e2e `cloud-3000.e2e.js` (the real app, three people
   on three computers), `cloud-3000-admin.e2e.js` (the maintainer, members and codes, documents, chats, history,
   backups) and `cloud-join.e2e.js` (creating an account, the admin's pop-up, the email pages in a browser). They run

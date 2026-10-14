@@ -197,6 +197,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
     members: () => ipcRenderer.invoke('lds:cloud-members'),
     rpc: (fn, args) => ipcRenderer.invoke('lds:cloud-rpc', { fn, args }),
     uploadStart: (o) => ipcRenderer.invoke('lds:cloud-upload-start', o || {}),
+    uploadPreview: () => ipcRenderer.invoke('lds:cloud-upload-preview'),
     pull: () => ipcRenderer.invoke('lds:cloud-pull'),
     groupEmpty: () => ipcRenderer.invoke('lds:cloud-group-empty'),
     signIn: (email, password) => ipcRenderer.invoke('lds:cloud-signin', { email, password }),
@@ -209,7 +210,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
     forgotPassword: (email) => ipcRenderer.invoke('lds:cloud-forgot', { email }),
     resetPassword: (email, code, password) => ipcRenderer.invoke('lds:cloud-reset', { email, code, password }),
     signOut: () => ipcRenderer.invoke('lds:cloud-signout'),
-    on: (name, cb) => { const ch = { status: 'lds:cloud-status', changed: 'lds:cloud-changed', refused: 'lds:cloud-refused', requests: 'lds:cloud-requests', joins: 'lds:cloud-joins', signin: 'lds:cloud-signin', removed: 'lds:cloud-removed' }[name];
+    on: (name, cb) => { const ch = { status: 'lds:cloud-status', changed: 'lds:cloud-changed', refused: 'lds:cloud-refused', requests: 'lds:cloud-requests', joins: 'lds:cloud-joins', progress: 'lds:cloud-progress', signin: 'lds:cloud-signin', removed: 'lds:cloud-removed' }[name];
       if (!ch) return () => {}; const fn = (_e, p) => { try { cb(p || {}); } catch (x) {} }; ipcRenderer.on(ch, fn); return () => { try { ipcRenderer.removeListener(ch, fn); } catch (x) {} }; },
   },
 });

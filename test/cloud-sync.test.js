@@ -23,7 +23,8 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
   if(!PG.findBin()){ console.log("skipped: PostgreSQL isn't installed here — 0 checks"); return; }
   process.env.LDS_CLOUD_POLL_MS = "100000";   // the tests pull by hand
   process.env.LDS_CLOUD_AUTO_MS = "50";
-  const db = await PG.start(), si = await startStandin(db);
+  const db = await PG.start(), si = await startStandin(db, { maxObjectBytes: 50000 });   // a small size limit, like the free plan's 50 MB
+  process.env.LDS_CLOUD_PIECE_BYTES = "40000";   // and pieces under it
   process.env.LDS_CLOUD_URL = si.url; process.env.LDS_CLOUD_ANON_KEY = si.anonKey;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lds-sync-"));
   const engines = [], extra = [];
@@ -231,6 +232,52 @@ const PERSON = { id: 1 }, APPWIN = { id: 2 };
       const ci = rd(path.join(A.dataRoot(), "chats", h16(kA), "index.json"));
       ok(ci.conversations.some(c => c.id === "c9" && c.ownerName === "Eddie"), "the admin sees the editor's chat, with who started it");
       ok(!A.chatMine("c9") && E.chatMine("c9"), "only the editor continues it");
+    });
+
+    await section("a file over the size limit: named, nothing saved; then it goes up in pieces", async () => {
+      await account("op2@co.com"); await account("ed2@co.com");
+      const g2 = (await M.rpc("lds_group_create", { name: "Second Co", admin_email: "op2@co.com", admin_name: "Op Two" })).id;
+      await si.addMember("ed2@co.com", g2, "Ed Two", "editor");
+      const P2 = computer("op2-pc"), l2 = P2.ud, k2 = "name:gamma", h2 = h16(k2);
+      const big = crypto.randomBytes(130000);   // over the limit: 4 pieces of 40000
+      wr(path.join(l2, "loans.json"), [{ _id: "ln_g", propertyName: "Gamma", annualRate: 4 }]);
+      wr(path.join(l2, "documents", h2, "index.json"), { propKey: k2, propName: "Gamma", files: [
+        { id: "dbig", stored: "dbig.pdf", name: "Big Scan.pdf", role: "agreement", savedAt: 7, type: "application/pdf", textLen: 5 },
+        { id: "dsmall", stored: "dsmall.pdf", name: "Small.pdf", role: "other", savedAt: 8, type: "application/pdf" }] });
+      fs.writeFileSync(path.join(l2, "documents", h2, "dbig.pdf"), big);
+      fs.writeFileSync(path.join(l2, "documents", h2, "dbig.txt"), "scan!");
+      fs.writeFileSync(path.join(l2, "documents", h2, "dsmall.pdf"), Buffer.from("%PDF small"));
+      // an app without pieces (as before this change)
+      process.env.LDS_CLOUD_PIECE_BYTES = "100000000";
+      const O1 = P2.e; await O1.init(); await O1.signIn("op2@co.com", "secret-pw-1");
+      const pv = O1.uploadPreview(l2);
+      ok(pv.loans === 1 && pv.properties === 1 && pv.documents === 2 && pv.bytes === 130000 + 5 + 10 && pv.biggest === 130000, "before starting: what goes up and its size");
+      const r1 = await O1.uploadStart({ root: l2, settings: {} }, "Starting data");
+      ok(!r1.ok && r1.failed.length === 1 && r1.failed[0].name === "Big Scan.pdf" && r1.failed[0].property === "Gamma" && /maximum allowed size/.test(r1.failed[0].why), "the file over the limit is named, with its property");
+      ok(/nothing was saved yet/.test(r1.error) && /Big Scan\.pdf/.test(r1.error), "and the message says nothing was saved yet");
+      ok(Number((await si.sql("select count(*) n from app.records where group_id = $1", [g2])).rows[0].n) === 0, "the group is still empty");
+      O1.close();
+      // this version: pieces
+      process.env.LDS_CLOUD_PIECE_BYTES = "40000";
+      const P2b = computer("op2-pc-again"); const O2 = P2b.e; await O2.init(); await O2.signIn("op2@co.com", "secret-pw-1");
+      const r2 = await O2.uploadStart({ root: l2, settings: {} }, "Starting data");
+      ok(r2.ok && r2.files === 3, "uploaded: the big file went up in pieces (" + JSON.stringify(r2) + ")");
+      const names = (await si.sql("select name from storage.objects where name like $1 order by name", [g2 + "/props/" + h2 + "/dbig.pdf%"])).rows.map(x => x.name.slice((g2 + "/props/" + h2 + "/").length));
+      ok(J(names) === J(["dbig.pdf.lds-part-1", "dbig.pdf.lds-part-2", "dbig.pdf.lds-part-3", "dbig.pdf.lds-part-4", "dbig.pdf.lds-parts.json"]), "stored as 4 pieces and a note (" + names.join(", ") + ")");
+      const sizes = (await si.sql("select (metadata->>'size')::int s from storage.objects where name like $1", [g2 + "/props/" + h2 + "/%"])).rows.map(x => x.s);
+      ok(sizes.every(x => x <= 50000), "every stored object is under the limit");
+      // another computer opens it
+      const EC = computer("ed2-pc"); await EC.e.init(); const re = await EC.e.signIn("ed2@co.com", "secret-pw-1");
+      ok(re.ok && re.member, "the editor of Second Co is in");
+      const dst = path.join(EC.e.dataRoot(), "documents", h2, "dbig.pdf");
+      for(let i = 0; i < 60 && !fs.existsSync(dst); i++){ await sleep(100); if(i % 10 === 9) await EC.e.pullNow(); }
+      ok(fs.existsSync(dst) && Buffer.compare(fs.readFileSync(dst), big) === 0, "on another computer the big file is whole, byte for byte");
+      ok(fs.readFileSync(path.join(EC.e.dataRoot(), "documents", h2, "dsmall.pdf"), "utf8") === "%PDF small", "and the small one too");
+      // a damaged note is caught, not a broken file
+      await si.sql("update storage.objects set name = name || '-gone' where name = $1", [g2 + "/props/" + h2 + "/dbig.pdf.lds-part-3"]);
+      const C = createClient({ url: si.url, anonKey: si.anonKey }); await C.signIn("ed2@co.com", "secret-pw-1");
+      let caught = null; try{ await C.download(g2 + "/props/" + h2 + "/dbig.pdf"); }catch(e){ caught = e; }
+      ok(caught && caught.code === "storage", "a missing piece: an error, never a cut-off file");
     });
   } finally {
     engines.forEach(e => { try{ e.close(); }catch(x){} });

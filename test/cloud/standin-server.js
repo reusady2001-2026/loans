@@ -248,6 +248,8 @@ async function startStandin(db, opts){
         const bucket = decodeURIComponent(so[1]), name = so[2] ? so[2].split("/").map(decodeURIComponent).join("/") : "";
         const file = path.join(store, bucket, name);
         if(req.method === "POST" || req.method === "PUT"){
+          // Supabase's own answer to a file over the project's size limit (the free plan: 50 MB)
+          if(opts.maxObjectBytes && body.length > opts.maxObjectBytes) return send(res, 400, { statusCode: "413", error: "Payload too large", message: "The object exceeded the maximum allowed size" });
           const upsert = req.method === "PUT" || String(req.headers["x-upsert"] || "") === "true";
           try{
             await asUser(claims, async c => {

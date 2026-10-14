@@ -210,6 +210,27 @@ function create(opts){
     }); }catch(e){}
   }
 
+  // ---- this computer's own data (2.9.17 layout), for the first upload: every property, and every file to store ------------------
+  function scanLocal(root){
+    const out = { loans: 0, props: [], uploads: [], bytes: 0 };
+    const loans = readJSON(path.join(root, "loans.json"), null); out.loans = Array.isArray(loans) ? loans.length : 0;
+    const docs = path.join(root, "documents");
+    for(const h of (fs.existsSync(docs) ? fs.readdirSync(docs) : [])){
+      const idx = readJSON(path.join(docs, h, "index.json"), null); if(!idx || !Array.isArray(idx.files)) continue;
+      const own = {}, list = [];
+      idx.files.forEach(f => { if(ROLE_FILE[f.role] && APP_RECORDS[f.name]){ const cur = own[f.role]; if(!cur || (f.savedAt || 0) > (cur.savedAt || 0)) own[f.role] = f; } else list.push(f); });
+      out.props.push({ h, idx, own, list });
+      list.forEach(f => [f.stored, f.id + ".txt"].forEach(n => {
+        const src = path.join(docs, h, n); let size = 0;
+        try{ size = fs.statSync(src).size; }catch(e){ return; }
+        out.uploads.push({ h, n, src, size, prop: idx.propName || idx.propKey || h, label: n === f.stored ? (f.name || n) : (f.name || n) + " (its text)",
+                           type: n === f.stored ? (f.type || "application/octet-stream") : "text/plain" });
+        out.bytes += size;
+      }));
+    }
+    return out;
+  }
+
   // ---- the admin's offline changes ---------------------------------------------------------------------------------------------
   function readQueue(){ return groupDir ? (readJSON(queueFile(), []) || []) : []; }
   function writeQueue(q){ if(q.length) writeJSON(queueFile(), q); else rm(queueFile()); }
@@ -300,7 +321,8 @@ function create(opts){
         for(const n of [f.stored, f.id + ".txt"]){
           const src = path.join(docDir(m[1]), n);
           if(!fs.existsSync(src)) continue;
-          await client.upload(objectPath(m[1], n), fs.readFileSync(src), { type: n === f.stored ? (f.type || "application/octet-stream") : "text/plain" });
+          try{ await client.upload(objectPath(m[1], n), fs.readFileSync(src), { type: n === f.stored ? (f.type || "application/octet-stream") : "text/plain" }); }
+          catch(e){ if(e.code !== "offline") e.message = "\u201c" + (f.name || n) + "\u201d: " + e.message; throw e; }
           try{ fs.mkdirSync(path.dirname(cacheFile(m[1], n)), { recursive: true }); fs.copyFileSync(src, cacheFile(m[1], n)); }catch(e){}
         }
       }
@@ -514,7 +536,8 @@ function create(opts){
     async init(){
       cfg = loadConfig();
       if(!cfg) return { mode: "local" };
-      client = createClient({ url: cfg.url, anonKey: cfg.anonKey, session: loadSession(), onSession: saveSession });
+      client = createClient({ url: cfg.url, anonKey: cfg.anonKey, session: loadSession(), onSession: saveSession,
+                              pieceBytes: Number(process.env.LDS_CLOUD_PIECE_BYTES) || opts.pieceBytes || undefined });
       if(!client.session) return { mode: "signin" };
       try{
         const h = await client.rpc("lds_hello"); online = true;
@@ -704,18 +727,32 @@ function create(opts){
         const loansF = path.join(local.root, "loans.json");
         if(fs.existsSync(loansF)) items.push({ path: "loans.json", content: readJSON(loansF, []) });
         if(local.settings && Object.keys(local.settings).length) items.push({ path: "settings.json", content: local.settings });
-        const docs = path.join(local.root, "documents"); let files = 0;
-        for(const h of (fs.existsSync(docs) ? fs.readdirSync(docs) : [])){
-          const idx = readJSON(path.join(docs, h, "index.json"), null); if(!idx || !Array.isArray(idx.files)) continue;
-          const own = {}, list = [];
-          idx.files.forEach(f => { if(ROLE_FILE[f.role] && APP_RECORDS[f.name]){ const cur = own[f.role]; if(!cur || (f.savedAt || 0) > (cur.savedAt || 0)) own[f.role] = f; } else list.push(f); });
-          for(const f of list){
-            for(const n of [f.stored, f.id + ".txt"]){ const src = path.join(docs, h, n); if(fs.existsSync(src)){ await client.upload(objectPath(h, n), fs.readFileSync(src), { type: n === f.stored ? (f.type || "application/octet-stream") : "text/plain" }); files++;
-              try{ fs.mkdirSync(path.dirname(cacheFile(h, n)), { recursive: true }); fs.copyFileSync(src, cacheFile(h, n)); }catch(e){} } }
+        const scan = scanLocal(local.root);
+        let files = 0, bytesDone = 0;
+        const failed = [];
+        const progress = name => broadcast("lds:cloud-progress", { what: "upload", done: files + failed.length, total: scan.uploads.length, bytesDone, bytesTotal: scan.bytes, name });
+        for(const u of scan.uploads){
+          progress(u.label);
+          try{ await client.upload(objectPath(u.h, u.n), fs.readFileSync(u.src), { type: u.type }); files++; }
+          catch(e){
+            if(e.code === "offline" || e.code === "auth") throw e;
+            failed.push({ property: u.prop, name: u.label, why: String(e.message || e).replace(/^The file couldn't be stored: /, "") });
+            continue;
           }
-          items.push({ path: "props/" + h + "/index.json", content: { propKey: idx.propKey || "", propName: idx.propName || "", files: list } });
-          Object.keys(own).forEach(r => { const c = readJSON(path.join(docs, h, own[r].stored), null); if(c !== null) items.push({ path: "props/" + h + "/" + ROLE_FILE[r], content: c }); });
+          finally{ bytesDone += u.size; }
+          try{ fs.mkdirSync(path.dirname(cacheFile(u.h, u.n)), { recursive: true }); fs.copyFileSync(u.src, cacheFile(u.h, u.n)); }catch(e){}
         }
+        progress("");
+        // a file that couldn't be stored: nothing is saved yet (what went up is kept, and used again next time)
+        if(failed.length){
+          return { ok: false, failed, error: (failed.length === 1 ? "This file couldn't be stored" : failed.length + " files couldn't be stored") +
+            ", so nothing was saved yet: " + failed.slice(0, 5).map(f => "\u201c" + f.name + "\u201d (" + f.property + ") \u2014 " + f.why).join("; ") +
+            (failed.length > 5 ? "; and " + (failed.length - 5) + " more" : "") + "." };
+        }
+        scan.props.forEach(p => {
+          items.push({ path: "props/" + p.h + "/index.json", content: { propKey: p.idx.propKey || "", propName: p.idx.propName || "", files: p.list } });
+          Object.keys(p.own).forEach(r => { const c = readJSON(path.join(local.root, "documents", p.h, p.own[r].stored), null); if(c !== null) items.push({ path: "props/" + p.h + "/" + ROLE_FILE[r], content: c }); });
+        });
         items.forEach(it => it.base_version = st.versions[it.path] || 0);
         // in batches, so a big book doesn't make one huge request
         for(let i = 0; i < items.length; i += 40){
@@ -740,6 +777,12 @@ function create(opts){
       }catch(e){ return errorResult(e); }
     },
     groupIsEmpty: groupEmpty,
+    // what the first upload would send, before it starts
+    uploadPreview(root){
+      const s = scanLocal(root);
+      return { loans: s.loans, properties: s.props.length, documents: s.props.reduce((n, p) => n + p.list.length, 0), bytes: s.bytes,
+               biggest: s.uploads.reduce((m, u) => Math.max(m, u.size), 0) };
+    },
 
     close(){ closed = true; stopPolling(); clearTimeout(autoTimer); },
     // tests

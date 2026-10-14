@@ -68,8 +68,9 @@ the Gmail API — Supabase's functions can't use Gmail's SMTP.
    `docs/config.js` holds the function's address and the publishable key.
 
 ## 7. Files
-**Storage → Settings**: the largest file allowed. Loan agreements can be large; set it above the biggest file you
-keep (the free plan stops at 50 MB a file).
+**Storage → Settings**: the largest file allowed — **50 MB** on the free plan (its most). A bigger document still
+goes up: the app stores it in pieces under that size and joins them when it is opened. The free plan holds about
+1 GB of files in all; the upload pop-up shows how much this computer's data is before it starts.
 
 ## 8. The first group
 1. The app (the version with the project's address in it) → sign in with the maintainer's account → **Groups** →

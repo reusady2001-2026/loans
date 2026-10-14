@@ -1133,6 +1133,7 @@ ipcMain.handle('lds:cloud-rpc', async (e, o) => {
   return r;
 });
 // the first upload: this computer's own data (today's folder, only read) becomes the group's starting copy
+ipcMain.handle('lds:cloud-upload-preview', () => cloud ? cloud.uploadPreview(uploadRoot()) : null);
 ipcMain.handle('lds:cloud-upload-start', (e, o) => cloud.uploadStart({ root: uploadRoot(), settings: (o && o.settings) || {} }, (o && o.reason) || 'Starting data'));
 ipcMain.handle('lds:cloud-signin', async (e, o) => {
   const r = await cloud.signIn(o && o.email, o && o.password);

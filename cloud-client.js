@@ -7,6 +7,8 @@
      rpc      POST /rest/v1/rpc/<function>  (every read and write goes through the lds_* functions)
      joining  POST /functions/v1/lds-join   (asking to join a group; the admin's decision; see supabase/functions)
      storage  POST|GET|DELETE /storage/v1/object/<bucket>/<path>
+              (a file bigger than one piece goes up in pieces "<path>.lds-part-1…" plus a note "<path>.lds-parts.json",
+              since Supabase's free plan stores at most 50 MB a file; downloading joins them back)
 
    The session (access + refresh token) is kept by the caller (cloud-sync.js
    saves it to disk) so the app opens signed in, and offline.
@@ -24,12 +26,15 @@ class CloudError extends Error {
 }
 
 const BUCKET = "lds-files";
+const PART = ".lds-part-", PARTS = ".lds-parts.json";
+const sha256 = b => require("crypto").createHash("sha256").update(b).digest("hex");
 
 function createClient(cfg){
   const base = String(cfg.url || "").replace(/\/+$/, "");
   const key = String(cfg.anonKey || "");
   const fetchFn = cfg.fetch || (typeof fetch === "function" ? fetch : null);
   const timeoutMs = cfg.timeoutMs || 20000;
+  const pieceBytes = Number(cfg.pieceBytes) || 40 * 1024 * 1024;   // under the free plan's 50 MB a file
   let session = cfg.session || null;          // { access_token, refresh_token, expires_at, user:{id,email} }
   let onSession = cfg.onSession || null;      // called whenever the session changes (to save it)
   let refreshing = null;
@@ -60,6 +65,27 @@ function createClient(cfg){
     // a rule on the server: the exception's name is the code, its hint the words to show
     const code = (d.code === "P0001" && d.message) ? String(d.message) : (d.code || "error");
     throw new CloudError(code, d.hint || d.message || ("The shared database said no (" + r.status + ")."), { status: r.status, detail: d });
+  }
+
+  // one stored object: added (already there = fine: names are never reused) or fetched
+  async function putObject(objectPath, buf, type, upsert){
+    const r = await authed("POST", "/storage/v1/object/" + BUCKET + "/" + encPath(objectPath),
+                           { body: buf, headers: { "Content-Type": type, "x-upsert": upsert ? "true" : "false" }, timeoutMs: 10 * 60 * 1000 });
+    if(r.ok) return true;
+    const d = r.data || {}, why = String(d.message || d.error || r.status);
+    if(String(d.statusCode) === "409" || /already exists|duplicate/i.test(why)) return true;
+    throw new CloudError(String(d.statusCode) === "413" || /maximum allowed size|too large/i.test(why) ? "too_big" : "storage",
+                         "The file couldn't be stored: " + why, { status: r.status, detail: d });
+  }
+  async function getObject(objectPath){
+    const url = "/storage/v1/object/authenticated/" + BUCKET + "/" + encPath(objectPath);
+    await ensureFresh();
+    let r = await call("GET", url, { raw: true, timeoutMs: 10 * 60 * 1000 });
+    if(r.buf) return r.buf;
+    if(r.status === 401 || r.status === 400 && /exp/i.test(JSON.stringify(r.data || ""))){ await refresh(); r = await call("GET", url, { raw: true, timeoutMs: 10 * 60 * 1000 }); if(r.buf) return r.buf; }
+    const d = r.data || {};
+    throw new CloudError("storage", "The file couldn't be fetched.", { status: r.status, detail: d,
+      notFound: r.status === 404 || String(d.statusCode) === "404" || /not.?found/i.test(String(d.error || d.message || "")) });
   }
 
   function authMessage(d){ return (d && (d.msg || d.error_description || d.message || d.error)) || "Sign-in failed."; }
@@ -153,21 +179,33 @@ function createClient(cfg){
       throw new CloudError("server", r.status === 404 ? "The joining function isn't set up on the shared database yet." : "The shared database didn't answer properly (" + r.status + ").", { status: r.status, detail: r.data });
     },
 
-    // files live at "<group id>/<path>"
+    // files live at "<group id>/<path>"; a big one in pieces (see the top)
     async upload(objectPath, buf, opts){
-      const r = await authed("POST", "/storage/v1/object/" + BUCKET + "/" + encPath(objectPath),
-                             { body: buf, headers: { "Content-Type": (opts && opts.type) || "application/octet-stream", "x-upsert": opts && opts.upsert ? "true" : "false" }, timeoutMs: 10 * 60 * 1000 });
-      if(r.ok) return true;
-      const d = r.data || {};
-      if(String(d.statusCode) === "409" || /already exists|duplicate/i.test(String(d.message || d.error || ""))) return true;   // the same file is already there
-      throw new CloudError("storage", "The file couldn't be stored: " + (d.message || d.error || r.status), { status: r.status, detail: d });
+      opts = opts || {};
+      const type = opts.type || "application/octet-stream";
+      if(buf.length <= pieceBytes) return putObject(objectPath, buf, type, opts.upsert);
+      const n = Math.ceil(buf.length / pieceBytes);
+      for(let i = 0; i < n; i++){
+        await putObject(objectPath + PART + (i + 1), buf.subarray(i * pieceBytes, Math.min(buf.length, (i + 1) * pieceBytes)), "application/octet-stream");
+        if(opts.onPiece) try{ opts.onPiece(i + 1, n); }catch(e){}
+      }
+      // the note last: it exists only once every piece is up
+      await putObject(objectPath + PARTS, Buffer.from(JSON.stringify({ lds: "pieces", pieces: n, size: buf.length, sha256: sha256(buf), type })), "application/json");
+      return true;
     },
     async download(objectPath){
-      await ensureFresh();
-      let r = await call("GET", "/storage/v1/object/authenticated/" + BUCKET + "/" + encPath(objectPath), { raw: true, timeoutMs: 10 * 60 * 1000 });
-      if(r.buf) return r.buf;
-      if(r.status === 401 || r.status === 400 && /exp/i.test(JSON.stringify(r.data || ""))){ await refresh(); r = await call("GET", "/storage/v1/object/authenticated/" + BUCKET + "/" + encPath(objectPath), { raw: true, timeoutMs: 10 * 60 * 1000 }); if(r.buf) return r.buf; }
-      throw new CloudError("storage", "The file couldn't be fetched.", { status: r.status, detail: r.data });
+      try{ return await getObject(objectPath); }
+      catch(e){
+        if(!e.notFound) throw e;
+        let note = null;
+        try{ note = JSON.parse((await getObject(objectPath + PARTS)).toString("utf8")); }catch(x){ if(x.notFound) throw e; throw x; }
+        if(!note || note.lds !== "pieces" || !(note.pieces > 0)) throw e;
+        const bufs = [];
+        for(let i = 1; i <= note.pieces; i++) bufs.push(await getObject(objectPath + PART + i));
+        const all = Buffer.concat(bufs);
+        if(all.length !== note.size || (note.sha256 && sha256(all) !== note.sha256)) throw new CloudError("storage", "A stored file came back incomplete — try again.");
+        return all;
+      }
     },
     async remove(objectPaths){
       const r = await authed("DELETE", "/storage/v1/object/" + BUCKET, { json: { prefixes: objectPaths } });
