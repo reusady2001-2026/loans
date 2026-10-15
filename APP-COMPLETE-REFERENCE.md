@@ -950,12 +950,21 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   untick the amortizing line when the lender sizes on the interest-only payment; a preset with "an all-interest-only
   loan is sized on the interest-only payment" unticks it when picked for such a deal.
 - **D7 / D10 — extend with today's lender:** "What kind of deal? New loan · Extend with today's lender" (single loans
-  only). The extension card: the date today's terms end (default: the payment before the rate resets, else the
-  maturity date), months on the new terms, interest-only (whole / N / none), amortization after it, index + spread,
-  this lender's penalty choice, the fee, its own limits (start from the refinance's) and a preset; it shows what you owe
-  then (the schedule's balance), what the limits allow, the pay-down, the coverage at the extended amount, the penalty
-  and how it was worked out, the fee, cash needed, the first payment on the new terms and the new maturity (flagged
-  when earlier than today's). **Save the extension** (asks first) keeps the same loan record: rate type Floating at the
+  only) comes **first**, right under Current Loan, and everything below follows it (the operator, after testing the
+  TEST app, 2026-10-15). With **Extend**: the verdict box is the extension's own (`data-refiverdict="extend"` /
+  `"extend-no"`, `"extended"` once saved) — what you'll owe when today's terms end, what today's lender allows, today's
+  rate and the extension's; the extension's rate (index + spread, in the box — no Fixed / Floating / Hybrid, no new-loan
+  amount); "Can you?" with the pay-down (`data-refipaydown="extend"`); the **one** limits table, value, appraisal and
+  preset — today's lender's (`data-refibasisext`, `data-refiextlim` / `data-refiextuse`), kept apart from a new loan's so
+  switching loses neither; "Should you?" by the same rule as a new loan (matures or resets within 12 months → extend;
+  terms ending more than 12 months away → not yet; a lower rate that saves more interest — from the date today's terms
+  end until today's loan ends — than the penalty → extend; else don't). Then "The extension's terms": the date today's
+  terms end (default: the payment before the rate resets, else the maturity date), months on the new terms,
+  interest-only (whole / N / none), amortization after it, this lender's penalty choice and the fee, with the pay-down,
+  the coverage at the extended amount, the penalty and how it was worked out, the fee, cash needed, the first payment
+  on the new terms and the new maturity (flagged when earlier than today's). Then the **payment schedule with the
+  extension**, from today to the new maturity (`data-refiextsched`: the pay-down row, "Extension starts", the
+  extension's months shaded). "Save the extension" sits on top, shown when the answer is Extend. **Save the extension** (asks first) keeps the same loan record: rate type Floating at the
   index + spread, the ARM fields cleared, the new term and maturity, status Extended, the pay-down as
   `principalPayments[{id, date, amount, note}]`, and `extension{date, months, ioMonths, amortMonths, lender, index,
   spread, owed, payDown, penalty, fee, cash, rate, at, by, before}` (`before` = the fields it changed). A history entry
@@ -975,8 +984,9 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   The benchmark library is F2 (not built).
 - **Assistant:** `set_refi_terms` takes `deal`, `appraisedValue`, `appraisalDate`, `preset`; `set_extension`,
   `save_extension`, `undo_extension` (each an Approve card); the refinance summary names the pay-down.
-- **Tests:** `test/e2e/refi-extend.e2e.js` (49 checks, Queens Gate: the pay-down worked out on its own and compared
-  with the screen, each penalty choice, save, schedule, history, undo, presets, the one-time move, the assistant).
+- **Tests:** `test/e2e/refi-extend.e2e.js` (Queens Gate: the pay-down worked out on its own and compared with the
+  screen, the layout — the deal first, the extension's own verdict, nothing shown twice, its schedule —, each penalty
+  choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
 - **Not in the draft:** presets filled from Azriel's numbers (they ship empty); the extension for a pooled or combined
   loan; a second extension on top of a saved one (undo first).
 

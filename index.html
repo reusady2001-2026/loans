@@ -7848,7 +7848,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_refiCanNow=(l)=>refiCanStage(l, refiDrafts[1]); window.LDS_refiDraftRate=()=>refiDrafts[1]?compute(refiDrafts[1]).derived.currentRate:null; window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_exitCost=(id, shiftBps)=>{ const l=getLoan(id); if(!l) return null; const cs=shiftBps ? [INDEX_CACHE[ymReinvestTenor(l)]].filter(Boolean) : [], was=cs.map(c=>c.value); cs.forEach(c=>{ c.value += shiftBps/100; });   // diagnostics: the Treasury moved by shiftBps (to compare with a calculator's rate shift)
       try{ const d=compute(l).derived, x=exitCost(l); return { type:x.type, cost:x.cost, ym:x.ym||null, balance:d.currentBalance, rate:d.currentRate, monthsLeft:d.monthsToMaturity, paymentsMade:d.paymentsMade }; } finally { cs.forEach((c,i)=>{ c.value = was[i]; }); } }; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
-    try{ window.LDS_compute=(l)=>compute(l); window.LDS_refiRec=(l)=>refiRec(l); window.LDS_refiHomeKey=(l)=>refiHomeKey(l); window.LDS_readAssumptions=(k)=>opLoadAssumptions(k); window.LDS_refiExtResult=(l)=>refiExtResult(l); window.LDS_refiPenalty=(l)=>refiPenalty(l); window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_propHistory=(k)=>{ delete propHistCache[k]; return propHistoryLoad(k); }; window.LDS_lenderPresets=()=>lenderPresets(); }catch(e){}   // diagnostics: a loan's schedule, and the next stage's refinance record / extension (F4)
+    try{ window.LDS_compute=(l)=>compute(l); window.LDS_refiRec=(l)=>refiRec(l); window.LDS_refiHomeKey=(l)=>refiHomeKey(l); window.LDS_readAssumptions=(k)=>opLoadAssumptions(k); window.LDS_refiExtResult=(l)=>refiExtResult(l); window.LDS_refiExtVerdict=(l)=>refiExtVerdict(l); window.LDS_refiExtSched=(l)=>refiExtScheduleHtml(l, refiExtVerdict(l)); window.LDS_refiPenalty=(l)=>refiPenalty(l); window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_propHistory=(k)=>{ delete propHistCache[k]; return propHistoryLoad(k); }; window.LDS_lenderPresets=()=>lenderPresets(); }catch(e){}   // diagnostics: a loan's schedule, and the next stage's refinance record / extension (F4)
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
@@ -11843,13 +11843,16 @@ tr.flagged:hover td{background:#fee2e2}
       if(b === "entered" && propNOIOverride(k) != null) return "your NOI (override)";
       const r = propNOIWithSource(k, [], refiMembers(loan)); return escapeHtml(r.src || "typed");
     }
-    function refiCapsBlock(loan, can, draft){
+    function refiCapsBlock(loan, can, draft, opts){
       if(!can || !can.sized) return "";
-      const lim = can.limits || refiLimits(loan), parts = refiPoolParts(loan), boost = refiMoveBoost(loan, refiBasis(loan));
-      const io = draft ? (draft.ioMonths || 0) : 0, term = draft ? (draft.loanTermMonths || 0) : 0;
+      // next stage (F4, draft) — the same block serves the extension with today's lender (opts.ext): its own limits,
+      // shown once, in place of a new loan's (each deal keeps its own; switching loses neither)
+      const X = !!(opts && opts.ext), A = X ? { lim: "data-refiextlim", use: "data-refiextuse", leg: "data-refiextleg" } : { lim: "data-refilim", use: "data-refiuse", leg: "data-refileg" };
+      const lim = can.limits || refiLimits(loan), parts = X ? null : refiPoolParts(loan), boost = refiMoveBoost(loan, refiBasis(loan));
+      const io = X ? opts.io : (draft ? (draft.ioMonths || 0) : 0), term = X ? opts.term : (draft ? (draft.loanTermMonths || 0) : 0);
       const pay = (io > 0 && term > 0 && io >= term) ? "interest-only for the whole term (the amortizing test still uses " + can.amortYears + " years)" : "amortizing over " + can.amortYears + " years" + (io > 0 ? ", after " + io + " months interest-only" : "");
       const fact = (t, v) => '<div class="flex gap-2 text-[12px]"><span class="w-16 shrink-0 font-semibold text-slate-500">'+t+'</span><span class="text-slate-700">'+v+'</span></div>';
-      const inp = (k, val, unit, ph) => '<span class="inline-flex items-center gap-1"><input type="number" step="any" data-refilim="'+k+'" value="'+(val == null ? '' : val)+'" placeholder="'+(ph || '')+'" class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-right text-xs tabular-nums"><span class="text-[11px] text-slate-500">'+unit+'</span></span>';
+      const inp = (k, val, unit, ph) => '<span class="inline-flex items-center gap-1"><input type="number" step="any" '+A.lim+'="'+k+'" value="'+(val == null ? '' : val)+'" placeholder="'+(ph || '')+'" class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-right text-xs tabular-nums"><span class="text-[11px] text-slate-500">'+unit+'</span></span>';
       const legs = [
         { key: "DSCR",       name: "Debt coverage, amortizing payment",     sign: "&ge;", box: inp("dscr", +lim.dscr.toFixed(3), "&times;"),                              how: "NOI &divide; (" + fmtX2(lim.dscr) + " &times; loan constant " + fmtPct(can.constant) + ")" },
         { key: "DSCR IO",    name: "Debt coverage, interest-only payment", sign: "&ge;", box: inp("dscrIO", lim.dscrIO != null ? +lim.dscrIO.toFixed(3) : null, "&times;", "not used"), how: lim.dscrIO != null ? "NOI &divide; (" + fmtX2(lim.dscrIO) + " &times; rate " + fmtPct(can.rate) + ")" : "type your lender&rsquo;s limit to use it" },
@@ -11860,28 +11863,30 @@ tr.flagged:hover td{background:#fee2e2}
       const rows = legs.map(l => { const c = cap(l.key), amt = can.legs ? can.legs[l.key] : (c && c.amt), bind = l.key === can.binding;
         const uses = lim.off.indexOf(l.key) < 0, usable = !!c, offRow = !uses && usable;
         const imp = c ? '<div class="text-[10px] tabular-nums '+(bind ? 'text-brand-700' : 'text-slate-400')+'">at '+fmtMoney(c.amt)+': DSCR '+fmtX2(c.impDSCR)+' amortizing &middot; '+fmtX2(c.impIO)+' interest-only &middot; LTV '+(c.impLTV != null ? fmtPct(c.impLTV) : '&mdash;')+' &middot; DY '+(c.impDY != null ? fmtPct(c.impDY) : '&mdash;')+'</div>' : '';
-        const tick = '<td class="py-1.5 pr-2 text-center align-top"><input type="checkbox" data-refiuse="'+l.key+'"'+(uses ? ' checked' : '')+' title="'+(uses ? 'This lender uses this limit — untick if it doesn’t' : 'This lender doesn’t use this limit — tick if it does')+'" class="mt-1 h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600"></td>';
-        return '<tr class="border-t border-slate-100 align-top'+(bind ? ' bg-brand-50' : '')+'" data-refileg="'+l.key+'"'+(uses ? '' : ' data-refilegoff')+'>'+ tick +
+        const tick = '<td class="py-1.5 pr-2 text-center align-top"><input type="checkbox" '+A.use+'="'+l.key+'"'+(uses ? ' checked' : '')+' title="'+(uses ? 'This lender uses this limit — untick if it doesn’t' : 'This lender doesn’t use this limit — tick if it does')+'" class="mt-1 h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600"></td>';
+        return '<tr class="border-t border-slate-100 align-top'+(bind ? ' bg-brand-50' : '')+'" '+A.leg+'="'+l.key+'"'+(uses ? '' : ' data-refilegoff')+'>'+ tick +
           '<td class="py-1.5 pr-2 text-sm '+(bind ? 'font-bold text-brand-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.name+(offRow ? ' <span class="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600 align-middle">not used by this lender</span>' : '')+(bind ? ' <span class="ml-1 rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white align-middle">binds</span>' : '')+'<div class="text-[11px] font-normal text-slate-500">'+l.how+'</div>'+imp+'</td>'+
           '<td class="py-1.5 px-2 whitespace-nowrap text-sm text-slate-500"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.sign+' '+l.box+'</td>'+
           '<td class="py-1.5 pl-2 text-right text-sm tabular-nums '+(bind ? 'font-extrabold text-brand-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+' data-refilegamt>'+(amt != null && isFinite(amt) && amt > 0 ? fmtMoney(amt) : '<span class="text-slate-400">not used</span>')+'</td></tr>'; }).join('');
       const margin = (can.margin != null && can.runnerUp)
         ? '<p class="mt-1.5 text-[11px] text-slate-500">'+fmtMoney(can.margin)+' of headroom before '+escapeHtml(can.runnerUp.label)+' would bind instead.</p>'
         : '';
-      return '<div class="mt-3 ml-9 border-t border-slate-200/70 pt-3" data-refibasis>'+
-        '<p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">How &ldquo;supports '+fmtMoney(can.maxLoan)+'&rdquo; is worked out</p>'+
+      return '<div class="mt-3 ml-9 border-t border-slate-200/70 pt-3" data-refibasis'+(X ? ' data-refibasisext' : '')+'>'+
+        '<p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">How &ldquo;'+(X ? 'today&rsquo;s lender allows ' : 'supports ')+fmtMoney(can.maxLoan)+'&rdquo; is worked out</p>'+
         '<div class="space-y-0.5">'+
           fact("NOI", '<strong class="tabular-nums">'+fmtMoney(can.noi)+'</strong> &mdash; '+(parts ? parts.length + ' properties together, each one&rsquo;s NOI and source in <strong>NOI by property</strong> above' : refiNOISourceText(loan))+(boost ? ' (including '+(boost > 0 ? '+' : '&minus;')+fmtMoney(Math.abs(boost))+' from the moves ticked below)' : ''))+
-          fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft)+' (never today&rsquo;s loan&rsquo;s rate)')+
+          fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; '+(X ? 'the extension&rsquo;s rate: '+escapeHtml(tenorShort(opts.index))+' '+fmtPct(liveIndexVal(opts.index) || 0)+' + '+Math.round(opts.spreadBps)+' bps, floating' : 'the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft))+' (never today&rsquo;s loan&rsquo;s rate)')+
           fact("Payment", pay)+
           fact("Value", refiValueFactHtml(loan, can))+
         '</div>'+
         ((io > 0 && term > 0 && io >= term && lim.off.indexOf("DSCR") < 0)
-          ? '<p class="mt-2 rounded-lg bg-sky-50 px-3 py-1.5 text-[11px] text-sky-900" data-refiiohint>This loan is interest-only for its whole term. If this lender sizes it on the interest-only payment'+(lim.dscrIO != null ? '' : ' (type its interest-only limit first)')+', untick &ldquo;Debt coverage, amortizing payment&rdquo; &mdash; both stay shown.</p>' : '')+
-        '<div class="mt-2 flex flex-wrap items-center gap-2" data-refipresetrow>'+presetPickerHtml(refiRec(loan).preset || "", 'data-refipreset')+' '+presetChipHtml(refiPresetOf(loan), lim, ' data-refipresetchip')+'</div>'+
-        '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="pr-2 text-center">Lender uses</th><th>Lender limit</th><th class="px-2">Your lender&rsquo;s</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-        '<p class="mt-1.5 text-[12px] text-slate-700" data-refismallest>'+(can.someOff ? 'The smallest of the limits this lender uses' : 'The smallest')+', <strong>'+fmtMoney(can.maxLoan)+'</strong>, is what '+(parts ? 'these properties support' : 'the property supports')+'.</p>'+margin+
-        '<p class="mt-1 text-[11px] text-slate-400">The limits (and which ones this lender uses) are this refinance&rsquo;s own, kept with the property for the whole team'+(lim.own ? ' &middot; <button type="button" data-refilimreset class="font-semibold text-brand-700 hover:underline">back to 1.25&times; / 75% / 7%, all used</button>' : ' &middot; they start at 1.25&times; / 75% / 7%, all used; type your lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only) and untick the ones it doesn&rsquo;t use')+'. <button type="button" data-refihist class="font-semibold text-brand-700 hover:underline">Change history</button></p>'+
+          ? '<p class="mt-2 rounded-lg bg-sky-50 px-3 py-1.5 text-[11px] text-sky-900" data-refiiohint>'+(X ? 'The extension' : 'This loan')+' is interest-only for its whole term. If this lender sizes it on the interest-only payment'+(lim.dscrIO != null ? '' : ' (type its interest-only limit first)')+', untick &ldquo;Debt coverage, amortizing payment&rdquo; &mdash; both stay shown.</p>' : '')+
+        (X ? '<div class="mt-2 flex flex-wrap items-center gap-2" data-refiextpresetrow>'+presetPickerHtml(opts.preset || "", 'data-refiextpreset')+' '+presetChipHtml(lenderPresetById(opts.preset), lim, ' data-refiextpresetchip')+'</div>'
+           : '<div class="mt-2 flex flex-wrap items-center gap-2" data-refipresetrow>'+presetPickerHtml(refiRec(loan).preset || "", 'data-refipreset')+' '+presetChipHtml(refiPresetOf(loan), lim, ' data-refipresetchip')+'</div>')+
+        '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="pr-2 text-center">Lender uses</th><th>Lender limit</th><th class="px-2">'+(X ? 'Today&rsquo;s lender&rsquo;s' : 'Your lender&rsquo;s')+'</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+        '<p class="mt-1.5 text-[12px] text-slate-700" data-refismallest>'+(can.someOff ? 'The smallest of the limits this lender uses' : 'The smallest')+', <strong>'+fmtMoney(can.maxLoan)+'</strong>, is what '+(X ? 'today&rsquo;s lender allows on the extension' : parts ? 'these properties support' : 'the property supports')+'.</p>'+margin+
+        (X ? '<p class="mt-1 text-[11px] text-slate-400">Today&rsquo;s lender&rsquo;s limits for the extension &mdash; kept with the property for the whole team, apart from a new loan&rsquo;s'+(lim.own ? ' &middot; <button type="button" data-refiextlimreset class="font-semibold text-brand-700 hover:underline">back to the new loan&rsquo;s limits</button>' : ' &middot; they start from the new loan&rsquo;s; type today&rsquo;s lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only) and untick the ones it doesn&rsquo;t use')+'. <button type="button" data-refihist class="font-semibold text-brand-700 hover:underline">Change history</button></p>' :
+        '<p class="mt-1 text-[11px] text-slate-400">The limits (and which ones this lender uses) are this refinance&rsquo;s own, kept with the property for the whole team'+(lim.own ? ' &middot; <button type="button" data-refilimreset class="font-semibold text-brand-700 hover:underline">back to 1.25&times; / 75% / 7%, all used</button>' : ' &middot; they start at 1.25&times; / 75% / 7%, all used; type your lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only) and untick the ones it doesn&rsquo;t use')+'. <button type="button" data-refihist class="font-semibold text-brand-700 hover:underline">Change history</button></p>')+
       '</div>';
     }
     // ── next stage (F4, draft) — lender presets: a list kept for the whole group (a shared setting), edited by the admin
@@ -12065,7 +12070,7 @@ tr.flagged:hover td{background:#fee2e2}
 
       const bottom = yes ? "Refinance."
         : decision ? "Your decision."
-        : pay ? "Pay down "+fmtMoney(v.payDown)+" and refinance &mdash; or extend with today&rsquo;s lender (What kind of deal? below)."
+        : pay ? "Pay down "+fmtMoney(v.payDown)+" and refinance &mdash; or extend with today&rsquo;s lender (What kind of deal? above)."
         : (!can.can ? "Don&rsquo;t refinance &mdash; the property can&rsquo;t support a loan the size of the payoff yet."
                     : "Don&rsquo;t refinance.");
       // next stage (F4, draft) — D1: what is ending, and the pay-down each way out takes
@@ -12079,8 +12084,8 @@ tr.flagged:hover td{background:#fee2e2}
           '<p data-refimustwhen>'+when+'</p>'+
           '<p class="mt-1" data-refipaydown="refi">To refinance at these limits: <strong>pay down '+fmtMoney(v.payDown)+'</strong> &mdash; what you owe ('+fmtMoney(can.payoff)+') less what the property supports ('+fmtMoney(can.maxLoan)+').</p>'+
           (refiExtAllowed(loan)
-            ? (xOwn ? '<p class="mt-1" data-refipaydown="extend">To extend with today&rsquo;s lender: <strong>'+(x.needed ? 'pay down '+fmtMoney(x.payDown) : 'no pay-down needed')+'</strong> at its limits &mdash; cash needed '+fmtMoney(x.cash)+' with the penalty and fee (Extend with today&rsquo;s lender, below).</p>'
-                    : '<p class="mt-1 text-[12px] text-slate-500" data-refipaydown="extend-empty">To extend with today&rsquo;s lender: pick <strong>Extend with today&rsquo;s lender</strong> under What kind of deal? below and fill in its terms &mdash; the pay-down it takes shows here.</p>')
+            ? (xOwn ? '<p class="mt-1" data-refipaydown="extend">To extend with today&rsquo;s lender: <strong>'+(x.needed ? 'pay down '+fmtMoney(x.payDown) : 'no pay-down needed')+'</strong> at its limits &mdash; cash needed '+fmtMoney(x.cash)+' with the penalty and fee (pick Extend with today&rsquo;s lender above to see it).</p>'
+                    : '<p class="mt-1 text-[12px] text-slate-500" data-refipaydown="extend-empty">To extend with today&rsquo;s lender: pick <strong>Extend with today&rsquo;s lender</strong> under What kind of deal? above and fill in its terms &mdash; the pay-down it takes shows here.</p>')
             : '')+
         '</div>';
       }
@@ -12369,27 +12374,126 @@ tr.flagged:hover td{background:#fee2e2}
       return '<div class="boxline flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-white px-5 py-3 shadow-sm" data-refidealrow>'+
         '<span class="text-[11px] font-bold uppercase tracking-wider text-violet-700">What kind of deal?</span>'+
         '<div class="inline-flex overflow-hidden rounded-lg border border-violet-300">'+b("new", "New loan")+b("extend", "Extend with today&rsquo;s lender")+'</div>'+
-        '<span class="text-[11px] text-slate-500">'+(ok ? (deal === "extend" ? 'today&rsquo;s loan stays the same record, with new terms from the date its terms end' : 'a new loan replaces today&rsquo;s loan(s)') + ' &middot; kept with the refinance, for the whole team' : 'an extension is with one lender, one loan at a time &mdash; open the loan itself to extend it')+'</span>'+
+        '<span class="text-[11px] text-slate-500">'+(ok ? (deal === "extend" ? 'the verdict, the limits and the schedule below are the extension&rsquo;s &mdash; today&rsquo;s loan stays the same record, with new terms from the date its terms end' : 'the verdict, the limits and the schedule below are a new loan&rsquo;s &mdash; it replaces today&rsquo;s loan(s)') + ' &middot; kept with the refinance, for the whole team' : 'an extension is with one lender, one loan at a time &mdash; open the loan itself to extend it')+'</span>'+
       '</div>';
     }
-    function refiExtCardHtml(loan){
+    // ── The extension, judged on its own (the operator, 2026-10-15): with "Extend with today's lender" picked, the verdict
+    // box judges the extension — not a new loan — by the same rule: today's loan matures or its rate resets within 12
+    // months → extend; new terms that would start more than 12 months away → not yet; else the extension's lower rate
+    // saves more interest (from the date today's terms end until today's loan ends) than the penalty → extend; else don't.
+    // The limits table, value and preset are shown once.
+    function refiExtCan(loan, r){
+      const lab = { "DSCR": "Debt coverage, amortizing (" + fmtX2(r.limits.dscr) + ")", "DSCR IO": "Debt coverage, interest-only (" + fmtX2(r.limits.dscrIO) + ")", "LTV": "Loan-to-value (" + fmtPct(r.limits.ltv) + ")", "Debt Yield": "Debt yield (" + fmtPct(r.limits.dy) + ")" };
+      const caps = (r.caps || []).map(c => Object.assign({}, c, { label: lab[c.key],
+        impDSCR: (r.constant > 0 && c.amt > 0) ? r.noi / (c.amt * r.constant) : null, impIO: (r.rate > 0 && c.amt > 0) ? r.noi / (c.amt * r.rate) : null,
+        impLTV: (r.value > 0) ? c.amt / r.value : null, impDY: (c.amt > 0) ? r.noi / c.amt : null }));
+      let used = caps.filter(c => c.used); if(!used.length) used = caps;
+      return { sized: r.noi > 0 && r.allowed > 0, limits: r.limits, constant: r.constant, rate: r.rate, value: r.value, capRate: loanCapRate(loan), appraisal: r.appraisal,
+               caps: caps, legs: r.legs, binding: r.binding, maxLoan: r.allowed, noi: r.noi, someOff: caps.some(c => !c.used), amortYears: Math.round(r.terms.amortMonths / 12),
+               runnerUp: used[1] || null, margin: used[1] ? used[1].amt - used[0].amt : null };
+    }
+    function refiExtVerdict(loan){
+      if(!refiExtAllowed(loan)) return null;
+      if(loan.extension) return { isSaved: true };
+      const r = refiExtResult(loan); if(!r) return null;
+      const c = compute(loan), curRate = c.derived.currentRate || 0, pm = Math.max(0, c.derived.paymentsMade || 0);
+      const ends = refiEnds(loan), reset = refiResetInfo(loan), W = REFI_MATURITY_WINDOW_MO;
+      const matSoon = ends.months != null && ends.months <= W, resetSoon = !!(reset && reset.months <= W);
+      const cheaper = r.rate < curRate - 0.00005;
+      let saved = 0;   // the interest the extension's rate saves, from the date today's terms end until today's loan ends
+      for(let i = r.k + 1; i < c.rows.length; i++){ const x = c.rows[i], dc = (loan.amortMethod === "30/360") ? 30 : x.days; saved += x.startingBalance * dc * ((x.rate - r.rate) / 360); }
+      const monthsToStart = Math.max(0, r.k + 1 - pm), penalty = r.penalty.amount;
+      let kind, why;
+      if(!(r.noi > 0) || !(r.allowed > 0)) kind = "unsized";
+      else if(matSoon || resetSoon){ kind = "yes"; why = (resetSoon && (!matSoon || reset.months <= ends.months)) ? "reset" : "maturity"; }
+      else if(monthsToStart > W){ kind = "no"; why = "notyet"; }   // the new terms would start more than 12 months from now: decided closer to then
+      else if(cheaper && saved > 1 && saved >= penalty - 1){ kind = "yes"; why = "saves"; }
+      else { kind = "no"; why = !cheaper ? "pricier" : "penalty"; }
+      return { r: r, kind: kind, why: why, curRate: curRate, cheaper: cheaper, saved: saved, penalty: penalty, reset: reset, ends: ends, monthsToStart: monthsToStart };
+    }
+    function refiExtPricingHtml(loan, r){
+      const t = r.terms, box = 'w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30';
+      return '<div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3" data-refiextpricing>'+
+        '<div class="mb-3 flex flex-wrap items-center gap-3"><span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">The extension&rsquo;s rate</span><span class="text-[11px] text-slate-400">today&rsquo;s lender&rsquo;s quote &mdash; an index + a spread, floating; everything above and below updates at once</span></div>'+
+        '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">'+
+          '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Index</span><select data-refiextf="index" class="'+box+'">'+REFI_INDEX_CHOICES.map(id => '<option value="'+id+'"'+(id === t.index ? ' selected' : '')+'>'+INDEX_BY_ID[id].label+'</option>').join('')+'</select></label>'+
+          '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Spread (bps) &mdash; today&rsquo;s lender&rsquo;s quote</span><input type="number" step="any" data-refiextf="spreadBps" value="'+t.spreadBps+'" class="'+box+' text-right tabular-nums"></label>'+
+        '</div>'+
+        '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refiextrate>'+fmtPct(r.rate)+'</span> <span class="text-[11px] text-slate-500">= '+escapeHtml(tenorShort(t.index))+' '+fmtPct(liveIndexVal(t.index) || 0)+' <span class="text-[10px] text-slate-400">('+escapeHtml(rateSourceText(t.index))+')</span> + '+Math.round(t.spreadBps)+' bps, floating</span></p>'+
+      '</div>';
+    }
+    function refiExtVerdictHtml(loan, ev){
       const e = loan.extension;
-      if(e){   // saved: what it did, and undo
-        return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-white p-5 shadow-sm" data-refiext="saved">'+
-          '<h3 class="text-xs font-bold uppercase tracking-wider text-violet-700">Extended with today&rsquo;s lender'+(e.lender ? ' &middot; '+escapeHtml(e.lender) : '')+'</h3>'+
-          '<p class="mt-2 text-sm text-slate-700">Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+': '+e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+
+      if(ev && ev.isSaved && e){   // saved: what it did, and undo
+        return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-violet-50 p-5 shadow-sm" data-refiverdict="extended" data-refiext="saved">'+
+          '<div class="flex items-center gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black text-violet-800">&#10003;</span>'+
+            '<div><p class="text-xl font-extrabold text-violet-800">Extended with today&rsquo;s lender'+(e.lender ? ' &middot; '+escapeHtml(e.lender) : '')+'</p>'+
+            '<p class="text-sm text-slate-600">Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+' &mdash; the schedule below has it.</p></div></div>'+
+          '<p class="mt-3 text-sm text-slate-700">'+e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+
             (e.payDown > 0.5 ? '; paid down '+fmtMoney(e.payDown) : '; no pay-down')+'; new maturity '+fmtDateUS(loan.maturityDate)+'. Cash it took: '+fmtMoney(e.cash || 0)+'.</p>'+
-          '<button type="button" data-refiextundo class="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo the extension</button>'+
+          '<div class="mt-3 flex flex-wrap items-center gap-3"><button type="button" data-refiextundo class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo the extension</button>'+
+          '<button type="button" data-refihist class="text-[12px] font-semibold text-brand-700 hover:underline">Change history</button></div>'+
         '</div>';
       }
-      const r = refiExtResult(loan); if(!r) return '';
-      const t = r.terms, lim = r.limits, pv = refiExtPreview(loan, r);
+      if(!ev || !ev.r) return '';
+      const r = ev.r, t = r.terms, can = refiExtCan(loan, r);
+      if(ev.kind === "unsized"){
+        return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm" data-refiverdict="extend-unsized">'+
+          '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge the extension yet</p>'+
+          '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so today&rsquo;s lender&rsquo;s limits can be worked out against the '+fmtMoney(r.owed)+' you&rsquo;ll owe.</p>'+
+          refiExtPricingHtml(loan, r)+'</div>';
+      }
+      const yes = ev.kind === "yes", pay = r.needed;
+      const banner = yes ? (pay ? "border-orange-400 bg-orange-50" : "border-emerald-400 bg-emerald-50") : "border-rose-300 bg-rose-50";
+      const bhead = yes ? (pay ? "text-orange-800" : "text-emerald-800") : "text-rose-800";
+      const mark = (ok, ch) => '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full '+(ok ? "bg-emerald-100 text-emerald-700" : ch === "!" ? "bg-orange-100 text-orange-700" : "bg-rose-100 text-rose-700")+' text-sm font-black">'+(ch || (ok ? "&#10003;" : "&#10007;"))+'</span>';
+      const title = yes ? ("Extend with today&rsquo;s lender"+(pay ? " &mdash; pay down "+fmtMoney(r.payDown) : "")) : (ev.why === "notyet" ? "Not yet" : "Don&rsquo;t extend now");
+      const canLine = pay
+        ? '<span data-refipaydown="extend">To extend with today&rsquo;s lender: <strong>pay down '+fmtMoney(r.payDown)+'</strong> &mdash; what you&rsquo;ll owe on '+fmtDateLong(t.date)+' (<strong>'+fmtMoney(r.owed)+'</strong>) less what its limits allow (<strong>'+fmtMoney(r.allowed)+'</strong>).</span> Its '+refiBindingWord(r.binding, r.limits)+' is the limit that sets that.'
+        : 'Today&rsquo;s lender&rsquo;s limits allow up to <strong>'+fmtMoney(r.allowed)+'</strong> &mdash; enough to cover the <strong>'+fmtMoney(r.owed)+'</strong> you&rsquo;ll owe on '+fmtDateLong(t.date)+'. <span data-refipaydown="extend">No pay-down needed.</span>';
+      const rateMove = "The rate goes from <strong>"+fmtPct(ev.curRate)+"</strong> to <strong>"+fmtPct(r.rate)+"</strong>";
+      let sLine;
+      if(ev.why === "reset") sLine = "Today&rsquo;s rate resets <strong>"+fmtDateLong(ev.reset.date)+"</strong>: "+fmtPct(ev.reset.from)+" &rarr; "+fmtPct(ev.reset.to)+". The extension&rsquo;s rate is <strong>"+fmtPct(r.rate)+"</strong> &mdash; something has to be done within 12 months.";
+      else if(ev.why === "maturity") sLine = "Today&rsquo;s loan ends <strong>"+fmtDateLong(ev.ends.date)+"</strong> (in "+ev.ends.months+" month"+(ev.ends.months === 1 ? "" : "s")+"), so you&rsquo;ll refinance, extend or pay it off regardless. The extension&rsquo;s rate is <strong>"+fmtPct(r.rate)+"</strong>.";
+      else if(ev.why === "saves") sLine = rateMove+" from "+fmtDateLong(t.date)+" &mdash; it saves <strong>"+fmtMoney(ev.saved)+"</strong> of interest until today&rsquo;s loan ends, "+(ev.penalty > 0 ? "more than the <strong>"+fmtMoney(ev.penalty)+"</strong> penalty this lender asks." : "and this lender asks no penalty.");
+      else if(ev.why === "notyet") sLine = "Today&rsquo;s terms run to <strong>"+fmtDateLong(t.date)+"</strong> (in "+ev.monthsToStart+" months), and nothing ends or resets within 12 months &mdash; an extension is decided closer to then.";
+      else if(ev.why === "pricier") sLine = rateMove+" &mdash; not lower, and nothing ends or resets within 12 months. Don&rsquo;t extend now.";
+      else sLine = rateMove+", but it saves only <strong>"+fmtMoney(ev.saved)+"</strong> of interest &mdash; less than the <strong>"+fmtMoney(ev.penalty)+"</strong> penalty this lender asks. Don&rsquo;t extend now.";
+      const bottom = yes ? ("Extend with today&rsquo;s lender"+(pay ? " &mdash; pay down "+fmtMoney(r.payDown) : "")+"; cash needed "+fmtMoney(r.cash)+" (pay-down + penalty + fee).") : (ev.why === "notyet" ? "Not yet &mdash; today&rsquo;s loan runs to "+fmtDateLong(t.date)+"." : "Don&rsquo;t extend now.");
+      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm" data-refiverdict="'+(yes ? "extend" : "extend-no")+'">'+
+        '<div class="flex items-center gap-3">'+
+          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes ? (pay ? "!" : "&#10003;") : "&#10007;")+'</span>'+
+          '<div><p class="text-xl font-extrabold '+bhead+'">'+title+'</p>'+
+          '<p class="text-sm text-slate-600">'+escapeHtml(loanLabel(loan))+(loan.lenderName ? ' &mdash; with '+escapeHtml(loan.lenderName) : '')+', sized on the '+refiBasisWord(loan)+' NOI at the extension&rsquo;s rate, '+fmtPct(r.rate)+'.</p></div>'+
+        '</div>'+
+        '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
+          refiStat("You&rsquo;ll owe on "+fmtDateUS(t.date), fmtMoney(r.owed))+
+          refiStat("Today&rsquo;s lender allows", fmtMoney(r.allowed))+
+          refiStat("Today&rsquo;s loan rate", fmtPct(ev.curRate)+(ev.reset ? ' <span class="text-[11px] font-semibold text-amber-700" data-refireset>&rarr; '+fmtPct(ev.reset.to)+' from '+fmtDateUS(ev.reset.date)+'</span>' : ''))+
+          refiStat("Extension rate", fmtPct(r.rate))+
+        '</dl>'+
+        refiExtPricingHtml(loan, r)+
+        '<div class="mt-4 flex items-start gap-3">'+mark(!pay, pay ? "!" : null)+
+          '<div><p class="text-sm font-bold text-slate-800">Can you? '+(pay ? "Yes, with a pay-down" : "Yes")+'</p>'+
+          '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
+        '</div>'+
+        refiCapsBlock(loan, can, null, { ext: true, io: r.io, term: t.months, index: t.index, spreadBps: t.spreadBps, preset: t.preset })+
+        '<div class="mt-3 flex items-start gap-3 border-t border-slate-200/70 pt-3">'+mark(yes)+
+          '<div class="flex-1"><p class="text-sm font-bold text-slate-800">Should you? '+(yes ? "Yes" : ev.why === "notyet" ? "Not yet" : "No")+'</p>'+
+          '<div class="text-sm leading-relaxed text-slate-700">'+sLine+'</div></div>'+
+        '</div>'+
+        '<p class="mt-4 text-sm font-semibold text-slate-900">'+bottom+'</p>'+
+      '</div>';
+    }
+    // The extension's own terms (date, months, interest-only, penalty, fee) and what they come to.
+    function refiExtCardHtml(loan, ev){
+      if(!ev || !ev.r) return '';
+      const r = ev.r, t = r.terms, pv = refiExtPreview(loan, r);
       const firstRow = pv ? pv.rows.find(x => x.ext) : null;
       const box = 'w-full rounded-md border border-slate-300 px-2 py-1 text-sm';
       const lab = (txt, inner) => '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">'+txt+'</span>'+inner+'</label>';
       const num = (f, v, extra) => '<input type="number" step="any" data-refiextf="'+f+'" value="'+(v == null ? '' : v)+'" class="'+box+' text-right tabular-nums"'+(extra || '')+'>';
       const sel = (f, opts, v) => '<select data-refiextf="'+f+'" class="'+box+'">'+opts.map(o => '<option value="'+o[0]+'"'+(o[0] === v ? ' selected' : '')+'>'+o[1]+'</option>').join('')+'</select>';
-      const idxOpts = REFI_INDEX_CHOICES.map(id => [id, INDEX_BY_ID[id].label]);
       const pen = r.penalty, pHow = t.penalty ? t.penalty.how : "";
       const inputs = '<div class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">'+
         lab("Today&rsquo;s terms end on", '<input type="date" data-refiextf="date" value="'+escapeHtml(t.date || '')+'" class="'+box+'">')+
@@ -12397,33 +12501,15 @@ tr.flagged:hover td{background:#fee2e2}
         lab("Interest-only", sel("io", [["whole", "The whole term"], ["n", "The first N months"], ["none", "None"]], t.io))+
         (t.io === "n" ? lab("Interest-only months", num("ioMonths", t.ioMonths)) : '')+
         lab("Amortization after interest-only (months)", num("amortMonths", t.amortMonths))+
-        lab("Index", sel("index", idxOpts, t.index))+
-        lab("Spread (bps) &mdash; the lender&rsquo;s quote", num("spreadBps", t.spreadBps))+
         lab("Early-payoff penalty &mdash; this lender asks", sel("penaltyHow", [["", "Not picked (assumed: on the pay-down)"]].concat(Object.keys(RefiExtend.PENALTY_HOWS).map(k => [k, RefiExtend.PENALTY_HOWS[k]])), pHow))+
         (pHow === "pct" ? lab("Part of the full penalty (%)", num("penaltyPct", t.penalty && t.penalty.pct != null ? +(t.penalty.pct * 100).toFixed(3) : "")) : '')+
         (pHow === "amt" ? lab("Penalty the lender asks ($)", num("penaltyAmt", t.penalty && t.penalty.amt != null ? Math.round(t.penalty.amt) : "")) : '')+
         lab("Extension fee in", sel("feeKind", [["pct", "% of the extended amount"], ["amt", "dollars"]], t.fee.kind))+
         lab("Extension fee", num("feeValue", t.fee.kind === "pct" ? +(t.fee.value * 100).toFixed(3) : Math.round(t.fee.value)))+
-      '</div>'+
-      '<p class="mt-2 text-sm text-slate-700">Rate <strong class="tabular-nums" data-refiextrate>'+fmtPct(r.rate)+'</strong> <span class="text-[11px] text-slate-500">= '+escapeHtml(tenorShort(t.index))+' '+fmtPct(liveIndexVal(t.index) || 0)+' + '+Math.round(t.spreadBps)+' bps, floating</span></p>';
-      const inp = (k, val, unit, ph) => '<span class="inline-flex items-center gap-1"><input type="number" step="any" data-refiextlim="'+k+'" value="'+(val == null ? '' : val)+'" placeholder="'+(ph || '')+'" class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-right text-xs tabular-nums"><span class="text-[11px] text-slate-500">'+unit+'</span></span>';
-      const legs = [
-        { key: "DSCR", name: "Debt coverage, amortizing payment", box: inp("dscr", +lim.dscr.toFixed(3), "&times;"), sign: "&ge;" },
-        { key: "DSCR IO", name: "Debt coverage, interest-only payment", box: inp("dscrIO", lim.dscrIO != null ? +lim.dscrIO.toFixed(3) : null, "&times;", "not used"), sign: "&ge;" },
-        { key: "LTV", name: "Loan-to-value"+(r.appraisal ? " (on the appraisal)" : ""), box: inp("ltv", +(lim.ltv * 100).toFixed(2), "%"), sign: "&le;" },
-        { key: "Debt Yield", name: "Debt yield", box: inp("dy", +(lim.dy * 100).toFixed(2), "%"), sign: "&ge;" }
-      ];
-      const rows = legs.map(l => { const amt = r.legs[l.key], uses = lim.off.indexOf(l.key) < 0, bind = l.key === r.binding, offRow = !uses && amt > 0;
-        return '<tr class="border-t border-slate-100'+(bind ? ' bg-violet-50' : '')+'" data-refiextleg="'+l.key+'">'+
-          '<td class="py-1.5 pr-2 text-center"><input type="checkbox" data-refiextuse="'+l.key+'"'+(uses ? ' checked' : '')+' class="h-4 w-4 cursor-pointer rounded border-slate-300 accent-violet-600"></td>'+
-          '<td class="py-1.5 pr-2 text-sm '+(bind ? 'font-bold text-violet-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.name+(offRow ? ' <span class="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">not used by this lender</span>' : '')+(bind ? ' <span class="ml-1 rounded bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">binds</span>' : '')+'</td>'+
-          '<td class="py-1.5 px-2 whitespace-nowrap text-sm text-slate-500"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.sign+' '+l.box+'</td>'+
-          '<td class="py-1.5 pl-2 text-right text-sm tabular-nums '+(bind ? 'font-extrabold text-violet-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+'>'+(amt > 0 ? fmtMoney(amt) : '<span class="text-slate-400">not used</span>')+'</td></tr>'; }).join('');
+      '</div>';
       const im = r.implied || {};
       const stat = (a, b, attr) => '<div class="flex justify-between gap-3"'+(attr || '')+'><dt class="text-slate-500">'+a+'</dt><dd class="font-semibold text-slate-900 tabular-nums">'+b+'</dd></div>';
       const results = '<dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl bg-violet-50/60 px-4 py-3 text-sm">'+
-        stat("You owe on "+fmtDateUS(t.date), fmtMoney(r.owed))+
-        stat("The lender&rsquo;s limits allow", fmtMoney(r.allowed)+(r.binding ? ' <span class="text-[11px] font-normal text-slate-500">('+escapeHtml(r.binding)+' binds)</span>' : ''))+
         stat("Pay-down needed", r.needed ? fmtMoney(r.payDown) : 'none needed', ' data-refipaydown="extend-card"')+
         stat("Extended amount", fmtMoney(r.amount))+
         stat("At "+fmtMoney(r.amount), 'DSCR '+fmtX2(im.dscr)+' amortizing &middot; '+fmtX2(im.dscrIO)+' interest-only &middot; LTV '+(im.ltv != null ? fmtPct(im.ltv) : '&mdash;')+' &middot; DY '+(im.dy != null ? fmtPct(im.dy) : '&mdash;'))+
@@ -12433,16 +12519,36 @@ tr.flagged:hover td{background:#fee2e2}
         stat("First payment on the new terms", (r.firstNewPay ? fmtDateUS(r.firstNewPay) : '&mdash;')+(firstRow ? ' &middot; '+fmtMoney(firstRow.payment)+(firstRow.type === "io" ? ' interest-only' : '') : ''))+
         stat("New maturity", fmtDateUS(r.newMaturity)+(r.oldMaturity && r.newMaturity && r.newMaturity < r.oldMaturity ? ' <span class="text-[11px] font-semibold text-amber-700" data-refiextearlier>earlier than today&rsquo;s '+fmtDateUS(r.oldMaturity)+'</span>' : ''))+
       '</dl>';
-      return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-white p-5 shadow-sm" data-refiext="draft">'+
-        '<div class="flex flex-wrap items-center justify-between gap-3"><h3 class="text-xs font-bold uppercase tracking-wider text-violet-700">Extend with today&rsquo;s lender'+(loan.lenderName ? ' &middot; '+escapeHtml(loan.lenderName) : '')+'</h3>'+
-          '<button type="button" id="refiExtSaveBtn" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Save the extension</button></div>'+
-        '<p class="mt-1 text-[11px] text-slate-500">Today&rsquo;s loan stays the same record: from the date its terms end, the new rate and term; the pay-down is recorded as a principal payment on that date; status Extended. Value, NOI and the appraisal are the refinance&rsquo;s own (above).</p>'+
-        inputs+
-        '<div class="mt-3 flex flex-wrap items-center gap-2" data-refiextpresetrow>'+presetPickerHtml(t.preset || "", 'data-refiextpreset')+' '+presetChipHtml(lenderPresetById(t.preset), lim, ' data-refiextpresetchip')+'</div>'+
-        '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="pr-2 text-center">Lender uses</th><th>This lender&rsquo;s limit</th><th class="px-2">Its limit</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-        '<p class="mt-1 text-[11px] text-slate-400">'+(lim.own ? 'This extension&rsquo;s own limits &middot; <button type="button" data-refiextlimreset class="font-semibold text-violet-700 hover:underline">use the refinance&rsquo;s limits</button>' : 'Starts from the refinance&rsquo;s limits above; type this lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only)')+
-          (r.io >= t.months && lim.off.indexOf("DSCR") < 0 ? ' &middot; interest-only for the whole term: if this lender sizes on the interest-only payment, untick the amortizing line' : '')+'.</p>'+
-        results+
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-refiext="draft">'+
+        '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-violet-700">The extension&rsquo;s terms'+(loan.lenderName ? ' &middot; '+escapeHtml(loan.lenderName) : '')+'</h3>'+
+        '<p class="text-[11px] text-slate-400">Today&rsquo;s loan stays the same record: from the date its terms end, the new rate and term; the pay-down is recorded as a principal payment on that date; status Extended. The rate and this lender&rsquo;s limits are in the box above.</p>'+
+        inputs+results+
+      '</div>';
+    }
+    // The payment schedule with the extension in place — from today to the new maturity (past payments don't change; the
+    // whole loan is on its own page). The pay-down and the extension's months are marked.
+    function refiExtScheduleHtml(loan, ev){
+      let c = null, title = "";
+      if(ev && ev.isSaved){ c = compute(loan); title = "Payment schedule &mdash; from today to "+fmtDateUS(loan.maturityDate)+", with the extension"; }
+      else if(ev && ev.r){ c = refiExtPreview(loan, ev.r); title = "Payment schedule with the extension &mdash; from today to "+fmtDateUS(ev.r.newMaturity)+(ev.kind === "yes" ? "" : " (if you extended)"); }
+      if(!c || !c.rows.length) return '';
+      const pm = Math.max(0, Math.min(c.rows.length - 1, c.derived.paymentsMade || 0)), rows = c.rows.slice(pm);
+      const body = rows.map(r => { const io = r.type === "io", bl = r.type === "balloon" || r.type === "final";
+        return '<tr class="'+(r.ext ? (io ? "bg-violet-50" : "bg-violet-50/60") : io ? "bg-amber-50" : "")+(bl ? " font-semibold" : "")+'"'+(r.ext ? ' data-schedext-row' : '')+'>'+
+          '<td class="px-2 py-1 text-left text-slate-400">'+r.index+'</td>'+
+          '<td class="px-2 py-1 text-left whitespace-nowrap">'+escapeHtml(r.label || "")+' <span class="text-[10px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</span>'+(io ? ' <span class="text-[9px] font-bold uppercase text-amber-700">IO</span>' : bl ? ' <span class="text-[9px] font-bold uppercase text-emerald-700">Balloon</span>' : '')+
+            (r.extStart ? ' <span class="ml-1 rounded bg-violet-100 px-1 text-[9px] font-bold uppercase text-violet-700" data-schedext>Extension starts</span>' : '')+(r.principalPay ? ' <span class="ml-1 rounded bg-violet-100 px-1 text-[9px] font-bold uppercase text-violet-700" data-schedpaid>Paid down '+fmtMoney(r.principalPay)+'</span>' : '')+'</td>'+
+          '<td class="px-2 py-1 text-right text-slate-500">'+fmtPct(r.rate)+'</td>'+
+          '<td class="px-2 py-1 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
+          '<td class="px-2 py-1 text-right">'+fmtMoney(r.payment)+'</td>'+
+          '<td class="px-2 py-1 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+'</td>'+
+          '<td class="px-2 py-1 text-right">'+fmtMoney(r.endingBalance)+'</td></tr>'; }).join("");
+      return '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-refiextsched>'+
+        '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">'+title+'</h3>'+
+        '<p class="mb-2 text-[11px] text-slate-400">The months on today&rsquo;s terms first, then the extension&rsquo;s (shaded). The loan&rsquo;s whole schedule, from its first payment, is on its own page.</p>'+
+        '<div class="max-h-96 overflow-auto thin-scroll rounded-lg border border-slate-200"><table class="w-full text-xs">'+
+        '<thead class="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr><th class="px-2 py-1.5 text-left">#</th><th class="px-2 py-1.5 text-left">Month</th><th class="px-2 py-1.5 text-right">Rate</th><th class="px-2 py-1.5 text-right">Interest</th><th class="px-2 py-1.5 text-right">Payment</th><th class="px-2 py-1.5 text-right">Principal</th><th class="px-2 py-1.5 text-right">Balance</th></tr></thead>'+
+        '<tbody class="divide-y divide-slate-100 tabular-nums">'+body+'</tbody></table></div>'+
       '</div>';
     }
     // The single, full-width detail card for the selected proposed option.
@@ -12490,8 +12596,9 @@ tr.flagged:hover td{background:#fee2e2}
       let verdict = refiVerdict(loan, refiDrafts[1]);
       // next stage (F4, draft) — D1: the pay-down verdict proposes a loan up to what the property supports; the gap is paid in
       if(verdict.paydown && refiDrafts[1] && verdict.can.maxLoan > 0 && (refiDrafts[1].originalAmount || 0) > verdict.can.maxLoan + 0.5){ refiDrafts[1].originalAmount = Math.floor(verdict.can.maxLoan); verdict = refiVerdict(loan, refiDrafts[1]); }
-      const deal = refiDeal(loan);
+      const deal = refiDeal(loan), ev = deal === "extend" ? refiExtVerdict(loan) : null;   // next stage (F4) — the extension is judged on its own
       const showProposal = (verdict.refi || verdict.decision || verdict.paydown) && deal === "new";   // 2.9.7 (#184) — and in the "your decision" case; F4 — and the pay-down case
+      const showExtSave = deal === "extend" && !!(ev && ev.r && ev.kind === "yes");
       const ends = refiEnds(loan);
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
@@ -12510,6 +12617,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
             (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">'+(verdict.decision ? 'Save as a loan &mdash; Refinance now' : verdict.paydown ? 'Save as a loan &mdash; pay in '+fmtMoney(Math.max(0, verdict.can.payoff - (refiDrafts[1].originalAmount || 0))) : 'Save as a loan')+'</button>' : '')+
+            (showExtSave ? '<button id="refiExtSaveBtn" type="button" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Save the extension'+(ev.r.needed ? ' &mdash; pay down '+fmtMoney(ev.r.payDown) : '')+'</button>' : '')+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -12524,11 +12632,10 @@ tr.flagged:hover td{background:#fee2e2}
             refiStat("Matures", fmtDateUS(ends.date || d.maturityDate))+
           '</dl>'+ resetNote +
         '</div>'+
+        refiDealHtml(loan)+   // next stage (F4) — the kind of deal first: everything below follows it
         refiAdvancedHtml(loan)+
         refiPushMovesHtml(loan)+
-        refiVerdictHtml(loan, verdict)+
-        refiDealHtml(loan)+
-        (deal === "extend" ? refiExtCardHtml(loan) : showProposal
+        (deal === "extend" ? refiExtVerdictHtml(loan, ev) + refiExtCardHtml(loan, ev) + refiExtScheduleHtml(loan, ev) : refiVerdictHtml(loan, verdict) + (showProposal
           ? '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
               '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
               '<p class="mb-3 text-[11px] text-slate-400">Matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s credit-aware rate. Every box is editable &mdash; the analysis and verdict above update live as you change them.</p>'+
@@ -12543,7 +12650,7 @@ tr.flagged:hover td{background:#fee2e2}
                 ? 'Right now you can, but by your rule it isn&rsquo;t worth doing &mdash; change the rate quote above to find your target.'
                 : 'Right now the property can&rsquo;t support a loan the size of the payoff, so there&rsquo;s no loan to propose.')+
               ' Change the NOI basis or your inputs above; close and reopen to reset the proposal.</p>'+
-            '</div>');
+            '</div>'));
 
       // The proposed loan follows the current loan's rate type + term, priced at today's
       // credit-aware rate (buildRefiOption), and every box stays editable below.
@@ -12766,7 +12873,9 @@ tr.flagged:hover td{background:#fee2e2}
         s += " Must act: " + (v.must.resetting && v.reset ? "today’s rate resets " + fmtDateLong(v.reset.date) + " (" + fmtPct(v.reset.from) + " → " + fmtPct(v.reset.to) + ")" : "today’s loan ends " + fmtDateLong(v.ends.date)) + ". To refinance at these limits: pay down " + fmtMoney(v.payDown) + ".";
         if(v.ext && v.ext.terms && (v.ext.terms.own || refiDeal(t) === "extend")) s += " To extend with today’s lender: " + (v.ext.needed ? "pay down " + fmtMoney(v.ext.payDown) : "no pay-down") + " (cash needed " + fmtMoney(v.ext.cash) + " with the penalty and fee).";
       }
-      if(refiDeal(t) === "extend"){ const x = refiExtResult(t); if(x) s += " Extension with today’s lender: " + refiExtNote(t, x) + "; allowed " + fmtMoney(x.allowed) + ", cash needed " + fmtMoney(x.cash) + ", new maturity " + fmtDateLong(x.newMaturity) + "."; }
+      if(refiDeal(t) === "extend"){ const ev = refiExtVerdict(t), x = ev && ev.r;   // next stage (F4) — the extension is judged on its own
+        if(ev && ev.isSaved) s += " Extended with today’s lender (saved); it now matures " + fmtDateLong(t.maturityDate) + ".";
+        else if(x) s += " Extend with today’s lender? " + (ev.kind === "yes" ? "Yes" : ev.why === "notyet" ? "Not yet — today’s terms run to " + fmtDateLong(x.terms.date) : "No") + ". " + refiExtNote(t, x) + "; its limits allow " + fmtMoney(x.allowed) + (x.needed ? " (pay down " + fmtMoney(x.payDown) + ")" : " (no pay-down)") + ", cash needed " + fmtMoney(x.cash) + ", new maturity " + fmtDateLong(x.newMaturity) + "."; }
       if(v.can.can){ const w = v.should;
         s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(w.cashNet) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
           : w.kind === "yes" ? (w.why === "maturity" ? "Yes — today’s loan ends within 12 months." : "Yes — it saves " + fmtMoney(w.saved) + " of interest until today’s loan ends, against a " + fmtMoney(w.penalty) + " early-payoff penalty.")

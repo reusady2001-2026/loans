@@ -73,7 +73,17 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
 
   // ---- D7: extend with today's lender ----
   await page.click('#refiView [data-refideal="extend"]'); await page.waitForTimeout(1500);
-  ok(await page.$('#refiView [data-refiext="draft"]')!==null && !(await page.$('#refiSaveBtn')), 'Extend with today’s lender: the extension card replaces the proposed new loan');
+  // the operator, after testing (2026-10-15): the kind of deal comes first, and with "Extend" everything below is the
+  // extension's — its own verdict (not a new loan's), its rate, one limits table, its terms, and its payment schedule
+  let lay=await page.evaluate(()=>({ order:[...document.querySelectorAll('#refiView [data-refidealrow], #refiView [data-refiverdict], #refiView [data-refiext="draft"], #refiView [data-refiextsched]')].map(e=>e.hasAttribute('data-refidealrow')?'deal':e.hasAttribute('data-refiverdict')?'verdict':e.hasAttribute('data-refiextsched')?'schedule':'terms'),
+    kind:(document.querySelector('#refiView [data-refiverdict]')||{getAttribute:()=>''}).getAttribute('data-refiverdict'), rtype:document.querySelectorAll('#refiView [data-rtype]').length, amount:!!document.getElementById('o1_amount'),
+    basis:document.querySelectorAll('#refiView [data-refibasis]').length, ext:document.querySelectorAll('#refiView [data-refibasisext] [data-refiextlim]').length, newLims:document.querySelectorAll('#refiView [data-refilim]').length,
+    presets:document.querySelectorAll('#refiView [data-refipresetrow], #refiView [data-refiextpresetrow]').length, value:document.querySelectorAll('#refiView [data-refiappr="value"]').length,
+    saveNew:!!document.getElementById('refiSaveBtn'), saveExt:!!document.getElementById('refiExtSaveBtn') }));
+  ok(lay.order.join(',')==='deal,verdict,terms,schedule', 'the kind of deal comes first, then the extension’s verdict, its terms and its schedule ('+lay.order.join(' → ')+')');
+  ok(lay.kind==='extend' && lay.rtype===0 && !lay.amount, 'with Extend, the verdict is the extension’s ('+lay.kind+') — no Fixed / Floating / Hybrid, no new-loan amount');
+  ok(lay.basis===1 && lay.ext===4 && lay.newLims===0 && lay.presets===1 && lay.value===1, 'nothing twice: one limits table (the extension’s), one preset row, one appraised value');
+  ok(!lay.saveNew && lay.saveExt, 'the button on top is “Save the extension” (no “Save as a loan”)');
   const setLim=async(k,v)=>{ await page.fill('#refiView [data-refiextlim="'+k+'"]',String(v)); await page.dispatchEvent('#refiView [data-refiextlim="'+k+'"]','change'); await page.waitForTimeout(900); };
   await setLim('dscr',1.11); await setLim('dscrIO',1.35);
   const extF=async(f,v)=>{ const sel=await page.$('#refiView select[data-refiextf="'+f+'"]'); if(sel) await page.selectOption('#refiView select[data-refiextf="'+f+'"]',String(v)); else await page.fill('#refiView [data-refiextf="'+f+'"]',String(v)); await page.dispatchEvent('#refiView [data-refiextf="'+f+'"]','change'); await page.waitForTimeout(900); };
@@ -91,7 +101,13 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   ok(x.r.terms.date==='2026-11-01'&&near(x.r.owed,owed), 'today’s terms end Nov 1, 2026 (the payment before the reset); owed then '+Math.round(owed));
   ok(near(x.r.allowed,allowed,1)&&near(x.r.payDown,payDown,1), 'what its limits allow ('+Math.round(allowed)+') and the pay-down ('+Math.round(payDown)+') match the arithmetic');
   ok(near(money(x.pd),Math.round(payDown*100)/100,1), 'the card shows the pay-down needed: '+x.pd.trim());
-  ok(/To extend with today’s lender: pay down/.test(x.verdictExt)&&near(money(x.verdictExt),Math.round(payDown*100)/100,1), 'the verdict box adds "To extend with today’s lender: pay down $Y"');
+  ok(/To extend with today’s lender: pay down/.test(x.verdictExt)&&near(money(x.verdictExt),Math.round(payDown*100)/100,1), 'the extension’s verdict: "To extend with today’s lender: pay down $Y"');
+  const ev=await page.evaluate((id)=>{ const v=window.LDS_refiExtVerdict(window.LDS_loans().find(x=>x._id===id)); return { kind:v.kind, why:v.why }; },ids.q);
+  const should=await page.evaluate(()=>[...document.querySelectorAll('#refiView [data-refiverdict] p')].map(p=>p.textContent).find(t=>/^Should you\?/.test(t))||'');
+  ok(ev.kind==='yes'&&ev.why==='reset'&&/Should you\? Yes/.test(should), 'Should you? Yes — today’s rate resets within 12 months (the same rule as a new loan, applied to the extension)');
+  const sch=await page.evaluate(()=>{ const b=document.querySelector('#refiView [data-refiextsched]'); return { title:(b.querySelector('h3')||{}).textContent||'', first:(b.querySelector('tbody tr td:nth-child(2)')||{}).textContent||'', paid:(b.querySelector('[data-schedpaid]')||{}).textContent||'', starts:!!b.querySelector('[data-schedext]'), extRows:b.querySelectorAll('[data-schedext-row]').length, rows:b.querySelectorAll('tbody tr').length }; });
+  ok(/from today to 11\/01\/2029/.test(sch.title)&&/Oct 2026/.test(sch.first), 'the payment schedule with the extension, from today (Oct 2026) to the new maturity ('+sch.title.trim()+')');
+  ok(near(money(sch.paid),Math.round(payDown*100)/100,1)&&sch.starts&&sch.extRows===36, 'it shows the pay-down ('+sch.paid.trim()+'), where the extension starts, and its 36 months');
   ok(x.r.implied&&near(x.r.implied.ltv,x.r.amount/65000000,1e-6)&&near(x.r.implied.dscrIO,x.r.noi/(x.r.amount*rate),1e-6), 'coverage at the extended amount: LTV on the appraisal, interest-only DSCR');
   // each penalty choice
   const full=x.pen;
@@ -103,7 +119,7 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   await extF('penaltyHow','none'); x=await R(); ok(x.r.penalty.amount===0, 'none: 0');
   await extF('penaltyHow','paydown'); await extF('feeValue',0.5); x=await R();
   ok(near(x.r.fee,Math.round(0.005*x.r.amount*100)/100,0.02)&&near(money(x.cash),Math.round((x.r.payDown+x.r.penalty.amount+x.r.fee)*100)/100,0.03), 'fee 0.5% of the extended amount; cash needed = pay-down + penalty + fee ('+x.cash.trim()+')');
-  ok(await page.evaluate(()=>/interest-only for the whole term/.test((document.querySelector('[data-refiext="draft"]')||{}).textContent||'')), 'D11: whole-term interest-only — the hint to untick the amortizing line; both lines shown');
+  ok(await page.evaluate(()=>/interest-only for its whole term/.test((document.querySelector('#refiView [data-refibasisext] [data-refiiohint]')||{}).textContent||'')), 'D11: whole-term interest-only — the hint to untick the amortizing line; both lines shown');
   const pure=RefiExtend.extend({ owed, noi:x.r.noi, value:65000000, rate, amortMonths:360, limits:{dscr:1.11,dscrIO:1.35,ltv:0.75,dy:0.07}, off:[], penaltyFull:full, penalty:{how:'paydown'}, fee:{kind:'pct',value:0.005} });
   ok(near(pure.cash,x.r.cash,0.05), 'the screen and refi-extend.js agree on the cash needed');
   const recE=await page.evaluate(async(id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const b=await window.LDS_readAssumptions(window.LDS_refiHomeKey(l)); return b&&b.refi&&b.refi[id]; },ids.q);
@@ -143,6 +159,9 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   // ---- D13 presets (this app is local: it is the admin) ----
   await openRefi(ids.q);
   await page.click('#refiView [data-refideal="new"]'); await page.waitForTimeout(1200);
+  lay=await page.evaluate((id)=>({ kind:document.querySelector('#refiView [data-refiverdict]').getAttribute('data-refiverdict'), newLims:document.querySelectorAll('#refiView [data-refilim]').length, extLims:document.querySelectorAll('#refiView [data-refiextlim]').length, rtype:document.querySelectorAll('#refiView [data-rtype]').length,
+    keep:(window.LDS_refiRec(window.LDS_loans().find(x=>x._id===id)).ext||{}).limits }),ids.q);
+  ok(lay.kind==='paydown'&&lay.newLims===4&&lay.extLims===0&&lay.rtype===3&&lay.keep&&lay.keep.dscr===1.11, 'back to New loan: the new loan’s verdict and limits again; the extension’s limits are kept for later');
   await page.click('#refiView [data-presetmanage]'); await page.waitForTimeout(300);
   await page.click('#presetModal [data-presetadd]'); await page.waitForTimeout(200);
   const pf=async(f,v)=>{ await page.fill('#presetModal [data-pi="0"][data-pf="'+f+'"]',String(v)); await page.dispatchEvent('#presetModal [data-pi="0"][data-pf="'+f+'"]','change'); };
@@ -163,6 +182,8 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   const other=await page.evaluate(()=>{ const L=window.LDS_loans().filter(l=>!l.archived); for(const l of L){ try{ const v=window.LDS_refiVerdict(l); if(v.can.sized&&!v.can.can&&!v.paydown) return l._id; }catch(e){} } return null; });
   if(other){ await openRefi(other); ok(await page.evaluate(()=>document.querySelector('[data-refiverdict]').getAttribute('data-refiverdict'))==='no', 'a loan that can’t cover but doesn’t mature or reset within 12 months: still "Don’t refinance"'); }
   else ok(true, '(no other loan here that can’t cover outside the 12 months)');
+  const nv=await page.evaluate(()=>{ for(const l of window.LDS_loans().filter(l=>!l.archived)){ try{ const v=window.LDS_refiExtVerdict(l); if(v&&v.r&&v.why==='notyet') return { name:l.propertyName, kind:v.kind, date:v.r.terms.date }; }catch(e){} } return null; });
+  ok(nv&&nv.kind==='no', 'a loan whose terms run past 12 months: the extension says “Not yet” ('+(nv?nv.name+', to '+nv.date:'none found')+')');
 
   // ---- the assistant: the appraisal and the deal, behind a card ----
   const r=await page.evaluate(()=>Promise.resolve(window.LDS_asstAction({action:'set_refi_terms',args:{name:'Queens Gate',changes:{appraisedValue:70000000, deal:'extend'}}})).then(x=>({ pending:!!(x&&x.pending), text:([...document.querySelectorAll('#aiAsstLog [data-asstcard]')].pop()||{}).textContent||'' })));
