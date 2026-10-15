@@ -791,7 +791,7 @@ The daily backup runs on the real project (2026-10-14). **Not tested, by the ope
 only tester, with one computer): offline, and two computers at once.
 
 **After shipping (the operator, in the installed 3.0.0):** sign in → **Start the group over** → **Upload this computer's
-data**; then mark Terrazul Sweetwater **Out of date…**; GitHub Pages pointed at the release branch (the email buttons);
+data**; GitHub Pages pointed at the release branch (the email buttons);
 the TEST app uninstalled. The release's "Update the shared database (Supabase)" run shows a green tick.
 
 **Check-list rule (from the operator, Part 10):** never ask the operator to sign out of (or into) Claude.
@@ -852,6 +852,143 @@ So the team works off the same data: groups made by the maintainer, each with on
 members; a typed reason on every change (who / when / why, field by field); the admin's changes need the admin's
 approval; shared chats; offline = the last picture, view-only but for the admin's offline code; a daily backup;
 always opening on the Portfolio dashboard; the user's local files untouched. Hosting: **Supabase**.
+
+### Next — the pro forma, lender scenarios and expense benchmarks (planned 2026-10-14; F1 and F4 built as a draft)
+From the meeting with Azriel on 2026-10-13, in this order:
+- **F1:** a pro forma (and an aggressive) column in Underwriting, with a kind and a story on every changed line, a
+  reconciliation to the T12 NOI, and an Excel file for the lender.
+- **F4:** in the refinance, an appraised value, an extension with today's lender and the pay-down needed, a pay-down
+  verdict for a loan that must be dealt with, and lender presets.
+- **F2:** a group benchmark library that flags expense anomalies by asset type, state, building age and features.
+
+The plan, the operator's decisions D1–D13 and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Version numbers are the
+operator's to choose.
+
+#### F1 — the pro forma: built as a DRAFT on the development branch (2026-10-14) — not shipped, no version, no release
+Built for the operator to see and test; it is not merged into the release branch, so no installed app has it. The
+test installer that the development branch builds ("Loan Debt Service Hub TEST") carries it.
+- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 38 checks). Input: the Setup's T12 lines, the accounts
+  under each line (`SetupBuilder.accountLine` + `ProForma.accountsFrom`, on the T12 rule's basis — an annualized
+  statement's account is its own last 3 months × 4; anything a line holds beyond its accounts is shown as
+  "Difference to the statement's printed total"), each line's month-by-month total, the units and the saved pro
+  forma. Order: revenue credit (each income line = last 3 or 6 months × 12/N) → account changes (take out, spread
+  1/N, new amount for one account) → whole-line changes (new total, per unit, a whole line spread) → % of revenue
+  (an expense = % of the version's own EGI; a rental deduction = −% of gross potential rent). Every step's effect is
+  measured on the NOI; T12 NOI + the effects must equal the pro forma NOI to the cent ("reconciles"), worked out twice.
+  Reserves are not in it (it starts from the T12 NOI, which has none); the lender file adds them on both sides.
+- **Two versions:** Safe and Aggressive. Aggressive = Safe + its own changes; an Aggressive change on the same line
+  (whole line) or account wins. One whole-line change per line per version; a whole-line change closes the account
+  changes on that line (the panel warns). A change without a kind or a story is never counted.
+- **Underwriting:** "Start a pro forma" → a **Pro forma** column right of Underwritten with its $/unit and a
+  **Safe / Aggressive** switch; a changed cell is marked and names its kind on hover; a line the T12 doesn't have can be
+  added ("+ Add a line"). Clicking a figure opens **"Change this line"**: T12 / Underwritten / Safe / Aggressive, the
+  changes on the line (Edit, Remove, who and when), the accounts with their row in the file and a 12-month strip, then
+  How (New total · Take out accounts · New amount for one account · Spread over years · % of revenue · Per unit), Kind,
+  Story (required; "Draft it with Claude"), Apply to (Safe · Aggressive · Both), and a live before → after preview.
+  **Revenue credit…** (T3 / T6, the revenue lines month by month with the months used, today's occupancy from the rent
+  roll, story required); **How it adds up** under the table for both versions; changes not counted are listed with
+  "fix or remove"; **History**; **Remove** (the history keeps every change). The column needs the 12-month basis.
+- **Kept:** `assumptions.json` → `proForma: {started, revenue:{base, aggressive}, changes:[{id, column, line, how,
+  value|pct|years|perUnit, accounts:[{name, sheet?, row}], kind, story, by, at, from}]}` (ids → the shared database
+  merges change by change). Every change, edit and removal goes to `history.json` with its story; in the shared
+  database the story starts the "Not saved yet" reason. View-only members see it read-only.
+- **General Data / refinance:** `noi.proForma = {base, aggressive, baseOk, aggressiveOk, aggressiveOwn, changes,
+  changesAggressive, lastBy, lastAt}`. The refinance's NOI choice gains **Pro forma · Safe** and **Pro forma ·
+  Aggressive** (only when it reconciles; Aggressive only when it has changes of its own); "How 'supports $X' is worked
+  out" names it ("pro forma · Safe (N changes; last by …)"). Pools add each property's.
+- **Lender file:** "For the lender…" → Safe only, or Safe and Aggressive → "<property> — Pro forma — <date>.xlsx":
+  *Pro forma* (line, T12, $/unit, pro forma, $/unit, [Aggressive, $/unit], change, kind, story; EGI, expenses, NOI,
+  reserves, NOI after reserves), *Reconciliation*, *Monthly* (the months used for the revenue credit marked).
+- **Assistant:** `propose_pro_forma_change` (an Approve card: the line and the NOI before → after, the kind, the story;
+  never an invented number); `read_property` returns the pro forma; `set_refi_noi_basis` takes "pro forma" / "aggressive".
+- **Tests:** `test/e2e/proforma.e2e.js` (42 checks, on the made-up `test/fixtures/proforma-t12.js`).
+- **Also in the draft (asked 2026-10-15) — which limits the lender uses:** in the refinance's "How 'supports $X' is
+  worked out", each of the four lender limits (debt coverage amortizing, debt coverage interest-only, loan-to-value,
+  debt yield) has a **"Lender uses"** tick box. All ticked at the start = the smallest binds, as before; untick the ones
+  the lender doesn't use and the smallest of the ticked ones binds (so a lender sizing on LTV only can allow more than
+  the debt coverage would). Unticked lines are greyed and marked "not used by this lender"; the last limit that sizes
+  can't be unticked. Kept per refinance with the limits (`off: [...]`; with F4 below, in the property's shared record);
+  "back to 1.25× / 75% / 7%, all used" resets it. The limit rows no longer light up under the mouse (it was a
+  leftover style for every table row and looked clickable); only the binding row is highlighted.
+  `test/e2e/refi-lender-uses.e2e.js` (13 checks). No warning when coverage falls under 1.00× — the operator's call:
+  the app is for the borrower; that risk is the lender's.
+- **Not in the draft yet:** listing changes that aren't counted in Data Health, the pro forma as context for "What to
+  push", and the cloud test-bed checks (two computers, view-only). Real-file check against Azriel's Queens Gate
+  $3.34M waits for his file.
+
+#### The TEST app: never the shared database (draft, 2026-10-15)
+The TEST installer ("Loan Debt Service Hub TEST", `package.json` `ldsTestBuild`, or `LDS_TEST_BUILD=1`) never uses the
+shared database (`main.js` sets `LDS_CLOUD_OFF` unless `LDS_CLOUD_URL` is given). On its first start it copies this
+computer's data from the real app's folder, read only: the newest group picture (`cloud/<group>/data/`) when the real
+app is signed in, else the real app's own data — loans, settings, documents, chats and the window's storage — and
+records where from in `test-copy.json`. A bar at the top says "TEST app — a copy of your group's data from … Nothing you
+do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (8 checks).
+
+#### F4 — lender scenarios: built as a DRAFT on the development branch (2026-10-15) — not shipped, no version, no release
+- **Engine:** `refi-extend.js` (pure, `test/refi-extend.test.js`, 17 checks): the loan constant; sizing on the limits a
+  lender uses; the penalty a lender asks on an extension (D7: the full penalty, on the pay-down only — full × pay-down ÷
+  owed —, a part as a % or $, or none; until one is picked, on the pay-down, marked assumed); the fee (% of the extended
+  amount or $); the extension (owed → allowed → pay-down → coverage at the extended amount → penalty, fee, cash
+  needed); `mustAct` (D1: can't cover AND matures or resets within 12 months).
+- **D1 — must act:** `refiVerdict` adds `paydown` (with `reset` = the first rate reset ahead: date, rate before and
+  after, the new payment). The verdict reads "Act before <date> — pay down $X" (`data-refiverdict="paydown"`), says
+  when today's rate resets (or the loan ends), "To refinance at these limits: pay down $X" (`data-refipaydown="refi"`)
+  and, once the extension's terms are in, "To extend with today's lender: pay down $Y" (`data-refipaydown="extend"`).
+  The reset shows next to "Today's loan rate" in every verdict. The proposed loan is shown and "Save as a loan — pay in
+  $X" is allowed up to what the property supports; the gap is recorded on the new loan (`paidInAtRefinance`) and in the
+  old loans' history. Outside the 12 months it stays "Don't refinance".
+- **D9 — shared refinance inputs:** a refinance's limits (and `off`), appraisal, kind of deal, extension terms and preset
+  are kept in the home property's `assumptions.json` under `refi[<refinance id>]` (the loan, `combo:` or `multi:`; a
+  portfolio under its first property, sorted). Read when the refinance opens (again after a minute); each change is
+  written in order from the latest copy and recorded in `history.json` (field `refi:<id>.<what>`); a change that
+  changes nothing is not saved. This computer's old `ldsHub.refiLimits.v1` limits move in once with a history entry.
+  "Change history" in the refinance lists them. In a plain browser they stay in the browser (`ldsHub.refiRec.v1`).
+  View-only members can't change them.
+- **Appraised value:** "Value" in "How 'supports $X' is worked out" — NOI ÷ cap rate, or a typed appraisal (date,
+  note); the LTV limit and the line under the amount use it.
+- **D11:** both coverage lines are always shown; a loan or extension interest-only for its whole term gets a note to
+  untick the amortizing line when the lender sizes on the interest-only payment; a preset with "an all-interest-only
+  loan is sized on the interest-only payment" unticks it when picked for such a deal.
+- **D7 / D10 — extend with today's lender:** "What kind of deal? New loan · Extend with today's lender" (single loans
+  only) comes **first**, right under Current Loan, and everything below follows it (the operator, after testing the
+  TEST app, 2026-10-15). With **Extend**: the verdict box is the extension's own (`data-refiverdict="extend"` /
+  `"extend-no"`, `"extended"` once saved) — what you'll owe when today's terms end, what today's lender allows, today's
+  rate and the extension's; the extension's rate (index + spread, in the box — no Fixed / Floating / Hybrid, no new-loan
+  amount); "Can you?" with the pay-down (`data-refipaydown="extend"`); the **one** limits table, value, appraisal and
+  preset — today's lender's (`data-refibasisext`, `data-refiextlim` / `data-refiextuse`), kept apart from a new loan's so
+  switching loses neither; "Should you?" by the same rule as a new loan (matures or resets within 12 months → extend;
+  terms ending more than 12 months away → not yet; a lower rate that saves more interest — from the date today's terms
+  end until today's loan ends — than the penalty → extend; else don't). Then "The extension's terms": the date today's
+  terms end (default: the payment before the rate resets, else the maturity date), months on the new terms,
+  interest-only (whole / N / none), amortization after it, this lender's penalty choice and the fee, with the pay-down,
+  the coverage at the extended amount, the penalty and how it was worked out, the fee, cash needed, the first payment
+  on the new terms and the new maturity (flagged when earlier than today's). Then the **payment schedule with the
+  extension**, from today to the new maturity (`data-refiextsched`: the pay-down row, "Extension starts", the
+  extension's months shaded). "Save the extension" sits on top, shown when the answer is Extend. **Save the extension** (asks first) keeps the same loan record: rate type Floating at the
+  index + spread, the ARM fields cleared, the new term and maturity, status Extended, the pay-down as
+  `principalPayments[{id, date, amount, note}]`, and `extension{date, months, ioMonths, amortMonths, lender, index,
+  spread, owed, payDown, penalty, fee, cash, rate, at, by, before}` (`before` = the fields it changed). A history entry
+  per field, noted "Extended with <lender>: …". **Undo the extension** restores `before`.
+- **The schedule (`buildSchedule`):** a loan with `extension` runs on its `before` terms up to the date, then the
+  extension's rate (the loan's own fields now hold it), its interest-only months, then a level payment over its
+  amortization to the new maturity; `principalPayments` come off after the last payment on or before their date. The
+  rows say "Paid down $X" and "Extension starts". A loan without them is exactly as before (all 29 built-in loans
+  checked row by row).
+- **Lender presets (D13):** the shared setting `lds.lenderPresets` (`CLOUD_SHARED_KEYS` / `SHARED_KEYS`), a list for the
+  group, ships empty; "Manage presets" (the admin; any local app) edits name, limits and which are used, the
+  interest-only rule, rate types allowed, longest amortization, the penalty on an extension, notes, source. Picking one
+  fills the limits and names it ("<name> preset", "(changed here)" once edited); a rate type it doesn't allow is greyed
+  with the reason and can't be picked. **Server:** `lds_save` refuses a non-admin's save that changes
+  `settings.json → lds.lenderPresets` (`admin_only_list`), tested on the local test database (`test/cloud-rules.test.js`,
+  5 checks). The setup version was not raised (still 1) — raising it is the operator's call before shipping.
+  The benchmark library is F2 (not built).
+- **Assistant:** `set_refi_terms` takes `deal`, `appraisedValue`, `appraisalDate`, `preset`; `set_extension`,
+  `save_extension`, `undo_extension` (each an Approve card); the refinance summary names the pay-down.
+- **Tests:** `test/e2e/refi-extend.e2e.js` (Queens Gate: the pay-down worked out on its own and compared with the
+  screen, the layout — the deal first, the extension's own verdict, nothing shown twice, its schedule —, each penalty
+  choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
+- **Not in the draft:** presets filled from Azriel's numbers (they ship empty); the extension for a pooled or combined
+  loan; a second extension on top of a saved one (undo first).
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared

@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('ldsShell', {
   // Marks this as the desktop build (the renderer checks it to show/hide the
   // Data menu, which is desktop-only).
   isDesktop: true,
+  testInfo: () => ipcRenderer.invoke('lds:test-info'),   // the test build: where its copy of the data came from (null in the real app)
 
   // Ask the desktop shell to raise THIS window to the front of the screen.
   // Used when a calendar event is clicked: the main window has already been
