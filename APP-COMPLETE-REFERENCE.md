@@ -902,6 +902,16 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
 - **Assistant:** `propose_pro_forma_change` (an Approve card: the line and the NOI before → after, the kind, the story;
   never an invented number); `read_property` returns the pro forma; `set_refi_noi_basis` takes "pro forma" / "aggressive".
 - **Tests:** `test/e2e/proforma.e2e.js` (42 checks, on the made-up `test/fixtures/proforma-t12.js`).
+- **Also in the draft (asked 2026-10-15) — which limits the lender uses:** in the refinance's "How 'supports $X' is
+  worked out", each of the four lender limits (debt coverage amortizing, debt coverage interest-only, loan-to-value,
+  debt yield) has a **"Lender uses"** tick box. All ticked at the start = the smallest binds, as before; untick the ones
+  the lender doesn't use and the smallest of the ticked ones binds (so a lender sizing on LTV only can allow more than
+  the debt coverage would). Unticked lines are greyed and marked "not used by this lender"; the last limit that sizes
+  can't be unticked. Kept per refinance on this computer with the limits (`ldsHub.refiLimits.v1` → `off: [...]`);
+  "back to 1.25× / 75% / 7%, all used" resets it. The limit rows no longer light up under the mouse (it was a
+  leftover style for every table row and looked clickable); only the binding row is highlighted.
+  `test/e2e/refi-lender-uses.e2e.js` (13 checks). No warning when coverage falls under 1.00× — the operator's call:
+  the app is for the borrower; that risk is the lender's.
 - **Not in the draft yet:** listing changes that aren't counted in Data Health, the pro forma as context for "What to
   push", and the cloud test-bed checks (two computers, view-only). Real-file check against Azriel's Queens Gate
   $3.34M waits for his file.
