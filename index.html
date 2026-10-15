@@ -15520,6 +15520,12 @@ tr.flagged:hover td{background:#fee2e2}
     if(aiChatAvailable() && el("aiAsstFab")){
       el("aiAsstFab").hidden = false;
       el("aiAsstFab").addEventListener("click", aiAsstOpen);
+      // Next stage (draft) — the test build: a bar says it works on its own copy of the data, never the team's
+      try{ if(window.ldsShell && ldsShell.testInfo) ldsShell.testInfo().then(function(t){ if(!t) return;
+        var b = document.createElement("div"); b.id = "testBuildBar";
+        b.className = "fixed top-0 left-1/2 -translate-x-1/2 z-[75] mt-1 rounded-full border border-amber-300 bg-amber-100 px-4 py-1 text-[12px] font-semibold text-amber-900 shadow";
+        b.textContent = "TEST app — " + (t.from ? "a copy of " + (t.shared ? "your group’s data" : "this computer’s data") + (t.at ? " from " + fmtWhenShort(t.at) : "") : "its own data") + ". Nothing you do here reaches your real app or the team.";
+        document.body.appendChild(b); }).catch(function(){}); }catch(e){}
       el("aiAsstClose").addEventListener("click", aiAsstClose);
       el("aiAsstSettingsToggle").addEventListener("click", ()=>openClaudeConn());   // unified subscription sign-in dialog
       // The Send button doubles as Stop while a request is running.
