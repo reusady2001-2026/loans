@@ -1,10 +1,11 @@
 # Next stage — the pro forma, lender scenarios and expense benchmarks: the plan
 
 *Written 2026-10-14 from the recording of the meeting with Azriel on 2026-10-13 ("Follow up", 56 minutes), and
-from a read of the app's code as it is after 3.0.0. Status: **F1 is built as a draft on the development branch
-(2026-10-14) for the operator to see and test — not shipped, no version, no release** (what it does: reference §9,
-"F1 — the pro forma: built as a DRAFT"); F4 and F2 are not built. The version number of each part is the operator's
-to choose (version rule, reference §8).*
+from a read of the app's code as it is after 3.0.0. Status: **F1 (2026-10-14) and F4 (2026-10-15) are built as a draft
+on the development branch for the operator to see and test — not shipped, no version, no release** (what they do:
+reference §9, "F1 — the pro forma" and "F4 — lender scenarios"); F2 is not built (it needs Azriel's benchmarks). The
+lender presets ship empty until Azriel's numbers come. The version number of each part, and raising the shared
+database's setup version for the presets rule (D13), are the operator's to choose (version rule, reference §8).*
 
 Three features, in the order to build them: **F1 the pro forma**, **F4 lender scenarios**, **F2 expense
 benchmarks**. (The names keep the first plan's numbers.)

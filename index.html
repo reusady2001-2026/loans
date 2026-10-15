@@ -17,6 +17,7 @@
   <script src="./t12-classify.js"></script>
   <script src="./setup-builder.js"></script>
   <script src="./proforma.js"></script>
+  <script src="./refi-extend.js"></script>
   <script src="./t12-parse.js"></script>
   <!-- Per-property operating model (SPEC-v2.3.0): store → taxonomy → calc → upload → sheet/assumptions → roll-up/scan -->
   <script src="./operating-store.js"></script>
@@ -1254,7 +1255,7 @@
     // every member calculates a floating loan from the same rates. In the shared database they come from the group;
     // this computer's own values are kept aside once, never changed (the first upload sends them).
     const CLOUD_RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
-    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(CLOUD_RATE_KEYS);
+    const CLOUD_SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate", "lds.lenderPresets"].concat(CLOUD_RATE_KEYS);   // next stage (F4) — the lender presets: the admin's list
     function cloudApplySettings(){
       if(!LDS_CLOUD) return;
       try{
@@ -1929,13 +1930,25 @@
       return c > 0 ? (balance * c) / (1 - Math.pow(1 + c, -n)) : balance / n;
     }
 
+    // Next stage (F4, draft) — a loan's extension with today's lender (saved from the refinance), read safely.
+    function loanExtension(l){
+      const e = l && l.extension; if(!e || typeof e !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(e.date || "")) return null;
+      return { date: e.date, months: Math.max(0, Math.round(Number(e.months) || 0)), io: Math.max(0, Math.round(Number(e.ioMonths) || 0)),
+               amortMonths: Math.max(1, Math.round(Number(e.amortMonths) || 360)), before: (e.before && typeof e.before === "object") ? e.before : null };
+    }
     // Build the displayed schedule across all rate phases; cut off at the loan
     // term with a balloon that lands the ending balance at exactly $0.00.
-    function buildSchedule(loan){
+    function buildSchedule(loanIn){
+      // Next stage (F4, draft) — an extension with today's lender: up to its date the schedule runs on the loan's terms
+      // before it (kept in extension.before), so nothing already paid changes; on the date the pay-down comes off; after
+      // it, the extension's rate (the loan's own rate fields now hold it), its interest-only months, then a level payment
+      // over the amortization left, to the new maturity. A loan with no extension: exactly as before.
+      const ext = loanExtension(loanIn), extTerms = loanIn;
+      const loan = (ext && ext.before) ? Object.assign({}, loanIn, ext.before) : loanIn;
       const start = accrualStartParts(loan);                 // first accrual month (origination)
       const fpParts = firstPayParts(loan);                   // first (interest-only) payment date, in arrears
       const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
-      const term = loan.loanTermMonths || loan.amortizationMonths || 0;
+      const term = loanIn.loanTermMonths || loanIn.amortizationMonths || 0;
       const rows = [];
       const segments = [];
       let balance = loan.originalAmount || 0;
@@ -1959,11 +1972,34 @@
       // 2.9.14 — pool releases: each paydown comes off the balance right after the last payment on or before its date; the
       // payment is then recalculated over the remaining amortization (or kept, when the release says so).
       const pdAt = {};
-      if(loan.poolReleases && fpParts){ poolReleases(loan).forEach(r => { let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= r.date) k = i; else break; } (pdAt[k] = pdAt[k] || []).push(r); }); }
+      const extraPays = (Array.isArray(loanIn.principalPayments) ? loanIn.principalPayments : []).filter(p => p && /^\d{4}-\d{2}-\d{2}$/.test(p.date || "") && Number(p.amount) > 0)
+        .map(p => ({ date: p.date, amount: Number(p.amount), reamortize: false, note: p.note || "", kind: "payment" }));   // next stage (F4) — a principal payment (an extension's pay-down)
+      if((loan.poolReleases || extraPays.length) && fpParts){ (loan.poolReleases ? poolReleases(loan) : []).concat(extraPays).forEach(r => { let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= r.date) k = i; else break; } (pdAt[k] = pdAt[k] || []).push(r); }); }
       const openingPaydowns = [];                            // 2.9.15 (P1) — releases dated before the first payment, as applied
       if(pdAt[-1]){ pdAt[-1].forEach(r => { const amt = Math.min(balance, r.amount); balance -= amt; openingPaydowns.push({ date: r.date, amount: amt }); }); if(!isFixedAmort){ currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0)); segments[0].payment = currentPayment; } }
 
+      let mExt = Infinity;
+      if(ext && fpParts){ let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= ext.date) k = i; else break; } mExt = k + 1; }
       for(let m=0; m<term; m++){
+        if(m >= mExt){   // next stage (F4) — the extension's months
+          if(m === mExt || m === mExt + ext.io){
+            const r0 = rateForMonth(extTerms, m);
+            currentPayment = (m - mExt < ext.io) ? 0 : (function(b, n, r){ const c = r / 12; return n > 0 ? (c > 0 ? (b * c) / (1 - Math.pow(1 + c, -n)) : b / n) : b; })(balance, ext.amortMonths, r0);
+            segments.push({ startMonth: m, rate: r0, payment: currentPayment, ext: true });
+          }
+          const { y, mo } = monthPosition(start, m), days = daysInMonth(y, mo);
+          const rInfo = effectiveRateInfo(extTerms, m, { y, mo }, null), rate = rInfo.rate;
+          const startingBalance = balance, dcDays = (extTerms.amortMethod === "30/360") ? 30 : days, interest = startingBalance * dcDays * (rate / 360);
+          const isFinal = m === term - 1, payParts = fpParts ? addMonths(fpParts, m) : null, paymentDate = payParts ? partsToISO(payParts.y, payParts.mo, payParts.d) : "";
+          let payment, principalPaid, type;
+          if(isFinal){ principalPaid = startingBalance; payment = startingBalance + interest; balance = 0; type = "balloon"; }
+          else if(m - mExt < ext.io){ payment = interest; principalPaid = 0; type = "io"; }
+          else { payment = currentPayment; principalPaid = payment - interest; balance = startingBalance - principalPaid; type = "amort"; }
+          totalInterest += interest; totalPaid += payment;
+          rows.push({ index: m + 1, label: MONTH_NAMES[mo] + " " + y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance: balance, type, isReset: false, rateSrc: rInfo.src, ext: true, extStart: m === mExt });
+          if(pdAt[m] && m < term - 1){ let amt = 0, paid = 0; const each = []; pdAt[m].forEach(r => { const a = Math.min(balance - amt, r.amount); amt += a; if(r.kind === "payment") paid += a; each.push({ date: r.date, amount: a }); }); balance = Math.max(0, balance - amt); const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; row.paydowns = each; totalPaid += amt; if(paid > 0) row.principalPay = paid; }
+          continue;
+        }
         // 2.9.7 (#221) — every hybrid's reset month is marked (calendar, schedule tag, reset warning), whatever
         // its payment type; a fixed payment from the documents stays as it is (only a level payment is re-solved).
         const isReset = isResetBoundary(loan, m);
@@ -2017,8 +2053,8 @@
         }
         totalInterest += interest; totalPaid += payment;
         rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src });
-        if(pdAt[m] && m < term - 1){ let amt = 0; const each = []; pdAt[m].forEach(r => { const a = Math.min(balance - amt, r.amount); amt += a; each.push({ date: r.date, amount: a }); }); balance = Math.max(0, balance - amt);
-          const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; row.paydowns = each; totalPaid += amt;
+        if(pdAt[m] && m < term - 1){ let amt = 0, paid = 0; const each = []; pdAt[m].forEach(r => { const a = Math.min(balance - amt, r.amount); amt += a; if(r.kind === "payment") paid += a; each.push({ date: r.date, amount: a }); }); balance = Math.max(0, balance - amt);
+          const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; row.paydowns = each; totalPaid += amt; if(paid > 0) row.principalPay = paid;   // next stage (F4) — a principal payment (an extension's pay-down), named on the row
           if(!isFixedAmort && pdAt[m].some(r => r.reamortize)){ currentPayment = solveSegmentPayment(loan, balance, m + 1, rateForMonth(loan, m + 1)); segments.push({ startMonth: m + 1, rate: rateForMonth(loan, m + 1), payment: currentPayment }); } }
       }
       // Surface a representative amortizing payment (the first amortizing month's total)
@@ -2073,7 +2109,7 @@
       // only period principal is 0, so the payment IS the interest — never $0 (a fully
       // interest-only/bullet loan pays interest every month until the balloon). Once
       // amortizing, it's the level P&I.
-      const inIONow = !!curRow && (curIdx < originalIO);
+      const inIONow = !!curRow && (curIdx < originalIO || curRow.type === "io");   // next stage (F4) — an extension's interest-only months too
       const monthlyPI = inIONow ? curRow.interest : (amortizingPI || (curRow ? curRow.payment : 0));
 
       const escrowKeys = ["escrowTax","escrowInsurance","replacementReserve","tilcReserve","groundLease","otherEscrow1Amt","otherEscrow2Amt"];
@@ -2087,7 +2123,7 @@
         derived: {
           currentBalance, maturityDate, monthlyPI, amortizingPI, inIONow, totalDebtService,
           originalIO, monthsToMaturity, paymentsMade, escrowTotal, feeTotal,
-          ioRemaining: Math.max(0, originalIO - paymentsMade),   // IO months still ahead
+          ioRemaining: loanExtension(loan) ? rows.slice(Math.max(0, paymentsMade)).filter(r => r.type === "io").length : Math.max(0, originalIO - paymentsMade),   // IO months still ahead (an extension's too)
           interestOnly: (term > 0 && originalIO >= term) ? "Y" : "N",
           currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
@@ -2593,7 +2629,7 @@
     const HISTORY_WHO_ASSISTANT = "Assistant, approved by You";
     function historyWhoFor(from){ return from === "assistant" ? HISTORY_WHO_ASSISTANT : "You"; }
     function historyFromLabel(from, extra){
-      const base = { typed: "typed", assistant: "the assistant", "excel-import": "Excel import", refinance: "refinance “Save as a loan”", restore: "restore from a backup", document: "a document" }[from] || (from || "typed");
+      const base = { typed: "typed", assistant: "the assistant", "excel-import": "Excel import", refinance: "refinance “Save as a loan”", extension: "refinance “Save the extension”", move: "moved in once from this computer", restore: "restore from a backup", document: "a document" }[from] || (from || "typed");
       return base + (extra && extra.file ? " · " + extra.file + (extra.page ? " p." + extra.page : "") : "");
     }
     function historyModalEl(){
@@ -2824,7 +2860,9 @@
           r.type==="balloon" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Balloon</span>' :
           r.type==="final" ? ' <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Final</span>' : '';
         const nowBadge = isNow ? ' <span class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700">Now</span>' : '';
-        const resetBadge = r.isReset ? ' <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">Reset → '+fmtPct(r.rate)+'</span>' : '';
+        const resetBadge = (r.isReset ? ' <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">Reset → '+fmtPct(r.rate)+'</span>' : '')+
+          (r.extStart ? ' <span class="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700" data-schedext>Extension starts &middot; '+fmtPct(r.rate)+'</span>' : '')+   // next stage (F4)
+          (r.principalPay ? ' <span class="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700" data-schedpaid>Paid down '+fmtMoney(r.principalPay)+'</span>' : '');
         return '<tr data-schedrow="'+r.index+'" class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
           '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+resetBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
@@ -7810,6 +7848,7 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_refiCanNow=(l)=>refiCanStage(l, refiDrafts[1]); window.LDS_refiDraftRate=()=>refiDrafts[1]?compute(refiDrafts[1]).derived.currentRate:null; window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_exitCost=(id, shiftBps)=>{ const l=getLoan(id); if(!l) return null; const cs=shiftBps ? [INDEX_CACHE[ymReinvestTenor(l)]].filter(Boolean) : [], was=cs.map(c=>c.value); cs.forEach(c=>{ c.value += shiftBps/100; });   // diagnostics: the Treasury moved by shiftBps (to compare with a calculator's rate shift)
       try{ const d=compute(l).derived, x=exitCost(l); return { type:x.type, cost:x.cost, ym:x.ym||null, balance:d.currentBalance, rate:d.currentRate, monthsLeft:d.monthsToMaturity, paymentsMade:d.paymentsMade }; } finally { cs.forEach((c,i)=>{ c.value = was[i]; }); } }; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
+    try{ window.LDS_compute=(l)=>compute(l); window.LDS_refiRec=(l)=>refiRec(l); window.LDS_refiHomeKey=(l)=>refiHomeKey(l); window.LDS_readAssumptions=(k)=>opLoadAssumptions(k); window.LDS_refiExtResult=(l)=>refiExtResult(l); window.LDS_refiPenalty=(l)=>refiPenalty(l); window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_propHistory=(k)=>{ delete propHistCache[k]; return propHistoryLoad(k); }; window.LDS_lenderPresets=()=>lenderPresets(); }catch(e){}   // diagnostics: a loan's schedule, and the next stage's refinance record / extension (F4)
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
@@ -11513,7 +11552,7 @@ tr.flagged:hover td{background:#fee2e2}
         annualRate:null, floatIndexValue:null, floatRepricedOn:null, floatIndexLive:null, armAssumedIndex:null,
         originalAmount: refiPayoff(loan), loanTermMonths: opt.term, amortizationMonths: amort, ioMonths: io,   // 2.9.7 (#25) — the property's payoff
         originationDate: partsToISO(today.y,today.mo,today.d), firstPaymentDate: partsToISO(fpm.y,fpm.mo,1), maturityDate: partsToISO(newMat.y,newMat.mo,1),
-        noi:null, capRate:null, refiIO:null, refiTermMonths:null, stackWith:null, prepayType:null, prepayConfirmed:null,
+        noi:null, capRate:null, refiIO:null, refiTermMonths:null, stackWith:null, prepayType:null, prepayConfirmed:null, extension:null, principalPayments:null, paidInAtRefinance:null,   // F4 — a new loan carries none of today's extension
         _closingPct: loanClosingPct(loan), _tenor: opt.tenor, _years: opt.years, _fixedIndex: null, _fixedSpread: (type === "Hybrid ARM") ? baseSpread : null,
         _spreadFrom: dsp.from, _fxSpreadFrom: (type === "Hybrid ARM") ? dsp.from : null,
       });
@@ -11550,17 +11589,94 @@ tr.flagged:hover td{background:#fee2e2}
     const REFI_LIMITS_DEFAULT = { dscr: 1.25, dscrIO: null, ltv: 0.75, dy: 0.07 };
     const REFI_LIMITS_STORE = "ldsHub.refiLimits.v1";
     const REFI_LIMIT_KEYS = ["DSCR", "DSCR IO", "LTV", "Debt Yield"];
-    var refiLimitsById = (function(){ try{ const o = JSON.parse(localStorage.getItem(REFI_LIMITS_STORE) || "{}"); return (o && typeof o === "object") ? o : {}; }catch(e){ return {}; } })();
-    function refiLimits(loan){
-      const o = (loan && refiLimitsById[loan._id]) || {}, d = REFI_LIMITS_DEFAULT, ok = (v, lo, hi) => typeof v === "number" && isFinite(v) && v > lo && v < hi;
-      const off = Array.isArray(o.off) ? o.off.filter(k => REFI_LIMIT_KEYS.indexOf(k) >= 0) : [];
-      return { dscr: ok(o.dscr, 0, 10) ? o.dscr : d.dscr, dscrIO: ok(o.dscrIO, 0, 10) ? o.dscrIO : null, ltv: ok(o.ltv, 0, 1.5) ? o.ltv : d.ltv, dy: ok(o.dy, 0, 1) ? o.dy : d.dy, off: off, own: !!(loan && refiLimitsById[loan._id]) };
+    var refiLimitsById = (function(){ try{ const o = JSON.parse(localStorage.getItem(REFI_LIMITS_STORE) || "{}"); return (o && typeof o === "object") ? o : {}; }catch(e){ return {}; } })();   // before the next stage: this computer only
+    // ── Next stage (F4, draft) — D9: a refinance's own inputs are kept with the property (assumptions.json, under "refi"),
+    // so the whole team sees one refinance: the lender's limits (and which of them it uses), the appraised value, the
+    // deal (a new loan, or an extension with today's lender) and its terms, and the lender preset picked. Keyed as
+    // before (the loan, "combo:" or "multi:"); a portfolio is kept under its first property (sorted). This computer's
+    // old limits move in once (with a history entry). In a plain browser (no desktop app) they stay in the browser.
+    const REFI_REC_STORE = "ldsHub.refiRec.v1";
+    const refiRecCache = {};   // home property key -> { at, refi: { refinance id -> record }, loading }
+    const refiRecQueue = {};
+    function refiHomeKey(loan){ if(!loan) return null; const ks = loan._poolKeys; return (ks && ks.length > 1) ? ks.slice().sort()[0] : propertyKey(loan); }
+    function refiRecShared(){ return !!(window.ldsShell && ldsShell.docSave && ldsShell.docList && ldsShell.docRead); }
+    function refiRecLocal(){ try{ const o = JSON.parse(localStorage.getItem(REFI_REC_STORE) || "{}"); return (o && typeof o === "object") ? o : {}; }catch(e){ return {}; } }
+    function refiRec(loan){
+      if(!loan) return {};
+      if(!refiRecShared()){ const o = refiRecLocal()[loan._id]; if(o) return o; return refiLimitsById[loan._id] ? { limits: refiLimitsById[loan._id] } : {}; }
+      const c = refiRecCache[refiHomeKey(loan)];
+      if(c && c.refi) return c.refi[loan._id] || {};
+      return refiLimitsById[loan._id] ? { limits: refiLimitsById[loan._id] } : {};   // until the property's file is read
     }
-    function refiSetLimits(loan, patch){
-      if(!loan) return; const id = loan._id;
-      if(patch === null) delete refiLimitsById[id];
-      else { const o = Object.assign({}, refiLimitsById[id] || {}, patch); Object.keys(o).forEach(k => { if(o[k] == null || (Array.isArray(o[k]) && !o[k].length)) delete o[k]; }); if(Object.keys(o).length) refiLimitsById[id] = o; else delete refiLimitsById[id]; }
-      try{ localStorage.setItem(REFI_LIMITS_STORE, JSON.stringify(refiLimitsById)); }catch(e){}
+    function refiRecClean(r){ Object.keys(r).forEach(k => { const v = r[k]; if(v == null || v === "" || (Array.isArray(v) && !v.length) || (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length)) delete r[k]; }); return r; }
+    // Read the property's record (again when it is older than a minute), then call back so the screen follows.
+    function refiRecEnsure(loan, cb){
+      if(!loan || !refiRecShared()) return;
+      const key = refiHomeKey(loan); if(!key) return;
+      const c = refiRecCache[key];
+      if(c && (c.loading || Date.now() - c.at < 60000)) return;
+      const slot = refiRecCache[key] = Object.assign(c || { refi: null }, { loading: true, at: Date.now() });
+      opLoadAssumptions(key).then(b => {
+        slot.refi = Object.assign({}, (b && b.refi && typeof b.refi === "object") ? b.refi : {}); slot.loading = false; slot.at = Date.now();
+        refiRecMoveOld(loan);
+        if(cb) cb();
+      }).catch(() => { slot.loading = false; if(!slot.refi) slot.refi = {}; });
+    }
+    // The one-time move of this computer's old limits into the property's record.
+    function refiRecMoveOld(loan){
+      const id = loan._id, old = refiLimitsById[id], c = refiRecCache[refiHomeKey(loan)];
+      if(!old || !c || !c.refi) return;
+      const drop = () => { delete refiLimitsById[id]; try{ localStorage.setItem(REFI_LIMITS_STORE, JSON.stringify(refiLimitsById)); }catch(e){} };
+      if(c.refi[id] && c.refi[id].limits){ drop(); return; }   // the team's record already has limits: they win
+      if(!cloudCanWrite()) return;   // view only: keep using this computer's copy
+      const lim = Object.assign({}, old);
+      cloudAutoRun("moved this computer's refinance limits to the property's record", () => refiRecSave(loan, r => { r.limits = lim; },
+        [{ label: "Refinance · lender limits", old: "kept on this computer only", new: refiLimitsText(refiLimitsFrom(lim)), note: "moved in once from this computer, so the whole team sees the same refinance", field: "limits" }], "move")).then(drop).catch(() => {});
+    }
+    // Save a change to this refinance's record: the screen follows at once; the file is written in order, from the
+    // latest copy (Underwriting's own when it shows this property), and the history gets the entries.
+    function refiRecSave(loan, mutate, hist, from){
+      const key = refiHomeKey(loan), id = loan._id;
+      const apply = (map) => { const r = JSON.parse(JSON.stringify(map[id] || {})); mutate(r); refiRecClean(r); if(Object.keys(r).length) map[id] = r; else delete map[id]; return map; };
+      hist = (hist || []).filter(h => String(h.old == null ? "" : h.old) !== String(h.new == null ? "" : h.new));   // an entry that changes nothing isn't one
+      try{ const hint = hist.map(h => h.label + ": " + (h.new == null ? "—" : h.new)).join("; "); if(hint) window.ldsReasonHint = (loanLabel(loan) + " — " + hint).slice(0, 480); }catch(e){}
+      if(!refiRecShared()){ try{ localStorage.setItem(REFI_REC_STORE, JSON.stringify(apply(refiRecLocal()))); }catch(e){} return Promise.resolve(true); }
+      const c = refiRecCache[key] || (refiRecCache[key] = { at: Date.now(), refi: {} });
+      const was = JSON.stringify((c.refi || {})[id] || null);
+      c.refi = apply(Object.assign({}, c.refi || {}));
+      if(JSON.stringify(c.refi[id] || null) === was) return refiRecQueue[key] || Promise.resolve(true);   // nothing changed: no save, no history entry
+      refiRecQueue[key] = (refiRecQueue[key] || Promise.resolve()).catch(() => {}).then(async () => {
+        const b0 = (opFocusKey === key && uwState && uwState.input && uwState.input.bench) ? uwState.input.bench : ((await opLoadAssumptions(key)) || {});
+        const before = JSON.parse(JSON.stringify(b0)), after = JSON.parse(JSON.stringify(b0));
+        after.refi = apply(Object.assign({}, (after.refi && typeof after.refi === "object") ? after.refi : {}));
+        if(!Object.keys(after.refi).length) delete after.refi;
+        await opSaveAssumptionsFor(key, before, after, from || "typed");
+        (hist || []).forEach(h => { try{ assumptionHistoryAdd(key, h.label, h.old, h.new, h.note || "", "refi:" + id + "." + (h.field || "terms"), from || "typed"); }catch(e){} });
+        c.refi = Object.assign({}, after.refi || {}); c.at = Date.now();
+        return true;
+      });
+      return refiRecQueue[key];
+    }
+    function refiLimitsFrom(o){
+      o = o || {}; const d = REFI_LIMITS_DEFAULT, ok = (v, lo, hi) => typeof v === "number" && isFinite(v) && v > lo && v < hi;
+      const off = Array.isArray(o.off) ? o.off.filter(k => REFI_LIMIT_KEYS.indexOf(k) >= 0) : [];
+      return { dscr: ok(o.dscr, 0, 10) ? o.dscr : d.dscr, dscrIO: ok(o.dscrIO, 0, 10) ? o.dscrIO : null, ltv: ok(o.ltv, 0, 1.5) ? o.ltv : d.ltv, dy: ok(o.dy, 0, 1) ? o.dy : d.dy, off: off };
+    }
+    function refiLimitsText(l){
+      return fmtX2(l.dscr) + " amortizing / " + (l.dscrIO != null ? fmtX2(l.dscrIO) + " interest-only" : "no interest-only limit") + " / LTV " + fmtPct(l.ltv) + " / debt yield " + fmtPct(l.dy) + (l.off && l.off.length ? "; not used: " + l.off.join(", ") : "; all used");
+    }
+    function refiLimits(loan){
+      const rec = refiRec(loan), o = rec.limits || null;
+      return Object.assign(refiLimitsFrom(o || {}), { own: !!o, preset: rec.preset || null });
+    }
+    function refiSetLimits(loan, patch, opts){
+      if(!loan) return;
+      if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return; }
+      const cur = refiLimits(loan), was = cur.own ? refiLimitsText(cur) : "the start (1.25× / 75% / 7%, all used)";
+      let next = null;
+      if(patch !== null){ const rec = refiRec(loan); next = Object.assign({}, rec.limits || {}, patch); Object.keys(next).forEach(k => { if(next[k] == null || (Array.isArray(next[k]) && !next[k].length)) delete next[k]; }); if(!Object.keys(next).length) next = null; }
+      const now = next ? refiLimitsText(refiLimitsFrom(next)) : "the start (1.25× / 75% / 7%, all used)";
+      refiRecSave(loan, r => { if(next) r.limits = next; else delete r.limits; }, [{ label: "Refinance · lender limits", old: was, new: now, note: (opts && opts.note) || "", field: "limits" }], (opts && opts.from) || "typed");
     }
     const fmtX2 = (v) => (v != null && isFinite(v)) ? v.toFixed(2) + "×" : "—";
     function refiBindingWord(binding, lim){
@@ -11601,6 +11717,9 @@ tr.flagged:hover td{background:#fee2e2}
       const amortYears = Math.max(0, Math.round(((draft && draft.amortizationMonths) || 360) / 12));
       const lim = refiLimits(loan);   // 3.0.0 — the analysis's own limits
       const s = Underwriting.sizeLoan(noi, { capRate: loanCapRate(loan), ltvMax: lim.ltv, dscrMin: lim.dscr, dyMin: lim.dy, intRate: rate, amortYears: amortYears });
+      // next stage (F4, draft) — a typed appraised value replaces NOI ÷ cap rate for the value and the LTV limit
+      const appr = refiAppraisal(loan);
+      if(appr){ s.value = appr.value; s.loanLTV = lim.ltv * appr.value; }
       // 3.0.0 — coverage on the interest-only payment (income ÷ interest), a fourth limit once one is typed
       const ok = noi != null && isFinite(noi) && noi > 0;
       const loanIO = (ok && lim.dscrIO > 0 && rate > 0) ? noi / (lim.dscrIO * rate) : null;
@@ -11632,7 +11751,7 @@ tr.flagged:hover td{background:#fee2e2}
       const runnerUp = usedCaps.length > 1 ? usedCaps[1] : null;
       const margin = runnerUp ? (runnerUp.amt - usedCaps[0].amt) : null;
       return { can: can, sized: sized, maxLoan: maxLoan, payoff: payoff, binding: binding,
-               gap: maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears, value: s.value, constant: _smc, capRate: loanCapRate(loan), limits: lim,
+               gap: maxLoan - payoff, noi: noi, rate: rate, amortYears: amortYears, value: s.value, appraisal: appr, constant: _smc, capRate: loanCapRate(loan), limits: lim,
                legs: { DSCR: s.loanDSCR, "DSCR IO": loanIO, LTV: s.loanLTV, "Debt Yield": s.loanDY },
                caps: caps, runnerUp: runnerUp, margin: margin, someOff: caps.some(c => !c.used) };
     }
@@ -11675,8 +11794,27 @@ tr.flagged:hover td{background:#fee2e2}
     function refiVerdict(loan, draft){
       const can = refiCanStage(loan, draft);
       const should = can.can ? refiShouldStage(loan, draft) : null;
-      return { can: can, should: should, refi: can.can && !!should && should.kind === "yes", decision: can.can && !!should && should.kind === "decision" };
+      // next stage (F4, draft) — D1, agreed as revised: the property can't support what you owe AND today's loan matures
+      // or its rate resets within 12 months → not just "Don't refinance": pay down $X to refinance (or $Y to extend).
+      const ends = refiEnds(loan), reset = refiResetInfo(loan);
+      const must = (window.RefiExtend ? RefiExtend.mustAct({ canCover: can.can, monthsToMaturity: ends.months, monthsToReset: reset ? reset.months : null, windowMonths: REFI_MATURITY_WINDOW_MO }) : { must: false });
+      const paydown = !!(can.sized && must.must);
+      return { can: can, should: should, refi: can.can && !!should && should.kind === "yes", decision: can.can && !!should && should.kind === "decision",
+               paydown: paydown, must: must, reset: reset, ends: ends, payDown: paydown ? Math.max(0, can.payoff - can.maxLoan) : 0, ext: paydown ? refiExtResult(loan) : null };
     }
+    // The first rate reset still ahead on today's loan (a hybrid's fixed period ending): when, and the rate before and after.
+    function refiResetInfo(loan){
+      let best = null;
+      refiMembers(loan).forEach(m => {
+        if(!m || m.rateType !== "Hybrid ARM") return;
+        const c = compute(m), pm = Math.max(0, c.derived.paymentsMade || 0);
+        for(let i = pm; i < c.rows.length; i++){ const r = c.rows[i];
+          if(r.isReset){ if(!best || i - pm < best.months) best = { months: i - pm, date: r.paymentDate, from: c.derived.currentRate || 0, to: r.rate, payment: r.payment, label: loanLabel(m) }; break; } }
+      });
+      return best;
+    }
+    // A typed appraised value (with its date and note), kept with the refinance.
+    function refiAppraisal(loan){ const a = refiRec(loan).appraisal; return (a && typeof a.value === "number" && isFinite(a.value) && a.value > 0) ? a : null; }
     // 2.9.4 (#3) — the three loan sizes (DSCR / LTV / debt-yield caps), the binding one marked, and the
     // margin to the runner-up. A display of the sizing the app already computes; no new math.
     // 3.0.0 — how "supports $X" is worked out: the NOI and where it comes from, the proposed loan's rate (index +
@@ -11715,7 +11853,7 @@ tr.flagged:hover td{background:#fee2e2}
       const legs = [
         { key: "DSCR",       name: "Debt coverage, amortizing payment",     sign: "&ge;", box: inp("dscr", +lim.dscr.toFixed(3), "&times;"),                              how: "NOI &divide; (" + fmtX2(lim.dscr) + " &times; loan constant " + fmtPct(can.constant) + ")" },
         { key: "DSCR IO",    name: "Debt coverage, interest-only payment", sign: "&ge;", box: inp("dscrIO", lim.dscrIO != null ? +lim.dscrIO.toFixed(3) : null, "&times;", "not used"), how: lim.dscrIO != null ? "NOI &divide; (" + fmtX2(lim.dscrIO) + " &times; rate " + fmtPct(can.rate) + ")" : "type your lender&rsquo;s limit to use it" },
-        { key: "LTV",        name: "Loan-to-value",                        sign: "&le;", box: inp("ltv", +(lim.ltv * 100).toFixed(2), "%"),                               how: fmtPct(lim.ltv) + " of value " + (can.value != null ? fmtMoney(can.value) : "&mdash;") + " (NOI &divide; " + fmtPct(can.capRate) + " cap rate)" },
+        { key: "LTV",        name: "Loan-to-value",                        sign: "&le;", box: inp("ltv", +(lim.ltv * 100).toFixed(2), "%"),                               how: fmtPct(lim.ltv) + " of value " + (can.value != null ? fmtMoney(can.value) : "&mdash;") + (can.appraisal ? " (the appraisal)" : " (NOI &divide; " + fmtPct(can.capRate) + " cap rate)") },
         { key: "Debt Yield", name: "Debt yield",                           sign: "&ge;", box: inp("dy", +(lim.dy * 100).toFixed(2), "%"),                                 how: "NOI &divide; " + fmtPct(lim.dy) }
       ];
       const cap = (k) => can.caps.find(c => c.key === k);
@@ -11736,11 +11874,124 @@ tr.flagged:hover td{background:#fee2e2}
           fact("NOI", '<strong class="tabular-nums">'+fmtMoney(can.noi)+'</strong> &mdash; '+(parts ? parts.length + ' properties together, each one&rsquo;s NOI and source in <strong>NOI by property</strong> above' : refiNOISourceText(loan))+(boost ? ' (including '+(boost > 0 ? '+' : '&minus;')+fmtMoney(Math.abs(boost))+' from the moves ticked below)' : ''))+
           fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft)+' (never today&rsquo;s loan&rsquo;s rate)')+
           fact("Payment", pay)+
+          fact("Value", refiValueFactHtml(loan, can))+
         '</div>'+
+        ((io > 0 && term > 0 && io >= term && lim.off.indexOf("DSCR") < 0)
+          ? '<p class="mt-2 rounded-lg bg-sky-50 px-3 py-1.5 text-[11px] text-sky-900" data-refiiohint>This loan is interest-only for its whole term. If this lender sizes it on the interest-only payment'+(lim.dscrIO != null ? '' : ' (type its interest-only limit first)')+', untick &ldquo;Debt coverage, amortizing payment&rdquo; &mdash; both stay shown.</p>' : '')+
+        '<div class="mt-2 flex flex-wrap items-center gap-2" data-refipresetrow>'+presetPickerHtml(refiRec(loan).preset || "", 'data-refipreset')+' '+presetChipHtml(refiPresetOf(loan), lim, ' data-refipresetchip')+'</div>'+
         '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="pr-2 text-center">Lender uses</th><th>Lender limit</th><th class="px-2">Your lender&rsquo;s</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
         '<p class="mt-1.5 text-[12px] text-slate-700" data-refismallest>'+(can.someOff ? 'The smallest of the limits this lender uses' : 'The smallest')+', <strong>'+fmtMoney(can.maxLoan)+'</strong>, is what '+(parts ? 'these properties support' : 'the property supports')+'.</p>'+margin+
-        '<p class="mt-1 text-[11px] text-slate-400">The limits (and which ones this lender uses) are this refinance&rsquo;s own, kept on this computer'+(lim.own ? ' &middot; <button type="button" data-refilimreset class="font-semibold text-brand-700 hover:underline">back to 1.25&times; / 75% / 7%, all used</button>' : ' &middot; they start at 1.25&times; / 75% / 7%, all used; type your lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only) and untick the ones it doesn&rsquo;t use')+'.</p>'+
+        '<p class="mt-1 text-[11px] text-slate-400">The limits (and which ones this lender uses) are this refinance&rsquo;s own, kept with the property for the whole team'+(lim.own ? ' &middot; <button type="button" data-refilimreset class="font-semibold text-brand-700 hover:underline">back to 1.25&times; / 75% / 7%, all used</button>' : ' &middot; they start at 1.25&times; / 75% / 7%, all used; type your lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only) and untick the ones it doesn&rsquo;t use')+'. <button type="button" data-refihist class="font-semibold text-brand-700 hover:underline">Change history</button></p>'+
       '</div>';
+    }
+    // ── next stage (F4, draft) — lender presets: a list kept for the whole group (a shared setting), edited by the admin
+    // only (the server refuses anyone else's change, D13). Ships empty — filled from Azriel's numbers. Each has its
+    // limits (and which it uses), whether it sizes an all-interest-only loan on the interest-only payment (D11), the rate
+    // types it allows, its longest amortization, its usual early-payoff penalty on an extension (D7), notes and source.
+    const LENDER_PRESETS_KEY = "lds.lenderPresets";
+    const REFI_RATE_WORD = { "Fixed": "fixed", "Floating": "floating", "Hybrid ARM": "hybrid" };
+    function lenderPresets(){ try{ const a = JSON.parse(localStorage.getItem(LENDER_PRESETS_KEY) || "[]"); return Array.isArray(a) ? a.filter(p => p && p.id && p.name) : []; }catch(e){ return []; } }
+    function lenderPresetsCanEdit(){ if(!LDS_CLOUD) return true; try{ const st = (typeof cloudUI !== "undefined" && cloudUI.st) || ldsShell.cloudInfo || {}; return st.role === "admin" && st.canWrite !== false; }catch(e){ return false; } }
+    function lenderPresetById(id){ return id ? (lenderPresets().find(p => p.id === id) || null) : null; }
+    function refiPresetOf(loan){ return lenderPresetById(refiRec(loan).preset); }
+    function presetLimits(p, wholeIO){
+      const L = p.limits || {}, off = (Array.isArray(p.off) ? p.off : []).filter(k => REFI_LIMIT_KEYS.indexOf(k) >= 0);
+      if(p.ioSizing && wholeIO && L.dscrIO > 0 && off.indexOf("DSCR") < 0) off.push("DSCR");   // D11 — this lender sizes an all-IO loan on the IO payment
+      const o = { dscr: L.dscr, dscrIO: L.dscrIO, ltv: L.ltv, dy: L.dy, off: off };
+      Object.keys(o).forEach(k => { if(o[k] == null || (Array.isArray(o[k]) && !o[k].length)) delete o[k]; });
+      return o;
+    }
+    function presetTypeOk(p, t){ return !p || !Array.isArray(p.rateTypes) || !p.rateTypes.length || p.rateTypes.indexOf(t) >= 0; }
+    function presetChipHtml(p, limNow, attr){
+      if(!p) return "";
+      const want = refiLimitsFrom(presetLimits(p, false)), changed = ["dscr","dscrIO","ltv","dy"].some(k => Math.abs((want[k] || 0) - (limNow[k] || 0)) > 1e-9);
+      return '<span class="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-800"'+(attr || '')+'>'+escapeHtml(p.name)+' preset'+(changed ? ' (changed here)' : '')+'</span>'+
+        (Array.isArray(p.rateTypes) && p.rateTypes.length ? ' <span class="text-[10px] text-slate-500">allows '+p.rateTypes.map(t => REFI_RATE_WORD[t] || t).join(", ")+'</span>' : '')+
+        (p.maxAmortYears ? ' <span class="text-[10px] text-slate-500">&middot; up to '+p.maxAmortYears+'-year amortization</span>' : '');
+    }
+    function presetPickerHtml(sel, attr){
+      const ps = lenderPresets(), can = lenderPresetsCanEdit();
+      return '<span class="inline-flex flex-wrap items-center gap-1.5"><span class="text-[11px] font-semibold text-slate-500">Lender preset</span>'+
+        (ps.length ? '<select '+attr+' class="rounded border border-slate-300 px-1.5 py-0.5 text-xs"><option value="">None &mdash; type the limits</option>'+ps.map(p => '<option value="'+escapeHtml(p.id)+'"'+(p.id === sel ? ' selected' : '')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
+                   : '<span class="text-[11px] text-slate-400">none yet'+(can ? '' : ' &mdash; the group&rsquo;s admin keeps the list')+'</span>')+
+        (can ? ' <button type="button" data-presetmanage class="text-[11px] font-semibold text-violet-700 hover:underline">'+(ps.length ? 'Manage presets' : 'Add a preset')+'</button>' : '')+'</span>';
+    }
+    // The admin's list, edited in a window (a copy until Save).
+    let presetDraft = null;
+    function presetModalEl(){
+      let m = el("presetModal"); if(m) return m;
+      m = document.createElement("div"); m.id = "presetModal"; m.className = "fixed inset-0 z-[70] hidden items-start justify-center overflow-y-auto bg-slate-900/40 p-4";
+      m.innerHTML = '<div class="mt-10 w-full max-w-5xl rounded-2xl bg-white p-5 shadow-2xl"><div class="flex items-center justify-between gap-3"><h3 class="text-base font-bold text-slate-900">Lender presets &mdash; the group&rsquo;s list</h3><button type="button" data-presetclose class="text-sm font-semibold text-slate-500 hover:text-slate-800">Close</button></div><div id="presetBody" class="mt-3"></div></div>';
+      document.body.appendChild(m);
+      m.addEventListener("click", e => { const t = e.target;
+        if(t.closest("[data-presetclose]") || t === m){ presetDraft = null; m.classList.add("hidden"); m.classList.remove("flex"); return; }
+        if(t.closest("[data-presetadd]")){ presetDraft.push({ id: "lp_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: "", limits: { dscr: 1.25, ltv: 0.75, dy: 0.07 }, rateTypes: ["Fixed", "Floating", "Hybrid ARM"], off: [] }); presetPaint(); return; }
+        const del = t.closest("[data-presetdel]"); if(del){ presetDraft.splice(Number(del.getAttribute("data-presetdel")), 1); presetPaint(); return; }
+        if(t.closest("[data-presetsave]")) presetSave();
+      });
+      m.addEventListener("change", e => { const t = e.target, i = Number(t.getAttribute("data-pi")), f = t.getAttribute("data-pf"); if(!(i >= 0) || !f || !presetDraft[i]) return;
+        const p = presetDraft[i], v = String(t.value || "").trim(), n = parseFloat(v);
+        if(f === "name" || f === "notes" || f === "source") p[f] = v;
+        else if(f === "dscr" || f === "dscrIO"){ p.limits = Object.assign({}, p.limits); if(v === "") delete p.limits[f]; else if(n > 0) p.limits[f] = n; }
+        else if(f === "ltv" || f === "dy"){ p.limits = Object.assign({}, p.limits); if(v === "") delete p.limits[f]; else if(n > 0) p.limits[f] = n / 100; }
+        else if(f === "ioSizing") p.ioSizing = !!t.checked;
+        else if(f === "maxAmortYears") p.maxAmortYears = (n > 0) ? Math.round(n) : null;
+        else if(f.indexOf("type:") === 0){ const ty = f.slice(5), set = new Set(p.rateTypes || []); if(t.checked) set.add(ty); else set.delete(ty); p.rateTypes = REFI_RATE_TYPES.filter(x => set.has(x)); }
+        else if(f.indexOf("use:") === 0){ const k = f.slice(4), set = new Set(p.off || []); if(t.checked) set.delete(k); else set.add(k); p.off = REFI_LIMIT_KEYS.filter(x => set.has(x)); }
+        else if(f === "penHow"){ p.penalty = v ? Object.assign({}, p.penalty || {}, { how: v }) : null; presetPaint(); }
+        else if(f === "penPct"){ p.penalty = Object.assign({}, p.penalty || { how: "pct" }, { pct: n >= 0 ? Math.min(100, n) / 100 : 0 }); }
+        else if(f === "penAmt"){ p.penalty = Object.assign({}, p.penalty || { how: "amt" }, { amt: n >= 0 ? n : 0 }); }
+      });
+      return m;
+    }
+    function presetPaint(){
+      const b = el("presetBody"); if(!b || !presetDraft) return;
+      const inp = (i, f, v, w, ph) => '<input data-pi="'+i+'" data-pf="'+f+'" value="'+escapeHtml(v == null ? '' : String(v))+'" placeholder="'+(ph || '')+'" class="'+(w || 'w-16')+' rounded border border-slate-300 px-1.5 py-0.5 text-xs">';
+      const cb = (i, f, on, txt) => '<label class="inline-flex items-center gap-1 text-[11px] text-slate-600"><input type="checkbox" data-pi="'+i+'" data-pf="'+f+'"'+(on ? ' checked' : '')+' class="h-3.5 w-3.5 accent-violet-600">'+txt+'</label>';
+      b.innerHTML = (presetDraft.length ? presetDraft.map((p, i) => { const L = p.limits || {}, pen = p.penalty || {};
+        return '<div class="mb-2 rounded-xl border border-slate-200 p-3 text-xs" data-presetrow="'+i+'">'+
+          '<div class="flex flex-wrap items-center gap-2">'+inp(i, "name", p.name, "w-48", "Name, e.g. Fannie Mae")+
+            ' DSCR '+inp(i, "dscr", L.dscr)+'&times; IO '+inp(i, "dscrIO", L.dscrIO, "w-16", "—")+'&times; LTV '+inp(i, "ltv", L.ltv != null ? +(L.ltv * 100).toFixed(2) : "")+'% DY '+inp(i, "dy", L.dy != null ? +(L.dy * 100).toFixed(2) : "")+'%'+
+            ' <button type="button" data-presetdel="'+i+'" class="ml-auto text-[11px] font-semibold text-rose-600 hover:underline">Remove</button></div>'+
+          '<div class="mt-1.5 flex flex-wrap items-center gap-3"><span class="text-[11px] text-slate-500">Uses:</span>'+REFI_LIMIT_KEYS.map(k => cb(i, "use:" + k, (p.off || []).indexOf(k) < 0, k)).join("")+
+            cb(i, "ioSizing", !!p.ioSizing, "an all-interest-only loan is sized on the interest-only payment")+'</div>'+
+          '<div class="mt-1.5 flex flex-wrap items-center gap-3"><span class="text-[11px] text-slate-500">Rate types:</span>'+REFI_RATE_TYPES.map(t => cb(i, "type:" + t, !Array.isArray(p.rateTypes) || p.rateTypes.indexOf(t) >= 0, REFI_RATE_WORD[t] || t)).join("")+
+            ' <span class="text-[11px] text-slate-500">Longest amortization</span> '+inp(i, "maxAmortYears", p.maxAmortYears, "w-12")+' <span class="text-[11px] text-slate-500">years</span>'+
+            ' <span class="text-[11px] text-slate-500">Penalty on an extension</span> <select data-pi="'+i+'" data-pf="penHow" class="rounded border border-slate-300 px-1 py-0.5 text-xs"><option value="">not set</option>'+Object.keys(RefiExtend.PENALTY_HOWS).map(k => '<option value="'+k+'"'+(pen.how === k ? ' selected' : '')+'>'+RefiExtend.PENALTY_HOWS[k]+'</option>').join("")+'</select>'+
+            (pen.how === "pct" ? ' '+inp(i, "penPct", pen.pct != null ? +(pen.pct * 100).toFixed(2) : "", "w-14")+'%' : pen.how === "amt" ? ' $'+inp(i, "penAmt", pen.amt, "w-24") : '')+'</div>'+
+          '<div class="mt-1.5 flex flex-wrap items-center gap-2">'+inp(i, "notes", p.notes, "flex-1 min-w-[12rem]", "Notes")+inp(i, "source", p.source, "w-56", "Source, e.g. Azriel, Oct 2026")+'</div>'+
+        '</div>'; }).join("") : '<p class="text-sm text-slate-500">No presets yet. The list ships empty &mdash; add each lender&rsquo;s numbers as you get them.</p>')+
+        '<div class="mt-3 flex items-center justify-between gap-3"><button type="button" data-presetadd class="rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm font-semibold text-violet-700 hover:bg-violet-100">Add a preset</button>'+
+        '<button type="button" data-presetsave class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Save the list</button></div>';
+    }
+    function presetOpen(){
+      if(!lenderPresetsCanEdit()){ toast("Only the group’s admin changes the lender presets", "info"); return; }
+      presetDraft = JSON.parse(JSON.stringify(lenderPresets()));
+      const m = presetModalEl(); presetPaint(); m.classList.remove("hidden"); m.classList.add("flex");
+    }
+    function presetSave(){
+      if(!lenderPresetsCanEdit()){ toast("Only the group’s admin changes the lender presets", "info"); return; }
+      const list = (presetDraft || []).map(p => Object.assign({}, p, { name: String(p.name || "").trim() })).filter(p => p.name);
+      const before = lenderPresets(), names = (a) => a.map(p => p.name).join(", ") || "none";
+      try{ localStorage.setItem(LENDER_PRESETS_KEY, JSON.stringify(list)); }catch(e){}
+      try{ window.ldsReasonHint = ("Lender presets: " + names(list)).slice(0, 480); }catch(e){}
+      cloudSettingSaved(LENDER_PRESETS_KEY);
+      try{ noteChange("Lender presets: " + names(before) + " → " + names(list)); }catch(e){}
+      presetDraft = null; const m = el("presetModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); }
+      toast("Saved the lender presets (" + list.length + ")", "check");
+      if(state.mode === "refi"){ const l = getLoan(state.activeId); if(l) renderRefi(l); }
+    }
+    // next stage (F4, draft) — the value the LTV limit is measured on: NOI ÷ cap rate, or a typed appraisal (with its date
+    // and a note), kept with the refinance.
+    function refiValueFactHtml(loan, can){
+      const a = can.appraisal, raw = refiRec(loan).appraisal || {}, box = 'rounded border border-slate-300 px-1.5 py-0.5 text-xs';
+      const head = a
+        ? '<strong class="tabular-nums">'+fmtMoney(a.value)+'</strong> &mdash; the appraisal'+(a.date ? ' of '+fmtDateUS(a.date) : '')+(a.note ? ' ('+escapeHtml(a.note)+')' : '')+' &middot; <button type="button" data-refiapprclear class="font-semibold text-brand-700 hover:underline">use NOI &divide; cap rate instead</button>'
+        : '<strong class="tabular-nums">'+(can.value != null ? fmtMoney(can.value) : '&mdash;')+'</strong> &mdash; NOI &divide; cap rate '+fmtPct(can.capRate)+' &middot; or type the appraisal:';
+      return '<span data-refivalue>'+head+'</span>'+
+        '<span class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">Appraised value $<input type="number" step="any" data-refiappr="value" value="'+(a ? Math.round(a.value) : '')+'" placeholder="e.g. 65000000" class="w-32 text-right tabular-nums '+box+'">'+
+        ' dated <input type="date" data-refiappr="date" value="'+escapeHtml(raw.date || '')+'" class="'+box+'">'+
+        ' note <input type="text" data-refiappr="note" value="'+escapeHtml(raw.note || '')+'" placeholder="who appraised it" class="w-40 '+box+'"></span>';
     }
     function refiGroupInfo(loan){ if(!loan) return null; const ks = loan._poolKeys || (isPoolLoan(loan) ? poolKeys(loan) : null); if(!ks || ks.length < 2) return null;
       const ns = ks.map(poolNameOfKey); return { n: ks.length, names: ns.length > 5 ? ns.slice(0, 3).join(" · ") + " + " + (ns.length - 3) + " more" : ns.join(" · "), loans: loan._poolKeys ? multiMembers(loan._id).length : 1 }; }
@@ -11766,8 +12017,9 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
       }
 
-      const banner = yes ? "border-emerald-400 bg-emerald-50" : decision ? "border-amber-300 bg-amber-50" : "border-rose-300 bg-rose-50";
-      const bhead  = yes ? "text-emerald-800" : decision ? "text-amber-800" : "text-rose-800";
+      const pay = !!v.paydown;   // next stage (F4, draft) — D1: must act, and a pay-down is what it takes
+      const banner = yes ? "border-emerald-400 bg-emerald-50" : decision ? "border-amber-300 bg-amber-50" : pay ? "border-orange-400 bg-orange-50" : "border-rose-300 bg-rose-50";
+      const bhead  = yes ? "text-emerald-800" : decision ? "text-amber-800" : pay ? "text-orange-800" : "text-rose-800";
       const mark = (ok) => '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full '+(ok?"bg-emerald-100 text-emerald-700":"bg-rose-100 text-rose-700")+' text-sm font-black">'+(ok?"&#10003;":"&#10007;")+'</span>';
 
       // Stage 1 line.
@@ -11813,21 +12065,39 @@ tr.flagged:hover td{background:#fee2e2}
 
       const bottom = yes ? "Refinance."
         : decision ? "Your decision."
+        : pay ? "Pay down "+fmtMoney(v.payDown)+" and refinance &mdash; or extend with today&rsquo;s lender (What kind of deal? below)."
         : (!can.can ? "Don&rsquo;t refinance &mdash; the property can&rsquo;t support a loan the size of the payoff yet."
                     : "Don&rsquo;t refinance.");
+      // next stage (F4, draft) — D1: what is ending, and the pay-down each way out takes
+      let mustBlock = "";
+      if(pay){
+        const when = v.must.resetting && v.reset
+          ? "Today&rsquo;s rate resets <strong>"+fmtDateLong(v.reset.date)+"</strong>: <strong>"+fmtPct(v.reset.from)+" &rarr; "+fmtPct(v.reset.to)+"</strong>"+(v.reset.payment ? " (the payment becomes "+fmtMoney(v.reset.payment)+")" : "")+"."
+          : "Today&rsquo;s loan ends <strong>"+fmtDateLong(v.ends.date)+"</strong>"+(v.ends.months != null ? " (in "+v.ends.months+" month"+(v.ends.months === 1 ? "" : "s")+")" : "")+".";
+        const x = v.ext, xOwn = x && x.terms && (x.terms.own || refiDeal(loan) === "extend");
+        mustBlock = '<div class="mt-3 rounded-xl border border-orange-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-700" data-refimust>'+
+          '<p data-refimustwhen>'+when+'</p>'+
+          '<p class="mt-1" data-refipaydown="refi">To refinance at these limits: <strong>pay down '+fmtMoney(v.payDown)+'</strong> &mdash; what you owe ('+fmtMoney(can.payoff)+') less what the property supports ('+fmtMoney(can.maxLoan)+').</p>'+
+          (refiExtAllowed(loan)
+            ? (xOwn ? '<p class="mt-1" data-refipaydown="extend">To extend with today&rsquo;s lender: <strong>'+(x.needed ? 'pay down '+fmtMoney(x.payDown) : 'no pay-down needed')+'</strong> at its limits &mdash; cash needed '+fmtMoney(x.cash)+' with the penalty and fee (Extend with today&rsquo;s lender, below).</p>'
+                    : '<p class="mt-1 text-[12px] text-slate-500" data-refipaydown="extend-empty">To extend with today&rsquo;s lender: pick <strong>Extend with today&rsquo;s lender</strong> under What kind of deal? below and fill in its terms &mdash; the pay-down it takes shows here.</p>')
+            : '')+
+        '</div>';
+      }
 
-      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm" data-refiverdict="'+(yes?"refinance":decision?"decision":"no")+'">'+
+      return '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm" data-refiverdict="'+(yes?"refinance":decision?"decision":pay?"paydown":"no")+'">'+
         '<div class="flex items-center gap-3">'+
-          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":"&#10007;")+'</span>'+
-          '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":"Don&rsquo;t refinance")+'</p>'+
+          '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":pay?"!":"&#10007;")+'</span>'+
+          '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":pay?"Act before "+fmtDateLong(v.must.resetting && v.reset ? v.reset.date : v.ends.date)+" &mdash; pay down "+fmtMoney(v.payDown):"Don&rsquo;t refinance")+'</p>'+
           '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on the '+refiBasisWord(loan)+' NOI at the proposed loan&rsquo;s rate, '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You owe (payoff)", fmtMoney(can.payoff))+
           refiStat((refiGroupInfo(loan) ? "Properties support" : "Property supports")+" (at the proposed rate)", fmtMoney(can.maxLoan))+
-          refiStat("Today&rsquo;s loan rate", fmtPct(curRate))+
+          refiStat("Today&rsquo;s loan rate", fmtPct(curRate)+(v.reset ? ' <span class="text-[11px] font-semibold text-amber-700" data-refireset>&rarr; '+fmtPct(v.reset.to)+' from '+fmtDateUS(v.reset.date)+'</span>' : ''))+
           refiStat("Proposed loan rate", fmtPct(can.rate))+
         '</dl>'+
+        mustBlock+
         pricing+
         '<div class="mt-4 flex items-start gap-3">'+mark(can.can)+
           '<div><p class="text-sm font-bold text-slate-800">Can you? '+(can.can?"Yes":"No")+'</p>'+
@@ -11877,9 +12147,11 @@ tr.flagged:hover td{background:#fee2e2}
       const tier = loanTier(loan), showTier = tierBps < 0 && baseBps > 0;
       const idxOpts = (sel) => REFI_INDEX_CHOICES.map(function(id){ return '<option value="'+id+'"'+(id===sel?' selected':'')+'>'+INDEX_BY_ID[id].label+'</option>'; }).join("");
       const src = (id) => '<span class="text-[10px] text-slate-400">('+escapeHtml(rateSourceText(id))+')</span>';   // 2.9.7 (#26)
+      const pst = refiPresetOf(loan);   // next stage (F4) — a preset's rate types: the others greyed, with the reason
       const typeToggle = '<div class="inline-flex overflow-hidden rounded-lg border border-brand-300 text-sm font-semibold">'+
-        REFI_RATE_TYPES.map(function(t,i){ var on=(draft.rateType===t), lbl=(t==="Hybrid ARM")?"Hybrid":t;
-          return '<button data-rtype="'+t+'" type="button" class="px-4 py-2 '+(i>0?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+'">'+lbl+'</button>'; }).join("")+'</div>';
+        REFI_RATE_TYPES.map(function(t,i){ var on=(draft.rateType===t), lbl=(t==="Hybrid ARM")?"Hybrid":t, okT=presetTypeOk(pst, t), why=okT?"":(pst.name+": no "+(REFI_RATE_WORD[t]||t));
+          return '<button data-rtype="'+t+'" type="button"'+(okT?'':' data-rtypeoff="'+escapeHtml(why)+'" title="'+escapeHtml(why)+'"')+' class="px-4 py-2 '+(i>0?"border-l border-brand-300 ":"")+(on?"bg-brand-600 text-white":"bg-brand-50 text-brand-700 hover:bg-brand-100")+(okT?"":" opacity-40 cursor-not-allowed line-through")+'">'+lbl+'</button>'; }).join("")+'</div>'+
+        (pst && !presetTypeOk(pst, draft.rateType) ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800" data-rtypewarn>'+escapeHtml(pst.name+": no "+(REFI_RATE_WORD[draft.rateType]||draft.rateType))+' &mdash; pick a type it allows</span>' : '');
       const head = '<div class="mb-3 flex flex-wrap items-center gap-3">'+
           '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Proposed rate</span>'+typeToggle+
           '<span class="text-[11px] text-slate-400">the proposed loan &mdash; starts from your current loan&rsquo;s type and a usual spread; type your lender&rsquo;s quote in the spread &mdash; everything above and below updates at once</span>'+
@@ -11937,10 +12209,241 @@ tr.flagged:hover td{background:#fee2e2}
     function refiAtLoanLine(loan, draft){
       const amt = Number(draft && draft.originalAmount) || 0, noi = refiNOI(loan), cr = loanCapRate(loan);
       if(!(amt > 0) || noi == null || !isFinite(noi)) return "";
-      const ads = annualDebtService(compute(draft).derived), value = (cr > 0) ? noi / cr : null;
+      const appr = refiAppraisal(loan), ads = annualDebtService(compute(draft).derived), value = appr ? appr.value : (cr > 0) ? noi / cr : null;   // next stage (F4) — the appraisal when typed
       const dscr = ads > 0 ? noi / ads : null, ltv = value > 0 ? amt / value : null, dy = noi / amt;
       const r = compute(draft).derived.currentRate || 0, dscrIO = r > 0 ? noi / (amt * r) : null;   // 3.0.0 — coverage on the interest-only payment too
-      return '<p class="mt-1 text-[11px] tabular-nums text-slate-500" data-refiatloan>the proposed loan ('+fmtMoney(amt)+' at '+fmtPct(r)+'): DSCR '+(dscr!=null?dscr.toFixed(2)+'&times;':'&mdash;')+' amortizing &middot; '+(dscrIO!=null?dscrIO.toFixed(2)+'&times;':'&mdash;')+' interest-only &middot; LTV '+(ltv!=null?fmtPct(ltv):'&mdash;')+' &middot; DY '+fmtPct(dy)+'</p>';
+      return '<p class="mt-1 text-[11px] tabular-nums text-slate-500" data-refiatloan>the proposed loan ('+fmtMoney(amt)+' at '+fmtPct(r)+'): DSCR '+(dscr!=null?dscr.toFixed(2)+'&times;':'&mdash;')+' amortizing &middot; '+(dscrIO!=null?dscrIO.toFixed(2)+'&times;':'&mdash;')+' interest-only &middot; LTV '+(ltv!=null?fmtPct(ltv):'&mdash;')+(appr ? ' (on the appraisal)' : '')+' &middot; DY '+fmtPct(dy)+'</p>';
+    }
+    // ── Next stage (F4, draft) — what kind of deal: a new loan (as before), or an extension with today's lender (D7, D10).
+    // The extension's terms are kept with the refinance (D9); its numbers come from refi-extend.js (pure); saving it
+    // updates today's loan in place — new maturity and rate terms from the date today's terms end, the pay-down as a
+    // principal payment on that date, status "Extended", and a history entry for every field.
+    const REFI_EXT_FIELDS = ["rateType","index","spread","annualRate","armInitialFixedMonths","armAdjustFreqMonths","rateFloor","rateCap","floatIndexValue","floatRepricedOn","floatIndexLive","armAssumedIndex","isHistorical","loanTermMonths","maturityDate","loanStatus","ioMonths","amortizationMonths","principalPayments"];
+    const REFI_EXT_LABEL = { date: "today’s terms end on", months: "months on the new terms", io: "interest-only", ioMonths: "interest-only months", amortMonths: "amortization after interest-only (months)", index: "index", spreadBps: "spread (bps)", penaltyHow: "early-payoff penalty", penaltyPct: "penalty (% of the full one)", penaltyAmt: "penalty ($)", feeKind: "fee in", feeValue: "fee" };
+    function refiExtAllowed(loan){ return !!loan && !loan._combined && !(loan._poolKeys && loan._poolKeys.length > 1) && !isPoolLoan(loan); }
+    function refiDeal(loan){ return refiExtAllowed(loan) && refiRec(loan).deal === "extend" ? "extend" : "new"; }
+    // When today's terms end, by default: the payment before the rate resets, else the maturity date, else the next payment.
+    function refiExtDefaultDate(loan){
+      const c = compute(loan), rows = c.rows, pm = Math.max(0, c.derived.paymentsMade || 0);
+      let idx = null;
+      if(loan.rateType === "Hybrid ARM"){ for(let i = Math.max(1, pm); i < rows.length; i++){ if(rows[i].isReset){ idx = i - 1; break; } } }
+      if(idx == null && rows.length) idx = rows.length - 1;
+      if(idx == null) return null;
+      if(idx < pm) idx = Math.min(rows.length - 1, pm);
+      return rows[idx] ? rows[idx].paymentDate : null;
+    }
+    function refiExtTerms(loan){
+      const e = refiRec(loan).ext || {}, num = (v, d) => (typeof v === "number" && isFinite(v)) ? v : d;
+      const ownIdx = loan.rateType === "Floating" && REFI_INDEX_CHOICES.indexOf(loan.index) >= 0;
+      return {
+        own: !!refiRec(loan).ext,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(e.date || "") ? e.date : refiExtDefaultDate(loan),
+        months: Math.max(1, Math.round(num(e.months, 36))),
+        io: ["whole", "n", "none"].indexOf(e.io) >= 0 ? e.io : "whole",
+        ioMonths: Math.max(0, Math.round(num(e.ioMonths, 12))),
+        amortMonths: Math.max(12, Math.round(num(e.amortMonths, loan.amortizationMonths || 360))),
+        index: REFI_INDEX_CHOICES.indexOf(e.index) >= 0 ? e.index : (ownIdx ? loan.index : REFI_DEFAULT_FLOAT_INDEX),
+        spreadBps: Math.max(0, num(e.spreadBps, ownIdx && loan.spread != null ? Math.round(loan.spread * 10000) : REFI_DEFAULT_FLOAT_BPS)),
+        penalty: (e.penalty && RefiExtend.PENALTY_HOWS[e.penalty.how]) ? e.penalty : null,
+        fee: { kind: (e.fee && e.fee.kind === "amt") ? "amt" : "pct", value: num(e.fee && e.fee.value, 0) },
+        limits: e.limits || null, preset: e.preset || null
+      };
+    }
+    function refiExtLimits(loan){ const t = refiExtTerms(loan); return t.limits ? Object.assign(refiLimitsFrom(t.limits), { own: true }) : Object.assign({}, refiLimits(loan), { own: false }); }
+    // The extension's numbers: what you owe when today's terms end, what the lender's limits allow at the new rate, the
+    // pay-down, the coverage at the extended amount, the penalty (this lender's way), the fee and the cash it takes.
+    function refiExtResult(loan){
+      if(!refiExtAllowed(loan) || !window.RefiExtend || loan.extension) return null;
+      const t = refiExtTerms(loan); if(!t.date) return null;
+      const c = compute(loan), rows = c.rows; let k = -1;
+      rows.forEach((r, i) => { if(r.paymentDate && r.paymentDate <= t.date) k = i; });
+      const last = k >= 0 ? rows[k] : null;
+      const owed = !last ? (loan.originalAmount || 0) : ((last.type === "balloon" || last.type === "final") ? last.startingBalance : last.endingBalance);
+      const rate = (liveIndexVal(t.index) || 0) + t.spreadBps / 10000;
+      const lim = refiExtLimits(loan), appr = refiAppraisal(loan), noi = refiNOI(loan), cr = loanCapRate(loan);
+      const value = appr ? appr.value : ((noi > 0 && cr > 0) ? noi / cr : null);
+      const io = t.io === "whole" ? t.months : t.io === "none" ? 0 : Math.min(t.months, t.ioMonths);
+      const res = RefiExtend.extend({ owed: owed, noi: noi, value: value, rate: rate, amortMonths: t.amortMonths, limits: lim, off: lim.off, penaltyFull: refiPenalty(loan), penalty: t.penalty, fee: t.fee });
+      const fp = firstPayParts(loan), first = fp ? addMonths(fp, k + 1) : null, mat = fp ? addMonths(fp, k + t.months) : null;
+      return Object.assign(res, { terms: t, k: k, rate: rate, value: value, appraisal: appr, limits: lim, io: io, noi: noi,
+        firstNewPay: first ? partsToISO(first.y, first.mo, first.d) : null, newMaturity: mat ? partsToISO(mat.y, mat.mo, mat.d) : null, oldMaturity: c.derived.maturityDate });
+    }
+    // Apply an extension to a loan record (a copy for the preview, today's loan on save).
+    function refiExtApply(target, loan, r){
+      const t = r.terms, term = r.k + 1 + t.months, before = {};
+      REFI_EXT_FIELDS.forEach(f => { before[f] = (loan[f] === undefined || loan[f] === null) ? null : JSON.parse(JSON.stringify(loan[f])); });
+      Object.assign(target, { rateType: "Floating", index: t.index, spread: t.spreadBps / 10000, isHistorical: false, annualRate: null,
+        armInitialFixedMonths: null, armAdjustFreqMonths: null, rateFloor: null, rateCap: null, floatIndexValue: null, floatRepricedOn: null, floatIndexLive: null, armAssumedIndex: null,
+        loanTermMonths: term, maturityDate: r.newMaturity || loan.maturityDate, loanStatus: "Extended" });
+      if(r.payDown > 0.5) target.principalPayments = (Array.isArray(loan.principalPayments) ? loan.principalPayments.slice() : []).concat([{ id: "pp_" + Date.now().toString(36), date: t.date, amount: r.payDown, note: "Extension pay-down" }]);
+      target.extension = { date: t.date, months: t.months, ioMonths: r.io, amortMonths: t.amortMonths, lender: loan.lenderName || "", index: t.index, spread: t.spreadBps / 10000,
+        owed: r.owed, payDown: r.payDown, penalty: { how: r.penalty.how, amount: r.penalty.amount, assumed: r.penalty.assumed }, fee: r.fee, cash: r.cash, rate: r.rate,
+        at: new Date().toISOString(), by: opOperator(), before: before };
+      return target;
+    }
+    function refiExtPreview(loan, r){ try{ const p = refiExtApply(JSON.parse(JSON.stringify(loan)), loan, r); return compute(p); }catch(e){ return null; } }
+    function refiExtNote(loan, r){
+      const t = r.terms;
+      return "Extended" + (loan.lenderName ? " with " + loan.lenderName : "") + ": " + t.months + " months" + (r.io >= t.months ? " interest-only" : r.io > 0 ? " (" + r.io + " interest-only)" : "") +
+        " at " + indexShort(t.index) + " + " + Math.round(t.spreadBps) + " bps from " + fmtDateUS(t.date) + (r.payDown > 0.5 ? "; paid down " + fmtMoney(r.payDown) : "; no pay-down") +
+        (r.penalty.amount > 0 ? "; penalty " + fmtMoney(r.penalty.amount) + (r.penalty.assumed ? " (assumed)" : "") : "") + (r.fee > 0 ? "; fee " + fmtMoney(r.fee) : "");
+    }
+    function refiExtSave(loan, opts){
+      opts = opts || {};
+      const r = refiExtResult(loan); if(!r){ toast("Nothing to save", "info"); return { ok: false }; }
+      if(!cloudCanWrite()){ toast("View only — you can’t change this loan", "info"); return { ok: false }; }
+      const go = () => refiExtCommit(loan, opts.from || "typed");
+      if(opts.confirmed) return go();
+      confirmDialog("Save the extension?", "Today's loan stays the same record. " + refiExtNote(loan, r) + ". New maturity " + fmtDateUS(r.newMaturity) + "; status Extended. Cash needed " + fmtMoney(r.cash) +
+        " (pay-down + penalty + fee). Every change goes in the loan's history, and you can undo it.", go, "Save the extension");
+      return { ok: true, asked: true };
+    }
+    function refiExtCommit(loan, from){
+      const r = refiExtResult(loan); if(!r) return { ok: false, error: "no extension" };
+      const old = JSON.parse(JSON.stringify(loan)), note = refiExtNote(loan, r), src = from === "assistant" ? "assistant" : "extension";
+      refiExtApply(loan, old, r);
+      ["maturityDate","loanTermMonths","rateType","index","spread","annualRate","armInitialFixedMonths","armAdjustFreqMonths","rateFloor","rateCap","isHistorical","loanStatus"].forEach(f => {
+        const a = old[f], b = loan[f]; if((a == null || a === "") && (b == null || b === "")) return; if(typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-9) return; if(String(a) === String(b)) return;
+        try{ loanHistoryAdd(loan, f, a == null ? null : a, b == null ? null : b, src, { note: note }); }catch(e){} });
+      if(r.payDown > 0.5){ try{ loanHistoryAdd(loan, "principalPayments", null, fmtMoney(r.payDown) + " on " + fmtDateUS(r.terms.date), src, { note: note }); }catch(e){} }
+      refiDraftsKey = ""; save();
+      toast("Saved — " + loanLabel(loan) + " is extended to " + fmtDateUS(loan.maturityDate) + ".", "check");
+      setMode("view"); try{ redrawAll(); }catch(e){}
+      return { ok: true, id: loan._id, maturityDate: loan.maturityDate, payDown: r.payDown, cash: r.cash };
+    }
+    function refiExtUndo(loan, opts){
+      opts = opts || {};
+      const e = loan && loan.extension; if(!e || !e.before){ toast("This loan has no saved extension", "info"); return { ok: false }; }
+      if(!cloudCanWrite()){ toast("View only — you can’t change this loan", "info"); return { ok: false }; }
+      const go = () => {
+        const old = JSON.parse(JSON.stringify(loan)), note = "Undid the extension saved " + fmtDateUS(String(e.at || "").slice(0, 10)) + (e.by ? " by " + e.by : "");
+        REFI_EXT_FIELDS.forEach(f => { const v = e.before[f]; if(v === null || v === undefined) delete loan[f]; else loan[f] = JSON.parse(JSON.stringify(v)); });
+        delete loan.extension;
+        ["maturityDate","loanTermMonths","rateType","index","spread","loanStatus"].forEach(f => { const a = old[f], b = loan[f]; if(String(a == null ? "" : a) !== String(b == null ? "" : b)){ try{ loanHistoryAdd(loan, f, a == null ? null : a, b == null ? null : b, opts.from === "assistant" ? "assistant" : "extension", { note: note }); }catch(x){} } });
+        if(e.payDown > 0.5){ try{ loanHistoryAdd(loan, "principalPayments", fmtMoney(e.payDown) + " on " + fmtDateUS(e.date), null, opts.from === "assistant" ? "assistant" : "extension", { note: note }); }catch(x){} }
+        refiDraftsKey = ""; save(); toast("The extension is undone — " + loanLabel(loan) + " is back to its terms before it.", "check");
+        try{ redrawAll(); }catch(x){} if(state.mode === "refi") renderRefi(loan);
+        return { ok: true };
+      };
+      if(opts.confirmed) return go();
+      confirmDialog("Undo the extension?", loanLabel(loan) + " goes back to its terms before the extension (maturity " + fmtDateUS(e.before.maturityDate) + "); the pay-down comes off the schedule. The history keeps both.", go, "Undo the extension");
+      return { ok: true, asked: true };
+    }
+    // Save one of the extension's terms (shared with the team, with a history entry).
+    function refiExtSet(loan, patch, label, oldTxt, newTxt){
+      if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return; }
+      refiRecSave(loan, r => { const e = Object.assign({}, r.ext || {}); Object.keys(patch).forEach(k => { if(patch[k] === null) delete e[k]; else e[k] = patch[k]; }); if(!e.date) e.date = refiExtTerms(loan).date; r.ext = e; },
+        [{ label: "Refinance · extension · " + label, old: oldTxt, new: newTxt, field: "ext" }]);
+    }
+    // next stage (F4, draft) — this refinance's own changes (limits, appraisal, deal, extension terms, preset): who, when, what.
+    function refiOpenHistory(loan){
+      const key = refiHomeKey(loan), pre = "refi:" + loan._id + ".";
+      delete propHistCache[key];
+      Promise.resolve(refiRecQueue[key]).catch(() => {}).then(() => propHistoryLoad(key)).then(h => {
+        openHistoryModal("Refinance — change history — " + (loan._combined ? loan.propertyName : loanLabel(loan)), (h && h.entries || []).filter(x => String(x.field || "").indexOf(pre) === 0)
+          .map(x => ({ at: x.at, label: x.label, old: x.old, new: x.new, who: x.who, from: historyFromLabel(x.from), note: x.note })));
+      });
+    }
+    // Pick a lender preset: it fills the limits (still editable), and the table names it. For the extension it also sets
+    // this lender's usual penalty choice.
+    function refiPickPreset(loan, id, where, from){
+      if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return { ok: false }; }
+      const p = lenderPresetById(id);
+      if(id && !p){ toast("That preset isn’t in the list", "info"); return { ok: false }; }
+      if(where === "ext"){
+        const t = refiExtTerms(loan), wholeIO = t.io === "whole" || (t.io === "n" && t.ioMonths >= t.months);
+        refiRecSave(loan, r => { const e = Object.assign({}, r.ext || {}); if(!e.date) e.date = t.date; if(p){ e.preset = p.id; e.limits = presetLimits(p, wholeIO); if(p.penalty && RefiExtend.PENALTY_HOWS[p.penalty.how]) e.penalty = Object.assign({}, p.penalty); } else delete e.preset; r.ext = e; },
+          [{ label: "Refinance · extension · lender preset", old: (lenderPresetById(t.preset) || {}).name || "none", new: p ? p.name : "none", field: "ext" }], from);
+      } else {
+        const d = refiDrafts[1], wholeIO = !!(d && (d.ioMonths || 0) > 0 && (d.ioMonths || 0) >= (d.loanTermMonths || 0));
+        const was = (refiPresetOf(loan) || {}).name || "none";
+        refiRecSave(loan, r => { if(p){ r.preset = p.id; r.limits = presetLimits(p, wholeIO); } else delete r.preset; },
+          [{ label: "Refinance · lender preset", old: was, new: p ? p.name + " (" + refiLimitsText(refiLimitsFrom(presetLimits(p, wholeIO))) + ")" : "none", field: "preset" }], from);
+      }
+      if(state.mode === "refi") refiReprice(loan);
+      return { ok: true, preset: p ? p.name : null };
+    }
+    function refiDealHtml(loan){
+      const deal = refiDeal(loan), ok = refiExtAllowed(loan);
+      const b = (v, t) => '<button type="button" data-refideal="'+v+'"'+(v === "extend" && !ok ? ' disabled title="An extension is with one lender, one loan at a time — open the loan itself to extend it"' : '')+' class="px-4 py-2 text-sm font-semibold '+(v === "extend" ? 'border-l border-violet-300 ' : '')+(deal === v ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 hover:bg-violet-100')+(v === "extend" && !ok ? ' opacity-50 cursor-not-allowed' : '')+'">'+t+'</button>';
+      return '<div class="boxline flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-white px-5 py-3 shadow-sm" data-refidealrow>'+
+        '<span class="text-[11px] font-bold uppercase tracking-wider text-violet-700">What kind of deal?</span>'+
+        '<div class="inline-flex overflow-hidden rounded-lg border border-violet-300">'+b("new", "New loan")+b("extend", "Extend with today&rsquo;s lender")+'</div>'+
+        '<span class="text-[11px] text-slate-500">'+(ok ? (deal === "extend" ? 'today&rsquo;s loan stays the same record, with new terms from the date its terms end' : 'a new loan replaces today&rsquo;s loan(s)') + ' &middot; kept with the refinance, for the whole team' : 'an extension is with one lender, one loan at a time &mdash; open the loan itself to extend it')+'</span>'+
+      '</div>';
+    }
+    function refiExtCardHtml(loan){
+      const e = loan.extension;
+      if(e){   // saved: what it did, and undo
+        return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-white p-5 shadow-sm" data-refiext="saved">'+
+          '<h3 class="text-xs font-bold uppercase tracking-wider text-violet-700">Extended with today&rsquo;s lender'+(e.lender ? ' &middot; '+escapeHtml(e.lender) : '')+'</h3>'+
+          '<p class="mt-2 text-sm text-slate-700">Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+': '+e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+
+            (e.payDown > 0.5 ? '; paid down '+fmtMoney(e.payDown) : '; no pay-down')+'; new maturity '+fmtDateUS(loan.maturityDate)+'. Cash it took: '+fmtMoney(e.cash || 0)+'.</p>'+
+          '<button type="button" data-refiextundo class="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo the extension</button>'+
+        '</div>';
+      }
+      const r = refiExtResult(loan); if(!r) return '';
+      const t = r.terms, lim = r.limits, pv = refiExtPreview(loan, r);
+      const firstRow = pv ? pv.rows.find(x => x.ext) : null;
+      const box = 'w-full rounded-md border border-slate-300 px-2 py-1 text-sm';
+      const lab = (txt, inner) => '<label class="block"><span class="mb-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">'+txt+'</span>'+inner+'</label>';
+      const num = (f, v, extra) => '<input type="number" step="any" data-refiextf="'+f+'" value="'+(v == null ? '' : v)+'" class="'+box+' text-right tabular-nums"'+(extra || '')+'>';
+      const sel = (f, opts, v) => '<select data-refiextf="'+f+'" class="'+box+'">'+opts.map(o => '<option value="'+o[0]+'"'+(o[0] === v ? ' selected' : '')+'>'+o[1]+'</option>').join('')+'</select>';
+      const idxOpts = REFI_INDEX_CHOICES.map(id => [id, INDEX_BY_ID[id].label]);
+      const pen = r.penalty, pHow = t.penalty ? t.penalty.how : "";
+      const inputs = '<div class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">'+
+        lab("Today&rsquo;s terms end on", '<input type="date" data-refiextf="date" value="'+escapeHtml(t.date || '')+'" class="'+box+'">')+
+        lab("Months on the new terms", num("months", t.months))+
+        lab("Interest-only", sel("io", [["whole", "The whole term"], ["n", "The first N months"], ["none", "None"]], t.io))+
+        (t.io === "n" ? lab("Interest-only months", num("ioMonths", t.ioMonths)) : '')+
+        lab("Amortization after interest-only (months)", num("amortMonths", t.amortMonths))+
+        lab("Index", sel("index", idxOpts, t.index))+
+        lab("Spread (bps) &mdash; the lender&rsquo;s quote", num("spreadBps", t.spreadBps))+
+        lab("Early-payoff penalty &mdash; this lender asks", sel("penaltyHow", [["", "Not picked (assumed: on the pay-down)"]].concat(Object.keys(RefiExtend.PENALTY_HOWS).map(k => [k, RefiExtend.PENALTY_HOWS[k]])), pHow))+
+        (pHow === "pct" ? lab("Part of the full penalty (%)", num("penaltyPct", t.penalty && t.penalty.pct != null ? +(t.penalty.pct * 100).toFixed(3) : "")) : '')+
+        (pHow === "amt" ? lab("Penalty the lender asks ($)", num("penaltyAmt", t.penalty && t.penalty.amt != null ? Math.round(t.penalty.amt) : "")) : '')+
+        lab("Extension fee in", sel("feeKind", [["pct", "% of the extended amount"], ["amt", "dollars"]], t.fee.kind))+
+        lab("Extension fee", num("feeValue", t.fee.kind === "pct" ? +(t.fee.value * 100).toFixed(3) : Math.round(t.fee.value)))+
+      '</div>'+
+      '<p class="mt-2 text-sm text-slate-700">Rate <strong class="tabular-nums" data-refiextrate>'+fmtPct(r.rate)+'</strong> <span class="text-[11px] text-slate-500">= '+escapeHtml(tenorShort(t.index))+' '+fmtPct(liveIndexVal(t.index) || 0)+' + '+Math.round(t.spreadBps)+' bps, floating</span></p>';
+      const inp = (k, val, unit, ph) => '<span class="inline-flex items-center gap-1"><input type="number" step="any" data-refiextlim="'+k+'" value="'+(val == null ? '' : val)+'" placeholder="'+(ph || '')+'" class="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-right text-xs tabular-nums"><span class="text-[11px] text-slate-500">'+unit+'</span></span>';
+      const legs = [
+        { key: "DSCR", name: "Debt coverage, amortizing payment", box: inp("dscr", +lim.dscr.toFixed(3), "&times;"), sign: "&ge;" },
+        { key: "DSCR IO", name: "Debt coverage, interest-only payment", box: inp("dscrIO", lim.dscrIO != null ? +lim.dscrIO.toFixed(3) : null, "&times;", "not used"), sign: "&ge;" },
+        { key: "LTV", name: "Loan-to-value"+(r.appraisal ? " (on the appraisal)" : ""), box: inp("ltv", +(lim.ltv * 100).toFixed(2), "%"), sign: "&le;" },
+        { key: "Debt Yield", name: "Debt yield", box: inp("dy", +(lim.dy * 100).toFixed(2), "%"), sign: "&ge;" }
+      ];
+      const rows = legs.map(l => { const amt = r.legs[l.key], uses = lim.off.indexOf(l.key) < 0, bind = l.key === r.binding, offRow = !uses && amt > 0;
+        return '<tr class="border-t border-slate-100'+(bind ? ' bg-violet-50' : '')+'" data-refiextleg="'+l.key+'">'+
+          '<td class="py-1.5 pr-2 text-center"><input type="checkbox" data-refiextuse="'+l.key+'"'+(uses ? ' checked' : '')+' class="h-4 w-4 cursor-pointer rounded border-slate-300 accent-violet-600"></td>'+
+          '<td class="py-1.5 pr-2 text-sm '+(bind ? 'font-bold text-violet-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.name+(offRow ? ' <span class="ml-1 rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">not used by this lender</span>' : '')+(bind ? ' <span class="ml-1 rounded bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">binds</span>' : '')+'</td>'+
+          '<td class="py-1.5 px-2 whitespace-nowrap text-sm text-slate-500"'+(offRow ? ' style="opacity:.5"' : '')+'>'+l.sign+' '+l.box+'</td>'+
+          '<td class="py-1.5 pl-2 text-right text-sm tabular-nums '+(bind ? 'font-extrabold text-violet-800' : 'text-slate-700')+'"'+(offRow ? ' style="opacity:.5"' : '')+'>'+(amt > 0 ? fmtMoney(amt) : '<span class="text-slate-400">not used</span>')+'</td></tr>'; }).join('');
+      const im = r.implied || {};
+      const stat = (a, b, attr) => '<div class="flex justify-between gap-3"'+(attr || '')+'><dt class="text-slate-500">'+a+'</dt><dd class="font-semibold text-slate-900 tabular-nums">'+b+'</dd></div>';
+      const results = '<dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl bg-violet-50/60 px-4 py-3 text-sm">'+
+        stat("You owe on "+fmtDateUS(t.date), fmtMoney(r.owed))+
+        stat("The lender&rsquo;s limits allow", fmtMoney(r.allowed)+(r.binding ? ' <span class="text-[11px] font-normal text-slate-500">('+escapeHtml(r.binding)+' binds)</span>' : ''))+
+        stat("Pay-down needed", r.needed ? fmtMoney(r.payDown) : 'none needed', ' data-refipaydown="extend-card"')+
+        stat("Extended amount", fmtMoney(r.amount))+
+        stat("At "+fmtMoney(r.amount), 'DSCR '+fmtX2(im.dscr)+' amortizing &middot; '+fmtX2(im.dscrIO)+' interest-only &middot; LTV '+(im.ltv != null ? fmtPct(im.ltv) : '&mdash;')+' &middot; DY '+(im.dy != null ? fmtPct(im.dy) : '&mdash;'))+
+        stat("Early-payoff penalty", fmtMoney(pen.amount)+' <span class="text-[11px] font-normal text-slate-500">'+escapeHtml(pen.why)+(pen.full > 0 ? ' (the full penalty today: '+fmtMoney(pen.full)+')' : '')+'</span>'+(pen.assumed ? ' <span class="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800" data-refiextassumed>assumed &mdash; confirm with the lender</span>' : ''))+
+        stat("Extension fee", fmtMoney(r.fee))+
+        stat("<strong>Cash needed</strong>", '<span data-refiextcash>'+fmtMoney(r.cash)+'</span> <span class="text-[11px] font-normal text-slate-500">pay-down + penalty + fee</span>')+
+        stat("First payment on the new terms", (r.firstNewPay ? fmtDateUS(r.firstNewPay) : '&mdash;')+(firstRow ? ' &middot; '+fmtMoney(firstRow.payment)+(firstRow.type === "io" ? ' interest-only' : '') : ''))+
+        stat("New maturity", fmtDateUS(r.newMaturity)+(r.oldMaturity && r.newMaturity && r.newMaturity < r.oldMaturity ? ' <span class="text-[11px] font-semibold text-amber-700" data-refiextearlier>earlier than today&rsquo;s '+fmtDateUS(r.oldMaturity)+'</span>' : ''))+
+      '</dl>';
+      return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-white p-5 shadow-sm" data-refiext="draft">'+
+        '<div class="flex flex-wrap items-center justify-between gap-3"><h3 class="text-xs font-bold uppercase tracking-wider text-violet-700">Extend with today&rsquo;s lender'+(loan.lenderName ? ' &middot; '+escapeHtml(loan.lenderName) : '')+'</h3>'+
+          '<button type="button" id="refiExtSaveBtn" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">Save the extension</button></div>'+
+        '<p class="mt-1 text-[11px] text-slate-500">Today&rsquo;s loan stays the same record: from the date its terms end, the new rate and term; the pay-down is recorded as a principal payment on that date; status Extended. Value, NOI and the appraisal are the refinance&rsquo;s own (above).</p>'+
+        inputs+
+        '<div class="mt-3 flex flex-wrap items-center gap-2" data-refiextpresetrow>'+presetPickerHtml(t.preset || "", 'data-refiextpreset')+' '+presetChipHtml(lenderPresetById(t.preset), lim, ' data-refiextpresetchip')+'</div>'+
+        '<table class="mt-2 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th class="pr-2 text-center">Lender uses</th><th>This lender&rsquo;s limit</th><th class="px-2">Its limit</th><th class="pl-2 text-right">Loan it allows</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+        '<p class="mt-1 text-[11px] text-slate-400">'+(lim.own ? 'This extension&rsquo;s own limits &middot; <button type="button" data-refiextlimreset class="font-semibold text-violet-700 hover:underline">use the refinance&rsquo;s limits</button>' : 'Starts from the refinance&rsquo;s limits above; type this lender&rsquo;s (e.g. 1.11&times; amortizing and 1.35&times; interest-only)')+
+          (r.io >= t.months && lim.off.indexOf("DSCR") < 0 ? ' &middot; interest-only for the whole term: if this lender sizes on the interest-only payment, untick the amortizing line' : '')+'.</p>'+
+        results+
+      '</div>';
     }
     // The single, full-width detail card for the selected proposed option.
     function refiOptionCardHtml(loan, n){
@@ -11980,11 +12483,15 @@ tr.flagged:hover td{background:#fee2e2}
       { const gks = (refiGroupKeys(loan) || []).filter(k => !Object.prototype.hasOwnProperty.call(gdNOICache, k) && !refiGDTried.has(k));   // 3.0.0 — each property of a group (once)
         gks.forEach(k => refiGDTried.add(k));
         if(gks.length) Promise.all(gks.map(k => opEnsureGeneralData(k).catch(() => null))).then(() => { if(state.activeId === loan._id && state.mode === "refi") refiReprice(loan); }); }
+      refiRecEnsure(loan, () => { if(state.mode === "refi" && (state.activeId === loan._id || loan._combined || loan._poolKeys)) refiReprice(loan); });   // next stage (F4) — D9: the refinance's own inputs, shared
       ensureRefiDrafts(loan);
       // The two-stage verdict drives what's shown: the proposed loan + its schedule (and the
       // "Save as a loan" button) appear ONLY when the answer is Refinance — you can, and you should.
-      const verdict = refiVerdict(loan, refiDrafts[1]);
-      const showProposal = verdict.refi || verdict.decision;   // 2.9.7 (#184) — and in the "your decision" case
+      let verdict = refiVerdict(loan, refiDrafts[1]);
+      // next stage (F4, draft) — D1: the pay-down verdict proposes a loan up to what the property supports; the gap is paid in
+      if(verdict.paydown && refiDrafts[1] && verdict.can.maxLoan > 0 && (refiDrafts[1].originalAmount || 0) > verdict.can.maxLoan + 0.5){ refiDrafts[1].originalAmount = Math.floor(verdict.can.maxLoan); verdict = refiVerdict(loan, refiDrafts[1]); }
+      const deal = refiDeal(loan);
+      const showProposal = (verdict.refi || verdict.decision || verdict.paydown) && deal === "new";   // 2.9.7 (#184) — and in the "your decision" case; F4 — and the pay-down case
       const ends = refiEnds(loan);
       let resetNote = "";
       if(loan.rateType === "Hybrid ARM"){
@@ -12002,7 +12509,7 @@ tr.flagged:hover td{background:#fee2e2}
             '<p class="text-sm text-slate-500">'+escapeHtml(loan._combined?loan.propertyName:loanLabel(loan))+(loan._combined?' — refinance the whole property?':' — should you refinance?')+'</p></div>'+
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
-            (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">'+(verdict.decision ? 'Save as a loan &mdash; Refinance now' : 'Save as a loan')+'</button>' : '')+
+            (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">'+(verdict.decision ? 'Save as a loan &mdash; Refinance now' : verdict.paydown ? 'Save as a loan &mdash; pay in '+fmtMoney(Math.max(0, verdict.can.payoff - (refiDrafts[1].originalAmount || 0))) : 'Save as a loan')+'</button>' : '')+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -12020,7 +12527,8 @@ tr.flagged:hover td{background:#fee2e2}
         refiAdvancedHtml(loan)+
         refiPushMovesHtml(loan)+
         refiVerdictHtml(loan, verdict)+
-        (showProposal
+        refiDealHtml(loan)+
+        (deal === "extend" ? refiExtCardHtml(loan) : showProposal
           ? '<div class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">'+
               '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-brand-700">Proposed New Loan</h3>'+
               '<p class="mb-3 text-[11px] text-slate-400">Matches your current loan&rsquo;s term'+((loan.ioMonths||0)>0?" &amp; interest-only period":"")+', priced at today&rsquo;s credit-aware rate. Every box is editable &mdash; the analysis and verdict above update live as you change them.</p>'+
@@ -12030,7 +12538,7 @@ tr.flagged:hover td{background:#fee2e2}
             '</div>'
           : '<div class="boxline rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">'+
               '<h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Proposed New Loan</h3>'+
-              '<p>The proposed loan and its amortization schedule show here when the answer above is <strong class="text-slate-700">Refinance</strong> (or your decision). '+
+              '<p>The proposed loan and its amortization schedule show here when the answer above is <strong class="text-slate-700">Refinance</strong> (or your decision, or a pay-down). '+
               (verdict.can && verdict.can.can
                 ? 'Right now you can, but by your rule it isn&rsquo;t worth doing &mdash; change the rate quote above to find your target.'
                 : 'Right now the property can&rsquo;t support a loan the size of the payoff, so there&rsquo;s no loan to propose.')+
@@ -12073,6 +12581,62 @@ tr.flagged:hover td{background:#fee2e2}
         if(!cb.checked && !canSize.length){ cb.checked = true; toast("Keep at least one limit the lender uses", "info"); return; }
         refiSetLimits(loan, { off: off.length ? off : null }); refiReprice(loan);
       }));
+      // next stage (F4, draft) — the appraised value, the kind of deal, and the extension's terms (shared, with history)
+      dom.refiView.querySelectorAll("[data-refiappr]").forEach(inp => inp.addEventListener("change", () => {
+        if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return; }
+        const f = inp.getAttribute("data-refiappr"), cur = refiRec(loan).appraisal || {}, raw = String(inp.value || "").trim();
+        const next = Object.assign({}, cur);
+        if(f === "value"){ const v = parseFloat(raw.replace(/[$,\s]/g, "")); if(raw === "") delete next.value; else if(!isFinite(v) || v <= 0){ toast("Type the appraised value in dollars", "info"); return; } else next.value = Math.round(v); }
+        else next[f] = raw || null;
+        refiRecSave(loan, r => { const a = Object.assign({}, next); Object.keys(a).forEach(k => { if(a[k] == null || a[k] === "") delete a[k]; }); if(Object.keys(a).length) r.appraisal = a; else delete r.appraisal; },   // a date or note typed first is kept too
+          [{ label: "Refinance · appraised value" + (f === "value" ? "" : " · " + f), old: f === "value" ? (cur.value ? fmtMoney(cur.value) : "NOI ÷ cap rate") : (cur[f] || null), new: f === "value" ? (next.value ? fmtMoney(next.value) : "NOI ÷ cap rate") : (next[f] || null), field: "appraisal" }]);
+        refiReprice(loan);
+      }));
+      dom.refiView.querySelectorAll("[data-refiapprclear]").forEach(b => b.addEventListener("click", () => {
+        if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return; }
+        const cur = refiRec(loan).appraisal || {};
+        refiRecSave(loan, r => { delete r.appraisal; }, [{ label: "Refinance · appraised value", old: cur.value ? fmtMoney(cur.value) : null, new: "NOI ÷ cap rate", field: "appraisal" }]); refiReprice(loan);
+      }));
+      dom.refiView.querySelectorAll("[data-refideal]").forEach(b => b.addEventListener("click", () => {
+        if(b.disabled) return; if(!cloudCanWrite()){ toast("View only — you can’t change this refinance", "info"); return; }
+        const v = b.getAttribute("data-refideal"), was = refiDeal(loan); if(v === was) return;
+        refiRecSave(loan, r => { if(v === "extend") r.deal = "extend"; else delete r.deal; }, [{ label: "Refinance · kind of deal", old: was === "extend" ? "extend with today’s lender" : "new loan", new: v === "extend" ? "extend with today’s lender" : "new loan", field: "deal" }]);
+        refiReprice(loan);
+      }));
+      dom.refiView.querySelectorAll("[data-refiextf]").forEach(inp => inp.addEventListener("change", () => {
+        const f = inp.getAttribute("data-refiextf"), raw = String(inp.value || "").trim(), t = refiExtTerms(loan), v = parseFloat(raw.replace(/[$,\s]/g, ""));
+        const lbl = REFI_EXT_LABEL[f] || f;
+        if(f === "date"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(raw)){ toast("Pick a date", "info"); return; } refiExtSet(loan, { date: raw }, lbl, t.date, raw); }
+        else if(f === "io" || f === "index"){ refiExtSet(loan, { [f]: raw }, lbl, t[f], raw); }
+        else if(f === "penaltyHow"){ const p = raw ? Object.assign({}, t.penalty || {}, { how: raw }) : null; refiExtSet(loan, { penalty: p }, lbl, t.penalty ? RefiExtend.PENALTY_HOWS[t.penalty.how] : "not picked", raw ? RefiExtend.PENALTY_HOWS[raw] : "not picked"); }
+        else if(f === "penaltyPct" || f === "penaltyAmt"){ if(!isFinite(v) || v < 0){ toast("Type a number of 0 or more", "info"); return; } const p = Object.assign({}, t.penalty || { how: f === "penaltyPct" ? "pct" : "amt" }); if(f === "penaltyPct") p.pct = Math.min(100, v) / 100; else p.amt = v; refiExtSet(loan, { penalty: p }, lbl, null, f === "penaltyPct" ? Math.min(100, v) + "%" : fmtMoney(v)); }
+        else if(f === "feeKind"){ refiExtSet(loan, { fee: { kind: raw === "amt" ? "amt" : "pct", value: 0 } }, lbl, t.fee.kind === "amt" ? "dollars" : "%", raw === "amt" ? "dollars" : "%"); }
+        else if(f === "feeValue"){ if(!isFinite(v) || v < 0){ toast("Type a number of 0 or more", "info"); return; } const val = t.fee.kind === "amt" ? v : v / 100; refiExtSet(loan, { fee: { kind: t.fee.kind, value: val } }, lbl, t.fee.kind === "amt" ? fmtMoney(t.fee.value) : fmtPct(t.fee.value), t.fee.kind === "amt" ? fmtMoney(val) : fmtPct(val)); }
+        else { if(!isFinite(v) || v < 0){ toast("Type a number of 0 or more", "info"); return; } refiExtSet(loan, { [f]: f === "spreadBps" ? v : Math.round(v) }, lbl, t[f], f === "spreadBps" ? v : Math.round(v)); }
+        refiReprice(loan);
+      }));
+      const extLimSet = (patch, note) => { const t = refiExtTerms(loan), cur = refiExtLimits(loan); const base = t.limits ? Object.assign({}, t.limits) : { dscr: cur.dscr, dscrIO: cur.dscrIO, ltv: cur.ltv, dy: cur.dy, off: cur.off.slice() };
+        const next = patch === null ? null : Object.assign(base, patch); if(next) Object.keys(next).forEach(k => { if(next[k] == null || (Array.isArray(next[k]) && !next[k].length)) delete next[k]; });
+        refiExtSet(loan, { limits: next }, "lender limits", t.limits ? refiLimitsText(cur) : "the refinance’s", next ? refiLimitsText(refiLimitsFrom(next)) : "the refinance’s"); refiReprice(loan); };
+      dom.refiView.querySelectorAll("[data-refiextlim]").forEach(inp => inp.addEventListener("change", () => {
+        const k = inp.getAttribute("data-refiextlim"), raw = String(inp.value || "").trim(), v = parseFloat(raw);
+        if(raw === ""){ extLimSet({ [k]: null }); return; }
+        if(!isFinite(v) || v <= 0){ toast("Type a number above 0", "info"); return; }
+        extLimSet({ [k]: (k === "ltv" || k === "dy") ? v / 100 : v });
+      }));
+      dom.refiView.querySelectorAll("[data-refiextuse]").forEach(cb => cb.addEventListener("change", () => {
+        const k = cb.getAttribute("data-refiextuse"), off = refiExtLimits(loan).off.filter(x => x !== k); if(!cb.checked) off.push(k);
+        const r = refiExtResult(loan), canSize = ((r && r.caps) || []).filter(c => off.indexOf(c.key) < 0);
+        if(!cb.checked && !canSize.length){ cb.checked = true; toast("Keep at least one limit the lender uses", "info"); return; }
+        extLimSet({ off: off.length ? off : null });
+      }));
+      dom.refiView.querySelectorAll("[data-refiextlimreset]").forEach(b => b.addEventListener("click", () => extLimSet(null)));
+      { const xb = el("refiExtSaveBtn"); if(xb) xb.addEventListener("click", () => refiExtSave(loan)); }
+      dom.refiView.querySelectorAll("[data-presetmanage]").forEach(b => b.addEventListener("click", () => presetOpen()));
+      dom.refiView.querySelectorAll("[data-refihist]").forEach(b => b.addEventListener("click", () => refiOpenHistory(loan)));
+      dom.refiView.querySelectorAll("[data-refipreset]").forEach(sel => sel.addEventListener("change", () => refiPickPreset(loan, sel.value, "refi")));
+      dom.refiView.querySelectorAll("[data-refiextpreset]").forEach(sel => sel.addEventListener("change", () => refiPickPreset(loan, sel.value, "ext")));
+      dom.refiView.querySelectorAll("[data-refiextundo]").forEach(b => b.addEventListener("click", () => refiExtUndo(loan)));
       const noiEditBtn = el("refiNoiEdit");
       if(noiEditBtn) noiEditBtn.addEventListener("click", () => openNoiFlow(loan, () => refiReprice(loan)));
 
@@ -12128,6 +12692,7 @@ tr.flagged:hover td{background:#fee2e2}
         // margin over SOFR; hybrid → both periods at 0 over their Treasuries, #80).
         wrap.addEventListener("click", (e) => {
           const b = e.target.closest && e.target.closest("[data-rtype]"); if(!b) return;
+          if(b.hasAttribute("data-rtypeoff")){ toast(b.getAttribute("data-rtypeoff"), "info"); return; }   // next stage (F4) — the preset doesn't allow it
           const draft = refiDrafts[1]; if(!draft) return;
           const type = b.getAttribute("data-rtype"); if(draft.rateType === type) return;
           draft.rateType = type;
@@ -12197,6 +12762,11 @@ tr.flagged:hover td{background:#fee2e2}
       const name = t._combined ? t.propertyName : loanLabel(t), n = refiMembers(t).length;
       if(!v.can.sized) return name + ": I can’t judge this yet — the property has no NOI (upload its T12 or enter the NOI).";
       let s = name + " — you owe " + fmtMoney(v.can.payoff) + (n > 1 ? " on " + n + " loans together" : "") + ". Can you? " + (v.can.can ? "Yes — it supports up to " + fmtMoney(v.can.maxLoan) + "." : "No — it supports only " + fmtMoney(v.can.maxLoan) + ".");
+      if(v.paydown){   // next stage (F4, draft) — D1: must act, and the pay-down each way out takes
+        s += " Must act: " + (v.must.resetting && v.reset ? "today’s rate resets " + fmtDateLong(v.reset.date) + " (" + fmtPct(v.reset.from) + " → " + fmtPct(v.reset.to) + ")" : "today’s loan ends " + fmtDateLong(v.ends.date)) + ". To refinance at these limits: pay down " + fmtMoney(v.payDown) + ".";
+        if(v.ext && v.ext.terms && (v.ext.terms.own || refiDeal(t) === "extend")) s += " To extend with today’s lender: " + (v.ext.needed ? "pay down " + fmtMoney(v.ext.payDown) : "no pay-down") + " (cash needed " + fmtMoney(v.ext.cash) + " with the penalty and fee).";
+      }
+      if(refiDeal(t) === "extend"){ const x = refiExtResult(t); if(x) s += " Extension with today’s lender: " + refiExtNote(t, x) + "; allowed " + fmtMoney(x.allowed) + ", cash needed " + fmtMoney(x.cash) + ", new maturity " + fmtDateLong(x.newMaturity) + "."; }
       if(v.can.can){ const w = v.should;
         s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(w.cashNet) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
           : w.kind === "yes" ? (w.why === "maturity" ? "Yes — today’s loan ends within 12 months." : "Yes — it saves " + fmtMoney(w.saved) + " of interest until today’s loan ends, against a " + fmtMoney(w.penalty) + " early-payoff penalty.")
@@ -12207,7 +12777,9 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function refiSaveSummary(loan){
       const olds = refiMembers(loan).filter(l => l && !l._combined), draft = refiDrafts[1];
-      return { olds, text: "This replaces " + olds.map(l => "“" + loanLabel(l) + "”").join(" and ") + " with one new " + fmtMoney(draft ? draft.originalAmount : 0) + " loan at " + fmtPct(draft ? compute(draft).derived.currentRate : 0) + ". " +
+      const payIn = draft ? Math.max(0, refiPayoff(loan) - (draft.originalAmount || 0)) : 0;   // next stage (F4) — D1: the gap you pay in
+      return { olds, payIn, text: "This replaces " + olds.map(l => "“" + loanLabel(l) + "”").join(" and ") + " with one new " + fmtMoney(draft ? draft.originalAmount : 0) + " loan at " + fmtPct(draft ? compute(draft).derived.currentRate : 0) + ". " +
+        (payIn > 0.5 ? "You pay in " + fmtMoney(payIn) + " (what you owe less the new loan). " : "") +
         (olds.length === 1 ? "The old loan is" : "The old loans are") + " marked Paid off (refinanced) today and kept on Home under Removed & paid-off loans." };
     }
     function saveActiveRefiOption(loan, opts){
@@ -12230,16 +12802,18 @@ tr.flagged:hover td{background:#fee2e2}
       nl.lienPosition = "Senior"; nl.loanStatus = ""; nl.lenderName = ""; nl.loanNumber = "";
       delete nl._poolKeys; delete nl.alsoSecures;
       const poolKs = (loan._poolKeys && loan._poolKeys.length > 1) ? loan._poolKeys : (isPoolLoan(loan) ? poolKeys(loan) : null);
-      ["_closingPct","_tenor","_years","_combined","_members","_seniorId","_rateTypeLabel","_rateTypeSub","_history","_fixedIndex","_fixedSpread","_baseSpread","_tierDelta","_effSpread","archived","archivedAt","paidOffReason","paidOffAt"].forEach(k => delete nl[k]);
+      ["_closingPct","_tenor","_years","_combined","_members","_seniorId","_rateTypeLabel","_rateTypeSub","_history","_fixedIndex","_fixedSpread","_baseSpread","_tierDelta","_effSpread","archived","archivedAt","paidOffReason","paidOffAt","extension","principalPayments","paidInAtRefinance"].forEach(k => delete nl[k]);
       const err = validateLoan(nl);
       if(err){ toast(err, "info"); return { ok:false, error: err }; }
       lockFixedRate(nl);   // a refinance is a new origination: lock index + spread
       const today = new Date().toISOString().slice(0,10);
+      const payIn = Math.max(0, refiPayoff(loan) - (nl.originalAmount || 0));   // next stage (F4) — D1: the gap paid in
       olds.forEach(l => {
         const was = l.loanStatus || "";
         l.loanStatus = "Paid off"; l.paidOffReason = "refinanced"; l.paidOffAt = today; l.archived = true; l.archivedAt = new Date().toISOString(); l.archivedReason = "refinanced";
-        try{ loanHistoryAdd(l, "loanStatus", was, "Paid off (refinanced)", from === "assistant" ? "assistant" : "refinance", { note: "replaced by the new " + fmtMoney(nl.originalAmount) + " loan" }); }catch(e){}
+        try{ loanHistoryAdd(l, "loanStatus", was, "Paid off (refinanced)", from === "assistant" ? "assistant" : "refinance", { note: "replaced by the new " + fmtMoney(nl.originalAmount) + " loan" + (payIn > 0.5 ? "; you paid in " + fmtMoney(payIn) : "") }); }catch(e){}
       });
+      if(payIn > 0.5) nl.paidInAtRefinance = Math.round(payIn * 100) / 100;
       try{ loanHistoryAdd(nl, "created", null, "added", from === "assistant" ? "assistant" : "refinance", { file: "refinanced " + olds.map(loanLabel).join(" + ") }); }catch(e){}
       if(poolKs){ const lead = propertyKey(nl); nl._id = nl._id || uid(); POOL_SRC.setKeys(nl, [lead].concat(poolKs.filter(k => k !== lead))); }
       loans.push(nl); state.activeId = nl._id; refiDraftsKey = ""; save();
@@ -12616,7 +13190,7 @@ tr.flagged:hover td{background:#fee2e2}
       "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, each T12's reading — by the reader and the AI, its status (checked, reviewed, waiting for the operator) and the operator's changes with their notes, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json — or, when it leaves them empty, on the senior loan's record, and the Profile tab shows them from there: when you read profile.json the app puts \"What the Profile tab shows\" on top, with where each value comes from — use it, and never say a value is stored nowhere when it is on the loan.",
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, sections?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card; sections: a list of names when the property is SEVERAL sections (its phases) — they are combined. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
-      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\", \"entered\", or — when the property has a pro forma — \"pro forma\" or \"aggressive\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal).",
+      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis} (\"in-place\", \"underwritten\", \"entered\", or — when the property has a pro forma — \"pro forma\" or \"aggressive\"). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal); and (draft) deal (\"new\" or \"extend\" — extend with today's lender), appraisedValue (dollars, null = back to NOI ÷ cap rate), appraisalDate, preset (a lender preset's name, or \"none\"). set_extension {name, changes}: the extension with today's lender — date (when today's terms end, YYYY-MM-DD), months, io (\"whole\", \"none\" or a number of months), amortMonths, index, spreadBps, penalty (\"full\", \"paydown\", \"none\", a percent like \"40%\" of the full penalty, or a dollar amount), fee (a percent like \"0.5%\" of the extended amount, or dollars). save_extension {name}: saves it (a card); undo_extension {name}: undoes a saved one (a card).",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). split_document {file, name?, parts:[{from, to, title?, names:[property names]}]}: a PDF holding several agreements (or one agreement for several properties) — propose its page ranges and which property each belongs to, from the pages you READ (where each agreement starts and which property it names); a card shows them, the operator changes anything and approves; each property then reads only its own pages (one part can name several properties). Never guess a range you haven't read. check_t12 {name}: read the property's T12 again with the reader AND the AI — the whole reading process (its own sheet(s) only); a failed check or a disagreement opens the review where the operator decides; it changes no number. fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
       "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
@@ -12940,7 +13514,9 @@ tr.flagged:hover td{background:#fee2e2}
         var t=refiPrepare(l); if(!t) return {ok:false,msg:"I couldn’t prepare that refinance."};
         var v=refiVerdict(t, refiDrafts[1]), sum=refiSummaryText(t, v);
         if(a && a.open){ activateTab("home"); state.activeId=t._id; try{ startRefi(); }catch(e){} }   // 2.9.7 (#90) — only when asked, brought to the front
-        if(!(v.refi || v.decision)) return {ok:true, msg: sum};
+        if(refiDeal(t)==="extend" && refiExtResult(t)) return {ok:true, msg: sum+" (It is set to extend with today’s lender — save_extension saves it.)"};
+        if(v.paydown && refiDrafts[1] && v.can.maxLoan>0 && (refiDrafts[1].originalAmount||0)>v.can.maxLoan+0.5){ refiDrafts[1].originalAmount=Math.floor(v.can.maxLoan); v=refiVerdict(t, refiDrafts[1]); sum=refiSummaryText(t, v); }   // F4 — D1: up to what it supports
+        if(!(v.refi || v.decision || v.paydown)) return {ok:true, msg: sum};
         var sm=refiSaveSummary(t);
         return aiAsstApprovalCard(escapeHtml(sum)+'<br><br>Save it? '+escapeHtml(sm.text), "", function(){
           if(refiDraftsKey !== t._id) ensureRefiDrafts(t);
@@ -13385,12 +13961,77 @@ tr.flagged:hover td{background:#fee2e2}
           ops.push(function(dd){ dd.loanTermMonths=tm; var tp=todayParts(),fp=addMonths(tp,1),nm2=addMonths(fp,tm-1); dd.maturityDate=partsToISO(nm2.y,nm2.mo,1); }); }
         if(c.amortYears!=null && isFinite(Number(c.amortYears))){ var am=Math.max(12,Math.round(Number(c.amortYears)*12)); rows.push(aiAsstRow("amort","Amortization", Math.round((d.amortizationMonths||0)/12)+" years", c.amortYears+" years")); ops.push(function(dd){ dd.amortizationMonths=am; }); }
         if(c.ioMonths!=null && isFinite(Number(c.ioMonths))){ var io=Math.max(0,Math.round(Number(c.ioMonths))); rows.push(aiAsstRow("io","Interest-only months", String(d.ioMonths||0), String(io))); ops.push(function(dd){ dd.ioMonths=io; }); }
-        if(!ops.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears, ioMonths, rateType, index or spread."};
+        // next stage (F4, draft) — the kind of deal, the appraised value and a lender preset (kept with the refinance, shared)
+        var recOps=[];
+        if(c.deal!=null){ var dl=/ext/i.test(String(c.deal))?"extend":"new"; if(dl==="extend" && !refiExtAllowed(t)) return {ok:false,msg:"An extension is with one lender, one loan at a time — name the loan itself, not the property or portfolio."};
+          rows.push(aiAsstRow("deal","Kind of deal", refiDeal(t)==="extend"?"Extend with today’s lender":"New loan", dl==="extend"?"Extend with today’s lender":"New loan"));
+          recOps.push(function(){ refiRecSave(t, function(r){ if(dl==="extend") r.deal="extend"; else delete r.deal; }, [{ label:"Refinance · kind of deal", old: refiDeal(t)==="extend"?"extend with today’s lender":"new loan", new: dl==="extend"?"extend with today’s lender":"new loan", field:"deal" }], "assistant"); }); }
+        if(c.appraisedValue!==undefined){ var av=c.appraisedValue==null||c.appraisedValue===""?null:Number(String(c.appraisedValue).replace(/[$,\s]/g,"")); if(av!=null && !(av>0)) return {ok:false,msg:"The appraised value must be a dollar amount above 0 (or null to go back to NOI ÷ cap rate)."};
+          var ap0=refiAppraisal(t); rows.push(aiAsstRow("appraisal","Appraised value", ap0?fmtMoney(ap0.value):"NOI ÷ cap rate", av!=null?fmtMoney(av):"NOI ÷ cap rate"));
+          var adt=c.appraisalDate&&/^\d{4}-\d{2}-\d{2}$/.test(String(c.appraisalDate))?String(c.appraisalDate):null;
+          recOps.push(function(){ refiRecSave(t, function(r){ if(av!=null){ r.appraisal=Object.assign({}, r.appraisal||{}, { value: Math.round(av) }); if(adt) r.appraisal.date=adt; } else delete r.appraisal; }, [{ label:"Refinance · appraised value", old: ap0?fmtMoney(ap0.value):"NOI ÷ cap rate", new: av!=null?fmtMoney(av):"NOI ÷ cap rate", field:"appraisal" }], "assistant"); }); }
+        if(c.preset!=null){ var pn2=String(c.preset).trim(), pz=/^none$/i.test(pn2)?null:lenderPresets().find(function(p){ return normName(p.name)===normName(pn2) || normName(p.name).indexOf(normName(pn2))>=0; });
+          if(!pz && !/^none$/i.test(pn2)) return {ok:false,msg:lenderPresets().length?"The lender presets are: "+lenderPresets().map(function(p){ return p.name; }).join(", ")+".":"There are no lender presets yet — the group’s admin adds them."};
+          rows.push(aiAsstRow("preset","Lender preset", escapeHtml((refiPresetOf(t)||{}).name||"none"), escapeHtml(pz?pz.name:"none")));
+          recOps.push(function(){ refiPickPreset(t, pz?pz.id:"", "refi", "assistant"); }); }
+        if(!ops.length && !recOps.length) return {ok:false,msg:"I can set the refinance's amount, termYears, amortYears, ioMonths, rateType, index or spread — and deal, appraisedValue or preset."};
+        if(recOps.length && !cloudCanWrite()) return {ok:false,msg:"View only — this refinance can’t be changed from this app."};
         return aiAsstApprovalCard('Change the proposed loan in the refinance of <b>'+escapeHtml(nm)+'</b>?', rows.join(''), function(){
+          recOps.forEach(function(op){ op(); });
           var dd=refiDrafts[1]; if(!dd || refiDraftsKey!==t._id){ ensureRefiDrafts(t); dd=refiDrafts[1]; }
           ops.forEach(function(op){ op(dd); }); applyProposedPricing(t, dd);
           if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||t); }catch(e){} }
           return {ok:true, html:'✓ Changed the proposed loan. '+escapeHtml(refiSummaryText(t, refiVerdict(t, dd), dd))};
+        });
+      },
+      // next stage (F4, draft) — the extension with today's lender: its terms (a card), save it (a card), undo it (a card).
+      set_extension: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        if(!refiExtAllowed(l)) return {ok:false,msg:"An extension is with one lender, one loan at a time — name one loan (not a pooled or combined one)."};
+        if(l.extension) return {ok:false,msg:loanLabel(l)+" already has a saved extension — undo_extension first to change it."};
+        if(!cloudCanWrite()) return {ok:false,msg:"View only — this refinance can’t be changed from this app."};
+        var c=(a&&a.changes)||{}, t=refiExtTerms(l), patch={}, rows=[], num=function(v){ return Number(String(v).replace(/[$,%\s]/g,"")); };
+        if(c.date!=null){ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(c.date))) return {ok:false,msg:"The date must be YYYY-MM-DD."}; patch.date=String(c.date); rows.push(aiAsstRow("date","Today’s terms end on", fmtDateUS(t.date), fmtDateUS(patch.date))); }
+        if(c.months!=null){ var mo=Math.round(num(c.months)); if(!(mo>0)) return {ok:false,msg:"The months must be above 0."}; patch.months=mo; rows.push(aiAsstRow("months","Months on the new terms", String(t.months), String(mo))); }
+        if(c.io!=null){ var io=String(c.io).toLowerCase(); if(/whole|all|full/.test(io)) patch.io="whole"; else if(/none|no/.test(io) || num(io)===0) patch.io="none"; else if(num(io)>0){ patch.io="n"; patch.ioMonths=Math.round(num(io)); } else return {ok:false,msg:"io must be \"whole\", \"none\" or a number of months."};
+          rows.push(aiAsstRow("io","Interest-only", t.io==="whole"?"the whole term":t.io==="none"?"none":t.ioMonths+" months", patch.io==="whole"?"the whole term":patch.io==="none"?"none":patch.ioMonths+" months")); }
+        if(c.amortMonths!=null){ var amo=Math.round(num(c.amortMonths)); if(!(amo>=12)) return {ok:false,msg:"The amortization must be 12 months or more."}; patch.amortMonths=amo; rows.push(aiAsstRow("amort","Amortization after interest-only", t.amortMonths+" months", amo+" months")); }
+        if(c.index!=null){ var ix=String(c.index).toLowerCase().trim(), hit=REFI_INDEX_CHOICES.find(function(id){ return id===ix || normName(INDEX_BY_ID[id].label).indexOf(normName(c.index))>=0; });
+          if(!hit) return {ok:false,msg:"The index must be one of: "+REFI_INDEX_CHOICES.map(function(id){ return INDEX_BY_ID[id].label; }).join(", ")+"."}; patch.index=hit; rows.push(aiAsstRow("index","Index", escapeHtml(INDEX_BY_ID[t.index].label), escapeHtml(INDEX_BY_ID[hit].label))); }
+        if(c.spreadBps!=null){ var sb=num(c.spreadBps); if(!(sb>=0)) return {ok:false,msg:"The spread can’t be negative."}; if(sb<1) sb=sb*10000; patch.spreadBps=sb; rows.push(aiAsstRow("spread","Spread", Math.round(t.spreadBps)+" bps", Math.round(sb)+" bps")); }
+        if(c.penalty!=null){ var pv=String(c.penalty).toLowerCase().trim(), pen;
+          if(/^full/.test(pv)) pen={how:"full"}; else if(/pay.?down|part paid/.test(pv)) pen={how:"paydown"}; else if(/^none|^no/.test(pv)) pen={how:"none"}; else if(/%$/.test(pv) && num(pv)>=0) pen={how:"pct", pct:Math.min(100,num(pv))/100}; else if(num(pv)>=0) pen={how:"amt", amt:num(pv)}; else return {ok:false,msg:"penalty must be full, paydown, none, a percent of the full penalty or a dollar amount."};
+          patch.penalty=pen; rows.push(aiAsstRow("penalty","Early-payoff penalty", t.penalty?RefiExtend.PENALTY_HOWS[t.penalty.how]:"not picked (assumed: on the pay-down)", RefiExtend.PENALTY_HOWS[pen.how]+(pen.how==="pct"?" — "+(pen.pct*100)+"%":pen.how==="amt"?" — "+fmtMoney(pen.amt):""))); }
+        if(c.fee!=null){ var fv=String(c.fee).trim(), fee=/%$/.test(fv)?{kind:"pct", value:num(fv)/100}:{kind:"amt", value:num(fv)}; if(!(fee.value>=0)) return {ok:false,msg:"The fee must be a percent or a dollar amount."}; patch.fee=fee; rows.push(aiAsstRow("fee","Extension fee", t.fee.kind==="amt"?fmtMoney(t.fee.value):fmtPct(t.fee.value), fee.kind==="amt"?fmtMoney(fee.value):fmtPct(fee.value))); }
+        if(!rows.length) return {ok:false,msg:"I can set the extension's date, months, io, amortMonths, index, spreadBps, penalty or fee."};
+        return aiAsstApprovalCard('Set the extension with today’s lender for <b>'+escapeHtml(loanLabel(l))+'</b>?', rows.join(''), function(){
+          refiRecSave(l, function(r){ var e=Object.assign({}, r.ext||{}); Object.keys(patch).forEach(function(k){ e[k]=patch[k]; }); if(!e.date) e.date=t.date; r.ext=e; r.deal="extend"; }, [{ label:"Refinance · extension", old:null, new:Object.keys(patch).join(", "), field:"ext" }], "assistant");
+          if(state.mode==="refi"){ try{ renderRefi(getLoan(state.activeId)||l); }catch(e){} }
+          var x=refiExtResult(l); return {ok:true, html:'✓ Set. '+(x?escapeHtml(refiExtNote(l, x)+"; allowed "+fmtMoney(x.allowed)+", cash needed "+fmtMoney(x.cash)+", new maturity "+fmtDateLong(x.newMaturity)+"."):"")};
+        });
+      },
+      save_extension: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
+        if(!refiExtAllowed(l)) return {ok:false,msg:"An extension is with one lender, one loan at a time."};
+        if(l.extension) return {ok:false,msg:loanLabel(l)+" already has a saved extension."};
+        var x=refiExtResult(l); if(!x) return {ok:false,msg:"There is no extension to save for "+loanLabel(l)+"."};
+        if(!cloudCanWrite()) return {ok:false,msg:"View only — this loan can’t be changed from this app."};
+        return aiAsstApprovalCard('Save the extension of <b>'+escapeHtml(loanLabel(l))+'</b>? Today’s loan stays the same record.', [
+            aiAsstRow("maturityDate","Maturity", fmtDateUS(x.oldMaturity), fmtDateUS(x.newMaturity)),
+            aiAsstRow("rate","Rate from "+fmtDateUS(x.terms.date), fmtPct(compute(l).derived.currentRate||0), escapeHtml(indexShort(x.terms.index))+" + "+Math.round(x.terms.spreadBps)+" bps ("+fmtPct(x.rate)+")"),
+            aiAsstRow("payDown","Pay-down", "—", x.needed?fmtMoney(x.payDown):"none"),
+            aiAsstRow("cash","Cash needed", "—", fmtMoney(x.cash)+" (penalty "+fmtMoney(x.penalty.amount)+(x.penalty.assumed?" assumed":"")+", fee "+fmtMoney(x.fee)+")"),
+            aiAsstRow("loanStatus","Status", escapeHtml(loanStatusOf(l)||"Active"), "Extended")].join(''), function(){
+          var r=refiExtCommit(l, "assistant");
+          return r.ok ? {ok:true, html:'✓ Saved the extension — '+escapeHtml(loanLabel(l))+' now matures '+escapeHtml(fmtDateLong(r.maturityDate))+'.', toast:'Extension saved'} : {ok:false, html:"Not saved: "+escapeHtml(r.error||"")};
+        });
+      },
+      undo_extension: function(a){
+        var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan, e=l.extension;
+        if(!e || !e.before) return {ok:false,msg:loanLabel(l)+" has no saved extension."};
+        return aiAsstApprovalCard('Undo the extension of <b>'+escapeHtml(loanLabel(l))+'</b>?', aiAsstRow("maturityDate","Maturity", fmtDateUS(l.maturityDate), fmtDateUS(e.before.maturityDate)), function(){
+          var r=refiExtUndo(l, { confirmed:true, from:"assistant" });
+          return r && r.ok ? {ok:true, html:'✓ Undid the extension of '+escapeHtml(loanLabel(l))+'.'} : {ok:false, html:"Not undone."};
         });
       }
     };
