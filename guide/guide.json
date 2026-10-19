@@ -1,9 +1,1869 @@
 {
  "version": 1,
- "builtAt": "2026-10-19T10:21:44.542Z",
+ "builtAt": "2026-10-19T10:36:45.805Z",
  "intro": "Pick the tab or screen you need help with. Each topic walks you through it step by step: a picture of the real screen, a number on every button, and what each one does. Use Back and Next (or the ← → keys); click a picture to see it full size.",
  "note": "The pictures come from the app itself, taken with the app’s own sample loans and made-up files (a made-up T12, rent roll and agreement) — never your real tenants. Claude’s answers in the pictures are made-up examples.",
  "chapters": [
+  {
+   "id": "start",
+   "title": "Getting around",
+   "intro": "The window bar at the top, the tabs, the switch between the whole portfolio and one property, the Assistant button and making the app bigger or smaller — where everything is.",
+   "cover": "img/start/screen-01.jpg",
+   "topics": [
+    {
+     "id": "screen",
+     "title": "The main screen",
+     "intro": "What you see when the app opens, from the top down.",
+     "steps": [
+      {
+       "title": "The whole window",
+       "text": "The app opens on the Portfolio tab. At the very top is the window bar (live rates, Settings and the window buttons). Under it: the app’s name, the property count and the version; then the tabs; then the switch between the whole portfolio and one property, the Data menu and the Needs Attention strip. The portfolio page itself starts below them.",
+       "img": "img/start/screen-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 2.5,
+         "y": 0.8,
+         "w": 18.8,
+         "h": 1.8,
+         "label": "Window bar",
+         "text": "The app’s own title bar. Drag it to move the window."
+        },
+        {
+         "x": 74.1,
+         "y": 0.4,
+         "w": 8.7,
+         "h": 2.7,
+         "label": "Fetch live rate",
+         "text": "Fetches today’s market rates and shows them in a list (next topic)."
+        },
+        {
+         "x": 83.3,
+         "y": 0.3,
+         "w": 6.1,
+         "h": 2.7,
+         "label": "Settings",
+         "text": "App size, the portfolio targets, the list of properties, this guide and the Claude connection (the Settings chapter)."
+        },
+        {
+         "x": 89.8,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Minimize",
+         "text": "Hides the window to the taskbar."
+        },
+        {
+         "x": 92.8,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Maximize",
+         "text": "Fills the screen; click again to go back to the size it was."
+        },
+        {
+         "x": 95.9,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Close",
+         "text": "Closes the app."
+        },
+        {
+         "x": 4.3,
+         "y": 6.2,
+         "w": 2.2,
+         "h": 3.6,
+         "label": "Living Residential",
+         "text": "The app’s name — nothing to click."
+        },
+        {
+         "x": 84.5,
+         "y": 7.1,
+         "w": 5.6,
+         "h": 1.8,
+         "label": "Property count",
+         "text": "How many properties are in the portfolio. Archived properties aren’t counted. Settings lists every one by name."
+        },
+        {
+         "x": 90.9,
+         "y": 6.6,
+         "w": 4.2,
+         "h": 2.9,
+         "label": "Version",
+         "text": "The version you have. Click it to check for a new version (the Settings chapter shows what it can say)."
+        },
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.9,
+         "h": 4.2,
+         "label": "Portfolio tab",
+         "text": "This page. It is always the first tab and can’t be closed."
+        },
+        {
+         "x": 12.4,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens Underwriting, the Calendar or Data Health in a tab of its own."
+        },
+        {
+         "x": 4.2,
+         "y": 23.8,
+         "w": 13,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "The whole book on one page (shown now)."
+        },
+        {
+         "x": 17.5,
+         "y": 23.8,
+         "w": 13.8,
+         "h": 4.4,
+         "label": "Specific Property",
+         "text": "One property at a time: its loans, payment schedule and profile."
+        },
+        {
+         "x": 32.5,
+         "y": 23.7,
+         "w": 8.1,
+         "h": 4.7,
+         "label": "Data",
+         "text": "Back up, restore, and Excel export and import (the Settings, Data & backups chapter)."
+        },
+        {
+         "x": 41.5,
+         "y": 21.2,
+         "w": 53.6,
+         "h": 9.6,
+         "label": "Needs Attention",
+         "text": "Dates coming up and loans worth refinancing — click a card to go there (the Portfolio chapter)."
+        },
+        {
+         "x": 3.9,
+         "y": 33.5,
+         "w": 28.5,
+         "h": 3.1,
+         "label": "Portfolio",
+         "text": "The portfolio page: totals, charts, coverage and every loan (the Portfolio chapter)."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "windowbar",
+     "title": "The window bar",
+     "intro": "The strip across the top of the window. It stays the same on every tab.",
+     "steps": [
+      {
+       "title": "Fetch live rate — the rates list",
+       "text": "Click Fetch live rate. The app asks the US feeds for today’s rates (the Treasury curve, SOFR and the others) and opens this list: every rate the app holds, its value, where the value comes from, and which of your loans use it. The new values are used at once by the refinance (today’s market rate), the Current / Market / Gap columns on the Portfolio page and the rate preview on the loan form. In this picture only one rate came back from the feeds; the others show the app’s built-in values. With no internet the list says so and the last saved values stay.",
+       "img": "img/start/windowbar-01.jpg",
+       "w": 768,
+       "h": 810,
+       "marks": [
+        {
+         "x": 2.6,
+         "y": 2.5,
+         "w": 50,
+         "h": 3,
+         "label": "Market rates",
+         "text": "The list of every rate the app holds."
+        },
+        {
+         "x": 2.6,
+         "y": 5.4,
+         "w": 50,
+         "h": 2,
+         "label": "How many were refreshed",
+         "text": "How many rates came fresh from the US feeds just now, and how many rates the app holds."
+        },
+        {
+         "x": 91.3,
+         "y": 2.5,
+         "w": 4.2,
+         "h": 4,
+         "label": "Close",
+         "text": "Closes the list (so does clicking outside it). The rates stay updated."
+        },
+        {
+         "x": 2.6,
+         "y": 16.5,
+         "w": 15.9,
+         "h": 8.3,
+         "label": "Rate",
+         "text": "The rate’s name — Prime, SOFR, Term SOFR, Fed Funds, the US Treasuries and “Other”."
+        },
+        {
+         "x": 18.5,
+         "y": 43.6,
+         "w": 11.3,
+         "h": 6,
+         "label": "Value",
+         "text": "The rate today, in percent."
+        },
+        {
+         "x": 29.8,
+         "y": 43.6,
+         "w": 12.1,
+         "h": 6,
+         "label": "Where it comes from",
+         "text": "“live” with the date it was quoted; “Built-in rate — fetch to update” is the app’s stored value; “Last saved rate” is the last value fetched."
+        },
+        {
+         "x": 41.9,
+         "y": 24.8,
+         "w": 53.5,
+         "h": 10.5,
+         "label": "Your loans on it",
+         "text": "Every loan of yours that uses this rate, and whether it is floating, hybrid or fixed (a fixed loan’s rate is locked and doesn’t move)."
+        }
+       ]
+      },
+      {
+       "title": "Settings",
+       "text": "Click Settings to open its menu. From the top: the app’s size (App scale), the portfolio targets the Portfolio page measures against, the list of every property with any possible duplicates, this guide, and the Claude connection. Each part is explained in the Settings, Data & backups chapter. Click anywhere outside the menu (or press Esc) to close it.",
+       "img": "img/start/windowbar-02.jpg",
+       "w": 1440,
+       "h": 1180,
+       "marks": [
+        {
+         "x": 83.3,
+         "y": 0.2,
+         "w": 6.1,
+         "h": 2.1,
+         "label": "Settings",
+         "text": "Opens and closes this menu."
+        },
+        {
+         "x": 70.6,
+         "y": 9.6,
+         "w": 18.2,
+         "h": 1.4,
+         "label": "App scale",
+         "text": "Makes everything bigger or smaller (last topic)."
+        },
+        {
+         "x": 70.6,
+         "y": 26.7,
+         "w": 18.2,
+         "h": 16.3,
+         "label": "Portfolio targets",
+         "text": "The DSCR, LTV and debt-yield targets the Portfolio page measures against."
+        },
+        {
+         "x": 70.6,
+         "y": 44,
+         "w": 18.2,
+         "h": 26.7,
+         "label": "Properties",
+         "text": "How many properties there are, every one by name, and any that look like duplicates."
+        },
+        {
+         "x": 70.6,
+         "y": 75.4,
+         "w": 18.2,
+         "h": 2.9,
+         "label": "Open the guide",
+         "text": "Opens this guide."
+        },
+        {
+         "x": 70.6,
+         "y": 85.8,
+         "w": 18.2,
+         "h": 2.9,
+         "label": "Claude connection",
+         "text": "Connects Claude for the AI features — your Claude subscription or an API key."
+        }
+       ]
+      },
+      {
+       "title": "The version and the window buttons",
+       "text": "On the right of the header is the version you have. Click it and the app checks for a new version; while a new version downloads it shows its progress, and once it is ready it turns green — “Update ready — Restart”: click it to restart into the new version. Your data and backups are not touched by an update. The three buttons at the top right minimize, maximize and close the window.",
+       "img": "img/start/windowbar-03.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 84.5,
+         "y": 7.1,
+         "w": 5.6,
+         "h": 1.8,
+         "label": "Property count",
+         "text": "How many properties are in the portfolio (archived ones aren’t counted)."
+        },
+        {
+         "x": 90.9,
+         "y": 6.6,
+         "w": 4.2,
+         "h": 2.9,
+         "label": "Version",
+         "text": "Your version. Click to check for an update; it then reads “Checking for updates…”, “Downloading update… %”, and finally “Update ready — Restart”."
+        },
+        {
+         "x": 89.8,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Minimize",
+         "text": "Hides the window to the taskbar."
+        },
+        {
+         "x": 92.8,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Maximize / Restore",
+         "text": "Fills the screen, or puts the window back to its size."
+        },
+        {
+         "x": 95.9,
+         "y": 0,
+         "w": 3.1,
+         "h": 3.6,
+         "label": "Close",
+         "text": "Closes the app."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "tabs",
+     "title": "Tabs",
+     "intro": "Portfolio is always the first tab. Underwriting, the Calendar and Data Health open in tabs of their own, next to it.",
+     "steps": [
+      {
+       "title": "The “+” menu",
+       "text": "Click the “+” after the last tab. A small menu lists the tools that open in a tab. Click one: it opens as a new tab and comes to the front.",
+       "img": "img/start/tabs-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.9,
+         "h": 4.2,
+         "label": "Portfolio",
+         "text": "The Portfolio tab — always there, can’t be closed."
+        },
+        {
+         "x": 12.4,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens this menu. Click it again to close the menu."
+        },
+        {
+         "x": 12.8,
+         "y": 24.2,
+         "w": 15.7,
+         "h": 4,
+         "label": "Underwriting & Sizing",
+         "text": "A property’s T12, its NOI, loan sizing and the pro forma."
+        },
+        {
+         "x": 12.8,
+         "y": 28.2,
+         "w": 15.7,
+         "h": 6.2,
+         "label": "Maturity & Reset Calendar",
+         "text": "Every maturity, rate reset and interest-only change, month by month."
+        },
+        {
+         "x": 12.8,
+         "y": 34.4,
+         "w": 15.7,
+         "h": 4,
+         "label": "Data Health",
+         "text": "What is missing or needs a look, across every property."
+        }
+       ]
+      },
+      {
+       "title": "Several tabs open",
+       "text": "Here Underwriting, the Calendar and Data Health are all open. Click a tab to bring it to the front — each keeps its place while you look at another. Each tool opens once: choosing it again from “+” just brings its tab forward. Drag a tab left or right to change the order (Portfolio stays first).",
+       "img": "img/start/tabs-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.9,
+         "h": 4.2,
+         "label": "Portfolio",
+         "text": "Back to the Portfolio page."
+        },
+        {
+         "x": 12.1,
+         "y": 15.2,
+         "w": 13.7,
+         "h": 4.2,
+         "label": "Underwriting",
+         "text": "An open tab. Click to bring it to the front."
+        },
+        {
+         "x": 26.1,
+         "y": 15.2,
+         "w": 11.4,
+         "h": 4.2,
+         "label": "Calendar",
+         "text": "Another open tab."
+        },
+        {
+         "x": 37.8,
+         "y": 15.2,
+         "w": 13.1,
+         "h": 4.2,
+         "label": "Data Health (in front)",
+         "text": "The tab showing now — it is white and joined to the page below."
+        },
+        {
+         "x": 47.4,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Pop out",
+         "text": "Opens this tab in a window of its own — handy on a second screen. The tab leaves the strip while its window is open (choosing the tool from “+” brings that window to the front). In the window, “Dock into main window” puts it back here as a tab, as it was; closing the window closes the tool."
+        },
+        {
+         "x": 48.9,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Close tab",
+         "text": "Closes the tab (next step)."
+        }
+       ]
+      },
+      {
+       "title": "Close a tab",
+       "text": "Click the × on a tab to close it. If it was the tab in front, you land back on Portfolio. Nothing is lost — your files and figures are saved with each property; open the tool again from “+” whenever you like.",
+       "img": "img/start/tabs-03.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.9,
+         "h": 4.2,
+         "label": "Portfolio",
+         "text": "Back in front after the Data Health tab was closed."
+        },
+        {
+         "x": 12.1,
+         "y": 15.2,
+         "w": 13.7,
+         "h": 4.2,
+         "label": "Underwriting",
+         "text": "Still open."
+        },
+        {
+         "x": 26.1,
+         "y": 15.2,
+         "w": 11.4,
+         "h": 4.2,
+         "label": "Calendar",
+         "text": "Still open."
+        },
+        {
+         "x": 38.1,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens a closed tool again."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "scope",
+     "title": "Whole Portfolio or one property",
+     "intro": "The switch under the tabs: the whole book on one page, or one property at a time.",
+     "steps": [
+      {
+       "title": "Whole Portfolio",
+       "text": "Whole Portfolio shows the whole book: Needs Attention, the totals, the charts, coverage per property, the forecast and every loan. Everything on it is explained in the Portfolio (Home) chapter.",
+       "img": "img/start/scope-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 4.2,
+         "y": 23.8,
+         "w": 13,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "Shows the whole book (green = the one showing)."
+        },
+        {
+         "x": 17.5,
+         "y": 23.8,
+         "w": 13.8,
+         "h": 4.4,
+         "label": "Specific Property",
+         "text": "Switches to one property (next step)."
+        },
+        {
+         "x": 32.5,
+         "y": 23.7,
+         "w": 8.1,
+         "h": 4.7,
+         "label": "Data",
+         "text": "Backups and Excel — the same menu on both sides of the switch."
+        },
+        {
+         "x": 41.5,
+         "y": 21.2,
+         "w": 53.6,
+         "h": 9.6,
+         "label": "Needs Attention",
+         "text": "Shown on the whole-portfolio side only."
+        }
+       ]
+      },
+      {
+       "title": "Specific Property",
+       "text": "Specific Property shows one property at a time: pick it in the list, and its loans, payment schedule and profile show below. The buttons beside the list add a loan or a property, edit or archive the property, and open the refinance. The property chapters explain this page. Click Whole Portfolio to go back.",
+       "img": "img/start/scope-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 17.5,
+         "y": 21.8,
+         "w": 13.8,
+         "h": 4.4,
+         "label": "Specific Property",
+         "text": "One property at a time (showing now)."
+        },
+        {
+         "x": 4.2,
+         "y": 21.8,
+         "w": 13,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "Back to the whole book."
+        },
+        {
+         "x": 5.6,
+         "y": 35.3,
+         "w": 35.9,
+         "h": 5.6,
+         "label": "Select a property",
+         "text": "The property to show. Pick another one here."
+        },
+        {
+         "x": 43,
+         "y": 35.9,
+         "w": 9,
+         "h": 4.9,
+         "label": "Add Loan",
+         "text": "Adds a loan — to this property or a new one."
+        },
+        {
+         "x": 52.5,
+         "y": 35.8,
+         "w": 11.3,
+         "h": 5.1,
+         "label": "Add Property",
+         "text": "Adds a property — a name is enough to start."
+        },
+        {
+         "x": 64.4,
+         "y": 35.8,
+         "w": 6.2,
+         "h": 5.1,
+         "label": "Edit",
+         "text": "Edits this property’s details."
+        },
+        {
+         "x": 71.1,
+         "y": 35.8,
+         "w": 8.4,
+         "h": 5.1,
+         "label": "Remove",
+         "text": "Archives this property and its loans (they can be brought back from the Portfolio page)."
+        },
+        {
+         "x": 81.3,
+         "y": 35.8,
+         "w": 12.1,
+         "h": 5.1,
+         "label": "Refi Calculator",
+         "text": "Opens the refinance for this property."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "assistant",
+     "title": "The Assistant button",
+     "intro": "The green button at the bottom right, on every tab.",
+     "steps": [
+      {
+       "title": "Ask the assistant",
+       "text": "The Assistant button sits at the bottom right of the window on every tab. Click it to ask Claude about your portfolio, or to ask it to do something in the app for you. The Assistant chapter shows it in full. Claude must be connected for it to answer (Settings → Claude connection).",
+       "img": "img/start/assistant-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 88.6,
+         "y": 92.9,
+         "w": 9,
+         "h": 4.9,
+         "label": "Assistant",
+         "text": "Opens the assistant window."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "scale",
+     "title": "Make everything bigger or smaller",
+     "intro": "App scale in Settings zooms the whole app, like zoom in a web browser.",
+     "steps": [
+      {
+       "title": "App scale",
+       "text": "Open Settings. Drag the App scale slider, or click one of the sizes under it: the whole app grows or shrinks at once, like zoom in a web browser — at 75% more of the page fits on the screen, at 150% everything is easier to read. The window bar at the top always stays the same size, so Settings is always easy to reach. Reset to 100% puts it back; the app also goes back to 100% each time you open it.",
+       "img": "img/start/scale-01.jpg",
+       "w": 1440,
+       "h": 1180,
+       "marks": [
+        {
+         "x": 83.3,
+         "y": 0.2,
+         "w": 6.1,
+         "h": 2.1,
+         "label": "Settings",
+         "text": "Opens this menu. The window bar it sits in never zooms."
+        },
+        {
+         "x": 85.7,
+         "y": 7.3,
+         "w": 3,
+         "h": 1.7,
+         "label": "Size now",
+         "text": "The size the app is at."
+        },
+        {
+         "x": 70.6,
+         "y": 9.6,
+         "w": 18.2,
+         "h": 1.4,
+         "label": "Slider",
+         "text": "Drag it: 50% (small) to 200% (big), in steps of 5%."
+        },
+        {
+         "x": 70.6,
+         "y": 14.2,
+         "w": 5.8,
+         "h": 2.2,
+         "label": "Sizes",
+         "text": "One click to 50%, 75%, 100%, 125%, 150% or 200%."
+        },
+        {
+         "x": 70.6,
+         "y": 20.1,
+         "w": 18.2,
+         "h": 2.5,
+         "label": "Reset to 100%",
+         "text": "Back to the normal size."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "home",
+   "title": "Portfolio (Home)",
+   "intro": "The Portfolio tab: what needs attention, the totals, the charts, coverage per property, the debt-service forecast, rate shock, and every loan grouped by property.",
+   "cover": "img/home/attention-01.jpg",
+   "topics": [
+    {
+     "id": "attention",
+     "title": "Needs Attention",
+     "intro": "The strip at the top: what is coming up in your loans, and which loans look worth refinancing.",
+     "steps": [
+      {
+       "title": "The cards",
+       "text": "Needs Attention lists, soonest first: balloons coming due in the next 24 months (Maturity), interest-only periods ending in the next 12 months (IO step-up), adjustable-rate resets in the next 12 months (ARM reset), and loans you flagged as out of date (Out of date). After those come the loans priced above today’s market (Refi). A card with a pink outline is three months away or less. Scroll the strip sideways to see every card. The picture is taken on a wide window so more cards show.",
+       "img": "img/home/attention-01.jpg",
+       "w": 1920,
+       "h": 900,
+       "marks": [
+        {
+         "x": 33.3,
+         "y": 24.9,
+         "w": 6.7,
+         "h": 2.2,
+         "label": "Needs Attention",
+         "text": "The strip’s title; the red number is how many cards there are."
+        },
+        {
+         "x": 42.8,
+         "y": 22.4,
+         "w": 12.5,
+         "h": 6.1,
+         "label": "ARM reset (amber)",
+         "text": "An adjustable rate resets soon: the new rate and the date."
+        },
+        {
+         "x": 55.7,
+         "y": 22.4,
+         "w": 12.5,
+         "h": 6.1,
+         "label": "Maturity (red)",
+         "text": "A loan comes due: the balloon to pay off and the date."
+        },
+        {
+         "x": 81.5,
+         "y": 22.4,
+         "w": 12.5,
+         "h": 6.1,
+         "label": "IO step-up (orange)",
+         "text": "An interest-only period ends: the new monthly payment and the date it starts."
+        }
+       ]
+      },
+      {
+       "title": "Refinance cards",
+       "text": "At the end of the strip are green Refi cards: loans whose rate is more than 0.25% above what the same loan would cost today. Each says by how much. Click one to open the refinance for that loan.",
+       "img": "img/home/attention-02.jpg",
+       "w": 1920,
+       "h": 900,
+       "marks": [
+        {
+         "x": 44.6,
+         "y": 22.4,
+         "w": 12.5,
+         "h": 6.1,
+         "label": "Refi (green)",
+         "text": "Priced above today’s market — click to open its refinance."
+        },
+        {
+         "x": 57.5,
+         "y": 22.4,
+         "w": 12.5,
+         "h": 6.1,
+         "label": "Another Refi card",
+         "text": "Sorted by how far above market, the biggest gap first."
+        }
+       ]
+      },
+      {
+       "title": "Click a date card",
+       "text": "Click a Maturity, IO step-up or ARM reset card: the app switches to Specific Property, opens that loan and brings its payment schedule to the month of the event, lit up for a few seconds. Scroll up and click Whole Portfolio to come back.",
+       "img": "img/home/attention-03.jpg",
+       "w": 1920,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3,
+         "y": 78.6,
+         "w": 92.8,
+         "h": 6.9,
+         "label": "That month",
+         "text": "The payment where the event happens (here the final payment with the balloon), lit up for a few seconds."
+        },
+        {
+         "x": 7.4,
+         "y": 82.2,
+         "w": 12.4,
+         "h": 2.2,
+         "label": "Pays on",
+         "text": "The date the payment is due — the date on the card."
+        }
+       ]
+      },
+      {
+       "title": "Click a refinance card",
+       "text": "Click a Refi card and the refinance analysis opens for that loan: what it would cost today, and whether to refinance. The Refinance chapter explains that page. Close takes you back.",
+       "img": "img/home/attention-04.jpg",
+       "w": 1920,
+       "h": 900,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 46.3,
+         "w": 17.3,
+         "h": 3.1,
+         "label": "Refinance Analysis",
+         "text": "The refinance for the loan on the card (the Refinance chapter)."
+        },
+        {
+         "x": 92.3,
+         "y": 46.9,
+         "w": 4,
+         "h": 4.2,
+         "label": "Close",
+         "text": "Back to where you were."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "totals",
+     "title": "The totals",
+     "intro": "The four tiles under the heading: the whole book in four numbers.",
+     "steps": [
+      {
+       "title": "The four tiles",
+       "text": "The tiles are figures to read, not buttons. Every active loan counts; removed, paid-off and archived ones don’t. Portfolio DSCR = the total NOI of every property ÷ the total yearly principal-and-interest payments of every loan (during an interest-only period the full amortizing payment is used). Portfolio debt yield = total NOI ÷ total balance. A property with no NOI yet counts as $0 NOI — so its debt pulls both numbers down — and the tile says how many such properties there are. The targets (1.25×, 8% …) are set in Settings.",
+       "img": "img/home/totals-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 9.9,
+         "w": 28.5,
+         "h": 2.2,
+         "label": "29 loans",
+         "text": "How many active loans the page covers."
+        },
+        {
+         "x": 84,
+         "y": 9.9,
+         "w": 11.1,
+         "h": 2.2,
+         "label": "Priced above market",
+         "text": "How many properties pay more than 0.25% above today’s market rate (the Refi cards in Needs Attention)."
+        },
+        {
+         "x": 3.9,
+         "y": 14.7,
+         "w": 22,
+         "h": 14,
+         "label": "Total Debt Outstanding",
+         "text": "What is owed today on every loan; under it, the number of loans and what they were when first made."
+        },
+        {
+         "x": 27,
+         "y": 14.7,
+         "w": 22,
+         "h": 14,
+         "label": "Weighted-Avg Rate",
+         "text": "The average interest rate, weighted by balance; under it, the total monthly debt service (payments plus escrows and fees)."
+        },
+        {
+         "x": 50,
+         "y": 14.7,
+         "w": 22,
+         "h": 14,
+         "label": "Portfolio DSCR",
+         "text": "Total NOI ÷ total yearly loan payments, against your minimum DSCR target."
+        },
+        {
+         "x": 73.1,
+         "y": 14.7,
+         "w": 22,
+         "h": 14,
+         "label": "Portfolio Debt Yield",
+         "text": "Total NOI ÷ total balance, against your minimum debt-yield target."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "charts",
+     "title": "The charts",
+     "intro": "Three charts: what kind of debt you have, when it comes due, and how the portfolio stands against its targets.",
+     "steps": [
+      {
+       "title": "Rate type, maturities and targets",
+       "text": "Point at a bar in “Debt maturing by year” to see its amount. In “Coverage vs targets” each bar is the portfolio’s figure and the thin dark line is your target: green clears it, amber is close, red is off. Under the bars, every property that is off a target is named — “no NOI” means its T12 or NOI hasn’t been added yet.",
+       "img": "img/home/charts-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.3,
+         "y": 14.5,
+         "w": 8.9,
+         "h": 14.2,
+         "label": "Debt by rate type",
+         "text": "Today’s balance split into fixed, hybrid ARM and floating; the total in the middle."
+        },
+        {
+         "x": 16.6,
+         "y": 23.2,
+         "w": 3.1,
+         "h": 1.8,
+         "label": "Legend",
+         "text": "Each type’s colour and its balance."
+        },
+        {
+         "x": 36.1,
+         "y": 18.7,
+         "w": 3,
+         "h": 11.1,
+         "label": "A year’s maturities",
+         "text": "What comes due that year. Amber = in the next two years, green = later."
+        },
+        {
+         "x": 66.9,
+         "y": 16.6,
+         "w": 6.9,
+         "h": 1.8,
+         "label": "Portfolio DSCR",
+         "text": "Against your minimum DSCR."
+        },
+        {
+         "x": 66.9,
+         "y": 27.7,
+         "w": 26.7,
+         "h": 1.7,
+         "label": "Portfolio LTV",
+         "text": "Balance ÷ value (value = NOI ÷ cap rate), against your maximum LTV — lower is better here."
+        },
+        {
+         "x": 66.9,
+         "y": 31.1,
+         "w": 9.2,
+         "h": 1.8,
+         "label": "Portfolio Debt Yield",
+         "text": "Against your minimum debt yield."
+        },
+        {
+         "x": 66.9,
+         "y": 39.4,
+         "w": 26.7,
+         "h": 1.7,
+         "label": "Off a target",
+         "text": "Every property that misses a target or has no NOI yet."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "coverage",
+     "title": "Coverage per property",
+     "intro": "The table of every property against the three targets, with its rate against today’s market — and what to do next for each.",
+     "steps": [
+      {
+       "title": "The coverage table",
+       "text": "One row per property (a senior loan and its mezzanine count as one), worst DSCR first; properties with no NOI yet are at the bottom. The picture shows the first rows — the table lists every property. Current is the property’s rate today, Market is what the same loan would cost now, and Gap is the difference (green when it is more than 0.25% above market).",
+       "img": "img/home/coverage-01.jpg",
+       "w": 1313,
+       "h": 410,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 4.2,
+         "w": 96.8,
+         "h": 5.9,
+         "label": "Coverage",
+         "text": "DSCR, debt yield and LTV per property, against your targets."
+        },
+        {
+         "x": 1.6,
+         "y": 11,
+         "w": 10.6,
+         "h": 5.5,
+         "label": "Create a portfolio…",
+         "text": "Put several properties under one new loan (last step of this topic)."
+        },
+        {
+         "x": 26.5,
+         "y": 24.5,
+         "w": 11.7,
+         "h": 7.9,
+         "label": "NOI",
+         "text": "The property’s yearly net operating income."
+        },
+        {
+         "x": 38.2,
+         "y": 24.5,
+         "w": 6.1,
+         "h": 7.9,
+         "label": "DSCR",
+         "text": "NOI ÷ yearly loan payments. Green clears the target, amber is close, red is off."
+        },
+        {
+         "x": 44.2,
+         "y": 24.5,
+         "w": 8.5,
+         "h": 7.9,
+         "label": "Debt Yield",
+         "text": "NOI ÷ balance."
+        },
+        {
+         "x": 52.8,
+         "y": 24.5,
+         "w": 7.9,
+         "h": 7.9,
+         "label": "LTV",
+         "text": "Balance ÷ value (value = NOI ÷ cap rate)."
+        },
+        {
+         "x": 60.7,
+         "y": 24.5,
+         "w": 7.3,
+         "h": 7.9,
+         "label": "Current",
+         "text": "The rate the property pays now (blended across its loans)."
+        },
+        {
+         "x": 68,
+         "y": 24.5,
+         "w": 6.7,
+         "h": 7.9,
+         "label": "Market",
+         "text": "What the same loan would cost today, from today’s rates."
+        },
+        {
+         "x": 74.7,
+         "y": 24.5,
+         "w": 8.1,
+         "h": 7.9,
+         "label": "Gap",
+         "text": "Current minus Market. Green: worth looking at a refinance."
+        },
+        {
+         "x": 83.7,
+         "y": 54.2,
+         "w": 4.2,
+         "h": 4.6,
+         "label": "Clears",
+         "text": "Meets all three targets."
+        },
+        {
+         "x": 83.7,
+         "y": 34.9,
+         "w": 6.2,
+         "h": 4.6,
+         "label": "Off target",
+         "text": "Misses at least one target."
+        },
+        {
+         "x": 83.7,
+         "y": 63.8,
+         "w": 7.5,
+         "h": 4.6,
+         "label": "Needs T12/NOI",
+         "text": "No NOI yet — add the T12 in Underwriting, or type the NOI (Add NOI)."
+        },
+        {
+         "x": 93.4,
+         "y": 34.4,
+         "w": 5.7,
+         "h": 5.5,
+         "label": "Refi path",
+         "text": "Opens the refinance for this property."
+        },
+        {
+         "x": 93.8,
+         "y": 63.4,
+         "w": 5.2,
+         "h": 5.5,
+         "label": "Add NOI",
+         "text": "Type the property’s NOI (next step)."
+        }
+       ]
+      },
+      {
+       "title": "Add NOI",
+       "text": "Click Add NOI on a property with no NOI. Type its yearly NOI, and the cap rate if you have a better one than the default for its type (value = NOI ÷ cap rate, which gives the LTV). Continue saves both; the row then shows its DSCR, debt yield and LTV, and every total on the page counts it. Cancel closes without saving. (The figure in the picture is made up and was not saved.)",
+       "img": "img/home/coverage-02.jpg",
+       "w": 384,
+       "h": 414,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 6,
+         "w": 87,
+         "h": 5.8,
+         "label": "Annual NOI",
+         "text": "This window asks for one property’s NOI."
+        },
+        {
+         "x": 6.5,
+         "y": 32.1,
+         "w": 87,
+         "h": 11.1,
+         "label": "Property annual NOI",
+         "text": "The yearly NOI in dollars, from the property’s operating statement. It must be more than $0."
+        },
+        {
+         "x": 6.5,
+         "y": 60.9,
+         "w": 87,
+         "h": 11.1,
+         "label": "Cap rate",
+         "text": "Used to estimate the value (NOI ÷ cap rate) and so the LTV. Filled in by property type; change it if you have a better figure."
+        },
+        {
+         "x": 42.2,
+         "y": 84.8,
+         "w": 22.5,
+         "h": 9.2,
+         "label": "Cancel",
+         "text": "Closes without saving."
+        },
+        {
+         "x": 66.7,
+         "y": 84.8,
+         "w": 26.8,
+         "h": 9.2,
+         "label": "Continue",
+         "text": "Saves the NOI and cap rate; the table and the totals update."
+        }
+       ]
+      },
+      {
+       "title": "Refi path",
+       "text": "Click Refi path on a property that has an NOI: the refinance analysis opens for that property (all its loans together when it has more than one). The Refinance chapter explains that page. Close brings you back.",
+       "img": "img/home/coverage-03.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 46.3,
+         "w": 21.4,
+         "h": 3.1,
+         "label": "Refinance Analysis",
+         "text": "The refinance for that property."
+        },
+        {
+         "x": 89.8,
+         "y": 46.9,
+         "w": 5.3,
+         "h": 4.2,
+         "label": "Close",
+         "text": "Back to the Portfolio page."
+        }
+       ]
+      },
+      {
+       "title": "Create a portfolio…",
+       "text": "“Create a portfolio…” is for putting several properties under one new loan. It opens this list: tick every property the new loan will cover (type in the box to find one). Under the list the app adds up what is owed on them and their NOI, and names any property with no NOI yet. Create the portfolio opens the refinance of them together — nothing changes until you save the new loan there (the Refinance chapter). Cancel closes the list.",
+       "img": "img/home/coverage-04.jpg",
+       "w": 540,
+       "h": 649,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 3.1,
+         "w": 92.6,
+         "h": 3.7,
+         "label": "Create a portfolio",
+         "text": "One new loan on several properties."
+        },
+        {
+         "x": 3.7,
+         "y": 17.9,
+         "w": 92.6,
+         "h": 4.6,
+         "label": "Find a property",
+         "text": "Type part of a name to shorten the list."
+        },
+        {
+         "x": 3.7,
+         "y": 25.5,
+         "w": 2.4,
+         "h": 2,
+         "label": "Tick",
+         "text": "Tick each property the new loan will cover."
+        },
+        {
+         "x": 72.4,
+         "y": 24.3,
+         "w": 22.1,
+         "h": 4.2,
+         "label": "Owes / NOI",
+         "text": "What is owed on the property today, and its NOI (or “no NOI” when its T12 isn’t in yet)."
+        },
+        {
+         "x": 3.7,
+         "y": 87.4,
+         "w": 92.6,
+         "h": 2.5,
+         "label": "Totals",
+         "text": "How many are ticked, the loans that would be paid off and what they owe, and the NOI together."
+        },
+        {
+         "x": 47.8,
+         "y": 91.7,
+         "w": 13.6,
+         "h": 5.2,
+         "label": "Cancel",
+         "text": "Closes the list."
+        },
+        {
+         "x": 62.9,
+         "y": 91.7,
+         "w": 33.4,
+         "h": 5.2,
+         "label": "Create the portfolio",
+         "text": "Opens the refinance of the ticked properties (tick at least two)."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "forecast",
+     "title": "Forecast and rate shock",
+     "intro": "What the book will cost to carry in the years ahead, and what a rise in rates would do.",
+     "steps": [
+      {
+       "title": "Debt-Service Forecast",
+       "text": "Each bar is a year’s debt service (principal and interest plus escrows and fees), from this year on; this year’s bar is darker and its label bold. Point at a bar to see its amount. 1yr / 3yr / 5yr groups the years into one-, three- or five-year bars. Recurring shows only the regular payments; + Payoffs adds the balloons coming due on top of each bar.",
+       "img": "img/home/forecast-01.jpg",
+       "w": 1313,
+       "h": 289,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 7.3,
+         "w": 22.2,
+         "h": 8.3,
+         "label": "Debt-Service Forecast",
+         "text": "Yearly debt service ahead."
+        },
+        {
+         "x": 75.8,
+         "y": 8.3,
+         "w": 3.1,
+         "h": 8.5,
+         "label": "1yr",
+         "text": "One bar per year (shown)."
+        },
+        {
+         "x": 78.9,
+         "y": 8.3,
+         "w": 3.1,
+         "h": 8.5,
+         "label": "3yr",
+         "text": "One bar per three years."
+        },
+        {
+         "x": 82,
+         "y": 8.3,
+         "w": 3.1,
+         "h": 8.5,
+         "label": "5yr",
+         "text": "One bar per five years."
+        },
+        {
+         "x": 86.1,
+         "y": 8.3,
+         "w": 6.1,
+         "h": 8.5,
+         "label": "Recurring",
+         "text": "Regular payments only (shown)."
+        },
+        {
+         "x": 92.2,
+         "y": 8.3,
+         "w": 5.9,
+         "h": 8.5,
+         "label": "+ Payoffs",
+         "text": "Adds the balloons due (next step)."
+        },
+        {
+         "x": 1.6,
+         "y": 28.1,
+         "w": 8.4,
+         "h": 64.6,
+         "label": "This year",
+         "text": "This year’s debt service."
+        }
+       ]
+      },
+      {
+       "title": "Three-year bars with payoffs",
+       "text": "Here 3yr and + Payoffs are on: each bar covers three years, and the dark part on top is the balloons that come due in those years. The key under the chart names the two colours.",
+       "img": "img/home/forecast-02.jpg",
+       "w": 1313,
+       "h": 316,
+       "marks": [
+        {
+         "x": 78.9,
+         "y": 7,
+         "w": 3.1,
+         "h": 7.8,
+         "label": "3yr",
+         "text": "On: three-year bars."
+        },
+        {
+         "x": 92.2,
+         "y": 7,
+         "w": 5.9,
+         "h": 7.8,
+         "label": "+ Payoffs",
+         "text": "On: balloons stacked on top."
+        },
+        {
+         "x": 25.9,
+         "y": 25,
+         "w": 23.9,
+         "h": 59.1,
+         "label": "A three-year bar",
+         "text": "Green: debt service. Dark: balloons due."
+        },
+        {
+         "x": 1.6,
+         "y": 88,
+         "w": 96.8,
+         "h": 4.8,
+         "label": "Key",
+         "text": "Which colour is which."
+        }
+       ]
+      },
+      {
+       "title": "Rate Shock",
+       "text": "What happens to your payments if rates move. Fixed loans don’t move; floating loans move at once; hybrid ARMs move only when they reset. The table shows the blended rate, the monthly debt service and the extra (or saved) interest per year if rates fall 1%, stay, or rise 1% or 2%.",
+       "img": "img/home/forecast-03.jpg",
+       "w": 1313,
+       "h": 342,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 6.1,
+         "w": 96.8,
+         "h": 7,
+         "label": "Rate Shock",
+         "text": "How much of the book is floating or ARM, and what share that is."
+        },
+        {
+         "x": 1.6,
+         "y": 22.5,
+         "w": 96.8,
+         "h": 2.9,
+         "label": "Fixed / ARM / Floating",
+         "text": "The book split by rate type: green fixed, amber ARM, red floating."
+        },
+        {
+         "x": 1.7,
+         "y": 37.1,
+         "w": 47.5,
+         "h": 41.5,
+         "label": "Scenarios",
+         "text": "−100 bps, Today, +100 bps, +200 bps (100 bps = 1%): blended rate, monthly debt service, and interest per year more (red) or less (green) than today."
+        },
+        {
+         "x": 1.6,
+         "y": 82.5,
+         "w": 47.6,
+         "h": 11.4,
+         "label": "In plain words",
+         "text": "What each +1% costs per year, and its share of your yearly debt service."
+        },
+        {
+         "x": 50.8,
+         "y": 36.8,
+         "w": 47.6,
+         "h": 10.5,
+         "label": "Now or at reset",
+         "text": "How much moves at once (floating) and how much only when the ARMs reset."
+        },
+        {
+         "x": 50.8,
+         "y": 50.8,
+         "w": 47.6,
+         "h": 4.4,
+         "label": "Most exposed",
+         "text": "The largest floating and ARM loans."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "detail",
+     "title": "Every loan, by property",
+     "intro": "Portfolio detail: one row per property, its loans under it, and a filter by lender.",
+     "steps": [
+      {
+       "title": "The Properties table",
+       "text": "Every property, largest balance first. A property with one loan is one row; click it to open that loan. A property with a senior loan and a mezzanine shows one bold row with the number of loans — click it to show them. Properties with no loan yet are at the bottom. The picture shows the first rows.",
+       "img": "img/home/detail-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 26,
+         "w": 91.2,
+         "h": 3.1,
+         "label": "Portfolio detail",
+         "text": "Every loan, grouped by property."
+        },
+        {
+         "x": 5.3,
+         "y": 35.9,
+         "w": 34.3,
+         "h": 2.7,
+         "label": "Properties",
+         "text": "The table."
+        },
+        {
+         "x": 68.4,
+         "y": 36.6,
+         "w": 16,
+         "h": 1.8,
+         "label": "Top lender",
+         "text": "Which lender holds the most of your debt, and its share."
+        },
+        {
+         "x": 84.9,
+         "y": 35.9,
+         "w": 8.7,
+         "h": 3.3,
+         "label": "All lenders",
+         "text": "Filter the table by lender (a later step)."
+        },
+        {
+         "x": 4,
+         "y": 45.9,
+         "w": 91,
+         "h": 4.7,
+         "label": "A property with 2 loans",
+         "text": "Click to show (or hide) its loans. Its row shows the combined balance, blended rate and total monthly P&I."
+        },
+        {
+         "x": 4,
+         "y": 55.3,
+         "w": 91,
+         "h": 4.3,
+         "label": "A one-loan property",
+         "text": "Click to open its loan."
+        },
+        {
+         "x": 20.8,
+         "y": 56.8,
+         "w": 3.2,
+         "h": 1.6,
+         "label": "Status",
+         "text": "The loan’s status (Active, or a flag such as Out of date)."
+        }
+       ]
+      },
+      {
+       "title": "Show a property’s loans",
+       "text": "Clicking the bold row opens it: each loan is listed under it, marked Senior or Mezz, with its own lender, type, balance, rate, payment and maturity. Click the bold row again to close it. Click a loan to open it.",
+       "img": "img/home/detail-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 4,
+         "y": 36.8,
+         "w": 91,
+         "h": 4.7,
+         "label": "Open property",
+         "text": "Click again to close it."
+        },
+        {
+         "x": 4,
+         "y": 41.5,
+         "w": 91,
+         "h": 4.6,
+         "label": "Senior loan",
+         "text": "The first-lien loan. Click to open it."
+        },
+        {
+         "x": 4,
+         "y": 46.1,
+         "w": 91,
+         "h": 4.6,
+         "label": "Mezz loan",
+         "text": "The mezzanine loan behind it. Click to open it."
+        }
+       ]
+      },
+      {
+       "title": "Open a loan",
+       "text": "Clicking a loan opens it on the Specific Property side: its figures, its payment schedule and the property’s profile (the property chapters explain that page). Click Whole Portfolio to come back.",
+       "img": "img/home/detail-03.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 17.5,
+         "y": 21.8,
+         "w": 13.8,
+         "h": 4.4,
+         "label": "Specific Property",
+         "text": "Now showing one property."
+        },
+        {
+         "x": 5.6,
+         "y": 35.3,
+         "w": 35.9,
+         "h": 5.6,
+         "label": "The loan",
+         "text": "The loan you clicked; pick another here."
+        },
+        {
+         "x": 4.2,
+         "y": 21.8,
+         "w": 13,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "Back to the Portfolio page."
+        }
+       ]
+      },
+      {
+       "title": "Filter by lender",
+       "text": "Click All lenders: every lender is listed with its total balance. Tick one or more and the table keeps only their properties (a property with two loans opens to show the matching one). The button and the line beside it say how many lenders are picked and their share of the book. Clear takes the filter off.",
+       "img": "img/home/detail-04.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 74.7,
+         "y": 65.7,
+         "w": 7.4,
+         "h": 1.7,
+         "label": "Filter by lender",
+         "text": "Every lender in the book."
+        },
+        {
+         "x": 74.7,
+         "y": 78.6,
+         "w": 0.9,
+         "h": 1.4,
+         "label": "Ticked",
+         "text": "Only this lender’s loans are shown."
+        },
+        {
+         "x": 88.9,
+         "y": 72.3,
+         "w": 2.6,
+         "h": 1.7,
+         "label": "Balance",
+         "text": "What is owed to that lender."
+        },
+        {
+         "x": 89.3,
+         "y": 65.6,
+         "w": 2.2,
+         "h": 1.8,
+         "label": "Clear",
+         "text": "Shows every lender again."
+        },
+        {
+         "x": 88,
+         "y": 61.4,
+         "w": 3.5,
+         "h": 1.8,
+         "label": "1 lender",
+         "text": "How many lenders are picked."
+        },
+        {
+         "x": 74.4,
+         "y": 61.4,
+         "w": 10.9,
+         "h": 1.8,
+         "label": "Share",
+         "text": "Their share of the whole book."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "addprop",
+     "title": "Add a property",
+     "intro": "Add a property from the Portfolio page — a name is enough to start.",
+     "steps": [
+      {
+       "title": "Add Property",
+       "text": "Click Specific Property, then Add Property. Type the property’s name and click Create. That is all it needs: its loans, T12, rent roll and documents can come later. The property is added to the portfolio straight away.",
+       "img": "img/home/addprop-01.jpg",
+       "w": 384,
+       "h": 298,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 8.4,
+         "w": 87,
+         "h": 8.1,
+         "label": "Add a property",
+         "text": "Adds a property to the portfolio."
+        },
+        {
+         "x": 6.5,
+         "y": 58.1,
+         "w": 87,
+         "h": 15.4,
+         "label": "Property name",
+         "text": "The name only (a made-up one here)."
+        },
+        {
+         "x": 47,
+         "y": 78.9,
+         "w": 22.5,
+         "h": 12.8,
+         "label": "Cancel",
+         "text": "Closes without adding anything."
+        },
+        {
+         "x": 71.5,
+         "y": 78.9,
+         "w": 22,
+         "h": 12.8,
+         "label": "Create",
+         "text": "Adds the property."
+        }
+       ]
+      },
+      {
+       "title": "It joins the portfolio",
+       "text": "The new property is at the bottom of the Properties table, marked No loan yet. Click it to open it in Underwriting, where its T12 goes and its loan can be added. It also counts in the property count at the top, and in coverage, where its NOI will count once it has one.",
+       "img": "img/home/addprop-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 4,
+         "y": 81.1,
+         "w": 91,
+         "h": 4.5,
+         "label": "The new property",
+         "text": "Click to open it in Underwriting."
+        },
+        {
+         "x": 16.7,
+         "y": 82,
+         "w": 5.7,
+         "h": 2.7,
+         "label": "No loan yet",
+         "text": "It has no loan yet."
+        }
+       ]
+      },
+      {
+       "title": "A name it can’t take as is",
+       "text": "If the name is empty, the window asks for one. If the name is like a property you already have, the app asks first: Open it opens the one you have; Create anyway adds the new one; Cancel does nothing. (The exact name of a property you have isn’t added twice — the app says so. The name of one of your loans offers to add a loan to that property instead.)",
+       "img": "img/home/addprop-03.jpg",
+       "w": 384,
+       "h": 220,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 11.4,
+         "w": 87,
+         "h": 10.9,
+         "label": "Similar to …",
+         "text": "The property it looks like."
+        },
+        {
+         "x": 6.5,
+         "y": 25.9,
+         "w": 87,
+         "h": 27.3,
+         "label": "Which one",
+         "text": "The name you typed and the one you already have."
+        },
+        {
+         "x": 6.5,
+         "y": 62.3,
+         "w": 22.5,
+         "h": 26.4,
+         "label": "Cancel",
+         "text": "Nothing is added."
+        },
+        {
+         "x": 31.1,
+         "y": 62.3,
+         "w": 37.7,
+         "h": 26.4,
+         "label": "Create anyway",
+         "text": "Adds the new property — they are different buildings."
+        },
+        {
+         "x": 70.9,
+         "y": 62.3,
+         "w": 22.6,
+         "h": 26.4,
+         "label": "Open it",
+         "text": "Opens the property you already have."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "removed",
+     "title": "Removed, paid-off and archived",
+     "intro": "At the bottom of the page: loans and properties taken out of the totals, and how to bring them back.",
+     "steps": [
+      {
+       "title": "Removed loans and archived properties",
+       "text": "A loan you remove (on its Loan Record) or mark as paid off leaves every total, tile and the calendar, and is listed in the grey strip with its status and the date. Restore puts it back exactly as it was. A property you archive (Specific Property → Remove) leaves the lists, the totals and the count with all its loans, and is listed in the amber strip; its files stay. Click its name to bring it back. Each bin deletes for good — it asks first (next steps).",
+       "img": "img/home/removed-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.3,
+         "y": 70.3,
+         "w": 16,
+         "h": 1.6,
+         "label": "Removed & paid-off loans",
+         "text": "How many loans are out of the totals."
+        },
+        {
+         "x": 33.6,
+         "y": 69.7,
+         "w": 19.6,
+         "h": 3.1,
+         "label": "The loan",
+         "text": "Its name, its status (Removed or Paid off) and the date."
+        },
+        {
+         "x": 53.2,
+         "y": 70,
+         "w": 4.8,
+         "h": 2.7,
+         "label": "Restore",
+         "text": "Puts it back in every total, tile and the calendar."
+        },
+        {
+         "x": 58,
+         "y": 70.1,
+         "w": 1.9,
+         "h": 2.4,
+         "label": "Delete permanently",
+         "text": "Deletes the loan record (asks first)."
+        },
+        {
+         "x": 5.3,
+         "y": 80.4,
+         "w": 6.7,
+         "h": 1.6,
+         "label": "Archived",
+         "text": "How many properties are archived."
+        },
+        {
+         "x": 31.2,
+         "y": 79.8,
+         "w": 8.3,
+         "h": 2.7,
+         "label": "Un-archive",
+         "text": "Click the name: the property and its loans come back to the lists, the totals and the count."
+        },
+        {
+         "x": 39.5,
+         "y": 79.9,
+         "w": 1.9,
+         "h": 2.4,
+         "label": "Delete permanently",
+         "text": "Deletes the property and its files (asks first)."
+        }
+       ]
+      },
+      {
+       "title": "Delete a loan permanently",
+       "text": "The bin asks first. Delete permanently removes the loan record for good — the app can’t undo it, but the automatic backups (Data menu) keep a copy. The property stays, with its files. Cancel leaves everything as it is.",
+       "img": "img/home/removed-02.jpg",
+       "w": 384,
+       "h": 224,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 11.2,
+         "w": 87,
+         "h": 21.4,
+         "label": "Delete permanently?",
+         "text": "The loan it is about."
+        },
+        {
+         "x": 6.5,
+         "y": 36.2,
+         "w": 87,
+         "h": 26.8,
+         "label": "What happens",
+         "text": "Gone for good; the automatic backups keep a copy."
+        },
+        {
+         "x": 19.7,
+         "y": 71.9,
+         "w": 22.5,
+         "h": 17,
+         "label": "Cancel",
+         "text": "Keeps the loan in the list."
+        },
+        {
+         "x": 44.3,
+         "y": 71.9,
+         "w": 49.2,
+         "h": 17,
+         "label": "Delete permanently",
+         "text": "Deletes the record."
+        }
+       ]
+      },
+      {
+       "title": "Delete an archived property",
+       "text": "The bin on an archived property lists what will be deleted — its loans and its files. It can’t be undone in the app; the automatic backups keep a copy, and portfolio chats that mention it are kept. Cancel leaves it archived.",
+       "img": "img/home/removed-03.jpg",
+       "w": 384,
+       "h": 240,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 10.4,
+         "w": 87,
+         "h": 10,
+         "label": "Delete permanently?",
+         "text": "The property it is about."
+        },
+        {
+         "x": 6.5,
+         "y": 23.8,
+         "w": 87,
+         "h": 41.7,
+         "label": "What is deleted",
+         "text": "Everything that goes with it."
+        },
+        {
+         "x": 19.7,
+         "y": 73.8,
+         "w": 22.5,
+         "h": 15.8,
+         "label": "Cancel",
+         "text": "Keeps it archived."
+        },
+        {
+         "x": 44.3,
+         "y": 73.8,
+         "w": 49.2,
+         "h": 15.8,
+         "label": "Delete permanently",
+         "text": "Deletes it for good."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
   {
    "id": "loan",
    "title": "A loan’s page",
@@ -7978,6 +9838,959 @@
          "h": 3.6,
          "label": "Send (greyed)",
          "text": "Waits until Claude is connected, so a message is never lost."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "settings",
+   "title": "Settings, Data & backups",
+   "intro": "The Settings menu (app size, portfolio targets, your properties, this guide, the Claude connection), the Data menu (backups, restore, Excel export and import) and the version chip.",
+   "cover": "img/settings/menu-01.jpg",
+   "topics": [
+    {
+     "id": "menu",
+     "title": "The Settings menu",
+     "intro": "Settings is at the top right of the window, on every tab.",
+     "steps": [
+      {
+       "title": "Open Settings",
+       "text": "Click Settings in the window bar. The menu has five parts, top to bottom: Display (App scale), Portfolio targets, Portfolio (your properties), Guide and Cloud (the Claude connection). Click outside the menu or press Esc to close it.",
+       "img": "img/settings/menu-01.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 83.3,
+         "y": 0.2,
+         "w": 6.1,
+         "h": 1.9,
+         "label": "Settings",
+         "text": "Opens and closes this menu."
+        },
+        {
+         "x": 70.6,
+         "y": 8.6,
+         "w": 18.2,
+         "h": 1.2,
+         "label": "App scale",
+         "text": "Makes the whole app bigger or smaller (next step)."
+        },
+        {
+         "x": 70.6,
+         "y": 23.9,
+         "w": 18.2,
+         "h": 14.6,
+         "label": "Portfolio targets",
+         "text": "The DSCR, LTV and debt-yield targets the Portfolio page measures against."
+        },
+        {
+         "x": 70.6,
+         "y": 39.3,
+         "w": 18.2,
+         "h": 36.4,
+         "label": "Portfolio",
+         "text": "How many properties there are, each one by name, and any that look like duplicates."
+        },
+        {
+         "x": 70.6,
+         "y": 76.7,
+         "w": 18.2,
+         "h": 8.4,
+         "label": "Guide",
+         "text": "Opens this guide."
+        },
+        {
+         "x": 70.6,
+         "y": 86,
+         "w": 18.2,
+         "h": 8.4,
+         "label": "Cloud",
+         "text": "The Claude connection for the AI features."
+        }
+       ]
+      },
+      {
+       "title": "App scale",
+       "text": "Drag the slider or click a size: everything below the window bar grows or shrinks at once, like zoom in a web browser. The window bar stays the same size so Settings is always easy to reach. Reset to 100% puts it back; the app also starts at 100% each time you open it.",
+       "img": "img/settings/menu-02.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 85.7,
+         "y": 6.6,
+         "w": 3,
+         "h": 1.5,
+         "label": "Size now",
+         "text": "The size the app is at."
+        },
+        {
+         "x": 70.6,
+         "y": 8.6,
+         "w": 18.2,
+         "h": 1.2,
+         "label": "Slider",
+         "text": "50% to 200%, in steps of 5%."
+        },
+        {
+         "x": 70.6,
+         "y": 12.7,
+         "w": 5.8,
+         "h": 2,
+         "label": "50%",
+         "text": "Half size — the most fits on the screen."
+        },
+        {
+         "x": 83,
+         "y": 12.7,
+         "w": 5.8,
+         "h": 2,
+         "label": "100%",
+         "text": "Normal size (highlighted when it is the size now)."
+        },
+        {
+         "x": 83,
+         "y": 15.1,
+         "w": 5.8,
+         "h": 2,
+         "label": "200%",
+         "text": "Double size. 75%, 125% and 150% are in between."
+        },
+        {
+         "x": 70.6,
+         "y": 18,
+         "w": 18.2,
+         "h": 2.3,
+         "label": "Reset to 100%",
+         "text": "Back to the normal size."
+        }
+       ]
+      },
+      {
+       "title": "Portfolio targets",
+       "text": "The three targets the Portfolio page measures against: the tiles, the Coverage vs targets chart and the coverage table (clears / off target). Type a new figure and click away (or press Tab) — the Portfolio page updates at once. They are saved for next time. They are not the refinance’s lending limits, and Underwriting sets its own sizing limits per property.",
+       "img": "img/settings/menu-03.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 81.8,
+         "y": 27.4,
+         "w": 5.6,
+         "h": 2,
+         "label": "Minimum DSCR",
+         "text": "NOI ÷ yearly loan payments should be at least this (1.25× to start)."
+        },
+        {
+         "x": 81.8,
+         "y": 30,
+         "w": 5.6,
+         "h": 2,
+         "label": "Maximum LTV",
+         "text": "Balance ÷ value should be at most this (75% to start)."
+        },
+        {
+         "x": 81.8,
+         "y": 32.7,
+         "w": 5.6,
+         "h": 2,
+         "label": "Minimum debt yield",
+         "text": "NOI ÷ balance should be at least this (8% to start)."
+        },
+        {
+         "x": 70.6,
+         "y": 35.3,
+         "w": 18.2,
+         "h": 3.1,
+         "label": "Where they are used",
+         "text": "A reminder of what these targets are for."
+        }
+       ]
+      },
+      {
+       "title": "Your properties and duplicates",
+       "text": "How many properties the app counts, with every one listed by name (and the start of its address) so you can check the count against your own list. Scroll the list to see them all. Below it, the app names any two properties that may be one building: the same street address, or similar names where one has no address. Here two made-up properties, “Sample Court” and “Sample Court East”, are flagged.",
+       "img": "img/settings/menu-04.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 70.6,
+         "y": 42.6,
+         "w": 5.7,
+         "h": 1.5,
+         "label": "Properties",
+         "text": "How many properties there are; under it, how many loans they hold."
+        },
+        {
+         "x": 70.6,
+         "y": 46.8,
+         "w": 18.2,
+         "h": 14.5,
+         "label": "Every property",
+         "text": "Numbered, with the start of each one’s address. Scroll it."
+        },
+        {
+         "x": 71.2,
+         "y": 63.9,
+         "w": 16.9,
+         "h": 7.7,
+         "label": "Possible duplicate",
+         "text": "The two names, and why they were flagged."
+        },
+        {
+         "x": 71.2,
+         "y": 69.7,
+         "w": 7.8,
+         "h": 2,
+         "label": "Not a duplicate",
+         "text": "They really are two buildings: the pair isn’t flagged again (next step)."
+        },
+        {
+         "x": 71.2,
+         "y": 72,
+         "w": 16.9,
+         "h": 3.1,
+         "label": "If they are one building",
+         "text": "Rename one to match the other (on its property page) and they become one property."
+        }
+       ]
+      },
+      {
+       "title": "Not a duplicate",
+       "text": "After Not a duplicate the app remembers the pair and says no duplicates are left. Data Health shows the same check.",
+       "img": "img/settings/menu-05.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 70.6,
+         "y": 62,
+         "w": 18.2,
+         "h": 1.3,
+         "label": "No duplicates",
+         "text": "Nothing left to look at."
+        }
+       ]
+      },
+      {
+       "title": "The Guide",
+       "text": "Open the guide opens this guide in a window over the app.",
+       "img": "img/settings/menu-06.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 70.6,
+         "y": 67.4,
+         "w": 18.2,
+         "h": 2.6,
+         "label": "Open the guide",
+         "text": "Opens the guide (next steps)."
+        }
+       ]
+      },
+      {
+       "title": "The guide window",
+       "text": "The guide opens on its contents: one card per tab or screen of the app (the pictures in this chapter are taken on a wide window). Click a card (or a name on the left) to see its topics, then a topic to walk through it. Type in the search box to find a button or a word anywhere in the guide. Esc or × closes it.",
+       "img": "img/settings/menu-07.jpg",
+       "w": 1920,
+       "h": 1000,
+       "marks": [
+        {
+         "x": 4.7,
+         "y": 7.7,
+         "w": 73.7,
+         "h": 2.4,
+         "label": "Where you are",
+         "text": "The chapter and topic you are in."
+        },
+        {
+         "x": 78.9,
+         "y": 6.5,
+         "w": 13.3,
+         "h": 3.4,
+         "label": "Search",
+         "text": "Finds every step that mentions what you type."
+        },
+        {
+         "x": 92.9,
+         "y": 6.6,
+         "w": 1.7,
+         "h": 3.2,
+         "label": "Close",
+         "text": "Closes the guide (so does Esc)."
+        },
+        {
+         "x": 4.2,
+         "y": 12.6,
+         "w": 13.7,
+         "h": 3.2,
+         "label": "Chapters",
+         "text": "Every chapter; the open one lists its topics under it."
+        },
+        {
+         "x": 19.9,
+         "y": 24.1,
+         "w": 24.2,
+         "h": 26.1,
+         "label": "A chapter",
+         "text": "Click to see its topics."
+        }
+       ]
+      },
+      {
+       "title": "A walkthrough step",
+       "text": "Each step is a picture of the app with numbered markers, and a list saying what each number is and does. Point at a number (in the picture or the list) to light up the part it marks. Click the picture to see it full size. Back and Next — or the ← and → keys — move through the steps, and at the end of a topic Next goes on to the next topic. Under the picture, one dot per step: click a dot to jump to that step.",
+       "img": "img/settings/menu-08.jpg",
+       "w": 1920,
+       "h": 1000,
+       "marks": [
+        {
+         "x": 19.9,
+         "y": 15.9,
+         "w": 16,
+         "h": 2.8,
+         "label": "The step",
+         "text": "What this step shows."
+        },
+        {
+         "x": 81.5,
+         "y": 14,
+         "w": 3.8,
+         "h": 1.8,
+         "label": "Step 1 of …",
+         "text": "Where you are in the topic."
+        },
+        {
+         "x": 85.7,
+         "y": 13.4,
+         "w": 3.8,
+         "h": 3,
+         "label": "Back",
+         "text": "The step before (← key)."
+        },
+        {
+         "x": 89.9,
+         "y": 13.5,
+         "w": 3.6,
+         "h": 2.8,
+         "label": "Next",
+         "text": "The next step (→ key); at the end, the next topic."
+        },
+        {
+         "x": 19.9,
+         "y": 31.2,
+         "w": 34.7,
+         "h": 68.8,
+         "label": "The picture",
+         "text": "Click it to see it full size."
+        },
+        {
+         "x": 20.2,
+         "y": 31.9,
+         "w": 1.3,
+         "h": 2.4,
+         "label": "A marker",
+         "text": "Point at it to light up what it marks."
+        },
+        {
+         "x": 73.6,
+         "y": 31.2,
+         "w": 20,
+         "h": 68.8,
+         "label": "What each number does",
+         "text": "The same numbers, in words."
+        }
+       ]
+      },
+      {
+       "title": "Search the guide",
+       "text": "Type in the search box: every step that mentions all the words you typed is listed. Click one to open it at that step.",
+       "img": "img/settings/menu-09.jpg",
+       "w": 1920,
+       "h": 1000,
+       "marks": [
+        {
+         "x": 78.9,
+         "y": 6.5,
+         "w": 13.3,
+         "h": 3.4,
+         "label": "Search",
+         "text": "What you typed."
+        },
+        {
+         "x": 19.9,
+         "y": 13.4,
+         "w": 73.7,
+         "h": 2.8,
+         "label": "Results",
+         "text": "How many steps match."
+        },
+        {
+         "x": 19.9,
+         "y": 17.4,
+         "w": 73.7,
+         "h": 5.4,
+         "label": "A result",
+         "text": "Its chapter and topic, and the step. Click to open it."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "claude",
+     "title": "Claude connection",
+     "intro": "Connect Claude for the AI features: the assistant, the second reading of each T12, and the stories in What to push.",
+     "steps": [
+      {
+       "title": "Open Claude connection",
+       "text": "At the bottom of Settings is Claude connection, with its state beside it (Connected, or what is missing). Click it to open the connection window.",
+       "img": "img/settings/claude-01.jpg",
+       "w": 1440,
+       "h": 1320,
+       "marks": [
+        {
+         "x": 70.6,
+         "y": 76.7,
+         "w": 18.2,
+         "h": 2.6,
+         "label": "Claude connection",
+         "text": "Opens the connection window (next step)."
+        },
+        {
+         "x": 83.7,
+         "y": 77.4,
+         "w": 4.2,
+         "h": 1.2,
+         "label": "State",
+         "text": "Connected — or not."
+        }
+       ]
+      },
+      {
+       "title": "Connected",
+       "text": "The top line says whether the app can reach Claude and how. Here it is signed in with a Claude subscription — no API key and nothing per use. Sign out disconnects the subscription. Advanced lets you use an Anthropic API key instead (next step). Close with × or by clicking outside the window.",
+       "img": "img/settings/claude-02.jpg",
+       "w": 512,
+       "h": 303,
+       "marks": [
+        {
+         "x": 13.5,
+         "y": 5.6,
+         "w": 69.6,
+         "h": 7.9,
+         "label": "Claude connection",
+         "text": "Your Claude subscription or an API key."
+        },
+        {
+         "x": 89.6,
+         "y": 6.9,
+         "w": 6.3,
+         "h": 10.6,
+         "label": "Close",
+         "text": "Closes the window."
+        },
+        {
+         "x": 4.1,
+         "y": 29.8,
+         "w": 91.8,
+         "h": 13.9,
+         "label": "State",
+         "text": "Green: connected, and how. Amber: not connected, and what to do."
+        },
+        {
+         "x": 74.7,
+         "y": 65.8,
+         "w": 15.4,
+         "h": 8.6,
+         "label": "Sign out",
+         "text": "Disconnects your Claude subscription on this computer (last step shows the result)."
+        },
+        {
+         "x": 7.4,
+         "y": 83.3,
+         "w": 85.2,
+         "h": 5.5,
+         "label": "Advanced",
+         "text": "Use an Anthropic API key instead (next step)."
+        }
+       ]
+      },
+      {
+       "title": "Advanced — an API key",
+       "text": "Open Advanced to use an Anthropic API key instead of a subscription: paste the key (it starts sk-ant-) and click Save. You then pay as you go at console.anthropic.com. The key is kept only on this computer. Once a key is saved, a Clear button removes it.",
+       "img": "img/settings/claude-03.jpg",
+       "w": 512,
+       "h": 407,
+       "marks": [
+        {
+         "x": 7.4,
+         "y": 62,
+         "w": 85.2,
+         "h": 4.1,
+         "label": "Advanced",
+         "text": "Opens and closes this part."
+        },
+        {
+         "x": 7.4,
+         "y": 74.9,
+         "w": 72.5,
+         "h": 8.4,
+         "label": "Anthropic API key",
+         "text": "Paste the key here. It is hidden as you type."
+        },
+        {
+         "x": 81.5,
+         "y": 74.9,
+         "w": 11.1,
+         "h": 8.4,
+         "label": "Save",
+         "text": "Saves the key and uses it."
+        },
+        {
+         "x": 7.4,
+         "y": 84.3,
+         "w": 85.2,
+         "h": 7.4,
+         "label": "Where it is kept",
+         "text": "Only on this computer."
+        }
+       ]
+      },
+      {
+       "title": "Not connected",
+       "text": "After Sign out (or before you have connected) the window offers Connect with your Claude subscription: a small sign-in window opens and takes you to your browser to sign in to your Claude Pro or Max subscription. Close it once it says you are signed in — the window here then turns green.",
+       "img": "img/settings/claude-04.jpg",
+       "w": 512,
+       "h": 367,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 24.5,
+         "w": 91.8,
+         "h": 11.4,
+         "label": "Not connected",
+         "text": "Says what is missing."
+        },
+        {
+         "x": 7.4,
+         "y": 51.2,
+         "w": 85.2,
+         "h": 10.9,
+         "label": "Connect with your Claude subscription",
+         "text": "Opens the sign-in window."
+        },
+        {
+         "x": 7.4,
+         "y": 65.4,
+         "w": 85.2,
+         "h": 16.5,
+         "label": "How it works",
+         "text": "What happens when you click Connect."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "data",
+     "title": "The Data menu: backups and Excel",
+     "intro": "The Data button under the tabs: back up and restore everything, and move loans in and out of Excel.",
+     "steps": [
+      {
+       "title": "The Data menu",
+       "text": "Click Data. Back up to a file opens your computer’s Save window: the file holds everything — every loan, every property’s folder (profile, assumptions, T12s, documents), every chat and your settings. Restore from a file opens your computer’s Open window: pick a backup and the app says what is in it and asks before replacing anything (what you have now is saved first). The app also keeps copies by itself — Recent automatic backups — after changes, and before an Excel import or a restore.",
+       "img": "img/settings/data-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 32.5,
+         "y": 23.5,
+         "w": 8.1,
+         "h": 4.7,
+         "label": "Data",
+         "text": "Opens and closes this menu."
+        },
+        {
+         "x": 33,
+         "y": 33.7,
+         "w": 21.3,
+         "h": 4,
+         "label": "Back up to a file…",
+         "text": "Saves everything to one file you choose (your computer’s Save window opens)."
+        },
+        {
+         "x": 33,
+         "y": 37.7,
+         "w": 21.3,
+         "h": 4,
+         "label": "Restore from a file…",
+         "text": "Replaces everything with a backup file you pick — it asks first, and keeps what you have as an automatic backup."
+        },
+        {
+         "x": 33,
+         "y": 46.3,
+         "w": 21.3,
+         "h": 4,
+         "label": "Export all loans to Excel…",
+         "text": "A workbook of every active loan (a later step)."
+        },
+        {
+         "x": 33,
+         "y": 50.2,
+         "w": 21.3,
+         "h": 4,
+         "label": "Import loans from Excel…",
+         "text": "Adds or updates loans from a workbook (later steps)."
+        },
+        {
+         "x": 33.1,
+         "y": 58,
+         "w": 21,
+         "h": 4.8,
+         "label": "An automatic backup",
+         "text": "Why it was taken (for example “After: Added property …”, “After a change” or “Before Excel import”), when, and what it holds. Click to restore it (next step)."
+        },
+        {
+         "x": 48.6,
+         "y": 55.7,
+         "w": 5.1,
+         "h": 1.8,
+         "label": "Open folder",
+         "text": "Opens the folder with the automatic backups on your computer."
+        }
+       ]
+      },
+      {
+       "title": "Restore an automatic backup",
+       "text": "Click an automatic backup: the app says exactly what it holds and what will be replaced. Restore replaces your loans, property folders and chats with it — your current data is saved first as another automatic backup — and the app reloads with the restored data. Cancel changes nothing.",
+       "img": "img/settings/data-02.jpg",
+       "w": 384,
+       "h": 304,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 8.2,
+         "w": 87,
+         "h": 15.8,
+         "label": "Restore …?",
+         "text": "What the backup holds."
+        },
+        {
+         "x": 6.5,
+         "y": 26.6,
+         "w": 87,
+         "h": 46.1,
+         "label": "What happens",
+         "text": "What is replaced, and that your current data is saved first."
+        },
+        {
+         "x": 44.6,
+         "y": 79.3,
+         "w": 22.5,
+         "h": 12.5,
+         "label": "Cancel",
+         "text": "Nothing changes."
+        },
+        {
+         "x": 69.2,
+         "y": 79.3,
+         "w": 24.3,
+         "h": 12.5,
+         "label": "Restore",
+         "text": "Restores the backup."
+        }
+       ]
+      },
+      {
+       "title": "Export all loans to Excel",
+       "text": "Export shows exactly what the workbook will hold: one column per active loan, one row per field, in sections. Untick a loan to leave it out (Select all ticks them all again). The values can’t be edited here — change a loan in the app. Export opens your computer’s Save window for the .xlsx file. Removed, paid-off and archived loans are not exported.",
+       "img": "img/settings/data-03.jpg",
+       "w": 1401,
+       "h": 828,
+       "marks": [
+        {
+         "x": 1.5,
+         "y": 2.5,
+         "w": 62.6,
+         "h": 2.9,
+         "label": "Export to Excel",
+         "text": "A preview of the workbook."
+        },
+        {
+         "x": 87.3,
+         "y": 4,
+         "w": 11.2,
+         "h": 1.9,
+         "label": "How many",
+         "text": "How many loans will be exported."
+        },
+        {
+         "x": 0.6,
+         "y": 10.9,
+         "w": 16.8,
+         "h": 3.9,
+         "label": "Field",
+         "text": "Each row is one field of a loan, grouped in sections (the green bands)."
+        },
+        {
+         "x": 18.1,
+         "y": 12,
+         "w": 0.9,
+         "h": 1.6,
+         "label": "A loan",
+         "text": "Untick to leave this loan out."
+        },
+        {
+         "x": 1.2,
+         "y": 94.7,
+         "w": 1.1,
+         "h": 1.9,
+         "label": "Select all",
+         "text": "Ticks or unticks every loan."
+        },
+        {
+         "x": 79.4,
+         "y": 93.4,
+         "w": 6.2,
+         "h": 4.6,
+         "label": "Cancel",
+         "text": "Closes without exporting."
+        },
+        {
+         "x": 86.1,
+         "y": 93.4,
+         "w": 12.7,
+         "h": 4.6,
+         "label": "Export",
+         "text": "Saves the workbook (your computer’s Save window opens)."
+        }
+       ]
+      },
+      {
+       "title": "Import from Excel — the checklist",
+       "text": "Import first lists the details every loan in your sheet needs. Loans can be in rows or in columns, and small differences in the headers are fine — an export from the app always works. Tick the box to say you checked, then Choose file… opens your computer’s Open window to pick the workbook.",
+       "img": "img/settings/data-04.jpg",
+       "w": 672,
+       "h": 782,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 3.2,
+         "w": 92.6,
+         "h": 3.1,
+         "label": "Before you import",
+         "text": "What your sheet needs."
+        },
+        {
+         "x": 0.1,
+         "y": 14.3,
+         "w": 99.7,
+         "h": 70.8,
+         "label": "The details",
+         "text": "Every detail a loan needs."
+        },
+        {
+         "x": 3.1,
+         "y": 88.1,
+         "w": 2.4,
+         "h": 2,
+         "label": "I’ve checked",
+         "text": "Tick it to turn on Choose file…"
+        },
+        {
+         "x": 63.1,
+         "y": 92.5,
+         "w": 12.8,
+         "h": 4.9,
+         "label": "Cancel",
+         "text": "Closes without importing."
+        },
+        {
+         "x": 77.1,
+         "y": 92.5,
+         "w": 19.8,
+         "h": 4.9,
+         "label": "Choose file…",
+         "text": "Opens your computer’s Open window to pick the workbook."
+        }
+       ]
+      },
+      {
+       "title": "Review the import",
+       "text": "Nothing is changed yet. Every loan in the workbook is a row with its status: new (it will be added), update (it matches a loan you have and something differs), unchanged (it matches and nothing differs), or missing data (amber cells — a required detail the sheet didn’t have; type it in the cell or remove the row). You can edit any cell. The counts at the top add up the rows. This made-up workbook holds an export of two sample loans (one with a changed insurance escrow) and two made-up loans, one of them incomplete.",
+       "img": "img/settings/data-05.jpg",
+       "w": 1401,
+       "h": 828,
+       "marks": [
+        {
+         "x": 1.5,
+         "y": 2.5,
+         "w": 62.6,
+         "h": 2.9,
+         "label": "Review import",
+         "text": "What the workbook would do."
+        },
+        {
+         "x": 69,
+         "y": 3.5,
+         "w": 29.5,
+         "h": 2.9,
+         "label": "Counts",
+         "text": "New, updated, unchanged, and how many need attention."
+        },
+        {
+         "x": 2.4,
+         "y": 14.7,
+         "w": 7.7,
+         "h": 4.4,
+         "label": "unchanged",
+         "text": "Matches a loan you have; nothing differs."
+        },
+        {
+         "x": 2.4,
+         "y": 19.1,
+         "w": 7.7,
+         "h": 4.5,
+         "label": "update",
+         "text": "Matches a loan you have; the changed details will be written to it (only the details the sheet has)."
+        },
+        {
+         "x": 2.4,
+         "y": 23.6,
+         "w": 7.7,
+         "h": 4.5,
+         "label": "new",
+         "text": "No match: it will be added."
+        },
+        {
+         "x": 2.4,
+         "y": 28.1,
+         "w": 7.7,
+         "h": 4.5,
+         "label": "missing data",
+         "text": "Needs a detail the sheet didn’t have."
+        },
+        {
+         "x": 1.2,
+         "y": 93.4,
+         "w": 8,
+         "h": 4.6,
+         "label": "+ Add loan",
+         "text": "Adds an empty row to fill in."
+        },
+        {
+         "x": 78.1,
+         "y": 93.4,
+         "w": 6.2,
+         "h": 4.6,
+         "label": "Cancel",
+         "text": "Closes; nothing is imported."
+        },
+        {
+         "x": 84.9,
+         "y": 93.4,
+         "w": 13.9,
+         "h": 4.6,
+         "label": "Resolve 1 to import",
+         "text": "Turns into Apply once nothing needs attention."
+        }
+       ]
+      },
+      {
+       "title": "Remove a row, then Apply",
+       "text": "At the end of each row (scroll the table to the right) a × removes it from the import. With the incomplete made-up loan removed, the counts say ready and the button reads Apply import (2). Apply first saves an automatic backup, then adds the new loan and writes the changes to the updated one; unchanged loans stay exactly as they are.",
+       "img": "img/settings/data-06.jpg",
+       "w": 1401,
+       "h": 828,
+       "marks": [
+        {
+         "x": 74.3,
+         "y": 3.5,
+         "w": 24.2,
+         "h": 2.9,
+         "label": "Ready",
+         "text": "1 new, 1 updated, 1 unchanged — nothing needs attention."
+        },
+        {
+         "x": 98.2,
+         "y": 15.2,
+         "w": 0.8,
+         "h": 2.4,
+         "label": "×",
+         "text": "Removes that row from the import."
+        },
+        {
+         "x": 86.7,
+         "y": 93.4,
+         "w": 12.1,
+         "h": 4.6,
+         "label": "Apply import (2)",
+         "text": "Imports the new and the updated loans."
+        }
+       ]
+      },
+      {
+       "title": "After the import",
+       "text": "Apply closes the window and the Portfolio page counts the new loan. In the Data menu the automatic backup taken just before the import is listed in amber as “Before Excel import” — click it to undo the import by restoring what you had.",
+       "img": "img/settings/data-07.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 33.1,
+         "y": 68.1,
+         "w": 19.9,
+         "h": 4.8,
+         "label": "Before Excel import",
+         "text": "Taken just before the import — restore it to undo the import."
+        },
+        {
+         "x": 33.1,
+         "y": 58,
+         "w": 19.9,
+         "h": 10.1,
+         "label": "After …",
+         "text": "Taken by itself a few seconds after a change, naming what changed — here the import."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "version",
+     "title": "The version and updates",
+     "intro": "The chip at the right of the header shows your version and any update.",
+     "steps": [
+      {
+       "title": "The version chip",
+       "text": "The chip shows the version you have (here v3.0.0). Click it to check for a new version: it reads “Checking for updates…”; if there is one, “Update available…” and “Downloading update… 40%” while it downloads by itself. When it is ready the chip turns green — “Update ready — Restart” — click it to restart into the new version. If you are up to date the app says so. Updates never touch your loans, files, chats or backups.",
+       "img": "img/settings/version-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 90.9,
+         "y": 6.6,
+         "w": 4.2,
+         "h": 2.9,
+         "label": "Version",
+         "text": "Your version. Click to check for an update; green “Update ready — Restart” means one is downloaded."
+        },
+        {
+         "x": 84.5,
+         "y": 7.1,
+         "w": 5.6,
+         "h": 1.8,
+         "label": "Property count",
+         "text": "How many properties are in the portfolio."
         }
        ]
       }

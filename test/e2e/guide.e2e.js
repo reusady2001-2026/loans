@@ -22,6 +22,10 @@ const DATA=JSON.parse(fs.readFileSync(path.join(APP,'guide','guide.json'),'utf8'
   const pos=await page.evaluate(()=>{ const ids=[...document.querySelectorAll('#settingsDD [id]')].map(e=>e.id); return { p:ids.indexOf('settingsPortfolio'), g:ids.indexOf('settingsGuide'), c:ids.indexOf('settingsClaudeWrap'), btn:(document.getElementById('settingsGuideBtn')||{}).textContent||'' }; });
   ok(pos.g>pos.p && pos.g<pos.c && /Open the guide/.test(pos.btn), 'Settings has “Guide → Open the guide” under the properties and above the Claude connection');
   await page.evaluate(()=>{ document.getElementById('settingsDD').open=true; }); await page.waitForTimeout(200);
+  // a 900-px window can't show the whole menu: it scrolls inside itself, so the guide and the Claude connection are reachable
+  const fit=await page.evaluate(()=>{ const p=document.querySelector('#settingsDD > div'), g=document.getElementById('settingsGuideBtn'); const pb=p.getBoundingClientRect().bottom;
+    p.scrollTop=g.offsetTop-p.clientHeight/2; const gb=g.getBoundingClientRect(); return { fits:pb<=innerHeight, scrolls:p.scrollHeight>p.clientHeight && getComputedStyle(p).overflowY==='auto', seen:gb.top>=0 && gb.bottom<=Math.min(innerHeight,pb) }; });
+  ok(fit.fits && fit.seen, 'the Settings menu stays inside a 900-px window and scrolls to “Open the guide” ('+JSON.stringify(fit)+')');
   await page.click('#settingsGuideBtn'); await page.waitForTimeout(900);
   let s=await page.evaluate(()=>({ open:!document.getElementById('guideModal').classList.contains('hidden'), dd:document.getElementById('settingsDD').open, cards:[...document.querySelectorAll('#guideMain [data-guidech]')].map(b=>b.getAttribute('data-guidech')), nav:document.querySelectorAll('#guideNav [data-guidech]').length,
     w:document.getElementById('guideBox').getBoundingClientRect().width/innerWidth }));
