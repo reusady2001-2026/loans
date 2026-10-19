@@ -24,8 +24,14 @@
     { id: "marketNorm",   label: "Market norm",               hint: "brought to what the market runs" }
   ];
   var KIND = {}; KINDS.forEach(function (k){ KIND[k.id] = k; });
-  var HOWS = { total: "New total", accountTotal: "New amount for one account", takeOut: "Take out accounts", spread: "Spread over years", pctRevenue: "% of revenue", perUnit: "Per unit" };
-  // Rental deductions a "% of revenue" can price (as a % of gross potential rent); every expense line can (as a % of EGI).
+  // Round 1 (the operator, 2026-10-19): a change is made to ONE ACCOUNT — "I'm not going to write a new total for a
+  // whole category without any basis"; a line's pro forma is the T12 plus its accounts' changes. Each change names its
+  // account (an account the T12 doesn't have is added with `newAccount: true`). The whole-line ways of the first draft
+  // (a new total for the line, a whole line per unit / % of revenue / spread) are no longer made: a saved one is listed
+  // as "not counted" so it can be removed.
+  var HOWS = { takeOut: "Take it out", accountTotal: "New amount", spread: "Spread over years", pctRevenue: "% of revenue", perUnit: "Per unit" };
+  var ONE = { accountTotal: 1, pctRevenue: 1, perUnit: 1 };   // the ways that set one account to a figure
+  // Rental deductions a "% of revenue" can price (as a % of gross potential rent); every expense account can (as a % of EGI).
   var DEDUCTIONS = { EMPL: 1, MOD: 1, VAC: 1, CONC: 1, BD: 1 };
 
   function r2(x){ return Math.round(x * 100) / 100; }
@@ -34,43 +40,51 @@
   function norm(s){ return String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " "); }
   function isIncome(sec){ return sec === "rental" || sec === "other"; }
   function isExpense(sec){ return sec === "expense"; }
-  function wholeLine(how){ return how === "total" || how === "perUnit" || how === "pctRevenue" || how === "spreadLine"; }
-  // a "spread" with accounts works on those accounts; with none, on the whole line
-  function effHow(c){ return (c.how === "spread" && !(c.accounts && c.accounts.length)) ? "spreadLine" : c.how; }
+  // a change of the first draft that stands in for a whole line (no account named)
+  function isWholeLine(c){ return !!c && (c.how === "total" || ((c.how === "perUnit" || c.how === "pctRevenue" || c.how === "spread") && !(c.accounts && c.accounts.length))); }
   function inVersion(c, v){ var col = c.column || "both"; return v === "aggressive" ? true : (col === "base" || col === "both"); }
+  function acctKey(line, name, sheet){ return line + "|" + norm(name) + "|" + (sheet || ""); }
 
   // Why a change can't be used (null = it can). `line` is the line it changes ({key, section} or null).
   function problemOf(c, line, units){
     if (!c || !c.id) return "it has no id";
     if (!c.line) return "it names no line";
+    if (isWholeLine(c)) return "it changes the whole line — the pro forma now changes one account at a time: remove it and change the accounts";
     if (!KIND[c.kind] || c.kind === "revenue") return "pick what kind of change it is";
     if (!String(c.story || "").trim()) return "write its reason (the story the lender reads)";
     if (["base", "aggressive", "both"].indexOf(c.column || "both") < 0) return "it applies to no version";
-    var how = c.how;
-    if (!HOWS[how]) return "pick how the line changes";
-    if (how === "total" && num(c.value) == null) return "type the new total";
+    var how = c.how, n = (c.accounts || []).length;
+    if (!HOWS[how]) return "pick how the account changes";
+    if (!n) return "pick the account";
+    if (ONE[how] && n !== 1) return "one account at a time";
+    if (c.newAccount && (!ONE[how] || !String(c.accounts[0].name || "").trim())) return "name the new account and its amount";
+    if (how === "accountTotal" && num(c.value) == null) return "type its new amount";
     if (how === "perUnit"){ if (num(c.perUnit) == null) return "type the $ per unit"; if (!(units > 0)) return "the property's units are missing"; }
     if (how === "pctRevenue"){
       var p = num(c.pct); if (p == null || p < 0 || p > 1) return "type the % (0 to 100)";
-      if (line && !(isExpense(line.section) || DEDUCTIONS[line.key])) return "only an expense line or a rental deduction can be a % of revenue";
+      if (line && !(isExpense(line.section) || DEDUCTIONS[line.key])) return "only an expense account or a rental deduction can be a % of revenue";
     }
-    if (how === "takeOut" && !(c.accounts && c.accounts.length)) return "tick the accounts to take out";
-    if (how === "accountTotal"){ if (!(c.accounts && c.accounts.length === 1)) return "tick the one account to change"; if (num(c.value) == null) return "type its new amount"; }
     if (how === "spread"){ var y = num(c.years); if (y == null || y < 2) return "type how many years (2 or more)"; }
     return null;
   }
 
   // The change in a few words, for the table, the reconciliation and the lender file.
-  function describe(c, accountsOf){
+  function describe(c){
     if (!c) return "";
-    var n = (c.accounts || []).length;
+    var n = (c.accounts || []).length, nm = n ? "“" + c.accounts[0].name + "”" : "";
+    if (isWholeLine(c)){
+      if (c.how === "total") return "New total " + money(num(c.value)) + " for the whole line";
+      if (c.how === "perUnit") return money(num(c.perUnit)) + " per unit for the whole line";
+      if (c.how === "pctRevenue") return pct(num(c.pct)) + " of revenue for the whole line";
+      return "The whole line spread over " + num(c.years) + " years";
+    }
+    var add = c.newAccount ? "Added " + nm + ": " : "", ofRev = DEDUCTIONS[c.line] ? " of gross potential rent" : " of revenue";
     switch (c.how){
-      case "total": return "New total " + money(num(c.value));
-      case "perUnit": return money(num(c.perUnit)) + " per unit";
-      case "pctRevenue": return pct(num(c.pct)) + " of revenue";
-      case "takeOut": return "Took out " + (n === 1 ? "“" + c.accounts[0].name + "”" : n + " accounts");
-      case "accountTotal": return (n ? "“" + c.accounts[0].name + "”" : "An account") + " set to " + money(num(c.value));
-      case "spread": return (n ? (n === 1 ? "“" + c.accounts[0].name + "”" : n + " accounts") + " spread" : "Spread") + " over " + num(c.years) + " years";
+      case "takeOut": return "Took out " + (n === 1 ? nm : n + " accounts");
+      case "accountTotal": return c.newAccount ? add + money(num(c.value)) : nm + " set to " + money(num(c.value));
+      case "spread": return (n === 1 ? nm : n + " accounts") + " spread over " + num(c.years) + " years";
+      case "pctRevenue": return c.newAccount ? add + pct(num(c.pct)) + ofRev : nm + " at " + pct(num(c.pct)) + ofRev;
+      case "perUnit": return c.newAccount ? add + money(num(c.perUnit)) + " per unit" : nm + " at " + money(num(c.perUnit)) + " per unit";
       default: return HOWS[c.how] || "";
     }
   }
@@ -78,8 +92,10 @@
   function pct(v){ if (!isNum(v)) return "—"; return (Math.round(v * 10000) / 100) + "%"; }
 
   // ---- one version (base = Safe, aggressive) --------------------------------------------------------------------
-  // input: { lines:[{key,label,section,t12}], catalog?:{code:{label,section}}, accounts:[{name,line,amount,monthly?,sheet?,row?}],
+  // input: { lines:[{key,label,section,t12}], catalog?:{code:{label,section}}, accounts:[{id,name,line,amount,monthly?,sheet?,row?,gap?}],
   //          monthly:{code:{ym:amount}}, months:[ym…], units, pf:{revenue:{base,aggressive}, changes:[…]} }
+  // Every account carries its own pro forma value (its T12 amount until a change sets it); a line is its T12 figure plus
+  // the moves of its accounts, so a line always equals the sum of its accounts.
   function computeVersion(input, v){
     var units = num(input.units);
     var pf = input.pf || {}, changes = Array.isArray(pf.changes) ? pf.changes : [];
@@ -101,13 +117,23 @@
       order.splice(lastIdx + 1, 0, code);
       return L[code];
     };
+    // the accounts, each with its value in this version
+    var A = [], AK = {};
+    (input.accounts || []).forEach(function (a, i){
+      if (!a || !a.line || !L[a.line]) return;
+      var o = { id: a.id || ("a" + i), name: String(a.name || "").trim(), line: a.line, amount: num(a.amount) || 0, value: num(a.amount) || 0, monthly: a.monthly || null, sheet: a.sheet || null, row: (a.row != null ? a.row : null), gap: !!a.gap, added: false, changes: [], kinds: [] };
+      A.push(o); if (!AK[acctKey(o.line, o.name, o.sheet)]) AK[acctKey(o.line, o.name, o.sheet)] = o;
+    });
+    var findAcct = function (line, ref){ var n = norm(ref.name);
+      return A.filter(function (a){ return a.line === line && norm(a.name) === n && (!ref.sheet || !a.sheet || ref.sheet === a.sheet); })[0] || null; };
+    var setAcct = function (a, nv){ nv = r2(nv); L[a.line].value = r2(L[a.line].value + nv - a.value); a.value = nv; };
     var NOI = function (){ var n = 0; order.forEach(function (k){ var l = L[k]; if (isIncome(l.section)) n += l.value; else if (isExpense(l.section)) n -= l.value; }); return r2(n); };
     var EGI = function (){ var e = 0; order.forEach(function (k){ if (isIncome(L[k].section)) e += L[k].value; }); return r2(e); };
     var GPRv = function (){ return L.GPR ? L.GPR.value : 0; };
     var t12Noi = NOI(), steps = [], problems = [], stale = [];
     var step = function (rec, fn){ var before = NOI(); fn(); var eff = r2(NOI() - before); rec.effect = eff; steps.push(rec); };
 
-    // 1. revenue credit — each income line = its last N months × 12 / N
+    // 1. revenue credit — each income account = its last N months × 12 / N (a line with no monthly accounts: the line's own months)
     var rc = (pf.revenue && (v === "aggressive" ? (pf.revenue.aggressive || pf.revenue.base) : pf.revenue.base)) || null;
     var revenueInfo = null;
     if (rc){
@@ -118,74 +144,66 @@
       else if (months.length < nMo) problems.push({ id: "revenue", reason: "the T12 has fewer than " + nMo + " dated months" });
       else {
         var use = months.slice(months.length - nMo), monthly = input.monthly || {};
-        revenueInfo = { months: use, n: nMo, story: story, lines: {} };
+        var ann = function (mo){ var s = 0, got = 0; use.forEach(function (ym){ if (isNum(mo[ym])){ s += mo[ym]; got++; } }); return got ? r2(s * 12 / nMo) : null; };
+        revenueInfo = { months: use, n: nMo, story: story, lines: {}, accounts: {} };
         step({ id: "revenue", kind: "revenue", line: null, label: "Revenue — last " + nMo + " months × " + (12 / nMo), story: story, how: "revenue", by: rc.by || null, at: rc.at || null }, function (){
           order.forEach(function (k){
             var l = L[k]; if (!isIncome(l.section)) return;
-            var mo = monthly[k]; if (!mo) return;
-            var s = 0, got = 0; use.forEach(function (ym){ if (isNum(mo[ym])){ s += mo[ym]; got++; } });
-            if (!got) return;
-            var nv = r2(s * 12 / nMo);
-            revenueInfo.lines[k] = { from: l.value, to: nv };
-            if (Math.abs(nv - l.value) > 0.004){ l.value = nv; if (l.changes.indexOf("revenue") < 0){ l.changes.push("revenue"); l.kinds.push("revenue"); } }
+            var from = l.value, mine = A.filter(function (a){ return a.line === k && a.monthly; });
+            if (mine.length){
+              mine.forEach(function (a){ var nv = ann(a.monthly); if (nv == null) return; revenueInfo.accounts[a.id] = { from: a.value, to: nv }; setAcct(a, nv); });
+            } else if (monthly[k]){ var nv = ann(monthly[k]); if (nv != null) l.value = nv; }
+            if (Math.abs(l.value - from) > 0.004){ revenueInfo.lines[k] = { from: from, to: l.value }; if (l.changes.indexOf("revenue") < 0){ l.changes.push("revenue"); l.kinds.push("revenue"); } }
           });
         });
       }
     }
 
-    // which changes count in this version; an Aggressive change on the same line (whole-line) or account wins
+    // which changes count in this version; an Aggressive change on the same account wins
     var mine = changes.filter(function (c){ return c && inVersion(c, v); });
-    var wholeOwner = {}, acctOwner = {};
+    var owner = {};
     mine.forEach(function (c){
-      var h = effHow(c), aggr = (c.column === "aggressive");
-      if (wholeLine(h)){ var o = wholeOwner[c.line]; if (!o || (v === "aggressive" && aggr && o.column !== "aggressive")) wholeOwner[c.line] = c; }
-      else (c.accounts || []).forEach(function (a){ var key = c.line + "|" + norm(a.name) + "|" + (a.sheet || ""), o = acctOwner[key]; if (!o || (v === "aggressive" && aggr && o.column !== "aggressive")) acctOwner[key] = c; });
+      if (isWholeLine(c)) return;
+      var aggr = (c.column === "aggressive");
+      (c.accounts || []).forEach(function (a){ var key = acctKey(c.line, a.name, a.sheet || ""), o = owner[key]; if (!o || (v === "aggressive" && aggr && o.column !== "aggressive")) owner[key] = c; });
     });
 
-    // the accounts under each line
-    var acctByLine = {}; (input.accounts || []).forEach(function (a){ if (!a || !a.line) return; (acctByLine[a.line] || (acctByLine[a.line] = [])).push(a); });
-    var findAcct = function (line, ref){ var list = acctByLine[line] || [], n = norm(ref.name);
-      return list.filter(function (a){ return norm(a.name) === n && (!ref.sheet || !a.sheet || ref.sheet === a.sheet); })[0] || null; };
-
-    // 2. account changes (take out / spread), in the order they were made
-    mine.forEach(function (c){
-      var h = effHow(c); if (wholeLine(h)) return;
-      var line = L[c.line] || null;
+    // 2. the account changes, in the order they were made; a % of revenue last (it reads this version's revenue):
+    //    first the rental deductions (a % of gross potential rent), then the expenses (a % of EGI)
+    var apply = function (c){
+      var line = L[c.line] || (c.newAccount ? addLine(c.line) : null);
       var why = problemOf(c, line, units); if (!why && !line) why = "its line is not in this T12";
-      if (why){ problems.push({ id: c.id, reason: why }); return; }
-      if (wholeOwner[c.line]){ problems.push({ id: c.id, reason: "the line has a new total, so its accounts can't change too", soft: true }); return; }
-      var mineAccts = (c.accounts || []).filter(function (a){ return acctOwner[c.line + "|" + norm(a.name) + "|" + (a.sheet || "")] === c; });
-      if (!mineAccts.length) return;   // every account it names is changed by an Aggressive change instead
+      if (why){ problems.push({ id: c.id, reason: why, legacy: isWholeLine(c) }); return; }
+      var refs = (c.accounts || []).filter(function (a){ return owner[acctKey(c.line, a.name, a.sheet || "")] === c; });
+      if (!refs.length) return;   // every account it names is changed by an Aggressive change instead
       var found = [], missing = [];
-      mineAccts.forEach(function (a){ var f = findAcct(c.line, a); if (f) found.push(f); else missing.push(a.name); });
-      if (missing.length){ stale.push({ id: c.id, missing: missing }); problems.push({ id: c.id, reason: "not in this T12 any more: " + missing.join(", "), stale: true }); return; }
-      step({ id: c.id, kind: c.kind, line: c.line, label: line.label, story: String(c.story).trim(), how: c.how, what: describe(c), by: c.by || null, at: c.at || null, column: c.column || "both" }, function (){
-        var amt = 0; found.forEach(function (a){ amt += num(a.amount) || 0; });
-        var cut = (h === "spread") ? amt * (1 - 1 / num(c.years)) : (h === "accountTotal") ? amt - num(c.value) : amt;
-        line.value = r2(line.value - cut);
-        line.changes.push(c.id); line.kinds.push(c.kind);
+      refs.forEach(function (ref){
+        var f = findAcct(c.line, ref);
+        if (c.newAccount){
+          if (f && !f.added){ missing.push(null); return; }
+          if (!f){ f = { id: "new:" + c.line + "|" + norm(ref.name), name: String(ref.name).trim(), line: c.line, amount: 0, value: 0, monthly: null, sheet: null, row: null, gap: false, added: true, changes: [], kinds: [] }; A.push(f); }
+        }
+        if (f) found.push(f); else missing.push(ref.name);
       });
-    });
-
-    // 3. whole-line changes (new total, per unit, a whole line spread); 4. then % of revenue (it reads the version's revenue)
-    var applyWhole = function (c){
-      var h = effHow(c), line = L[c.line] || addLine(c.line);
-      var why = problemOf(c, line, units); if (!why && !line) why = "that line can't be added";
-      if (why){ problems.push({ id: c.id, reason: why }); return; }
-      step({ id: c.id, kind: c.kind, line: c.line, label: line.label, story: String(c.story).trim(), how: c.how, what: describe(c), by: c.by || null, at: c.at || null, column: c.column || "both" }, function (){
-        var nv = line.value;
-        if (h === "total") nv = num(c.value);
-        else if (h === "perUnit") nv = num(c.perUnit) * units;
-        else if (h === "spreadLine") nv = line.value / num(c.years);
-        else if (h === "pctRevenue") nv = (isExpense(line.section) ? 1 : -1) * num(c.pct) * (isExpense(line.section) ? EGI() : GPRv());
-        line.value = r2(nv);
+      if (c.newAccount && missing.length){ problems.push({ id: c.id, reason: "“" + c.accounts[0].name + "” is already in the T12 — change it there" }); return; }
+      if (missing.length){ stale.push({ id: c.id, missing: missing }); problems.push({ id: c.id, reason: "not in this T12 any more: " + missing.join(", "), stale: true }); return; }
+      step({ id: c.id, kind: c.kind, line: c.line, account: found.length === 1 ? found[0].name : null, label: line.label, story: String(c.story).trim(), how: c.how, what: describe(c), by: c.by || null, at: c.at || null, column: c.column || "both" }, function (){
+        found.forEach(function (a){
+          var nv = a.value;
+          if (c.how === "takeOut") nv = 0;
+          else if (c.how === "accountTotal") nv = num(c.value);
+          else if (c.how === "spread") nv = a.value / num(c.years);
+          else if (c.how === "perUnit") nv = num(c.perUnit) * units;
+          else if (c.how === "pctRevenue") nv = isExpense(line.section) ? num(c.pct) * EGI() : -num(c.pct) * GPRv();
+          setAcct(a, nv); a.changes.push(c.id); a.kinds.push(c.kind);
+        });
         line.changes.push(c.id); line.kinds.push(c.kind);
       });
     };
-    mine.forEach(function (c){ var h = effHow(c); if (wholeLine(h) && h !== "pctRevenue" && wholeOwner[c.line] === c) applyWhole(c); });
-    mine.forEach(function (c){ var h = effHow(c); if (h === "pctRevenue" && wholeOwner[c.line] === c) applyWhole(c); });
-    // a whole-line change that lost to an Aggressive one on the same line is not an error — it just isn't this version's
-    mine.forEach(function (c){ var h = effHow(c); if (wholeLine(h) && wholeOwner[c.line] !== c && problemOf(c, L[c.line] || null, units)) problems.push({ id: c.id, reason: problemOf(c, L[c.line] || null, units) }); });
+    var isPct = function (c){ return c.how === "pctRevenue"; }, secOf = function (c){ var l = L[c.line] || catalog[c.line]; return l ? l.section : null; };
+    mine.forEach(function (c){ if (!isPct(c)) apply(c); });
+    mine.forEach(function (c){ if (isPct(c) && !isExpense(secOf(c))) apply(c); });
+    mine.forEach(function (c){ if (isPct(c) && isExpense(secOf(c))) apply(c); });
 
     // the reconciliation: T12 NOI + every step = the pro forma NOI (a guard, not a fudge: it is worked out twice)
     var noi = NOI(), sum = t12Noi; steps.forEach(function (s){ sum += s.effect; }); sum = r2(sum);
@@ -193,8 +211,10 @@
     var groups = KINDS.map(function (k){ var items = steps.filter(function (s){ return s.kind === k.id; });
       var tot = 0; items.forEach(function (s){ tot += s.effect; }); return { kind: k.id, label: k.label, items: items, total: r2(tot) }; }).filter(function (g){ return g.items.length; });
     var lines = order.map(function (k){ var l = L[k]; return { key: k, label: l.label, section: l.section, t12: l.t12, value: l.value, delta: r2(l.value - l.t12), changes: l.changes.slice(), kinds: l.kinds.slice(), added: l.added }; });
+    var accounts = A.map(function (a){ return { id: a.id, name: a.name, line: a.line, amount: a.amount, value: a.value, delta: r2(a.value - a.amount), monthly: a.monthly, sheet: a.sheet, row: a.row, gap: a.gap, added: a.added, changes: a.changes.slice(), kinds: a.kinds.slice() }; });
+    var acctById = {}; accounts.forEach(function (a){ acctById[a.id] = a; });
     var opex = 0; order.forEach(function (k){ if (isExpense(L[k].section)) opex += L[k].value; });
-    return { version: v, lines: lines, byKey: L, egi: EGI(), opex: r2(opex), noi: noi, t12Noi: t12Noi, steps: steps, groups: groups,
+    return { version: v, lines: lines, byKey: L, accounts: accounts, acctById: acctById, egi: EGI(), opex: r2(opex), noi: noi, t12Noi: t12Noi, steps: steps, groups: groups,
              reconciles: reconciles, gap: gap, problems: problems, stale: stale, revenue: revenueInfo };
   }
 
@@ -222,6 +242,66 @@
       out.push({ id: "a" + i, name: String(r.name || "").trim(), line: code, amount: r2(amt), monthly: mo, sheet: r.sheet || null, row: (r.row != null ? r.row : null) });
     });
     return out;
+  }
+
+  // ---- suggestions (round 1) ---------------------------------------------------------------------------------------
+  function refOf(a){ var o = { name: a.name }; if (a.sheet) o.sheet = a.sheet; if (a.row != null) o.row = a.row; return o; }
+  function r6(x){ return Math.round(x * 1e6) / 1e6; }
+  // From the underwriting assumptions — the pro forma is the draft of the underwriting (the operator, 2026-10-19): "If I
+  // assume a management fee of 2.5%, then that will be my default story for lowering the management fee if it was
+  // higher." A line that runs ABOVE its assumption gets one suggested change on its biggest account, sized so the line
+  // lands on the assumption (its other accounts stay as they are), with a ready story. Nothing is applied by itself.
+  // assume: { mgmtPct, vacancyPct } (decimals).
+  function assumptionSuggestions(input, assume){
+    input = input || {}; assume = assume || {};
+    var out = [], lines = {}; (input.lines || []).forEach(function (l){ if (l && l.key) lines[l.key] = l; });
+    var egi = 0; (input.lines || []).forEach(function (l){ if (l && isIncome(l.section) && isNum(l.t12)) egi += l.t12; });
+    var gpr = lines.GPR && isNum(lines.GPR.t12) ? lines.GPR.t12 : 0;
+    // the biggest account of a line (sign 1: the largest amount; −1: the largest deduction)
+    var pick = function (k, sign){
+      var all = (input.accounts || []).filter(function (a){ return a && a.line === k; }), list = all.filter(function (a){ return !a.gap; });
+      if (!list.length) list = all; if (!list.length) return null;
+      return list.slice().sort(function (a, b){ return sign * ((num(b.amount) || 0) - (num(a.amount) || 0)); })[0];
+    };
+    var mg = lines.MGMT, am = num(assume.mgmtPct);
+    if (mg && am != null && egi > 0 && mg.t12 > 0 && mg.t12 / egi > am + 0.00005){
+      var actual = mg.t12 / egi, a = pick("MGMT", 1);
+      if (a){ var others = r2(mg.t12 - (num(a.amount) || 0)), p = am - others / egi;
+        if (p > 0) out.push({ id: "assume:MGMT", source: "assumption", line: "MGMT", account: refOf(a), accountId: a.id || null, how: "pctRevenue", pct: r6(p), kind: "marketNorm", column: "both",
+          story: "Management fee at " + pct(am) + " of revenue, our underwriting assumption; the T12 ran " + pct(actual) + " (" + money(mg.t12) + ")." + (Math.abs(others) >= 0.01 ? " The line's other accounts stay as they are." : ""),
+          why: "Your underwriting assumes a " + pct(am) + " management fee; this T12 runs " + pct(actual) + " of revenue." }); }
+    }
+    var vc = lines.VAC, av = num(assume.vacancyPct);
+    if (vc && av != null && gpr > 0 && vc.t12 < 0 && -vc.t12 / gpr > av + 0.00005){
+      var actualV = -vc.t12 / gpr, b = pick("VAC", -1);
+      if (b){ var othersV = r2(vc.t12 - (num(b.amount) || 0)), pv = av + othersV / gpr;
+        if (pv > 0) out.push({ id: "assume:VAC", source: "assumption", line: "VAC", account: refOf(b), accountId: b.id || null, how: "pctRevenue", pct: r6(pv), kind: "marketNorm", column: "both",
+          story: "Vacancy at " + pct(av) + " of gross potential rent, our underwriting assumption; the T12 ran " + pct(actualV) + " (" + money(vc.t12) + ")." + (Math.abs(othersV) >= 0.01 ? " The line's other accounts stay as they are." : ""),
+          why: "Your underwriting assumes " + pct(av) + " vacancy; this T12 runs " + pct(actualV) + " of gross potential rent." }); }
+    }
+    return out;
+  }
+  // A suggestion Claude made (or the assistant proposed), matched to this T12: its line and account by name, its way
+  // and its figures checked like any change. → { change, line, account } or { reason }.
+  function matchSuggestion(input, s){
+    input = input || {}; s = s || {};
+    var lines = (input.lines || []).filter(function (l){ return l && l.key && l.section !== "reserve"; });
+    var strip = function (x){ return norm(x).replace(/^less:\s*/, ""); }, w = strip(s.line);
+    var line = lines.filter(function (l){ return l.key.toLowerCase() === w || strip(l.label) === w; })[0] || lines.filter(function (l){ return w && strip(l.label).indexOf(w) >= 0; })[0];
+    if (!line) return { reason: "there is no line “" + (s.line || "") + "”" };
+    var accts = (input.accounts || []).filter(function (a){ return a && a.line === line.key; }), an = norm(s.account);
+    var a = accts.filter(function (x){ return norm(x.name) === an; })[0] || accts.filter(function (x){ return an && norm(x.name).indexOf(an) >= 0; })[0];
+    if (!a) return { reason: "there is no account “" + (s.account || "") + "” under " + line.label };
+    var how = String(s.how || ""); if (!HOWS[how]) return { reason: "the way “" + how + "” is not one of " + Object.keys(HOWS).join(", ") };
+    var colIn = String(s.column || "both").toLowerCase(), col = /aggr/.test(colIn) ? "aggressive" : (/safe|base/.test(colIn) ? "base" : "both");
+    var c = { line: line.key, how: how, accounts: [refOf(a)], kind: String(s.kind || ""), story: String(s.story || "").trim(), column: col };
+    if (how === "accountTotal") c.value = num(s.value);
+    if (how === "spread") c.years = num(s.years);
+    if (how === "perUnit") c.perUnit = num(s.perUnit);
+    if (how === "pctRevenue"){ var p = num(s.pct); if (p != null && p > 1) p = p / 100; c.pct = p; }
+    var why = problemOf(Object.assign({ id: "check" }, c), line, num(input.units));
+    if (why) return { reason: why };
+    return { change: c, line: line, account: a };
   }
 
   // The lender file's three sheets as rows (the caller turns them into a workbook).
@@ -265,9 +345,24 @@
     monthly.push(["Line"].concat(months).concat(["Total"]));
     monthly.push(["Used for the revenue credit"].concat(months.map(function (m){ return used.indexOf(m) >= 0 ? "yes" : ""; })).concat([""]));
     Object.keys(meta.monthly || {}).forEach(function (k){ var mo = meta.monthly[k], t = 0; var r = [(b.byKey[k] || {}).label || k].concat(months.map(function (m){ var x = mo[m]; if (isNum(x)) t += x; return isNum(x) ? x : null; })); r.push(r2(t)); monthly.push(r); });
-    return { head: head, proForma: pf, reconciliation: recon, monthly: monthly };
+    // every changed account (round 1: a change is made to one account): line, account, T12, Safe, (Aggressive), what, kind, story
+    var acc = [["Line", "Account", "T12", "Pro forma (Safe)"].concat(both ? ["Aggressive"] : []).concat(["Change", "Kind", "Story"])];
+    var stepOf = function (ver, id){ return ver.steps.filter(function (s){ return s.id === id; })[0] || null; };
+    var seen = {};
+    (b.accounts || []).concat(both ? (a.accounts || []) : []).forEach(function (x){
+      if (seen[x.id]) return; seen[x.id] = 1;
+      var xb = b.acctById[x.id], xa = a.acctById[x.id];
+      var ids = ((xb && xb.changes) || []).concat(both && xa ? xa.changes.filter(function (id){ return !xb || xb.changes.indexOf(id) < 0; }) : []);
+      if (!ids.length) return;
+      var sts = ids.map(function (id){ return stepOf(b, id) || stepOf(a, id); }).filter(Boolean);
+      var r = [(b.byKey[x.line] || a.byKey[x.line] || {}).label || x.line, x.name + (x.added ? " (added)" : ""), x.amount, xb ? xb.value : x.amount];
+      if (both) r.push(xa ? xa.value : x.amount);
+      acc.push(r.concat([sts.map(function (s){ return s.what; }).join("; "), sts.map(function (s){ return (KIND[s.kind] || {}).label || s.kind; }).join("; "), sts.map(function (s){ return s.story; }).join(" | ")]));
+    });
+    return { head: head, proForma: pf, reconciliation: recon, monthly: monthly, accounts: acc };
   }
 
   return { KINDS: KINDS, KIND: KIND, HOWS: HOWS, DEDUCTIONS: DEDUCTIONS, compute: compute, computeVersion: computeVersion,
-           accountsFrom: accountsFrom, problemOf: problemOf, describe: describe, lenderSheets: lenderSheets, money: money, pct: pct };
+           accountsFrom: accountsFrom, problemOf: problemOf, describe: describe, isWholeLine: isWholeLine, acctKey: acctKey,
+           assumptionSuggestions: assumptionSuggestions, matchSuggestion: matchSuggestion, lenderSheets: lenderSheets, money: money, pct: pct };
 });

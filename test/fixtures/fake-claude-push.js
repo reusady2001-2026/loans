@@ -27,6 +27,9 @@ process.stdin.on('end', () => {
   // 2.9.7 — the assistant chat: answers come, in order, from the JSON array in $LDS_FAKE_CHAT_FILE (a string,
   // or {error:"…"}); every prompt it was sent is appended to $LDS_FAKE_CHAT_LOG (one JSON line each).
   if (/Respond to the request provided on standard input/i.test(a[1] || '')) { answerChat(raw); return; }
+  // F1 round 1 — the pro forma stories (What to push): fixed FAKE-STORY suggestions on accounts the input names, plus one
+  // on an account that is not in the T12 (the app must leave it out). The input is recorded to $LDS_FAKE_STORIES_INPUT.
+  if (/prepare the pro forma they show a lender/i.test(a[1] || '')) { answerStories(raw); return; }
   let input = null; try { input = JSON.parse(raw); } catch (e) {}
   if (process.env.LDS_FAKE_INPUT_FILE) { try { fs.writeFileSync(process.env.LDS_FAKE_INPUT_FILE, JSON.stringify(input)); } catch (e) {} }
   if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' ' + ((input && input.property) || '?') + '\n'); } catch (e) {} }   // one line per call, so a test can count them
@@ -122,4 +125,19 @@ function answerChat(raw) {
   try { fs.writeFileSync(process.env.LDS_FAKE_CHAT_FILE, JSON.stringify(q)); } catch (e) {}
   if (r && typeof r === 'object' && r.error) { console.log(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: r.error })); return; }
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: String(r), total_cost_usd: 0 }));
+}
+
+function answerStories(raw){
+  let input = null; try { input = JSON.parse(raw); } catch (e) {}
+  if (process.env.LDS_FAKE_STORIES_INPUT) { try { fs.writeFileSync(process.env.LDS_FAKE_STORIES_INPUT, JSON.stringify(input)); } catch (e) {} }
+  // pictures: a fixed made-up answer from $LDS_FAKE_STORIES_FILE ({summary, stories})
+  if (process.env.LDS_FAKE_STORIES_FILE) { const d = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_STORIES_FILE, 'utf8')); console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: d, result: JSON.stringify(d), total_cost_usd: 0 })); return; }
+  const find = (re) => { for (const l of (input && input.lines) || []) for (const ac of l.accounts || []) if (re.test(ac.account)) return { line: l.line, account: ac.account, t12: ac.t12, months: ac.months }; return null; };
+  const stories = [], snow = find(/snow/i), bank = find(/bank charges/i);
+  if (snow) stories.push({ line: snow.line, account: snow.account, how: 'accountTotal', value: 9000, kind: 'normalized', story: 'FAKE-STORY Snow removal ran far above a normal winter; normalized to a normal year.',
+    basis: 'FAKE-BASIS the four winter months total ' + snow.t12 + '; a normal winter is taken as 9,000.', backedBy: 'FAKE-BACKED the snow-removal invoices for the last three winters', confidence: 'strong', column: 'both' });
+  if (bank) stories.push({ line: bank.line, account: bank.account, how: 'takeOut', kind: 'partnership', story: 'FAKE-STORY Bank charges belong to the partnership account.', basis: 'FAKE-BASIS 68 a month.', backedBy: 'FAKE-BACKED the bank statements', confidence: 'possible', column: 'aggressive' });
+  stories.push({ line: 'Contract Services', account: 'FAKE-NOT-IN-THE-T12', how: 'takeOut', kind: 'nonRecurring', story: 'x', basis: 'x' });
+  const data = { summary: 'FAKE-STORIES-SUMMARY ' + stories.length + ' suggestions', stories };
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
 }

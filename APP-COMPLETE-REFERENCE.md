@@ -864,44 +864,81 @@ From the meeting with Azriel on 2026-10-13, in this order:
 The plan, the operator's decisions D1–D13 and what is needed from Azriel: `PLAN-NEXT-STAGE.md`. Version numbers are the
 operator's to choose.
 
-#### F1 — the pro forma: built as a DRAFT on the development branch (2026-10-14) — not shipped, no version, no release
+#### F1 — the pro forma: built as a DRAFT on the development branch (2026-10-14; round 1 reworked 2026-10-19) — not shipped, no version, no release
 Built for the operator to see and test; it is not merged into the release branch, so no installed app has it. The
 test installer that the development branch builds ("Loan Debt Service Hub TEST") carries it.
-- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 38 checks). Input: the Setup's T12 lines, the accounts
+- **Round 1 (the operator, 2026-10-19, after the screens): a change is made to ONE ACCOUNT.** "I'm not going to write a
+  new total for a whole category without any basis. The new total will be just calculated per my changes for each
+  account." Each changed account has its own story (often the same one — "Same story as…"). The management fee is an
+  account like any other: it stays at the T12 figure unless the operator changes it — the revenue credit never moves
+  it. No account is ever hidden ("we are not in the business of showing half information"): a $0 account shows its 12
+  zeros. The pro forma is the draft of the underwriting: the underwriting assumptions give **default stories**, and
+  "What to push" suggests **stories** a lender would accept. The Underwritten column itself is unchanged in round 1 (it
+  still prices vacancy and the management fee from the assumptions, and the loan is sized on it); making it "the T12 +
+  the pro forma changes you accepted" is round 2, the operator's decision.
+- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 60 checks). Input: the Setup's T12 lines, the accounts
   under each line (`SetupBuilder.accountLine` + `ProForma.accountsFrom`, on the T12 rule's basis — an annualized
   statement's account is its own last 3 months × 4; anything a line holds beyond its accounts is shown as
-  "Difference to the statement's printed total"), each line's month-by-month total, the units and the saved pro
-  forma. Order: revenue credit (each income line = last 3 or 6 months × 12/N) → account changes (take out, spread
-  1/N, new amount for one account) → whole-line changes (new total, per unit, a whole line spread) → % of revenue
-  (an expense = % of the version's own EGI; a rental deduction = −% of gross potential rent). Every step's effect is
-  measured on the NOI; T12 NOI + the effects must equal the pro forma NOI to the cent ("reconciles"), worked out twice.
-  Reserves are not in it (it starts from the T12 NOI, which has none); the lender file adds them on both sides.
-- **Two versions:** Safe and Aggressive. Aggressive = Safe + its own changes; an Aggressive change on the same line
-  (whole line) or account wins. One whole-line change per line per version; a whole-line change closes the account
-  changes on that line (the panel warns). A change without a kind or a story is never counted.
+  "Difference to the statement's printed total"), each account's months, the units and the saved pro forma. **Every
+  account carries its own value** (its T12 amount until a change sets it); a line is its T12 figure plus its accounts'
+  moves, so it always equals the sum of its accounts. Order: revenue credit (each income **account** = its last 3 or 6
+  months × 12/N; one with no months — the difference to the printed total — keeps its amount) → account changes in the
+  order made (take it out → 0; new amount; spread → 1/N; per unit → $ × units; an account the T12 doesn't have, added
+  with `newAccount`) → % of revenue last (a rental deduction = −% of gross potential rent, then an expense = % of the
+  version's own EGI — so a % the operator chose follows that version's revenue). Every step's effect is measured on
+  the NOI; T12 NOI + the effects must equal the pro forma NOI to the cent ("reconciles"), worked out twice. Reserves are
+  not in it; the lender file adds them on both sides. A first-draft whole-line change (a new total for the line, a
+  whole line per unit / % / spread) is no longer made: a saved one is listed "not counted — it changes the whole line"
+  and can be removed. `assumptionSuggestions(input, {mgmtPct, vacancyPct})`: a line running above its assumption gets
+  one suggestion on its biggest account, sized so the line lands on the assumption, with the default story
+  ("Management fee at 2.5% of revenue, our underwriting assumption; the T12 ran 3%"). `matchSuggestion(input, s)`
+  matches Claude's suggestion to a line and an account by name and checks it like any change.
+- **Two versions:** Safe and Aggressive. Aggressive = Safe + its own changes; an Aggressive change on the same account
+  wins. One change per account per version; a change without a kind or a story is never counted.
 - **Underwriting:** "Start a pro forma" → a **Pro forma** column right of Underwritten with its $/unit and a
-  **Safe / Aggressive** switch; a changed cell is marked and names its kind on hover; a line the T12 doesn't have can be
-  added ("+ Add a line"). Clicking a figure opens **"Change this line"**: T12 / Underwritten / Safe / Aggressive, the
-  changes on the line (Edit, Remove, who and when), the accounts with their row in the file and a 12-month strip, then
-  How (New total · Take out accounts · New amount for one account · Spread over years · % of revenue · Per unit), Kind,
-  Story (required; "Draft it with Claude"), Apply to (Safe · Aggressive · Both), and a live before → after preview.
-  **Revenue credit…** (T3 / T6, the revenue lines month by month with the months used, today's occupancy from the rent
-  roll, story required); **How it adds up** under the table for both versions; changes not counted are listed with
-  "fix or remove"; **History**; **Remove** (the history keeps every change). The column needs the 12-month basis.
+  **Safe / Aggressive** switch; a changed cell is marked (teal dot) and names its kind on hover; a line with an open
+  suggestion has an amber dot; the bar says "N suggestions" (the list opens each account). Clicking a figure opens the
+  line's panel, **about 80% of the window** (80vw × 85vh): T12 / Underwritten / Safe / Aggressive for the line, notes
+  (the management fee stays at the T12; a benchmark the line runs above — for the whole line, so the operator picks the
+  accounts; the revenue credit), then **every account** with its row in the file, its **12 months** (real figures, no
+  graph), its T12, Safe and Aggressive, its changes and its suggestion chips, and the line's total. **Click an account**
+  and its choices open under it: its changes (Edit, Remove, who, when, where from), the suggestions for it ("Use this" ·
+  "Not this one" · "Bring it back"), then Take it out · New amount · Spread over years · % of revenue (expense accounts
+  and rental deductions) · Per unit, the Kind, Apply to (Safe · Aggressive · Both), "Same story as…", the Story
+  (required; "Draft it with Claude" gets the account's 12 months) and a live preview: the account's 12 months in the T12
+  and after (each month in proportion to the T12), the line and the NOI before → after for both versions. The panel
+  stays open after a save. "+ Add an account the T12 doesn't have" (in the panel, or "+ Add an account" in the bar for
+  any line, one the T12 has or not). **Revenue credit…** (T3 / T6, the revenue lines month by month with the months
+  used — the annualized figures are the engine's —, today's occupancy from the rent roll, story required); **How it adds
+  up** under the table for both versions; changes not counted are listed with "fix or remove"; **History**; **Remove**.
+  The column needs the 12-month basis.
+- **Claude's stories (What to push → "Stories for the pro forma"):** "Find stories with Claude" sends every account
+  with its 12 months, the assumptions and the changes already made; Claude returns 3–10 suggestions, each one account
+  with a way, a figure, a kind, a story, **how it got the number** (`basis`) and **what backs it with the lender**
+  (`backedBy`, e.g. "the snow-removal invoices for the last three winters"), strong or possible, both or Aggressive.
+  Never an invented event, vendor or market figure; the management fee only when it runs above the assumption. Each card
+  shows its effect on the pro forma NOI and **"Put it in the pro forma draft"** (starts the pro forma if needed and opens
+  the account filled in, to check and save); one on an account that isn't in the T12 is left out and named. Kept in
+  `general-data.json → pfStories` (dropped when the T12 in use changes, like "what to push").
 - **Kept:** `assumptions.json` → `proForma: {started, revenue:{base, aggressive}, changes:[{id, column, line, how,
-  value|pct|years|perUnit, accounts:[{name, sheet?, row}], kind, story, by, at, from}]}` (ids → the shared database
-  merges change by change). Every change, edit and removal goes to `history.json` with its story; in the shared
-  database the story starts the "Not saved yet" reason. View-only members see it read-only.
+  value|pct|years|perUnit, accounts:[{name, sheet?, row}] (one), newAccount?, kind, story, by, at, from (typed,
+  assistant, claude, assumption), sug?}], skipped:[{id, by, at}]}` (ids → the shared database merges change by change).
+  Every change, edit, removal and set-aside goes to `history.json` ("Pro forma · <line> · <account>", with its story);
+  in the shared database the story starts the "Not saved yet" reason. View-only members see it read-only.
 - **General Data / refinance:** `noi.proForma = {base, aggressive, baseOk, aggressiveOk, aggressiveOwn, changes,
   changesAggressive, lastBy, lastAt}`. The refinance's NOI choice gains **Pro forma · Safe** and **Pro forma ·
   Aggressive** (only when it reconciles; Aggressive only when it has changes of its own); "How 'supports $X' is worked
   out" names it ("pro forma · Safe (N changes; last by …)"). Pools add each property's.
 - **Lender file:** "For the lender…" → Safe only, or Safe and Aggressive → "<property> — Pro forma — <date>.xlsx":
   *Pro forma* (line, T12, $/unit, pro forma, $/unit, [Aggressive, $/unit], change, kind, story; EGI, expenses, NOI,
-  reserves, NOI after reserves), *Reconciliation*, *Monthly* (the months used for the revenue credit marked).
-- **Assistant:** `propose_pro_forma_change` (an Approve card: the line and the NOI before → after, the kind, the story;
-  never an invented number); `read_property` returns the pro forma; `set_refi_noi_basis` takes "pro forma" / "aggressive".
-- **Tests:** `test/e2e/proforma.e2e.js` (42 checks, on the made-up `test/fixtures/proforma-t12.js`).
+  reserves, NOI after reserves), *Changed accounts* (every changed account: line, account, T12, Safe, [Aggressive],
+  change, kind, story), *Reconciliation*, *Monthly* (the months used for the revenue credit marked).
+- **Assistant:** `propose_pro_forma_change {line, account, how, …, newAccount?}` — one account (a whole-line total is
+  refused; an unknown account is refused with the line's accounts); an Approve card with the account, the line and the
+  NOI before → after, the kind, the story; never an invented number. `read_property` returns the pro forma with the
+  changed accounts; `set_refi_noi_basis` takes "pro forma" / "aggressive".
+- **Tests:** `test/e2e/proforma.e2e.js` (76 checks, on the made-up `test/fixtures/proforma-t12.js`, which has a $0 pool
+  service; Claude is the scripted stand-in `test/fixtures/fake-claude-push.js`).
 - **Also in the draft (asked 2026-10-15) — which limits the lender uses:** in the refinance's "How 'supports $X' is
   worked out", each of the four lender limits (debt coverage amortizing, debt coverage interest-only, loan-to-value,
   debt yield) has a **"Lender uses"** tick box. All ticked at the start = the smallest binds, as before; untick the ones
@@ -912,9 +949,9 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   leftover style for every table row and looked clickable); only the binding row is highlighted.
   `test/e2e/refi-lender-uses.e2e.js` (13 checks). No warning when coverage falls under 1.00× — the operator's call:
   the app is for the borrower; that risk is the lender's.
-- **Not in the draft yet:** listing changes that aren't counted in Data Health, the pro forma as context for "What to
-  push", and the cloud test-bed checks (two computers, view-only). Real-file check against Azriel's Queens Gate
-  $3.34M waits for his file.
+- **Not in the draft yet:** the Underwritten column as "T12 + the accepted pro forma changes" (round 2 — the operator's
+  decision); listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
+  Real-file check against Azriel's Queens Gate $3.34M waits for his file.
 
 #### The TEST app: never the shared database (draft, 2026-10-15)
 The TEST installer ("Loan Debt Service Hub TEST", `package.json` `ldsTestBuild`, or `LDS_TEST_BUILD=1`) never uses the

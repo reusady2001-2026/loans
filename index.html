@@ -4152,6 +4152,7 @@ tr.flagged:hover td{background:#fee2e2}
       const puCell = (v, c)=> '<td class="py-1 pr-2 text-right text-[11px] tabular-nums text-slate-400 '+(c||'')+'">'+puVal(v)+'</td>';
       // Next stage (F1, draft) — the Pro forma column, with its Safe / Aggressive switch, right of Underwritten.
       const pfR = pfCompute(), pfV = pfR ? (pfR.res[pfShow] || pfR.res.base) : null, pfCols = !!pfV;
+      const pfSugN = {}; if(pfR) try{ pfSuggestions(pfR).forEach(x => { if(x.open) pfSugN[x.line] = (pfSugN[x.line] || 0) + 1; }); }catch(e){}
       const pfCell = (key, opt)=>{
         opt = opt || {};
         if(!pfCols) return '';
@@ -4159,8 +4160,9 @@ tr.flagged:hover td{background:#fee2e2}
         const l = pfV.byKey[key]; if(!l) return '<td class="border-l border-teal-100"></td><td></td>';
         const n = l.changes.length, kinds = n ? pfKinds(l.kinds) : '';
         const cls = n ? 'border border-teal-300 bg-teal-50 font-semibold text-teal-800' : 'border border-transparent text-slate-700 hover:border-teal-300 hover:bg-teal-50/60';
-        const tip = n ? kinds+' — '+n+' change'+(n===1?'':'s')+' · click to see or change' : 'Click to change this line in the pro forma';
-        return '<td class="py-1 px-1 text-right whitespace-nowrap border-l border-teal-100">'+(n ? '<span class="mr-0.5 inline-block h-1.5 w-1.5 rounded-full bg-teal-500 align-middle" data-pfchanged="'+escapeHtml(key)+'"></span>' : '')+
+        const sg = pfSugN[key] || 0;
+        const tip = (n ? kinds+' — '+n+' change'+(n===1?'':'s')+' · click to see its accounts' : 'Click to see this line’s accounts and change them')+(sg ? ' · '+sg+' suggestion'+(sg===1?'':'s') : '');
+        return '<td class="py-1 px-1 text-right whitespace-nowrap border-l border-teal-100">'+(sg ? '<span class="mr-0.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" data-pfsugdot="'+escapeHtml(key)+'" title="'+sg+' suggestion'+(sg===1?'':'s')+'"></span>' : '')+(n ? '<span class="mr-0.5 inline-block h-1.5 w-1.5 rounded-full bg-teal-500 align-middle" data-pfchanged="'+escapeHtml(key)+'"></span>' : '')+
           '<button type="button" data-pfline="'+escapeHtml(key)+'" class="min-w-[6.5rem] whitespace-nowrap rounded px-1.5 py-0.5 text-right text-sm tabular-nums '+cls+'" title="'+escapeHtml(tip)+'">'+uwFmt(l.value)+'</button></td>'+
           (opt.comm ? '<td class="py-1 pr-2 text-right text-[10px] text-slate-300">&mdash;</td>' : puCell(l.value));
       };
@@ -4321,6 +4323,8 @@ tr.flagged:hover td{background:#fee2e2}
     let pfRev = null;        // the revenue credit being set in its panel
     let pfPanel = null;      // which panel is open
     const PF_COL = { base: "Safe", aggressive: "Aggressive", both: "Safe and Aggressive" };
+    try{ window.LDS_pfSuggestions = () => { const R = pfLast || pfCompute(); return R ? pfSuggestions(R) : null; }; window.LDS_pfStories = (k) => pfStoriesCache.get(k || opFocusKey) || null; window.LDS_pfStoriesInput = (k) => pfStoriesInput(k || opFocusKey);
+      window.LDS_pfAddRaw = (c) => { const pf = uwState.input.bench.proForma; if(!pf) return false; pf.changes = (pf.changes || []).concat([c]); pfPersist([]); return true; }; }catch(e){}   // tests: a change saved by the first draft
     try{ window.LDS_pfLast = () => pfLast; window.LDS_pfLenderBook = (both) => { const R = pfLast || pfCompute(); return R ? pfLenderBook(R, !!both) : null; }; }catch(e){}   // diagnostics + tests
     function pfStarted(b){ return !!(b && b.proForma && b.proForma.started); }
     function pfAggrOwn(pf){ return !!(pf && ((pf.changes || []).some(c => c && c.column === "aggressive") || (pf.revenue && pf.revenue.aggressive))); }
@@ -4375,7 +4379,10 @@ tr.flagged:hover td{background:#fee2e2}
         const ver = (v) => ({ noi: r0(res[v].noi), reconcilesToTheDollar: res[v].reconciles, t12Noi: r0(res[v].t12Noi),
           reconciliation: res[v].groups.map(g => ({ kind: g.label, total: r0(g.total), items: g.items.map(s => ({ line: s.label, change: s.what || undefined, story: s.story, effect: r0(s.effect) })) })),
           notCounted: res[v].problems.length ? res[v].problems.map(p => ({ change: p.id, why: p.reason })) : undefined });
-        return { note: "Draft feature (next stage). Starts from the T12 NOI; before reserves.", safe: ver("base"), aggressive: pfAggrOwn(ctx.bench.proForma) ? ver("aggressive") : "the same as Safe (no changes of its own)",
+        const accts = res.base.accounts.concat(res.aggressive.accounts.filter(a => !res.base.acctById[a.id])).filter(a => a.changes.length || (res.aggressive.acctById[a.id] && res.aggressive.acctById[a.id].changes.length))
+          .map(a => ({ line: (res.base.byKey[a.line] || res.aggressive.byKey[a.line] || {}).label || a.line, account: a.name + (a.added ? " (added)" : ""), t12: r0(a.amount), safe: res.base.acctById[a.id] ? r0(res.base.acctById[a.id].value) : undefined, aggressive: res.aggressive.acctById[a.id] ? r0(res.aggressive.acctById[a.id].value) : undefined }));
+        return { note: "Draft feature (next stage). Starts from the T12 NOI; before reserves. Every change is made to ONE account; a line is the T12 plus its accounts' changes.", safe: ver("base"), aggressive: pfAggrOwn(ctx.bench.proForma) ? ver("aggressive") : "the same as Safe (no changes of its own)",
+          changedAccounts: accts,
           changedLines: res.base.lines.concat(res.aggressive.lines.filter(l => !res.base.byKey[l.key])).filter(l => l.changes.length || (res.aggressive.byKey[l.key] && res.aggressive.byKey[l.key].changes.length))
             .map(l => ({ line: l.label, t12: r0(l.t12), safe: res.base.byKey[l.key] ? r0(res.base.byKey[l.key].value) : undefined, aggressive: res.aggressive.byKey[l.key] ? r0(res.aggressive.byKey[l.key].value) : undefined })) };
       }catch(e){ return null; }
@@ -4398,7 +4405,7 @@ tr.flagged:hover td{background:#fee2e2}
       const tool = (attr, label, dis) => '<button type="button" '+attr+(dis ? ' disabled title="View only"' : '')+' class="rounded-lg border border-teal-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50">'+label+'</button>';
       const probs = [];
       ["base", "aggressive"].forEach(v => res[v].problems.forEach(p => { if(probs.some(x => x.id === p.id && x.reason === p.reason)) return; probs.push({ id: p.id, reason: p.reason, v: v, stale: p.stale, soft: p.soft }); }));
-      const pf = b.proForma, chOf = (id) => (pf.changes || []).find(c => c.id === id);
+      const pf = b.proForma, chOf = (id) => (pf.changes || []).find(c => c.id === id), nSug = pfSuggestions(R).filter(x => x.open).length;
       const probHtml = probs.length ? '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900" data-pfproblems><b>'+probs.length+' change'+(probs.length === 1 ? '' : 's')+' not counted:</b> '+
         probs.map(p => { const c = chOf(p.id); return '<span class="block">&bull; '+escapeHtml(c ? (((R.input.catalog[c.line] || {}).label || c.line) + ' — ' + ProForma.describe(c)) : (p.id === "revenue" ? "Revenue credit" : p.id))+': '+escapeHtml(p.reason)+(c ? ' <button type="button" data-pfline="'+escapeHtml(c.line)+'" class="font-semibold text-teal-800 underline">fix or remove</button>' : '')+'</span>'; }).join('')+'</div>' : '';
       const noiOf = (v) => '<span class="tabular-nums">'+(res[v].reconciles ? uwFmt(res[v].noi) : '<span class="text-rose-700">doesn’t reconcile</span>')+'</span>';
@@ -4407,9 +4414,9 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="flex flex-wrap items-center gap-2"><span class="text-[11px] font-bold uppercase tracking-wider text-teal-800">Pro forma</span> <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">draft</span>'+
             '<span class="inline-flex rounded-lg border border-teal-200 bg-white p-0.5" data-pfswitch>'+sw("base")+sw("aggressive")+'</span>'+
             '<span class="text-[11px] text-teal-900" data-pfnois>'+PF_COL[pfShow]+' NOI <b>'+noiOf(pfShow)+'</b> &middot; '+PF_COL[other]+' '+noiOf(other)+(pfAggrOwn(pf) ? '' : ' <span class="text-teal-700/70">(no changes of its own yet)</span>')+'</span></div>'+
-          '<div class="flex flex-wrap items-center gap-1.5">'+tool('data-pfrevenue', 'Revenue credit…', !can)+tool('data-pfadd', '+ Add a line', !can)+tool('data-pflender', 'For the lender…')+tool('data-pfhistory', 'History')+tool('data-pfclear', 'Remove', !can)+'</div>'+
+          '<div class="flex flex-wrap items-center gap-1.5">'+(nSug ? '<button type="button" data-pfsuglist class="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100">'+nSug+' suggestion'+(nSug === 1 ? '' : 's')+'</button>' : '')+tool('data-pfrevenue', 'Revenue credit…', !can)+tool('data-pfadd', '+ Add an account', !can)+tool('data-pflender', 'For the lender…')+tool('data-pfhistory', 'History')+tool('data-pfclear', 'Remove', !can)+'</div>'+
         '</div>'+
-        '<div class="mt-1 text-[10px] text-teal-800/80">Click any figure in the Pro forma column to change that line. It starts from the T12 column; reserves are not part of it (the T12 NOI has none).</div>'+probHtml+'</div>';
+        '<div class="mt-1 text-[10px] text-teal-800/80">Click a figure in the Pro forma column to open that line&rsquo;s accounts and change them one by one. It starts from the T12 column; reserves are not part of it (the T12 NOI has none).</div>'+probHtml+'</div>';
     }
 
     // ---- the reconciliation under the table: T12 NOI + each change = the pro forma NOI, for both versions ---------------
@@ -4441,156 +4448,298 @@ tr.flagged:hover td{background:#fee2e2}
       }
       return m;
     }
-    function pfOpen(title, html, wide){ const m = pfModalEl(); el("pfBox").className = "w-full " + (wide ? "max-w-6xl" : "max-w-3xl") + " rounded-2xl bg-white shadow-2xl"; el("pfTitle").textContent = title; el("pfBody").innerHTML = html; m.classList.remove("hidden"); m.classList.add("flex"); }
+    // size: "full" — the account panel, about 80% of the window (the operator: "it should be around 80% of the app screen");
+    // true — wide (the revenue credit); otherwise a normal dialog
+    function pfOpen(title, html, size){ const m = pfModalEl(), box = el("pfBox"), body = el("pfBody");
+      if(size === "full"){ box.className = "flex flex-col rounded-2xl bg-white shadow-2xl"; box.style.cssText = "width:80vw;max-width:none;height:85vh"; body.className = "min-h-0 flex-1 overflow-y-auto px-5 py-4"; m.classList.remove("items-start"); m.classList.add("items-center"); }
+      else { box.className = "w-full " + (size ? "max-w-6xl" : "max-w-3xl") + " rounded-2xl bg-white shadow-2xl"; box.style.cssText = ""; body.className = "px-5 py-4"; m.classList.add("items-start"); m.classList.remove("items-center"); }
+      box.setAttribute("data-pfsize", size === "full" ? "full" : size ? "wide" : "normal"); box.removeAttribute("data-pfopenline");
+      el("pfTitle").textContent = title; body.innerHTML = html; body.scrollTop = 0; m.classList.remove("hidden"); m.classList.add("flex"); }
     function pfClose(){ const m = el("pfModal"); if(m){ m.classList.add("hidden"); m.classList.remove("flex"); } pfDraft = null; pfRev = null; pfPanel = null; }
     function pfLineOf(R, key){
       const cat = R.input.catalog[key] || null, lb = R.res.base.byKey[key], la = R.res.aggressive.byKey[key];
       if(lb || la) return lb || la;
       return cat && cat.section ? { key: key, label: cat.label, section: cat.section, t12: 0, value: 0, added: true, changes: [], kinds: [], fresh: true } : null;
     }
-    function pfHowsFor(R, line){
-      const accts = R.input.accounts.filter(a => a.line === line.key && !a.gap), isExp = line.section === "expense", isDed = !!ProForma.DEDUCTIONS[line.key], fresh = !!(line.added || line.fresh) && !line.t12;
-      const out = [["total", "New total"]];
-      if(accts.length){ out.push(["takeOut", "Take out accounts"]); out.push(["accountTotal", "New amount for one account"]); }
-      if(!fresh) out.push(["spread", "Spread over years"]);
-      if(isExp || isDed) out.push(["pctRevenue", "% of revenue"]);
-      out.push(["perUnit", "Per unit"]);
+    // ---- round 1 (the operator, 2026-10-19): a change is made to ONE ACCOUNT ------------------------------------------
+    // The panel shows every account under the line (none hidden — a $0 account too) with its 12 months; click one and its
+    // choices open under it, with the kind, the version and the story. The line is the T12 plus its accounts' changes.
+    function pfNorm(s){ return String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " "); }
+    function pfRef(a){ const o = { name: a.name }; if(a.sheet) o.sheet = a.sheet; if(a.row != null) o.row = a.row; return o; }
+    function pfSameAcct(ref, a){ return !!ref && !!a && pfNorm(ref.name) === pfNorm(a.name) && (!ref.sheet || !a.sheet || ref.sheet === a.sheet); }
+    // every account of a line: the T12's (with the difference to its printed total) and the ones the pro forma added
+    function pfAcctsOf(R, key){
+      const out = R.input.accounts.filter(a => a.line === key), seen = {};
+      R.res.base.accounts.concat(R.res.aggressive.accounts).forEach(a => { if(a.added && a.line === key && !seen[a.id]){ seen[a.id] = 1; out.push(a); } });
       return out;
     }
-    // two changes fight over the same line or account when they count in the same version (an Aggressive one beats a Safe or "both" one)
+    function pfAcctById(R, id){ return R.input.accounts.find(a => a.id === id) || R.res.base.acctById[id] || R.res.aggressive.acctById[id] || null; }
+    function pfChangesOn(key, a){ const pf = uwState.input.bench.proForma || {};
+      return a ? (pf.changes || []).filter(c => c && c.line === key && !ProForma.isWholeLine(c) && (c.accounts || []).some(ref => pfSameAcct(ref, a))) : []; }
+    // a rental deduction (vacancy, concessions, …) is a negative amount: the panel asks for it as a positive figure
+    function pfNeg(line, a){ return (line.section === "rental" || line.section === "other") && ((a && a.amount < 0) || !!ProForma.DEDUCTIONS[line.key]); }
+    function pfHowsFor(line, a){
+      const out = [], isNew = !a || a.added, canPct = line.section === "expense" || !!ProForma.DEDUCTIONS[line.key];
+      if(!isNew){ out.push(["takeOut", "Take it out"]); }
+      out.push(["accountTotal", isNew ? "Its amount" : "New amount"]);
+      if(!isNew && a.amount) out.push(["spread", "Spread over years"]);
+      if(canPct) out.push(["pctRevenue", "% of revenue"]);
+      if(!pfNeg(line, a)) out.push(["perUnit", "Per unit"]);
+      return out;
+    }
+    // two changes fight over the same account when they count in the same version (an Aggressive one beats a Safe or "both" one)
     function pfClash(a, b){ const x = a.column || "both", y = b.column || "both"; return x === y || (x === "both" && y === "base") || (x === "base" && y === "both"); }
-    function pfWhole(c){ return c.how === "total" || c.how === "perUnit" || c.how === "pctRevenue" || (c.how === "spread" && !(c.accounts && c.accounts.length)); }
+    // ---- suggestions: from the underwriting assumptions, and Claude's stories (What to push) --------------------------
+    function pfSuggestions(R){
+      const bench = uwState.input.bench, pf = bench.proForma || {}, skipped = {}, out = [];
+      (pf.skipped || []).forEach(s => { if(s && s.id) skipped[s.id] = s; });
+      ProForma.assumptionSuggestions(R.input, { mgmtPct: bench.mgmtPct, vacancyPct: bench.vacancyPct }).forEach(s => {
+        const a = R.input.accounts.find(x => x.id === s.accountId); if(!a) return;
+        out.push({ id: s.id, source: "assumption", line: s.line, acctId: a.id, why: s.why, change: { line: s.line, how: s.how, pct: s.pct, accounts: [s.account], kind: s.kind, story: s.story, column: s.column } });
+      });
+      const st = pfStoriesOf(opFocusKey);
+      ((st && st.items) || []).forEach(s => { const m = ProForma.matchSuggestion(R.input, s); if(!m.change) return;
+        out.push({ id: "claude:" + m.change.line + "|" + pfNorm(m.account.name) + "|" + m.change.how, source: "claude", line: m.change.line, acctId: m.account.id, change: m.change,
+          why: String(s.basis || ""), backedBy: String(s.backedBy || ""), confidence: String(s.confidence || "") }); });
+      out.forEach(s => { s.skipped = !!skipped[s.id]; s.taken = pfChangesOn(s.line, pfAcctById(R, s.acctId)).length > 0; s.open = !s.skipped && !s.taken; });
+      return out;
+    }
+    function pfSugText(s){ const c = s.change; return ProForma.describe(c) + " · " + ((ProForma.KIND[c.kind] || {}).label || c.kind); }
+    function pfNewDraft(key, acctId, extra){ return Object.assign({ line: key, acctId: acctId, id: null, how: null, value: "", pct: "", years: "", perUnit: "", newName: "", kind: "", story: "", column: pfShow === "aggressive" ? "aggressive" : "both", from: "typed", sugId: null }, extra || {}); }
+    function pfDraftFrom(c, acctId, extra){
+      const line = pfLineOf(pfLast, c.line) || { section: "expense", key: c.line }, a = pfAcctById(pfLast, acctId), neg = pfNeg(line, a);
+      return pfNewDraft(c.line, acctId, Object.assign({ how: c.how, value: c.value != null ? String(neg ? Math.abs(c.value) : c.value) : "", pct: c.pct != null ? String(Math.round(c.pct * 1e6) / 1e4) : "",
+        years: c.years != null ? String(c.years) : "", perUnit: c.perUnit != null ? String(c.perUnit) : "", kind: c.kind || "", story: c.story || "", column: c.column || "both",
+        newName: (acctId === "new" && c.accounts && c.accounts[0]) ? c.accounts[0].name : "" }, extra || {}));
+    }
     function pfDraftChange(){
       const d = pfDraft, R = pfLast; if(!d || !d.how || !R) return null;
-      const accts = R.input.accounts.filter(a => a.line === d.line && !a.gap);
-      const picked = Object.keys(d.accounts || {}).filter(id => d.accounts[id]).map(id => accts.find(a => a.id === id)).filter(Boolean).map(a => { const o = { name: a.name }; if(a.sheet) o.sheet = a.sheet; if(a.row != null) o.row = a.row; return o; });
+      const line = pfLineOf(R, d.line); if(!line) return null;
+      const isNew = d.acctId === "new", a = isNew ? null : pfAcctById(R, d.acctId); if(!isNew && !a) return null;
       const c = { id: d.id || pfNewId(), column: d.column || "both", line: d.line, how: d.how, kind: d.kind || "", story: String(d.story || "").trim(), by: opOperator(), at: new Date().toISOString(), from: d.from || "typed" };
-      if(d.how === "total" || d.how === "accountTotal") c.value = uwNum(d.value);
+      c.accounts = isNew ? [{ name: String(d.newName || "").trim() }] : [pfRef(a)];
+      if(isNew || a.added) c.newAccount = true;
+      if(d.how === "accountTotal"){ const v = uwNum(d.value); c.value = (v != null && pfNeg(line, a)) ? -Math.abs(v) : v; }
       if(d.how === "pctRevenue"){ const p = uwNum(d.pct); c.pct = (p == null) ? null : Math.round(p * 1e6) / 1e8; }
       if(d.how === "spread") c.years = uwNum(d.years);
       if(d.how === "perUnit") c.perUnit = uwNum(d.perUnit);
-      if(d.how === "takeOut" || d.how === "spread" || d.how === "accountTotal") c.accounts = picked;
+      if(d.sugId) c.sug = d.sugId;
       return c;
     }
     // Why the change in the panel can't be saved yet (null = it can), and what it does to each version.
     function pfDraftCheck(){
-      const R = pfLast, c = pfDraftChange(); if(!R || !c) return { why: "pick how the line changes" };
-      const line = pfLineOf(R, c.line), units = uwNum(uwState.input.units);
+      const R = pfLast, c = pfDraftChange(); if(!R || !c) return { why: "pick what to do with the account" };
+      const line = pfLineOf(R, c.line), units = uwNum(uwState.input.units), pf = uwState.input.bench.proForma;
       let why = ProForma.problemOf(c, line, units);
-      const others = (uwState.input.bench.proForma.changes || []).filter(x => x && x.id !== c.id && x.line === c.line);
-      if(!why && pfWhole(c)){ const hit = others.find(x => pfWhole(x) && pfClash(x, c)); if(hit) why = "this line already has “" + ProForma.describe(hit) + "” in " + PF_COL[hit.column || "both"] + " — remove or edit that one first"; }
-      if(!why && !pfWhole(c)){ const names = (c.accounts || []).map(a => a.name.toLowerCase()); const hit = others.find(x => !pfWhole(x) && pfClash(x, c) && (x.accounts || []).some(a => names.indexOf(String(a.name).toLowerCase()) >= 0)); if(hit) why = "an account you ticked is already changed by “" + ProForma.describe(hit) + "” in " + PF_COL[hit.column || "both"]; }
-      const pf = JSON.parse(JSON.stringify(uwState.input.bench.proForma)); pf.changes = (pf.changes || []).filter(x => x.id !== c.id).concat([c]);
-      const after = ProForma.compute(Object.assign({}, R.input, { pf: pf }));
+      if(!why && pfDraft.acctId === "new" && R.input.accounts.some(a => a.line === c.line && pfNorm(a.name) === pfNorm(c.accounts[0].name))) why = "“" + c.accounts[0].name + "” is already in the T12 — change it there";
+      if(!why){ const hit = (pf.changes || []).find(x => x && x.id !== c.id && x.line === c.line && !ProForma.isWholeLine(x) && pfClash(x, c) && (x.accounts || []).some(r => pfSameAcct(r, c.accounts[0])));
+        if(hit) why = "this account already has a change in " + PF_COL[hit.column || "both"] + " (" + ProForma.describe(hit) + ") — edit or remove that one"; }
+      const pf2 = JSON.parse(JSON.stringify(pf)); pf2.changes = (pf2.changes || []).filter(x => x.id !== c.id).concat([c]);
+      const after = ProForma.compute(Object.assign({}, R.input, { pf: pf2 }));
       return { why: why, c: c, after: after };
     }
-    function pfStrip(mo, months){
-      if(!mo) return "";
-      const use = months.slice(-12), vals = use.map(m => (typeof mo[m] === "number" ? mo[m] : 0)), mx = Math.max.apply(null, vals.map(Math.abs).concat([1]));
-      return '<span class="inline-flex h-4 items-end gap-px align-middle" title="'+escapeHtml(use.map((m, i) => ymShort(m) + ": " + fmtMoney(vals[i])).join("\n"))+'">'+vals.map(v => '<span class="inline-block w-1 rounded-sm '+(v < 0 ? 'bg-rose-300' : 'bg-teal-400')+'" style="height:'+Math.max(1, Math.round(Math.abs(v) / mx * 16))+'px"></span>').join('')+'</span>';
+    // the months shown: the T12's last 12
+    function pfMonths(R){ return R.input.months.slice(-12); }
+    function pfN(v){ if(v == null || !isFinite(v)) return ""; const r = Math.round(v); return r === 0 ? "0" : (r < 0 ? "&minus;" : "") + Math.abs(r).toLocaleString("en-US"); }
+    // an account's months at a new yearly figure: each month in proportion to the T12 (all twelve the same when the T12 has none)
+    function pfScaled(a, total, months){
+      const mo = a && a.monthly, sum = mo ? months.reduce((s, m) => s + (typeof mo[m] === "number" ? mo[m] : 0), 0) : 0;
+      if(mo && Math.abs(sum) > 0.004) return months.map(m => (typeof mo[m] === "number" ? mo[m] : 0) * total / sum);
+      return months.map(() => total / months.length);
     }
-    function pfOpenLine(key){
+    function pfOpenLine(key, acctId){
       const R = pfLast || pfCompute(); if(!R) return;
       const line = pfLineOf(R, key); if(!line) return;
-      if(!pfDraft || pfDraft.line !== key) pfDraft = { line: key, how: null, value: "", pct: "", years: "", perUnit: "", accounts: {}, kind: "", story: "", column: pfShow === "aggressive" ? "aggressive" : "both" };
+      if(acctId == null) pfDraft = null;
+      else if(!pfDraft || pfDraft.line !== key || pfDraft.acctId !== acctId) pfDraft = pfNewDraft(key, acctId);
       pfPanel = { type: "line", key: key };
-      pfOpen(line.label, pfLineHtml(R, line));
+      pfOpen(line.label, pfLineHtml(R, line), "full"); el("pfBox").setAttribute("data-pfopenline", key);
+      pfUpdatePreview();
+      if(acctId != null){ const ed = document.querySelector("#pfModal [data-pfeditor]"); if(ed) try{ ed.scrollIntoView({ block: "nearest" }); }catch(e){} }
+    }
+    // re-draw the open panel where it is (the scroll stays put)
+    function pfRedraw(){
+      if(!pfPanel || pfPanel.type !== "line" || !pfLast) return;
+      const line = pfLineOf(pfLast, pfPanel.key); if(!line) return;
+      const sc = el("pfBody"), top = sc ? sc.scrollTop : 0, tw = document.querySelector("#pfModal [data-pfacctwrap]"), left = tw ? tw.scrollLeft : 0;
+      el("pfBody").innerHTML = pfLineHtml(pfLast, line);
+      if(sc) sc.scrollTop = top; const tw2 = document.querySelector("#pfModal [data-pfacctwrap]"); if(tw2) tw2.scrollLeft = left;
       pfUpdatePreview();
     }
     function pfLineHtml(R, line){
-      const can = cloudCanWrite(), key = line.key, units = uwNum(uwState.input.units), pu = (v) => (units > 0 && v != null) ? fmtMoney(v / units) : "&mdash;";
+      const can = cloudCanWrite(), key = line.key, units = uwNum(uwState.input.units), bench = uwState.input.bench, pu = (v) => (units > 0 && v != null) ? fmtMoney(v / units) : "&mdash;";
       const uw = uwLastBuilt && uwLastBuilt.result.underwritten.lines ? uwLastBuilt.result.underwritten.lines[key] : null;
-      const lb = R.res.base.byKey[key], la = R.res.aggressive.byKey[key], d = pfDraft;
+      const lb = R.res.base.byKey[key], la = R.res.aggressive.byKey[key], d = pfDraft, months = pfMonths(R);
       const fig = (label, v, cls) => '<div class="rounded-lg border border-slate-200 px-3 py-2"><div class="text-[10px] uppercase tracking-wide text-slate-400">'+label+'</div><div class="text-sm font-bold tabular-nums '+(cls || 'text-slate-800')+'">'+(v == null ? "&mdash;" : uwFmt(v))+'</div><div class="text-[10px] tabular-nums text-slate-400">'+pu(v)+' / unit</div></div>';
-      let h = '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">'+fig("T12", line.fresh ? null : line.t12)+fig("Underwritten", uw)+fig("Pro forma · Safe", lb ? lb.value : null, "text-teal-800")+fig("Aggressive", la ? la.value : null, "text-teal-800")+'</div>';
-      if(line.fresh || line.added) h += '<p class="mt-2 text-[11px] text-slate-500">The T12 has no '+escapeHtml(line.label)+' line &mdash; a change here adds it to the pro forma.</p>';
-      // the changes already on this line
-      const pf = uwState.input.bench.proForma, mine = (pf.changes || []).filter(c => c && c.line === key);
-      if(mine.length){
+      let h = '<div class="grid grid-cols-2 gap-2 sm:grid-cols-4" data-pffigs>'+fig("T12", line.fresh ? null : line.t12)+fig("Underwritten", uw)+fig("Pro forma · Safe", lb ? lb.value : null, "text-teal-800")+fig("Aggressive", la ? la.value : null, "text-teal-800")+'</div>';
+      const notes = [];
+      notes.push('The line is the T12 plus the changes you make to its accounts &mdash; click an account to change it. Each change has its own story.');
+      if(key === "MGMT") notes.push('<b>The management fee stays at the T12 figure</b> unless you change its account &mdash; the revenue credit does not move it.');
+      try{ const bs = opBenchStatus(key, line.t12, units, bench.benchmarks); if(bs && bs.off && bs.gapPerUnit > 0) notes.push('<span data-pfbench>Your benchmark is <b>'+fmtMoney(bs.bench)+'/unit</b>; this T12 runs <b>'+fmtMoney(bs.actualPerUnit)+'/unit</b> ('+fmtMoney(bs.gapTotal)+' a year above). A benchmark is for the whole line &mdash; pick the accounts that drive it.</span>'); }catch(e){}
+      if(R.res.base.revenue && R.res.base.revenue.lines[key]) notes.push('The revenue credit sets each account here to its last '+R.res.base.revenue.n+' months &times; '+(12 / R.res.base.revenue.n)+'.');
+      if(line.fresh || line.added) notes.push('The T12 has no '+escapeHtml(line.label)+' line &mdash; an account you add here adds the line to the pro forma.');
+      h += '<div class="mt-2 space-y-0.5 text-[11px] text-slate-600">'+notes.map(n => '<p>'+n+'</p>').join('')+'</div>';
+      // a whole-line change from the first draft: not counted — remove it and change the accounts
+      const pf = bench.proForma, legacy = (pf.changes || []).filter(c => c && c.line === key && ProForma.isWholeLine(c));
+      if(legacy.length) h += '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900" data-pflegacy>'+legacy.map(c => '<div class="flex items-center justify-between gap-2"><span><b>Not counted:</b> “'+escapeHtml(ProForma.describe(c))+'” changes the whole line. The pro forma now changes one account at a time.</span>'+(can ? '<button type="button" data-pfremove="'+escapeHtml(c.id)+'" class="shrink-0 font-semibold text-rose-600 underline">Remove</button>' : '')+'</div>').join('')+'</div>';
+      // the accounts — every one, with its 12 months, its T12 and its pro forma in both versions
+      const accts = pfAcctsOf(R, key), sugs = pfSuggestions(R).filter(s => s.line === key), ruled = !!(uwLastFull && (uwLastFull.annualized || uwLastFull.trimmed));
+      const nCols = months.length + 5;
+      const head = '<tr class="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><th class="sticky left-0 z-10 bg-slate-50 py-1.5 pl-2 pr-2 text-left">Account</th>'+months.map(m => '<th class="whitespace-nowrap px-1.5 py-1.5 text-right font-semibold">'+escapeHtml(ymShort(m).replace(/ (\d\d)(\d\d)$/, " $2"))+'</th>').join('')+
+        '<th class="border-l border-slate-200 px-2 py-1.5 text-right" title="'+(ruled ? (uwLastFull.annualized ? 'Last 3 months × 4 (the T12 rule)' : 'The last 12 months (the T12 rule)') : 'The 12-month total')+'">T12'+(uwLastFull && uwLastFull.annualized ? ' <span class="normal-case">(last 3 × 4)</span>' : '')+'</th>'+
+        '<th class="border-l border-teal-100 px-2 py-1.5 text-right text-teal-700">Safe</th><th class="px-2 py-1.5 text-right text-teal-700">Aggressive</th><th class="px-2 py-1.5 text-left">Changes</th></tr>';
+      const rowOf = (a) => {
+        const on = !!(d && d.acctId === a.id), xb = R.res.base.acctById[a.id], xa = R.res.aggressive.acctById[a.id], ch = pfChangesOn(key, a);
+        const sb = xb ? xb.value : a.amount, sa = xa ? xa.value : a.amount, chB = xb && xb.changes.length, chA = xa && xa.changes.length, credB = xb && Math.abs(xb.value - a.amount) > 0.004 && !chB;
+        const mySugs = sugs.filter(s => s.acctId === a.id && s.open);
+        const cell = (v, changed) => '<td class="px-2 py-1 text-right tabular-nums '+(changed ? 'font-bold text-teal-800' : 'text-slate-600')+'">'+(v == null ? '' : pfN(v))+'</td>';
+        const short = { base: "Safe", aggressive: "Aggressive", both: "Both" };
+        const tags = ch.map(c => '<span class="mb-0.5 mr-1 inline-block whitespace-nowrap rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-800" title="'+escapeHtml(PF_COL[c.column || "both"]+': '+ProForma.describe(c)+' — '+c.story)+'">'+short[c.column || "both"]+' &middot; '+escapeHtml((ProForma.KIND[c.kind] || {}).label || c.kind)+'</span>').join('') +
+          mySugs.map(s => '<span class="mb-0.5 mr-1 inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-semibold '+(s.source === "claude" ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-amber-300 bg-amber-50 text-amber-800')+'" data-pfsugchip="'+escapeHtml(s.id)+'">'+(s.source === "claude" ? 'Claude suggests' : 'Suggested')+'</span>').join('');
+        return '<tr class="cursor-pointer border-t border-slate-100 '+(on ? 'bg-teal-50' : 'hover:bg-slate-50')+'" data-pfacct="'+escapeHtml(a.id)+'" title="Click to change this account">'+
+          '<td class="sticky left-0 z-10 min-w-[14rem] max-w-[20rem] py-1 pl-2 pr-2 '+(on ? 'bg-teal-50' : 'bg-white')+'"><div class="'+(a.gap ? 'italic text-slate-500' : 'font-medium text-slate-800')+'">'+escapeHtml(a.name)+(a.added ? ' <span class="text-[9px] font-semibold uppercase tracking-wide text-teal-600">added</span>' : '')+'</div>'+
+            (a.row != null ? '<div class="text-[10px] text-slate-400">row '+(a.row + 1)+(a.sheet ? ' · '+escapeHtml(a.sheet) : '')+'</div>' : '')+'</td>'+
+          months.map(m => { const x = a.monthly ? a.monthly[m] : null; return '<td class="px-1.5 py-1 text-right tabular-nums text-slate-600">'+(typeof x === "number" ? pfN(x) : (a.added ? '' : '&ndash;'))+'</td>'; }).join('')+
+          '<td class="border-l border-slate-200 px-2 py-1 text-right font-semibold tabular-nums text-slate-800">'+(a.added ? '&mdash;' : pfN(a.amount))+'</td>'+
+          '<td class="border-l border-teal-100 px-2 py-1 text-right tabular-nums '+(chB ? 'font-bold text-teal-800' : credB ? 'text-teal-700' : 'text-slate-600')+'"'+(credB ? ' title="The revenue credit"' : '')+'>'+pfN(sb)+'</td>'+
+          cell(sa, !!chA)+'<td class="min-w-[8rem] max-w-[14rem] px-2 py-1">'+tags+'</td></tr>'+
+          (on ? '<tr data-pfeditor><td colspan="'+nCols+'" class="border-y-2 border-teal-300 bg-teal-50/40 p-0"><div class="sticky left-0 p-3" style="max-width:calc(80vw - 3rem)">'+pfEditorHtml(R, line, a, sugs.filter(s => s.acctId === a.id), can)+'</div></td></tr>' : '');
+      };
+      let foot = '';
+      if(accts.length){
+        const sumM = months.map(m => accts.reduce((s, a) => s + (a.monthly && typeof a.monthly[m] === "number" ? a.monthly[m] : 0), 0));
+        foot = '<tr class="border-t-2 border-slate-300 bg-slate-50 font-bold"><td class="sticky left-0 z-10 bg-slate-50 py-1.5 pl-2 pr-2 text-slate-900">'+escapeHtml(line.label)+' &mdash; the line</td>'+sumM.map(v => '<td class="px-1.5 py-1.5 text-right tabular-nums text-slate-700">'+pfN(v)+'</td>').join('')+
+          '<td class="border-l border-slate-200 px-2 py-1.5 text-right tabular-nums text-slate-900">'+pfN(line.fresh ? 0 : line.t12)+'</td><td class="border-l border-teal-100 px-2 py-1.5 text-right tabular-nums text-teal-800">'+pfN(lb ? lb.value : 0)+'</td><td class="px-2 py-1.5 text-right tabular-nums text-teal-800">'+pfN(la ? la.value : 0)+'</td><td></td></tr>';
+      }
+      h += '<div class="mt-3 flex items-baseline justify-between gap-2"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Accounts under this line ('+accts.length+')</span><span class="text-[10px] text-slate-400">every account in the T12, a $0 one too &middot; months as the statement shows them</span></div>'+
+        '<div class="mt-1 overflow-x-auto rounded-lg border border-slate-200" data-pfacctwrap><table class="w-full border-collapse text-[12px]"><thead>'+head+'</thead><tbody>'+
+          (accts.length ? accts.map(rowOf).join('') : '<tr><td colspan="'+nCols+'" class="px-3 py-3 text-[12px] text-slate-500">This line has no accounts in the T12.</td></tr>')+
+          (d && d.acctId === "new" ? '<tr data-pfeditor><td colspan="'+nCols+'" class="border-y-2 border-teal-300 bg-teal-50/40 p-0"><div class="sticky left-0 p-3" style="max-width:calc(80vw - 3rem)">'+pfEditorHtml(R, line, null, [], can)+'</div></td></tr>' : '')+
+          foot+'</tbody></table></div>';
+      if(can && !(d && d.acctId === "new")) h += '<div class="mt-2"><button type="button" data-pfnewacct class="rounded-lg border border-dashed border-teal-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-teal-800 hover:bg-teal-50">+ Add an account the T12 doesn’t have</button></div>';
+      if(!can) h += '<p class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-500">View only &mdash; you can see this property’s pro forma but not change it.</p>';
+      return h;
+    }
+    // the editor under an account: its changes, the suggestions for it, then what to do, the kind, the version and the story
+    function pfEditorHtml(R, line, a, sugs, can){
+      const d = pfDraft, key = line.key, isNew = !a, units = uwNum(uwState.input.units), pf = uwState.input.bench.proForma;
+      let h = '<div class="text-[13px] font-bold text-slate-900">'+(isNew ? 'A new account under '+escapeHtml(line.label) : escapeHtml(a.name))+'</div>';
+      const ch = a ? pfChangesOn(key, a) : [];
+      if(ch.length){
         const eff = (id) => { const s = R.res.base.steps.find(x => x.id === id) || R.res.aggressive.steps.find(x => x.id === id); return s ? s.effect : null; };
         const probOf = (id) => { const p = R.res.base.problems.find(x => x.id === id) || R.res.aggressive.problems.find(x => x.id === id); return p ? p.reason : ""; };
-        h += '<div class="mt-4"><div class="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Changes on this line</div>'+mine.map(c => { const pr = probOf(c.id);
-          return '<div class="flex items-start justify-between gap-3 border-t border-slate-100 py-2" data-pfchange="'+escapeHtml(c.id)+'"><div class="min-w-0 text-[12px]"><span class="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800">'+PF_COL[c.column || "both"]+'</span> <b class="text-slate-800">'+escapeHtml(ProForma.describe(c))+'</b> <span class="text-slate-500">&middot; '+escapeHtml((ProForma.KIND[c.kind] || {}).label || c.kind)+'</span>'+
-            '<div class="italic text-slate-600">“'+escapeHtml(c.story || "")+'”</div><div class="text-[10px] text-slate-400">'+escapeHtml(pfWho(c))+(c.from === "assistant" ? ' &middot; proposed by Claude' : '')+'</div>'+(pr ? '<div class="text-[11px] font-semibold text-amber-700">Not counted: '+escapeHtml(pr)+'</div>' : '')+'</div>'+
+        h += '<div class="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-1">'+ch.map(c => { const pr = probOf(c.id);
+          return '<div class="flex items-start justify-between gap-3 border-t border-slate-100 py-2 first:border-0" data-pfchange="'+escapeHtml(c.id)+'"><div class="min-w-0 text-[12px]"><span class="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800">'+PF_COL[c.column || "both"]+'</span> <b class="text-slate-800">'+escapeHtml(ProForma.describe(c))+'</b> <span class="text-slate-500">&middot; '+escapeHtml((ProForma.KIND[c.kind] || {}).label || c.kind)+'</span>'+
+            '<div class="italic text-slate-600">“'+escapeHtml(c.story || "")+'”</div><div class="text-[10px] text-slate-400">'+escapeHtml(pfWho(c))+(c.from === "assistant" ? ' &middot; proposed by Claude in the assistant' : c.from === "claude" ? ' &middot; a story Claude suggested' : c.from === "assumption" ? ' &middot; from your underwriting assumption' : '')+'</div>'+(pr ? '<div class="text-[11px] font-semibold text-amber-700">Not counted: '+escapeHtml(pr)+'</div>' : '')+'</div>'+
             '<div class="shrink-0 text-right"><div class="text-[12px] font-semibold tabular-nums '+((eff(c.id) || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(eff(c.id))+' NOI</div>'+
             (can ? '<button type="button" data-pfedit="'+escapeHtml(c.id)+'" class="mt-1 text-[11px] font-semibold text-teal-800 underline">Edit</button> <button type="button" data-pfremove="'+escapeHtml(c.id)+'" class="mt-1 text-[11px] font-semibold text-rose-600 underline">Remove</button>' : '')+'</div></div>'; }).join('')+'</div>';
       }
-      // the accounts under the line
-      const accts = R.input.accounts.filter(a => a.line === key);
-      const tickable = d && (d.how === "takeOut" || d.how === "spread" || d.how === "accountTotal");
-      if(accts.length){
-        h += '<div class="mt-4"><div class="mb-1 flex items-baseline justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Accounts under this line ('+accts.filter(a => !a.gap).length+')</span><span class="text-[10px] text-slate-400">'+(uwLastFull && uwLastFull.annualized ? 'each at its last 3 months × 4 (the T12 rule)' : uwLastFull && uwLastFull.trimmed ? 'each over the last 12 months (the T12 rule)' : 'each at its 12-month total')+'</span></div>'+
-          '<div class="max-h-64 overflow-y-auto rounded-lg border border-slate-200"><table class="w-full text-[12px]"><tbody>'+accts.map(a => {
-            const on = !!(d && d.accounts && d.accounts[a.id]);
-            return '<tr class="border-t border-slate-100 first:border-0 '+(on ? 'bg-teal-50' : '')+'" data-pfacctrow="'+escapeHtml(a.id)+'"><td class="w-6 py-1 pl-2">'+(tickable && can && !a.gap ? '<input type="checkbox" data-pfacct="'+escapeHtml(a.id)+'"'+(on ? ' checked' : '')+' class="h-3.5 w-3.5 accent-teal-600">' : '')+'</td>'+
-              '<td class="py-1 pr-2 '+(a.gap ? 'italic text-slate-400' : 'text-slate-700')+'">'+escapeHtml(a.name)+(a.row != null ? ' <span class="text-[10px] text-slate-400">row '+(a.row + 1)+(a.sheet ? ' · '+escapeHtml(a.sheet) : '')+'</span>' : '')+'</td>'+
-              '<td class="py-1 pr-2">'+pfStrip(a.monthly, R.input.months)+'</td><td class="py-1 pr-2 text-right tabular-nums text-slate-700">'+fmtMoney(a.amount)+'</td></tr>'; }).join('')+'</tbody></table></div></div>';
-      }
-      if(!can) return h + '<p class="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-500">View only &mdash; you can see this property’s pro forma but not change it.</p>';
-      // the form
-      const hows = pfHowsFor(R, line);
-      h += '<div class="mt-4 rounded-xl border border-teal-200 bg-teal-50/30 p-3" data-pfform><div class="mb-2 text-[11px] font-bold uppercase tracking-wider text-teal-800">'+(d && d.id ? 'Edit the change' : 'Add a change')+'</div>'+
-        '<div class="text-[11px] font-semibold text-slate-600">How</div><div class="mt-1 flex flex-wrap gap-1.5">'+hows.map(x => '<button type="button" data-pfhow="'+x[0]+'" class="rounded-full border px-2.5 py-1 text-[11px] font-semibold '+(d && d.how === x[0] ? 'border-teal-600 bg-teal-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-teal-400')+'">'+x[1]+'</button>').join('')+'</div>';
-      if(d && d.how){
+      // the suggestions for this account
+      const shown = sugs.filter(s => !s.taken);
+      if(shown.length) h += '<div class="mt-2 space-y-1.5">'+shown.map(s => { const isC = s.source === "claude";
+        return '<div class="rounded-lg border '+(isC ? 'border-violet-200 bg-violet-50/60' : 'border-amber-200 bg-amber-50/60')+' px-3 py-2 text-[12px]'+(s.skipped ? ' opacity-60' : '')+'" data-pfsug="'+escapeHtml(s.id)+'">'+
+          '<div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><span class="text-[10px] font-bold uppercase tracking-wide '+(isC ? 'text-violet-700' : 'text-amber-800')+'">'+(isC ? 'Claude suggests' : 'From your underwriting assumption')+(s.confidence ? ' &middot; '+escapeHtml(s.confidence) : '')+'</span>'+
+            '<div class="font-semibold text-slate-800">'+escapeHtml(pfSugText(s))+'</div><div class="italic text-slate-600">“'+escapeHtml(s.change.story)+'”</div>'+
+            (s.why ? '<div class="text-[11px] text-slate-500">'+(isC ? 'How Claude got the number: ' : '')+escapeHtml(s.why)+'</div>' : '')+
+            (s.backedBy ? '<div class="text-[11px] font-semibold text-violet-800">To back it with the lender: '+escapeHtml(s.backedBy)+'</div>' : '')+'</div>'+
+          (can ? '<div class="flex shrink-0 gap-2">'+(s.skipped ? '<button type="button" data-pfunskip="'+escapeHtml(s.id)+'" class="text-[11px] font-semibold text-slate-600 underline">Bring it back</button>'
+            : '<button type="button" data-pfusesug="'+escapeHtml(s.id)+'" class="rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500">Use this</button><button type="button" data-pfskip="'+escapeHtml(s.id)+'" class="text-[11px] font-semibold text-slate-500 underline">Not this one</button>')+'</div>' : '')+
+          '</div>'+(s.skipped ? '<div class="text-[10px] text-slate-400">You set this one aside.</div>' : '')+'</div>'; }).join('')+'</div>';
+      if(!can) return h;
+      const editing = !!(d && d.id), hows = pfHowsFor(line, a);
+      h += '<div class="mt-3" data-pfform><div class="text-[11px] font-semibold text-slate-600">'+(editing ? 'Edit the change' : ch.length ? 'Another change (the other version)' : 'What do you want to do with it?')+'</div>';
+      if(isNew) h += '<label class="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Account name <input type="text" data-pfin="newName" value="'+escapeHtml(d.newName || "")+'" placeholder="e.g. PILOT taxes" class="w-64 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"></label>';
+      h += '<div class="mt-1 flex flex-wrap gap-1.5">'+hows.map(x => '<button type="button" data-pfhow="'+x[0]+'" class="rounded-full border px-3 py-1 text-[12px] font-semibold '+(d.how === x[0] ? 'border-teal-600 bg-teal-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-teal-400')+'">'+x[1]+'</button>').join('')+'</div>';
+      if(d.how){
+        const neg = pfNeg(line, a);
         const inp = (k, ph, pre, suf) => '<span class="inline-flex items-center gap-1">'+(pre ? '<span class="text-[12px] text-slate-400">'+pre+'</span>' : '')+'<input type="text" inputmode="decimal" data-pfin="'+k+'" value="'+escapeHtml(String(d[k] == null ? "" : d[k]))+'" placeholder="'+ph+'" class="w-32 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums">'+(suf ? '<span class="text-[12px] text-slate-500">'+suf+'</span>' : '')+'</span>';
         let f = "";
-        if(d.how === "total") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">New total for the year '+inp("value", "e.g. 60,000", "$")+'</label>';
-        if(d.how === "takeOut") f = '<p class="text-[12px] text-slate-600">Tick the accounts above to take out of this line.</p>';
-        if(d.how === "accountTotal") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Tick one account above; its new amount for the year '+inp("value", "e.g. 12,000", "$")+'</label>';
-        if(d.how === "spread") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Paid every '+inp("years", "3", "", "years")+'<span class="text-[11px] text-slate-400">— counts 1/N a year. Tick accounts above, or none for the whole line.</span></label>';
-        if(d.how === "pctRevenue") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("pct", "e.g. 1", "", "%")+'<span class="text-[11px] text-slate-400">'+(line.section === "expense" ? 'of the version’s own effective gross income — it moves when revenue moves' : 'of gross potential rent (a deduction)')+'</span></label>';
+        if(d.how === "takeOut") f = '<p class="text-[12px] text-slate-600">The whole account comes out of the pro forma ('+(a ? fmtMoney(a.amount) : '')+' a year).</p>';
+        if(d.how === "accountTotal") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+(isNew ? 'Its amount for the year' : 'Its new amount for the year')+' '+inp("value", "e.g. 20,000", neg ? "&minus;$" : "$")+(neg ? '<span class="text-[11px] text-slate-400">a deduction</span>' : '')+'</label>';
+        if(d.how === "spread") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Paid every '+inp("years", "3", "", "years")+'<span class="text-[11px] text-slate-400">&mdash; counts 1/N of it a year</span></label>';
+        if(d.how === "pctRevenue") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("pct", "e.g. 2.5", "", "%")+'<span class="text-[11px] text-slate-400">'+(line.section === "expense" ? 'of the version’s effective gross income &mdash; you chose it, so it moves when that version’s revenue moves' : 'of gross potential rent (a deduction)')+'</span></label>';
         if(d.how === "perUnit") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("perUnit", "e.g. 275", "$", "per unit a year")+'<span class="text-[11px] text-slate-400">&times; '+(units > 0 ? units + ' units' : '<b class="text-amber-700">units missing</b>')+'</span></label>';
-        h += '<div class="mt-3">'+f+'</div>'+
-          '<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-[11px] font-semibold text-slate-600">Kind <span class="text-rose-500">*</span><select data-pfin="kind" class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">Pick one…</option>'+
+        // the stories already written in this pro forma, to use again ("one thing can cause a lot of things")
+        const stories = []; (pf.changes || []).forEach(c => { const s = String((c && c.story) || "").trim(); if(s && c.id !== d.id && !stories.some(x => x.s === s)) stories.push({ s: s, k: c.kind, where: ((c.accounts && c.accounts[0]) ? c.accounts[0].name : (pfLineOf(R, c.line) || {}).label) }); });
+        h += '<div class="mt-2">'+f+'</div>'+
+          '<div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3"><label class="text-[11px] font-semibold text-slate-600">Kind <span class="text-rose-500">*</span><select data-pfin="kind" class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">Pick one…</option>'+
             ProForma.KINDS.filter(k => k.id !== "revenue").map(k => '<option value="'+k.id+'"'+(d.kind === k.id ? ' selected' : '')+'>'+escapeHtml(k.label)+'</option>').join('')+'</select>'+
             (ProForma.KIND[d.kind] ? '<span class="mt-0.5 block text-[10px] font-normal text-slate-400" data-pfkindhint>'+escapeHtml(ProForma.KIND[d.kind].hint)+'</span>' : '')+'</label>'+
-          '<div class="text-[11px] font-semibold text-slate-600">Apply to<div class="mt-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+["base", "aggressive", "both"].map(v => '<button type="button" data-pfcol="'+v+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(d.column === v ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+(v === "both" ? "Both" : PF_COL[v])+'</button>').join('')+'</div></div></div>'+
+          '<div class="text-[11px] font-semibold text-slate-600">Apply to<div class="mt-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+["base", "aggressive", "both"].map(v => '<button type="button" data-pfcol="'+v+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(d.column === v ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+(v === "both" ? "Both" : PF_COL[v])+'</button>').join('')+'</div></div>'+
+          (stories.length ? '<label class="text-[11px] font-semibold text-slate-600">Same story as&hellip;<select data-pfsamestory class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">&mdash; pick a story you wrote &mdash;</option>'+stories.map((x, i) => '<option value="'+i+'">'+escapeHtml(x.where + ': ' + (x.s.length > 70 ? x.s.slice(0, 70) + '…' : x.s))+'</option>').join('')+'</select></label>' : '<div></div>')+'</div>'+
           '<label class="mt-3 block text-[11px] font-semibold text-slate-600">Story &mdash; the reason the lender reads <span class="text-rose-500">*</span>'+
-            '<textarea data-pfin="story" rows="2" maxlength="600" placeholder="e.g. Snow removal ran triple a normal winter; normalized to the 3-year average." class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">'+escapeHtml(d.story || "")+'</textarea></label>'+
+            '<textarea data-pfin="story" rows="2" maxlength="600" placeholder="e.g. Snow removal ran far above a normal winter; normalized to a normal year." class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">'+escapeHtml(d.story || "")+'</textarea></label>'+
           '<div class="mt-1 flex items-center justify-between gap-2">'+(aiAvailable() ? '<button type="button" data-pfdraft class="text-[11px] font-semibold text-teal-800 underline">Draft it with Claude</button>' : '<span class="text-[10px] text-slate-400">Connect Claude in Settings to have it draft the story.</span>')+'</div>'+
-          '<div id="pfPreview" class="mt-3 rounded-lg bg-white px-3 py-2 text-[12px]"></div>'+
-          '<div class="mt-3 flex items-center justify-end gap-2"><button type="button" data-pfclose class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" data-pfsave class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500 disabled:opacity-50">'+(d.id ? 'Save the edit' : 'Add the change')+'</button></div>';
+          '<div id="pfPreview" class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px]"></div>'+
+          '<div class="mt-3 flex items-center justify-end gap-2"><button type="button" data-pfcancel class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="button" data-pfsave class="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500 disabled:opacity-50">'+(editing ? 'Save the edit' : 'Save the change')+'</button></div>';
       }
       return h + '</div>';
     }
+    // before → after for the account: its 12 months in the T12 and in each version, the line and the NOI
     function pfUpdatePreview(){
       const box = el("pfPreview"); if(!box || !pfDraft) return;
-      const k = pfDraftCheck(), R = pfLast, save = document.querySelector("[data-pfsave]");
+      const k = pfDraftCheck(), R = pfLast, save = document.querySelector("#pfModal [data-pfsave]");
       if(save) save.disabled = !!k.why;
       if(!k.after){ box.innerHTML = '<span class="text-slate-400">'+escapeHtml(k.why || "")+'</span>'; return; }
-      const row = (v) => { const a = R.res[v], b = k.after[v], l0 = a.byKey[pfDraft.line], l1 = b.byKey[pfDraft.line], p = b.problems.find(x => x.id === k.c.id);
-        return '<div class="flex flex-wrap items-baseline justify-between gap-2"><span class="font-semibold text-slate-700">'+PF_COL[v]+'</span><span class="tabular-nums text-slate-600">line '+uwFmt(l0 ? l0.value : 0)+' &rarr; <b class="text-slate-900">'+uwFmt(l1 ? l1.value : 0)+'</b> &middot; NOI '+uwFmt(a.noi)+' &rarr; <b class="text-teal-800">'+uwFmt(b.noi)+'</b> ('+pfSigned(b.noi - a.noi)+')</span></div>'+(p && !k.why ? '<div class="text-[11px] text-amber-700">Not counted in '+PF_COL[v]+': '+escapeHtml(p.reason)+'</div>' : ''); };
-      // a new total (or per unit, % of revenue, a whole-line spread) stands in for the whole line: the account changes on it stop counting
-      const closes = (!k.why && pfWhole(k.c)) ? (uwState.input.bench.proForma.changes || []).filter(x => x && x.id !== k.c.id && x.line === k.c.line && !pfWhole(x) && pfClash(x, k.c)) : [];
-      box.innerHTML = row("base") + row("aggressive") + (closes.length ? '<div class="mt-1 text-[11px] text-amber-700" data-pfcloses>While it stands, the '+closes.length+' account change'+(closes.length === 1 ? '' : 's')+' on this line ('+closes.map(x => escapeHtml(ProForma.describe(x))).join("; ")+') won’t count.</div>' : '') + (k.why ? '<div class="mt-1 text-[11px] font-semibold text-amber-700" data-pfwhy>To save: '+escapeHtml(k.why)+'</div>' : '<div class="mt-1 text-[11px] font-semibold text-emerald-700" data-pfready>&#10003; ready to save</div>');
+      const months = pfMonths(R), a0 = pfDraft.acctId === "new" ? null : pfAcctById(R, pfDraft.acctId);
+      const accIn = (res, v) => res[v].accounts.find(x => x.line === k.c.line && pfSameAcct(k.c.accounts[0], x)) || null;
+      const tr = (label, vals, total, cls) => '<tr class="border-t border-slate-100 '+(cls || '')+'"><td class="whitespace-nowrap py-1 pr-3 font-semibold">'+label+'</td>'+vals.map(x => '<td class="px-1.5 py-1 text-right tabular-nums">'+pfN(x)+'</td>').join('')+'<td class="border-l border-slate-200 px-2 py-1 text-right font-bold tabular-nums">'+pfN(total)+'</td></tr>';
+      let rows = a0 && !a0.added ? tr("T12", months.map(m => a0.monthly && typeof a0.monthly[m] === "number" ? a0.monthly[m] : 0), a0.amount, "text-slate-600") : "";
+      ["base", "aggressive"].forEach(v => { const x = accIn(k.after, v); const tot = x ? x.value : (a0 ? a0.amount : 0); rows += tr("After &middot; "+PF_COL[v], pfScaled(a0, tot, months), tot, "text-teal-800"); });
+      const sumRow = (v) => { const b = R.res[v], aft = k.after[v], l0 = b.byKey[pfDraft.line], l1 = aft.byKey[pfDraft.line], p = aft.problems.find(x => x.id === k.c.id);
+        return '<div class="flex flex-wrap items-baseline justify-between gap-2"><span class="font-semibold text-slate-700">'+PF_COL[v]+'</span><span class="tabular-nums text-slate-600">'+escapeHtml((pfLineOf(R, pfDraft.line) || {}).label || "")+' '+uwFmt(l0 ? l0.value : 0)+' &rarr; <b class="text-slate-900">'+uwFmt(l1 ? l1.value : 0)+'</b> &middot; NOI '+uwFmt(b.noi)+' &rarr; <b class="text-teal-800">'+uwFmt(aft.noi)+'</b> ('+pfSigned(aft.noi - b.noi)+')</span></div>'+(p && !k.why ? '<div class="text-[11px] text-amber-700">Not counted in '+PF_COL[v]+': '+escapeHtml(p.reason)+'</div>' : ''); };
+      box.innerHTML = '<div class="overflow-x-auto"><table class="w-full text-[11px]" data-pfmonths><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400"><th class="py-1 pr-3 text-left">'+escapeHtml(a0 ? a0.name : (k.c.accounts[0].name || "New account"))+'</th>'+months.map(m => '<th class="px-1.5 py-1 text-right">'+escapeHtml(ymShort(m).replace(/ (\d\d)(\d\d)$/, " $2"))+'</th>').join('')+'<th class="border-l border-slate-200 px-2 py-1 text-right">Year</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+        '<div class="mt-0.5 text-[10px] text-slate-400">After: each month in proportion to the T12'+(a0 && a0.monthly ? '' : ' (spread evenly — the T12 has no months for it)')+'; the year is what counts.</div>'+
+        '<div class="mt-2 space-y-0.5">'+sumRow("base") + sumRow("aggressive")+'</div>' +
+        (k.why ? '<div class="mt-1 text-[11px] font-semibold text-amber-700" data-pfwhy>To save: '+escapeHtml(k.why)+'</div>' : '<div class="mt-1 text-[11px] font-semibold text-emerald-700" data-pfready>&#10003; ready to save</div>');
     }
     function pfSaveDraft(){
       const k = pfDraftCheck(); if(!k.c) return;
       if(k.why){ toast(k.why, "info"); return; }
       const R = pfLast, pf = uwState.input.bench.proForma, c = k.c, line = pfLineOf(R, c.line), prev = (pf.changes || []).find(x => x.id === c.id);
-      const v = (c.column === "aggressive") ? "aggressive" : "base", before = R.res[v].byKey[c.line], after = k.after[v].byKey[c.line];
+      const v = (c.column === "aggressive") ? "aggressive" : "base", acc = (res) => res[v].accounts.find(x => x.line === c.line && pfSameAcct(c.accounts[0], x)) || null;
+      const before = acc(R.res), after = acc(k.after);
       pf.changes = prev ? pf.changes.map(x => x.id === c.id ? c : x) : (pf.changes || []).concat([c]);
-      const kind = (ProForma.KIND[c.kind] || {}).label || c.kind;
-      pfClose();
-      pfPersist([{ label: "Pro forma · " + line.label + (c.column === "both" ? "" : " (" + PF_COL[c.column] + ")"), old: fmtMoney(before ? before.value : 0), new: fmtMoney(after ? after.value : 0),
-        note: (prev ? "edited — " : "") + kind + " — " + ProForma.describe(c) + " — " + c.story, field: "proForma." + c.line, hint: "Pro forma · " + line.label + ": " + c.story }]);
-      toast("Pro forma · " + line.label + " changed", "check");
+      const kind = (ProForma.KIND[c.kind] || {}).label || c.kind, an = c.accounts[0].name;
+      const keepOpen = pfDraft && pfDraft.acctId !== "new" ? pfDraft.acctId : null;
+      pfDraft = null;
+      pfPersist([{ label: "Pro forma · " + line.label + " · " + an + (c.column === "both" ? "" : " (" + PF_COL[c.column] + ")"), old: fmtMoney(before ? before.value : 0), new: fmtMoney(after ? after.value : 0),
+        note: (prev ? "edited — " : "") + kind + " — " + ProForma.describe(c) + " — " + c.story, field: "proForma." + c.line, hint: "Pro forma · " + an + ": " + c.story }]);
+      toast("Pro forma · " + an + " changed", "check");
+      pfAfterSave(c.line, keepOpen);
     }
+    // after a save the panel stays open on the same line (the account's row shows its new figures)
+    function pfAfterSave(key, acctId){ const R = pfCompute(); if(!R || !pfPanel || pfPanel.type !== "line") return; pfDraft = null; pfRedraw(); }
     function pfRemoveChange(id){
       const R = pfLast || pfCompute(), pf = uwState.input.bench.proForma, c = (pf.changes || []).find(x => x.id === id); if(!c || !R) return;
-      const line = pfLineOf(R, c.line) || { label: c.line };
+      const line = pfLineOf(R, c.line) || { label: c.line }, an = (c.accounts && c.accounts[0]) ? c.accounts[0].name : "";
       if(!confirm("Remove “" + ProForma.describe(c) + "” from " + line.label + "?")) return;
       pf.changes = pf.changes.filter(x => x.id !== id);
-      pfClose();
-      pfPersist([{ label: "Pro forma · " + line.label, old: ProForma.describe(c), new: "removed", note: c.story, field: "proForma." + c.line, hint: "Pro forma · removed a change on " + line.label }]);
+      pfDraft = null;
+      pfPersist([{ label: "Pro forma · " + line.label + (an ? " · " + an : ""), old: ProForma.describe(c), new: "removed", note: c.story, field: "proForma." + c.line, hint: "Pro forma · removed a change on " + (an || line.label) }]);
+      pfAfterSave(c.line, null);
     }
     function pfEditChange(id){
       const c = (uwState.input.bench.proForma.changes || []).find(x => x.id === id), R = pfLast; if(!c || !R) return;
-      const accts = R.input.accounts.filter(a => a.line === c.line), picked = {};
-      (c.accounts || []).forEach(ref => { const a = accts.find(x => x.name.toLowerCase() === String(ref.name).toLowerCase() && (!ref.sheet || !x.sheet || ref.sheet === x.sheet)); if(a) picked[a.id] = true; });
-      pfDraft = { id: c.id, line: c.line, how: c.how, value: c.value != null ? String(c.value) : "", pct: c.pct != null ? String(Math.round(c.pct * 1e6) / 1e4) : "", years: c.years != null ? String(c.years) : "", perUnit: c.perUnit != null ? String(c.perUnit) : "",
-        accounts: picked, kind: c.kind || "", story: c.story || "", column: c.column || "both", from: c.from };
-      pfOpenLine(c.line);
+      const a = pfAcctsOf(R, c.line).find(x => c.accounts && c.accounts[0] && pfSameAcct(c.accounts[0], x));
+      if(!a) return;
+      pfDraft = pfDraftFrom(c, a.id, { id: c.id, from: c.from });
+      pfOpenLine(c.line, a.id);
+    }
+    function pfUseSuggestion(sid){
+      const R = pfLast; if(!R) return;
+      const s = pfSuggestions(R).find(x => x.id === sid); if(!s) return;
+      pfDraft = pfDraftFrom(s.change, s.acctId, { from: s.source === "claude" ? "claude" : "assumption", sugId: s.id });
+      pfOpenLine(s.line, s.acctId);
+    }
+    function pfSkipSuggestion(sid, back){
+      const pf = uwState.input.bench.proForma; if(!pf) return;
+      const R = pfLast, s = R ? pfSuggestions(R).find(x => x.id === sid) : null;
+      pf.skipped = (pf.skipped || []).filter(x => x && x.id !== sid);
+      if(!back) pf.skipped.push({ id: sid, by: opOperator(), at: new Date().toISOString() });
+      const where = s ? ((pfAcctById(R, s.acctId) || {}).name || s.line) : sid;
+      pfPersist([{ label: "Pro forma · suggestion", old: back ? "set aside" : null, new: back ? "brought back" : "set aside", note: s ? pfSugText(s) : sid, field: "proForma.skipped", hint: "Pro forma · " + (back ? "brought back" : "set aside") + " a suggestion on " + where }]);
+      pfRedraw();
     }
     // Every change is saved to the property's assumptions.json, its history gets the story, and the shared database's
     // "Not saved yet" bar starts with it as the reason (editable).
@@ -4633,7 +4782,9 @@ tr.flagged:hover td{background:#fee2e2}
       const can = cloudCanWrite(), rv = (uwState.input.bench.proForma.revenue) || {}, d = pfRev, months = R.input.months.slice(-12), n = d.months;
       const use = n ? R.input.months.slice(-n) : [];
       const inc = R.res.base.lines.filter(l => (l.section === "rental" || l.section === "other") && R.input.monthly[l.key]);
-      const ann = (k) => { const mo = R.input.monthly[k] || {}; let s = 0, got = 0; use.forEach(m => { if(typeof mo[m] === "number"){ s += mo[m]; got++; } }); return got ? Math.round(s * 12 / n * 100) / 100 : null; };
+      // each line after the credit, worked out by the engine itself (account by account — an account with no months keeps its amount)
+      const credited = n ? ProForma.compute(Object.assign({}, R.input, { pf: { revenue: { base: { months: n, story: "-" } }, changes: [] } })).base : null;
+      const ann = (k) => (credited && credited.byKey[k]) ? credited.byKey[k].value : null;
       let tT = 0, tA = 0;
       const rows = inc.map(l => { const a = n ? ann(l.key) : null; tT += l.t12; tA += (a != null ? a : l.t12);
         return '<tr class="border-t border-slate-100"><td class="sticky left-0 bg-white py-1 pl-2 pr-2 text-slate-700 whitespace-nowrap">'+escapeHtml(l.label)+'</td>'+months.map(m => { const x = (R.input.monthly[l.key] || {})[m];
@@ -4672,15 +4823,130 @@ tr.flagged:hover td{background:#fee2e2}
       pfPersist([{ label: "Pro forma · Revenue credit (" + PF_COL[v] + ")", old: prev ? "T" + prev.months : null, new: "T" + d.months + " — NOI " + fmtMoney(before) + " → " + fmtMoney(after), note: story, field: "proForma.revenue", hint: "Pro forma · revenue credit: " + story }]);
     }
 
-    // ---- add a line the T12 doesn't have ----------------------------------------------------------------------------
+    // ---- add an account the T12 doesn't have (under any line — one the T12 has or not) --------------------------------
     function pfOpenAdd(){
       const R = pfLast || pfCompute(); if(!R) return;
       pfPanel = { type: "add" };
       const have = {}; R.res.base.lines.forEach(l => { have[l.key] = 1; }); R.res.aggressive.lines.forEach(l => { have[l.key] = 1; });
-      const cat = R.input.catalog, grp = (sec, title) => { const ks = Object.keys(cat).filter(k => cat[k].section === sec && !have[k] && (sec !== "rental" || ProForma.DEDUCTIONS[k])); if(!ks.length) return "";
-        return '<div class="mt-3"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">'+title+'</div><div class="mt-1 flex flex-wrap gap-1.5">'+ks.map(k => '<button type="button" data-pfaddline="'+escapeHtml(k)+'" class="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-400 hover:bg-teal-50">'+escapeHtml(cat[k].label)+'</button>').join('')+'</div></div>'; };
-      pfOpen("Add a line the T12 doesn’t have", '<p class="text-[12px] text-slate-600">For a line the statement has no figure for &mdash; e.g. bad debt at 1% of revenue, or a marketing package. Pick the line; then say how much, its kind and its story.</p>'+
-        grp("rental", "Rental deductions") + grp("other", "Other income") + grp("expense", "Expenses"));
+      const cat = R.input.catalog, grp = (sec, title) => { const ks = Object.keys(cat).filter(k => cat[k].section === sec && (sec !== "rental" || ProForma.DEDUCTIONS[k] || have[k])); if(!ks.length) return "";
+        ks.sort((x, y) => (have[y] ? 1 : 0) - (have[x] ? 1 : 0));
+        return '<div class="mt-3"><div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">'+title+'</div><div class="mt-1 flex flex-wrap gap-1.5">'+ks.map(k => '<button type="button" data-pfaddline="'+escapeHtml(k)+'" class="rounded-full border px-2.5 py-1 text-[11px] font-semibold hover:border-teal-400 hover:bg-teal-50 '+(have[k] ? 'border-slate-300 bg-white text-slate-700' : 'border-dashed border-slate-300 bg-slate-50 text-slate-500')+'">'+escapeHtml(cat[k].label)+(have[k] ? '' : ' <span class="font-normal">(not in the T12)</span>')+'</button>').join('')+'</div></div>'; };
+      pfOpen("Add an account the T12 doesn’t have", '<p class="text-[12px] text-slate-600">For money the statement has no account for &mdash; e.g. bad debt at 1% of revenue, a PILOT tax, an antenna lease. Pick the line it belongs to; then name the account and say how much, its kind and its story.</p>'+
+        grp("rental", "Rental income and deductions") + grp("other", "Other income") + grp("expense", "Expenses"));
+    }
+    // ---- every suggestion in one list: from your assumptions and Claude's stories ------------------------------------
+    function pfOpenSugList(){
+      const R = pfLast || pfCompute(); if(!R) return;
+      pfPanel = { type: "sugs" };
+      const sugs = pfSuggestions(R).filter(s => s.open), can = cloudCanWrite();
+      const row = (s) => { const a = pfAcctById(R, s.acctId) || {}, ln = pfLineOf(R, s.line) || {}, isC = s.source === "claude";
+        return '<div class="rounded-lg border '+(isC ? 'border-violet-200 bg-violet-50/50' : 'border-amber-200 bg-amber-50/50')+' px-3 py-2 text-[12px]" data-pfsuglistrow="'+escapeHtml(s.id)+'"><div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0">'+
+          '<div class="text-[10px] font-bold uppercase tracking-wide '+(isC ? 'text-violet-700' : 'text-amber-800')+'">'+(isC ? 'Claude suggests' : 'From your underwriting assumption')+'</div>'+
+          '<div class="font-semibold text-slate-800">'+escapeHtml(ln.label || s.line)+' &middot; '+escapeHtml(a.name || "")+' &mdash; '+escapeHtml(pfSugText(s))+'</div><div class="italic text-slate-600">“'+escapeHtml(s.change.story)+'”</div>'+
+          (s.backedBy ? '<div class="text-[11px] font-semibold text-violet-800">To back it with the lender: '+escapeHtml(s.backedBy)+'</div>' : '')+'</div>'+
+          (can ? '<button type="button" data-pfusesug="'+escapeHtml(s.id)+'" class="shrink-0 rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500">Open the account</button>' : '')+'</div></div>'; };
+      pfOpen("Suggestions for this pro forma", '<p class="text-[12px] text-slate-600">From your underwriting assumptions (the pro forma is the draft of the underwriting) and from Claude&rsquo;s read of the T12 (What to push). Nothing is applied until you open the account, check it and save it.</p>'+
+        (sugs.length ? '<div class="mt-3 space-y-1.5">'+sugs.map(row).join('')+'</div>' : '<p class="mt-3 text-[12px] text-slate-500">No open suggestions.</p>'), true);
+    }
+
+    // ---- Claude's stories for the pro forma (What to push, round 1) -------------------------------------------------
+    // The operator (2026-10-19): "the AI looks on the T12 and thinks, how can we change the story in a way that will
+    // convince the lender and still sound right" — e.g. snow removal $37k in a once-in-ten-years winter, normalized to
+    // $20k. Claude gets EVERY account with its 12 months and suggests changes, one account each, with a kind, a story,
+    // how it got the number and what the owner needs to back it. Nothing is applied: each one opens its account in the
+    // pro forma panel, filled in, for the operator to check and save. Kept with the property (general-data.json →
+    // pfStories), like "what to push", and dropped when the T12 in use changes.
+    const pfStoriesCache = new Map();   // propKey -> {loading} | {error} | {summary, items, at, sig}
+    function pfStoriesOf(key){ const s = key ? pfStoriesCache.get(key) : null; return (s && Array.isArray(s.items)) ? s : null; }
+    const PF_STORY_INSTRUCTION = [
+      "You help the owner of ONE multifamily property prepare the pro forma they show a lender: the trailing-twelve-month statement (T12) with changes, made ONE ACCOUNT at a time, each with a kind and a story the lender reads. You get, as JSON on stdin: the property, its units, its address (when known), the underwriting assumptions (decimals: 0.05 means 5%), the 12 month names in `months` (oldest first), and every line of the T12 with every account under it — the account's T12 amount and its 12 monthly amounts in the same order (null when the statement has none). `alreadyInThePF` lists the changes the owner already made.",
+      "Find the accounts whose year does NOT show how the property runs going forward, and for each propose ONE change and its story — changes a lender would accept because they are true and checkable. Typical stories: a cost that happened once (nonRecurring: take it out); a cost paid every few years that landed in this year (spread: spread over N years); an unusual year, such as a hard winter or a one-off spike in a few months (normalized: a new amount for a normal year); a cost of the owner or the partnership, not of the building, such as corporate travel, software, shipping, partnership legal or accounting (partnership: take it out); an account far from what the market runs (marketNorm: a % of revenue or per unit); how the property runs from now on, when the statement itself shows it (operating).",
+      "Every number you propose must come from the statement's own figures or the assumptions given (for example the account's months without the spike, its normal monthly run-rate, its share of revenue), and `basis` says exactly how you got it, in one sentence with the figures. Never invent an event, a vendor, a contract, a date or a market figure that is not in the input. When the story rests on a fact you cannot see (that the winter was unusually heavy, that a project is finished), write the story as the owner would state it and put in `backedBy` what the owner must confirm and show the lender (for example: the snow-removal invoices for the last three winters). Do not propose a change to an account already in alreadyInThePF. Leave the management fee alone unless it runs above the management-fee assumption; never move it just because revenue changes. Leave revenue accounts alone unless one is clearly one-time income.",
+      "Return 3 to 10 suggestions, the strongest first. For each: line (the line's name exactly as given), account (the account's name exactly as given), how (takeOut, accountTotal, spread, pctRevenue or perUnit), the figure that way needs (value: the new yearly dollars for accountTotal; years for spread; pct as a decimal for pctRevenue; perUnit: dollars per unit a year for perUnit), kind (partnership, nonRecurring, spread, normalized, operating or marketNorm), story (one or two plain sentences, no sales language), basis, backedBy, confidence (strong or possible) and column (both; or aggressive for one a cautious lender may not accept). Also a one-sentence summary. Use full words; NOI is the only abbreviation."
+    ].join(" ");
+    function pfStoriesSchema(){
+      return { type: "object", properties: { summary: { type: "string" }, stories: { type: "array", items: { type: "object", properties: {
+        line: { type: "string" }, account: { type: "string" }, how: { type: "string", enum: ["takeOut", "accountTotal", "spread", "pctRevenue", "perUnit"] },
+        value: { type: "number" }, years: { type: "number" }, pct: { type: "number" }, perUnit: { type: "number" },
+        kind: { type: "string", enum: ["partnership", "nonRecurring", "spread", "normalized", "operating", "marketNorm"] },
+        story: { type: "string" }, basis: { type: "string" }, backedBy: { type: "string" }, confidence: { type: "string", enum: ["strong", "possible"] }, column: { type: "string", enum: ["both", "safe", "aggressive"] }
+      }, required: ["line", "account", "how", "kind", "story", "basis"] } } }, required: ["stories"] };
+    }
+    // the pro forma's input for this property — whether or not the pro forma is started
+    function pfInputNow(){ if(!pfReady()) return null; return (pfLast && pfStarted(uwState.input.bench)) ? pfLast.input : pfInputFrom(uwLastFull, Object.assign({}, uwState.input.bench, { proForma: uwState.input.bench.proForma || {} }), uwNum(uwState.input.units)); }
+    function pfStoriesInput(key){
+      if(!key || opFocusKey !== key) return null;
+      const input = pfInputNow(); if(!input) return null;
+      const bench = uwState.input.bench, months = input.months.slice(-12), p = opProp(key), sr = p && p.loans && p.loans[0], r2 = (x) => (x == null || !isFinite(x)) ? null : Math.round(x * 100) / 100;
+      const lines = input.lines.filter(l => l && l.section !== "reserve").map(l => ({ line: l.label, side: l.section === "expense" ? "expense" : "income", t12: r2(l.t12),
+        accounts: input.accounts.filter(a => a.line === l.key).map(a => ({ account: a.name, t12: r2(a.amount), months: a.monthly ? months.map(m => typeof a.monthly[m] === "number" ? r2(a.monthly[m]) : null) : null })) }));
+      const pf = bench.proForma || {};
+      return { property: (p && p.name) || key, address: (sr && sr.propertyAddress) || null, units: uwNum(uwState.input.units), months: months.map(ymShort),
+        t12Basis: uwLastFull && uwLastFull.annualized ? "each account's T12 amount is its last 3 months × 4 (the statement starts in a lease-up)" : "each account's T12 amount is its 12-month total",
+        underwritingAssumptions: { vacancy: bench.vacancyPct, managementFee: bench.mgmtPct }, lines: lines,
+        alreadyInThePF: (pf.changes || []).filter(c => c && !ProForma.isWholeLine(c)).map(c => ({ line: (input.catalog[c.line] || {}).label || c.line, account: (c.accounts && c.accounts[0]) ? c.accounts[0].name : "", change: ProForma.describe(c), story: c.story })) };
+    }
+    function pfRunStories(key){
+      if(!aiAvailable()){ toast("Finding stories needs the desktop app and a connected Claude.", "error"); return; }
+      const input = pfStoriesInput(key); if(!input){ toast("Read this property’s T12 first (12-month basis)", "info"); return; }
+      pfStoriesCache.set(key, { loading: true }); pfRenderStories();
+      return ldsShell.aiExtract({ instruction: PF_STORY_INSTRUCTION, schema: pfStoriesSchema(), input: JSON.stringify(input), timeoutMs: 300000 })
+        .then((r) => {
+          if(!r || !r.ok){ pfStoriesCache.set(key, { error: (r && r.error) || "Claude could not read this property." }); }
+          else { const d = r.data || {};
+            const rec = { summary: String(d.summary || ""), items: (Array.isArray(d.stories) ? d.stories : []).slice(0, 20), at: new Date().toISOString(), sig: opPushSig(key) };
+            pfStoriesCache.set(key, rec);
+            opPersistGeneralExtras(key, { pfStories: rec });
+          }
+          pfRenderStories(); try{ if(opFocusKey === key) uwRerenderSetup(); }catch(e){} })
+        .catch((e) => { pfStoriesCache.set(key, { error: String((e && e.message) || e) }); pfRenderStories(); });
+    }
+    // "Put it in the pro forma draft": start the pro forma if needed, then open the account with the story filled in
+    function pfPutStory(sid){
+      if(!cloudCanWrite()){ toast("View only — you can’t change this property", "info"); return; }
+      if(!pfStarted(uwState.input.bench)) pfStart();
+      const R = pfLast || pfCompute(); if(!R) return;
+      pfUseSuggestion(sid);
+    }
+    function pfRenderStories(){
+      const mount = el("opStoriesMount"); if(!mount) return;
+      const key = opFocusKey; if(!key || !window.ProForma){ mount.innerHTML = ""; return; }
+      const input = pfInputNow(), st = pfStoriesCache.get(key), canAI = aiAvailable(), can = cloudCanWrite();
+      const runBtn = (label) => '<button type="button" id="pfStoriesRun" class="rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-50"'+((st && st.loading) || !input ? ' disabled' : '')+'>'+label+'</button>';
+      const intro = '<div class="flex items-start justify-between gap-2"><div class="min-w-0"><div class="text-[11px] font-bold uppercase tracking-wider text-violet-700">Stories for the pro forma <span class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-800">draft</span></div>'+
+        '<p class="text-[12px] text-slate-600">Claude reads every account month by month and suggests changes a lender would accept &mdash; each with its story, how it got the number and what you need to back it. Nothing goes in until you open the account and save it.</p></div>'+
+        '<div class="shrink-0">'+(canAI ? runBtn(st && Array.isArray(st.items) ? "Look again" : "Find stories with Claude") : '')+'</div></div>';
+      let body = "";
+      if(!input) body = '<p class="mt-2 text-[12px] text-slate-400">Read this property&rsquo;s T12 on the 12-month basis first.</p>';
+      else if(!canAI) body = '<p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-500">This runs on the embedded Claude &mdash; open the desktop app with Claude connected.</p>';
+      else if(st && st.loading) body = '<p class="mt-2 text-[12px] text-slate-500">Claude is reading every account&hellip;</p>';
+      else if(st && st.error) body = '<p class="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">'+escapeHtml(st.error)+'</p>';
+      else if(st && Array.isArray(st.items)){
+        const R = pfLast && pfStarted(uwState.input.bench) ? pfLast : { input: input, res: ProForma.compute(input) };
+        const sugs = pfStarted(uwState.input.bench) ? pfSuggestions(R).filter(x => x.source === "claude") : [];
+        const left = [], cards = [];
+        st.items.forEach(it => { const m = ProForma.matchSuggestion(input, it);
+          if(!m.change){ left.push((it.account || it.line || "?") + " — " + m.reason); return; }
+          const id = "claude:" + m.change.line + "|" + pfNorm(m.account.name) + "|" + m.change.how, sg = sugs.find(x => x.id === id);
+          const v = m.change.column === "aggressive" ? "aggressive" : "base", probe = Object.assign({ id: "probe", by: "", at: "" }, m.change);
+          const pf2 = JSON.parse(JSON.stringify((uwState.input.bench.proForma) || {})); pf2.changes = (pf2.changes || []).concat([probe]);
+          const after = ProForma.compute(Object.assign({}, input, { pf: pf2 }))[v], eff = after.noi - R.res[v].noi;
+          const state = sg && sg.taken ? '<span class="text-[11px] font-semibold text-emerald-700">In the pro forma &#10003;</span>' : sg && sg.skipped ? '<span class="text-[11px] text-slate-400">Set aside</span>'
+            : (can ? '<button type="button" data-pfputsug="'+escapeHtml(id)+'" class="rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500">Put it in the pro forma draft</button>' : '');
+          cards.push('<li class="rounded-xl border border-violet-200 bg-white px-3 py-2.5" data-pfstory="'+escapeHtml(id)+'"><div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0">'+
+            '<div class="font-semibold text-slate-800">'+escapeHtml(m.line.label)+' &middot; '+escapeHtml(m.account.name)+' <span class="font-normal text-slate-500">('+fmtMoney(m.account.amount)+' in the T12)</span></div>'+
+            '<div class="text-[12px] text-slate-700">'+escapeHtml(ProForma.describe(m.change))+' &middot; '+escapeHtml((ProForma.KIND[m.change.kind] || {}).label || m.change.kind)+(m.change.column === "aggressive" ? ' &middot; Aggressive' : '')+(it.confidence ? ' &middot; '+escapeHtml(it.confidence) : '')+'</div>'+
+            '<div class="italic text-[12px] text-slate-600">“'+escapeHtml(m.change.story)+'”</div>'+
+            (it.basis ? '<div class="text-[11px] text-slate-500">How Claude got the number: '+escapeHtml(it.basis)+'</div>' : '')+
+            (it.backedBy ? '<div class="text-[11px] font-semibold text-violet-800">To back it with the lender: '+escapeHtml(it.backedBy)+'</div>' : '')+'</div>'+
+            '<div class="shrink-0 text-right">'+(sg && sg.taken ? '' : '<div class="text-sm font-extrabold tabular-nums '+(eff >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(eff)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">pro forma NOI &middot; '+PF_COL[v]+'</div>')+'<div class="mt-1">'+state+'</div></div></div></li>');
+        });
+        body = (st.summary ? '<p class="mt-2 text-[12px] font-semibold text-slate-700">'+escapeHtml(st.summary)+'</p>' : '')+
+          (cards.length ? '<ul class="mt-2 space-y-2">'+cards.join('')+'</ul>' : '<p class="mt-2 text-[12px] text-slate-500">Claude found no account to change.</p>')+
+          (left.length ? '<p class="mt-2 text-[11px] text-slate-400" data-pfstoriesleft>Left out ('+left.length+'): '+escapeHtml(left.join("; "))+'.</p>' : '')+
+          '<p class="mt-1 text-[10px] text-slate-400">Claude&rsquo;s suggestions from this T12, '+escapeHtml(fmtWhenShort(st.at) || "")+'. You check every figure and every story before it goes in.</p>';
+      } else body = '<p class="mt-2 text-[12px] text-slate-500">Claude will read every account and suggest the changes and stories for your pro forma.</p>';
+      mount.innerHTML = '<div class="mt-4 border-t border-violet-100 pt-3">'+intro+body+'</div>';
     }
 
     // ---- the lender file (Excel): Pro forma, Reconciliation, Monthly --------------------------------------------------
@@ -4688,7 +4954,7 @@ tr.flagged:hover td{background:#fee2e2}
       const R = pfLast || pfCompute(); if(!R) return;
       pfPanel = { type: "lender" };
       const own = pfAggrOwn(uwState.input.bench.proForma), bad = ["base", "aggressive"].filter(v => !R.res[v].reconciles);
-      pfOpen("For the lender — the Excel file", '<p class="text-[12px] text-slate-600">Three sheets: <b>Pro forma</b> (each line: T12, pro forma, $/unit, the change, its kind and its story), <b>Reconciliation</b> (T12 NOI → each change → pro forma NOI) and <b>Monthly</b> (the T12 by month, the months used for the revenue credit marked).</p>'+
+      pfOpen("For the lender — the Excel file", '<p class="text-[12px] text-slate-600">Four sheets: <b>Pro forma</b> (each line: T12, pro forma, $/unit, the change, its kind and its story), <b>Changed accounts</b> (every account you changed: its T12, pro forma, kind and story), <b>Reconciliation</b> (T12 NOI → each change → pro forma NOI) and <b>Monthly</b> (the T12 by month, the months used for the revenue credit marked).</p>'+
         '<div class="mt-3 space-y-1.5 text-[13px]"><label class="flex items-center gap-2"><input type="radio" name="pfLenderWhich" value="base" checked class="accent-teal-600"> Safe only</label>'+
         '<label class="flex items-center gap-2"><input type="radio" name="pfLenderWhich" value="both" class="accent-teal-600"> Safe and Aggressive'+(own ? '' : ' <span class="text-[11px] text-slate-400">(Aggressive has no changes of its own yet)</span>')+'</label></div>'+
         (bad.length ? '<p class="mt-2 text-[12px] font-semibold text-rose-700">'+bad.map(v => PF_COL[v]).join(" and ")+' doesn’t reconcile — fix it before you send it.</p>' : '')+
@@ -4705,6 +4971,7 @@ tr.flagged:hover td{background:#fee2e2}
       const fmt = (ws, cols) => { Object.keys(ws).forEach(a => { if(a[0] === "!") return; const c = ws[a]; if(c && typeof c.v === "number") c.z = "#,##0"; }); ws["!cols"] = cols.map(w => ({ wch: w })); return ws; };
       const pfCols = [34, 14, 10, 16, 10].concat(both ? [16, 10] : []).concat([34, 22, 60]);
       XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.head.concat(sh.proForma)), pfCols), "Pro forma");
+      XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.accounts), [28, 34, 14, 16].concat(both ? [16] : []).concat([40, 22, 70])), "Changed accounts");
       XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.reconciliation), [30, 46, 70, 16]), "Reconciliation");
       XLSX.utils.book_append_sheet(wb, fmt(XLSX.utils.aoa_to_sheet(sh.monthly), [30].concat(months.map(() => 11)).concat([14])), "Monthly");
       return { wb: wb, file: (name + " — Pro forma — " + meta.date + ".xlsx").replace(/[\\/:*?"<>|]+/g, "-"), sheets: sh };
@@ -4721,7 +4988,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
 
     // ---- "Draft it": Claude drafts the story from the line's numbers, the kind and what you typed ----------------------
-    const PF_DRAFT_INSTRUCTION = "You write the reason a lender reads next to ONE change in a property's pro forma (the NOI the owner asks the lender to accept, worked out from the T12). One or two plain, factual sentences. Use ONLY the facts and numbers in the input; never invent a number, a date, a vendor, an event or a cause that is not in it — when the operator typed their own words, build on them and keep their meaning. No sales language. Also suggest the kind of change from the list given.";
+    const PF_DRAFT_INSTRUCTION = "You write the reason a lender reads next to ONE change to ONE account in a property's pro forma (the NOI the owner asks the lender to accept, worked out from the T12; the account's 12 months are given). One or two plain, factual sentences. Use ONLY the facts and numbers in the input; never invent a number, a date, a vendor, an event or a cause that is not in it — when the operator typed their own words, build on them and keep their meaning. No sales language. Also suggest the kind of change from the list given.";
     async function pfDraftStory(which){
       if(!aiAvailable()){ toast("Connect Claude in Settings to draft it", "info"); return; }
       const R = pfLast; if(!R) return;
@@ -4732,9 +4999,9 @@ tr.flagged:hover td{background:#fee2e2}
         input = { property: opPropDisplayName(opFocusKey), change: "revenue credit — each revenue line annualized from its last " + d.months + " months", monthsUsed: ymRange(use),
           lines: R.res.base.lines.filter(l => (l.section === "rental" || l.section === "other") && R.input.monthly[l.key]).map(l => ({ line: l.label, t12: l.t12, recentMonths: use.map(m => (R.input.monthly[l.key] || {})[m]) })), operatorTyped: d.story || "" };
       } else {
-        const c = pfDraftChange() || {}, line = pfLineOf(R, pfDraft.line) || {};
-        input = { property: opPropDisplayName(opFocusKey), line: line.label, t12Amount: line.t12, units: uwNum(uwState.input.units), how: ProForma.HOWS[c.how] || c.how, change: c.how ? ProForma.describe(c) : "",
-          accounts: (c.accounts || []).map(ref => { const a = R.input.accounts.find(x => x.line === pfDraft.line && x.name === ref.name); return { name: ref.name, amount: a ? a.amount : null }; }),
+        const c = pfDraftChange() || {}, line = pfLineOf(R, pfDraft.line) || {}, a = pfDraft.acctId === "new" ? null : pfAcctById(R, pfDraft.acctId), months = pfMonths(R);
+        input = { property: opPropDisplayName(opFocusKey), line: line.label, lineT12: line.t12, units: uwNum(uwState.input.units), how: ProForma.HOWS[c.how] || c.how, change: c.how ? ProForma.describe(c) : "",
+          account: a ? { name: a.name, t12: a.amount, months: a.monthly ? months.map(m => ({ month: ymShort(m), amount: typeof a.monthly[m] === "number" ? a.monthly[m] : null })) : null } : { name: pfDraft.newName || "", newAccount: true },
           kindChosen: c.kind ? (ProForma.KIND[c.kind] || {}).label : "", operatorTyped: pfDraft.story || "" };
       }
       const kinds = ProForma.KINDS.filter(k => k.id !== "revenue").map(k => k.id);
@@ -4744,7 +5011,7 @@ tr.flagged:hover td{background:#fee2e2}
       const s = r && r.ok && r.data && String(r.data.story || "").trim();
       if(!s){ toast("Claude couldn’t draft it" + (r && r.error ? " — " + r.error : ""), "info"); if(btn){ btn.disabled = false; btn.textContent = "Draft it with Claude"; } return; }
       if(which === "revenue"){ if(pfRev){ pfRev.story = s; const t = document.querySelector("[data-pfrevstory]"); if(t) t.value = s; } }
-      else if(pfDraft){ pfDraft.story = s; if(!pfDraft.kind && r.data.kind && ProForma.KIND[r.data.kind]) pfDraft.kind = r.data.kind; pfOpenLine(pfDraft.line); }
+      else if(pfDraft){ pfDraft.story = s; if(!pfDraft.kind && r.data.kind && ProForma.KIND[r.data.kind]) pfDraft.kind = r.data.kind; pfRedraw(); }
       if(btn){ btn.disabled = false; btn.textContent = "Draft it with Claude"; }
     }
 
@@ -4754,36 +5021,46 @@ tr.flagged:hover td{background:#fee2e2}
       const ln = t.closest("[data-pfline]"); if(ln){ pfDraft = null; pfOpenLine(ln.getAttribute("data-pfline")); return; }
       if(t.closest("[data-pfrevenue]")){ pfOpenRevenue(); return; }
       if(t.closest("[data-pfadd]")){ pfOpenAdd(); return; }
+      if(t.closest("[data-pfsuglist]")){ pfOpenSugList(); return; }
       if(t.closest("[data-pflender]")){ pfOpenLender(); return; }
       if(t.closest("[data-pfhistory]")){ pfOpenHistory(); return; }
       if(t.closest("[data-pfclear]")){ pfClear(); return; }
+      const put = t.closest("[data-pfputsug]"); if(put){ pfPutStory(put.getAttribute("data-pfputsug")); return; }
+      if(t.closest("#pfStoriesRun")){ pfRunStories(opFocusKey); return; }
       if(!t.closest("#pfModal")) return;
       if(t.closest("[data-pfclose]")){ pfClose(); return; }
-      const how = t.closest("[data-pfhow]"); if(how && pfDraft){ const h = how.getAttribute("data-pfhow"); if(pfDraft.how !== h){ pfDraft.how = h; pfDraft.accounts = {}; if(!pfDraft.kind && h === "spread") pfDraft.kind = "spread"; } pfOpenLine(pfDraft.line); return; }
-      const col = t.closest("[data-pfcol]"); if(col && pfDraft){ pfDraft.column = col.getAttribute("data-pfcol"); pfOpenLine(pfDraft.line); return; }
+      if(t.closest("[data-pfcancel]")){ pfDraft = null; pfRedraw(); return; }
+      const how = t.closest("[data-pfhow]"); if(how && pfDraft){ const h = how.getAttribute("data-pfhow"); if(pfDraft.how !== h){ pfDraft.how = h; if(!pfDraft.kind && h === "spread") pfDraft.kind = "spread"; } pfRedraw(); return; }
+      const col = t.closest("[data-pfcol]"); if(col && pfDraft){ pfDraft.column = col.getAttribute("data-pfcol"); pfRedraw(); return; }
       if(t.closest("[data-pfsave]")){ pfSaveDraft(); return; }
       const ed = t.closest("[data-pfedit]"); if(ed){ pfEditChange(ed.getAttribute("data-pfedit")); return; }
       const rm = t.closest("[data-pfremove]"); if(rm){ pfRemoveChange(rm.getAttribute("data-pfremove")); return; }
       const dr = t.closest("[data-pfdraft]"); if(dr){ pfDraftStory(dr.getAttribute("data-pfdraft") === "revenue" ? "revenue" : "line"); return; }
+      const us = t.closest("[data-pfusesug]"); if(us){ pfUseSuggestion(us.getAttribute("data-pfusesug")); return; }
+      const sk = t.closest("[data-pfskip]"); if(sk){ pfSkipSuggestion(sk.getAttribute("data-pfskip"), false); return; }
+      const uk = t.closest("[data-pfunskip]"); if(uk){ pfSkipSuggestion(uk.getAttribute("data-pfunskip"), true); return; }
+      if(t.closest("[data-pfnewacct]") && pfPanel && pfPanel.type === "line"){ pfDraft = pfNewDraft(pfPanel.key, "new"); pfRedraw(); const ed2 = document.querySelector("#pfModal [data-pfeditor]"); if(ed2) try{ ed2.scrollIntoView({ block: "nearest" }); }catch(e){} return; }
       const rvv = t.closest("[data-pfrevver]"); if(rvv && pfRev){ const v = rvv.getAttribute("data-pfrevver"), rv = uwState.input.bench.proForma.revenue || {}, cur = rv[v] || (v === "aggressive" ? rv.base : null);
         pfRev = { version: v, months: cur ? cur.months : pfRev.months, story: cur ? cur.story || "" : pfRev.story }; el("pfBody").innerHTML = pfRevenueHtml(pfLast); return; }
       const rvm = t.closest("[data-pfrevmo]"); if(rvm && pfRev){ pfRev.months = Number(rvm.getAttribute("data-pfrevmo")); el("pfBody").innerHTML = pfRevenueHtml(pfLast); return; }
       if(t.closest("[data-pfrevsave]")){ pfSaveRevenue(false); return; }
       if(t.closest("[data-pfrevoff]")){ pfSaveRevenue(true); return; }
-      const al = t.closest("[data-pfaddline]"); if(al){ pfDraft = null; pfOpenLine(al.getAttribute("data-pfaddline")); return; }
+      const al = t.closest("[data-pfaddline]"); if(al){ const k = al.getAttribute("data-pfaddline"); pfDraft = pfNewDraft(k, "new"); pfOpenLine(k, "new"); return; }
       if(t.closest("[data-pflenderbuild]")){ const r = document.querySelector('input[name="pfLenderWhich"]:checked'); pfLenderExport(!!(r && r.value === "both")); return; }
+      // an account row: open its choices under it (click it again to close them)
+      const ar = t.closest("[data-pfacct]"); if(ar && pfPanel && pfPanel.type === "line"){ const id = ar.getAttribute("data-pfacct");
+        if(pfDraft && pfDraft.acctId === id && !pfDraft.id) pfDraft = null; else pfDraft = pfNewDraft(pfPanel.key, id);
+        pfRedraw(); const ed3 = document.querySelector("#pfModal [data-pfeditor]"); if(ed3) try{ ed3.scrollIntoView({ block: "nearest" }); }catch(e){} return; }
     });
     document.addEventListener("input", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#pfModal")) return;
       if(t.hasAttribute("data-pfin") && pfDraft){ pfDraft[t.getAttribute("data-pfin")] = t.value; pfUpdatePreview(); return; }
       if(t.hasAttribute("data-pfrevstory") && pfRev){ pfRev.story = t.value; }
     });
     document.addEventListener("change", (e) => { const t = e.target; if(!t || !t.closest || !t.closest("#pfModal")) return;
-      if(t.hasAttribute("data-pfacct") && pfDraft){ const id = t.getAttribute("data-pfacct");
-        if(pfDraft.how === "accountTotal"){ pfDraft.accounts = {}; document.querySelectorAll("#pfModal [data-pfacct]").forEach(x => { if(x !== t) x.checked = false; }); }
-        pfDraft.accounts[id] = t.checked;
-        document.querySelectorAll("#pfModal [data-pfacctrow]").forEach(r => { r.classList.toggle("bg-teal-50", !!pfDraft.accounts[r.getAttribute("data-pfacctrow")]); });
-        pfUpdatePreview(); return; }
-      if(t.hasAttribute("data-pfin") && pfDraft){ pfDraft[t.getAttribute("data-pfin")] = t.value; if(t.getAttribute("data-pfin") === "kind") pfOpenLine(pfDraft.line); else pfUpdatePreview(); }
+      if(t.hasAttribute("data-pfsamestory") && pfDraft && t.value !== ""){ const pf = uwState.input.bench.proForma, list = [];
+        (pf.changes || []).forEach(c => { const s = String((c && c.story) || "").trim(); if(s && c.id !== pfDraft.id && !list.some(x => x.s === s)) list.push({ s: s, k: c.kind }); });
+        const pick = list[Number(t.value)]; if(pick){ pfDraft.story = pick.s; if(!pfDraft.kind && pick.k) pfDraft.kind = pick.k; } pfRedraw(); return; }
+      if(t.hasAttribute("data-pfin") && pfDraft){ pfDraft[t.getAttribute("data-pfin")] = t.value; if(t.getAttribute("data-pfin") === "kind") pfRedraw(); else pfUpdatePreview(); }
     });
     function recomputeSizing(){
       if(!uwLastBuilt || !window.Underwriting) return;
@@ -5836,6 +6113,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(!gd || !gd.noi){ gd = await opUpdateGeneralDataNow(key) || gd; }   // make sure the record exists (built from the folder T12) — already inside this property's turn
         if(!gd) return;
         if(extras.push !== undefined) gd.push = extras.push;
+        if(extras.pfStories !== undefined) gd.pfStories = extras.pfStories;
         if(extras.t12Review !== undefined) gd.t12Review = extras.t12Review;
         if(extras.assumptions !== undefined) gd.assumptions = extras.assumptions;
         gd.updatedAt = new Date().toISOString();
@@ -6009,6 +6287,8 @@ tr.flagged:hover td{background:#fee2e2}
         var curT = opT12Cur[key];
         if(existing && existing.push && opPushFits(existing.push, curT)) gd.push = existing.push;   // 2.9.7 (#78) — the saved "what to push" survives a rebuild;
         else if(existing && existing.push){ delete gd.push; try{ opPushCache.delete(key); }catch(e){} }
+        if(existing && existing.pfStories && opPushFits(existing.pfStories, curT)) gd.pfStories = existing.pfStories;   // F1 round 1 — Claude's pro forma stories, same rule
+        else if(existing && existing.pfStories){ delete gd.pfStories; try{ pfStoriesCache.delete(key); }catch(e){} }
         if(existing && existing.assumptions) gd.assumptions = existing.assumptions;   // whether it is stale is decided by what it was run on
         if(existing && existing.t12Review && opT12ReviewFits(existing.t12Review, curT)) gd.t12Review = existing.t12Review;
         else if(existing && existing.t12Review){ delete gd.t12Review; try{ delete t12ReviewLive[key]; }catch(e){} }
@@ -6053,6 +6333,7 @@ tr.flagged:hover td{background:#fee2e2}
       // Hydrate Claude's saved "what to push" (with its two NOI-impact figures) into the session
       // cache, so the moves show in the refi's push checkboxes without re-running Claude this session.
       try{ if(gd && gd.push && !opPushCache.has(key) && opPushFits(gd.push, opT12Cur[key])) opPushCache.set(key, gd.push); }catch(e){}
+      try{ if(gd && gd.pfStories && !pfStoriesCache.has(key) && opPushFits(gd.pfStories, opT12Cur[key])) pfStoriesCache.set(key, gd.pfStories); }catch(e){}
       return gdNOICache[key];
     }
     // The General Data card for the underwriting tab: identity + both NOIs + a per-line
@@ -6763,7 +7044,7 @@ tr.flagged:hover td{background:#fee2e2}
       const tail = document.createElement("div"); tail.className = "space-y-6 mt-6";
       tail.innerHTML =
         '<div class="boxline rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-slate-600">Portfolio roll-up</h3><div id="opRollupMount" class="mt-2 overflow-x-auto"></div></div>'+
-        '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What to push on this property</h3><div id="opScanMount" class="mt-2"></div></div>';
+        '<div class="boxline rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"><h3 class="text-xs font-bold uppercase tracking-wider text-amber-700">What to push on this property</h3><div id="opScanMount" class="mt-2"></div><div id="opStoriesMount"></div></div>';
       view.appendChild(tail);
       opRenderPortfolio(); opRenderPush();
     }
@@ -7811,6 +8092,7 @@ tr.flagged:hover td{background:#fee2e2}
       }
       mount.innerHTML = head + body;
       const run = el("opPushRun"); if(run) run.addEventListener("click", () => opRunPush(key));
+      try{ pfRenderStories(); }catch(e){}
     }
     function opRenderPortfolio(){
       const rm = el("opRollupMount"); if(!rm) return;
@@ -13291,7 +13573,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- propose_profile_change {name, changes, sources?}: a PROPERTY's own facts: propertyName, address, residentialUnits, commercialUnits, rentableSqFt, yearBuilt, acquisitionDate, manager, dataSource, yardiCode, notes, and noi (the entered NOI of a property with no loan). You can never set noiOverride — that is the operator's own.",
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
-      "- propose_pro_forma_change {name, line, how, value?, pct?, years?, perUnit?, accounts?, kind, story, column?} (a DRAFT feature): one change in the property's PRO FORMA (Underwriting → Pro forma: the T12 with changes, each with a kind and a story, adding up to the NOI the lender is asked to accept). line: the line's name (e.g. \"Marketing\"); how: total (value = the new yearly total), takeOut (accounts = the names of the T12 accounts under the line to take out), accountTotal (one account, value = its new yearly amount), spread (years = paid every N years; accounts, or none for the whole line), pctRevenue (pct, a decimal — expense lines and rental deductions only), perUnit (perUnit = dollars per unit a year); kind: partnership, nonRecurring, spread, normalized, operating or marketNorm; story: the reason the lender reads; column: safe, aggressive or both (default both). NEVER invent a number: every amount comes from the T12, the rent roll or what the operator said; you may draft the story and suggest the kind. read_property shows the pro forma (both versions and how each adds up).",
+      "- propose_pro_forma_change {name, line, account, how, value?, pct?, years?, perUnit?, newAccount?, kind, story, column?} (a DRAFT feature): one change to ONE ACCOUNT in the property's PRO FORMA (Underwriting → Pro forma: the T12 with changes, each with a kind and a story, adding up to the NOI the lender is asked to accept; a line is the T12 plus its accounts' changes — never a new total for a whole line). line: the line's name (e.g. \"Contract Services\"); account: the T12 account's name under that line (or, with newAccount: true, the name of an account the T12 doesn't have); how: takeOut, accountTotal (value = its new yearly amount), spread (years = paid every N years), pctRevenue (pct, a decimal — expense accounts and rental deductions only), perUnit (perUnit = dollars per unit a year); kind: partnership, nonRecurring, spread, normalized, operating or marketNorm; story: the reason the lender reads; column: safe, aggressive or both (default both). The management fee stays at the T12 unless the operator asks to change it. NEVER invent a number: every amount comes from the T12, the rent roll or what the operator said; you may draft the story and suggest the kind. read_property shows the pro forma (both versions, how each adds up and the changed accounts).",
       "- POOLED LOANS (one loan secured by several properties): set_pool {name, properties:[names], allocations?:{name: amount}} makes the named loan one loan secured by its own property plus those listed (a name not in the app yet becomes a new property; allocations are each property's allocated amount). release_from_pool {name, property, price?, date?, keepPayment?}: take one property out of a pooled loan with a paydown (default price: its share of today's balance; the payment is recalculated unless keepPayment). refinance_together {properties:[names]}: open ONE refinance for several properties — every loan on them is paid off and the NOI is all of theirs; properties with no loan yet can be included.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
@@ -13961,38 +14243,49 @@ tr.flagged:hover td{background:#fee2e2}
           if(!code) Object.keys(cat).forEach(function(k){ if(!code && String(cat[k].label).toLowerCase()===wl) code=k; });
           if(!code) Object.keys(cat).forEach(function(k){ var lb=String(cat[k].label).toLowerCase().replace(/^less:\s*/,""); if(!code && wl && (lb===wl.replace(/^less:\s*/,"") || lb.indexOf(wl)>=0)) code=k; });
           if(!code) return {ok:false,msg:'There is no line "'+want+'". Its lines: '+input.lines.filter(function(l){ return l.section!=="reserve"; }).map(function(l){ return l.label; }).join(", ")+"."};
-          var how=String((a&&a.how)||"").trim(), hmap={ total:"total", "new total":"total", takeout:"takeOut", "take out":"takeOut", accounttotal:"accountTotal", spread:"spread", "spread over years":"spread", pctrevenue:"pctRevenue", "% of revenue":"pctRevenue", percent:"pctRevenue", perunit:"perUnit", "per unit":"perUnit" };
-          var h=hmap[how.toLowerCase()]; if(!h) return {ok:false,msg:"how must be one of: total, takeOut, accountTotal, spread, pctRevenue, perUnit."};
-          var accts=input.accounts.filter(function(x){ return x.line===code && !x.gap; }), refs=[], miss=[];
-          [].concat((a&&a.accounts)||[]).forEach(function(n){ var nm=String((n&&n.name)||n).trim().toLowerCase(), f=accts.find(function(x){ return x.name.toLowerCase()===nm; }) || accts.find(function(x){ return nm && x.name.toLowerCase().indexOf(nm)>=0; });
-            if(f){ var o={ name:f.name }; if(f.sheet) o.sheet=f.sheet; if(f.row!=null) o.row=f.row; refs.push(o); } else miss.push(String((n&&n.name)||n)); });
-          if(miss.length) return {ok:false,msg:"No account "+miss.map(function(m){ return '"'+m+'"'; }).join(", ")+" under "+cat[code].label+". Its accounts: "+(accts.map(function(x){ return x.name+" ("+fmtMoney(x.amount)+")"; }).join("; ")||"none")+"."};
+          var how=String((a&&a.how)||"").trim(), hmap={ takeout:"takeOut", "take out":"takeOut", "take it out":"takeOut", accounttotal:"accountTotal", "new amount":"accountTotal", amount:"accountTotal", spread:"spread", "spread over years":"spread", pctrevenue:"pctRevenue", "% of revenue":"pctRevenue", percent:"pctRevenue", perunit:"perUnit", "per unit":"perUnit" };
+          var h=hmap[how.toLowerCase()];
+          if(!h) return {ok:false,msg:(/^(total|new total)$/i.test(how) ? "The pro forma changes one account at a time — never a new total for a whole line. Name the account to change. " : "")+"how must be one of: takeOut, accountTotal, spread, pctRevenue, perUnit."};
+          // one account: a T12 account under the line, or a new one (newAccount)
+          var nameIn=String((a&&a.account)||((a&&a.accounts&&a.accounts[0]&&(a.accounts[0].name||a.accounts[0]))||"")).trim();
+          var accts=input.accounts.filter(function(x){ return x.line===code; }), isNew=!!(a&&a.newAccount), ref=null;
+          if(!nameIn) return {ok:false,msg:"Name the account under "+cat[code].label+" to change. Its accounts: "+(accts.map(function(x){ return x.name+" ("+fmtMoney(x.amount)+")"; }).join("; ")||"none")+"."};
+          if(isNew){
+            if(accts.some(function(x){ return pfNorm(x.name)===pfNorm(nameIn); })) return {ok:false,msg:'"'+nameIn+'" is already an account under '+cat[code].label+" — change it there (without newAccount)."};
+            ref={ name:nameIn };
+          } else {
+            var nm=nameIn.toLowerCase(), f=accts.find(function(x){ return x.name.toLowerCase()===nm; }) || accts.find(function(x){ return nm && x.name.toLowerCase().indexOf(nm)>=0; });
+            if(!f) return {ok:false,msg:'No account "'+nameIn+'" under '+cat[code].label+". Its accounts: "+(accts.map(function(x){ return x.name+" ("+fmtMoney(x.amount)+")"; }).join("; ")||"none")+". (For an account the T12 doesn't have, set newAccount: true.)"};
+            ref=pfRef(f);
+          }
           var colIn=String((a&&a.column)||"both").toLowerCase(), col=/aggr/.test(colIn)?"aggressive":(/safe|base/.test(colIn)?"base":"both");
           var pctV=(a&&a.pct!=null)?Number(a.pct):null; if(pctV!=null && pctV>1) pctV=pctV/100;
-          var c={ id:pfNewId(), column:col, line:code, how:h, kind:String((a&&a.kind)||""), story:String((a&&a.story)||"").trim(), from:"assistant", at:new Date().toISOString() };
-          if(h==="total"||h==="accountTotal") c.value=Number(a&&a.value); if(h==="pctRevenue") c.pct=pctV; if(h==="spread") c.years=Number(a&&a.years); if(h==="perUnit") c.perUnit=Number(a&&a.perUnit);
-          if(h==="takeOut"||h==="spread"||h==="accountTotal") c.accounts=refs;
+          var c={ id:pfNewId(), column:col, line:code, how:h, accounts:[ref], kind:String((a&&a.kind)||""), story:String((a&&a.story)||"").trim(), from:"assistant", at:new Date().toISOString() };
+          if(isNew) c.newAccount=true;
+          if(h==="accountTotal") c.value=Number(a&&a.value); if(h==="pctRevenue") c.pct=pctV; if(h==="spread") c.years=Number(a&&a.years); if(h==="perUnit") c.perUnit=Number(a&&a.perUnit);
           var line=input.lines.find(function(l){ return l.key===code; }) || { key:code, label:cat[code].label, section:cat[code].section, t12:0 };
           var why=ProForma.problemOf(c, line, ctx.units); if(why) return {ok:false,msg:"Can't propose it: "+why+"."};
-          var others=(bench0.proForma.changes||[]).filter(function(x){ return x.line===code; });
-          if(pfWhole(c)){ var hit=others.find(function(x){ return pfWhole(x) && pfClash(x,c); }); if(hit) return {ok:false,msg:cat[code].label+" already has “"+ProForma.describe(hit)+"” in "+PF_COL[hit.column||"both"]+". The operator removes or edits it in the pro forma panel; or propose it for the other version."}; }
+          var hit=(bench0.proForma.changes||[]).find(function(x){ return x.line===code && !ProForma.isWholeLine(x) && pfClash(x,c) && (x.accounts||[]).some(function(rf){ return pfSameAcct(rf, ref); }); });
+          if(hit) return {ok:false,msg:'"'+ref.name+'" already has “'+ProForma.describe(hit)+"” in "+PF_COL[hit.column||"both"]+". The operator edits or removes it in the pro forma panel; or propose it for the other version."};
           var before=ProForma.compute(input), pf1=JSON.parse(JSON.stringify(bench0.proForma)); pf1.changes=(pf1.changes||[]).concat([c]);
           var after=ProForma.compute(Object.assign({}, input, { pf:pf1 }));
           var v=col==="aggressive"?"aggressive":"base", lb=before[v].byKey[code], la=after[v].byKey[code], p=after[v].problems.find(function(x){ return x.id===c.id; });
           if(p) return {ok:false,msg:"It wouldn't count: "+p.reason+"."};
-          var rows=aiAsstRow("line", cat[code].label+" ("+PF_COL[col]+")", fmtMoney(lb?lb.value:0), fmtMoney(la?la.value:0))+
+          var acB=before[v].accounts.find(function(x){ return x.line===code && pfSameAcct(ref, x); }), acA=after[v].accounts.find(function(x){ return x.line===code && pfSameAcct(ref, x); });
+          var rows=aiAsstRow("account", ref.name+(isNew?" (new account)":"")+" · "+cat[code].label+" ("+PF_COL[col]+")", fmtMoney(acB?acB.value:0), fmtMoney(acA?acA.value:0))+
+            aiAsstRow("line", cat[code].label, fmtMoney(lb?lb.value:0), fmtMoney(la?la.value:0))+
             aiAsstRow("noi", "Pro forma NOI · "+PF_COL[v], fmtMoney(before[v].noi), fmtMoney(after[v].noi))+
             aiAsstRow("kind", "Kind", null, escapeHtml((ProForma.KIND[c.kind]||{}).label||c.kind))+
             aiAsstRow("story", "Story", null, escapeHtml(c.story));
-          return aiAsstApprovalCard('Change <b>'+escapeHtml(cat[code].label)+'</b> in <b>'+escapeHtml(r.name)+'</b>’s pro forma — '+escapeHtml(ProForma.describe(c))+(pfStarted(ctx.bench)?'':' (this starts its pro forma)')+'?', rows, function(){
+          return aiAsstApprovalCard('Change <b>'+escapeHtml(ref.name)+'</b> ('+escapeHtml(cat[code].label)+') in <b>'+escapeHtml(r.name)+'</b>’s pro forma — '+escapeHtml(ProForma.describe(c))+(pfStarted(ctx.bench)?'':' (this starts its pro forma)')+'?', rows, function(){
             return opLoadAssumptions(key).catch(function(){ return null; }).then(function(cur){
               var b0=opMergeBench(uwDefaults().bench, cur), b1=JSON.parse(JSON.stringify(b0));
               if(!pfStarted(b1)) b1.proForma={ started:{ by:historyWhoFor("assistant"), at:new Date().toISOString() }, revenue:{}, changes:[] };
               c.by=historyWhoFor("assistant"); b1.proForma.changes=(b1.proForma.changes||[]).concat([c]);
               return opSaveAssumptionsFor(key, b0, b1, "assistant").then(function(){
-                try{ assumptionHistoryAdd(key, "Pro forma · "+cat[code].label+(col==="both"?"":" ("+PF_COL[col]+")"), fmtMoney(lb?lb.value:0), fmtMoney(la?la.value:0), ((ProForma.KIND[c.kind]||{}).label||c.kind)+" — "+ProForma.describe(c)+" — "+c.story, "proForma."+code, "assistant"); }catch(e){}
+                try{ assumptionHistoryAdd(key, "Pro forma · "+cat[code].label+" · "+ref.name+(col==="both"?"":" ("+PF_COL[col]+")"), fmtMoney(acB?acB.value:0), fmtMoney(acA?acA.value:0), ((ProForma.KIND[c.kind]||{}).label||c.kind)+" — "+ProForma.describe(c)+" — "+c.story, "proForma."+code, "assistant"); }catch(e){}
                 try{ opRenderPortfolio(); }catch(e){}
-                return {ok:true, html:'✓ '+escapeHtml(cat[code].label)+' in '+escapeHtml(r.name)+'’s pro forma: '+fmtMoney(lb?lb.value:0)+' → '+fmtMoney(la?la.value:0)+' ('+PF_COL[col]+'); pro forma NOI '+fmtMoney(after[v].noi)+'.', toast:'Pro forma · '+cat[code].label};
+                return {ok:true, html:'✓ '+escapeHtml(ref.name)+' ('+escapeHtml(cat[code].label)+') in '+escapeHtml(r.name)+'’s pro forma: '+fmtMoney(acB?acB.value:0)+' → '+fmtMoney(acA?acA.value:0)+' ('+PF_COL[col]+'); pro forma NOI '+fmtMoney(after[v].noi)+'.', toast:'Pro forma · '+ref.name};
               });
             });
           });

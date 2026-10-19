@@ -1,7 +1,7 @@
 /* ============================================================================
    A made-up T12 for the pro forma tests (next stage, F1): "Sample Gardens", with real month-to-month movement —
    spring renewals (the revenue credit), a snowy winter (normalized), a one-time pest treatment (non-recurring),
-   exterior painting every few years (spread), bank charges (partnership). Every total row is the exact sum of its
+   exterior painting every few years (spread), bank charges (partnership), a pool service at $0 all year. Every total row is the exact sum of its
    lines, in cents. Returns the grid in the SheetJS sheet_to_json({header:1}) shape.
    Hand arithmetic for the tests (dollars):
      Residential Rent 12 months 1,177,500; last 3 (Apr–Jun) 101,500 + 102,000 + 102,300 = 305,800 → × 4 = 1,223,200
@@ -57,6 +57,7 @@ function grid(){
   line("Landscaping", [1500,1500,1500,1200,600,0,0,0,600,1200,1500,1500], ["cs","exp"]);
   line("Snow Removal", [0,0,0,0,1400,4200,4800,3600,0,0,0,0], ["cs","exp"]);
   line("Pest Control", [300,300,300,300,300,300,300,300,4100,300,300,300], ["cs","exp"]);
+  line("Pool Service", z(), ["cs","exp"]);   // round 1 — an account at $0 all year: shown, never hidden
   total("TOTAL CONTRACT SERVICES", "cs");
   push(["PAYROLL"]);
   line("Manager Salary", flat(5416.67), ["pay","exp"]);
