@@ -204,8 +204,8 @@ module.exports = {
           go: async (h) => {
             try { fs.unlinkSync(path.join(h.ctx.UDATA, "claude", "signed-in.marker")); } catch (e) {}
             await h.js(() => document.getElementById("aiAsstClose").click()); await h.wait(300);
-            // the open settings make the chat taller than a 900-pixel window (its message box falls off the bottom), so
-            // this picture is taken in a taller window
+            // on a 900-pixel window the status and the connection choices scroll inside themselves; the picture shows
+            // them whole in a taller window
             await h.ctx.setSize(h.ctx.W, 1300); await h.wait(500);
             await open(h); await h.wait(500);
             await h.page.waitForSelector("#claudeSignInAsst", { timeout: 15000 });

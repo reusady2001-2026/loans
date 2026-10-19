@@ -517,6 +517,14 @@ const SPEC = {
             { sel: RESET_ROW + " td:nth-child(7)", label: "Payment after", text: "The same payment." },
             { sel: RESET_ROW + " td:nth-child(8)", label: "Principal paid", text: "Lower than before the reset — the higher rate takes more interest." }
           ] },
+        { title: "A kept payment below the interest", text: "If the rate after the reset is high enough, the kept payment is less than the month’s interest. Then no principal is paid and the interest left unpaid is added to what is owed (negative amortization) — the balance grows, and is paid back at maturity. The schedule says so above the table. Living Lofts, a built-in loan, keeps its payment across its 2026 reset.",
+          go: async (h) => { await pick(h, "Living Lofts (Middlesex)"); await schedTo(h, '#scheduleBody tr:has([data-schedunpaid])'); },
+          shot: SCHED,
+          marks: [
+            { sel: "#scheduleKeyDates [data-schedunpaidnote]", label: "The payment is less than the interest", text: "From which month, the payment against the interest, and how much unpaid interest is added over how many months. Check the note: many loans require at least the interest — then pick Recalculate (next step)." },
+            { sel: '#scheduleBody tr:has([data-schedunpaid]) td:nth-child(8)', label: "Principal paid: $0, + unpaid interest", text: "No principal — the payment doesn’t even cover the interest. Under it, this month’s interest the payment leaves unpaid." },
+            { sel: '#scheduleBody tr:has([data-schedunpaid]) td:nth-child(9)', label: "Ending balance", text: "Higher than the starting balance: the unpaid interest is added to it." }
+          ] },
         { title: "Recalculate", text: "Edit the loan and pick “Recalculate over the remaining amortization”. At the reset the payment is worked out again: what is owed then, over the months of amortization left, at the new rate.",
           go: async (h) => {
             await pick(h, "Juniper Flats (example)"); await h.click("#loanRecEdit", { wait: 900 });

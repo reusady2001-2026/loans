@@ -755,7 +755,7 @@
     <main class="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
 
       <!-- ===================== TAB STRIP (Home + tool tabs) ===================== -->
-      <div id="tabStrip" class="mb-4 flex items-end gap-1 overflow-x-auto border-b border-ink-200/70"></div>
+      <div id="tabStrip" class="mb-4 flex items-end gap-1 overflow-x-auto overflow-y-hidden border-b border-ink-200/70"></div>   <!-- the tabs are 1px taller than the strip (its border): no vertical scrollbar -->
 
       <!-- The whole app is the "Home" tab; tool tabs (Calendar, Underwriting) show as sibling panels. -->
       <div id="homePanel" class="space-y-6">
@@ -1210,13 +1210,14 @@
           </button>
         </div>
       </div>
-      <div class="px-5 pt-4 space-y-3">
+      <!-- the status and the connection choices scroll inside themselves on a short window, so the message box and Send stay in view -->
+      <div class="px-5 pt-4 space-y-3 min-h-0 overflow-y-auto">
         <div id="aiAsstConnRow" class="text-sm"></div>
         <div id="aiAsstSettings" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"></div>
       </div>
-      <div id="aiAsstLog" class="flex-1 min-h-[240px] overflow-auto p-5 space-y-4"></div>
-      <div id="aiAsstHistoryPanel" class="hidden flex-1 min-h-[240px] overflow-auto p-4"></div>
-      <div class="p-4 border-t border-slate-100 space-y-2">
+      <div id="aiAsstLog" class="flex-1 min-h-[140px] overflow-auto p-5 space-y-4"></div>
+      <div id="aiAsstHistoryPanel" class="hidden flex-1 min-h-[140px] overflow-auto p-4"></div>
+      <div class="shrink-0 p-4 border-t border-slate-100 space-y-2">
         <div class="flex items-center gap-2">
           <span class="grid h-5 w-5 shrink-0 place-items-center text-slate-400"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></span>
           <select id="aiAsstProp" title="Focus the assistant on a property — attached files are saved to it, and it reads that property's saved files first" class="flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-brand-500">
@@ -2041,7 +2042,7 @@
         const isFinal = m === term-1;
         const payParts = fpParts ? addMonths(fpParts, m) : null;
         const paymentDate = payParts ? partsToISO(payParts.y, payParts.mo, payParts.d) : "";
-        let payment, principalPaid, type;
+        let payment, principalPaid, type, unpaid = 0;
 
         if(isFinal){
           principalPaid = startingBalance;
@@ -2056,15 +2057,17 @@
           payment = interest + principalPaid;
           balance = startingBalance - principalPaid; type = "amort";
         } else if(fixedPI > 0){
-          // a flat total P&I per the docs; principal is whatever is left after interest
-          payment = statedPI; principalPaid = Math.max(0, payment - interest);
-          balance = startingBalance - principalPaid; type = "amort";
+          // a flat total P&I per the docs; principal is whatever is left after interest. A payment below the interest (a
+          // kept payment after a reset to a higher rate) pays no principal, and the interest it leaves unpaid is added to
+          // what is owed (negative amortization) — it never just disappears.
+          payment = statedPI; principalPaid = Math.max(0, payment - interest); unpaid = Math.max(0, interest - payment);
+          balance = startingBalance - principalPaid + unpaid; type = "amort";
         } else {
           payment = currentPayment; principalPaid = payment - interest;
           balance = startingBalance - principalPaid; type = "amort";
         }
         totalInterest += interest; totalPaid += payment;
-        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src });
+        rows.push({ index:m+1, label:MONTH_NAMES[mo]+" "+y, paymentDate, startingBalance, days, rate, interest, payment, principalPaid, endingBalance:balance, type, isReset, rateSrc: rInfo.src, unpaidInterest: unpaid });
         if(pdAt[m] && m < term - 1){ let amt = 0, paid = 0; const each = []; pdAt[m].forEach(r => { const a = Math.min(balance - amt, r.amount); amt += a; if(r.kind === "payment") paid += a; each.push({ date: r.date, amount: a }); }); balance = Math.max(0, balance - amt);
           const row = rows[rows.length - 1]; row.endingBalance = balance; row.paydown = amt; row.paydowns = each; totalPaid += amt; if(paid > 0) row.principalPay = paid;   // next stage (F4) — a principal payment (an extension's pay-down), named on the row
           if(!isFixedAmort && pdAt[m].some(r => r.reamortize)){ currentPayment = solveSegmentPayment(loan, balance, m + 1, rateForMonth(loan, m + 1)); segments.push({ startMonth: m + 1, rate: rateForMonth(loan, m + 1), payment: currentPayment }); } }
@@ -2875,6 +2878,8 @@
         const resetBadge = (r.isReset ? ' <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">Reset → '+fmtPct(r.rate)+'</span>' : '')+
           (r.extStart ? ' <span class="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700" data-schedext>Extension starts &middot; '+fmtPct(r.rate)+'</span>' : '')+   // next stage (F4)
           (r.principalPay ? ' <span class="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-violet-700" data-schedpaid>Paid down '+fmtMoney(r.principalPay)+'</span>' : '');
+        // a payment below the interest: under the principal ($0), what is added to what is owed (the table keeps its width)
+        const unpaid = r.unpaidInterest > 0 ? '<div class="text-[10px] font-semibold text-rose-700 whitespace-nowrap" data-schedunpaid title="The payment is less than the interest: what it leaves unpaid is added to what is owed">+'+fmtMoney(r.unpaidInterest)+' unpaid interest</div>' : '';
         return '<tr data-schedrow="'+r.index+'" class="'+cls+' transition-colors">'+
           '<td class="px-4 py-2.5 text-left text-slate-400">'+r.index+'</td>'+
           '<td class="px-4 py-2.5 text-left whitespace-nowrap"><div class="font-medium text-slate-800">'+r.label+badge+nowBadge+resetBadge+'</div><div class="text-[11px] text-slate-400">pays '+fmtDateUS(r.paymentDate)+'</div></td>'+
@@ -2883,7 +2888,7 @@
           '<td class="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">'+fmtPct(r.rate)+(r.rateSrc ? ' <span data-ratesrc class="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-slate-500 cursor-help" title="'+escapeHtml(r.rateSrc.text)+'">'+escapeHtml(r.rateSrc.tag)+'</span>' : '')+'</td>'+   // 2.9.7 (#130)
           '<td class="px-4 py-2.5 text-right text-amber-700">'+fmtMoney(r.interest)+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.payment)+'</td>'+
-          '<td class="px-4 py-2.5 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+'</td>'+
+          '<td class="px-4 py-2.5 text-right text-emerald-700">'+fmtMoney(r.principalPaid)+unpaid+'</td>'+
           '<td class="px-4 py-2.5 text-right">'+fmtMoney(r.endingBalance)+'</td>'+
         '</tr>';
       }).join("");
@@ -2913,7 +2918,11 @@
       const kd = (io > 0 && firstPay && firstPI && firstPI.index !== firstPay.index)
         ? jumpBtn("First interest payment", firstPay) + jumpBtn("First P&amp;I payment", firstPI)
         : jumpBtn("First payment", firstPay);
-      const kdEl = el("scheduleKeyDates"); if(kdEl) kdEl.innerHTML = kd;
+      // a kept payment below the interest: say so above the schedule, with what it adds to the balance by maturity
+      const short = rows.filter(r => r.unpaidInterest > 0), shortSum = short.reduce((a, r) => a + r.unpaidInterest, 0);
+      const shortNote = short.length ? '<div data-schedunpaidnote class="basis-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"><b>The payment is less than the interest</b> from '+escapeHtml(short[0].label)+
+        ' ('+fmtMoney(short[0].payment)+' against '+fmtMoney(short[0].interest)+' of interest): no principal is paid, and the interest left unpaid is added to what is owed — '+fmtMoney(shortSum)+' over '+short.length+' month'+(short.length === 1 ? '' : 's')+', paid back at maturity. Check the note: many require at least the interest.</div>' : '';
+      const kdEl = el("scheduleKeyDates"); if(kdEl) kdEl.innerHTML = kd + shortNote;
     }
 
     function termLabel(months){
@@ -3838,7 +3847,7 @@ tr.flagged:hover td{background:#fee2e2}
     else if(t.id==='clearBtn'){clearAll();}
   });
   app.innerHTML=headerHtml()+controlsHtml()+'<div id="content"></div>';
-  try{ (function(){ var cb=document.querySelectorAll('[data-lender]');for(var a=0;a<cb.length;a++)cb[a].checked=!!st.lenders[cb[a].getAttribute('data-lender')]; var cl=document.querySelectorAll('[data-loan]');for(var b=0;b<cl.length;b++)if(cl[b].tagName==='INPUT')cl[b].checked=!!st.loans[cl[b].getAttribute('data-loan')]; var mn=document.getElementById('amtMin'),mx=document.getElementById('amtMax'),ls=document.getElementById('loanSearch'); if(mn&&st.amtMin!=null)mn.value=st.amtMin; if(mx&&st.amtMax!=null)mx.value=st.amtMax; if(ls&&st.search)ls.value=st.search; setSeg(); updateCounts(); filterLoanOpts(); })(); }catch(e){}
+  try{ (function(){ var cb=document.querySelectorAll('[data-lender]');for(var a=0;a<cb.length;a++)cb[a].checked=!!st.lenders[cb[a].getAttribute('data-lender')]; var cl=document.querySelectorAll('[data-loan]');for(var b=0;b<cl.length;b++)if(cl[b].tagName==='INPUT')cl[b].checked=!!st.loans[cl[b].getAttribute('data-loan')]; var mn=document.getElementById('amtMin'),mx=document.getElementById('amtMax'),ls=document.getElementById('loanSearch'); if(mn&&st.amtMin!=null)mn.value=st.amtMin; if(mx&&st.amtMax!=null)mx.value=st.amtMax; if(ls&&st.search)ls.value=st.search; var ss=document.getElementById('sortSel'); if(ss)ss.value=st.sort; setSeg(); updateCounts(); filterLoanOpts(); })(); }catch(e){}
   renderContent();
 })();
 `;
@@ -6721,6 +6730,8 @@ tr.flagged:hover td{background:#fee2e2}
     // dropdown was removed): a property with no loan reads "No loan data yet", one with a loan but no
     // T12 "No T12 yet", otherwise "Stabilized". It is a display label in Data Health; it never touches
     // the NOI, which always follows the automatic annualization rule.
+    // the property has a loan of its own that isn't removed / paid off (its entered NOI then lives on that loan)
+    function propHasOwnActiveLoan(propKey){ return loans.some(l => propertyKey(l) === propKey && !loanIsInactiveSelf(l)); }
     function propSeniorLoan(propKey){ const all = loans.filter(l => propertyKey(l) === propKey); if(!all.length) return null; const ls = all.filter(l => !loanIsInactiveSelf(l)).length ? all.filter(l => !loanIsInactiveSelf(l)) : all; return ls.find(l => !isMezz(l)) || ls[0]; }   // 2.9.7 — an active senior first; a removed one still names / describes a property left with no active loan
     function propertyHasT12(propKey){
       try{ if(window.OperatingStore && OperatingStore.get(propKey)) return true; }catch(e){}
@@ -6780,7 +6791,7 @@ tr.flagged:hover td{background:#fee2e2}
       var waiting = rows.filter(function(r){ return r.status === "unknown"; }), byName = rows.filter(function(r){ return r.status === "name"; });
       return '<div class="rounded-xl border '+(waiting.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700')+' px-4 py-2 text-sm" data-health-parts="'+waiting.length+'">'+
         '<div class="font-semibold">Files with several parts waiting for your answer: '+waiting.length+'</div>'+
-        (waiting.length ? '<ul class="mt-1 space-y-0.5 text-[12px]">'+waiting.map(function(r){ return '<li data-health-partrow>'+escapeHtml(r.name)+' · “'+escapeHtml(r.file)+'” ('+r.parts+' parts) — its numbers aren’t used until you say which part is its own · '+opPartsAnswerBtn(r.key, r.file, "Answer")+'</li>'; }).join('')+'</ul>' : '')+
+        (waiting.length ? '<ul class="mt-1 space-y-0.5 text-[12px]">'+waiting.map(function(r){ return '<li data-health-partrow>'+escapeHtml(r.name)+' · “'+escapeHtml(r.file)+'” ('+nParts(r.parts)+') — its numbers aren’t used until you say which part is its own · '+opPartsAnswerBtn(r.key, r.file, "Answer")+'</li>'; }).join('')+'</ul>' : '')+
         (byName.length ? '<div class="mt-1 text-[12px] text-slate-600">Matched by name only — confirm once: '+byName.map(function(r){ return escapeHtml(r.name)+' · “'+escapeHtml(r.file)+'” → '+escapeHtml(r.label)+' '+opPartsAnswerBtn(r.key, r.file, "Confirm"); }).join(' · ')+'</div>' : '')+
       '</div>';
     }
@@ -8158,7 +8169,10 @@ tr.flagged:hover td{background:#fee2e2}
     try{ window.LDS_refiVerdictWith=(l,patch)=>{ const d=buildRefiOption(l,1); Object.assign(d, patch||{}); applyProposedPricing(l,d); return refiVerdict(l,d); }; window.LDS_refiPayoff=(l)=>refiPayoff(l); window.LDS_refiDraft=()=>refiDrafts[1]||null; window.LDS_refiCanNow=(l)=>refiCanStage(l, refiDrafts[1]); window.LDS_refiDraftRate=()=>refiDrafts[1]?compute(refiDrafts[1]).derived.currentRate:null; window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_exitCost=(id, shiftBps)=>{ const l=getLoan(id); if(!l) return null; const cs=shiftBps ? [INDEX_CACHE[ymReinvestTenor(l)]].filter(Boolean) : [], was=cs.map(c=>c.value); cs.forEach(c=>{ c.value += shiftBps/100; });   // diagnostics: the Treasury moved by shiftBps (to compare with a calculator's rate shift)
       try{ const d=compute(l).derived, x=exitCost(l); return { type:x.type, cost:x.cost, ym:x.ym||null, balance:d.currentBalance, rate:d.currentRate, monthsLeft:d.monthsToMaturity, paymentsMade:d.paymentsMade }; } finally { cs.forEach((c,i)=>{ c.value = was[i]; }); } }; window.LDS_getLoan=(id)=>getLoan(id); }catch(e){}   // diagnostics: 2.9.7 (#25, #181-#185)
     try{ window.LDS_refiVerdict=(l)=>refiVerdict(l, buildRefiOption(l, 1)); window.LDS_refiCanStage=(l)=>refiCanStage(l, buildRefiOption(l, 1)); window.LDS_refiShouldStage=(l)=>refiShouldStage(l, buildRefiOption(l, 1)); window.LDS_resetRefiDraft=()=>{ refiDraftsKey=""; }; }catch(e){}   // diagnostics: the two-stage Can-I / Should-I refinance verdict
-    try{ window.LDS_compute=(l)=>compute(l); window.LDS_refiRec=(l)=>refiRec(l); window.LDS_refiHomeKey=(l)=>refiHomeKey(l); window.LDS_readAssumptions=(k)=>opLoadAssumptions(k); window.LDS_refiExtResult=(l)=>refiExtResult(l); window.LDS_refiExtVerdict=(l)=>refiExtVerdict(l); window.LDS_refiExtSched=(l)=>refiExtScheduleHtml(l, refiExtVerdict(l)); window.LDS_refiPenalty=(l)=>refiPenalty(l); window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_propHistory=(k)=>{ delete propHistCache[k]; return propHistoryLoad(k); }; window.LDS_lenderPresets=()=>lenderPresets(); }catch(e){}   // diagnostics: a loan's schedule, and the next stage's refinance record / extension (F4)
+    try{ window.LDS_compute=(l)=>compute(l); window.LDS_refiRec=(l)=>refiRec(l);
+      // a click while the property's record is being read: what the screen shows when the read lands (test only)
+      window.LDS_refiRecRace=(id,deal)=>{ const l=loans.find(x=>x._id===id); if(!l) return Promise.resolve(null); const c=refiRecCache[refiHomeKey(l)]; if(c) c.at=0;
+        return new Promise(res=>{ refiRecEnsure(l, ()=>res((refiRec(l)||{}).deal||"new")); refiRecSave(l, r=>{ if(deal==="extend") r.deal="extend"; else delete r.deal; }, [], "test"); }); }; window.LDS_refiHomeKey=(l)=>refiHomeKey(l); window.LDS_readAssumptions=(k)=>opLoadAssumptions(k); window.LDS_refiExtResult=(l)=>refiExtResult(l); window.LDS_refiExtVerdict=(l)=>refiExtVerdict(l); window.LDS_refiExtSched=(l)=>refiExtScheduleHtml(l, refiExtVerdict(l)); window.LDS_refiPenalty=(l)=>refiPenalty(l); window.LDS_refiLimits=(l)=>refiLimits(l); window.LDS_propHistory=(k)=>{ delete propHistCache[k]; return propHistoryLoad(k); }; window.LDS_lenderPresets=()=>lenderPresets(); }catch(e){}   // diagnostics: a loan's schedule, and the next stage's refinance record / extension (F4)
     try{ window.LDS_opAutoPreloaded=()=>opAutoPreloaded; }catch(e){}   // diagnostics: the roll-up's once-per-session auto-load of every property's T12
     try{ window.LDS_setPush=(k,p)=>opPushCache.set(k,p); window.LDS_getPush=(k)=>opPushCache.get(k); window.LDS_refiMoveBoost=(l)=>refiMoveBoost(l, refiBasis(l)); }catch(e){}   // diagnostics: the refi's "what to push" checkboxes (dual-impact moves → working NOI)
     try{ window.LDS_recomputeAll=(r)=>opRecomputeAll(r); window.LDS_lastRecompute=()=>opLastRecompute(); window.LDS_computeVersion=()=>opComputeVersion(); window.LDS_noiMethodLabel=(l)=>noiMethodLabel(gdNOICache[propertyKey(l)]); }catch(e){}   // diagnostics: 2.9.0 recompute-all + NOI method label
@@ -8310,7 +8324,7 @@ tr.flagged:hover td{background:#fee2e2}
       const groups = {}, order = [];
       Profile.FIELDS.forEach(function(fd){ if(!groups[fd.group]){ groups[fd.group] = []; order.push(fd.group); } groups[fd.group].push(fd); });
       const fields = order.map(function(g){
-        const rows = groups[g].filter(function(fd){ return !(fd.key === "noi" && propSeniorLoan(key)); }).map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');   // 2.9.7 (#46) — a property with loans keeps its entered NOI on the loan ("Add NOI")
+        const rows = groups[g].filter(function(fd){ return !(fd.key === "noi" && propHasOwnActiveLoan(key)); }).map(function(fd){ return pfFieldHtml(key, profile, fd); }).join('');   // 2.9.7 (#46) — a property with loans keeps its entered NOI on the loan ("Add NOI")
         return '<div class="mb-3 last:mb-0"><h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">'+escapeHtml(g)+'</h4><div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'+rows+'</div></div>';
       }).join('');
       const comphtml = comp.complete
@@ -10881,10 +10895,13 @@ tr.flagged:hover td{background:#fee2e2}
       try{ if(window.OperatingStore && window.OperatingCalc){ opInit(); const r = OperatingStore.get(key); const n = r ? OperatingCalc.effectiveNOI(r) : null; if(n != null && isFinite(n)) return { noi: n, src: "operating statement" }; } }catch(e){}
       const typed = (active || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi))).sort(loanRank);   // the property's own loan (senior first), as a one-property refinance reads it
       if(typed.length) return { noi: Number(typed[0].noi), src: "typed on its loan" };
+      // an NOI typed on the property (its profile — shown once the property has no loan of its own) is newer than a
+      // removed loan's: it comes first
+      const e = propEnteredNOI(key); if(e != null) return { noi: e, src: "typed on the property" };
       const old = (inactive || []).filter(l => l && l.noi != null && l.noi !== "" && isFinite(Number(l.noi)));
       const pos = old.find(l => Number(l.noi) > 0); if(pos) return { noi: Number(pos.noi), src: "an earlier loan's NOI" };
       if(old.length) return { noi: Number(old[0].noi), src: "an earlier loan's NOI" };
-      const e = propEnteredNOI(key); return e != null ? { noi: e, src: "typed on the property" } : { noi: null, src: null };
+      return { noi: null, src: null };
     }
     function loanlessPosition(p){
       const inact = (p.inactive || []).slice().sort(loanRank);
@@ -10985,10 +11002,14 @@ tr.flagged:hover td{background:#fee2e2}
     function poolReleases(l){ return poolSplitNames(l && l.poolReleases).map(x => { const p = x.split("=").map(t => t.trim());
         return { date: p[0] || "", amount: Number(String(p[1] || "").replace(/[$,]/g, "")) || 0, property: p[2] || "", alloc: Number(String(p[3] || "").replace(/[$,]/g, "")) || 0, reamortize: !/keep/i.test(p[4] || "") }; })
       .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.amount > 0); }
-    // allocated amounts: the lead gets what the others don't (less what released properties carried)
+    // allocated amounts: the typed ones as typed; what is left of the loan (less what released properties carried) goes to
+    // the properties with no amount — the lead, and any partner left blank — in proportion to their NOI (evenly if none
+    // has one), the same rule as a pool with no amounts at all. The loan form's line says the same.
     function poolAlloc(l){ const ks = poolKeys(l), a = POOL_SRC.alloc(l) || {}, out = {}; let rest = (Number(l.originalAmount) || 0) - poolReleases(l).reduce((t, r) => t + (r.alloc || 0), 0), open = [];
       ks.forEach(k => { if(a[k] != null && isFinite(a[k])){ out[k] = a[k]; rest -= a[k]; } else open.push(k); });
-      if(!Object.keys(out).length) return null; open.forEach(k => { out[k] = open.length ? Math.max(0, rest) / open.length : 0; }); return out; }
+      if(!Object.keys(out).length) return null;
+      const left = Math.max(0, rest), w = open.map(k => { const n = poolKeyNOI(k); return n > 0 && isFinite(n) ? n : 0; }), wS = w.reduce((t, x) => t + x, 0);
+      open.forEach((k, i) => { out[k] = wS > 0 ? left * w[i] / wS : left / open.length; }); return out; }
     function poolAllocSum(al){ return al ? Object.keys(al).reduce((t, k) => t + (al[k] || 0), 0) : 0; }
     function poolPanelHtml(l, focusKey){
       const d = compute(l).derived, ads = annualDebtService(d), ks = poolKeys(l), noi = poolNOI(l), val = poolValue(l), al = poolAlloc(l), alSum = poolAllocSum(al), rel = poolReleases(l);
@@ -11084,9 +11105,9 @@ tr.flagged:hover td{background:#fee2e2}
         inp.value = parts.join("; "); inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); sumLine();
         const c = el("poolFormCount"); if(c) c.textContent = parts.length ? ("This loan also secures " + parts.length + " other propert" + (parts.length === 1 ? "y" : "ies")) : "A loan on one property — tick others to make it a pooled loan"; };
       const money0 = (v) => { const n = Number(String(v || "").replace(/[$,\s]/g, "")); return n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : ""; };
-      const sumLine = () => { const sl = el("poolFormAllocSum"); if(!sl) return; let t = 0, n = 0; box.querySelectorAll("[data-poolform]").forEach(cb => { if(!cb.checked) return; const a = box.querySelector('[data-poolformamt="' + CSS.escape(cb.getAttribute("data-poolform")) + '"]'), v = a ? Number(String(a.value || "").replace(/[$,\s]/g, "")) : 0; if(v > 0){ t += v; n++; } });
+      const sumLine = () => { const sl = el("poolFormAllocSum"); if(!sl) return; let t = 0, n = 0, blank = 0; box.querySelectorAll("[data-poolform]").forEach(cb => { if(!cb.checked) return; const a = box.querySelector('[data-poolformamt="' + CSS.escape(cb.getAttribute("data-poolform")) + '"]'), v = a ? Number(String(a.value || "").replace(/[$,\s]/g, "")) : 0; if(v > 0){ t += v; n++; } else blank++; });
         const L = Number(String((el("f_originalAmount") || {}).value || "").replace(/[$,\s]/g, "")) || 0;
-        sl.textContent = n ? ("Allocated to the partners: " + fmtMoney(t) + (L > 0 ? " of the " + fmtMoney(L) + " loan" + (L - t > 0.5 ? " — the other " + fmtMoney(L - t) + " is this loan's own property" : "") : "")) : "Allocated amounts are optional: without them each property's share follows its NOI."; };
+        sl.textContent = n ? ("Allocated to the partners: " + fmtMoney(t) + (L > 0 ? " of the " + fmtMoney(L) + " loan" + (L - t > 0.5 ? " — the other " + fmtMoney(L - t) + (blank ? " is shared by NOI between this loan's own property and the " + blank + " ticked without an amount" : " is this loan's own property") : "") : "")) : "Allocated amounts are optional: without them each property's share follows its NOI."; };
       const draw = () => {
         const { cur } = parse(), ok = ownKey(), props = opProperties().filter(p => p.key !== ok).map(p => ({ key: p.key, name: p.name, has: (p.loans || []).length > 0, isNew: false }));
         Object.keys(cur).forEach(k => { if(k !== ok && !props.some(p => p.key === k)) props.push({ key: k, name: cur[k].name, has: false, isNew: true }); });
@@ -11925,9 +11946,12 @@ tr.flagged:hover td{background:#fee2e2}
       const key = refiHomeKey(loan); if(!key) return;
       const c = refiRecCache[key];
       if(c && (c.loading || Date.now() - c.at < 60000)) return;
-      const slot = refiRecCache[key] = Object.assign(c || { refi: null }, { loading: true, at: Date.now() });
+      const slot = refiRecCache[key] = Object.assign(c || { refi: null }, { loading: true, at: Date.now() }), gen = slot.gen || 0;
       opLoadAssumptions(key).then(b => {
-        slot.refi = Object.assign({}, (b && b.refi && typeof b.refi === "object") ? b.refi : {}); slot.loading = false; slot.at = Date.now();
+        // a change made while the file was being read (a click on "Extend with today's lender") is newer than what was
+        // read: keep it — its own save writes it from the latest file — instead of putting the old record back on screen
+        if((slot.gen || 0) === gen) slot.refi = Object.assign({}, (b && b.refi && typeof b.refi === "object") ? b.refi : {});
+        slot.loading = false; slot.at = Date.now();
         refiRecMoveOld(loan);
         if(cb) cb();
       }).catch(() => { slot.loading = false; if(!slot.refi) slot.refi = {}; });
@@ -11955,6 +11979,7 @@ tr.flagged:hover td{background:#fee2e2}
       const was = JSON.stringify((c.refi || {})[id] || null);
       c.refi = apply(Object.assign({}, c.refi || {}));
       if(JSON.stringify(c.refi[id] || null) === was) return refiRecQueue[key] || Promise.resolve(true);   // nothing changed: no save, no history entry
+      c.gen = (c.gen || 0) + 1;   // a read of the file already under way must not undo this change (refiRecEnsure)
       refiRecQueue[key] = (refiRecQueue[key] || Promise.resolve()).catch(() => {}).then(async () => {
         const b0 = (opFocusKey === key && uwState && uwState.input && uwState.input.bench) ? uwState.input.bench : ((await opLoadAssumptions(key)) || {});
         const before = JSON.parse(JSON.stringify(b0)), after = JSON.parse(JSON.stringify(b0));
@@ -14027,7 +14052,7 @@ tr.flagged:hover td{background:#fee2e2}
         Object.keys(ch).forEach(function(fk){ var fd=Profile.fieldDef(fk); if(fd && fd.type==="int" && ch[fk]!=null && ch[fk]!==""){ var bad2=profileFieldProblem(fk, ch[fk]); if(bad2){ notes.push(bad2.replace(/ — not saved\.$/," — left out.")); delete ch[fk]; } }
           if(fk==="yearBuilt" && ch[fk]!=null && ch[fk]!==""){ var bad3=profileFieldProblem(fk, ch[fk]); if(bad3){ notes.push(bad3.replace(/ — not saved\.$/," — left out.")); delete ch[fk]; } } });
         return opEnsureGeneralData(key).catch(function(){}).then(function(){ return opEnsureProfile(key); }).then(function(){
-          if(ch.noi!==undefined){ var no=aiAsstNOIRefusal(r.name, key); if(no){ delete ch.noi; notes.push(no); } else if(propSeniorLoan(key)){ delete ch.noi; notes.push("This property has loans — its entered NOI is set with set_property_noi."); } }
+          if(ch.noi!==undefined){ var no=aiAsstNOIRefusal(r.name, key); if(no){ delete ch.noi; notes.push(no); } else if(propHasOwnActiveLoan(key)){ delete ch.noi; notes.push("This property has loans — its entered NOI is set with set_property_noi."); } }
           var edits=aiProfileBuildEdit(key, ch);
           if(!edits.length) return {ok:false,msg: notes.length ? notes.join(" ") : "I didn’t have a valid profile change to propose — either the field isn’t a profile field or the value already matches."};
           var srcs=(a&&a.sources)||{}, one=(a&&a.source&&typeof a.source==="object")?a.source:null, tick=edits.length>1;
@@ -15073,9 +15098,10 @@ tr.flagged:hover td{background:#fee2e2}
         container.querySelectorAll('[data-partsel="'+p.no+'"]').forEach(function(sl){ if(sl.value && keys.indexOf(sl.value) < 0) keys.push(sl.value); });
         return { part: p, use: !!(cb && cb.checked), keys: keys, key: keys[0] || "" }; });
     }
+    function nParts(n){ return n + (n === 1 ? " part" : " parts"); }   // "1 part", "3 parts"
     function opPartsIntro(fileName, info, ctxKey, defaults, mode){
       var ctxN = ctxKey ? ((opProp(ctxKey) || {}).name || ctxKey) : "";
-      var head = '“'+escapeHtml(fileName)+'” has '+info.parts.length+' parts'+(info.sheetsCount > 1 ? ' on '+info.sheetsCount+' sheets' : '')+'. ';
+      var head = '“'+escapeHtml(fileName)+'” has '+nParts(info.parts.length)+(info.sheetsCount > 1 ? ' on '+info.sheetsCount+' sheets' : '')+'. ';
       if(!ctxKey) return head + 'Pick the property for each part you want to link — a part with no property is left out.';
       var cps = defaults.ctxParts || (defaults.ctxPart != null ? [defaults.ctxPart] : []);
       var and = function(a){ return a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; };
@@ -15330,7 +15356,11 @@ tr.flagged:hover td{background:#fee2e2}
         if(!opIsSheetFile(f.name)) return Promise.resolve({ rest: f });
         return f.arrayBuffer().then(function(buf){ var bytes = new Uint8Array(buf), info = opPartsInfo(bytes, f.name);
           if(!info || !info.multi) return { rest: f };
-          return opSha1(bytes).then(function(sha){ return { multi: { src: { name: f.name, bytes: bytes, text: texts[f.name] || "", type: f.type || "", label: "", sha: sha }, info: info } }; });
+          // its text goes with every part saved from it (Documents shows it read, the assistant can read it): the text
+          // already read (the chat), or read now (a file dropped in Documents / on a property)
+          var tx = texts[f.name] != null ? Promise.resolve({ text: texts[f.name] }) : aiExtractFileText(f).catch(function(){ return {}; });
+          return Promise.all([opSha1(bytes), tx]).then(function(r){ var ex = r[1] || {};
+            return { multi: { src: { name: f.name, bytes: bytes, text: ex.text || "", type: f.type || "", label: ex.label || "", sha: r[0] }, info: info } }; });
         }).catch(function(){ return { rest: f }; });
       })).then(function(list){ return { multi: list.filter(function(x){ return x.multi; }).map(function(x){ return x.multi; }), rest: list.filter(function(x){ return x.rest; }).map(function(x){ return x.rest; }) }; });
     }
@@ -15572,8 +15602,8 @@ tr.flagged:hover td{background:#fee2e2}
           var slot = host.querySelector('[data-docpart="'+f.id+'"]'); if(!slot || !rp || !rp.info || !rp.info.multi) return;
           var rps = (rp.parts && rp.parts.length) ? rp.parts : (rp.part ? [rp.part] : []);
           if(rp.part) slot.innerHTML = (rps.length > 1 ? 'This property’s parts: ' : 'This property’s part: ')+escapeHtml(FileParts.partsLabel(rps, rp.info.sheetsCount))+(rp.status === "name" ? ' <span class="text-amber-700">(by its name — not confirmed)</span> · '+opPartsAnswerBtn(propKey, f.name, "Confirm") : ' · '+opPartsAnswerBtn(propKey, f.name, "Change"));
-          else if(rp.status === "none") slot.innerHTML = 'None of its '+rp.info.parts.length+' parts is this property’s · '+opPartsAnswerBtn(propKey, f.name, "Change");
-          else if(rp.status === "unknown"){ slot.className = "text-[11px] font-semibold text-amber-700"; slot.innerHTML = 'It has '+rp.info.parts.length+' parts — which one is this property’s? Its numbers aren’t used until you say. '+opPartsAnswerBtn(propKey, f.name, "Answer"); }
+          else if(rp.status === "none") slot.innerHTML = 'None of its '+nParts(rp.info.parts.length)+' is this property’s · '+opPartsAnswerBtn(propKey, f.name, "Change");
+          else if(rp.status === "unknown"){ slot.className = "text-[11px] font-semibold text-amber-700"; slot.innerHTML = 'It has '+nParts(rp.info.parts.length)+' — which one is this property’s? Its numbers aren’t used until you say. '+opPartsAnswerBtn(propKey, f.name, "Answer"); }
         }); }); }, Promise.resolve()).catch(function(){});
         host.querySelectorAll('[data-doctype]').forEach(function(sel){ sel.addEventListener('change', function(){ var id=sel.getAttribute('data-doctype'), f=files.find(function(x){ return x.id===id; }), was=f&&f.role;
           ldsShell.docSetRole(propKey, id, sel.value).then(function(rr){
@@ -17191,6 +17221,10 @@ tr.flagged:hover td{background:#fee2e2}
         if(info.loans || info.reload || info.merged){
           loans = load();
           if(state.activeId && !getLoan(state.activeId)) state.activeId = loans.length ? loans[0]._id : null;
+          // the first upload (or the first change from the group) brings loans into an app that opened with none: show
+          // them on the whole-portfolio dashboard, as at start-up, instead of leaving "No loans yet" up
+          if(state.mode === "empty" && loans.length) state.mode = "portfolio";
+          else if(state.mode === "portfolio" && !loans.length) state.mode = "empty";
         }
         if((info.props && info.props.length) || info.reload || info.files || info.merged){
           [profileCache, gdNOICache, gdFullCache, loanRRCache, propHistCache, standaloneProps].forEach(o => Object.keys(o).forEach(k => delete o[k]));

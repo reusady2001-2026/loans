@@ -223,7 +223,9 @@ duplicate") come from the group; this computer's own values are kept aside, unch
 - **2.9.14 — pooled (cross-collateralized) loans:** one loan record secured by **any number of properties** (one
   balance, one payment). Its own name / address is the **lead** property; **"Also secures this loan"** on the loan
   form lists the others — a list of your properties with a tick box, a search box and an **allocated amount** for each
-  (optional; without them a property's share follows its NOI), a line adding the amounts up, and a box for a
+  (optional; without them a property's share follows its NOI; with some typed, the rest of the loan goes to the lead
+  and any property left blank, by their NOI — the line under the list says so; fixed 2026-10-19, the panel split it
+  evenly while the line said "the lead's"), a line adding the amounts up, and a box for a
   property **not in the app yet** ("Add to this loan" — it becomes a property of its own, with its folder, when you
   Save). So three new properties under one new loan = Add loan, type the first, add the other two, Save. Stored on the
   loan as "Name = amount; …" (an Excel row too).
@@ -251,6 +253,13 @@ duplicate") come from the group; this computer's own values are kept aside, unch
   left as it is (its ARM rider isn't known). At today's 5-yr Treasury (4.16% + 2.50% = 6.66%): 1222 Commerce
   $148,062.35 → **$156,266.98**; The Botanic $384,807.04 → **$412,625.78** (projections — the real 2031 rate isn't
   known). The loan form now also shows the **Fixed Amortization Payment** field for these loans (it was hidden).
+  - **A kept payment below the interest (fixed 2026-10-19, found taking the Guide's pictures):** no principal is
+    paid and the interest the payment leaves unpaid is **added to what is owed** (negative amortization) — before, it
+    simply disappeared (principal $0, balance flat, the loan's total paid short of loan + interest). The schedule marks
+    each such month "+$X unpaid interest" and says above the table from when, how much and over how many months.
+    **Living Lofts** (kept payment $151,604.11) resets in Jul 2026 to 6.79% — $194,093.04 of interest — so 59 months
+    add **$2,729,920.61** to its balance by maturity. Its ARM rider isn't known: if the note requires at least the
+    interest, set it to Recalculate.
 - **2.9.14 — a rename from the loan form keeps the property's profile.** Before, renaming a property on the loan form
   could replace its profile with a blank one (its NOI override and every other profile field were lost); the
   property page and the assistant were not affected.
@@ -260,7 +269,9 @@ duplicate") come from the group; this computer's own values are kept aside, unch
   acquisition date ("When Living acquired it"), manager, data source, Yardi code, notes.
 - **NOI (2.9.7, your NOI rule):** **NOI override** — typed by you only; it replaces the T12's NOI everywhere
   (DSCR, debt yield, the roll-up and the refinance); clear it to go back to the T12. For a property with **no
-  loan**, **NOI (annual, entered)** — used while there is no T12 (negative allowed).
+  loan**, **NOI (annual, entered)** — used while there is no T12 (negative allowed). Also shown once **all** of a
+  property's loans are removed / paid off (it was hidden then, while the page said "enter one in its profile"), and
+  an NOI typed there comes before a removed loan's own NOI (fixed 2026-10-19).
 - Checks: units and sq ft whole numbers ≥ 0, year built 1800 – this year; anything else isn't saved.
 - **History (N)** on every field: old → new, when, who ("You" / "Assistant, approved by You") and where from
   (typed, the assistant, a document and page).
@@ -652,6 +663,13 @@ saved, the key is used.
   data 0.5 MB. What has no picture is said in the step's words: the computer's own Open / Save / Print / folder
   windows, the pop-out window, update-chip states other than the running version, the app at a scale other than 100%,
   toasts, and states no sample loan reaches ("Out of date", "Don't extend now", "Matched by name only — Confirm").
+  **Fixed while taking the pictures (2026-10-19):** the pooled-loan allocation and a kept payment below the interest
+  (§4.2), the profile's entered NOI after the loans are removed (§4.3), "1 part" (not "1 parts"), Home after the
+  first upload to a shared database (it stayed on "No loans yet"), the chat on a short window with Claude not
+  connected (the status and choices scroll; the message box and Send stay in view), a stray vertical scrollbar on the
+  tab strip, the calendar's Sort box after a redraw, a workbook added through "which part is whose" saved without its
+  text, and "Extend with today's lender" clicked while the property's refinance record was being read (the read put
+  "New loan" back on screen). `test/e2e/guide-found-bugs.e2e.js` checks each (Home: `cloud-3000.e2e.js`).
   **The Settings menu scrolls inside itself** (`max-height: calc(100vh − 44px)`): with the Guide section it is ~1,060 px
   tall, so on a 900-px window "Open the guide" and the Claude connection were below the window with no way to reach them.
 

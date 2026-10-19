@@ -221,12 +221,12 @@ module.exports = {
             { sel: btn("Upload this computer's data", "Not now"), label: "Not now", text: "Closes; the group stays empty." },
             { sel: "#cuGo", label: "Upload", text: "Sends it, file by file, then opens the group’s data." }
           ] },
-        { title: "The group’s data", text: "Uploaded: the group has the data. Everyone in the group sees the same, and changes reach every open app by themselves. (If the screen still says “No loans yet”, click Whole Portfolio.)",
+        { title: "The group’s data", text: "Uploaded: the group has the data, and Home shows it at once. Everyone in the group sees the same, and changes reach every open app by themselves.",
           go: async (h) => { await h.js(() => document.getElementById("cuGo").click());
             await until(h, () => typeof window.LDS_loans === "function" && LDS_loans().length > 20 && !document.getElementById("cloudBanner"), null, 120000);
-            await h.wait(2500); await h.home();
-            // the Home screen stays on "No loans yet" after the upload until Whole Portfolio is clicked (reported)
-            await h.js(() => document.getElementById("scopePortfolioBtn").click()); await h.wait(1500); await h.top(); await h.calm(); },
+            // Home switches to the portfolio by itself once the loans arrive (no click on Whole Portfolio)
+            await until(h, () => document.getElementById("emptyState").hidden && !document.getElementById("portfolioView").hidden, null, 30000);
+            await h.wait(1500); await h.top(); await h.calm(); },
           shot: "view",
           marks: [
             { sel: "#cloudChip", label: "Online", text: "Green: online, live with the group. Blue: a change of yours isn’t saved yet. Amber: offline." },
