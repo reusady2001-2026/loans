@@ -648,6 +648,12 @@ saved, the key is used.
   `test/guide.test.js` (every picture on disk, every marker inside its picture with an explanation, the spec and the
   capture agree, nothing left over, Settings' order) and `test/e2e/guide.e2e.js` (the window, a chapter, a topic,
   Back / Next / keys, the next topic, every picture loads, search, full size, Esc).
+  **Size:** 12 chapters, 107 topics, 308 steps, 1,624 markers; the pictures are about 20 MB (JPEG quality 72), the
+  data 0.5 MB. What has no picture is said in the step's words: the computer's own Open / Save / Print / folder
+  windows, the pop-out window, update-chip states other than the running version, the app at a scale other than 100%,
+  toasts, and states no sample loan reaches ("Out of date", "Don't extend now", "Matched by name only — Confirm").
+  **The Settings menu scrolls inside itself** (`max-height: calc(100vh − 44px)`): with the Guide section it is ~1,060 px
+  tall, so on a 900-px window "Open the guide" and the Claude connection were below the window with no way to reach them.
 
 
 ### 4.17 The shared database (3.0.0)
