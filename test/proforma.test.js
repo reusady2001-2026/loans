@@ -150,6 +150,28 @@ ok(eq(r.acctById.r1.value, 5520000) && eq(r.acctById.r2.value, 240000) && eq(r.b
 ok(eq(r.acctById.o1.value, 9600) && eq(r.acctById['gap-OTH'].value, 4000) && eq(r.byKey.OTH.value, 13600), 'an account with no months (the difference to the printed total) keeps its amount: other income 9,600 + 4,000 = 13,600');
 ok(eq(r.byKey.MGMT.value, 150000) && r.reconciles, 'the management fee is not moved by the revenue credit');
 
+// ---- annualize one account (3, 6 or 12 months); a new amount of $0 reads "Took out" ----
+// in2's Laundry: 9 months at 400, then 3 at 800 → T3 = 800 × 12 = 9,600; T6 = (3×400 + 3×800) × 2 = 7,200; T12 = 6,000
+const inA = Object.assign({}, in2, { pf: { changes: [] } });
+const ann = (n, extra) => PF.compute(Object.assign({}, inA, { pf: { changes: [S(Object.assign({ id: 'an', column: 'both', line: 'OTH', how: 'annualize', months: n, accounts: [{ name: 'Laundry' }], kind: 'revenue', story: 'Laundry contract renewed in June.' }, extra || {}))] } })).base;
+r = ann(3); ok(eq(r.acctById.o1.value, 9600) && eq(r.byKey.OTH.value, 13600) && eq(st(r, 'an').effect, 3600), 'annualize T3: Laundry 800 × 12 = 9,600 (+3,600); the kind may be Revenue credit');
+ok(PF.describe({ how: 'annualize', months: 3, accounts: [{ name: 'Laundry' }] }) === '“Laundry” annualized from its last 3 months', 'it reads “Laundry” annualized from its last 3 months');
+ok(r.groups.length === 1 && r.groups[0].kind === 'revenue', 'an annualized revenue account is grouped with the revenue credit');
+r = ann(6); ok(eq(r.acctById.o1.value, 7200), 'annualize T6: (3 × 400 + 3 × 800) × 2 = 7,200');
+r = ann(12); ok(eq(r.acctById.o1.value, 6000) && eq(st(r, 'an').effect, 0), 'annualize T12 on a 12-month statement = the T12 (no change)');
+r = ann(4); ok(r.problems.some(p => p.id === 'an' && /3, 6 or 12/.test(p.reason)), 'only 3, 6 or 12 months');
+r = ann(3, { accounts: [{ name: 'Difference to the statement’s printed total' }] });
+ok(r.problems.some(p => p.id === 'an' && /no months/.test(p.reason)), 'an account the statement gives no months for can’t be annualized');
+r = PF.compute(Object.assign({}, inA, { months: months.slice(0, 2), pf: { changes: [S({ id: 'an2', column: 'both', line: 'OTH', how: 'annualize', months: 3, accounts: [{ name: 'Laundry' }], kind: 'operating', story: 's' })] } })).base;
+ok(r.problems.some(p => p.id === 'an2' && /fewer than 3/.test(p.reason)), 'annualizing needs that many dated months');
+r = PF.compute(Object.assign({}, inA, { pf: { changes: [S({ id: 'kr', column: 'both', line: 'OTH', how: 'accountTotal', value: 1, accounts: [{ name: 'Laundry' }], kind: 'revenue', story: 's' })] } })).base;
+ok(r.problems.some(p => p.id === 'kr' && /kind/.test(p.reason)), 'the Revenue credit kind is only for annualizing');
+ok(PF.describe({ how: 'accountTotal', value: 0, accounts: [{ name: 'Travel' }] }) === 'Took out “Travel”', 'a new amount of $0 reads “Took out …”');
+r = PF.compute(Object.assign({}, in2, { pf: { revenue: { base: { months: 12, story: 's' } }, changes: [] } })).base;
+ok(eq(r.byKey.GPR.value, 5220000) && !r.problems.length, 'a 12-month revenue credit on a 12-month statement leaves revenue as the T12');
+const mT = PF.matchSuggestion(input, { line: 'General & Admin', account: 'Travel', how: 'takeOut', kind: 'partnership', story: 's' });
+ok(mT.change && mT.change.how === 'accountTotal' && mT.change.value === 0, 'Claude’s “takeOut” becomes a new amount of $0');
+
 // ---- suggestions from the underwriting assumptions ----
 let sug = PF.assumptionSuggestions(input, { mgmtPct: 0.025, vacancyPct: 0.05 });
 const sm = sug.find(x => x.line === 'MGMT');

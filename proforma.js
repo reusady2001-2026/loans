@@ -29,8 +29,11 @@
   // account (an account the T12 doesn't have is added with `newAccount: true`). The whole-line ways of the first draft
   // (a new total for the line, a whole line per unit / % of revenue / spread) are no longer made: a saved one is listed
   // as "not counted" so it can be removed.
-  var HOWS = { takeOut: "Take it out", accountTotal: "New amount", spread: "Spread over years", pctRevenue: "% of revenue", perUnit: "Per unit" };
-  var ONE = { accountTotal: 1, pctRevenue: 1, perUnit: 1 };   // the ways that set one account to a figure
+  // (2026-10-19, later) "Take it out" is no longer offered — a new amount of $0 does it, and reads "Took out …"; a
+  // saved takeOut still counts. "Annualize": the account = its last 3, 6 or 12 months × 12/N.
+  var HOWS = { accountTotal: "New amount", spread: "Spread over years", annualize: "Annualize", pctRevenue: "% of revenue", perUnit: "Per unit", takeOut: "Take it out" };
+  var ONE = { accountTotal: 1, pctRevenue: 1, perUnit: 1, annualize: 1 };   // the ways that set one account to a figure
+  var MONTHS_OK = { 3: 1, 6: 1, 12: 1 };
   // Rental deductions a "% of revenue" can price (as a % of gross potential rent); every expense account can (as a % of EGI).
   var DEDUCTIONS = { EMPL: 1, MOD: 1, VAC: 1, CONC: 1, BD: 1 };
 
@@ -50,14 +53,15 @@
     if (!c || !c.id) return "it has no id";
     if (!c.line) return "it names no line";
     if (isWholeLine(c)) return "it changes the whole line — the pro forma now changes one account at a time: remove it and change the accounts";
-    if (!KIND[c.kind] || c.kind === "revenue") return "pick what kind of change it is";
+    if (!KIND[c.kind] || (c.kind === "revenue" && c.how !== "annualize")) return "pick what kind of change it is";
     if (!String(c.story || "").trim()) return "write its reason (the story the lender reads)";
     if (["base", "aggressive", "both"].indexOf(c.column || "both") < 0) return "it applies to no version";
     var how = c.how, n = (c.accounts || []).length;
     if (!HOWS[how]) return "pick how the account changes";
     if (!n) return "pick the account";
     if (ONE[how] && n !== 1) return "one account at a time";
-    if (c.newAccount && (!ONE[how] || !String(c.accounts[0].name || "").trim())) return "name the new account and its amount";
+    if (c.newAccount && (!ONE[how] || how === "annualize" || !String(c.accounts[0].name || "").trim())) return "name the new account and its amount";
+    if (how === "annualize" && !MONTHS_OK[num(c.months)]) return "pick 3, 6 or 12 months";
     if (how === "accountTotal" && num(c.value) == null) return "type its new amount";
     if (how === "perUnit"){ if (num(c.perUnit) == null) return "type the $ per unit"; if (!(units > 0)) return "the property's units are missing"; }
     if (how === "pctRevenue"){
@@ -81,7 +85,8 @@
     var add = c.newAccount ? "Added " + nm + ": " : "", ofRev = DEDUCTIONS[c.line] ? " of gross potential rent" : " of revenue";
     switch (c.how){
       case "takeOut": return "Took out " + (n === 1 ? nm : n + " accounts");
-      case "accountTotal": return c.newAccount ? add + money(num(c.value)) : nm + " set to " + money(num(c.value));
+      case "accountTotal": return c.newAccount ? add + money(num(c.value)) : (num(c.value) === 0 ? "Took out " + nm : nm + " set to " + money(num(c.value)));
+      case "annualize": return nm + " annualized from its last " + num(c.months) + " months";
       case "spread": return (n === 1 ? nm : n + " accounts") + " spread over " + num(c.years) + " years";
       case "pctRevenue": return c.newAccount ? add + pct(num(c.pct)) + ofRev : nm + " at " + pct(num(c.pct)) + ofRev;
       case "perUnit": return c.newAccount ? add + money(num(c.perUnit)) + " per unit" : nm + " at " + money(num(c.perUnit)) + " per unit";
@@ -139,7 +144,7 @@
     if (rc){
       var nMo = num(rc.months), story = String(rc.story || "").trim();
       var months = Array.isArray(input.months) ? input.months.slice().sort() : [];
-      if (!(nMo === 3 || nMo === 6)) problems.push({ id: "revenue", reason: "pick 3 or 6 months" });
+      if (!MONTHS_OK[nMo]) problems.push({ id: "revenue", reason: "pick 3, 6 or 12 months" });
       else if (!story) problems.push({ id: "revenue", reason: "write its reason (the story the lender reads)" });
       else if (months.length < nMo) problems.push({ id: "revenue", reason: "the T12 has fewer than " + nMo + " dated months" });
       else {
@@ -187,10 +192,19 @@
       });
       if (c.newAccount && missing.length){ problems.push({ id: c.id, reason: "“" + c.accounts[0].name + "” is already in the T12 — change it there" }); return; }
       if (missing.length){ stale.push({ id: c.id, missing: missing }); problems.push({ id: c.id, reason: "not in this T12 any more: " + missing.join(", "), stale: true }); return; }
+      var annTo = null;
+      if (c.how === "annualize"){
+        var nA = num(c.months), allM = Array.isArray(input.months) ? input.months.slice().sort() : [], useA = allM.slice(Math.max(0, allM.length - nA)), a0 = found[0];
+        if (allM.length < nA){ problems.push({ id: c.id, reason: "the T12 has fewer than " + nA + " dated months" }); return; }
+        var sA = 0, gotA = 0; if (a0.monthly) useA.forEach(function (ym){ if (isNum(a0.monthly[ym])){ sA += a0.monthly[ym]; gotA++; } });
+        if (!gotA){ problems.push({ id: c.id, reason: "the T12 has no months for this account" }); return; }
+        annTo = r2(sA * 12 / nA);
+      }
       step({ id: c.id, kind: c.kind, line: c.line, account: found.length === 1 ? found[0].name : null, label: line.label, story: String(c.story).trim(), how: c.how, what: describe(c), by: c.by || null, at: c.at || null, column: c.column || "both" }, function (){
         found.forEach(function (a){
           var nv = a.value;
           if (c.how === "takeOut") nv = 0;
+          else if (c.how === "annualize") nv = annTo;
           else if (c.how === "accountTotal") nv = num(c.value);
           else if (c.how === "spread") nv = a.value / num(c.years);
           else if (c.how === "perUnit") nv = num(c.perUnit) * units;
@@ -292,11 +306,13 @@
     var accts = (input.accounts || []).filter(function (a){ return a && a.line === line.key; }), an = norm(s.account);
     var a = accts.filter(function (x){ return norm(x.name) === an; })[0] || accts.filter(function (x){ return an && norm(x.name).indexOf(an) >= 0; })[0];
     if (!a) return { reason: "there is no account “" + (s.account || "") + "” under " + line.label };
-    var how = String(s.how || ""); if (!HOWS[how]) return { reason: "the way “" + how + "” is not one of " + Object.keys(HOWS).join(", ") };
+    var how = String(s.how || ""); if (how === "takeOut"){ how = "accountTotal"; s = Object.assign({}, s, { value: 0 }); }
+    if (!HOWS[how] || how === "takeOut") return { reason: "the way “" + how + "” is not one of accountTotal, spread, annualize, pctRevenue, perUnit" };
     var colIn = String(s.column || "both").toLowerCase(), col = /aggr/.test(colIn) ? "aggressive" : (/safe|base/.test(colIn) ? "base" : "both");
     var c = { line: line.key, how: how, accounts: [refOf(a)], kind: String(s.kind || ""), story: String(s.story || "").trim(), column: col };
     if (how === "accountTotal") c.value = num(s.value);
     if (how === "spread") c.years = num(s.years);
+    if (how === "annualize") c.months = num(s.months);
     if (how === "perUnit") c.perUnit = num(s.perUnit);
     if (how === "pctRevenue"){ var p = num(s.pct); if (p != null && p > 1) p = p / 100; c.pct = p; }
     var why = problemOf(Object.assign({ id: "check" }, c), line, num(input.units));
@@ -362,7 +378,7 @@
     return { head: head, proForma: pf, reconciliation: recon, monthly: monthly, accounts: acc };
   }
 
-  return { KINDS: KINDS, KIND: KIND, HOWS: HOWS, DEDUCTIONS: DEDUCTIONS, compute: compute, computeVersion: computeVersion,
+  return { KINDS: KINDS, KIND: KIND, HOWS: HOWS, DEDUCTIONS: DEDUCTIONS, MONTHS_OK: MONTHS_OK, compute: compute, computeVersion: computeVersion,
            accountsFrom: accountsFrom, problemOf: problemOf, describe: describe, isWholeLine: isWholeLine, acctKey: acctKey,
            assumptionSuggestions: assumptionSuggestions, matchSuggestion: matchSuggestion, lenderSheets: lenderSheets, money: money, pct: pct };
 });

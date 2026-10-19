@@ -18,6 +18,7 @@
   <script src="./setup-builder.js"></script>
   <script src="./proforma.js"></script>
   <script src="./refi-extend.js"></script>
+  <script src="./guide-viewer.js"></script>
   <script src="./t12-parse.js"></script>
   <!-- Per-property operating model (SPEC-v2.3.0): store → taxonomy → calc → upload → sheet/assumptions → roll-up/scan -->
   <script src="./operating-store.js"></script>
@@ -618,6 +619,16 @@
             <div id="settingsTargets" class="mt-3 pt-3 border-t border-slate-100"></div>
             <!-- Portfolio: property count + every property name + a duplicate-property report, so the count can be verified. Filled when Settings opens. -->
             <div id="settingsPortfolio" class="mt-3 pt-3 border-t border-slate-100"></div>
+            <!-- The Guide (the operator, 2026-10-19): under the properties, above the Claude connection — every tab, screen and
+                 button, step by step with pictures of the app (guide-viewer.js, guide/guide.json). -->
+            <div id="settingsGuide" class="mt-3 pt-3 border-t border-slate-100">
+              <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Guide</span>
+              <button type="button" id="settingsGuideBtn" class="mt-1.5 w-full flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-left text-xs font-semibold text-brand-800 hover:bg-brand-100 transition">
+                <svg class="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <span class="flex-1">Open the guide</span>
+              </button>
+              <p class="mt-1.5 text-[10px] leading-snug text-slate-400">How to use every tab and screen, step by step, with pictures.</p>
+            </div>
             <!-- Claude connection lives here too (not only inside the loan-reader) so it's where you'd look. Desktop app only. -->
             <div id="settingsClaudeWrap" class="mt-3 pt-3 border-t border-slate-100" hidden>
               <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Cloud</span>
@@ -4479,10 +4490,11 @@ tr.flagged:hover td{background:#fee2e2}
     // a rental deduction (vacancy, concessions, …) is a negative amount: the panel asks for it as a positive figure
     function pfNeg(line, a){ return (line.section === "rental" || line.section === "other") && ((a && a.amount < 0) || !!ProForma.DEDUCTIONS[line.key]); }
     function pfHowsFor(line, a){
+      // (the operator, 2026-10-19) no "Take it out": a new amount of $0 does it; "Annualize" an account from its last 3, 6 or 12 months
       const out = [], isNew = !a || a.added, canPct = line.section === "expense" || !!ProForma.DEDUCTIONS[line.key];
-      if(!isNew){ out.push(["takeOut", "Take it out"]); }
       out.push(["accountTotal", isNew ? "Its amount" : "New amount"]);
       if(!isNew && a.amount) out.push(["spread", "Spread over years"]);
+      if(!isNew && a.monthly) out.push(["annualize", "Annualize"]);
       if(canPct) out.push(["pctRevenue", "% of revenue"]);
       if(!pfNeg(line, a)) out.push(["perUnit", "Per unit"]);
       return out;
@@ -4505,10 +4517,11 @@ tr.flagged:hover td{background:#fee2e2}
       return out;
     }
     function pfSugText(s){ const c = s.change; return ProForma.describe(c) + " · " + ((ProForma.KIND[c.kind] || {}).label || c.kind); }
-    function pfNewDraft(key, acctId, extra){ return Object.assign({ line: key, acctId: acctId, id: null, how: null, value: "", pct: "", years: "", perUnit: "", newName: "", kind: "", story: "", column: pfShow === "aggressive" ? "aggressive" : "both", from: "typed", sugId: null }, extra || {}); }
+    function pfNewDraft(key, acctId, extra){ return Object.assign({ line: key, acctId: acctId, id: null, how: null, value: "", pct: "", years: "", months: "", perUnit: "", newName: "", kind: "", story: "", column: pfShow === "aggressive" ? "aggressive" : "both", from: "typed", sugId: null }, extra || {}); }
     function pfDraftFrom(c, acctId, extra){
       const line = pfLineOf(pfLast, c.line) || { section: "expense", key: c.line }, a = pfAcctById(pfLast, acctId), neg = pfNeg(line, a);
-      return pfNewDraft(c.line, acctId, Object.assign({ how: c.how, value: c.value != null ? String(neg ? Math.abs(c.value) : c.value) : "", pct: c.pct != null ? String(Math.round(c.pct * 1e6) / 1e4) : "",
+      if(c.how === "takeOut") c = Object.assign({}, c, { how: "accountTotal", value: 0 });   // a saved "take it out" is edited as a new amount of $0
+      return pfNewDraft(c.line, acctId, Object.assign({ how: c.how, value: c.value != null ? String(neg ? Math.abs(c.value) : c.value) : "", months: c.months != null ? String(c.months) : "", pct: c.pct != null ? String(Math.round(c.pct * 1e6) / 1e4) : "",
         years: c.years != null ? String(c.years) : "", perUnit: c.perUnit != null ? String(c.perUnit) : "", kind: c.kind || "", story: c.story || "", column: c.column || "both",
         newName: (acctId === "new" && c.accounts && c.accounts[0]) ? c.accounts[0].name : "" }, extra || {}));
     }
@@ -4522,6 +4535,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(d.how === "accountTotal"){ const v = uwNum(d.value); c.value = (v != null && pfNeg(line, a)) ? -Math.abs(v) : v; }
       if(d.how === "pctRevenue"){ const p = uwNum(d.pct); c.pct = (p == null) ? null : Math.round(p * 1e6) / 1e8; }
       if(d.how === "spread") c.years = uwNum(d.years);
+      if(d.how === "annualize") c.months = uwNum(d.months);
       if(d.how === "perUnit") c.perUnit = uwNum(d.perUnit);
       if(d.sugId) c.sug = d.sugId;
       return c;
@@ -4654,8 +4668,15 @@ tr.flagged:hover td{background:#fee2e2}
         const neg = pfNeg(line, a);
         const inp = (k, ph, pre, suf) => '<span class="inline-flex items-center gap-1">'+(pre ? '<span class="text-[12px] text-slate-400">'+pre+'</span>' : '')+'<input type="text" inputmode="decimal" data-pfin="'+k+'" value="'+escapeHtml(String(d[k] == null ? "" : d[k]))+'" placeholder="'+ph+'" class="w-32 rounded-md border border-slate-300 bg-white px-2 py-1 text-right text-sm tabular-nums">'+(suf ? '<span class="text-[12px] text-slate-500">'+suf+'</span>' : '')+'</span>';
         let f = "";
-        if(d.how === "takeOut") f = '<p class="text-[12px] text-slate-600">The whole account comes out of the pro forma ('+(a ? fmtMoney(a.amount) : '')+' a year).</p>';
-        if(d.how === "accountTotal") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+(isNew ? 'Its amount for the year' : 'Its new amount for the year')+' '+inp("value", "e.g. 20,000", neg ? "&minus;$" : "$")+(neg ? '<span class="text-[11px] text-slate-400">a deduction</span>' : '')+'</label>';
+        if(d.how === "accountTotal") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+(isNew ? 'Its amount for the year' : 'Its new amount for the year')+' '+inp("value", "e.g. 20,000", neg ? "&minus;$" : "$")+(neg ? '<span class="text-[11px] text-slate-400">a deduction</span>' : '')+(isNew ? '' : '<span class="text-[11px] text-slate-400">&mdash; type 0 to take the account out</span>')+'</label>';
+        if(d.how === "annualize"){ const ms = pfMonths(R).length ? R.input.months.slice().sort() : [], opt = (n) => { const use = ms.slice(Math.max(0, ms.length - n)); let sum = 0, got = 0; use.forEach(m => { const x = a && a.monthly ? a.monthly[m] : null; if(typeof x === "number"){ sum += x; got++; } });
+            const v = got ? Math.round(sum * 12 / n * 100) / 100 : null, same = v != null && Math.abs(v - a.amount) < 0.5, short = ms.length < n;
+            return { n: n, v: v, same: same, off: short || v == null, use: use }; };
+          const os = [3, 6, 12].map(opt), cur = os.find(o => String(o.n) === String(d.months));
+          f = '<div class="text-[12px] text-slate-600">The account becomes its last months &times; 12 &divide; the months &mdash; use it when it runs differently now than the whole year shows.</div>'+
+            '<div class="mt-1.5 flex flex-wrap gap-1.5" data-pfmonths-pick>'+os.map(o => '<button type="button" data-pfmo="'+o.n+'"'+(o.off ? ' disabled' : '')+' class="rounded-lg border px-3 py-1.5 text-left text-[12px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 '+(String(d.months) === String(o.n) ? 'border-teal-600 bg-teal-600 text-white' : o.same ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-slate-300 bg-white text-slate-700 hover:border-teal-400')+'" title="'+(o.same ? 'Same as the T12' : '')+'">Last '+o.n+' months'+
+              '<span class="block text-[11px] font-normal tabular-nums">'+(o.v == null ? (ms.length < o.n ? 'the T12 has '+ms.length+' months' : 'no months') : fmtMoney(o.v)+' a year'+(o.same ? ' &middot; same as the T12' : ''))+'</span></button>').join('')+'</div>'+
+            (cur && cur.use.length ? '<div class="mt-1 text-[11px] text-slate-500">Months used: <b>'+escapeHtml(ymRange(cur.use))+'</b></div>' : ''); }
         if(d.how === "spread") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">Paid every '+inp("years", "3", "", "years")+'<span class="text-[11px] text-slate-400">&mdash; counts 1/N of it a year</span></label>';
         if(d.how === "pctRevenue") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("pct", "e.g. 2.5", "", "%")+'<span class="text-[11px] text-slate-400">'+(line.section === "expense" ? 'of the version’s effective gross income &mdash; you chose it, so it moves when that version’s revenue moves' : 'of gross potential rent (a deduction)')+'</span></label>';
         if(d.how === "perUnit") f = '<label class="flex flex-wrap items-center gap-2 text-[12px] text-slate-600">'+inp("perUnit", "e.g. 275", "$", "per unit a year")+'<span class="text-[11px] text-slate-400">&times; '+(units > 0 ? units + ' units' : '<b class="text-amber-700">units missing</b>')+'</span></label>';
@@ -4663,7 +4684,7 @@ tr.flagged:hover td{background:#fee2e2}
         const stories = []; (pf.changes || []).forEach(c => { const s = String((c && c.story) || "").trim(); if(s && c.id !== d.id && !stories.some(x => x.s === s)) stories.push({ s: s, k: c.kind, where: ((c.accounts && c.accounts[0]) ? c.accounts[0].name : (pfLineOf(R, c.line) || {}).label) }); });
         h += '<div class="mt-2">'+f+'</div>'+
           '<div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3"><label class="text-[11px] font-semibold text-slate-600">Kind <span class="text-rose-500">*</span><select data-pfin="kind" class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">Pick one…</option>'+
-            ProForma.KINDS.filter(k => k.id !== "revenue").map(k => '<option value="'+k.id+'"'+(d.kind === k.id ? ' selected' : '')+'>'+escapeHtml(k.label)+'</option>').join('')+'</select>'+
+            ProForma.KINDS.filter(k => k.id !== "revenue" || d.how === "annualize").map(k => '<option value="'+k.id+'"'+(d.kind === k.id ? ' selected' : '')+'>'+escapeHtml(k.label)+'</option>').join('')+'</select>'+
             (ProForma.KIND[d.kind] ? '<span class="mt-0.5 block text-[10px] font-normal text-slate-400" data-pfkindhint>'+escapeHtml(ProForma.KIND[d.kind].hint)+'</span>' : '')+'</label>'+
           '<div class="text-[11px] font-semibold text-slate-600">Apply to<div class="mt-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+["base", "aggressive", "both"].map(v => '<button type="button" data-pfcol="'+v+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(d.column === v ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+(v === "both" ? "Both" : PF_COL[v])+'</button>').join('')+'</div></div>'+
           (stories.length ? '<label class="text-[11px] font-semibold text-slate-600">Same story as&hellip;<select data-pfsamestory class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"><option value="">&mdash; pick a story you wrote &mdash;</option>'+stories.map((x, i) => '<option value="'+i+'">'+escapeHtml(x.where + ': ' + (x.s.length > 70 ? x.s.slice(0, 70) + '…' : x.s))+'</option>').join('')+'</select></label>' : '<div></div>')+'</div>'+
@@ -4792,15 +4813,16 @@ tr.flagged:hover td{background:#fee2e2}
           '<td class="px-2 py-1 text-right tabular-nums text-slate-600">'+fmtMoney(l.t12)+'</td><td class="px-2 py-1 text-right tabular-nums font-semibold text-teal-800">'+(a != null ? fmtMoney(a) : '&mdash;')+'</td></tr>'; }).join('');
       const occ = (() => { try{ const rr = loanRRCache[opFocusKey], bk = rr && rr.block; if(bk && bk.residentialUnits > 0 && bk.occupiedUnits != null) return Math.round(bk.occupiedUnits / bk.residentialUnits * 1000) / 10 + "% — " + bk.occupiedUnits + " of " + bk.residentialUnits + " units occupied (the rent roll" + (rr.file && rr.file.name ? ", " + rr.file.name : "") + ")"; }catch(e){} return null; })();
       const pill = (attr, val, label, on) => '<button type="button" '+attr+'="'+val+'" class="rounded-md px-2.5 py-1 text-[11px] font-semibold '+(on ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100')+'">'+label+'</button>';
-      let h = '<p class="text-[12px] text-slate-600">Each revenue line becomes its last '+(n || 'N')+' months &times; '+(n ? 12 / n : '12/N')+'. Use it when the property runs better now than the year shows (it filled up, rents went up). Kind: <b>Revenue credit</b>.</p>'+
+      let h = '<p class="text-[12px] text-slate-600">Each revenue account becomes its last '+(n || 'N')+' months &times; '+(n ? 12 / n : '12/N')+' (one account at a time: Annualize, in a line&rsquo;s panel). Use it when the property runs better now than the year shows (it filled up, rents went up). Kind: <b>Revenue credit</b>.</p>'+
         '<div class="mt-3 flex flex-wrap items-center gap-3"><span class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+pill("data-pfrevver", "base", "Safe", d.version === "base")+pill("data-pfrevver", "aggressive", "Aggressive (its own)", d.version === "aggressive")+'</span>'+
-          '<span class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+pill("data-pfrevmo", "3", "T3 — last 3 months", n === 3)+pill("data-pfrevmo", "6", "T6 — last 6 months", n === 6)+'</span>'+
+          '<span class="inline-flex rounded-lg border border-slate-300 bg-white p-0.5">'+pill("data-pfrevmo", "3", "T3 — last 3 months", n === 3)+pill("data-pfrevmo", "6", "T6 — last 6 months", n === 6)+pill("data-pfrevmo", "12", "T12 — last 12 months", n === 12)+'</span>'+
           (use.length ? '<span class="text-[11px] text-slate-500">Months used: <b>'+escapeHtml(ymRange(use))+'</b></span>' : '')+'</div>'+
         (d.version === "aggressive" && !rv.aggressive ? '<p class="mt-1 text-[11px] text-slate-500">Aggressive uses Safe’s revenue credit until you give it its own.</p>' : '')+
         (occ ? '<p class="mt-2 text-[11px] text-slate-600">Today’s occupancy: <b>'+escapeHtml(occ)+'</b></p>' : '')+
         '<div class="mt-3 overflow-x-auto rounded-lg border border-slate-200"><table class="w-full text-[11px]"><thead><tr class="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400"><th class="sticky left-0 bg-slate-50 py-1 pl-2 pr-2 text-left">Line</th>'+months.map(m => '<th class="px-1.5 py-1 text-right '+(use.indexOf(m) >= 0 ? 'text-teal-700' : '')+'">'+escapeHtml(ymShort(m).replace(/ (\d\d)(\d\d)$/, " $2"))+'</th>').join('')+'<th class="px-2 py-1 text-right">T12</th><th class="px-2 py-1 text-right text-teal-700">Annualized</th></tr></thead><tbody>'+rows+
           '<tr class="border-t-2 border-slate-200 font-bold"><td class="sticky left-0 bg-white py-1 pl-2 pr-2">Revenue</td>'+months.map(() => '<td></td>').join('')+'<td class="px-2 py-1 text-right tabular-nums">'+fmtMoney(tT)+'</td><td class="px-2 py-1 text-right tabular-nums text-teal-800">'+fmtMoney(tA)+'</td></tr></tbody></table></div>'+
-        (R.input.months.length < (n || 3) ? '<p class="mt-2 text-[11px] font-semibold text-amber-700">The T12 has only '+R.input.months.length+' dated months.</p>' : '');
+        (R.input.months.length < (n || 3) ? '<p class="mt-2 text-[11px] font-semibold text-amber-700">The T12 has only '+R.input.months.length+' dated months.</p>' : '')+
+        (n === 12 && Math.abs(tA - tT) < 0.5 ? '<p class="mt-2 text-[11px] font-semibold text-slate-500" data-pfrevsame>The last 12 months are the T12 itself &mdash; this changes nothing here. It matters only when the file has more than 12 months, or when the T12 rule used the last 3 months &times; 4.</p>' : '');
       if(!can) return h + '<p class="mt-3 text-[12px] text-slate-500">View only.</p>';
       h += '<label class="mt-3 block text-[11px] font-semibold text-slate-600">Story &mdash; the reason the lender reads <span class="text-rose-500">*</span><textarea data-pfrevstory rows="2" maxlength="600" placeholder="e.g. Lease-up finished in May; the last three months show the stabilized run-rate." class="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">'+escapeHtml(d.story || "")+'</textarea></label>'+
         '<div class="mt-1">'+(aiAvailable() ? '<button type="button" data-pfdraft="revenue" class="text-[11px] font-semibold text-teal-800 underline">Draft it with Claude</button>' : '')+'</div>'+
@@ -4860,15 +4882,15 @@ tr.flagged:hover td{background:#fee2e2}
     function pfStoriesOf(key){ const s = key ? pfStoriesCache.get(key) : null; return (s && Array.isArray(s.items)) ? s : null; }
     const PF_STORY_INSTRUCTION = [
       "You help the owner of ONE multifamily property prepare the pro forma they show a lender: the trailing-twelve-month statement (T12) with changes, made ONE ACCOUNT at a time, each with a kind and a story the lender reads. You get, as JSON on stdin: the property, its units, its address (when known), the underwriting assumptions (decimals: 0.05 means 5%), the 12 month names in `months` (oldest first), and every line of the T12 with every account under it — the account's T12 amount and its 12 monthly amounts in the same order (null when the statement has none). `alreadyInThePF` lists the changes the owner already made.",
-      "Find the accounts whose year does NOT show how the property runs going forward, and for each propose ONE change and its story — changes a lender would accept because they are true and checkable. Typical stories: a cost that happened once (nonRecurring: take it out); a cost paid every few years that landed in this year (spread: spread over N years); an unusual year, such as a hard winter or a one-off spike in a few months (normalized: a new amount for a normal year); a cost of the owner or the partnership, not of the building, such as corporate travel, software, shipping, partnership legal or accounting (partnership: take it out); an account far from what the market runs (marketNorm: a % of revenue or per unit); how the property runs from now on, when the statement itself shows it (operating).",
+      "Find the accounts whose year does NOT show how the property runs going forward, and for each propose ONE change and its story — changes a lender would accept because they are true and checkable. Typical stories: a cost that happened once (nonRecurring: a new amount of 0, which takes it out, or of its normal year); a cost paid every few years that landed in this year (spread: spread over N years); an unusual year, such as a hard winter or a one-off spike in a few months (normalized: a new amount for a normal year); a cost of the owner or the partnership, not of the building, such as corporate travel, software, shipping, partnership legal or accounting (partnership: a new amount of 0); an account that runs differently in its recent months, such as a new contract or a rent increase (annualize from its last 3, 6 or 12 months; kind revenue for an income account, else operating); an account far from what the market runs (marketNorm: a % of revenue or per unit); how the property runs from now on, when the statement itself shows it (operating).",
       "Every number you propose must come from the statement's own figures or the assumptions given (for example the account's months without the spike, its normal monthly run-rate, its share of revenue), and `basis` says exactly how you got it, in one sentence with the figures. Never invent an event, a vendor, a contract, a date or a market figure that is not in the input. When the story rests on a fact you cannot see (that the winter was unusually heavy, that a project is finished), write the story as the owner would state it and put in `backedBy` what the owner must confirm and show the lender (for example: the snow-removal invoices for the last three winters). Do not propose a change to an account already in alreadyInThePF. Leave the management fee alone unless it runs above the management-fee assumption; never move it just because revenue changes. Leave revenue accounts alone unless one is clearly one-time income.",
-      "Return 3 to 10 suggestions, the strongest first. For each: line (the line's name exactly as given), account (the account's name exactly as given), how (takeOut, accountTotal, spread, pctRevenue or perUnit), the figure that way needs (value: the new yearly dollars for accountTotal; years for spread; pct as a decimal for pctRevenue; perUnit: dollars per unit a year for perUnit), kind (partnership, nonRecurring, spread, normalized, operating or marketNorm), story (one or two plain sentences, no sales language), basis, backedBy, confidence (strong or possible) and column (both; or aggressive for one a cautious lender may not accept). Also a one-sentence summary. Use full words; NOI is the only abbreviation."
+      "Return 3 to 10 suggestions, the strongest first. For each: line (the line's name exactly as given), account (the account's name exactly as given), how (accountTotal, spread, annualize, pctRevenue or perUnit), the figure that way needs (value: the new yearly dollars for accountTotal — 0 takes the account out; years for spread; months — 3, 6 or 12 — for annualize; pct as a decimal for pctRevenue; perUnit: dollars per unit a year for perUnit), kind (partnership, nonRecurring, spread, normalized, operating, marketNorm, or revenue for an annualized income account), story (one or two plain sentences, no sales language), basis, backedBy, confidence (strong or possible) and column (both; or aggressive for one a cautious lender may not accept). Also a one-sentence summary. Use full words; NOI is the only abbreviation."
     ].join(" ");
     function pfStoriesSchema(){
       return { type: "object", properties: { summary: { type: "string" }, stories: { type: "array", items: { type: "object", properties: {
-        line: { type: "string" }, account: { type: "string" }, how: { type: "string", enum: ["takeOut", "accountTotal", "spread", "pctRevenue", "perUnit"] },
-        value: { type: "number" }, years: { type: "number" }, pct: { type: "number" }, perUnit: { type: "number" },
-        kind: { type: "string", enum: ["partnership", "nonRecurring", "spread", "normalized", "operating", "marketNorm"] },
+        line: { type: "string" }, account: { type: "string" }, how: { type: "string", enum: ["accountTotal", "spread", "annualize", "pctRevenue", "perUnit"] },
+        value: { type: "number" }, years: { type: "number" }, months: { type: "number", enum: [3, 6, 12] }, pct: { type: "number" }, perUnit: { type: "number" },
+        kind: { type: "string", enum: ["partnership", "nonRecurring", "spread", "normalized", "operating", "marketNorm", "revenue"] },
         story: { type: "string" }, basis: { type: "string" }, backedBy: { type: "string" }, confidence: { type: "string", enum: ["strong", "possible"] }, column: { type: "string", enum: ["both", "safe", "aggressive"] }
       }, required: ["line", "account", "how", "kind", "story", "basis"] } } }, required: ["stories"] };
     }
@@ -5030,7 +5052,12 @@ tr.flagged:hover td{background:#fee2e2}
       if(!t.closest("#pfModal")) return;
       if(t.closest("[data-pfclose]")){ pfClose(); return; }
       if(t.closest("[data-pfcancel]")){ pfDraft = null; pfRedraw(); return; }
-      const how = t.closest("[data-pfhow]"); if(how && pfDraft){ const h = how.getAttribute("data-pfhow"); if(pfDraft.how !== h){ pfDraft.how = h; if(!pfDraft.kind && h === "spread") pfDraft.kind = "spread"; } pfRedraw(); return; }
+      const how = t.closest("[data-pfhow]"); if(how && pfDraft){ const h = how.getAttribute("data-pfhow"); if(pfDraft.how !== h){ pfDraft.how = h;
+          if(pfDraft.kind === "revenue" && h !== "annualize") pfDraft.kind = "";
+          if(!pfDraft.kind && h === "spread") pfDraft.kind = "spread";
+          if(!pfDraft.kind && h === "annualize"){ const ln0 = pfLineOf(pfLast, pfDraft.line); pfDraft.kind = (ln0 && (ln0.section === "rental" || ln0.section === "other")) ? "revenue" : "operating"; } }
+        pfRedraw(); return; }
+      const mo = t.closest("[data-pfmo]"); if(mo && pfDraft && !mo.disabled){ pfDraft.months = mo.getAttribute("data-pfmo"); pfRedraw(); return; }
       const col = t.closest("[data-pfcol]"); if(col && pfDraft){ pfDraft.column = col.getAttribute("data-pfcol"); pfRedraw(); return; }
       if(t.closest("[data-pfsave]")){ pfSaveDraft(); return; }
       const ed = t.closest("[data-pfedit]"); if(ed){ pfEditChange(ed.getAttribute("data-pfedit")); return; }
@@ -13573,7 +13600,7 @@ tr.flagged:hover td{background:#fee2e2}
       "- propose_profile_change {name, changes, sources?}: a PROPERTY's own facts: propertyName, address, residentialUnits, commercialUnits, rentableSqFt, yearBuilt, acquisitionDate, manager, dataSource, yardiCode, notes, and noi (the entered NOI of a property with no loan). You can never set noiOverride — that is the operator's own.",
       "- set_property_noi {name, noi, capRate?}: set a property's annual NOI (negative allowed). YOUR NOI RULE: when the NOI comes from a T12 or from the operator's own override, you can't change it — say so and tell them they can override it on the property page.",
       "- edit_assumptions {name, changes}: a property's underwriting assumptions — vacancy, managementFee, capRate (decimals), reservePerUnit, payrollPerUnit, repairsPerUnit (dollars), and sizing limits ltvMax, dscrMin, debtYieldMin, sizingRate, amortYears. pin_underwriting_line {name, line, value?, perUnit?, unpin?}: pin (or unpin) one underwritten line (e.g. \"Insurance\", \"Real Estate Taxes\") to a yearly figure. set_average_rent {name, averageRent}: the Underwriting average rent per unit. save_property_record {name}: save a property's Underwriting to its record.",
-      "- propose_pro_forma_change {name, line, account, how, value?, pct?, years?, perUnit?, newAccount?, kind, story, column?} (a DRAFT feature): one change to ONE ACCOUNT in the property's PRO FORMA (Underwriting → Pro forma: the T12 with changes, each with a kind and a story, adding up to the NOI the lender is asked to accept; a line is the T12 plus its accounts' changes — never a new total for a whole line). line: the line's name (e.g. \"Contract Services\"); account: the T12 account's name under that line (or, with newAccount: true, the name of an account the T12 doesn't have); how: takeOut, accountTotal (value = its new yearly amount), spread (years = paid every N years), pctRevenue (pct, a decimal — expense accounts and rental deductions only), perUnit (perUnit = dollars per unit a year); kind: partnership, nonRecurring, spread, normalized, operating or marketNorm; story: the reason the lender reads; column: safe, aggressive or both (default both). The management fee stays at the T12 unless the operator asks to change it. NEVER invent a number: every amount comes from the T12, the rent roll or what the operator said; you may draft the story and suggest the kind. read_property shows the pro forma (both versions, how each adds up and the changed accounts).",
+      "- propose_pro_forma_change {name, line, account, how, value?, pct?, years?, months?, perUnit?, newAccount?, kind, story, column?} (a DRAFT feature): one change to ONE ACCOUNT in the property's PRO FORMA (Underwriting → Pro forma: the T12 with changes, each with a kind and a story, adding up to the NOI the lender is asked to accept; a line is the T12 plus its accounts' changes — never a new total for a whole line). line: the line's name (e.g. \"Contract Services\"); account: the T12 account's name under that line (or, with newAccount: true, the name of an account the T12 doesn't have); how: accountTotal (value = its new yearly amount; 0 takes the account out), spread (years = paid every N years), annualize (months = 3, 6 or 12: the account = its last N months × 12/N), pctRevenue (pct, a decimal — expense accounts and rental deductions only), perUnit (perUnit = dollars per unit a year); kind: partnership, nonRecurring, spread, normalized, operating or marketNorm (or revenue, for an annualized income account); story: the reason the lender reads; column: safe, aggressive or both (default both). The management fee stays at the T12 unless the operator asks to change it. NEVER invent a number: every amount comes from the T12, the rent roll or what the operator said; you may draft the story and suggest the kind. read_property shows the pro forma (both versions, how each adds up and the changed accounts).",
       "- POOLED LOANS (one loan secured by several properties): set_pool {name, properties:[names], allocations?:{name: amount}} makes the named loan one loan secured by its own property plus those listed (a name not in the app yet becomes a new property; allocations are each property's allocated amount). release_from_pool {name, property, price?, date?, keepPayment?}: take one property out of a pooled loan with a paydown (default price: its share of today's balance; the payment is recalculated unless keepPayment). refinance_together {properties:[names]}: open ONE refinance for several properties — every loan on them is paid off and the NOI is all of theirs; properties with no loan yet can be included.",
       "- create_property {name}; archive_property {name}; unarchive_property {name}; delete_property_permanently {name} (archived only — for good). remove_loan {name} (archives the loan — it can be restored); restore_loan {name}; delete_loan_permanently {name} (archived or paid-off only — for good); set_loan_status {name, status} (Active, Matured, Extended, Extension undecided, Paid off).",
       "- save_attachment {file, names?}: save a file attached in this chat to the properties named (a list), or — with no names — to every property its content names. copy_document {file, from, to} (to: one name or a list) and move_document {file, from, to}: a saved document to other properties. Use these whenever the operator asks to save, copy, move or put a file into a property — you CAN do it.",
@@ -14243,9 +14270,10 @@ tr.flagged:hover td{background:#fee2e2}
           if(!code) Object.keys(cat).forEach(function(k){ if(!code && String(cat[k].label).toLowerCase()===wl) code=k; });
           if(!code) Object.keys(cat).forEach(function(k){ var lb=String(cat[k].label).toLowerCase().replace(/^less:\s*/,""); if(!code && wl && (lb===wl.replace(/^less:\s*/,"") || lb.indexOf(wl)>=0)) code=k; });
           if(!code) return {ok:false,msg:'There is no line "'+want+'". Its lines: '+input.lines.filter(function(l){ return l.section!=="reserve"; }).map(function(l){ return l.label; }).join(", ")+"."};
-          var how=String((a&&a.how)||"").trim(), hmap={ takeout:"takeOut", "take out":"takeOut", "take it out":"takeOut", accounttotal:"accountTotal", "new amount":"accountTotal", amount:"accountTotal", spread:"spread", "spread over years":"spread", pctrevenue:"pctRevenue", "% of revenue":"pctRevenue", percent:"pctRevenue", perunit:"perUnit", "per unit":"perUnit" };
+          var how=String((a&&a.how)||"").trim(), hmap={ takeout:"takeOut", "take out":"takeOut", "take it out":"takeOut", accounttotal:"accountTotal", "new amount":"accountTotal", amount:"accountTotal", spread:"spread", "spread over years":"spread", annualize:"annualize", annualise:"annualize", pctrevenue:"pctRevenue", "% of revenue":"pctRevenue", percent:"pctRevenue", perunit:"perUnit", "per unit":"perUnit" };
           var h=hmap[how.toLowerCase()];
-          if(!h) return {ok:false,msg:(/^(total|new total)$/i.test(how) ? "The pro forma changes one account at a time — never a new total for a whole line. Name the account to change. " : "")+"how must be one of: takeOut, accountTotal, spread, pctRevenue, perUnit."};
+          if(!h) return {ok:false,msg:(/^(total|new total)$/i.test(how) ? "The pro forma changes one account at a time — never a new total for a whole line. Name the account to change. " : "")+"how must be one of: accountTotal (0 takes the account out), spread, annualize, pctRevenue, perUnit."};
+          if(h==="takeOut"){ h="accountTotal"; a=Object.assign({}, a, { value:0 }); }   // "take it out" is a new amount of $0
           // one account: a T12 account under the line, or a new one (newAccount)
           var nameIn=String((a&&a.account)||((a&&a.accounts&&a.accounts[0]&&(a.accounts[0].name||a.accounts[0]))||"")).trim();
           var accts=input.accounts.filter(function(x){ return x.line===code; }), isNew=!!(a&&a.newAccount), ref=null;
@@ -14262,7 +14290,7 @@ tr.flagged:hover td{background:#fee2e2}
           var pctV=(a&&a.pct!=null)?Number(a.pct):null; if(pctV!=null && pctV>1) pctV=pctV/100;
           var c={ id:pfNewId(), column:col, line:code, how:h, accounts:[ref], kind:String((a&&a.kind)||""), story:String((a&&a.story)||"").trim(), from:"assistant", at:new Date().toISOString() };
           if(isNew) c.newAccount=true;
-          if(h==="accountTotal") c.value=Number(a&&a.value); if(h==="pctRevenue") c.pct=pctV; if(h==="spread") c.years=Number(a&&a.years); if(h==="perUnit") c.perUnit=Number(a&&a.perUnit);
+          if(h==="accountTotal") c.value=Number(a&&a.value); if(h==="pctRevenue") c.pct=pctV; if(h==="spread") c.years=Number(a&&a.years); if(h==="annualize") c.months=Number(a&&a.months); if(h==="perUnit") c.perUnit=Number(a&&a.perUnit);
           var line=input.lines.find(function(l){ return l.key===code; }) || { key:code, label:cat[code].label, section:cat[code].section, t12:0 };
           var why=ProForma.problemOf(c, line, ctx.units); if(why) return {ok:false,msg:"Can't propose it: "+why+"."};
           var hit=(bench0.proForma.changes||[]).find(function(x){ return x.line===code && !ProForma.isWholeLine(x) && pfClash(x,c) && (x.accounts||[]).some(function(rf){ return pfSameAcct(rf, ref); }); });
@@ -16554,6 +16582,8 @@ tr.flagged:hover td{background:#fee2e2}
     // menu entry and shows a live Connected / Not set badge.
     if(el("settingsClaudeBtn")) el("settingsClaudeBtn").addEventListener("click", openClaudeConn);
     claudeConnBadge();
+    // the Guide (Settings → Guide): close the Settings menu, open the guide's window
+    if(el("settingsGuideBtn")) el("settingsGuideBtn").addEventListener("click", function(){ try{ const d = el("settingsGuideBtn").closest("details"); if(d) d.open = false; }catch(e){} if(window.LDS_Guide) window.LDS_Guide.open(); });
     // Global "Fetch live rate" (title bar) — available on every tab.
     if(el("fetchRateBtn")) el("fetchRateBtn").addEventListener("click", function(){ fetchAllLiveRates({ list: true }); });
     // 2.9.4 — Explain/Check modal retired (the AI assistant explains and sanity-checks a loan on request).

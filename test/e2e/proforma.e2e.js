@@ -112,7 +112,7 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   // Marketing → its one account, Advertising (756.25 × 12 = 9,075)
   await pick('MKT','Advertising');
   s=await page.evaluate(()=>[...document.querySelectorAll('#pfModal [data-pfhow]')].map(b=>b.textContent));
-  ok(JSON.stringify(s)==='["Take it out","New amount","Spread over years","% of revenue","Per unit"]', 'clicking an account opens its choices under it: '+s.join(' · '));
+  ok(JSON.stringify(s)==='["New amount","Spread over years","Annualize","% of revenue","Per unit"]', 'clicking an account opens its choices under it (no “Take it out” — a new amount of $0 does it): '+s.join(' · '));
   let p=await fill({ how:'accountTotal', value:6000, kind:'operating', story:'' });
   ok(p.disabled && /write its reason/.test(p.why), 'no story → can’t save ("'+p.why.trim()+'")');
   await page.selectOption('#pfModal select[data-pfin="kind"]',''); p=await fill({ story:'Occupancy is at 95%; the listing package is cut to the basic plan.' });
@@ -129,19 +129,31 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   await page.evaluate(()=>{ [...document.querySelectorAll('#pfModal [data-pfacct]')].find(x=>/Advertising/.test(x.textContent)).click(); }); await page.waitForTimeout(250);
   ok(s && !(await page.evaluate(()=>!!document.querySelector('#pfModal [data-pfeditor]'))), 'click the account again → its choices close');
 
-  await pick('GA','Bank Charges'); await fill({ how:'takeOut', kind:'partnership', story:'Bank charges are on the partnership account.' }); await save(); r=await R();
-  ok(near(r.base.lines.GA,4210) && near(r.base.accts['Bank Charges'],0), 'take it out: Bank Charges ($816) out of G&A (5,026 → 4,210)');
+  await pick('GA','Bank Charges'); await fill({ how:'accountTotal', value:0, kind:'partnership', story:'Bank charges are on the partnership account.' }); await save(); r=await R();
+  ok(near(r.base.lines.GA,4210) && near(r.base.accts['Bank Charges'],0), 'a new amount of $0 takes it out: Bank Charges ($816) out of G&A (5,026 → 4,210)');
+  s=await page.evaluate(()=>((document.querySelector('[data-pfrecon="base"]')||{}).innerText||''));
+  ok(/Took out “Bank Charges”/.test(s), 'and reads “Took out “Bank Charges”” in how it adds up');
+  // annualize one account: Electric (UTIL) — last 3 (Apr–Jun) 2,100 + 2,300 + 2,700 = 7,100 × 4 = 28,400; last 6 = 14,700 × 2 = 29,400; last 12 = 30,300 = the T12
+  await pick('UTIL','Electric'); await fill({ how:'annualize' });
+  s=await page.evaluate(()=>[...document.querySelectorAll('#pfModal [data-pfmo]')].map(b=>({ n:b.getAttribute('data-pfmo'), t:b.innerText.replace(/\s+/g,' '), off:b.disabled, kind:(document.querySelector('#pfModal select[data-pfin="kind"]')||{}).value })));
+  ok(s.length===3 && /\$28,400\.00/.test(s[0].t) && /\$29,400\.00/.test(s[1].t) && /\$30,300\.00 a year · same as the T12/.test(s[2].t) && s[0].kind==='operating',
+     'Annualize offers the last 3, 6 or 12 months with what each gives (28,400 · 29,400 · 30,300 = the T12, greyed); an expense defaults to Operating change');
+  await page.click('#pfModal [data-pfmo="3"]'); await page.waitForTimeout(200);
+  p=await fill({ story:'A new electricity contract since April.' });
+  ok(p.ready && /Months used: Apr 2026 → Jun 2026/.test(await page.evaluate(()=>document.getElementById('pfBody').innerText)) && /\+\$1,900\.00/.test(p.preview), 'last 3 months picked: months used Apr → Jun 2026, NOI +1,900');
+  await save(); r=await R();
+  ok(near(r.base.accts['Electric'],28400) && near(r.base.lines.UTIL,97732.08-1900), 'saved: Electric 30,300 → 28,400; Utilities −1,900');
   await pick('RM','Exterior Painting'); await fill({ how:'spread', years:5, kind:'spread', story:'Painted every 5 years.' }); await save(); r=await R();
   ok(near(r.base.lines.RM,55030-11520) && near(r.base.accts['Exterior Painting'],2880), 'spread over 5 years: Exterior Painting 14,400 → 2,880 a year (R&M −11,520)');
   await pick('CS','Pest Control'); await fill({ how:'accountTotal' });
   s=await page.evaluate(()=>[...document.querySelectorAll('#pfModal select[data-pfsamestory] option')].map(o=>o.textContent).slice(1));
-  ok(s.length===4 && s.some(x=>/^Snow Removal: FAKE-STORY/.test(x)) && s.some(x=>/^Bank Charges: Bank charges/.test(x)), '"Same story as…" lists the stories already written, with their account ('+s.length+')');
+  ok(s.length===5 && s.some(x=>/^Snow Removal: FAKE-STORY/.test(x)) && s.some(x=>/^Bank Charges: Bank charges/.test(x)), '"Same story as…" lists the stories already written, with their account ('+s.length+')');
   await page.selectOption('#pfModal select[data-pfsamestory]','0'); await page.waitForTimeout(250);
   s=await page.evaluate(()=>({ story:document.querySelector('#pfModal textarea[data-pfin="story"]').value, kind:document.querySelector('#pfModal select[data-pfin="kind"]') ? document.querySelector('#pfModal select[data-pfin="kind"]').value : null }));
   ok(/FAKE-STORY Snow/.test(s.story), 'picking one fills the story in (one cause, several accounts)');
   await fill({ value:3600, kind:'nonRecurring', story:'A one-time treatment in March.' }); await save(); r=await R();
   ok(near(r.base.lines.CS,23700) && near(r.base.accts['Pest Control'],3600), 'two accounts of one line, each its own change: Snow 9,000 and Pest Control 3,600 (CS 23,700)');
-  await pick('CS','Pest Control'); p=await fill({ how:'takeOut', kind:'nonRecurring', story:'x' });
+  await pick('CS','Pest Control'); p=await fill({ how:'accountTotal', value:0, kind:'nonRecurring', story:'x' });
   ok(p.disabled && /already has/.test(p.why), 'the same account twice in the same version is refused ("'+p.why.trim().slice(0,70)+'…")');
   await page.click('#pfModal [data-pfcancel]'); await page.waitForTimeout(200);
   // a rental deduction as a % of revenue: Bad Debt (−380 × 12 = −4,560) → −1% × 1,177,500 = −11,775
@@ -156,6 +168,9 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   await page.click('[data-pfrevenue]'); await page.waitForTimeout(300);
   s=await page.evaluate(()=>({ used:(document.getElementById('pfBody').innerText.match(/Months used: ([^\n]+)/)||[])[1]||'' }));
   ok(/Apr 2026 → Jun 2026/.test(s.used), 'the revenue panel shows the months used ('+s.used+')');
+  await page.click('#pfModal [data-pfrevmo="12"]'); await page.waitForTimeout(250);
+  ok(await page.evaluate(()=>!!document.querySelector('#pfModal [data-pfrevsame]')), 'T12 is offered too; on a 12-month file it says it changes nothing');
+  await page.click('#pfModal [data-pfrevmo="3"]'); await page.waitForTimeout(250);
   await page.click('#pfModal [data-pfrevsave]'); await page.waitForTimeout(300);
   ok(await page.evaluate(()=>!document.getElementById('pfModal').classList.contains('hidden')), 'a revenue credit without a story is not saved');
   await page.fill('#pfModal [data-pfrevstory]','The last three months show the rent after the spring renewals.');
@@ -202,8 +217,8 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   await page.click('[data-pfshow="base"]'); await page.waitForTimeout(600);
 
   // ---- the reconciliation, by hand ----
-  const SAFE=T12_NOI+72440+816+3800+5000+11520+3075-7672+(34669.2-30510.2), AGGR=SAFE-(34669.2-30510.2)+(34669.2-30660.2)+(48250.56-36000)+6000;
-  ok(near(r.base.noi,SAFE) && r.base.ok, 'Safe NOI = T12 616,006.36 + revenue 72,440 + 816 + 3,800 + 5,000 + 11,520 + 3,075 − 7,672 + 4,159 = '+SAFE.toFixed(2)+' (got '+r.base.noi+'), reconciles');
+  const SAFE=T12_NOI+72440+816+1900+3800+5000+11520+3075-7672+(34669.2-30510.2), AGGR=SAFE-(34669.2-30510.2)+(34669.2-30660.2)+(48250.56-36000)+6000;
+  ok(near(r.base.noi,SAFE) && r.base.ok, 'Safe NOI = T12 616,006.36 + revenue 72,440 + 816 + 1,900 + 3,800 + 5,000 + 11,520 + 3,075 − 7,672 + 4,159 = '+SAFE.toFixed(2)+' (got '+r.base.noi+'), reconciles');
   ok(near(r.aggr.noi,AGGR) && r.aggr.ok, 'Aggressive NOI = '+AGGR.toFixed(2)+' (got '+r.aggr.noi+'), reconciles');
   ok(JSON.stringify(r.base.groups.map(g=>g[0]))===JSON.stringify(['revenue','partnership','nonRecurring','spread','normalized','operating','marketNorm']), 'grouped by kind in the plan’s order');
 
@@ -234,8 +249,8 @@ const T12_NOI=616006.36, T12_EGI=1155640;
     const j=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(rd.base64),c=>c.charCodeAt(0)))); const h=(l.files||[]).filter(x=>x.role==='history').sort((a,b)=>b.savedAt-a.savedAt)[0]; let hist=null;
     if(h){ const hr=await ldsShell.docRead(k,h.id); hist=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(hr.base64),c=>c.charCodeAt(0)))); }
     return { pf:j.proForma, hist: hist ? hist.entries.filter(e=>/^proForma/.test(e.field||'')).map(e=>({label:e.label,note:e.note,old:e.old,new:e.new})) : [] }; },key);
-  ok(disk.pf && disk.pf.started && disk.pf.changes.length===8 && disk.pf.changes.every(c=>c.id&&c.story&&c.kind&&c.by&&c.at&&c.accounts&&c.accounts.length===1) && disk.pf.revenue.base.months===3,
-     'assumptions.json → proForma: 8 changes, each on ONE account with a kind, story, who and when; the T3 revenue credit');
+  ok(disk.pf && disk.pf.started && disk.pf.changes.length===9 && disk.pf.changes.every(c=>c.id&&c.story&&c.kind&&c.by&&c.at&&c.accounts&&c.accounts.length===1) && disk.pf.revenue.base.months===3,
+     'assumptions.json → proForma: 9 changes, each on ONE account with a kind, story, who and when; the T3 revenue credit');
   ok(disk.pf.changes.some(c=>c.from==='claude'&&c.accounts[0].name==='Snow Removal') && disk.pf.changes.some(c=>c.from==='assumption'&&c.line==='MGMT') && disk.pf.changes.some(c=>c.newAccount&&c.accounts[0].name==='Rooftop antenna lease') && (disk.pf.skipped||[]).some(x=>x.id==='assume:VAC'),
      'it records where each came from (Claude’s story, your assumption), the new account, and the suggestion set aside');
   ok(disk.hist.some(e=>/Marketing · Advertising/.test(e.label)&&/edited/.test(e.note||'')) && disk.hist.some(e=>/Advertising/.test(e.label)&&e.new==='removed') && disk.hist.some(e=>/Contract Services · Snow Removal/.test(e.label)&&e.old==='$14,000.00'&&e.new==='$9,000.00') && disk.hist.some(e=>/Revenue credit/.test(e.label)&&/spring renewals/.test(e.note||'')),
@@ -262,7 +277,7 @@ const T12_NOI=616006.36, T12_EGI=1155640;
     ok(s.indexOf('proforma')>=0 && s.indexOf('aggressive')>=0, 'the NOI choice gains "Pro forma · Safe" and "Pro forma · Aggressive" ('+s.join(', ')+')');
     await page.click('#refiView [data-noibasis="proforma"]'); await page.waitForTimeout(800);
     s=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const t=(document.querySelector('#refiView [data-refibasis]')||{}).innerText||''; return { b:window.LDS_refiBasis(l), noi:window.LDS_refiNOI(l), txt:t }; },ref.id);
-    ok(s.b==='proforma' && near(s.noi,SAFE-3075,1) && /pro forma · Safe \(7 changes/.test(s.txt), 'picked: the refinance sizes on the Safe pro forma NOI and says so ("pro forma · Safe (7 changes; …)": the revenue credit + 6 accounts)'+(s.b==='proforma'?'':' basis '+s.b)+' '+s.noi+' '+s.txt.slice(0,160).replace(/\n/g,' '));
+    ok(s.b==='proforma' && near(s.noi,SAFE-3075,1) && /pro forma · Safe \(8 changes/.test(s.txt), 'picked: the refinance sizes on the Safe pro forma NOI and says so ("pro forma · Safe (8 changes; …)": the revenue credit + 7 accounts)'+(s.b==='proforma'?'':' basis '+s.b)+' '+s.noi+' '+s.txt.slice(0,160).replace(/\n/g,' '));
   }
 
   // ---- the lender file ----

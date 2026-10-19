@@ -33,6 +33,8 @@ process.stdin.on('end', () => {
   let input = null; try { input = JSON.parse(raw); } catch (e) {}
   if (process.env.LDS_FAKE_INPUT_FILE) { try { fs.writeFileSync(process.env.LDS_FAKE_INPUT_FILE, JSON.stringify(input)); } catch (e) {} }
   if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' ' + ((input && input.property) || '?') + '\n'); } catch (e) {} }   // one line per call, so a test can count them
+  // pictures (the Guide): a fixed made-up "what to push" answer from $LDS_FAKE_PUSH_FILE
+  if (process.env.LDS_FAKE_PUSH_FILE) { const d = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_PUSH_FILE, 'utf8')); console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: d, result: JSON.stringify(d), total_cost_usd: 0 })); return; }
   const t12 = (input && input.t12) || { income: [], expense: [] };
   const find = (re) => (t12.income || []).find((r) => re.test(r.line || ''));
   const gpr = find(/gross potential rent/i), vac = find(/vacancy/i);

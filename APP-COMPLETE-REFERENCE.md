@@ -622,8 +622,8 @@ saved, the key is used.
   at 400,000 or 300,000 characters (long material is read in parts, §4.14).
 
 ### 4.16 Settings, Data menu & backups
-- **Settings (menu):** the app scale, the Claude connection, the property count + every property name, and the
-  portfolio targets (Home). *(No benchmarks editor — benchmarks are per property in Underwriting, #112; no GL-mapping editor,
+- **Settings (menu):** the app scale, the portfolio targets (Home), the property count + every property name, the
+  **Guide** (draft, 2026-10-19 — below), and the Claude connection. *(No benchmarks editor — benchmarks are per property in Underwriting, #112; no GL-mapping editor,
   #113.)*
 - **Data menu:** **Back up to a file…** (one file holds the loans, every property folder, every chat and the
   settings), **Restore from a file…**, the recent automatic backups (each says why it was taken — **2.9.8:** a routine one says *what* changed, e.g.
@@ -631,6 +631,23 @@ saved, the key is used.
   loans to Excel…**, **Import loans from Excel…** (matched by the app's own Loan ID, then loan number, then name + address; "N
   new, M updated, U unchanged").
 - A restore replaces everything, after saving a safety snapshot of the current data first.
+- **The Guide (draft, 2026-10-19 — the operator: "a guide in the app with the screenshots of every single screen").**
+  Settings → **Guide** (under the properties, above the Claude connection) → **Open the guide**: a window (92% of the
+  app) — pick a tab (a chapter: Getting around, Portfolio, a loan's page, Properties, Underwriting & Sizing, Refinance,
+  the Calendar, Data Health, Documents & files, the Assistant, Settings/Data & backups, the shared database), then a
+  topic (e.g. Underwriting → Upload a T12: drag and drop, or "choose a file"); a topic is a walkthrough — a picture of
+  the real screen with a numbered marker on every button and box and what each does; Back / Next (or ← →) and past the
+  last step into the next topic; point at an explanation to light up its box; click a picture for full size; a search
+  over every step; Esc closes. `guide-viewer.js` (the window) reads `guide/guide.json`. The pictures are **taken by a
+  script, not by hand**: `guide/capture.js` drives the app (Electron + Playwright) through every step of
+  `guide/spec/<chapter>.js` with the built-in sample loans and made-up files only (a made-up T12, rent roll, agreement;
+  made-up Claude answers in `guide/fixtures/`), writes `guide/img/<chapter>/*.jpg` and `guide/guide.json`, and stops
+  on a step whose screen or button isn't there any more — so after any change to a screen, retake the guide
+  (`xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js [chapter…]`, `guide/README.md`). Shipped:
+  `guide-viewer.js`, `guide/guide.json`, `guide/img/**`; the specs and the capture scripts are not.
+  `test/guide.test.js` (every picture on disk, every marker inside its picture with an explanation, the spec and the
+  capture agree, nothing left over, Settings' order) and `test/e2e/guide.e2e.js` (the window, a chapter, a topic,
+  Back / Next / keys, the next topic, every picture loads, search, full size, Esc).
 
 
 ### 4.17 The shared database (3.0.0)
@@ -876,15 +893,16 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   "What to push" suggests **stories** a lender would accept. The Underwritten column itself is unchanged in round 1 (it
   still prices vacancy and the management fee from the assumptions, and the loan is sized on it); making it "the T12 +
   the pro forma changes you accepted" is round 2, the operator's decision.
-- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 60 checks). Input: the Setup's T12 lines, the accounts
+- **Engine:** `proforma.js` (pure, `test/proforma.test.js`, 72 checks). Input: the Setup's T12 lines, the accounts
   under each line (`SetupBuilder.accountLine` + `ProForma.accountsFrom`, on the T12 rule's basis — an annualized
   statement's account is its own last 3 months × 4; anything a line holds beyond its accounts is shown as
   "Difference to the statement's printed total"), each account's months, the units and the saved pro forma. **Every
   account carries its own value** (its T12 amount until a change sets it); a line is its T12 figure plus its accounts'
   moves, so it always equals the sum of its accounts. Order: revenue credit (each income **account** = its last 3 or 6
   months × 12/N; one with no months — the difference to the printed total — keeps its amount) → account changes in the
-  order made (take it out → 0; new amount; spread → 1/N; per unit → $ × units; an account the T12 doesn't have, added
-  with `newAccount`) → % of revenue last (a rental deduction = −% of gross potential rent, then an expense = % of the
+  order made (a new amount — **$0 takes the account out** and reads "Took out …"; spread → 1/N; **annualize → its last
+  3, 6 or 12 months × 12/N**; per unit → $ × units; an account the T12 doesn't have, added with `newAccount`; a saved
+  first-draft "take out" still counts) → % of revenue last (a rental deduction = −% of gross potential rent, then an expense = % of the
   version's own EGI — so a % the operator chose follows that version's revenue). Every step's effect is measured on
   the NOI; T12 NOI + the effects must equal the pro forma NOI to the cent ("reconciles"), worked out twice. Reserves are
   not in it; the lender file adds them on both sides. A first-draft whole-line change (a new total for the line, a
@@ -903,12 +921,15 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   accounts; the revenue credit), then **every account** with its row in the file, its **12 months** (real figures, no
   graph), its T12, Safe and Aggressive, its changes and its suggestion chips, and the line's total. **Click an account**
   and its choices open under it: its changes (Edit, Remove, who, when, where from), the suggestions for it ("Use this" ·
-  "Not this one" · "Bring it back"), then Take it out · New amount · Spread over years · % of revenue (expense accounts
+  "Not this one" · "Bring it back"), then New amount ("type 0 to take the account out" — no separate "Take it out",
+  the operator, 2026-10-19) · Spread over years · **Annualize** (last 3 / 6 / 12 months, each showing what it gives;
+  the last 12 on a 12-month T12 is the T12 itself, greyed "same as the T12"; Months used; kind Operating change, or
+  Revenue credit for an income account — the only change that may take that kind) · % of revenue (expense accounts
   and rental deductions) · Per unit, the Kind, Apply to (Safe · Aggressive · Both), "Same story as…", the Story
   (required; "Draft it with Claude" gets the account's 12 months) and a live preview: the account's 12 months in the T12
   and after (each month in proportion to the T12), the line and the NOI before → after for both versions. The panel
   stays open after a save. "+ Add an account the T12 doesn't have" (in the panel, or "+ Add an account" in the bar for
-  any line, one the T12 has or not). **Revenue credit…** (T3 / T6, the revenue lines month by month with the months
+  any line, one the T12 has or not). **Revenue credit…** (T3 / T6 / **T12** — T12 changes nothing on a 12-month file and says so —, the revenue lines month by month with the months
   used — the annualized figures are the engine's —, today's occupancy from the rent roll, story required); **How it adds
   up** under the table for both versions; changes not counted are listed with "fix or remove"; **History**; **Remove**.
   The column needs the 12-month basis.
@@ -937,7 +958,7 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   refused; an unknown account is refused with the line's accounts); an Approve card with the account, the line and the
   NOI before → after, the kind, the story; never an invented number. `read_property` returns the pro forma with the
   changed accounts; `set_refi_noi_basis` takes "pro forma" / "aggressive".
-- **Tests:** `test/e2e/proforma.e2e.js` (76 checks, on the made-up `test/fixtures/proforma-t12.js`, which has a $0 pool
+- **Tests:** `test/e2e/proforma.e2e.js` (84 checks, on the made-up `test/fixtures/proforma-t12.js`, which has a $0 pool
   service; Claude is the scripted stand-in `test/fixtures/fake-claude-push.js`).
 - **Also in the draft (asked 2026-10-15) — which limits the lender uses:** in the refinance's "How 'supports $X' is
   worked out", each of the four lender limits (debt coverage amortizing, debt coverage interest-only, loan-to-value,

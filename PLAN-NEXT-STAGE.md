@@ -6,7 +6,9 @@ on the development branch for the operator to see and test — not shipped, no v
 reference §9, "F1 — the pro forma" and "F4 — lender scenarios"). **F1 round 1 (2026-10-19)**, after the operator saw the
 screens: every change is made to one account with its own story (no new total for a whole line), the panel is about
 80% of the window with every account's 12 months, the management fee never follows the revenue credit by itself, the
-underwriting assumptions give default stories and "What to push" suggests stories. Round 2 (the operator's decision):
+underwriting assumptions give default stories and "What to push" suggests stories. Then (same day): no "Take it out" (a
+new amount of $0 does it), "Annualize" an account from its last 3, 6 or 12 months (and a 12-month revenue credit), and
+the in-app **Guide** (Settings → Guide; reference §4.16). Round 2 (the operator's decision):
 whether the Underwritten column becomes "the T12 + the accepted pro forma changes". F2 is not built (it needs Azriel's benchmarks). The
 lender presets ship empty until Azriel's numbers come. The version number of each part, and raising the shared
 database's setup version for the presets rule (D13), are the operator's to choose (version rule, reference §8).*
