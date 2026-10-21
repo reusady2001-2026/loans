@@ -1092,6 +1092,10 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     and appeal deadline and the unit count for the property's own address, and uses a record only when its address
     matches. **The web line:** Claude Code's own usage can read 0 searches when there were some (the run quoted RealPage
     but read "did not search"); from the CLI only a count above 0 is taken, otherwise the searches Claude lists.
+  - **The NOI never empties while it is refreshed (found by the full test run):** opening a property, "Recompute all" and
+    a T12 review decision emptied the property's cached NOI and then read it again; for a second or two (longer on a busy
+    machine) the property had no NOI — Home, the roll-up or the refinance could show none. They now read it again and swap
+    the new figures in (`opEnsureGeneralData(key, true)`); only deleting the property or its T12 empties it.
   - **Profile:** "Utilities — who pays" (Owner (in the rent) · Residents (their own meters) · Billed back to residents ·
     Split) and "Utilities — which ones".
   - **Rent roll reader:** keeps each unit's move-in, lease end and move-out (an Excel date, M/D/YYYY or YYYY-MM-DD; a

@@ -5648,7 +5648,7 @@ tr.flagged:hover td{background:#fee2e2}
           i.t12Overrides = r.overrides || [];   // 2.9.16 — your changes from its review
           uwApplyParse({ noRender: true }); }
         await opEnsureFromDisk(key);
-        delete gdNOICache[key]; delete gdFullCache[key]; await opEnsureGeneralData(key);   // fresh General Data (history + both NOIs) from the folder
+        await opEnsureGeneralData(key, true);   // fresh General Data (history + both NOIs) from the folder — swapped in, never emptied first
         // 2.9.1 — Sizing units come from the PROFILE first (then the loan): a confirmed unit count shows pre-filled.
         try{ await opEnsureProfile(key); var pu = opProfileEffective(key, "residentialUnits"); i.units = (pu != null && pu !== "") ? pu : null; }catch(e){}
         if(i.avgRentUnit != null && i.rrGPR == null) uwFillRentFromAvg();   // a typed average → its yearly rent on these units
@@ -5681,8 +5681,7 @@ tr.flagged:hover td{background:#fee2e2}
       opRecomputing = true;
       var ver = await opComputeVersion(), props = opProperties(), recomputed = 0;
       for(var i = 0; i < props.length; i++){
-        try{ delete gdNOICache[props[i].key]; delete gdFullCache[props[i].key];
-             var gd = await opUpdateGeneralData(props[i].key); if(gd && gd.noi) recomputed++; }catch(e){}
+        try{ var gd = await opUpdateGeneralData(props[i].key); if(gd && gd.noi) recomputed++; else await opEnsureGeneralData(props[i].key, true); }catch(e){}   // the old figures stay until the new ones are in
       }
       opRecomputing = false;
       var entry = { at: new Date().toISOString(), version: ver, reason: reason || "manual", properties: props.length, recomputed: recomputed };
@@ -6570,9 +6569,11 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // Load a property's General Data into the synchronous caches (once per key): the two
     // NOIs the refi panel reads, and the whole record the history card reads.
-    async function opEnsureGeneralData(key){
+    // force: read it again even when it is loaded — the figures already there stay until the new ones replace them (2026-10-21:
+    // emptying the cache first left the property with no NOI for a moment, which Home, the roll-up or the refinance could show)
+    async function opEnsureGeneralData(key, force){
       if(!key) return null;
-      if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
+      if(!force && Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
       var gen0 = gdWriteGen[key] || 0, gd = await opLoadGeneralData(key);
       if((gdWriteGen[key] || 0) !== gen0){ gd = await opLoadGeneralData(key) || gd; }   // written while it was read: read the newer file
       // BACKFILL a missing record (a T12 saved before General Data existed, or added outside the
@@ -8246,7 +8247,7 @@ tr.flagged:hover td{background:#fee2e2}
       await opT12Persist(key, rv); delete t12ReviewLive[key];
       try{ assumptionHistoryAdd && assumptionHistoryAdd(key, "T12 line: " + card.label, before, t12ChoiceText(card, d), d.note); }catch(e){}
       // every figure follows: rebuild General Data (Home, refinance, assistant) and the tab
-      try{ delete gdNOICache[key]; await opUpdateGeneralData(key); }catch(e){}
+      try{ if(!(await opUpdateGeneralData(key))) await opEnsureGeneralData(key, true); }catch(e){}   // swapped in, never emptied first
       try{ uwBuild(); }catch(e){}
       renderUnderwriting();
       try{ render(); }catch(e){}

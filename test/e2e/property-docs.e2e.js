@@ -46,8 +46,11 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.evaluate((k)=>window.LDS_openSizing(k),P.key);
   await page.waitForFunction(()=>!!document.getElementById('uwFile'),null,{timeout:15000});
   await page.setInputFiles('#uwFile',path.join(APP,'test','fixtures','sample-t12.xlsx'));
-  await page.waitForFunction((k)=>{ const g=window.LDS_gdNOICache()[k]; return g&&g.inPlace>0; },P.key,{timeout:20000}).catch(()=>{});
+  // the T12 is read (the reader and the check) before its NOI is used — up to a minute when the machine is busy (it read
+  // "undefined" once after 20 s in a full run, though the removal dialog a moment later already quoted the NOI)
+  await page.waitForFunction((k)=>{ const g=window.LDS_gdNOICache()[k]; return g&&g.inPlace>0; },P.key,{timeout:60000}).catch(()=>{});
   const noi1=await page.evaluate((k)=>(window.LDS_gdNOICache()[k]||{}).inPlace,P.key);
+  ok(noi1>0,'the uploaded T12 gives the property its NOI ('+noi1+')');
   await page.evaluate(()=>{ const t=document.querySelector('[data-tabsel="home"]'); if(t) t.click(); }); await open(P.id);
   await page.evaluate(()=>{ const row=[...document.querySelectorAll('#loanDocsPanel [data-docrow]')].find(r=>/sample-t12/.test(r.innerText)); row.querySelector('[data-docdel]').click(); });
   await page.waitForTimeout(400);
