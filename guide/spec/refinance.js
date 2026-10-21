@@ -1,10 +1,50 @@
 /* Guide chapter: Refinance — should you refinance a loan, how much the property supports, a new loan or an extension
    with today's lender, lender presets, and several properties under one new loan.
-   The pictures use the app's built-in sample loans; Villages of Whitewater gets a made-up T12 (test/fixtures/proforma-t12.js)
-   so the NOI choice and "what to push" have something to show, and a made-up NOI is typed where one is needed. */
+   The pictures use the app's built-in sample loans. A refinance is sized on the property's T12 (or the underwriting
+   approved from it — 2026-10-21), and the sample loans have none, so each property refinanced here gets a MADE-UP T12:
+   Villages of Whitewater the made-up "Sample Gardens" T12 (test/fixtures/proforma-t12.js), its underwriting approved
+   and Claude's (made-up) "what to push"; Queens Gate, The Mews, The Mint and Avalon White Plains a made-up T12 whose
+   NOI is the figure the sample loan already carries (so the examples' verdicts stay what the words say). */
 "use strict";
 const path = require("path");
 const GRID = require(path.join(__dirname, "..", "..", "test", "fixtures", "proforma-t12.js")).grid();
+// a made-up 12-month T12 whose NOI is `noi` to the cent: every month the same (the last takes the cents left over),
+// every total row the exact sum of its lines
+const MONTHS = ["Jul 2025","Aug 2025","Sep 2025","Oct 2025","Nov 2025","Dec 2025","Jan 2026","Feb 2026","Mar 2026","Apr 2026","May 2026","Jun 2026"];
+const madeUpT12 = (name, noi) => {
+  const n = Math.round(noi * 100), inc = Math.round(n / 0.55), exp = inc - n, g = [];
+  const parts = (tot, sh) => { let left = tot; return sh.map((x, i) => { if (i === sh.length - 1) return left; const v = Math.round(tot * x); left -= v; return v; }); };
+  const split = (tot) => { const m = Math.trunc(tot / 12), a = Array(12).fill(m); a[11] = tot - m * 11; return a; };
+  const row = (label, cents) => { g.push([label].concat(cents.map(c => c / 100), [cents.reduce((a, b) => a + b, 0) / 100])); return cents; };
+  const add = (...rs) => rs[0].map((_, i) => rs.reduce((a, r) => a + r[i], 0));
+  const [rent, vac, oth] = parts(inc, [1.04, -0.06, 0.02]), [tax, ins, rm, pay, mg] = parts(exp, [0.30, 0.10, 0.20, 0.32, 0.08]);
+  g.push([name + " (made-up figures)"]); g.push(["Cash Flow (12 months)"]); g.push(["Period = Jul 2025-Jun 2026"]); g.push([]);
+  g.push([null].concat(MONTHS, ["Total"]));
+  g.push(["INCOME"]); g.push(["RENTAL INCOME"]);
+  const r1 = row("Residential Rent", split(rent)), r2 = row("Vacancy Loss", split(vac)); const tr = row("TOTAL RENTAL INCOME", add(r1, r2)); g.push([]);
+  g.push(["OTHER INCOME"]); const o1 = row("Utility Reimbursements", split(oth)); const to = row("TOTAL OTHER INCOME", o1); g.push([]);
+  const ti = row("TOTAL INCOME", add(tr, to)); g.push([]);
+  g.push(["EXPENSES"]); g.push(["TAXES AND INSURANCE"]);
+  const e1 = row("Real Estate Taxes", split(tax)), e2 = row("Property Insurance", split(ins)); const te1 = row("TOTAL TAXES AND INSURANCE", add(e1, e2));
+  g.push(["REPAIRS & MAINTENANCE"]); const e3 = row("Plumbing Repairs", split(rm)); const te2 = row("TOTAL REPAIRS & MAINTENANCE", e3);
+  g.push(["PAYROLL"]); const e4 = row("Manager Salary", split(pay)); const te3 = row("TOTAL PAYROLL", e4);
+  g.push(["MANAGEMENT FEES"]); const e5 = row("Management Fee", split(mg)); const te4 = row("TOTAL MANAGEMENT FEES", e5); g.push([]);
+  const te = row("TOTAL EXPENSES", add(te1, te2, te3, te4)); g.push([]);
+  row("NET OPERATING INCOME", ti.map((x, i) => x - te[i]));
+  return g;
+};
+// drop a made-up T12 on a property in Underwriting and wait until it is read (the underwriting draft shows)
+const uwT12 = async (h, name, grid, file) => {
+  const key = await h.js((n) => { const p = window.opProperties().find(x => x.name === n); return p ? p.key : null; }, name);
+  if (!key) throw new Error("no property " + name);
+  await h.uwProperty(key);
+  const f = await h.xlsx(grid, file);
+  await h.page.setInputFiles("#uwFile", f);
+  await h.page.waitForFunction(() => !!document.querySelector("[data-pfline]"), null, { timeout: 40000 });
+  await h.page.waitForFunction((k) => { const g = window.LDS_gdNOICache()[k]; return !!(g && g.inPlace != null); }, key, { timeout: 30000 });
+  await h.wait(1500); await h.calm();
+  return key;
+};
 
 const RV = "#refiView ";
 const card = (h3) => RV + '.boxline:has(h3:has-text("' + h3 + '"))';
@@ -37,7 +77,7 @@ const openRefi = async (h, re) => {
   await h.openLoan(re);
   await h.page.waitForFunction(() => { const b = document.getElementById("refiBtn"); return b && !b.disabled; }, null, { timeout: 15000 }).catch(() => {});
   await h.click("#refiBtn", { wait: 600 });
-  await h.page.waitForFunction(() => document.querySelectorAll("#refiView [data-refiverdict], #refiView #refiPricing").length > 0, null, { timeout: 15000 }).catch(() => {});
+  await h.page.waitForFunction(() => document.querySelectorAll("#refiView [data-refiverdict], #refiView #refiPricing, #refiView [data-refinot12]").length > 0, null, { timeout: 15000 }).catch(() => {});
   await h.wait(1500); await h.calm();
 };
 const setVal = async (h, sel, v) => { await h.js((a) => { const i = document.querySelector(a.s); i.value = String(a.v); i.dispatchEvent(new Event("change", { bubbles: true })); }, { s: sel, v: v }); await h.wait(1200); await h.calm(); };
@@ -64,6 +104,7 @@ const pickPool = async (h, names) => {
     if (first && list) list.scrollTop = Math.max(0, first.offsetTop - list.offsetTop - 60); }, names);
   await h.wait(500);
 };
+const PUSHBOX = RV + "[data-refipushbox]";
 const hideHistory = async (h) => { await h.js(() => { const m = document.getElementById("historyModal"); if (m){ m.classList.add("hidden"); m.classList.remove("flex"); } }); await h.wait(200); };
 
 module.exports = {
@@ -72,21 +113,25 @@ module.exports = {
   intro: "Should you refinance a loan? How much the property supports, the rate, the lender’s limits, a new loan or an extension with today’s lender — and several properties under one new loan.",
   setup: async (h) => {
     h.acceptDialogs = [/residential units/i];
-    // Villages of Whitewater: a made-up T12, a pro forma with two changes, and Claude's (made-up) "what to push"
     await h.newTab("underwriting");
-    await h.uwProperty("name:villages of whitewater");
-    const f = await h.xlsx(GRID, "Sample Gardens T12 (made-up).xlsx");
-    await h.uwUpload(f);
+    // Villages of Whitewater: the made-up "Sample Gardens" T12, two changes with their stories, the underwriting approved,
+    // then Claude's (made-up) "what to push"
+    const vk = await uwT12(h, "Villages of Whitewater", GRID, "Sample Gardens T12 (made-up).xlsx");
     await h.fill('input[data-uwf="units"]', "120"); await h.wait(1500);
-    await h.click("[data-pfstart]", { wait: 1200 });
     const at = new Date().toISOString();
     await h.js((t) => {
       window.LDS_pfAddRaw({ id: "g1", column: "both", line: "CS", how: "accountTotal", value: 9000, accounts: [{ name: "Snow Removal" }], kind: "normalized", story: "A heavy winter; a normal one runs about $9,000 (made-up example).", by: "You", at: t });
       window.LDS_pfAddRaw({ id: "g2", column: "aggressive", line: "GA", how: "accountTotal", value: 0, accounts: [{ name: "Bank Charges" }], kind: "partnership", story: "On the partnership’s account (made-up example).", by: "You", at: t });
     }, at);
     await h.wait(2500);
-    await h.page.waitForFunction(() => { const p = window.opProperties().find(x => /villages of whitewater/i.test(x.name)); const c = p && window.LDS_getPush && window.LDS_getPush(p.key); return !!(c && Array.isArray(c.moves) && c.moves.length); }, null, { timeout: 30000 }).catch(() => {});
+    await h.page.waitForFunction(() => { const b = document.querySelector("[data-uwapprove]"); return b && !b.disabled; }, null, { timeout: 20000 });
+    await h.jsClick("[data-uwapprove]");
+    await h.page.waitForFunction((k) => { const g = window.LDS_gdNOICache()[k]; return !!(g && g.underwritten != null); }, vk, { timeout: 20000 });
+    await h.page.waitForFunction((k) => { const c = window.LDS_getPush && window.LDS_getPush(k); return !!(c && Array.isArray(c.moves) && c.moves.length); }, vk, { timeout: 40000 }).catch(() => {});
     await h.wait(1500);
+    // the other properties refinanced here: a made-up T12 with the NOI each sample loan already carries
+    for (const [nm, noi] of [["Queens Gate Apartments", 2810007], ["The Mews at Princeton", 10570636], ["The Mint (Rahway)", 5017563], ["Avalon White Plains", 9000000]])
+      await uwT12(h, nm, madeUpT12(nm, noi), nm + " T12 (made-up).xlsx");
     await h.home();
   },
   topics: [
@@ -133,7 +178,8 @@ module.exports = {
         { title: "Coverage & value — today’s loan", text: "Today’s loan measured on the property’s NOI. These are the figures a lender looks at first.",
           shot: card("Coverage"),
           marks: [
-            { sel: card("Coverage") + " >> text=Annual NOI", label: "Annual NOI", text: "The property’s yearly net operating income this analysis uses (here typed on the loan)." },
+            { sel: RV + '[data-noibasis="inplace"]', label: "NOI basis", text: "Which NOI the refinance is sized on. Here In-place T12 — the property’s T12 (made-up). Safe and Aggressive are greyed until the property’s underwriting is approved (see “The NOI basis” below)." },
+            { sel: card("Coverage") + " >> text=Annual NOI", label: "Annual NOI", text: "The yearly net operating income this analysis uses — from the T12, or the approved underwriting. A typed NOI never sizes a refinance." },
             { sel: card("Coverage") + " >> text=Cap rate", label: "Cap rate", text: "Used to estimate the value: value = NOI ÷ cap rate." },
             { sel: card("Coverage") + " >> text=Est. value", label: "Est. value", text: "The estimated value of the property (an appraisal you type replaces it — see “How much the property supports”)." },
             { sel: card("Coverage") + " >> text=LTV today", label: "LTV today", text: "Loan-to-value: what you owe ÷ the value." },
@@ -142,7 +188,7 @@ module.exports = {
             { sel: card("Coverage") + " >> text=Interest-only DSCR today", label: "Interest-only DSCR", text: "Coverage on an interest-only payment — what some lenders size on." },
             { sel: card("Coverage") + " >> text=Debt yield today", label: "Debt yield today", text: "NOI ÷ what you owe — what insurance companies and CMBS lenders look at." },
             { sel: card("Coverage") + " >> text=Coverage today", label: "Coverage today", text: "Whether today’s coverage clears your DSCR floor." },
-            { sel: "#refiNoiEdit", label: "Edit inputs", text: "Opens a small window to keep or change the NOI and the cap rate (next step)." },
+            { sel: "#refiNoiEdit", label: "Cap rate", text: "Opens a small window to change the cap rate (next step)." },
             { sel: card("Coverage") + " >> text=/financeable|tier|Tier/ >> nth=0", label: "Credit tier", text: "How a lender would grade today’s numbers. Below the floor, the line under it says which test fails; a strong tier takes basis points off the proposed spread.", optional: true },
             { sel: card("Coverage") + " >> text=/^Not financeable as sized/", label: "Why it is below the floor", text: "Each test that fails, against your floor or ceiling: DSCR, LTV, debt yield. Shown only when a test fails.", optional: true },
             { sel: "#refiPrepayType", label: "Exit cost — penalty type", text: "How the early-payoff penalty is worked out — explained in the next steps." },
@@ -150,23 +196,15 @@ module.exports = {
             { sel: "#refiStackWith", label: "Capital stack", text: "Link a mezz or senior loan on the same property — explained below." },
             { sel: card("Coverage") + " >> text=/^DSCR = NOI/", label: "How these are worked out", text: "The formulas behind the figures above. They are screening estimates — confirm with the loan documents and a rate sheet." }
           ] },
-        { title: "Edit inputs — the NOI and the cap rate", text: "“Edit inputs” shows the NOI saved for the property and its cap rate. Keep them, or change them.",
+        { title: "Cap rate", text: "“Cap rate” changes the cap rate that values the property (value = NOI ÷ cap rate). The NOI itself comes from the property’s T12 or its approved underwriting — pick it with the NOI basis; it is never typed here.",
           go: async (h) => { await h.click("#refiNoiEdit", { wait: 500 }); },
-          shot: "#noiModal > div",
-          marks: [
-            { sel: "#noiSaved", label: "Saved annual NOI", text: "The NOI this property already has." },
-            { sel: "#capSaved", label: "Cap rate", text: "The cap rate used for the value." },
-            { sel: "#noiChange", label: "Change it", text: "Shows boxes to type a new NOI and cap rate (next step)." },
-            { sel: "#noiKeep", label: "Keep & continue", text: "Closes the window and keeps both as they are." }
-          ] },
-        { title: "Typing a new NOI", text: "Type the yearly NOI in dollars and, if you have a better figure, the cap rate. The new NOI becomes the property’s from now on.",
-          go: async (h) => { await h.click("#noiChange", { wait: 400 }); },
           after: async (h) => { await h.click("#noiCancel", { wait: 400 }); },
           shot: "#noiModal > div",
           marks: [
-            { sel: "#noiField", label: "Property annual NOI", text: "The yearly net operating income, from the operating statement or rent roll." },
+            { sel: "#noiTitle", label: "Refinance — cap rate", text: "This window changes the cap rate only." },
+            { sel: "#noiText", label: "Where the NOI comes from", text: "The T12, or the approved underwriting — the NOI basis on the Coverage card." },
             { sel: "#capField", label: "Cap rate (%)", text: "Value = NOI ÷ cap rate; it sets the loan-to-value." },
-            { sel: "#noiSave", label: "Continue", text: "Saves both and updates the whole analysis." },
+            { sel: "#noiSave", label: "Continue", text: "Saves the cap rate and updates the whole analysis." },
             { sel: "#noiCancel", label: "Cancel", text: "Closes without changing anything." }
           ] },
         { title: "Exit cost — the early-payoff penalty", text: "Paying today’s loan off early usually costs a penalty. The app estimates it from the type of penalty in the loan; “assumed” means nobody has confirmed the type yet.",
@@ -198,38 +236,65 @@ module.exports = {
           marks: [
             { sel: "#refiStackWith", label: "Link a loan", text: "Pick the other loan on the same property (None = this loan alone). Agency senior loans don’t allow subordinate debt." }
           ] },
-        { title: "The NOI basis — which NOI the refinance uses", text: "Once a property has a T12, the refinance can be measured on different NOIs. Here Villages of Whitewater has a made-up T12 and a pro forma: pick the NOI you want the loan sized on — everything below follows.",
+        { title: "The NOI basis — which NOI the refinance uses", text: "Villages of Whitewater has a made-up T12 and an APPROVED underwriting (Underwriting → Approve the underwriting), so its refinance can be sized on three NOIs: the in-place T12, the Safe underwriting or the Aggressive one. Pick one — everything below follows. Your pick is kept with this refinance for the whole team.",
           go: async (h) => { await openRefi(h, /villages of whitewater$/); await h.top(); },
           shot: card("Coverage") + " >> div:has(> div > div:has-text('NOI basis for this analysis')) >> nth=0",
           marks: [
             { sel: RV + '[data-noibasis="inplace"]', label: "In-place T12", text: "The NOI as the property runs today, from its T12 (by the T12 rule)." },
-            { sel: RV + '[data-noibasis="underwritten"]', label: "Underwritten", text: "The NOI the Underwriting tab works out with your assumptions — the figure a lender underwrites to." },
-            { sel: RV + '[data-noibasis="proforma"]', label: "Pro forma · Safe", text: "The pro forma NOI (Underwriting → Pro forma): the T12 with your changes, each with its story. Shown when the pro forma adds up." },
-            { sel: RV + '[data-noibasis="aggressive"]', label: "Pro forma · Aggressive", text: "The Aggressive version — shown when it has changes of its own." },
-            { sel: card("Coverage") + " >> text=/^T12 · / >> nth=0", label: "Which months", text: "The months of the T12 the NOI comes from.", optional: true },
-            { sel: card("Coverage") + " >> text=/^Sizing on the/", label: "What it is sized on", text: "Says which NOI the whole analysis now uses — the verdict, the limits and the amount all follow your pick." }
+            { sel: RV + '[data-noibasis="underwritten"]', label: "Safe underwriting", text: "The approved Safe underwriting: the T12 with the changes and stories you approved, after replacement reserves. The starting choice once it is approved." },
+            { sel: RV + '[data-noibasis="aggressive"]', label: "Aggressive underwriting", text: "The approved Aggressive version, after reserves." },
+            { sel: card("Coverage") + " >> text=/^12-mo|^T12|^Last 3/ >> nth=0", label: "Which months", text: "How the T12’s NOI was worked out.", optional: true },
+            { sel: card("Coverage") + " >> text=/^Sizing on the/", label: "What it is sized on", text: "Which NOI the whole analysis now uses, and who approved the underwriting and when. A property whose underwriting isn’t approved has In-place T12 only." }
           ] }
       ] },
-    { id: "push", title: "What to push — test it against the refinance", intro: "Tick a move Claude suggested, or add your own, and see what it does to the refinance.",
+    { id: "push", title: "What to push — what it would get you", intro: "Your planning tool, not the lender’s: tick what you would push, set the amount you need to cover, and see what loan it gets you.",
       steps: [
-        { title: "Claude’s moves and your own levers", text: "Claude’s suggestions from “What to push” in Underwriting appear here as tick boxes, each with its yearly effect on the NOI. Ticking one adds it to the NOI this refinance uses — coverage, the credit tier and the verdict update at once. It is a what-if: nothing is saved.",
-          go: async (h) => { await h.scroll(card("What to push")); },
-          shot: card("What to push"),
+        { title: "Claude’s pushes, measured on each basis", text: "The pushes from “What to push” in Underwriting (Claude reads the T12 and the approved underwriting) appear here as tick boxes. Each has three effects — on the in-place T12, on Safe and on Aggressive — net of what each already counts; ticking one adds its effect on the NOI basis picked above. Your ticks are kept with this refinance.",
+          go: async (h) => { await h.scroll(PUSHBOX); },
+          shot: { sel: PUSHBOX, grow: true },
           marks: [
-            { sel: RV + "[data-refimove] >> nth=0", label: "A move", text: "Tick to add its estimated yearly effect to the NOI used here; untick to take it out." },
-            { sel: card("What to push") + " >> text=/^in.place .* a year$/ >> nth=0", label: "Its yearly effect", text: "What the move adds to the in-place NOI and to the underwritten NOI. Ticking it adds the one that matches the NOI basis picked above (here underwritten)." },
+            { sel: PUSHBOX + " h3", label: "What to push — what it would get you", text: "Your plan: the coverage, the verdict and the proposed loan above and below follow what you tick." },
+            { sel: RV + "[data-refitargetbox]", label: "The amount to cover", text: "What you need the loan to cover, and the NOI that covers it (next steps)." },
+            { sel: RV + "[data-refimove] >> nth=0", label: "A push", text: "Tick to add it to the NOI used here; untick to take it out." },
+            { sel: RV + "[data-refimove] >> nth=0 >> xpath=following-sibling::span[1]/span[2]", label: "Its effects", text: "First what it adds on the basis picked (here the Safe underwriting), then on each basis: in-place, Safe, Aggressive. The same push is worth less on an underwriting that already counts part of it." },
             { sel: "#refiManualLabel", label: "Your own lever — name", text: "A name for something you expect to add (for example paid parking)." },
-            { sel: "#refiManualAmt", label: "Your own lever — dollars a year", text: "The yearly amount it adds (a negative amount takes NOI away)." },
+            { sel: "#refiManualAmt", label: "Your own lever — dollars a year", text: "The yearly amount it adds; it counts the same on any basis (a negative amount takes NOI away)." },
             { sel: "#refiManualAdd", label: "Add", text: "Adds your lever to the list, ticked." }
           ] },
-        { title: "Ticked — the NOI moves", text: "With a move ticked and a lever of your own added, the card says how much is added to the working NOI.",
-          go: async (h) => { await tick(h, RV + "[data-refimove]", true); await h.js(() => { document.getElementById("refiManualLabel").value = "Paid parking (made-up)"; document.getElementById("refiManualAmt").value = "12000"; document.getElementById("refiManualAdd").click(); }); await h.wait(1200); await h.calm(); await h.scroll(card("What to push")); },
-          shot: card("What to push"),
+        { title: "The amount to cover", text: "Pick what the new loan has to cover: today’s payoff (with the early-payoff penalty), the balance once there is no penalty (the last 12 months before maturity), or the balance at maturity. The line under it says the NOI that covers it at the proposed rate and the lender’s limits, and how far today’s NOI is from it.",
+          go: async (h) => { await h.scroll(RV + "[data-refitargetbox]"); },
+          shot: RV + "[data-refitargetbox]",
           marks: [
-            { sel: card("What to push") + " >> text=/applied to the working NOI/", label: "Applied", text: "How much the ticked moves add to the NOI this refinance uses." },
-            { sel: RV + "[data-refimove] >> nth=0", label: "Ticked move", text: "Counted now." },
+            { sel: RV + '[data-reficover="today"]', label: "Today’s payoff", text: "What you owe today plus the early-payoff penalty. The starting choice." },
+            { sel: RV + '[data-reficover="open"]', label: "No penalty — the last 12 months", text: "What you will owe 12 months before maturity, when the loan can be paid off without a penalty (today’s payoff if it matures within 12 months)." },
+            { sel: RV + '[data-reficover="maturity"]', label: "At maturity", text: "What you will owe when the loan matures, before its final payment." },
+            { sel: RV + "[data-refitargetbox] > p >> nth=0", label: "What it is", text: "What the amount picked is made of." },
+            { sel: RV + "[data-refitarget]", label: "The NOI you need", text: "The NOI that covers the amount on the basis picked, and how much more that is than today’s." }
+          ] },
+        { title: "At maturity", text: "Picked “At maturity”: a smaller amount to cover, so a smaller NOI. Your pick is kept with this refinance.",
+          go: async (h) => { await h.click(RV + '[data-reficover="maturity"]', { wait: 1200 }); await h.calm(); await h.scroll(RV + "[data-refitargetbox]"); },
+          shot: RV + "[data-refitargetbox]",
+          marks: [
+            { sel: RV + '[data-reficover="maturity"]', label: "At maturity", text: "Picked." },
+            { sel: RV + "[data-refitarget]", label: "The NOI you need", text: "Worked out again for this amount." }
+          ] },
+        { title: "Ticked — what it gets you", text: "A push ticked and a lever of your own added: the card says how much is added to the NOI, and the line under the amount says whether that covers it — or how much NOI is still missing.",
+          go: async (h) => { await tick(h, RV + "[data-refimove]", true); await h.js(() => { document.getElementById("refiManualLabel").value = "Paid parking (made-up)"; document.getElementById("refiManualAmt").value = "12000"; document.getElementById("refiManualAdd").click(); }); await h.wait(1200); await h.calm(); await h.scroll(PUSHBOX); },
+          shot: { sel: PUSHBOX, grow: true },
+          marks: [
+            { sel: RV + "[data-refiboost]", label: "Added to the NOI", text: "What the ticked pushes and your levers add on this basis." },
+            { sel: RV + "[data-refitarget]", label: "Covered — or still missing", text: "Whether the NOI now covers the amount, with what is to spare or what is still missing." },
+            { sel: RV + "[data-refimove] >> nth=0", label: "Ticked push", text: "Counted now." },
             { sel: RV + "[data-refimanual] >> nth=0", label: "Your lever", text: "Marked “yours”; tick or untick it like Claude’s." },
             { sel: RV + "[data-refimanualdel] >> nth=0", label: "×", text: "Removes your lever." }
+          ] },
+        { title: "The same push on another basis", text: "Switched to In-place T12: the ticked push now counts its in-place effect (here a little more than on Safe, which already counts part of the lower vacancy).",
+          go: async (h) => { await h.click(RV + '[data-noibasis="inplace"]', { wait: 1200 }); await h.calm(); await h.scroll(PUSHBOX); },
+          after: async (h) => { await h.click(RV + '[data-noibasis="underwritten"]', { wait: 1200 }); await h.calm(); },
+          shot: { sel: PUSHBOX, grow: true },
+          marks: [
+            { sel: RV + "[data-refimove] >> nth=0 >> xpath=following-sibling::span[1]/span[2]", label: "On the In-place T12", text: "The effect counted now." },
+            { sel: RV + "[data-refiboost]", label: "Added to the NOI", text: "Follows the basis." }
           ] }
       ] },
     { id: "verdict", title: "The verdict — can you, should you?", intro: "The coloured box answers two questions in order: can the property support a loan the size of what you owe, and is it worth doing.",
@@ -280,14 +345,14 @@ module.exports = {
             { sel: VERDICT + " >> text=/^Can you\\? No/", label: "Can you? No", text: "What caps it, and what would change it: NOI rising, the rate falling, or a pay-down." },
             { sel: VERDICT + " >> p.font-semibold.text-slate-900 >> nth=-1", label: "Bottom line", text: "Don’t refinance — the property can’t support a loan the size of the payoff yet." }
           ]) },
-        { title: "Can’t judge this yet", text: "A loan whose property has no NOI (no T12, nothing typed) can’t be sized. The box says so instead of guessing; the rate boxes are still there.",
-          go: async (h) => { await openRefi(h, /avalon norwalk/); await h.scroll(UNSIZED); },
-          shot: { sel: UNSIZED, grow: true },
+        { title: "No T12 yet", text: "Avalon Norwalk has no T12. A refinance is sized on the property’s T12 and the underwriting made from it — never on a typed NOI — so nothing is sized: the screen says so and takes you to Underwriting to upload it.",
+          go: async (h) => { await openRefi(h, /avalon norwalk/); await h.page.waitForSelector(RV + "[data-refinot12]", { timeout: 15000 }); await h.top(); },
+          shot: "view",
           marks: [
-            { sel: UNSIZED + " >> text=/Can.t judge this yet/", label: "Can’t judge this yet", text: "There is no NOI to size the refinance on." },
-            { sel: UNSIZED + " >> text=/Enter this property/", label: "What to do", text: "Type the NOI with “Edit inputs” (Coverage & value, above), or upload the property’s T12 in Underwriting." },
-            { sel: PRICE, label: "Proposed rate", text: "The new loan’s rate type, index and spread — they still work without an NOI." },
-            { sel: UNSIZED + " >> #o1_amount", label: "Proposed loan amount", text: "Still there: type an amount and the rate boxes above it, and the proposed loan below still works out its payment." }
+            { sel: RV + "[data-refinot12] h3", label: "No T12 yet", text: "This property has no T12 uploaded." },
+            { sel: RV + "[data-refinot12] p", label: "Why nothing is sized", text: "A refinance is sized on the T12 and on the underwriting made from it." },
+            { sel: RV + "[data-refiuploadt12] >> nth=0", label: "Upload its T12 in Underwriting", text: "Closes the refinance and opens Underwriting on this property, ready for its T12." },
+            { sel: "#refiCloseBtn", label: "Close", text: "Back to the loan’s page." }
           ] }
       ] },
     { id: "rate", title: "The proposed rate and amount", intro: "Inside the verdict box: the new loan’s rate type, its index and spread, and the amount.",
@@ -632,11 +697,11 @@ module.exports = {
       ] },
     { id: "together", title: "Several loans or properties together", intro: "A property with a senior and a mezzanine loan refinances as one package; “Create a portfolio…” puts several properties under one new loan.",
       steps: [
-        { title: "Senior + mezz — the whole property", text: "Pick the property’s combined entry (“2 loans”) under Specific Property, then Refi Calculator: both loans are paid off by one new loan. Here Avalon White Plains, with a made-up NOI typed for the example.",
+        { title: "Senior + mezz — the whole property", text: "Pick the property’s combined entry (“2 loans”) under Specific Property, then Refi Calculator: both loans are paid off by one new loan. Here Avalon White Plains, with a made-up T12.",
           go: async (h) => {
             await h.closeModals(); await h.js(() => { const b = document.getElementById("refiCloseBtn"); if (b && b.offsetParent) b.click(); }); await h.home();
             await h.js(() => { const b = document.getElementById("scopeLoanBtn"); if (b) b.click(); }); await h.wait(500);
-            await h.js(() => { const p = window.opProperties().find(x => x.name === "Avalon White Plains"); const sr = window.LDS_loans().find(l => l.propertyName === "Avalon White Plains"); sr.noi = 9000000; const s = document.getElementById("loanSelect"); s.value = "combo:" + p.key; s.dispatchEvent(new Event("change", { bubbles: true })); });
+            await h.js(() => { const p = window.opProperties().find(x => x.name === "Avalon White Plains"); const s = document.getElementById("loanSelect"); s.value = "combo:" + p.key; s.dispatchEvent(new Event("change", { bubbles: true })); });
             await h.wait(800); await h.click("#refiBtn", { wait: 1500 }); await h.calm(); await h.top();
           },
           shot: { sel: card("Current debt"), grow: true },
@@ -648,72 +713,84 @@ module.exports = {
             { sel: card("Current debt") + " >> text=Remaining", label: "Remaining", text: "Months until the first of them ends." },
             { sel: card("Current debt") + " >> text=Matures", label: "Matures", text: "When the first of them is due." }
           ] },
-        { title: "Create a portfolio…", text: "On the Portfolio tab, above the Coverage table: “Create a portfolio…”. Tick every property the one new loan will secure; the line under the list says how many loans it pays off and the NOI. Nothing changes until you save the new loan on the next screen.",
+        { title: "Create a portfolio…", text: "On the Portfolio tab, above the Coverage table: “Create a portfolio…”. Tick every property the one new loan will secure; each row shows what is owed and the NOI its refinance would use, and the line under the list adds them up. Nothing changes until you save the new loan on the next screen.",
           go: async (h) => {
             await h.js(() => { const b = document.getElementById("refiCloseBtn"); if (b && b.offsetParent) b.click(); }); await h.home();
             await h.js(() => { const b = document.getElementById("scopePortfolioBtn"); if (b) b.click(); }); await h.wait(500);
-            await h.jsClick("#poolRefiBtn"); await h.wait(600);
-            await pickPool(h, ["queens gate apartments", "the mews at princeton", "the mint (rahway)"]);
+            await h.jsClick("#poolRefiBtn"); await h.wait(1200);
+            await pickPool(h, ["queens gate apartments", "the mews at princeton", "villages of whitewater"]);
           },
           shot: "#poolPicker > div",
           marks: [
             { sel: "#poolPickSearch", label: "Find a property", text: "Type to narrow the list." },
             { sel: '#poolPicker [data-poolpickrow="queens gate apartments"] [data-poolpick]', label: "Tick a property", text: "Tick each property the new loan will secure." },
-            { sel: '#poolPicker [data-poolpickrow="queens gate apartments"] [data-poolpicknoi]', label: "Owes · NOI", text: "What is owed on the property, and its NOI with where it comes from." },
-            { sel: '#poolPicker [data-poolpickrow="reatta ranch"] [data-poolpicknoi="none"]', label: "No NOI", text: "A property without a T12 or a typed NOI. You can still tick it, but the package can’t be sized until it has one.", optional: true },
-            { sel: "#poolPickNote", label: "The package", text: "How many are ticked, the loans to pay off and what is owed, and the NOI together." },
+            { sel: '#poolPicker [data-poolpickrow="queens gate apartments"] [data-poolpicknoi]', label: "Owes · NOI", text: "What is owed on the property, and the NOI its refinance would use: its T12 (In-place T12), or its Safe underwriting once approved." },
+            { sel: '#poolPicker [data-poolpickrow="villages of whitewater"] [data-poolpicknoi]', label: "Safe underwriting", text: "Villages of Whitewater’s underwriting is approved, so its Safe figure is used (you can pick another basis on the next screen).", optional: true },
+            { sel: '#poolPicker [data-poolpicknoi="none"] >> nth=0', label: "no T12", text: "A property with no T12. You can tick it, but nothing is sized until its T12 is uploaded — a typed NOI doesn’t count for a refinance.", optional: true },
+            { sel: "#poolPickNote", label: "The package", text: "How many are ticked, the loans to pay off and what is owed, and the NOI together (or which ticked property has no T12)." },
             { sel: "#poolPickCancel", label: "Cancel", text: "Closes the list." },
             { sel: "#poolPickGo", label: "Create the portfolio", text: "Opens the refinance of the ticked properties together. It needs at least two, and at least one loan to pay off." }
           ] },
-        { title: "The portfolio’s refinance", text: "The same refinance screen, for the whole package: NOI by property, with each one’s NOI and where it comes from. A property with no NOI can be typed in the table.",
-          go: async (h) => { await h.click("#poolPickGo", { wait: 2500 }); await h.calm(); await h.scroll(RV + "[data-refipoolnoi]"); },
-          shot: { sel: RV + "[data-refipoolnoi] >> xpath=ancestor::table[1]/..", grow: true },
+        { title: "NOI by property — each with its own basis", text: "The same refinance screen, for the whole package. Each property has its own row and its own NOI basis: In-place T12, or Safe or Aggressive once its underwriting is approved. The package is sized on the total.",
+          go: async (h) => { await h.click("#poolPickGo", { wait: 2500 }); await h.calm(); await h.page.waitForSelector(RV + "[data-refipoolnoitable]", { timeout: 15000 }); await h.scroll(RV + "[data-refipoolnoitable]"); },
+          shot: { sel: RV + "[data-refipoolnoitable]", grow: true },
           marks: [
             { sel: RV + "[data-refipoolnoi] >> nth=0", label: "A property", text: "One row per property in the package." },
-            { sel: RV + "[data-refipoolnoi] td >> nth=1", label: "NOI", text: "Its NOI." },
-            { sel: RV + "[data-refipoolnoi] td >> nth=2", label: "From", text: "Where the NOI comes from: a T12, your override, or typed on its loan." },
-            { sel: RV + "[data-refipooltotal]", label: "Together", text: "The NOI the package is sized on." }
+            { sel: RV + "[data-refikeybasis] >> nth=0", label: "Its basis", text: "Pick the NOI this property counts with. Safe and Aggressive are greyed (“approve it first”) until its underwriting is approved." },
+            { sel: RV + "[data-refipoolnoi] td >> nth=2", label: "NOI", text: "Its NOI on the basis picked." },
+            { sel: RV + "[data-refipoolnoi] td >> nth=3", label: "+ ticked pushes", text: "What its ticked pushes add (below)." },
+            { sel: RV + "[data-refipoolnoi] td >> nth=4", label: "From", text: "Where the figure comes from: the T12 and its months, or the approved underwriting and when it was approved." },
+            { sel: RV + "[data-refipooltotal]", label: "Total", text: "The NOI the package is sized on: every property’s NOI, its pushes and your levers." }
+          ] },
+        { title: "Pick each property’s basis", text: "Villages of Whitewater switched to its Aggressive underwriting; Queens Gate and The Mews stay on their in-place T12. The total and everything below follow; each pick is kept with this refinance.",
+          go: async (h) => { await h.select(RV + '[data-refipoolnoi]:has-text("Villages of Whitewater") [data-refikeybasis]', "aggressive", { wait: 1500 }); await h.calm(); await h.scroll(RV + "[data-refipoolnoitable]"); },
+          shot: { sel: RV + "[data-refipoolnoitable]", grow: true },
+          marks: [
+            { sel: RV + '[data-refipoolnoi]:has-text("Villages of Whitewater") [data-refikeybasis]', label: "Aggressive underwriting", text: "Picked for this property only." },
+            { sel: RV + '[data-refipoolnoi]:has-text("Villages of Whitewater") td >> nth=2', label: "Its NOI", text: "Now its approved Aggressive figure." },
+            { sel: RV + "[data-refipooltotal]", label: "Total", text: "Worked out again." }
+          ] },
+        { title: "Each property’s pushes", text: "What to push lists each property’s pushes under its name, ticked one by one; a push counts its effect on the basis picked for its property. A property whose underwriting isn’t approved has none yet.",
+          go: async (h) => { await tick(h, RV + '[data-refipoolnoi] ~ * [data-refimove], ' + RV + "[data-refimove]", true); await h.scroll(PUSHBOX); },
+          shot: { sel: PUSHBOX, grow: true },
+          marks: [
+            { sel: PUSHBOX + ' div.uppercase:has-text("Villages of Whitewater")', label: "Villages of Whitewater · on the Aggressive underwriting", text: "Its pushes, counted on the basis picked for it." },
+            { sel: RV + "[data-refimove] >> nth=0", label: "A push ticked", text: "Its effect on Aggressive is added to the package’s NOI." },
+            { sel: RV + "[data-refiboost]", label: "Added to the NOI", text: "Everything ticked, every property together." },
+            { sel: PUSHBOX + ' div.uppercase:has-text("Queens Gate")', label: "Queens Gate Apartments", text: "No pushes yet: approve its underwriting in Underwriting first, then What to push lists them." },
+            { sel: RV + "[data-refitargetbox]", label: "The amount to cover", text: "For the whole package." }
           ] },
         { title: "The portfolio’s verdict", text: "“These 3 properties support …” — the verdict and everything after it work exactly as for one loan; “Save as a loan” puts one new loan on all of them and pays off every loan on them.",
           go: async (h) => { await h.scroll(VERDICT); },
           shot: { sel: VERDICT, grow: true },
           marks: [
-            { sel: VERDICT + " >> p >> nth=0", label: "The answer", text: "For the whole package — here a pay-down before Queens Gate’s rate resets." },
+            { sel: VERDICT + " >> p >> nth=0", label: "The answer", text: "For the whole package." },
             { sel: VERDICT + " >> p >> nth=1", label: "Which properties", text: "The properties and the number of loans paid off." },
             { sel: VERDICT + " >> text=You owe (payoff)", label: "You owe (payoff)", text: "Every loan on them, added up." },
             { sel: VERDICT + " >> text=/Properties support/", label: "Properties support", text: "The biggest single loan the properties support together." },
-            { sel: VERDICT + " >> text=/Today.s loan rate/", label: "Today’s loan rate", text: "The loans’ rate together, weighted by what is owed (with the first reset ahead)." },
+            { sel: VERDICT + " >> text=/Today.s loan rate/", label: "Today’s loan rate", text: "The loans’ rate together, weighted by what is owed." },
             { sel: VERDICT + " >> text=Proposed loan rate", label: "Proposed loan rate", text: "The one new loan’s rate." },
-            { sel: RV + "[data-refimust]", label: "When, and the pay-down", text: "What ends first, and the pay-down a new loan needs. (An extension isn’t offered for a package — it is a single loan’s choice.)" },
+            { sel: RV + "[data-refimust]", label: "When, and the pay-down", text: "What ends first, and the pay-down a new loan needs. (An extension isn’t offered for a package — it is a single loan’s choice.)", optional: true },
             { sel: PRICE, label: "Proposed rate", text: "The one new loan’s rate type, index and spread." },
             { sel: "#o1_amount", label: "Proposed loan amount", text: "The one new loan." },
             { sel: VERDICT + " >> text=/^Can you\\?/", label: "Can you?", text: "For all of them together." },
-            { sel: BASIS, label: "How “supports $X” is worked out", text: "The package’s NOI (all of them together), the rate, the payment, the value and the limits." },
+            { sel: BASIS, label: "How “supports $X” is worked out", text: "The package’s NOI (every property on its own basis, with its pushes), the rate, the payment, the value and the limits." },
             { sel: VERDICT + " >> p.font-semibold.text-slate-900 >> nth=-1", label: "Bottom line", text: "What to do for the package." }
           ] },
-        { title: "A property with no NOI", text: "Here Queens Gate Apartments and Avalon Norwalk, which has no T12 and no NOI typed. Counting it as $0 would understate what the package supports, so nothing is sized yet — type its NOI right in the table.",
+        { title: "A property with no T12", text: "Here Queens Gate Apartments and Avalon Norwalk, which has no T12. Counting it as $0 — or on a typed NOI — would misstate what the package supports, so nothing is sized until its T12 is uploaded.",
           go: async (h) => {
             await h.js(() => { const b = document.getElementById("refiCloseBtn"); if (b && b.offsetParent) b.click(); }); await h.home();
             await h.js(() => { const b = document.getElementById("scopePortfolioBtn"); if (b) b.click(); }); await h.wait(500);
-            await h.jsClick("#poolRefiBtn"); await h.wait(600);
+            await h.jsClick("#poolRefiBtn"); await h.wait(1200);
             await pickPool(h, ["queens gate apartments", "avalon norwalk"]);
-            await h.click("#poolPickGo", { wait: 2500 }); await h.calm(); await h.scroll(RV + "[data-refipoolnoitable]");
+            await h.click("#poolPickGo", { wait: 2500 }); await h.calm(); await h.page.waitForSelector(RV + "[data-refinot12]", { timeout: 15000 }); await h.top();
           },
-          shot: { sel: RV + "[data-refipoolnoitable]", grow: true },
+          shot: "view",
           marks: [
-            { sel: RV + "[data-refipoolnoi] >> nth=0", label: "With an NOI", text: "Queens Gate: its NOI and where it comes from." },
-            { sel: RV + "[data-refipooltype]", label: "Type its NOI", text: "Avalon Norwalk has no T12 and nothing typed. Type its yearly NOI here — it is saved on the property, as if typed on its page — and the package is sized at once." },
-            { sel: RV + "[data-refipooltotal]", label: "Total", text: "Blank until every property has an NOI." },
-            { sel: RV + "[data-refipoolnoitable] >> text=/have no NOI/", label: "What is missing", text: "Which properties have no NOI. Type 0 only if the property truly earns nothing." }
-          ] },
-        { title: "Can’t judge this yet — the package", text: "The verdict box names the property that has no NOI instead of guessing.",
-          go: async (h) => { await h.scroll(UNSIZED); },
-          shot: { sel: UNSIZED, grow: true },
-          marks: [
-            { sel: UNSIZED + " >> text=/Can.t judge this yet/", label: "Can’t judge this yet", text: "The package can’t be sized yet." },
-            { sel: RV + "[data-refinonoi]", label: "No NOI for …", text: "Which property is missing its NOI, and what to do: upload its T12 or type its NOI in “NOI by property” above." },
-            { sel: PRICE, label: "Proposed rate", text: "Still there." },
-            { sel: UNSIZED + " >> #o1_amount", label: "Proposed loan amount", text: "Still there." }
+            { sel: RV + "[data-refinot12] h3", label: "No T12 yet", text: "The package can’t be sized yet." },
+            { sel: RV + "[data-refinot12] p", label: "Which property", text: "The property with no T12 — the others are fine." },
+            { sel: RV + "[data-refiuploadt12] >> nth=0", label: "Upload Avalon Norwalk’s T12 in Underwriting", text: "Opens Underwriting on that property, ready for its T12; come back to the package afterwards." },
+            { sel: "#refiCloseBtn", label: "Close", text: "Back to the Portfolio tab." }
           ] }
       ] }
   ]

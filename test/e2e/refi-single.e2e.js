@@ -15,6 +15,7 @@ const val=(page,id)=>page.evaluate(i=>{const e=document.getElementById(i);return
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env)});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:15000}).catch(()=>{}); await page.waitForTimeout(500);
+  await require('./_t12seed').seedT12(page);   // (2026-10-21) a refinance is sized on the property's T12
   // make the portfolio (home) view the active one, then open the first VISIBLE loan row
   // (property-group member rows are `hidden` and not clickable) and its refinance analysis
   await page.evaluate(()=>{const h=document.querySelector('[data-tabsel="home"]');if(h)h.click();});
@@ -33,6 +34,7 @@ const val=(page,id)=>page.evaluate(i=>{const e=document.getElementById(i);return
     l.floatIndexValue=null; l.floatIndexLive=null; l.floatRepricedOn=null;
     l.armInitialFixedMonths=null; l.armAdjustFreqMonths=null; l.rateFloor=null; l.rateCap=null; l.stackWith=null;
   }}, loanId);
+  await require('./_t12seed').seedT12(page);   // …with the NOI just set
   await row.click().catch(()=>{});
   await page.waitForFunction(()=>{const b=document.getElementById('refiBtn');return b&&!b.disabled;},null,{timeout:8000}).catch(()=>{});
   await page.click('#refiBtn').catch(()=>{});

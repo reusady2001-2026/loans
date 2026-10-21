@@ -15,6 +15,7 @@ const near=(a,b)=>typeof a==='number'&&typeof b==='number'&&Math.abs(a-b)<0.01;
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort());
   await page.waitForSelector('tr[data-goto]',{timeout:25000,state:'attached'}); await page.waitForTimeout(800);
+  await require('./_t12seed').seedT12(page);   // (2026-10-21) a refinance is sized on the property's T12
   const ids=await page.evaluate(()=>{ const L=window.LDS_loans(); const q=L.find(x=>/queens gate/i.test(x.propertyName||'')); const o=L.find(x=>x!==q&&Number(x.noi)>0&&!/queens gate/i.test(x.propertyName||'')); return { q:q&&q._id, o:o&&o._id }; });
   const openRefi=async(id)=>{ await page.click('[data-tabsel="home"]').catch(()=>{}); await page.waitForTimeout(300);
     await page.evaluate((id)=>{ const tr=document.querySelector('tr[data-goto="'+id+'"]'); if(tr) tr.click(); },id); await page.waitForTimeout(500);

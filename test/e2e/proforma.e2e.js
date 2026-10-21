@@ -1,8 +1,13 @@
-/* e2e — next stage F1 (a DRAFT), round 1: the pro forma in Underwriting, driven through the real screens.
+/* e2e — next stage F1 (a DRAFT): the pro forma in Underwriting, driven through the real screens.
    Round 1 (the operator, 2026-10-19): a change is made to ONE ACCOUNT, each with its own story; the panel is about 80%
    of the window and shows every account of the line (a $0 one too) with its 12 months; click an account and its choices
    open under it; the management fee is never moved by the revenue credit; the underwriting assumptions give default
-   stories (suggestions); Claude's "stories for the pro forma" (What to push) can be put in the draft.
+   stories (suggestions); Claude's stories can be put in the draft.
+   Round 2 (the operator, 2026-10-21): the UNDERWRITING is the approved pro forma. The draft starts by itself on the T12
+   (no start button, no Underwritten column, no line pins); replacement reserves are a line in both Safe and Aggressive;
+   Claude's stories sit under the table; "Approve the underwriting" makes Safe and Aggressive the property's underwriting
+   (General Data, the refinance's Safe / Aggressive bases); a change after that reads "changed since approved";
+   "Start over" clears the draft and keeps the approval.
    A made-up T12 (test/fixtures/proforma-t12.js) is dropped on a property; Claude is the scripted stand-in
    (test/fixtures/fake-claude-push.js). Every expected figure is worked out by hand in the comments.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node -r ./test/e2e/_t12auto.js test/e2e/proforma.e2e.js */
@@ -22,7 +27,7 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),
     args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:FAKE,CLAUDE_CONFIG_DIR:path.join(UDATA,'claude'),LDS_FAKE_STORIES_INPUT:STORIES_IN})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
-  page.on('dialog',d=>{ if(/^Remove|residential units/.test(d.message())) d.accept(); else d.dismiss(); });   // the units typed go to the profile too
+  page.on('dialog',d=>{ if(/^Remove|residential units|^Start this property/.test(d.message())) d.accept(); else d.dismiss(); });   // the units typed go to the profile too; "Start over" asks first
   await page.route(/^https?:\/\//,r=>r.abort());
   try{ const win=await app.browserWindow(page); await win.evaluate(w=>{w.setSize(1600,1000);}); }catch(e){}
   await page.waitForSelector('tr[data-goto]',{timeout:25000,state:'attached'}); await page.waitForTimeout(800);
@@ -33,23 +38,40 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   await page.waitForFunction(()=>{const v=document.getElementById('uwView');return v&&!v.hidden&&document.getElementById('opPropPick');},null,{timeout:10000}).catch(()=>{});
   await page.evaluate(()=>{const s=document.getElementById('opPropPick');s.value='name:villages of whitewater';s.dispatchEvent(new Event('change',{bubbles:true}));}); await page.waitForTimeout(800);
   await page.setInputFiles('#uwFile',T12);
-  await page.waitForFunction(()=>!!document.querySelector('input[data-uwline]'),null,{timeout:30000}).catch(()=>{});
+  await page.waitForFunction(()=>!!document.querySelector('[data-pfline]')&&!!document.querySelector('[data-pfbar]'),null,{timeout:30000}).catch(()=>{});
   await page.waitForTimeout(1500);
   await page.fill('input[data-uwf="units"]','120'); await page.evaluate(()=>{ const i=document.querySelector('input[data-uwf="units"]'); i.dispatchEvent(new Event('change',{bubbles:true})); });
   await page.waitForTimeout(1500);
+  const num=(t)=>Number(String(t||'').replace(/[^0-9.\-]/g,''))||0;
 
-  // ---- before: the start button, no column ----
-  let s=await page.evaluate(()=>({ start: !!document.querySelector('[data-pfstart]'), head: !!document.querySelector('[data-pfhead]') }));
-  ok(s.start && !s.head, 'before: a "Start a pro forma" button and no Pro forma column');
-  await page.click('[data-pfstart]'); await page.waitForTimeout(1200);
+  // ---- the draft starts by itself on the T12: no start button, no Underwritten column, no line pins ----
   const R=()=>page.evaluate(()=>{ const r=window.LDS_pfLast(); if(!r) return null; const v=(x)=>({ noi:x.noi, ok:x.reconciles, gap:x.gap, steps:x.steps.length, problems:x.problems.map(p=>p.reason), lines:Object.fromEntries(x.lines.map(l=>[l.key,l.value])),
       accts:Object.fromEntries(x.accounts.map(a=>[a.name,a.value])), groups:x.groups.map(g=>[g.kind,Math.round(g.total*100)/100]) });
     return { base:v(r.res.base), aggr:v(r.res.aggressive), t12:r.res.t12 }; });
   let r=await R();
-  s=await page.evaluate(()=>({ head: (document.querySelector('[data-pfhead]')||{}).textContent||'', cells: document.querySelectorAll('[data-pfline]').length, recons: document.querySelectorAll('[data-pfrecon]').length, ok: document.querySelectorAll('[data-pfrecon] [data-pfok]').length }));
-  ok(/Pro forma/.test(s.head) && /Safe/.test(s.head) && s.cells>=15, 'started: the Pro forma column (Safe) with a clickable figure on every line ('+s.cells+')');
-  ok(r && near(r.base.noi,T12_NOI) && near(r.t12.noi,T12_NOI) && r.base.ok && r.aggr.ok, 'it starts as the T12 column: NOI '+(r&&r.base.noi)+' = the T12 NOI, both versions add up');
+  const uwState=()=>page.evaluate(()=>({ chip:(document.querySelector('[data-uwstatus]')||{getAttribute:()=>null}).getAttribute('data-uwstatus'), line:(document.querySelector('[data-uwapproved]')||{}).textContent||'',
+    approve:((document.querySelector('[data-uwapprove]')||{}).textContent||'').trim(), safe:(document.getElementById('uwSafeNoi')||{}).textContent||'', aggr:(document.getElementById('uwAggrNoi')||{}).textContent||'' }));
+  let s=await page.evaluate(()=>({ start: !!document.querySelector('[data-pfstart]'), pins: document.querySelectorAll('input[data-uwline]').length, head: (document.querySelector('[data-pfhead]')||{}).textContent||'',
+    ths:[...document.querySelectorAll('#uwSetupTable thead th')].map(t=>t.textContent.trim()), cells: document.querySelectorAll('[data-pfline]').length, recons: document.querySelectorAll('[data-pfrecon]').length, ok: document.querySelectorAll('[data-pfrecon] [data-pfok]').length,
+    bar:((document.querySelector('[data-pfbar]')||{}).innerText||'') }));
+  ok(!s.start && s.pins===0, 'no "Start a pro forma" button and no line pins — the draft starts by itself on the T12');
+  ok(s.ths.length===5 && /^In-Place/.test(s.ths[1]) && /Underwriting · Safe/.test(s.head) && !s.ths.some(t=>/^Underwritten/.test(t)) && s.cells>=15,
+     'the table: Line · In-Place · $/unit · Underwriting · Safe · $/unit — no Underwritten column; a clickable figure on every line ('+s.ths.join(' | ')+'; '+s.cells+')');
+  ok(/UNDERWRITING/i.test(s.bar) && /Start over/.test(s.bar), 'the bar is the UNDERWRITING, with "Start over"');
+  ok(r && near(r.base.noi,T12_NOI) && near(r.t12.noi,T12_NOI) && r.base.ok && r.aggr.ok, 'it starts as the T12: NOI '+(r&&r.base.noi)+' = the T12 NOI, both versions add up');
   ok(s.recons===2 && s.ok===2, 'two reconciliations (Safe, Aggressive), each "reconciles to the dollar"');
+  // reserves are a line in both versions: 120 units × $200 = 24,000
+  s=await page.evaluate(()=>({ rsv:[...document.querySelectorAll('[data-pfrecon] [data-pfreserves]')].map(x=>x.innerText.replace(/\s+/g,' ')), base:(document.querySelector('[data-pfuwnoi="base"]')||{}).textContent||'', aggr:(document.querySelector('[data-pfuwnoi="aggressive"]')||{}).textContent||'',
+    before:/= NOI before reserves/.test((document.querySelector('[data-pfrecon="base"]')||{}).innerText||'') }));
+  ok(s.rsv.length===2 && s.rsv.every(x=>/24,000/.test(x)) && s.before && near(num(s.base),T12_NOI-24000) && near(num(s.aggr),T12_NOI-24000),
+     'replacement reserves are a line in both: NOI before reserves − 24,000 (120 × $200) = Safe / Aggressive underwriting NOI '+s.base+' / '+s.aggr);
+  let u=await uwState();
+  ok(u.chip==='draft' && /Approve the underwriting/.test(u.approve) && /Not approved yet/.test(u.line), 'not approved yet: the chip reads "draft", with "Approve the underwriting"');
+  ok(near(num(u.safe),T12_NOI-24000) && near(num(u.aggr),T12_NOI-24000), 'the Safe and Aggressive cards show the underwriting NOI after reserves ('+u.safe+' · '+u.aggr+')');
+  s=await page.evaluate(()=>[...document.querySelectorAll('#uwSizingOut [data-uwsizing]')].map(x=>x.getAttribute('data-uwsizing')));
+  ok(JSON.stringify(s)==='["base","aggressive"]', 'debt sizing shows Safe and Aggressive side by side');
+  let gd0=await page.evaluate(()=>{ const g=(window.LDS_gdNOICache()||{})['name:villages of whitewater']; return g?{ip:g.inPlace,uw:g.underwritten}:null; });
+  ok(gd0 && near(gd0.ip,T12_NOI) && gd0.uw==null, 'General Data: the in-place NOI, and no underwriting NOI until it is approved');
 
   // ---- suggestions from the underwriting assumptions (2.5% management fee, 5% vacancy) ----
   // management fee: 34,669.20 / EGI 1,155,640 = 3.0% > 2.5%; vacancy: 64,300 / 1,177,500 = 5.46% > 5%
@@ -59,15 +81,19 @@ const T12_NOI=616006.36, T12_EGI=1155640;
      'the management fee runs 3% against the 2.5% assumption → a suggestion at 2.5% with its default story ("'+(sM&&sM.story)+'")');
   ok(sV && near(sV.pct,0.05,1e-9) && /5% of gross potential rent/.test(sV.story), 'vacancy runs 5.46% against 5% → a suggestion at 5% ("'+(sV&&sV.story)+'")');
   s=await page.evaluate(()=>({ dots:[...document.querySelectorAll('[data-pfsugdot]')].map(x=>x.getAttribute('data-pfsugdot')).sort(), chip:(document.querySelector('[data-pfsuglist]')||{}).textContent||'' }));
-  ok(JSON.stringify(s.dots)==='["MGMT","VAC"]' && /2 suggestions/.test(s.chip), 'the Pro forma column marks the two lines with a suggestion; the bar says "2 suggestions"');
+  ok(JSON.stringify(s.dots)==='["MGMT","VAC"]' && /2 suggestions/.test(s.chip), 'the Underwriting column marks the two lines with a suggestion; the bar says "2 suggestions"');
+  ok(await page.evaluate(()=>!document.querySelector('[data-pfassumewarn]')), 'both lines run ABOVE their assumptions → suggestions that raise the NOI; no warning');
 
-  // ---- Claude's stories for the pro forma (What to push) ----
+  // ---- Claude's stories for the underwriting: under the table, while drafting ----
+  s=await page.evaluate(()=>{ const m=document.getElementById('opStoriesMount'), out=document.getElementById('uwSetupOut'), push=document.getElementById('opScanMount');
+    return { inUw: !!(m&&out&&out.contains(m)), inPush: !!(m&&push&&push.contains(m)), title:/Claude’s stories for the underwriting/i.test((m||{}).innerText||'') }; });
+  ok(s.inUw && !s.inPush && s.title, 'Claude’s stories sit under the underwriting table ("Claude’s stories for the underwriting"), not in What to push');
   await page.click('#pfStoriesRun'); await page.waitForTimeout(4000);
   s=await page.evaluate(()=>({ txt:(document.getElementById('opStoriesMount')||{}).innerText||'', cards:[...document.querySelectorAll('#opStoriesMount [data-pfstory]')].map(x=>x.getAttribute('data-pfstory')), left:(document.querySelector('#opStoriesMount [data-pfstoriesleft]')||{}).textContent||'' }));
   ok(s.cards.length===2 && /FAKE-STORIES-SUMMARY/.test(s.txt) && /To back it with the lender: FAKE-BACKED the snow-removal invoices/.test(s.txt) && /How Claude got the number: FAKE-BASIS/.test(s.txt),
      'Claude’s stories: 2 cards, each with its story, how Claude got the number and what backs it ('+s.cards.join(', ')+')');
   ok(/FAKE-NOT-IN-THE-T12/.test(s.left) && /no account/.test(s.left), 'a suggestion on an account that is not in the T12 is left out, and says so');
-  ok(/\+\$5,000\.00/.test(s.txt), 'the snow card shows what it does to the Safe pro forma NOI (+$5,000: 14,000 → 9,000)');
+  ok(/\+\$5,000\.00/.test(s.txt) && /Put it in the draft/.test(s.txt), 'the snow card shows what it does to the Safe NOI (+$5,000: 14,000 → 9,000), with "Put it in the draft"');
   const sin=JSON.parse(fs.readFileSync(STORIES_IN,'utf8'));
   const csIn=sin.lines.find(l=>l.line==='Contract Services'), pool=csIn&&csIn.accounts.find(a=>a.account==='Pool Service'), snowIn=csIn&&csIn.accounts.find(a=>a.account==='Snow Removal');
   ok(sin.months.length===12 && snowIn && snowIn.months.join(',')==='0,0,0,0,1400,4200,4800,3600,0,0,0,0' && pool && pool.t12===0 && near(sin.underwritingAssumptions.managementFee,0.025),
@@ -76,7 +102,7 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   await page.click('[data-pfputsug^="claude:CS|snow removal"]'); await page.waitForTimeout(500);
   s=await page.evaluate(()=>({ title:document.getElementById('pfTitle').textContent, open:(document.querySelector('#pfModal tr.bg-teal-50[data-pfacct]')||{}).textContent||'', v:(document.querySelector('#pfModal [data-pfin="value"]')||{}).value,
     kind:(document.querySelector('#pfModal select[data-pfin="kind"]')||{}).value, story:(document.querySelector('#pfModal textarea[data-pfin="story"]')||{}).value, ready:!!document.querySelector('#pfModal [data-pfready]') }));
-  ok(s.title==='Contract Services' && /Snow Removal/.test(s.open) && s.v==='9000' && s.kind==='normalized' && /FAKE-STORY/.test(s.story) && s.ready, '"Put it in the pro forma draft" opens Snow Removal with the amount, kind and story filled in, ready to check and save');
+  ok(s.title==='Contract Services' && /Snow Removal/.test(s.open) && s.v==='9000' && s.kind==='normalized' && /FAKE-STORY/.test(s.story) && s.ready, '"Put it in the draft" opens Snow Removal with the amount, kind and story filled in, ready to check and save');
   await page.click('#pfModal [data-pfsave]'); await page.waitForTimeout(1200); r=await R();
   ok(near(r.base.accts['Snow Removal'],9000) && near(r.base.lines.CS,27500) && near(r.base.noi,T12_NOI+5000), 'saved: Snow Removal 14,000 → 9,000; Contract Services 32,500 → 27,500; NOI +5,000');
 
@@ -263,21 +289,42 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   s=await page.evaluate(()=>({ cards:document.querySelectorAll('#opStoriesMount [data-pfstory]').length, taken:/In the pro forma ✓/.test((document.getElementById('opStoriesMount')||{}).innerText||'') }));
   ok(s.cards===2 && s.taken, 'Claude’s stories are kept with the property (general-data.json) and the snow one shows "In the pro forma ✓"');
 
-  // ---- General Data → the refinance's NOI choice ----
+  // ---- approve: Safe and Aggressive become the property's underwriting (after reserves) ----
   await page.waitForTimeout(1000);
+  const ref0=await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>/villages of whitewater/i.test(x.propertyName||'')); return l?window.LDS_refiNOIOptions(l):null; });
+  ok(ref0 && near(ref0.inPlace,T12_NOI) && ref0.underwritten==null && ref0.aggressive==null, 'before the approval the refinance has only the in-place T12 ('+JSON.stringify(ref0)+')');
+  await page.evaluate(()=>{ const b=document.querySelector('[data-uwapprove]'); if(b) b.click(); });
+  await page.waitForFunction(()=>{ const g=(window.LDS_gdNOICache()||{})['name:villages of whitewater']; return !!(g&&g.underwritten!=null); },null,{timeout:20000}).catch(()=>{});
+  await page.waitForTimeout(1500);
+  u=await uwState();
+  ok(u.chip==='approved' && /Approved by/.test(u.line) && !u.approve, 'approved: the chip reads "approved", with who and when; no approve button while nothing changed');
+  const gdA=await page.evaluate(()=>{ const g=(window.LDS_gdNOICache()||{})['name:villages of whitewater']; return g?{uw:g.underwritten,ag:g.underwrittenAggressive,ap:g.uwApproved,m:g.uwModel}:null; });
+  ok(gdA && near(gdA.uw,SAFE-3075-24000) && near(gdA.ag,AGGR-3075-24000) && gdA.ap && gdA.ap.current && gdA.m===2, 'General Data: the underwriting NOI = Safe after reserves '+(gdA&&gdA.uw)+' · Aggressive '+(gdA&&gdA.ag)+', approved');
+  const apDisk=await page.evaluate(async(k)=>{ const l=await ldsShell.docList(k); const f=(l.files||[]).filter(x=>x.role==='assumptions').sort((a,b)=>b.savedAt-a.savedAt)[0]; const rd=await ldsShell.docRead(k,f.id);
+    const j=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(rd.base64),c=>c.charCodeAt(0)))); return j.proForma&&j.proForma.approved; },key);
+  ok(apDisk && near(apDisk.base,SAFE-3075-24000) && near(apDisk.aggressive,AGGR-3075-24000) && near(apDisk.reserves,24000) && apDisk.by && apDisk.at && apDisk.snapshot && apDisk.snapshot.changes.length===9,
+     'assumptions.json → proForma.approved: Safe, Aggressive, the reserves, who, when, and the changes as approved');
+
+  // ---- the refinance: In-place T12 · Safe underwriting · Aggressive underwriting ----
   const ref=await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>/villages of whitewater/i.test(x.propertyName||'')); return l?{ id:l._id, o:window.LDS_refiNOIOptions(l) }:null; });
-  ok(ref && near(ref.o.proForma,SAFE-3075) && near(ref.o.aggressive,AGGR-3075), 'the refinance can use the pro forma: Safe '+(ref&&ref.o.proForma)+' · Aggressive '+(ref&&ref.o.aggressive));
+  ok(ref && near(ref.o.underwritten,SAFE-3075-24000) && near(ref.o.aggressive,AGGR-3075-24000), 'the refinance can use the approved underwriting: Safe '+(ref&&ref.o.underwritten)+' · Aggressive '+(ref&&ref.o.aggressive));
   if(ref){
     await page.click('[data-tabsel="home"]').catch(()=>{}); await page.waitForTimeout(400);
     await page.evaluate((id)=>{ const tr=document.querySelector('tr[data-goto="'+id+'"]'); if(tr) tr.click(); },ref.id);
     await page.waitForFunction(()=>{const b=document.getElementById('refiBtn');return b&&!b.disabled;},null,{timeout:10000}).catch(()=>{});
     await page.click('#refiBtn').catch(()=>{});
     await page.waitForFunction(()=>document.querySelectorAll('#refiView [data-noibasis]').length>0,null,{timeout:10000}).catch(()=>{});
-    s=await page.evaluate(()=>[...document.querySelectorAll('#refiView [data-noibasis]')].map(b=>b.getAttribute('data-noibasis')));
-    ok(s.indexOf('proforma')>=0 && s.indexOf('aggressive')>=0, 'the NOI choice gains "Pro forma · Safe" and "Pro forma · Aggressive" ('+s.join(', ')+')');
-    await page.click('#refiView [data-noibasis="proforma"]'); await page.waitForTimeout(800);
+    s=await page.evaluate(()=>[...document.querySelectorAll('#refiView [data-noibasis]')].map(b=>b.getAttribute('data-noibasis')+(b.disabled?':off':'')));
+    ok(JSON.stringify(s)==='["inplace","underwritten","aggressive"]', 'the NOI basis: In-place T12 · Safe underwriting · Aggressive underwriting, all open once approved ('+s.join(', ')+')');
     s=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const t=(document.querySelector('#refiView [data-refibasis]')||{}).innerText||''; return { b:window.LDS_refiBasis(l), noi:window.LDS_refiNOI(l), txt:t }; },ref.id);
-    ok(s.b==='proforma' && near(s.noi,SAFE-3075,1) && /pro forma · Safe \(8 changes/.test(s.txt), 'picked: the refinance sizes on the Safe pro forma NOI and says so ("pro forma · Safe (8 changes; …)": the revenue credit + 7 accounts)'+(s.b==='proforma'?'':' basis '+s.b)+' '+s.noi+' '+s.txt.slice(0,160).replace(/\n/g,' '));
+    ok(s.b==='underwritten' && near(s.noi,SAFE-3075-24000,1) && /Safe underwriting \(approved/.test(s.txt), 'it starts on the Safe underwriting and says so ("Safe underwriting (approved …)") — '+s.b+' '+s.noi);
+    await page.evaluate(()=>{ const b=document.querySelector('#refiView [data-noibasis="aggressive"]'); if(b) b.click(); }); await page.waitForTimeout(1000);
+    s=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const t=(document.querySelector('#refiView [data-refibasis]')||{}).innerText||''; return { b:window.LDS_refiBasis(l), noi:window.LDS_refiNOI(l), txt:t }; },ref.id);
+    ok(s.b==='aggressive' && near(s.noi,AGGR-3075-24000,1) && /Aggressive underwriting/.test(s.txt), 'picked Aggressive: the refinance sizes on Aggressive after reserves ('+s.noi+')');
+    await page.evaluate(()=>{ const b=document.querySelector('#refiView [data-noibasis="inplace"]'); if(b) b.click(); }); await page.waitForTimeout(1000);
+    s=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); return { b:window.LDS_refiBasis(l), noi:window.LDS_refiNOI(l) }; },ref.id);
+    ok(s.b==='inplace' && near(s.noi,T12_NOI,1), 'picked In-place T12: the T12 NOI ('+s.noi+')');
+    await page.evaluate(()=>{ const b=document.getElementById('refiCloseBtn'); if(b) b.click(); }); await page.waitForTimeout(400);
   }
 
   // ---- the lender file ----
@@ -313,6 +360,18 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   const saved=await page.evaluate(async(k)=>{ const l=await ldsShell.docList(k); const f=(l.files||[]).filter(x=>x.role==='assumptions').sort((a,b)=>b.savedAt-a.savedAt)[0]; const rd=await ldsShell.docRead(k,f.id);
     const j=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(rd.base64),c=>c.charCodeAt(0)))); return (j.proForma.changes||[]).filter(c=>c.from==='assistant'); },key);
   ok(saved.length===1 && saved[0].line==='UTIL' && saved[0].accounts[0].name==='Electric' && saved[0].column==='aggressive' && /Assistant/i.test(saved[0].by||''), 'approved: saved on the Electric account, marked as from the assistant ('+(saved[0]&&saved[0].by)+')');
+
+  // ---- a change after the approval: "changed since approved"; the approved figures stay in use until approved again ----
+  await page.evaluate(()=>{ const t=[...document.querySelectorAll('[data-tabsel]')].find(x=>x.getAttribute('data-tabsel')!=='home'); if(t) t.click(); }); await page.waitForTimeout(1500);
+  u=await uwState();
+  const gdC=await page.evaluate(()=>{ const g=(window.LDS_gdNOICache()||{})['name:villages of whitewater']; return g?{uw:g.underwritten,ap:g.uwApproved}:null; });
+  ok(u.chip==='changed' && /Approve again/.test(u.approve) && gdC && near(gdC.uw,SAFE-3075-24000) && gdC.ap && gdC.ap.current===false,
+     'after the assistant’s change: "changed since approved", "Approve again"; the refinance keeps the approved Safe '+(gdC&&gdC.uw)+' until then');
+  // ---- Start over: the draft goes back to the T12, the approval stays ----
+  await page.evaluate(()=>{ const b=document.querySelector('[data-pfclear]'); if(b) b.click(); }); await page.waitForTimeout(2000);
+  r=await R(); u=await uwState();
+  const gdS=await page.evaluate(()=>{ const g=(window.LDS_gdNOICache()||{})['name:villages of whitewater']; return g?{uw:g.underwritten}:null; });
+  ok(r && near(r.base.noi,T12_NOI) && near(r.aggr.noi,T12_NOI) && u.chip==='changed' && gdS && near(gdS.uw,SAFE-3075-24000), '"Start over": the draft is the T12 again ('+(r&&r.base.noi)+'); the approved underwriting stays in use ('+(gdS&&gdS.uw)+')');
 
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

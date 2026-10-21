@@ -258,7 +258,7 @@ const SPEC = {
             { sel: "#propOpOpen", label: "Open in Underwriting", text: "Upload its T12 there." },
             { sel: "#propOpPanel [data-loanopsrc]", label: "Your entered NOI", text: "Says the NOI is the one typed in the profile — no T12 yet." }
           ] },
-        { title: "The NOI override", text: "An override is typed by you only and wins over everything — the T12, the entered NOI. DSCR, debt yield, Home and the refinance all use it. Clear the field to go back.",
+        { title: "The NOI override", text: "An override is typed by you only and wins over the T12 and the entered NOI on this page, in DSCR, debt yield and Home. The refinance never uses a typed figure: it is sized on the T12 or the underwriting approved from it. Clear the field to go back.",
           go: async (h) => { await pick(h, NAME); await pfSet(h, "noiOverride", "1200000"); await h.wait(500); },
           shot: "#propOpPanel > div",
           marks: [

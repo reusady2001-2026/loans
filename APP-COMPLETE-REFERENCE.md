@@ -463,8 +463,11 @@ targets are set in Settings.
 - **Early-payoff penalty — yield maintenance** (unchanged): the rate gap over the remaining term on today's balance,
   discounted at the matching Treasury, at least 1%. **Checked against Chatham Financial's calculator (cf.com), 3 real
   loans, 2026-10-14** — see §8.
-- The NOI the refinance is sized on: **In-place T12 NOI**, **Underwritten NOI**, or the **entered** NOI (your
-  override, when you set one).
+- The NOI the refinance is sized on (draft, 2026-10-21): **In-place T12**, **Safe underwriting** or **Aggressive
+  underwriting** — the last two are the property's APPROVED underwriting (§9, F1 round 2) and can't be picked before
+  it is approved. **A property with no T12 is not refinanced:** the screen says "No T12 yet" and offers "Upload its
+  T12 in Underwriting" — a typed NOI never sizes a refinance (Home and the portfolio totals still show a typed NOI).
+  In a package each property has **its own** basis. "Cap rate" (was "Edit inputs") edits only the cap rate.
 - **Save as a loan** replaces all the property's loans: the old ones become **Paid off (refinanced)**, dated, in
   their history.
 
@@ -645,11 +648,12 @@ saved, the key is used.
 - **The Guide (draft, 2026-10-19 — the operator: "a guide in the app with the screenshots of every single screen").**
   Settings → **Guide** (under the properties, above the Claude connection) → **Open the guide**: a window (92% of the
   app) — pick a tab (a chapter: Getting around, Portfolio, a loan's page, Properties, Underwriting & Sizing, Refinance,
-  the Calendar, Data Health, Documents & files, the Assistant, Settings/Data & backups, the shared database), then a
-  topic (e.g. Underwriting → Upload a T12: drag and drop, or "choose a file"); a topic is a walkthrough — a picture of
-  the real screen with a numbered marker on every button and box and what each does; Back / Next (or ← →) and past the
-  last step into the next topic; point at an explanation to light up its box; click a picture for full size; a search
-  over every step; Esc closes. `guide-viewer.js` (the window) reads `guide/guide.json`. The pictures are **taken by a
+  the Calendar, Data Health, Documents & files, the Assistant, Settings/Data & backups, the shared database).
+  **A chapter is one page you scroll (the operator, 2026-10-21: "a scroll guide, not an arrow one"):** every topic
+  is a heading and every step follows it — a picture of the real screen with a numbered marker on every button and
+  box, and **its explanations beside the picture** (under it on a narrow window). The topics are listed on the left
+  and follow the scroll; clicking one scrolls to it. Point at an explanation to light up its box; click a picture for
+  full size; a search over every step jumps to it; Esc closes. Pictures load as they come into view. `guide-viewer.js` (the window) reads `guide/guide.json`. The pictures are **taken by a
   script, not by hand**: `guide/capture.js` drives the app (Electron + Playwright) through every step of
   `guide/spec/<chapter>.js` with the built-in sample loans and made-up files only (a made-up T12, rent roll, agreement;
   made-up Claude answers in `guide/fixtures/`), writes `guide/img/<chapter>/*.jpg` and `guide/guide.json`, and stops
@@ -657,8 +661,8 @@ saved, the key is used.
   (`xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js [chapter…]`, `guide/README.md`). Shipped:
   `guide-viewer.js`, `guide/guide.json`, `guide/img/**`; the specs and the capture scripts are not.
   `test/guide.test.js` (every picture on disk, every marker inside its picture with an explanation, the spec and the
-  capture agree, nothing left over, Settings' order) and `test/e2e/guide.e2e.js` (the window, a chapter, a topic,
-  Back / Next / keys, the next topic, every picture loads, search, full size, Esc).
+  capture agree, nothing left over, Settings' order) and `test/e2e/guide.e2e.js` (the window, a chapter's one page,
+  explanations beside each picture, the topic list following the scroll, every picture loads, search, full size, Esc).
   **Size:** 12 chapters, 107 topics, 308 steps, 1,624 markers; the pictures are about 20 MB (JPEG quality 72), the
   data 0.5 MB. What has no picture is said in the step's words: the computer's own Open / Save / Print / folder
   windows, the pop-out window, update-chip states other than the running version, the app at a scale other than 100%,
@@ -994,8 +998,53 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   leftover style for every table row and looked clickable); only the binding row is highlighted.
   `test/e2e/refi-lender-uses.e2e.js` (13 checks). No warning when coverage falls under 1.00× — the operator's call:
   the app is for the borrower; that risk is the lender's.
-- **Not in the draft yet:** the Underwritten column as "T12 + the accepted pro forma changes" (round 2 — the operator's
-  decision); listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
+- **Round 2 (the operator, 2026-10-21) — four phases: the loan exists → Underwriting → What to push → Refinance.**
+  - **Underwriting = the APPROVED pro forma, Safe and Aggressive.** The pro forma is the draft; there is no separate
+    Underwritten column any more (the table is Line | In-Place | $/unit | Underwriting · Safe/Aggressive | $/unit), no
+    "Start a pro forma" (it starts by itself on a T12) and no line pins. Replacement reserves are a line in both
+    versions (reserve per unit × units): "= NOI before reserves − Replacement reserves = Safe/Aggressive underwriting
+    NOI". The bar reads UNDERWRITING with a chip: **Draft** · **Approved** · **Changed since approval**; **Approve the
+    underwriting** (or **Approve again**) keeps `proForma.approved = {at, by, base, aggressive, reserves, sig,
+    snapshot:{changes, revenue}}` and writes the history ("Underwriting — approved — Safe $… · Aggressive $…"). "Start
+    over" clears the draft's changes and keeps the last approval. The cards: In-place, Safe, Aggressive; **Debt
+    sizing shows Safe and Aggressive side by side** ("keep the box").
+  - **Claude's stories while drafting** (under the table, "Claude's stories for the underwriting" → "Put it in the
+    draft"): a story only RAISES the NOI; one that would lower it is listed apart ("Left out — it would lower the
+    NOI"). The operator can still type a decrease. Assumption suggestions now also bring revenue up to the rent
+    roll's GPR (and commercial rent lease by lease) when the T12 runs below it. **An assumption that would lower the
+    NOI is never a suggestion — it is a warning** in the bar (`[data-pfassumewarn]`, `ProForma.assumptionWarnings`):
+    e.g. "Vacancy: your assumption is 8% of gross potential rent; this T12 runs 5.15% … at 8% the NOI would be $X
+    lower" — not used; the operator can type that change himself. An assumption never moves the underwriting by
+    itself.
+  - **General Data:** `underwritten` = the approved Safe (after reserves), `underwrittenAggressive`, `uwApproved {at,
+    by, current}`, `uwModel: 2` (a record without it reads as not approved). The portfolio roll-up's column is **Safe
+    UW NOI** — blank until approved, never worked out from the assumptions.
+  - **What to push runs after the approval** (and again when the approval changes): before it, "Approve the
+    underwriting first". Claude reads the T12 and the approved Safe and Aggressive (each change and its story).
+    RULE 1 — a push only raises the NOI (one with a negative effect is dropped and listed). RULE 2 — never the same
+    lever as a story already in the underwriting (a rent-increase story + another rent push collides; an
+    occupancy-annualize story + a vacancy 4%→3% push doesn't — it names the story it sits beside, `besideStory`).
+    RULE 3 — each push has three effects, **in-place, on Safe and on Aggressive**, each net of what that version
+    already counts.
+  - **Refinance:** the basis per property (In-place T12 · Safe underwriting · Aggressive underwriting); **What to push
+    — what it would get you** lists each property's pushes, ticked independently, each counting its effect on its
+    property's basis, plus your own levers; the ticks, levers and bases are kept with the refinance (`refi.bases`,
+    `refi.pushes`, `refi.levers`). **The amount to cover:** Today's payoff (with the penalty) · No penalty — the last
+    12 months (the balance 12 months before maturity) · At maturity (the balance just before the final payment); the
+    target line says the NOI that covers it on the chosen basis, how much more that is, and what the ticked pushes
+    close ("covered, with $X to spare" or "$Y of NOI still missing"). From the verdict onward the screen is unchanged.
+  - **Create a portfolio…** lists each property with the NOI its refinance would use (its T12, or the approved
+    underwriting) or "no T12"; the note names the ones with no T12 ("upload it in Underwriting") and never counts a
+    typed NOI.
+  - **What to push runs** when the underwriting is approved (or approved again) or on Re-analyse — no longer when an
+    assumption alone is saved.
+  - **Bugs found and fixed in round 2:** the Underwriting table crashed on a property whose rent roll has commercial
+    leases (a leftover from the removed line pins); "At maturity" read $0 for a loan maturing on the 1st of a month
+    (the final payment was counted).
+  - **Assistant:** `set_refi_noi_basis {name, basis, property?}` takes in-place / safe / aggressive (a package names the
+    property); `toggle_refi_move` ticks a push on its own property; `pin_underwriting_line` is refused (lines aren't
+    pinned); `read_property` gives `underwritingSafe`, `underwritingAggressive`, `underwritingApproved`.
+- **Not in the draft yet:** listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
   Real-file check against Azriel's Queens Gate $3.34M waits for his file.
 
 #### The TEST app: never the shared database (draft, 2026-10-15)

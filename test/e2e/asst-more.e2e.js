@@ -49,12 +49,9 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   res=await click('aiAsstEditApprove'); await page.waitForTimeout(400);
   ok(res&&res.ok&&await page.evaluate(async(k)=>!((await window.ldsShell.docList(k)).files||[]).some(x=>x.name==='side-letter.txt'),K),'approved → removed');
 
-  // ---- #52: pin an Underwriting line ----
+  // ---- the underwriting is the approved pro forma: lines aren't pinned any more ----
   r=await run({action:'pin_underwriting_line',args:{name:'Avalon White Plains',line:'Insurance',value:123456}});
-  ok(r.card&&/Insurance/.test(r.text)&&/123,456/.test(r.text),'pin a line: card with the figure');
-  res=await click('aiAsstEditApprove'); await page.waitForTimeout(800);
-  r=await run({action:'read_property',args:{name:'Avalon White Plains'}});
-  ok(res&&res.ok&&r.data&&r.data.assumptions.lineOverrides&&r.data.assumptions.lineOverrides.INS&&r.data.assumptions.lineOverrides.INS.value===123456,'approved → pinned in the property’s assumptions');
+  ok(!r.card&&r.ok===false&&/approved pro forma/.test(r.msg||r.text||''),'pin a line: refused — the underwriting is the approved pro forma');
 
   // ---- #52: backups and recompute ----
   r=await run({action:'backup_now',args:{}});
@@ -72,7 +69,9 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   // every action Claude is told about exists, and every action exists in what Claude is told
   const AN=await page.evaluate(()=>{ const names=window.LDS_asstActionNames(), sys=window.LDS_asstSystem(); const told=[...new Set((sys.match(/\b[a-z]+(?:_[a-z]+)+(?= \{)/g)||[]))];
-    return { missing: told.filter(n=>!names.includes(n)), untold: names.filter(n=>sys.indexOf(n)<0) }; });
+    // retired actions stay only to refuse a call (e.g. from an old chat) — Claude isn't told about them (2026-10-21: lines aren't pinned)
+    const RETIRED=['pin_underwriting_line'];
+    return { missing: told.filter(n=>!names.includes(n)), untold: names.filter(n=>RETIRED.indexOf(n)<0&&sys.indexOf(n)<0) }; });
   ok(AN.missing.length===0,'every action in Claude’s instructions exists'+(AN.missing.length?' (missing: '+AN.missing.join(', ')+')':''));
   ok(AN.untold.length===0,'every action is in Claude’s instructions'+(AN.untold.length?' (not told: '+AN.untold.join(', ')+')':''));
 

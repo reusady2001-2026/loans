@@ -128,7 +128,7 @@ const SPEC = {
     // ------------------------------------------------------------------------------------------------------------------
     { id: "noi", title: "The NOI box", intro: "Under the tiles: the property’s NOI and the coverage figures, and where that NOI came from.",
       steps: [
-        { title: "NOI, DSCR, debt yield, LTV", text: "One NOI for the property — the same one Underwriting, Home and the refinance use. The small line says where it came from, in this order: your NOI override (in the profile), else the T12, else the property’s operating lines, else an NOI typed on the loan. With none, it says “No NOI yet”.",
+        { title: "NOI, DSCR, debt yield, LTV", text: "One NOI for the property — the same one Underwriting and Home use (the refinance uses only the T12 or the underwriting approved from it). The small line says where it came from, in this order: your NOI override (in the profile), else the T12, else the property’s operating lines, else an NOI typed on the loan. With none, it says “No NOI yet”.",
           go: async (h) => { await h.openLoan(/Queens Gate/); },
           shot: "#loanOpPanel > div",
           marks: [

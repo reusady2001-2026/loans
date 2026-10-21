@@ -1,7 +1,10 @@
 # The in-app Guide
 
-Settings → **Guide** → *Open the guide* opens a window: pick a tab (a chapter), then a topic; a topic is a walkthrough
-of steps — a picture of the real app with a numbered marker on every button, and what each number does.
+Settings → **Guide** → *Open the guide* opens a window: pick a tab (a chapter) and it opens as **one long page** to
+scroll — every topic a heading, every step under it: its words, then a picture of the real app with a numbered marker on
+every button and, beside it (under it on a narrow window), what each number does. The menu on the left jumps to a topic
+and follows you as you scroll; pictures load as they come into view; the search jumps to a step; click a picture for
+full size; Esc closes. No Back / Next.
 
 - `guide-viewer.js` — the window (loaded by `index.html`; reads `guide/guide.json`).
 - `guide/spec/<chapter>.js` — what each chapter shows: its topics and steps (how to reach each screen, the picture's

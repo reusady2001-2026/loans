@@ -58,11 +58,12 @@ module.exports = {
           ],
           after: async (h) => { await portfolio(h); } },
         { title: "Click a refinance card",
-          text: "Click a Refi card and the refinance analysis opens for that loan: what it would cost today, and whether to refinance. The Refinance chapter explains that page. Close takes you back.",
+          text: "Click a Refi card and the refinance opens for that loan. A refinance is sized on the property’s T12 and the underwriting approved from it — never a typed NOI — so a property with no T12 yet says “No T12 yet”, with a button to upload it. The Refinance chapter explains the whole page. Close takes you back.",
           go: async (h) => { await h.js(() => { const r = document.querySelector("#alertsRail .overflow-x-auto"); if (r) r.scrollLeft = r.scrollWidth; }); await h.click("#alertsRail [data-alert-refi] >> nth=0", { wait: 1500 }); await h.calm(); await top(h); },
           shot: "view",
           marks: [
             { sel: "#refiView h2", label: "Refinance Analysis", text: "The refinance for the loan on the card (the Refinance chapter)." },
+            { sel: "#refiView [data-refinot12]", label: "No T12 yet", text: "This sample property has no T12: nothing is sized until it is uploaded. Its button opens Underwriting for it." },
             { sel: "#refiCloseBtn", label: "Close", text: "Back to where you were." }
           ],
           after: async (h) => { await h.click("#refiCloseBtn", { wait: 600 }).catch(() => {}); await wide(h, false); await portfolio(h); } }
@@ -136,7 +137,7 @@ module.exports = {
           ],
           after: async (h) => { await h.click("#noiCancel", { wait: 400 }); } },
         { title: "Refi path",
-          text: "Click Refi path on a property that has an NOI: the refinance analysis opens for that property (all its loans together when it has more than one). The Refinance chapter explains that page. Close brings you back.",
+          text: "Click Refi path: the refinance opens for that property (all its loans together when it has more than one). Like every refinance it needs the property’s T12 — without one it says “No T12 yet”. The Refinance chapter explains that page. Close brings you back.",
           go: async (h) => { await portfolio(h); await h.click(COV + " [data-covpath] >> nth=0", { wait: 1500 }); await h.calm(); await top(h); },
           shot: "view",
           marks: [

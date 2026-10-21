@@ -102,7 +102,7 @@ module.exports = {
           marks: [
             { sel: '[data-tabsel="home"]', label: "Portfolio", text: "The Portfolio tab — always there, can’t be closed." },
             { sel: "#tabNewBtn", label: "+", text: "Opens this menu. Click it again to close the menu." },
-            { sel: '#tabNewMenu [data-tabopen="underwriting"]', label: "Underwriting & Sizing", text: "A property’s T12, its NOI, loan sizing and the pro forma." },
+            { sel: '#tabNewMenu [data-tabopen="underwriting"]', label: "Underwriting & Sizing", text: "A property’s T12, its underwriting (Safe and Aggressive, approved by you), loan sizing and what to push." },
             { sel: '#tabNewMenu [data-tabopen="calendar"]', label: "Maturity & Reset Calendar", text: "Every maturity, rate reset and interest-only change, month by month." },
             { sel: '#tabNewMenu [data-tabopen="health"]', label: "Data Health", text: "What is missing or needs a look, across every property." }
           ] },

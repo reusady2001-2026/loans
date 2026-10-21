@@ -266,6 +266,31 @@
   // higher." A line that runs ABOVE its assumption gets one suggested change on its biggest account, sized so the line
   // lands on the assumption (its other accounts stay as they are), with a ready story. Nothing is applied by itself.
   // assume: { mgmtPct, vacancyPct } (decimals).
+  // (2026-10-21) an assumption that would LOWER the NOI is never a suggestion: it is a warning. The T12 runs better than
+  // the assumption, the underwriting keeps the T12's figure, and the warning says what a lender underwriting the
+  // assumption would take off the NOI (effect < 0).
+  function assumptionWarnings(input, assume){
+    input = input || {}; assume = assume || {};
+    var out = [], lines = {}; (input.lines || []).forEach(function (l){ if (l && l.key) lines[l.key] = l; });
+    var egi = 0; (input.lines || []).forEach(function (l){ if (l && isIncome(l.section) && isNum(l.t12)) egi += l.t12; });
+    var gpr = lines.GPR && isNum(lines.GPR.t12) ? lines.GPR.t12 : 0;
+    var mg = lines.MGMT, am = num(assume.mgmtPct);
+    if (mg && am != null && am > 0 && egi > 0 && isNum(mg.t12) && mg.t12 >= 0 && mg.t12 / egi < am - 0.00005){
+      var effM = r2(mg.t12 - am * egi);
+      out.push({ id: "warn:MGMT", line: "MGMT", assumed: am, actual: r6(mg.t12 / egi), effect: effM,
+        text: "Management fee: your assumption is " + pct(am) + " of revenue; this T12 runs " + pct(mg.t12 / egi) + " (" + money(mg.t12) + "). The underwriting keeps the T12's — at " + pct(am) + " the NOI would be " + money(-effM) + " lower." });
+    }
+    var vc = lines.VAC, av = num(assume.vacancyPct);
+    if (av != null && av > 0 && gpr > 0){
+      var loss = vc && isNum(vc.t12) ? -vc.t12 : 0;
+      if (loss / gpr < av - 0.00005){
+        var effV = r2(loss - av * gpr);
+        out.push({ id: "warn:VAC", line: "VAC", assumed: av, actual: r6(loss / gpr), effect: effV,
+          text: "Vacancy: your assumption is " + pct(av) + " of gross potential rent; this T12 runs " + pct(loss / gpr) + " (" + money(-loss) + "). The underwriting keeps the T12's — at " + pct(av) + " the NOI would be " + money(-effV) + " lower." });
+      }
+    }
+    return out;
+  }
   function assumptionSuggestions(input, assume){
     input = input || {}; assume = assume || {};
     var out = [], lines = {}; (input.lines || []).forEach(function (l){ if (l && l.key) lines[l.key] = l; });
@@ -292,6 +317,24 @@
         if (pv > 0) out.push({ id: "assume:VAC", source: "assumption", line: "VAC", account: refOf(b), accountId: b.id || null, how: "pctRevenue", pct: r6(pv), kind: "marketNorm", column: "both",
           story: "Vacancy at " + pct(av) + " of gross potential rent, our underwriting assumption; the T12 ran " + pct(actualV) + " (" + money(vc.t12) + ")." + (Math.abs(othersV) >= 0.01 ? " The line's other accounts stay as they are." : ""),
           why: "Your underwriting assumes " + pct(av) + " vacancy; this T12 runs " + pct(actualV) + " of gross potential rent." }); }
+    }
+    // (2026-10-21) the underwriting is the approved pro forma: the rent the rent roll proves today, and the commercial
+    // leases lease by lease, come in as suggestions too — only when they RAISE the NOI (a suggestion never lowers it)
+    var rr = num(assume.rrGPR), gl = lines.GPR;
+    if (gl && rr != null && rr > 0 && isNum(gl.t12) && rr > gl.t12 + 0.5){
+      var g = pick("GPR", 1);
+      if (g){ var othersG = r2(gl.t12 - (num(g.amount) || 0)), vG = r2(rr - othersG);
+        if (vG > 0) out.push({ id: "assume:GPR", source: "assumption", line: "GPR", account: refOf(g), accountId: g.id || null, how: "accountTotal", value: vG, kind: "operating", column: "both",
+          story: "Gross potential rent from today's rent roll: " + money(rr) + " a year; the T12 shows " + money(gl.t12) + "." + (Math.abs(othersG) >= 0.01 ? " The line's other accounts stay as they are." : ""),
+          why: "Today's rent roll comes to " + money(rr) + " a year of gross potential rent; the T12 shows " + money(gl.t12) + "." }); }
+    }
+    var rc = num(assume.rrCommercial), cl = lines.COM;
+    if (cl && rc != null && rc > 0 && isNum(cl.t12) && rc > cl.t12 + 0.5){
+      var cA = pick("COM", 1);
+      if (cA){ var othersC = r2(cl.t12 - (num(cA.amount) || 0)), vC = r2(rc - othersC);
+        if (vC > 0) out.push({ id: "assume:COM", source: "assumption", line: "COM", account: refOf(cA), accountId: cA.id || null, how: "accountTotal", value: vC, kind: "operating", column: "both",
+          story: "Commercial rent from the rent roll's leases, lease by lease: " + money(rc) + " a year; the T12 shows " + money(cl.t12) + ".",
+          why: "The commercial leases on the rent roll come to " + money(rc) + " a year; the T12 shows " + money(cl.t12) + "." }); }
     }
     return out;
   }
@@ -380,5 +423,5 @@
 
   return { KINDS: KINDS, KIND: KIND, HOWS: HOWS, DEDUCTIONS: DEDUCTIONS, MONTHS_OK: MONTHS_OK, compute: compute, computeVersion: computeVersion,
            accountsFrom: accountsFrom, problemOf: problemOf, describe: describe, isWholeLine: isWholeLine, acctKey: acctKey,
-           assumptionSuggestions: assumptionSuggestions, matchSuggestion: matchSuggestion, lenderSheets: lenderSheets, money: money, pct: pct };
+           assumptionSuggestions: assumptionSuggestions, assumptionWarnings: assumptionWarnings, matchSuggestion: matchSuggestion, lenderSheets: lenderSheets, money: money, pct: pct };
 });

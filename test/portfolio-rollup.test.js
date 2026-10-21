@@ -107,7 +107,7 @@ section("buildRows — grouping, senior+mezz collapse, names, units, counts", ()
 section("combined position — Avalon dscr/dy/ltv on the SUMMED debt service / balance", () => {
   const a = R[K.avalon];
   ok(cents(a.noi, 12000000), "noi = 12,000,000.00 (effectiveNOI)");
-  ok(cents(a.uwNoi, 11500000), "uwNoi = 11,500,000.00 (derive().underwrittenNOI)");
+  ok(a.uwNoi === null, "uwNoi null — the Safe UW NOI is the APPROVED underwriting (hooks.propertyNOI), never worked out from the record (2026-10-21)");
   ok(cents(a.annualDS, 6792000), "annualDS = 5,145,600 + 1,646,400 = 6,792,000.00 (got " + a.annualDS + ")");
   ok(cents(a.balance, 120000000), "balance = 96,000,000 + 24,000,000 = 120,000,000.00 (got " + a.balance + ")");
   ok(approx(a.dscr, 1.76678445, 1e-7) && a.dscr === 12000000 / 6792000, "dscr = 12,000,000 / 6,792,000 = 1.76678445 (got " + a.dscr + ")");
@@ -119,7 +119,7 @@ section("combined position — Avalon dscr/dy/ltv on the SUMMED debt service / b
 
 section("single loan, loan-only, record-only, negative NOI", () => {
   const w = R[K.weaver];
-  ok(cents(w.noi, 815000) && cents(w.uwNoi, 795750), "Weaver noi 815,000.00 / uwNoi 795,750.00");
+  ok(cents(w.noi, 815000) && w.uwNoi === null, "Weaver noi 815,000.00 / uwNoi null (not approved)");
   ok(cents(w.annualDS, 400000) && cents(w.balance, 8000000), "Weaver annualDS 400,000.00 / balance 8,000,000.00");
   ok(w.dscr === 2.0375, "Weaver dscr = 815,000 / 400,000 = 2.0375 exactly (got " + w.dscr + ")");
   ok(w.dy === 0.101875, "Weaver dy = 815,000 / 8,000,000 = 0.101875 exactly (got " + w.dy + ")");
@@ -133,7 +133,7 @@ section("single loan, loan-only, record-only, negative NOI", () => {
   ok(!fake.calls.derive.some(c => c.key === K.orphan), "derive() not called for a record without lines");
   ok(o.balance === 0 && o.annualDS === 0 && o.dscr === null && o.maturity === null, "record-only: no debt, no ratios, no maturity");
   const l = R[K.lease];
-  ok(cents(l.noi, -50000) && cents(l.uwNoi, -40000), "negative NOI is shown (−50,000.00 / −40,000.00), never hidden");
+  ok(cents(l.noi, -50000) && l.uwNoi === null, "negative NOI is shown (−50,000.00), never hidden");
   ok(l.dscr === null && l.dy === null && l.ltv === null, "negative NOI → ratios null");
   ok(cents(l.balance, 1000000) && cents(l.annualDS, 60000), "negative NOI still carries its debt figures");
 });
@@ -153,7 +153,7 @@ section("totals — 2.9.15 (C1): every property counts, whatever its state", () 
   const t = out.totals;
   ok(t.properties === 6 && t.loans === 6, "properties 6, loans 2+1+1+0+1+1 = 6 (got " + t.properties + "/" + t.loans + ")");
   ok(cents(t.noi, 12765000), "noi = 12,000,000 + 815,000 − 50,000 = 12,765,000.00 (no NOI adds nothing to the column) (got " + t.noi + ")");
-  ok(cents(t.uwNoi, 12255750), "uwNoi = 11,500,000 + 795,750 − 40,000 = 12,255,750.00 (got " + t.uwNoi + ")");
+  ok(t.uwNoi === null, "uwNoi total null — no property has an approved underwriting (got " + t.uwNoi + ")");
   ok(cents(t.balance, 135470000), "balance = 120,000,000 + 1,000,000 + 6,370,000 + 0 + 8,000,000 + 100,000 = 135,470,000.00 (got " + t.balance + ")");
   ok(cents(t.annualDS, 7624000), "annualDS = 6,792,000 + 60,000 + 360,000 + 0 + 400,000 + 12,000 = 7,624,000.00 (got " + t.annualDS + ")");
   // Every property counts: M Lofts and Zeta (loans, no NOI) count at $0 NOI with ALL their debt, Linden's negative NOI
@@ -217,10 +217,8 @@ section("inputs: records as array, loans/defaults from hooks, NaN guards, errors
   ok(JSON.stringify(viaHooks) === JSON.stringify(out), "loans omitted → hooks.loans()");
   fake.calls.derive.length = 0;
   PR.buildRows(REC, LOANS, hooksFor(LOANS));
-  ok(fake.calls.derive.length === 3 && fake.calls.derive.every(c => c.gd === GD), "globalDefaults omitted → hooks.globalDefaults() handed to derive()");
-  const gd2 = { vacancyPct: 0.07 };
-  PR.buildRows(REC, LOANS, hooksFor(LOANS), gd2);
-  ok(fake.calls.derive.slice(-3).every(c => c.gd === gd2), "explicit globalDefaults handed to derive() as given");
+  PR.buildRows(REC, LOANS, hooksFor(LOANS), { vacancyPct: 0.07 });
+  ok(fake.calls.derive.length === 0, "derive() is never called — the Safe UW NOI is the approved underwriting, not an assumption-based figure");
   // an engine returning garbage must not leak NaN/undefined/strings into a row
   global.OperatingCalc = { effectiveNOI: () => NaN, derive: () => ({ underwrittenNOI: undefined }), stack: () => ({ dscr: NaN, dy: undefined, ltv: "0.5", balance: Infinity, annualDS: null }) };
   const g = PR.buildRows({ [K.weaver]: REC[K.weaver] }, [L.weaver, L.mlofts], hooksFor(LOANS, { currentBalance: l => (l._id === "l-mlofts" ? undefined : BAL[l._id]), annualDebtService: l => (l._id === "l-mlofts" ? NaN : DS[l._id]) }), GD);
@@ -246,7 +244,7 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   const rowHtml = key => rowHtmlOf(html, key);
   const av = rowHtml(K.avalon);
   ok(av.includes(">Avalon White Plains<") && av.includes(">400<") && av.includes(">2<"), "Avalon: name, 400 units, 2 loans");
-  ok(av.includes(">$12,000,000.00<") && av.includes(">$11,500,000.00<"), "Avalon: NOI / UW NOI money to 2 decimals");
+  ok(av.includes(">$12,000,000.00<") && !av.includes(">$11,500,000.00<"), "Avalon: NOI money to 2 decimals; no UW NOI (not approved)");
   ok(av.includes(">$120,000,000.00<") && av.includes(">$6,792,000.00<"), "Avalon: balance / annual DS");
   ok(av.includes(">1.77×<"), "Avalon: DSCR 1.7668 → 1.77×");
   ok(av.includes(">10.00%<") && av.includes(">55.00%<"), "Avalon: DY 10.00%, LTV 55.00%");
@@ -255,10 +253,10 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok((ml.match(/>—</g) || []).length === 6, "loan-only row: units, NOI, UW NOI, DSCR, DY, LTV are all — (6 dashes, got " + (ml.match(/>—</g) || []).length + ")");
   ok(ml.includes(">$6,370,000.00<") && ml.includes(">$360,000.00<") && ml.includes(">05/01/2027<"), "loan-only row still shows balance, DS, maturity");
   const le = rowHtml(K.lease);
-  ok(le.includes(">-$50,000.00<") && le.includes(">-$40,000.00<"), "negative money rendered -$50,000.00");
+  ok(le.includes(">-$50,000.00<"), "negative money rendered -$50,000.00");
   const ti = html.indexOf("data-op-total"), tot = html.slice(ti, html.indexOf("</tr>", ti));
   ok(tot.includes("6 properties") && tot.includes(">6<"), "totals row: 6 properties, 6 loans");
-  ok(tot.includes(">$12,765,000.00<") && tot.includes(">$12,255,750.00<") && tot.includes(">$135,470,000.00<") && tot.includes(">$7,624,000.00<"), "totals row money");
+  ok(tot.includes(">$12,765,000.00<") && tot.includes(">$135,470,000.00<") && tot.includes(">$7,624,000.00<"), "totals row money");
   ok(tot.includes(">1.67×<") && tot.includes(">9.42%<") && tot.includes(">58.45%<"), "totals row DSCR 1.67× / DY 9.42% / LTV 58.45% — every property counted");
   const SCOPE = "6 of 6 properties counted — DSCR 1.67× · DY 9.42% · LTV 58.45% · 3 with no NOI, counted at $0 ($6.47M debt) · 1 with NOI at or below $0 · 1 with no loan (no debt)";
   const si = html.indexOf("data-op-scope"), sc = si < 0 ? "" : html.slice(si, html.indexOf("</tr>", si));
@@ -332,7 +330,7 @@ section("hardening — null lines, mezz-only names, hooks.maturity, per-row erro
   ok(fake.calls.derive.length === 0, "derive() not called for a null-only sheet");
   ok(one([]).uwNoi === null && one(null).uwNoi === null && one("GPR").uwNoi === null && fake.calls.derive.length === 0, "lines as an array / null / a string → no lines, no derive()");
   const fr = one({ GPR: 5 });   // a bare number IS a line to the calc (annual 5)
-  ok(fake.calls.derive.length === 1 && cents(fr.noi, 815000) && cents(fr.uwNoi, 795750), "a non-object line still counts: noi and uwNoi both set");
+  ok(fake.calls.derive.length === 0 && cents(fr.noi, 815000) && fr.uwNoi === null, "a non-object line still counts: noi set (uwNoi waits for an approved underwriting)");
 
   // a property whose only loan is a mezz is named like the app's picker: "(Mezz…)" stripped
   const k2m = { _id: "k2m", propertyName: "K2 Sweetwater (Mezz)", propertyAddress: "10726 SW 7th Street, Miami, FL", lienPosition: "Mezzanine", maturityDate: "2027-01-01" };
@@ -423,7 +421,7 @@ section("totals — the whole book: a property with no balance or no debt servic
   const abHooks = hooksFor([A, B], { annualDebtService: l => ({ a: 100000, b: 50000 })[l._id], currentBalance: l => { if (l._id === "b") throw new Error("no schedule for B"); return 1000000; }, capRate: () => 0.06 });
   const ab = PR.buildRows(abRecs, [A, B], abHooks, GD), bRow = byKey(ab.rows)["addr:b st"];
   ok(/no schedule for B/.test(bRow.error) && bRow.noi === null && bRow.uwNoi === null && bRow.annualDS === null && bRow.balance === null, "B: currentBalance throws inside stack() → noi AND uwNoi null although both had been computed before the throw");
-  ok(ab.totals.noiProps === 1 && ab.totals.noNOIProps === 1 && ab.totals.noi === 150000 && ab.totals.uwNoi === 140000 && ab.totals.dscr === 1.5, "totals do not count B's half-computed NOI: noiProps 1, noi 150,000, uwNoi 140,000, DSCR 1.50 (not 2 / 350,000 / 330,000); B is named as having no NOI");
+  ok(ab.totals.noiProps === 1 && ab.totals.noNOIProps === 1 && ab.totals.noi === 150000 && ab.totals.dscr === 1.5, "totals do not count B's half-computed NOI: noiProps 1, noi 150,000, DSCR 1.50 (not 2 / 350,000); B is named as having no NOI");
   global.OperatingCalc = fake;
 });
 
@@ -459,18 +457,18 @@ section("integration — real OperatingCalc (operating-calc.js)", () => {
   ok(res.rows.length === 3 && res.rows.map(x => x.name).join(",") === "Loan Only,Override Court,Weaver Mill", "3 rows sorted by name (got " + res.rows.map(x => x.name).join(",") + ")");
   ok(w && w.loans === 2 && w.name === "Weaver Mill", "senior + mezz → one row named for the senior");
   ok(w && cents(w.noi, 815000), "in-place NOI = 815,000.00 (got " + (w && w.noi) + ")");
-  ok(w && cents(w.uwNoi, 795750), "underwritten NOI = 795,750.00 (got " + (w && w.uwNoi) + ")");
+  ok(w && w.uwNoi === null, "no approved underwriting → Safe UW NOI null (got " + (w && w.uwNoi) + ")");
   ok(w && cents(w.annualDS, 550000) && cents(w.balance, 10000000), "stack annualDS 550,000.00 / balance 10,000,000.00 (got " + (w && w.annualDS) + " / " + (w && w.balance) + ")");
   ok(w && approx(w.dscr, 1.48181818, 1e-7), "stack dscr = 815,000 / 550,000 = 1.48181818 (got " + (w && w.dscr) + ")");
   ok(w && approx(w.dy, 0.0815, 1e-12), "stack dy = 815,000 / 10,000,000 = 0.0815 (got " + (w && w.dy) + ")");
   ok(w && approx(w.ltv, 0.73619632, 1e-7), "stack ltv = 10,000,000 / (815,000 / 0.06) = 0.73619632 (got " + (w && w.ltv) + ")");
   ok(w && w.maturity === "2029-01-01", "earliest maturity is the mezz's 2029-01-01 (got " + (w && w.maturity) + ")");
-  ok(v && cents(v.noi, 815000) && cents(v.uwNoi, 795750), "a WORSE vacancy override (10%) is ignored — the underwriting credits the proven 5%: uwNoi 795,750.00, in-place still 815,000.00 (got " + (v && v.uwNoi) + ")");
+  ok(v && cents(v.noi, 815000) && v.uwNoi === null, "an assumption override never makes a UW NOI: in-place 815,000.00, Safe UW NOI null until approved (got " + (v && v.uwNoi) + ")");
   ok(v && approx(v.dscr, 815000 / 300000, 1e-12) && approx(v.dy, 0.163, 1e-12) && approx(v.ltv, 0.39877301, 1e-7), "override row ratios: dscr 2.7167, dy 16.3%, ltv 39.88%");
   ok(o && o.noi === null && o.uwNoi === null && o.dscr === null && cents(o.balance, 1500000) && cents(o.annualDS, 90000), "loan-only row next to real-engine rows: NOI null, debt shown");
   const t = res.totals;
   ok(t.properties === 3 && t.loans === 4, "totals: 3 properties, 4 loans");
-  ok(cents(t.noi, 1630000) && cents(t.uwNoi, 1591500), "totals noi 1,630,000.00 / uwNoi 1,591,500.00 = 795,750 (Weaver) + 795,750 (Override, actual credited) (got " + t.noi + " / " + t.uwNoi + ")");
+  ok(cents(t.noi, 1630000) && t.uwNoi === null, "totals noi 1,630,000.00 / uwNoi null (nothing approved) (got " + t.noi + " / " + t.uwNoi + ")");
   ok(cents(t.balance, 16500000) && cents(t.annualDS, 940000), "totals balance 16,500,000.00 / annualDS 940,000.00");
   // Every property counts: Loan Only has no NOI, so it counts at $0 with its 90,000 of debt service and 1,500,000 of balance
   ok(t.noiProps === 2 && t.properties === 3 && t.noNOIProps === 1 && cents(t.noNOIDebt, 1500000), "NOI on 2 of 3; Loan Only has none and carries 1,500,000.00 of debt");
@@ -510,7 +508,9 @@ section("2.9.12 — the roll-up runs on the app's ONE NOI (hooks.propertyNOI), n
     const one = { inPlace: 2171632.44, underwritten: 1950000, from: "t12" };
     const row = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? one : null) }), GD).rows[0];
     ok(cents(row.noi, 2171632.44), "NOI = the app's T12-rule NOI (2,171,632.44), not the lines' 925,080.37");
-    ok(cents(row.uwNoi, 1950000), "UW NOI = the app's underwritten NOI");
+    ok(cents(row.uwNoi, 1950000), "Safe UW NOI = the app's APPROVED Safe underwriting");
+    const draft = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? { inPlace: 2171632.44, underwritten: null, from: "t12" } : null) }), GD).rows[0];
+    ok(cents(draft.noi, 2171632.44) && draft.uwNoi === null, "not approved yet → Safe UW NOI blank (never worked out from the lines), the in-place NOI still shows");
     ok(approx(row.dscr, 2171632.44 / 1745000) && approx(row.dy, 2171632.44 / 24200000) && approx(row.ltv, 24200000 / (2171632.44 / 0.065)), "DSCR / debt yield / LTV all run on that one NOI");
     const noRec = PR.buildRows({}, [lC], hk({ propertyNOI: () => one }), GD).rows[0];
     ok(cents(noRec.noi, 2171632.44) && approx(noRec.dscr, 2171632.44 / 1745000), "a property with no operating record still shows the app's NOI and its ratios");

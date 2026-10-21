@@ -31,6 +31,7 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   // ---- D9: this computer's old limits move into the property's record once ----
   await page.evaluate((id)=>{ localStorage.setItem('ldsHub.refiLimits.v1', JSON.stringify({ [id]: { dscr: 1.3, off: ['Debt Yield'] } })); }, ids.q);
   await page.reload(); await page.waitForSelector('tr[data-goto]',{timeout:25000,state:'attached'}); await page.waitForTimeout(800);
+  await require('./_t12seed').seedT12(page);   // (2026-10-21) a refinance is sized on the property's T12: each property's NOI as its T12 NOI
   const Q=()=>page.evaluate((id)=>window.LDS_loans().find(x=>x._id===id),ids.q);
   const openRefi=async(id)=>{ await page.click('[data-tabsel="home"]').catch(()=>{}); await page.waitForTimeout(300);
     await page.evaluate((id)=>{ const tr=document.querySelector('tr[data-goto="'+id+'"]'); if(tr) tr.click(); },id); await page.waitForTimeout(500);

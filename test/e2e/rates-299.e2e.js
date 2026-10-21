@@ -32,6 +32,9 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   // ---- (7) the SOFRs in Refinance ----
   const LID=await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>x.rateType==='Floating'&&x.originalAmount>1000000)||window.LDS_loans()[0]; return l._id; });
+  // (2026-10-21) a refinance is sized on the property's T12: give the loan's property a T12 NOI (its own NOI, else 10% of the loan)
+  const seedKey=await page.evaluate((lid)=>{ const l=window.LDS_loans().find(x=>x._id===lid); const n=window.LDS_loanNOI(l); return { k:window.propertyKey(l), n:(n!=null&&isFinite(n)&&n>0)?n:Math.round(l.originalAmount*0.1) }; },LID);
+  await require('./_t12seed').seedT12(page, null, { [seedKey.k]: seedKey.n });
   await page.evaluate((lid)=>{ document.getElementById('scopeLoanBtn').click(); const s=document.getElementById('loanSelect'); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); if(window.LDS_resetRefiDraft) window.LDS_resetRefiDraft(); },LID);
   await page.waitForTimeout(500); await page.click('#refiBtn'); await page.waitForTimeout(800);
   await page.evaluate(()=>{ const b=document.querySelector('#refiPricing [data-rtype="Floating"]'); if(b) b.click(); }); await page.waitForTimeout(600);

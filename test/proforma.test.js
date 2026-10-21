@@ -187,6 +187,20 @@ const cV = S({ id: 'sv', column: 'both', line: 'VAC', how: sv.how, pct: sv.pct, 
 r = PF.compute(Object.assign({}, inV, { pf: { changes: [cV] } })).base;
 ok(Math.abs(r.byKey.VAC.value - (-104400)) < 5, 'applied: the vacancy line ≈ −2% × 5,220,000 = −104,400 (got ' + r.byKey.VAC.value + ')');
 
+// ---- (2026-10-21) an assumption that would LOWER the NOI is a warning, never a suggestion ----
+let wn = PF.assumptionWarnings(input, { mgmtPct: 0.025, vacancyPct: 0.05 });
+const wv = wn.find(x => x.line === 'VAC');
+ok(wv && wv.effect < 0 && eq(wv.assumed, 0.05) && /your assumption is 5% of gross potential rent; this T12 runs 3\.7/.test(wv.text) && /lower/.test(wv.text),
+   'vacancy runs 3.7% under a 5% assumption → a WARNING (at 5% the NOI would be lower), not a suggestion ("' + (wv && wv.text) + '")');
+const gprT12 = input.lines.find(l => l.key === 'GPR').t12;
+ok(Math.abs(wv.effect - (wv.actual - 0.05) * gprT12) < 5, 'the warning says how much lower: (actual − 5%) × GPR ' + gprT12 + ' = ' + wv.effect);
+ok(!wn.some(x => x.line === 'MGMT'), 'the management fee runs ABOVE its 2.5% assumption → a suggestion (above), no warning');
+wn = PF.assumptionWarnings(input, { mgmtPct: 0.04 });
+const wm = wn.find(x => x.line === 'MGMT');
+ok(wm && wm.effect < 0 && /your assumption is 4% of revenue; this T12 runs 3%/.test(wm.text), 'a 4% management assumption against a 3% T12 → a warning ("' + (wm && wm.text) + '")');
+ok(!PF.assumptionSuggestions(input, { mgmtPct: 0.04 }).some(x => x.line === 'MGMT'), '…and never a suggestion that would lower the NOI');
+ok(!PF.assumptionWarnings(input, { mgmtPct: 0.03 }).length, 'at the assumption → no warning');
+
 // ---- a suggestion from Claude, matched to the T12 ----
 let m = PF.matchSuggestion(input, { line: 'Contract Services', account: 'snow', how: 'accountTotal', value: 20000, kind: 'normalized', story: 'A hard winter.', column: 'safe' });
 ok(m.change && m.change.line === 'CS' && m.change.accounts[0].name === 'Snow removal' && m.change.column === 'base' && eq(m.change.value, 20000), 'Claude’s suggestion is matched by line label and account name (Snow removal, Safe)');

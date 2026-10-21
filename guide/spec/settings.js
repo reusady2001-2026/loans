@@ -117,40 +117,84 @@ module.exports = {
           ],
           after: async (h) => { await h.closeModals(); await normal(h); } },
         { title: "The guide window",
-          text: "The guide opens on its contents: one card per tab or screen of the app (the pictures in this chapter are taken on a wide window). Click a card (or a name on the left) to see its topics, then a topic to walk through it. Type in the search box to find a button or a word anywhere in the guide. Esc or × closes it.",
-          go: async (h) => { await h.ctx.setSize(1920, 1000); await h.wait(500); await portfolio(h); await settings(h); await h.click("#settingsGuideBtn", { wait: 400 }); await h.page.waitForSelector("#guideMain [data-guidech]", { timeout: 15000 }); await h.wait(600); },
+          text: "The guide opens on its contents: one card per chapter — a tab or screen of the app (the pictures in this chapter are taken on a wide window). Click a card, or a chapter on the left, to open it. Type in the search box to find a button or a word anywhere in the guide. Esc or × closes it.",
+          go: async (h) => { await h.ctx.setSize(1920, 1000); await h.wait(500); await portfolio(h); await settings(h); await h.click("#settingsGuideBtn", { wait: 400 }); await h.page.waitForSelector("#guideMain [data-guidech]", { timeout: 15000 }); await h.wait(800); },
           shot: "view",
           marks: [
-            { sel: "#guideCrumb", label: "Where you are", text: "The chapter and topic you are in." },
+            { sel: "#guideCrumb", label: "Where you are", text: "The chapter and the topic you are reading." },
             { sel: "#guideSearch", label: "Search", text: "Finds every step that mentions what you type." },
             { sel: "[data-guideclose]", label: "Close", text: "Closes the guide (so does Esc)." },
             { sel: "#guideNav [data-guidech] >> nth=0", label: "Chapters", text: "Every chapter; the open one lists its topics under it." },
-            { sel: "#guideMain [data-guidech] >> nth=0", label: "A chapter", text: "Click to see its topics." }
+            { sel: "#guideMain [data-guidech] >> nth=0", label: "A chapter", text: "Click to open it: the whole chapter on one page." }
           ] },
-        { title: "A walkthrough step",
-          text: "Each step is a picture of the app with numbered markers, and a list saying what each number is and does. Point at a number (in the picture or the list) to light up the part it marks. Click the picture to see it full size. Back and Next — or the ← and → keys — move through the steps, and at the end of a topic Next goes on to the next topic. Under the picture, one dot per step: click a dot to jump to that step.",
-          go: async (h) => { await h.click("#guideMain [data-guidech] >> nth=0", { wait: 400 }); await h.click("#guideMain [data-guidetp] >> nth=1", { wait: 800 }); await h.wait(600); },
+        { title: "A chapter — one page you scroll",
+          text: "A chapter opens as one long page: every topic is a heading, and every step follows under it — its words, then a picture of the app with numbered markers, and beside the picture what each number is and does (under it on a narrow window). Scroll down to read on; there is no Back or Next. Pictures load as they come into view.",
+          go: async (h) => { await h.click("#guideMain [data-guidech] >> nth=0", { wait: 600 }); await h.page.waitForSelector("#guideMain [data-guidestep]", { timeout: 15000 }); await h.page.waitForFunction(() => { const i = document.querySelector("#guideMain [data-guideimg] img"); return !!(i && i.complete && i.naturalWidth); }, null, { timeout: 15000 }).catch(() => {}); await h.wait(600); },
           shot: "view",
           marks: [
-            { sel: "[data-guidesteptitle]", label: "The step", text: "What this step shows." },
-            { sel: "[data-guidecount]", label: "Step 1 of …", text: "Where you are in the topic." },
-            { sel: "[data-guideprev]", label: "Back", text: "The step before (← key)." },
-            { sel: "[data-guidenext]", label: "Next", text: "The next step (→ key); at the end, the next topic." },
-            { sel: "#guideMain [data-guideimg]", label: "The picture", text: "Click it to see it full size." },
-            { sel: "#guideMain [data-guidemk] >> nth=0", label: "A marker", text: "Point at it to light up what it marks." },
-            { sel: "[data-guidemarks]", label: "What each number does", text: "The same numbers, in words." },
-            { sel: "#guideMain [data-guidestep] >> nth=0", label: "Steps", text: "One dot per step — click one to jump to it.", optional: true }
+            { sel: "#guideMain h2", label: "The chapter", text: "Its name, what it covers, and how many topics and steps it has." },
+            { sel: "#guideMain [data-guidehome]", label: "All chapters", text: "Back to the contents." },
+            { sel: "#guideMain h3[data-guidetp] >> nth=0", label: "A topic", text: "Each topic is a heading on the page, numbered." },
+            { sel: "#guideMain [data-guidestep] h4 >> nth=0", label: "A step", text: "What this step shows, in words." },
+            { sel: "#guideMain [data-guideimg] >> nth=0", label: "The picture", text: "The real app, with a numbered marker on every button and box. Click it to see it full size." },
+            { sel: "#guideMain [data-guidemarks] >> nth=0", label: "What each number does", text: "Beside the picture: the same numbers, in words." },
+            { sel: "#guideNav button[data-guidetp] >> nth=0", label: "The topics", text: "The chapter's topics. The one you are reading is lit, and it follows you as you scroll." }
+          ] },
+        { title: "Jump to a topic",
+          text: "Click a topic on the left and the page scrolls to it; the topic stays lit, and “Where you are” at the top says it too.",
+          go: async (h) => { await h.click("#guideNav button[data-guidetp] >> nth=2", { wait: 800 }); await h.page.waitForFunction(() => { const i = [...document.querySelectorAll("#guideMain [data-guideimg] img")].find(x => { const r = x.getBoundingClientRect(); return r.top > 0 && r.top < window.innerHeight; }); return !i || (i.complete && i.naturalWidth); }, null, { timeout: 15000 }).catch(() => {}); await h.wait(600); },
+          shot: "view",
+          marks: [
+            { sel: '#guideNav button[data-guidetp][data-on="1"]', label: "The topic picked", text: "Lit while you read it." },
+            { sel: "#guideCrumb", label: "Where you are", text: "The chapter › the topic." },
+            { sel: "#guideMain h3[data-guidetp] >> nth=2", label: "Its heading", text: "The page has scrolled to the topic." }
+          ] },
+        { title: "Point at a number",
+          text: "Point at a number — on the picture or in the list beside it — and both light up, with the part of the screen it marks.",
+          go: async (h) => {
+            await h.js(() => { const mn = document.getElementById("guideMain"); const st = [...mn.querySelectorAll("[data-guidestep]")].find(x => { const r = x.getBoundingClientRect(), m = mn.getBoundingClientRect(); return r.top >= m.top - 2 && x.querySelector("[data-guidemarks] li"); });
+              if (st){ st.setAttribute("data-guideshot", "1"); mn.scrollTop += st.getBoundingClientRect().top - mn.getBoundingClientRect().top - 8; } });
+            await h.page.waitForFunction(() => { const i = document.querySelector("#guideMain [data-guideshot] [data-guideimg] img"); return !i || (i.complete && i.naturalWidth); }, null, { timeout: 15000 }).catch(() => {});
+            await h.hover('#guideMain [data-guideshot] [data-guidemarks] li[data-guidemk="1"]'); await h.wait(400);
+          },
+          after: async (h) => { await h.page.mouse.move(5, 5); await h.wait(200); },
+          shot: "view",
+          marks: [
+            { sel: '#guideMain [data-guideshot] [data-guidemarks] li[data-guidemk="1"]', label: "A number in the list", text: "Pointed at: it lights up…" },
+            { sel: '#guideMain [data-guideshot] [data-guidebox="1"]', label: "…and its box", text: "…and so does the part of the picture it marks." }
+          ] },
+        { title: "Full size",
+          text: "Click a picture to see it full size over the guide. Click it again, or press Esc, to go back.",
+          go: async (h) => { await h.js(() => { const i = document.querySelector("#guideMain [data-guideshot] [data-guideimg]") || [...document.querySelectorAll("#guideMain [data-guideimg]")].find(x => { const r = x.getBoundingClientRect(); return r.top > 0 && r.top < window.innerHeight; }); if (i) i.click(); }); await h.page.waitForFunction(() => { const i = document.querySelector("#guideZoom img"); return !!(i && i.complete && i.naturalWidth); }, null, { timeout: 15000 }).catch(() => {}); await h.wait(400); },
+          after: async (h) => { await h.js(() => { const z = document.getElementById("guideZoom"); if (z) z.classList.add("hidden"); document.querySelectorAll("[data-guideshot]").forEach(x => x.removeAttribute("data-guideshot")); }); await h.wait(300); },
+          shot: "view",
+          marks: [
+            { sel: "#guideZoom img", label: "Full size", text: "The picture at its own size; scroll to see all of it. Click or Esc to close." }
           ] },
         { title: "Search the guide",
-          text: "Type in the search box: every step that mentions all the words you typed is listed. Click one to open it at that step.",
-          go: async (h) => { await h.fill("#guideSearch", "backup", { change: false }); await h.js(() => { const s = document.getElementById("guideSearch"); s.dispatchEvent(new Event("input", { bubbles: true })); }); await h.wait(500); },
+          text: "Type in the search box: every step that mentions all the words you typed is listed, with its chapter and topic. Click one to jump to it.",
+          go: async (h) => { await h.js(() => { document.getElementById("guideMain").scrollTop = 0; }); await h.fill("#guideSearch", "backup", { change: false }); await h.js(() => { const s = document.getElementById("guideSearch"); s.dispatchEvent(new Event("input", { bubbles: true })); document.getElementById("guideMain").scrollTop = 0; }); await h.wait(500); },
           shot: "view",
           marks: [
             { sel: "#guideSearch", label: "Search", text: "What you typed." },
             { sel: "#guideMain h2", label: "Results", text: "How many steps match." },
-            { sel: "#guideMain [data-guidejump] >> nth=0", label: "A result", text: "Its chapter and topic, and the step. Click to open it." }
+            { sel: "#guideMain [data-guidejump] >> nth=0", label: "A result", text: "Its chapter and topic, and the step. Click to jump to it." }
+          ] },
+        { title: "A search result",
+          text: "Its chapter opens as its page, scrolled to that step, which lights up for a moment. Read on from there, or scroll back up.",
+          go: async (h) => {
+            const key = await h.js(() => { const b = document.querySelector("#guideMain [data-guidejump]"); return b ? b.getAttribute("data-guidejump") : null; });
+            await h.click("#guideMain [data-guidejump] >> nth=0", { wait: 800 });
+            await h.js((k) => { const x = document.querySelector('#guideMain [data-guidestep="' + k + '"]'); if (x) x.setAttribute("data-guideshot", "1"); }, key);
+            await h.page.waitForFunction(() => { const i = document.querySelector("#guideMain [data-guideshot] [data-guideimg] img"); return !i || (i.complete && i.naturalWidth); }, null, { timeout: 15000 }).catch(() => {}); await h.wait(500);
+          },
+          shot: "view",
+          marks: [
+            { sel: "#guideMain [data-guideshot] h4", label: "The step found", text: "The page is scrolled to it." },
+            { sel: "#guideCrumb", label: "Where you are", text: "Its chapter and topic." },
+            { sel: '#guideNav button[data-guidetp][data-on="1"]', label: "Its topic", text: "Lit on the left." }
           ],
-          after: async (h) => { await h.closeModals(); await normal(h); } }
+          after: async (h) => { await h.js(() => { document.querySelectorAll("[data-guideshot]").forEach(x => x.removeAttribute("data-guideshot")); }); await h.closeModals(); await normal(h); } }
       ] },
     // ------------------------------------------------------------------------------------------------------------------
     { id: "claude", title: "Claude connection", intro: "Connect Claude for the AI features: the assistant, the second reading of each T12, and the stories in What to push.",

@@ -26,6 +26,7 @@ const rtxt=(page)=>page.evaluate(()=>(document.getElementById('refiView')||{}).i
   ok(!!loanId,'Villages of Whitewater (a Fixed loan) exists to open');
   // give the property an NOI so DSCR (1.58×) / LTV (47%) earn a credit tier — the seed loan carries none
   await page.evaluate((lid)=>{const ls=(window.LDS_loans?window.LDS_loans():[]);const l=ls.find(x=>x._id===lid);if(l){l.noi=1122512;l.capRate=0.055;}},loanId);
+  await require('./_t12seed').seedT12(page, ['Villages of Whitewater']);   // (2026-10-21) the refinance is sized on the property's T12 NOI
   await page.click('tr[data-goto="'+loanId+'"]').catch(()=>{});
   await page.waitForFunction(()=>{const b=document.getElementById('refiBtn');return b&&!b.disabled;},null,{timeout:8000}).catch(()=>{});
   await page.click('#refiBtn').catch(()=>{});

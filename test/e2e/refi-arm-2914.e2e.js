@@ -60,7 +60,8 @@ const ann=(P,r,n)=>P*r/(1-Math.pow(1+r,-n));
   const LID=await page.evaluate(()=>window.opProperties().find(p=>p.name==='Villages of Whitewater').loans[0]._id);
   const setup=(rate,step)=>page.evaluate(({lid,rate,step})=>{ const l=window.LDS_loans().find(x=>x._id===lid);
     Object.assign(l,{rateType:'Fixed',isHistorical:true,amortType:'Level',capRate:0.05,loanTermMonths:480,amortizationMonths:480,ioMonths:0,annualRate:rate,rateFloor:null,rateCap:null,prepayType:'Step-down',prepayConfirmed:true,stepDownPct:step,maturityDate:null});
-    l.noi=window.LDS_computeBalance(l)*0.20; return window.LDS_computeBalance(l); },{lid:LID,rate,step});
+    l.noi=window.LDS_computeBalance(l)*0.20; window.LDS_setGDNOI(window.propertyKey(l),{ inPlace:l.noi });   // (2026-10-21) the refinance is sized on the property's T12 NOI
+    return window.LDS_computeBalance(l); },{lid:LID,rate,step});
   const verdict=(patch)=>page.evaluate(({lid,patch})=>{ const l=window.LDS_loans().find(x=>x._id===lid); const v=window.LDS_refiVerdictWith(l,Object.assign({_baseSpread:0},patch||{})); const s=v.should||{};   // 3.0.0 — the lender's quote typed as 0 bps (these rules need the lower rate)
     return { decision:v.decision, kind:s.kind, why:s.why, saved:s.saved, penalty:s.penalty, cashPct:s.cashPct, cashNet:s.cashNet, loss:s.loss, payoff:s.payoff, newAmt:s.newAmt }; },{lid:LID,patch});
   const payoff=await setup(0.0450,0.10);

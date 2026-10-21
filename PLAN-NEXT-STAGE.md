@@ -8,8 +8,12 @@ screens: every change is made to one account with its own story (no new total fo
 80% of the window with every account's 12 months, the management fee never follows the revenue credit by itself, the
 underwriting assumptions give default stories and "What to push" suggests stories. Then (same day): no "Take it out" (a
 new amount of $0 does it), "Annualize" an account from its last 3, 6 or 12 months (and a 12-month revenue credit), and
-the in-app **Guide** (Settings → Guide; reference §4.16). Round 2 (the operator's decision):
-whether the Underwritten column becomes "the T12 + the accepted pro forma changes". F2 is not built (it needs Azriel's benchmarks). The
+the in-app **Guide** (Settings → Guide; reference §4.16). **Round 2 (2026-10-21, built as a draft):** the underwriting
+IS the approved pro forma (Safe and Aggressive, reserves a line in both); "What to push" runs on the approved
+underwriting and only raises the NOI, never on a story's lever, with an effect on in-place, Safe and Aggressive; the
+refinance is sized on In-place T12, Safe or Aggressive per property (no T12 → no refinance), with the pushes ticked per
+property and the amount to cover (today · no penalty · at maturity); the Guide is one scroll page per chapter
+(reference §9, "Round 2"). F2 is not built (it needs Azriel's benchmarks). The
 lender presets ship empty until Azriel's numbers come. The version number of each part, and raising the shared
 database's setup version for the presets rule (D13), are the operator's to choose (version rule, reference §8).*
 

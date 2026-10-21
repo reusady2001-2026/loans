@@ -121,16 +121,13 @@
       if (pnIn != null && C && typeof C.stackOn === "function") {
         row.noi = pnIn;
         row.noiFrom = pn.from || "app";
-        var pnUw = fin(pn.underwritten);
-        if (pnUw != null) row.uwNoi = pnUw;
-        else if (rec && lineCount(rec) > 0) { var d0 = C.derive(rec, gd); row.uwNoi = fin(d0 && d0.underwrittenNOI); }
+        // (2026-10-21) the underwriting is the APPROVED Safe pro forma — blank until it is approved, never a figure worked out here
+        row.uwNoi = fin(pn.underwritten);
         st = C.stackOn(pnIn, group, hooks) || {};
       } else if (rec) {
         if (calcErr) throw calcErr;
         row.noi = fin(C.effectiveNOI(rec));
-        // A record with no lines has no underwritten NOI either: derive() on nothing
-        // would just return minus reserves, which is not an underwriting of anything.
-        if (lineCount(rec) > 0) { var d = C.derive(rec, gd); row.uwNoi = fin(d && d.underwrittenNOI); }
+        // (2026-10-21) no approved underwriting without the app's NOI for the property: the column stays blank
         st = C.stack(rec, group, hooks) || {};
       } else {
         // No operating record yet: the debt side is still known (same definition as
@@ -270,7 +267,7 @@
   }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
 
-  var COLS = ["Property", "Units", "Loans", "In-place NOI", "UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
+  var COLS = ["Property", "Units", "Loans", "In-place NOI", "Safe UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
   function td(s, cls, title){ return '<td class="py-1 px-2 text-right text-sm tabular-nums ' + (cls || "text-slate-600") + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + s + '</td>'; }
 
   // render(mountEl, buildRows(...), { onOpen(propKey) }). Idempotent: every call

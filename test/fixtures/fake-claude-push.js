@@ -47,7 +47,7 @@ process.stdin.on('end', () => {
     ? 'FAKE-SUMMARY: the underwriting already credits the proven ' + pct(actual) + ' vacancy, so there is nothing to gain there.'
     : 'FAKE-SUMMARY: the statement shows ' + (actual != null ? pct(actual) : 'an unknown') + ' vacancy against a ' + (assumed != null ? pct(assumed) : 'missing') + ' underwriting assumption.';
   const data = { summary: summary, overlaps: [], moves: [
-    { title: 'FAKE-MOVE trim utilities', rank: 1, impact: 'FAKE-IMPACT about $40,000 a year', impactInPlace: 40000, impactUnderwritten: 38000, effort: 'light', rationale: 'FAKE-RATIONALE utilities run above the benchmark.' } ] };
+    { title: 'FAKE-MOVE trim utilities', rank: 1, impact: 'FAKE-IMPACT about $40,000 a year', impactInPlace: 40000, impactSafe: 38000, impactAggressive: 38000, impactUnderwritten: 38000, lever: 'utilities', effort: 'light', rationale: 'FAKE-RATIONALE utilities run above the benchmark.' } ] };
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
 });
 

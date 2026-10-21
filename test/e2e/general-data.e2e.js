@@ -68,14 +68,24 @@ const dscrPair=(page)=>page.evaluate(()=>{
   ok(gd&&gd.lines&&gd.lines.RET&&Object.keys(gd.lines.RET.monthly).length===12,'the real-estate-taxes line carries all 12 monthly values');
   ok(gd&&gd.lines.RET&&Math.abs(gd.lines.RET.ttm-sum(gd.lines.RET.monthly))<0.02,'the taxes trailing-12 equals the sum of its 12 months');
   ok(gd&&gd.noi&&typeof gd.noi.inPlace==='number'&&gd.noi.inPlace>0,'in-place NOI stored ('+(gd&&gd.noi&&gd.noi.inPlace)+')');
-  ok(gd&&gd.noi&&typeof gd.noi.underwritten==='number'&&gd.noi.underwritten>0,'underwritten NOI stored ('+(gd&&gd.noi&&gd.noi.underwritten)+')');
+  ok(gd&&gd.noi&&gd.noi.underwritten==null,'no underwriting NOI before the underwriting is approved (got '+(gd&&gd.noi&&gd.noi.underwritten)+')');
+  // (2026-10-21) the underwriting is the APPROVED pro forma: its units set the replacement reserves (a line in both
+  // versions, so the underwriting differs from the in-place T12), then approve it
+  await page.fill('input[data-uwf="units"]','120').catch(()=>{}); await page.evaluate(()=>{ const i=document.querySelector('input[data-uwf="units"]'); if(i) i.dispatchEvent(new Event('change',{bubbles:true})); });
+  await page.waitForTimeout(1500);
+  await page.waitForFunction(()=>!!document.querySelector('[data-uwapprove]')&&!document.querySelector('[data-uwapprove]').disabled,null,{timeout:20000}).catch(()=>{});
+  await page.evaluate(()=>{ const b=document.querySelector('[data-uwapprove]'); if(b) b.click(); });
+  await page.waitForFunction((k)=>{ const g=window.LDS_gdNOICache()[k]; return !!(g&&g.underwritten!=null); },KEY,{timeout:20000}).catch(()=>{});
+  await page.waitForTimeout(1200);
+  const gdA=readGD(); Object.assign(gd||{}, gdA||{});
+  ok(gdA&&gdA.noi&&typeof gdA.noi.underwritten==='number'&&gdA.noi.underwritten>0&&gdA.noi.uwModel===2&&gdA.noi.uwApproved&&gdA.noi.uwApproved.at,'approved → the Safe underwriting NOI is stored with the approval ('+(gdA&&gdA.noi&&gdA.noi.underwritten)+')');
   ok(gd&&!('identity' in gd)&&!('propertyName' in gd),'2.9.10 — no copy of the name/address/units in general-data.json (the profile is their one source)');
 
   // ---- B. the underwriting tab shows the General Data history card ----
   const uw=await uwText(page);
   ok(/General Data\s*[—-]\s*operating history/i.test(uw),'the General Data history card renders in the underwriting tab');
   ok(/Real Estate Taxes/i.test(uw),'the taxes line appears in the history readout');
-  ok(/In-place NOI/i.test(uw)&&/Underwritten NOI/i.test(uw),'both NOIs are shown on the card');
+  ok(/In-place NOI/i.test(uw)&&/Underwriting NOI/i.test(uw),'both NOIs are shown on the card (in-place, and the approved underwriting)');
   ok(/12 months/i.test(uw)&&/2025-07/.test(uw)&&/2026-06/.test(uw),'the 12-month span is labelled');
 
   // ---- C. the refinance calculator gains a NOI-basis toggle ----
@@ -94,10 +104,10 @@ const dscrPair=(page)=>page.evaluate(()=>{
     await page.waitForTimeout(300);
 
     const nBtns=await page.evaluate(()=>document.querySelectorAll('#refiView [data-noibasis]').length);
-    ok(nBtns===2,'the NOI-basis toggle offers two options (in-place T12 + underwritten)');
+    ok(nBtns===3,'the NOI basis offers three options (in-place T12, Safe and Aggressive underwriting) (got '+nBtns+')');
     const bothFig=await page.evaluate(()=>[...document.querySelectorAll('#refiView [data-noibasis]')].every(b=>/\$/.test(b.textContent||'')));
     ok(bothFig,'each basis button shows its own NOI figure');
-    ok((await activeBasis(page))==='underwritten','the default basis is Underwritten — the figure a loan is sized on');
+    ok((await activeBasis(page))==='underwritten','the default basis is the Safe underwriting — the figure a loan is sized on');
     const noiUW=await refiNoiShown(page);
     ok(gd&&noiUW!=null&&Math.abs(noiUW-gd.noi.underwritten)<2,'the analysis runs on the underwritten NOI by default ('+noiUW+')');
     const dpUW=await dscrPair(page);   // v2.8.5: the tier grades on the SAME (underwritten) NOI the panel shows
