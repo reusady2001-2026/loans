@@ -45,9 +45,22 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(c.refiOn, 'Refinance is on for the property');
   ok(c.selVal===meta.stackedCombo, 'the selector stays on the property');
 
-  // ---- the property refinances as one combined position ----
+  // ---- (2026-10-21) no T12 → the property isn't refinanced: "No T12 yet", nothing sized ----
   await page.click('#refiBtn').catch(()=>{});
   await page.waitForFunction(()=>{const v=document.getElementById('refiView');return v&&!v.hidden;},null,{timeout:8000}).catch(()=>{});
+  await page.waitForTimeout(600);
+  const noT12 = await page.evaluate(()=>{ const v=document.getElementById('refiView'); return { block:!!v.querySelector('[data-refinot12]'), upload:!!v.querySelector('[data-refiuploadt12]'), verdict:!!v.querySelector('[data-refiverdict]') }; });
+  ok(noT12.block && noT12.upload && !noT12.verdict, 'with no T12 the stack shows "No T12 yet" and an upload button — no verdict, nothing sized');
+  await page.click('#refiCloseBtn').catch(()=>{});
+  await page.waitForTimeout(300);
+
+  // ---- the property refinances as one combined position (once it has a T12 NOI) ----
+  await require('./_t12seed').seedT12(page, null, { [meta.stackedCombo.slice(6)]: 12000000 });
+  await page.evaluate((combo)=>{const s=document.getElementById('loanSelect');s.value=combo;s.dispatchEvent(new Event('change',{bubbles:true}));}, meta.stackedCombo);
+  await page.waitForFunction(()=>{const v=document.getElementById('loanView');return v&&!v.hidden;},null,{timeout:8000}).catch(()=>{});
+  await page.waitForTimeout(300);
+  await page.click('#refiBtn').catch(()=>{});
+  await page.waitForFunction(()=>{const v=document.getElementById('refiView');return v&&!v.hidden&&!!v.querySelector('[data-refiverdict]');},null,{timeout:8000}).catch(()=>{});
   await page.waitForTimeout(300);
   const rtext = await page.evaluate(()=>(document.getElementById('refiView')||{}).innerText||'');
   ok(/whole property/i.test(rtext), 'the refinance is the whole property (combined), not one slice');

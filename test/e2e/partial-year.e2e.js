@@ -52,7 +52,13 @@ function readGD(){ try{ const idx=JSON.parse(fs.readFileSync(path.join(PROPDIR,'
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlace-ANNUALIZED)<2,'IN-PLACE NOI is the last 3 months × 4 = 1,080,000 (got '+(gd&&gd.noi&&gd.noi.inPlace)+')');
   ok(gd&&gd.noi&&Math.abs(gd.noi.inPlaceStatement-STMT)<2,'the 7-month statement total 630,000 is kept for reference');
   ok(gd&&gd.noi&&Array.isArray(gd.noi.annualizedMonths)&&gd.noi.annualizedMonths.join(',')==='2026-05,2026-06,2026-07','the annualization months are May, Jun, Jul 2026');
-  ok(gd&&gd.noi&&gd.noi.underwritten>700000,'UNDERWRITTEN NOI is on the same annualized run-rate (over 700k) — got '+(gd&&gd.noi&&Math.round(gd.noi.underwritten)));
+  ok(gd&&gd.noi&&gd.noi.underwritten==null,'no underwriting NOI before it is approved (got '+(gd&&gd.noi&&gd.noi.underwritten)+')');
+  // (2026-10-21) the underwriting is the APPROVED pro forma: approve it — it is on the same annualized run-rate
+  await page.waitForFunction(()=>!!document.querySelector('[data-uwapprove]')&&!document.querySelector('[data-uwapprove]').disabled,null,{timeout:20000}).catch(()=>{});
+  await page.evaluate(()=>{ const b=document.querySelector('[data-uwapprove]'); if(b) b.click(); });
+  for(let t=0;t<60&&!(((readGD()||{}).noi||{}).underwritten>0);t++) await page.waitForTimeout(300);
+  const gdA=readGD();
+  ok(gdA&&gdA.noi&&gdA.noi.underwritten>700000,'approved → the Safe underwriting NOI is on the same annualized run-rate (over 700k) — got '+(gdA&&gdA.noi&&Math.round(gdA.noi.underwritten)));
 
   // ---- the underwriting tab shows the annualized figure and says why ----
   const uw=await page.evaluate(()=>document.getElementById('uwView').innerText||'');

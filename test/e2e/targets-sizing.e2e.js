@@ -3,7 +3,7 @@
      target; the three targets come from Settings ("Minimum DSCR (target)", "Maximum LTV (target)", "Minimum
      debt yield (target)") and Home follows a change at once (#165).
    - Underwriting: the sizing card starts at 1.25× / 75% / 7% (#165), and editing a sizing input moves the
-     "Max supportable loan" headline in the same step (#16).
+     max supportable loan in the same step (#16) — on Safe and on Aggressive, side by side (2026-10-21).
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/targets-sizing.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -38,13 +38,14 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.setInputFiles('#uwFile',T12);
   await page.waitForFunction(()=>/statement NOI/.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:15000}).catch(()=>{});
   await page.waitForTimeout(1200);
-  const sz=await page.evaluate(()=>{ const g=k=>(document.querySelector('#uwView [data-uwsize="'+k+'"]')||{}).value; return { dscr:g('dscrMin'), ltv:g('ltvMax'), dy:g('dyMin'), head:(document.getElementById('uwMaxLoanCard')||{}).textContent, card:(document.getElementById('uwSzMax')||{}).textContent }; });
+  const sz=await page.evaluate(()=>{ const g=k=>(document.querySelector('#uwView [data-uwsize="'+k+'"]')||{}).value; return { dscr:g('dscrMin'), ltv:g('ltvMax'), dy:g('dyMin'), head:(document.getElementById('uwSzSMax')||{}).textContent, card:(document.getElementById('uwSzAMax')||{}).textContent }; });
   ok(sz.dscr==='1.25' && sz.ltv==='75' && sz.dy==='7','the sizing card starts at 1.25× / 75% / 7% ('+sz.dscr+' / '+sz.ltv+' / '+sz.dy+')');
-  ok(sz.head===sz.card,'headline and sizing card agree ('+sz.head+')');
+  // (2026-10-21) the sizing box shows Safe and Aggressive side by side (decision 3) — each its own max supportable loan
+  ok(/\$[\d,]+/.test(sz.head||'') && /\$[\d,]+/.test(sz.card||''),'the sizing box shows a max supportable loan for Safe and for Aggressive ('+sz.head+' · '+sz.card+')');
   await page.evaluate(()=>{ const i=document.querySelector('#uwView [data-uwsize="dscrMin"]'); i.focus(); i.value='1.60'; i.dispatchEvent(new Event('input',{bubbles:true})); });
   await page.waitForTimeout(400);
-  const sz2=await page.evaluate(()=>({ head:(document.getElementById('uwMaxLoanCard')||{}).textContent, card:(document.getElementById('uwSzMax')||{}).textContent }));
-  ok(sz2.card!==sz.card && sz2.head===sz2.card,'editing the DSCR input moves the headline in the same step ('+sz.head+' → '+sz2.head+')');
+  const sz2=await page.evaluate(()=>({ head:(document.getElementById('uwSzSMax')||{}).textContent, card:(document.getElementById('uwSzAMax')||{}).textContent }));
+  ok(sz2.head!==sz.head && sz2.card!==sz.card,'editing the DSCR input moves both max loans in the same step (Safe '+sz.head+' → '+sz2.head+', Aggressive '+sz.card+' → '+sz2.card+')');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}
   console.log(fails.n?fails.n+' FAILED':'all targets-sizing e2e checks passed');

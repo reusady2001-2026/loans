@@ -65,6 +65,17 @@
     return isNaN(n) ? null : (neg ? -n : n);
   }
   function round2(n){ return Math.round(n * 100) / 100; }
+  // A date cell as "YYYY-MM-DD": an Excel serial (the sheet is read raw), "M/D/YYYY" (or M/D/YY), or "YYYY-MM-DD".
+  // Anything else is null — never a guessed date.
+  function toISODate(v){
+    if (typeof v === "number" && isFinite(v) && v > 20000 && v < 80000){ var d = new Date(Math.round((v - 25569) * 86400000)); return isNaN(d) ? null : d.toISOString().slice(0, 10); }
+    var t = str(v); if (!t) return null;
+    var m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+    m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (m){ var y = m[3].length === 2 ? 2000 + (+m[3]) : +m[3]; if (+m[1] < 1 || +m[1] > 12 || +m[2] < 1 || +m[2] > 31) return null; return y + "-" + ("0" + m[1]).slice(-2) + "-" + ("0" + m[2]).slice(-2); }
+    return null;
+  }
   function sum(arr){ return arr.reduce(function(a,b){ return a + b; }, 0); }
   function mean(arr){ return arr.length ? sum(arr) / arr.length : null; }
 
@@ -79,7 +90,12 @@
     { key: "name",   any: [/^name$|tenant\s*name|resident\s*name|\bname\b/] },
     { key: "market", any: [/market\s*rent/, /gross\s*(potential\s*)?rent/, /asking\s*rent/, /\bgpr\b/, /\bmarket\b/] },
     { key: "actual", any: [/actual\s*rent/, /current\s*rent/, /in.?place\s*rent/, /lease(d)?\s*rent/, /charged\s*rent/, /tenant\s*rent/, /\bactual\b/, /^rent$/, /\brent\b/] },
-    { key: "status", any: [/status/, /\boccup/, /vacan/] }
+    { key: "status", any: [/status/, /\boccup/, /vacan/] },
+    // (2026-10-21) the lease dates — when a resident moved in and when the lease ends: the year's turnover (how many
+    // leases end, so how much vacancy is natural) is read from them. Last, so they never take a rent or status column.
+    { key: "moveIn",   any: [/move\s*-?\s*in/] },
+    { key: "leaseEnd", any: [/lease\s*(exp|end)/, /\bexpir/, /lease\s*to\b/] },
+    { key: "moveOut",  any: [/move\s*-?\s*out/] }
   ];
   var COMMERCIAL_TYPE_RE = /commercial|retail|\bcam\b|\bcomm\b|\bnnn\b|store\b|storefront|office\b/;
   var COMMERCIAL_NAME_RE = /commercial/i;
@@ -220,8 +236,12 @@
     else if (/occup|leased|current|filled|notice|evict/.test(statusRaw)) occupied = true;
     else if (resident || nameRaw) occupied = true;
     else occupied = (actual != null && actual > 0);
-    return { unit: unitId, type: typeRaw, sqft: sqft, resident: resident, name: nameRaw,
+    var rec = { unit: unitId, type: typeRaw, sqft: sqft, resident: resident, name: nameRaw,
       marketRent: market, actualRent: actual, occupied: occupied, nonRevenue: nonRevenue, commercial: commercial };
+    if (map.moveIn != null) rec.moveIn = toISODate(row[map.moveIn]);
+    if (map.leaseEnd != null) rec.leaseEnd = toISODate(row[map.leaseEnd]);
+    if (map.moveOut != null) rec.moveOut = toISODate(row[map.moveOut]);
+    return rec;
   }
 
   // The printed "Summary Groups" footing, when present: occupied / vacant / non-revenue unit counts and
@@ -290,5 +310,26 @@
     return out;
   }
 
-  return { parse: parse, findHeader: findHeader, aggregate: aggregate };
+  // (2026-10-21) The year's turnover from the lease dates, for Claude's stories and What to push: how many occupied
+  // residential leases end in each of the next 12 months from `asOf` ("YYYY-MM-DD"), how many have already ended or have
+  // no end date (month to month), and the average time residents have stayed. Only what the rent roll says — a unit
+  // with no lease date is counted as "no date", never guessed.
+  function turnover(units, asOf){
+    var res = (units || []).filter(function(u){ return u && !u.commercial && u.occupied; });
+    var out = { occupied: res.length, withLeaseEnd: 0, endingNext12: 0, byMonth: {}, endedOrMonthToMonth: 0, noDate: 0, avgMonthsSinceMoveIn: null };
+    if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return out;
+    var y = +asOf.slice(0, 4), m = +asOf.slice(5, 7), endY = y + 1, stays = [];
+    var horizon = endY + "-" + ("0" + m).slice(-2) + "-" + asOf.slice(8, 10);
+    res.forEach(function(u){
+      if (u.moveIn && u.moveIn <= asOf){ var my = +u.moveIn.slice(0, 4), mm = +u.moveIn.slice(5, 7); stays.push((y - my) * 12 + (m - mm)); }
+      if (!u.leaseEnd){ out.noDate++; return; }
+      out.withLeaseEnd++;
+      if (u.leaseEnd < asOf){ out.endedOrMonthToMonth++; return; }
+      if (u.leaseEnd <= horizon){ out.endingNext12++; var k = u.leaseEnd.slice(0, 7); out.byMonth[k] = (out.byMonth[k] || 0) + 1; }
+    });
+    if (stays.length) out.avgMonthsSinceMoveIn = Math.round(mean(stays) * 10) / 10;
+    return out;
+  }
+
+  return { parse: parse, findHeader: findHeader, aggregate: aggregate, toISODate: toISODate, turnover: turnover };
 });

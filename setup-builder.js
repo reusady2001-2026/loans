@@ -60,6 +60,19 @@
     return { sums: sums, review: review };
   }
 
+  // Next stage (F1, draft) — the Underwriting line one account (a parsed T12 row) lands on: the line you set in the
+  // review, else its classification; folded the way fromParse folds it (an income-role code in the printed expense
+  // section → G&A, an expense-role code in the income section → Other Income) when the Setup is built from the
+  // statement (fold), or as the monthly series classifies it (no fold) when it is built from the T12 rule's sums.
+  function accountLine(r, fold){
+    if(!r) return null;
+    var cc = r.forceCode ? { code: r.forceCode } : T12.classifyConfident(r.name, r.section, r.sub), code = cc && cc.code;
+    if(code == null) return null;
+    if(!fold) return code;
+    var isExp = String(r.section || "").toUpperCase().indexOf("EXP") >= 0, expCode = (T12.roleOf(code) === "expense");
+    return isExp ? (expCode ? code : "GA") : (expCode ? "OTH" : code);
+  }
+
   // Build category sums straight from a parsed statement (t12-parse.parseGrid
   // output: {rows, categories, totals}). The statement's PRINTED footing is the
   // authority: in-place income, expense and NOI are read from totals.{income,
@@ -251,6 +264,6 @@
     return { rows: rows, total: tot };
   }
 
-  return { buildSetup: buildSetup, classifySum: classifySum, fromParse: fromParse, sizingSummary: sizingSummary,
+  return { buildSetup: buildSetup, classifySum: classifySum, fromParse: fromParse, accountLine: accountLine, sizingSummary: sizingSummary,
            setCustom: setCustom, LABEL: LABEL, RENTAL: RENTAL, OTHER: OTHER, EXPENSE: EXPENSE };
 });

@@ -12,7 +12,7 @@ const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_module
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-rates299-'));
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
 (async()=>{
-  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent',LDS_RATES_OFFLINE:'1'})});
+  const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox','--proxy-server=http://127.0.0.1:9'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent',LDS_RATES_OFFLINE:'1'})});   // no web at all: with page.route alone the window still reached the real rate sites under load ("11 refreshed")
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort()); await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(1500);
 
@@ -22,7 +22,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const L=await page.evaluate(()=>{ const m=document.querySelector('[data-rateslist]'); const row=(id)=>{ const r=m.querySelector('[data-raterow="'+id+'"]'); return r?{ v:r.querySelector('[data-ratevalue]').textContent, src:r.querySelector('[data-ratesrc]').textContent, loans:r.querySelector('[data-rateloans]').textContent }:null; };
     return { n:m.querySelectorAll('[data-raterow]').length, head:m.innerText.slice(0,200), sofr:row('sofr'), sofr30:row('sofr30'), term:row('termsofr1m'), other:row('other'), ust10:row('ust10y') }; });
   ok(L.n===13,'all 13 rates are listed ('+L.n+')');
-  ok(/Couldn’t fetch \(offline\?\) — the last saved values/.test(L.head),'offline, it says the values are the last saved ones');
+  ok(/Couldn’t fetch \(offline\?\) — the last saved values/.test(L.head),'offline, it says the values are the last saved ones ("'+L.head.replace(/\s+/g,' ').slice(0,120)+'")');
   ok(L.sofr30&&/%$/.test(L.sofr30.v)&&L.term&&/%$/.test(L.term.v),'SOFR 30-day Average and 1-month Term SOFR are there with values ('+L.sofr30.v+', '+L.term.v+')');
   ok(L.sofr&&L.sofr.src.length>3,'each rate says where it comes from ("'+(L.sofr&&L.sofr.src)+'")');
   ok(L.other&&L.other.v==='each loan’s own value'&&!/5\.0/.test(L.other.v),'"Other / Custom" reads "each loan’s own value", not 5%');
@@ -32,6 +32,9 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 
   // ---- (7) the SOFRs in Refinance ----
   const LID=await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>x.rateType==='Floating'&&x.originalAmount>1000000)||window.LDS_loans()[0]; return l._id; });
+  // (2026-10-21) a refinance is sized on the property's T12: give the loan's property a T12 NOI (its own NOI, else 10% of the loan)
+  const seedKey=await page.evaluate((lid)=>{ const l=window.LDS_loans().find(x=>x._id===lid); const n=window.LDS_loanNOI(l); return { k:window.propertyKey(l), n:(n!=null&&isFinite(n)&&n>0)?n:Math.round(l.originalAmount*0.1) }; },LID);
+  await require('./_t12seed').seedT12(page, null, { [seedKey.k]: seedKey.n });
   await page.evaluate((lid)=>{ document.getElementById('scopeLoanBtn').click(); const s=document.getElementById('loanSelect'); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); if(window.LDS_resetRefiDraft) window.LDS_resetRefiDraft(); },LID);
   await page.waitForTimeout(500); await page.click('#refiBtn'); await page.waitForTimeout(800);
   await page.evaluate(()=>{ const b=document.querySelector('#refiPricing [data-rtype="Floating"]'); if(b) b.click(); }); await page.waitForTimeout(600);

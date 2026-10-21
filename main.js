@@ -15,7 +15,11 @@ const CloudSync = require('./cloud-sync');   // 3.0.0 — the shared database (S
 // The test build (.github/workflows/test-build.yml): a separate app next to the real one, for trying a version before
 // it ships. It never updates itself (an update would fetch the real app), and its first upload reads the real app's
 // data folder (read only) — its own folder starts empty.
-const TEST_BUILD = (() => { try { return !!require('./package.json').ldsTestBuild; } catch (e) { return false; } })();
+const TEST_BUILD = process.env.LDS_TEST_BUILD === '1' || (() => { try { return !!require('./package.json').ldsTestBuild; } catch (e) { return false; } })();
+// Next stage (draft) — the test build never uses the shared database: it works on its own copy of this computer's data,
+// taken once on its first start from the real app's folder (read only): the group's picture when the real app is signed
+// in, else the real app's own data. Nothing it does reaches the real app or the team.
+if (TEST_BUILD && !process.env.LDS_CLOUD_URL) process.env.LDS_CLOUD_OFF = '1';
 function uploadRoot() {
   if (!TEST_BUILD) return app.getPath('userData');
   for (const n of ['Loan Debt Service Hub', 'loan-debt-service-hub']) {
@@ -24,6 +28,42 @@ function uploadRoot() {
   }
   return app.getPath('userData');
 }
+function testRealDir() {
+  if (process.env.LDS_TEST_REAL_DIR) return fs.existsSync(process.env.LDS_TEST_REAL_DIR) ? process.env.LDS_TEST_REAL_DIR : null;   // tests
+  for (const n of ['Loan Debt Service Hub', 'loan-debt-service-hub']) { const d = path.join(app.getPath('appData'), n); if (fs.existsSync(d)) return d; }
+  return null;
+}
+// the newest group picture (the real app signed in to the shared database), else the real app's own data
+function testCopySource(real) {
+  let best = null;
+  try { const cd = path.join(real, 'cloud'); fs.readdirSync(cd).forEach(g => { const f = path.join(cd, g, 'data', 'loans.json'); try { const t = fs.statSync(f).mtimeMs; if (!best || t > best.t) best = { dir: path.join(cd, g, 'data'), t: t, shared: true }; } catch (e) {} }); } catch (e) {}
+  if (best) return best;
+  return fs.existsSync(path.join(real, 'loans.json')) ? { dir: real, shared: false } : null;
+}
+// copy a file or folder, one file at a time (a file the real app holds open — a LOCK — is skipped, never touched)
+function testCopyTree(src, dst, out) {
+  let st; try { st = fs.statSync(src); } catch (e) { return; }
+  if (st.isDirectory()) { try { fs.mkdirSync(dst, { recursive: true }); } catch (e) {} let names = []; try { names = fs.readdirSync(src); } catch (e) {} names.forEach(n => testCopyTree(path.join(src, n), path.join(dst, n), out)); return; }
+  if (path.basename(src) === 'LOCK') return;
+  try { fs.copyFileSync(src, dst); out.files++; } catch (e) { out.skipped++; }
+}
+function testCopyOnce() {
+  if (!TEST_BUILD) return;
+  const mine = app.getPath('userData'), mark = path.join(mine, 'test-copy.json');
+  if (fs.existsSync(mark)) return;
+  const real = testRealDir(), info = { at: new Date().toISOString(), from: null, shared: false, copied: [], files: 0, skipped: 0 };
+  if (real && path.resolve(real) !== path.resolve(mine)) {
+    const src = testCopySource(real), out = { files: 0, skipped: 0 };
+    if (src) { info.from = src.dir; info.shared = !!src.shared;
+      ['loans.json', 'settings.json', 'documents', 'chats'].forEach(n => { const p = path.join(src.dir, n); if (fs.existsSync(p)) { testCopyTree(p, path.join(mine, n), out); info.copied.push(n); } }); }
+    const ls = path.join(real, 'Local Storage');   // the page's own settings (Underwriting, refinance limits, the operator's name)
+    if (fs.existsSync(ls)) { testCopyTree(ls, path.join(mine, 'Local Storage'), out); info.copied.push('Local Storage'); }
+    info.files = out.files; info.skipped = out.skipped;
+  }
+  try { fs.mkdirSync(mine, { recursive: true }); fs.writeFileSync(mark, JSON.stringify(info, null, 2)); } catch (e) {}
+  mainLog('test build: copied ' + info.files + ' files from ' + (info.from || 'nowhere') + (info.skipped ? ' (' + info.skipped + ' skipped)' : ''));
+}
+ipcMain.handle('lds:test-info', () => { if (!TEST_BUILD) return null; try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'test-copy.json'), 'utf8')); } catch (e) { return { at: null }; } });
 const SIGNIN_URL = 'lds://app/signin.html';
 let cloud = null, cloudReady = Promise.resolve({ mode: 'local' });
 // 3.0.0 — where the data lives: today's folder, or (signed in to the shared database) the group's picture of it.
@@ -1209,6 +1249,7 @@ ipcMain.handle('lds:ai-logout', () => ai.logout());
 // 2.9.8 — a window that is hidden or covered keeps running at full speed (OCR, reading queue).
 try { app.commandLine.appendSwitch('disable-renderer-backgrounding'); app.commandLine.appendSwitch('disable-backgrounding-occluded-windows'); app.commandLine.appendSwitch('disable-background-timer-throttling'); } catch (e) {}
 app.whenReady().then(() => {
+  try { testCopyOnce(); } catch (e) { mainLog('test build: copy failed: ' + e.message); }   // next stage (draft) — before anything reads the data
   registerAppProtocol();
   setTimeout(pruneOcrCache, 30000);
   Menu.setApplicationMenu(null); // no default menu bar

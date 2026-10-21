@@ -74,10 +74,10 @@ async function calendarCheck(tag, s, lender, balloon) {
 async function rollupCheck(tag, s, truth, props, poolNOI, poolDSv) {
   const r = await L.rollup(s.page);
   if (!r || !r.total) { rec(tag + '21 Underwriting roll-up counts the pool once', false, 'roll-up did not render'); return; }
-  const bal = L.parseMoney(r.total[5]), noi = L.parseMoney(r.total[3]), bad = [];
+  const bal = L.parseMoney(r.total[6]), noi = L.parseMoney(r.total[3]), bad = [];
   props.forEach(p => r.rows.filter(x => (x[0] || '').toLowerCase().indexOf(p.name.toLowerCase()) === 0).forEach(x => {
-    const d = (x[7] || '').match(/([0-9.]+)×/); if (d && Math.abs(+d[1] - p.noi / poolDSv) < 0.011) bad.push(p.name + ' carries the whole pool (' + x[7] + ')'); }));
-  const poolRow = r.rows.some(x => L.near(L.parseMoney(x[3]), poolNOI, 1) && /([0-9.]+)×/.test(x[7] || '') && Math.abs(+(x[7].match(/([0-9.]+)×/)[1]) - poolNOI / poolDSv) < 0.011);
+    const d = (x[8] || '').match(/([0-9.]+)×/); if (d && Math.abs(+d[1] - p.noi / poolDSv) < 0.011) bad.push(p.name + ' carries the whole pool (' + x[8] + ')'); }));
+  const poolRow = r.rows.some(x => L.near(L.parseMoney(x[3]), poolNOI, 1) && /([0-9.]+)×/.test(x[8] || '') && Math.abs(+(x[8].match(/([0-9.]+)×/)[1]) - poolNOI / poolDSv) < 0.011);
   rec(tag + '21 Underwriting roll-up counts the pool once', L.near(bal, truth.totalDebt, 5) && L.near(noi, truth.allNOI, 1) && !bad.length,
     'roll-up total debt ' + money(bal) + ' (truth ' + money(truth.totalDebt) + '), NOI ' + money(noi) + ' (truth ' + money(truth.allNOI) + ')' + (bad.length ? '; ' + bad.join('; ') : '') + '; pool row ' + poolRow + '; ' + r.rows.length + ' rows');
 }

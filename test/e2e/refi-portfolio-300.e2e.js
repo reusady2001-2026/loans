@@ -1,6 +1,8 @@
 /* 3.0.0 — the refinance fixes from the 2026-10-13 meeting, on 5 made-up properties with 6 loans (test/e2e/pool/fixture.js).
    P1–P6: refinancing several properties together never counts a property with no NOI as $0 — each property's NOI and its
-   source are shown, and the ones with none are named.
+   source are shown, and the ones with none are named. (2026-10-21) a refinance is sized on each property's T12 (or the
+   underwriting approved from it), on the basis chosen PER PROPERTY: a property with no T12 stops the package ("No T12
+   yet", naming it), and a typed NOI — on the property or on its loan — never sizes it (Home still shows it).
    Q1–Q7: one property — the proposed rate starts at a real spread shown as index + spread; today's loan vs the proposed
    loan are labeled and the size uses only the proposed rate; "supports $X" is broken down (NOI and source, rate,
    payment, each limit's loan, the binding one); the lender's limits (amortizing and interest-only coverage, LTV, debt
@@ -29,10 +31,13 @@ async function tick(page, names) {
 }
 async function refiState(page) {
   return page.evaluate(() => { const v = document.getElementById('refiView'), l = window.LDS_activeLoan();
-    const rows = [...v.querySelectorAll('[data-refipoolnoi]')].map(tr => [...tr.querySelectorAll('td')].map(td => (td.innerText || '').replace(/\s+/g, ' ').trim()));
+    // a row: name, the basis chosen for it (the select's value), NOI, + ticked pushes, where it comes from
+    const rows = [...v.querySelectorAll('[data-refipoolnoi]')].map(tr => [...tr.querySelectorAll('td')].map(td => { const sel = td.querySelector('select'); return sel ? sel.value : (td.innerText || '').replace(/\s+/g, ' ').trim(); }));
     return { id: l && l._id, noi: l ? window.LDS_refiNOI(l) : null, rows, total: (v.querySelector('[data-refipooltotal]') || {}).textContent || '',
       missing: (v.querySelector('[data-refipoolmissing]') || {}).textContent || '', noNoi: (v.querySelector('[data-refinonoi]') || {}).textContent || '',
       verdict: (v.querySelector('[data-refiverdict]') || {}).getAttribute ? v.querySelector('[data-refiverdict]').getAttribute('data-refiverdict') : null,
+      noT12: (v.querySelector('[data-refinot12]') || {}).textContent || '', uploads: [...v.querySelectorAll('[data-refiuploadt12]')].map(b => b.getAttribute('data-refiuploadt12')),
+      basis: l ? window.LDS_refiBasis(l) : null, bases: l ? ((window.LDS_refiRec(l) || {}).bases || null) : null,
       text: v.innerText.replace(/\s+/g, ' ') }; });
 }
 
@@ -42,51 +47,64 @@ async function refiState(page) {
     await L.setNOIs(s.page, WITH.concat([F.CONTROL]));
     await L.setNOIs(s.page, [{ name: NO_NOI, addr: F.PROPS[4].addr, noi: '' }]);   // the fifth has no T12 and nothing typed
     await s.page.waitForTimeout(400);
-    // P1 — the picker shows each property's NOI and its source, and names the one with none
+    // the T12s: the four with an NOI have one (their NOI as the T12's), Elm Terrace has none
+    const KEY = await s.page.evaluate(() => { const o = {}; window.opProperties().forEach(p => { o[p.name] = p.key; }); return o; });
+    const seedT12 = require('./_t12seed').seedT12;
+    const figs = {}; WITH.forEach(p => { figs[KEY[p.name]] = p.noi; });
+    await seedT12(s.page, [], figs);
+    await s.page.evaluate((k) => window.LDS_setGDNOI(k, { inPlace: null }), KEY[NO_NOI]);   // read: no T12
+    // P1 — the picker shows the NOI each property's refinance would use (its T12) and names the one with no T12;
+    // a typed NOI (Elm's override, P6) is never counted (2026-10-21)
     await openPicker(s.page);
     const pk = await tick(s.page, F.PROPS.map(p => p.name));
-    const elmRow = pk.rows.find(r => r.name === NO_NOI), maple = pk.rows.find(r => r.name === 'Maple Court');
-    rec('P1 picker: each property\'s NOI and source; the one with none is named', /no NOI/.test(elmRow && elmRow.noi) && /\$1,000,000/.test(maple && maple.noi) && /override/.test(maple.noi) && new RegExp('no NOI for ' + NO_NOI).test(pk.note) && !/NOI \$/.test(pk.note.replace(/NOI \$[\d,]+ ·/g, '')),
+    const elmRow = pk.rows.find(r => r.name === NO_NOI), maple = pk.rows.find(r => r.name === 'Maple Court'), mapleFig = (F.PROPS.find(p => p.name === 'Maple Court') || {}).noi;
+    rec('P1 picker: each property\'s T12 NOI; the one with no T12 is named', /no T12/.test(elmRow && elmRow.noi) && /In-place T12/.test(maple && maple.noi) && maple.noi.indexOf(money(mapleFig).replace(/\.00$/, '')) >= 0 && new RegExp('no T12 for ' + NO_NOI).test(pk.note) && !/type its NOI/.test(pk.note),
       'Maple row "' + (maple && maple.noi) + '", Elm row "' + (elmRow && elmRow.noi) + '", note "' + pk.note + '"');
+    const openPkg = async () => { await s.page.evaluate(() => { const b = document.getElementById('refiCloseBtn'); if (b) b.click(); }); await s.page.waitForTimeout(300);
+      await openPicker(s.page); const t = await tick(s.page, F.PROPS.map(p => p.name)); await s.page.evaluate(() => document.getElementById('poolPickGo').click()); await s.page.waitForTimeout(1800); return t; };
     await s.page.evaluate(() => document.getElementById('poolPickGo').click());
     await s.page.waitForTimeout(1800);
-    // P2 — the refinance lists all 5 with their NOI and source; Elm Terrace has none
+    // P2 — one property with no T12 stops the package: "No T12 yet", naming it, with its upload button
     let r = await refiState(s.page);
-    const elm = r.rows.find(x => x[0] === NO_NOI), mp = r.rows.find(x => x[0] === 'Maple Court');
-    rec('P2 refinance: NOI by property, 5 rows with the source', r.rows.length === 5 && mp && /\$1,000,000/.test(mp[1]) && /override/.test(mp[2]) && elm && /no NOI/.test(elm[1]) && /no T12/.test(elm[2]),
-      r.rows.map(x => x.join(' | ')).join(' ; '));
-    // P3 — nothing is sized while one property has no NOI: no $0 sum, the property is named
-    rec('P3 no NOI → not sized, never $0, the property named', r.noi == null && r.total.trim() === '—' && new RegExp(NO_NOI).test(r.missing) && new RegExp(NO_NOI).test(r.noNoi) && !/These \d+ properties support/.test(r.text),
-      'refiNOI ' + money(r.noi) + ' (the 4 with NOI sum to ' + money(SUM4) + '), total "' + r.total + '", note "' + r.missing.slice(0, 120) + '", verdict note "' + r.noNoi.slice(0, 120) + '"');
-    // P4 — typing its NOI in the table saves it on the property and sizes the package on all 5
-    await s.page.evaluate((v) => { const i = document.querySelector('[data-refipooltype]'); i.value = String(v); i.dispatchEvent(new Event('change', { bubbles: true })); }, F.PROPS[4].noi);
-    await s.page.waitForTimeout(1500);
+    rec('P2 refinance: a property with no T12 stops the package, named, with its upload button', new RegExp(NO_NOI + ' has no T12').test(r.noT12) && !/Maple Court/.test(r.noT12) && r.uploads.length === 1 && r.uploads[0] === KEY[NO_NOI] && r.verdict == null,
+      'block "' + r.noT12.replace(/\s+/g, ' ').slice(0, 160) + '", uploads ' + JSON.stringify(r.uploads) + ', verdict ' + r.verdict);
+    // P3 — nothing is sized while one has no T12: no $0 sum
+    rec('P3 no T12 → not sized, never $0', r.noi == null && !/These \d+ properties support/.test(r.text) && !/\$4,500,000/.test(r.text),
+      'refiNOI ' + money(r.noi) + ' (the 4 with a T12 sum to ' + money(SUM4) + ')');
+    // P4 — its T12 comes in: NOI by property, each on its own basis (In-place T12 until its underwriting is approved), all 5 sized
+    await seedT12(s.page, [], { [KEY[NO_NOI]]: F.PROPS[4].noi });
+    await openPkg();
     r = await refiState(s.page);
-    const elm2 = r.rows.find(x => x[0] === NO_NOI);
-    rec('P4 typing the missing NOI sizes the package on all 5', L.near(r.noi, SUM5, 1) && elm2 && /\$500,000/.test(elm2[1]) && /typed on the property/.test(elm2[2]) && /\$5,000,000/.test(r.total) && !r.missing && r.verdict != null,
-      'refiNOI ' + money(r.noi) + ' (truth ' + money(SUM5) + '), Elm row "' + (elm2 || []).join(' | ') + '", total "' + r.total + '", verdict ' + r.verdict);
-    // P5 — the typed NOI is the property's own (its page shows it after closing the refinance)
-    const prof = await s.page.evaluate((n) => { const p = window.opProperties().find(x => x.name === n); return p ? window.LDS_profileEffective(p.key, 'noi') : null; }, NO_NOI);
-    rec('P5 the typed NOI is saved on the property', prof != null && Number(prof.value != null ? prof.value : prof) === F.PROPS[4].noi, 'profile noi ' + JSON.stringify(prof));
-    // P6 — an NOI typed on the property's own loan (no T12) counts too, named as such
-    await s.page.evaluate(async (n) => { const p = window.opProperties().find(x => x.name === n); await window.LDS_setProfileField(p.key, 'noi', ''); }, NO_NOI);
-    await s.page.evaluate(() => { const b = document.getElementById('refiCloseBtn'); if (b) b.click(); });
-    await s.page.waitForTimeout(400);
-    const ed = await s.page.evaluate((v) => { const l = window.LDS_getLoan('ln_r6'); if (!l) return false; l.noi = v; return true; }, F.PROPS[4].noi);   // as an Excel row brings it (the loan form has no NOI box)
-    await openPicker(s.page);
-    const pk2 = await tick(s.page, F.PROPS.map(p => p.name));
-    await s.page.evaluate(() => document.getElementById('poolPickGo').click());
-    await s.page.waitForTimeout(1800);
+    const elm2 = r.rows.find(x => x[0] === NO_NOI), mp = r.rows.find(x => x[0] === 'Maple Court');
+    rec('P4 every T12 in: NOI by property, each on the In-place T12, the package sized on all 5', r.rows.length === 5 && r.rows.every(x => x[1] === 'inplace') && L.near(r.noi, SUM5, 1) && elm2 && /\$500,000/.test(elm2[2]) && /In-place T12/.test(elm2[4]) && mp && /\$1,000,000/.test(mp[2]) && /\$5,000,000/.test(r.total) && !r.missing && r.verdict != null,
+      'refiNOI ' + money(r.noi) + ' (truth ' + money(SUM5) + '), rows ' + r.rows.map(x => x.join(' | ')).join(' ; ') + ', total "' + r.total + '", verdict ' + r.verdict);
+    // P5 — the basis is chosen PER PROPERTY: Maple's underwriting approved (Safe 900,000 · Aggressive 950,000) → Maple starts on Safe, the others stay on the T12
+    await s.page.evaluate((k) => window.LDS_setGDNOI(k, { inPlace: 1000000, underwritten: 900000, underwrittenAggressive: 950000, uwModel: 2, uwApproved: { at: new Date().toISOString(), by: 'Test', current: true } }), KEY['Maple Court']);
+    await openPkg();
     r = await refiState(s.page);
-    const elm3 = r.rows.find(x => x[0] === NO_NOI);
-    rec('P6 an NOI typed on the property\'s own loan counts, named as such', ed && L.near(r.noi, SUM5, 1) && elm3 && /typed on its loan/.test(elm3[2]) && !/no NOI for/.test(pk2.note),
-      'refiNOI ' + money(r.noi) + ' (truth ' + money(SUM5) + '), Elm row "' + (elm3 || []).join(' | ') + '", picker note "' + pk2.note + '"');
+    const mp2 = r.rows.find(x => x[0] === 'Maple Court');
+    const p5a = mp2 && mp2[1] === 'underwritten' && /\$900,000/.test(mp2[2]) && r.rows.filter(x => x[1] === 'inplace').length === 4 && L.near(r.noi, SUM5 - 100000, 1) && r.basis === 'mixed';
+    await s.page.selectOption('#refiView [data-refikeybasis="' + KEY['Maple Court'] + '"]', 'aggressive'); await s.page.waitForTimeout(1500);
+    r = await refiState(s.page);
+    const mp3 = r.rows.find(x => x[0] === 'Maple Court');
+    rec('P5 the basis is chosen per property (Maple: Safe, then Aggressive; the rest on the T12) and kept with the refinance', p5a && mp3 && mp3[1] === 'aggressive' && /\$950,000/.test(mp3[2]) && L.near(r.noi, SUM5 - 50000, 1) && r.bases && r.bases[KEY['Maple Court']] === 'aggressive',
+      'Maple ' + (mp2 || []).slice(1, 3).join(' ') + ' → ' + (mp3 || []).slice(1, 3).join(' ') + ', refiNOI ' + money(r.noi) + ', saved bases ' + JSON.stringify(r.bases));
+    // P6 — a typed NOI never sizes a refinance: Elm Terrace without its T12, an NOI typed on the property AND on its loan → still "No T12 yet"
+    await s.page.evaluate((k) => window.LDS_setGDNOI(k, { inPlace: null }), KEY[NO_NOI]);
+    await s.page.evaluate(async (k) => { await window.LDS_setProfileField(k, 'noiOverride', 500000); }, KEY[NO_NOI]);
+    const ed = await s.page.evaluate((v) => { const l = window.LDS_getLoan('ln_r6'); if (!l) return false; l.noi = v; return true; }, F.PROPS[4].noi);   // as an Excel row brings it
+    const pk2 = await openPkg();
+    r = await refiState(s.page);
+    rec('P6 an NOI typed on the property or its loan never sizes the refinance (the picker still shows it)', ed && r.noi == null && new RegExp(NO_NOI + ' has no T12').test(r.noT12) && r.verdict == null && !/no NOI for/.test(pk2.note),
+      'refiNOI ' + money(r.noi) + ', block "' + r.noT12.replace(/\s+/g, ' ').slice(0, 100) + '", picker note "' + pk2.note + '"');
     if (s.errors.length) rec('P-err page errors', false, s.errors.slice(0, 3).join(' | ')); else rec('P-err page errors', true, 'none');
   } finally { try { await s.app.close(); } catch (e) {} }
   // Q — one property (Control Tower, NOI $900,000, a 5% fixed loan in Cincinnati): items 2–5
   const q = await L.boot(APP, F.bookR());
   try {
     await L.setNOIs(q.page, F.PROPS.concat([F.CONTROL]));
+    { const ck = await q.page.evaluate(() => window.opProperties().find(p => p.name === 'Control Tower').key);
+      await require('./_t12seed').seedT12(q.page, [], { [ck]: F.CONTROL.noi }); }   // (2026-10-21) its T12: 900,000
     await q.page.evaluate(() => { try { localStorage.removeItem('ldsHub.refiLimits.v1'); } catch (e) {} });
     const openRefi = async () => { await L.selectPos(q.page, 'ln_control'); await q.page.waitForTimeout(600);
       await q.page.evaluate(() => document.getElementById('refiBtn').click());
@@ -111,7 +129,7 @@ async function refiState(page) {
       'supports ' + money(a.max) + ' (DSCR leg at the proposed ' + (a.rate * 100).toFixed(2) + '%: ' + money(900000 / (1.25 * mc(a.rate))) + ')');
     // Q4 (item 4) — the basis of "supports $X": NOI + source, rate, payment type, each limit's loan, the binding one
     const nBind = Object.keys(a.legs).filter(k => a.legs[k].binds).length;
-    rec('Q4 "supports $X" shows NOI and source, rate, payment, each limit\'s loan and which binds', /NOI \$900,000[^—]*— your NOI \(override\)/.test(a.basis) && /amortizing over 30 years/.test(a.basis) && Object.keys(a.legs).length === 4 && nBind === 1 && a.legs[a.binding].binds && /not used/.test(a.legs['DSCR IO'].amt),
+    rec('Q4 "supports $X" shows NOI and source, rate, payment, each limit\'s loan and which binds', /NOI \$900,000[^—]*— in-place T12/.test(a.basis) && /amortizing over 30 years/.test(a.basis) && Object.keys(a.legs).length === 4 && nBind === 1 && a.legs[a.binding].binds && /not used/.test(a.legs['DSCR IO'].amt),
       'legs ' + Object.keys(a.legs).map(k => k + ' ' + a.legs[k].amt + (a.legs[k].binds ? ' (binds)' : '')).join(', '));
     // Q5 (item 5) — the lender's limits are typed per analysis: 1.11× amortizing, 1.35× interest-only
     const setLim = async (k, v) => { await q.page.evaluate(([k, v]) => { const i = document.querySelector('[data-refilim="' + k + '"]'); i.value = String(v); i.dispatchEvent(new Event('change', { bubbles: true })); }, [k, v]); await q.page.waitForTimeout(500); };

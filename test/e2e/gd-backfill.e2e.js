@@ -26,6 +26,12 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.waitForFunction(()=>/operating history/i.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
   await page.waitForTimeout(400);
 
+  // (2026-10-21) the underwriting is the APPROVED pro forma: approve it, then both NOIs are kept
+  await page.waitForFunction(()=>!!document.querySelector('[data-uwapprove]')&&!document.querySelector('[data-uwapprove]').disabled,null,{timeout:20000}).catch(()=>{});
+  await page.evaluate(()=>{ const b=document.querySelector('[data-uwapprove]'); if(b) b.click(); });
+  await page.waitForFunction((k)=>{ const g=window.LDS_gdNOICache()[k]; return !!(g&&g.underwritten!=null); },KEY,{timeout:20000}).catch(()=>{});
+  await page.waitForTimeout(800);
+
   // ---- simulate "a T12 in the folder but no general-data.json": delete the general-data file,
   //      keep the T12, clear the in-memory cache (a fresh launch) ----
   const del=await page.evaluate(async(k)=>{

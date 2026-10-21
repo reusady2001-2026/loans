@@ -56,16 +56,16 @@ async function run() {
     const r = await L.rollup(s.page), tot = (r && r.total) || [];
     const scope = await s.page.evaluate(() => { const m = document.getElementById('opRollupMount'), t = m && m.querySelector('tr[data-op-scope]'); return t ? t.innerText.trim() : ''; });
     const hD = (c.wDscr).toFixed(2) + '×', hY = ((c.wDy) * 100).toFixed(2) + '%', hL = ((c.wLtv) * 100).toFixed(2) + '%';
-    out.push({ id: 'C1-i Underwriting\'s roll-up shows the same DSCR, debt yield and LTV as Home', pass: tot[7] === hD && tot[8] === hY && tot[9] === hL,
-      detail: 'roll-up ' + [tot[7], tot[8], tot[9]].join(' / ') + ' · Home ' + [hD, hY, hL].join(' / ') });
+    out.push({ id: 'C1-i Underwriting\'s roll-up shows the same DSCR, debt yield and LTV as Home', pass: tot[8] === hD && tot[9] === hY && tot[10] === hL,
+      detail: 'roll-up ' + [tot[8], tot[9], tot[10]].join(' / ') + ' · Home ' + [hD, hY, hL].join(' / ') });
     out.push({ id: 'C1-j the roll-up counts the same 8 properties and names the 3 with no NOI', pass: /^Total — 8 properties/.test(tot[0] || '') && /^8 of 8 properties counted/.test(scope) && /3 with no NOI, counted at \$0/.test(scope),
       detail: '"' + (tot[0] || '') + '" · "' + scope + '"' });
     // giving the no-NOI property an NOI moves both screens the same way
     await L.setNOIs(s.page, [{ name: 'No NOI Tower', noi: 1500000 }]);
     const h2 = await L.home(s.page), r2 = await L.rollup(s.page), t2 = (r2 && r2.total) || [];
     const want2 = (sumNOI + 1500000) / sumDS;
-    out.push({ id: 'C1-k an NOI for No NOI Tower lifts both screens to the same new DSCR', pass: L.near(h2.cov.wDscr, want2, 1e-9) && t2[7] === h2.cov.wDscr.toFixed(2) + '×' && h2.cov.nNoNOI === 2,
-      detail: 'Home ' + h2.cov.wDscr.toFixed(4) + '× (truth ' + want2.toFixed(4) + '×), roll-up ' + t2[7] + ', with no NOI now ' + h2.cov.nNoNOI });
+    out.push({ id: 'C1-k an NOI for No NOI Tower lifts both screens to the same new DSCR', pass: L.near(h2.cov.wDscr, want2, 1e-9) && t2[8] === h2.cov.wDscr.toFixed(2) + '×' && h2.cov.nNoNOI === 2,
+      detail: 'Home ' + h2.cov.wDscr.toFixed(4) + '× (truth ' + want2.toFixed(4) + '×), roll-up ' + t2[8] + ', with no NOI now ' + h2.cov.nNoNOI });
     if (s.errors.length) out.push({ id: 'err page errors', pass: false, detail: s.errors.slice(0, 3).join(' | ') });
   } finally { await s.app.close(); }
   return out;

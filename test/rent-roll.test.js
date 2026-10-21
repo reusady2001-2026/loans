@@ -202,5 +202,33 @@ group("junk / empty input never throws", function(){
   ok(RR.parse([]).properties.length === 0, "empty grid → no properties");
 });
 
+group("(2026-10-21) lease dates: move-in, lease end, move-out — and the year's turnover from them", function(){
+  var g = [
+    ["Unit", "Unit Type", "Resident", "Name", "Market Rent", "Actual Rent", "Move In", "Lease Expiration", "Move Out"],
+    ["101", "A1", "t1", "Ann",    1500, 1500, 45658, "3/31/2027", ""],          // an Excel serial (2025-01-01) and a M/D/YYYY date
+    ["102", "A1", "t2", "Bob",    1500, 1480, "2024-06-15", "2026-06-30", ""],   // lease already ended: month to month
+    ["103", "A1", "t3", "Cy",     1500, 1500, "1/5/26", "1/4/27", "11/30/2026"], // two-digit years; on notice
+    ["104", "A1", "t4", "Di",     1500, 1500, "", "", ""],                       // no dates on the rent roll
+    ["105", "A1", "VACANT", "VACANT", 1500, 0, "", "", ""],                      // vacant: not a lease
+    ["106", "A1", "t6", "Ed",     1500, 1500, "2023-01-01", "12/31/2028", ""]    // ends after the next 12 months
+  ];
+  var p = RR.parse(g).properties[0], u = function(id){ return p.units.filter(function(x){ return x.unit === id; })[0]; };
+  eq(u("101").moveIn, "2025-01-01", "an Excel date serial reads as its date");
+  eq(u("101").leaseEnd, "2027-03-31", "M/D/YYYY reads as YYYY-MM-DD");
+  eq(u("103").leaseEnd, "2027-01-04", "a two-digit year is 20xx");
+  eq(u("103").moveOut, "2026-11-30", "the move-out date is kept");
+  ok(u("104").leaseEnd === null && u("104").moveIn === null, "a blank date is null, never guessed");
+  eq(RR.toISODate("next spring"), null, "words are not a date");
+  eq(RR.toISODate("13/40/2026"), null, "an impossible month is not a date");
+  var t = RR.turnover(p.units, "2026-10-21");
+  eq(t.occupied, 5, "5 occupied leases (the vacant unit is not one)");
+  eq(t.endingNext12, 2, "2 leases end within the next 12 months (101 in Mar 2027, 103 in Jan 2027)");
+  ok(t.byMonth["2027-03"] === 1 && t.byMonth["2027-01"] === 1, "…by month");
+  eq(t.endedOrMonthToMonth, 1, "1 lease already ended (month to month)");
+  eq(t.noDate, 1, "1 occupied unit has no lease date");
+  ok(t.avgMonthsSinceMoveIn != null && t.avgMonthsSinceMoveIn > 0, "average stay since move-in (" + t.avgMonthsSinceMoveIn + " months)");
+  eq(RR.turnover(p.units, "").endingNext12, 0, "no date to count from: nothing is counted");
+});
+
 console.log("\n" + (fails ? (fails + " FAILED, " + passes + " passed") : ("all " + passes + " rent-roll tests passed")));
 process.exit(fails ? 1 : 0);

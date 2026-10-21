@@ -12,6 +12,8 @@ if (a[0] === '--version') { console.log('0.0.0 (fake Claude Code for tests)'); p
 if (a[0] === '--help') { console.log('  --effort <level>  Effort level (low, medium, high)'); process.exit(0); }
 if (a[0] === 'auth' && a[1] === 'status') { console.log(JSON.stringify({ loggedIn: signedIn() })); process.exit(0); }
 if (a[0] !== '-p') process.exit(0);
+// (2026-10-21) every request's arguments, one JSON line each — the tests check that the web is allowed app-wide
+if (process.env.LDS_FAKE_ARGS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_ARGS_FILE, JSON.stringify(a) + '\n'); } catch (e) {} }
 let raw = '';
 process.stdin.on('data', (d) => { raw += d; });
 process.stdin.on('end', () => {
@@ -27,23 +29,34 @@ process.stdin.on('end', () => {
   // 2.9.7 — the assistant chat: answers come, in order, from the JSON array in $LDS_FAKE_CHAT_FILE (a string,
   // or {error:"…"}); every prompt it was sent is appended to $LDS_FAKE_CHAT_LOG (one JSON line each).
   if (/Respond to the request provided on standard input/i.test(a[1] || '')) { answerChat(raw); return; }
+  // F1 round 1 — the pro forma stories (What to push): fixed FAKE-STORY suggestions on accounts the input names, plus one
+  // on an account that is not in the T12 (the app must leave it out). The input is recorded to $LDS_FAKE_STORIES_INPUT.
+  if (/prepare the pro forma they show a lender/i.test(a[1] || '')) { answerStories(raw); return; }
   let input = null; try { input = JSON.parse(raw); } catch (e) {}
   if (process.env.LDS_FAKE_INPUT_FILE) { try { fs.writeFileSync(process.env.LDS_FAKE_INPUT_FILE, JSON.stringify(input)); } catch (e) {} }
   if (process.env.LDS_FAKE_CALLS_FILE) { try { fs.appendFileSync(process.env.LDS_FAKE_CALLS_FILE, new Date().toISOString() + ' ' + ((input && input.property) || '?') + '\n'); } catch (e) {} }   // one line per call, so a test can count them
-  const t12 = (input && input.t12) || { income: [], expense: [] };
-  const find = (re) => (t12.income || []).find((r) => re.test(r.line || ''));
+  // pictures (the Guide): a fixed made-up "what to push" answer from $LDS_FAKE_PUSH_FILE
+  if (process.env.LDS_FAKE_PUSH_FILE) { const d = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_PUSH_FILE, 'utf8')); console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: d, result: JSON.stringify(d), total_cost_usd: 0 })); return; }
+  // (2026-10-21) the shared briefing: every T12 line with its accounts (the same input Claude's stories get)
+  const income = ((input && input.lines) || []).filter((r) => r.side === 'income');
+  const find = (re) => income.find((r) => re.test(r.line || ''));
   const gpr = find(/gross potential rent/i), vac = find(/vacancy/i);
   // The same base the app uses for vacancy: gross potential rent net of employee and model units.
-  const base = gpr ? gpr.annual + (t12.income || []).filter((r) => /employee|model/i.test(r.line || '')).reduce((a, r) => a + (r.annual || 0), 0) : 0;
-  const actual = (gpr && vac && base) ? Math.abs(vac.annual) / base : null;
+  const base = gpr ? gpr.t12 + income.filter((r) => /employee|model/i.test(r.line || '')).reduce((a, r) => a + (r.t12 || 0), 0) : 0;
+  const actual = (gpr && vac && base) ? Math.abs(vac.t12) / base : null;
   const assumed = input && input.underwritingAssumptions ? input.underwritingAssumptions.vacancy : null;
   const pct = (v) => (v * 100).toFixed(2) + '%';
   const summary = (actual != null && assumed != null && assumed > actual)
     ? 'FAKE-SUMMARY: the underwriting already credits the proven ' + pct(actual) + ' vacancy, so there is nothing to gain there.'
     : 'FAKE-SUMMARY: the statement shows ' + (actual != null ? pct(actual) : 'an unknown') + ' vacancy against a ' + (assumed != null ? pct(assumed) : 'missing') + ' underwriting assumption.';
-  const data = { summary: summary, overlaps: [], moves: [
-    { title: 'FAKE-MOVE trim utilities', rank: 1, impact: 'FAKE-IMPACT about $40,000 a year', impactInPlace: 40000, impactUnderwritten: 38000, effort: 'light', rationale: 'FAKE-RATIONALE utilities run above the benchmark.' } ] };
-  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0 }));
+  // (2026-10-21) every move names what it checked; the app shows only confirmed moves — the two FAKE-UNCONFIRMED ones
+  // (no check named; a check named but its own words say it still needs checking) must never be shown
+  const data = { summary: summary, overlaps: [], searches: ['FAKE-SEARCH utility rates Harrison Ohio 2026'], moves: [
+    { title: 'FAKE-MOVE trim utilities', rank: 1, impact: 'FAKE-IMPACT about $40,000 a year', impactInPlace: 40000, impactSafe: 38000, impactAggressive: 38000, impactUnderwritten: 38000, lever: 'utilities', effort: 'light', rationale: 'FAKE-RATIONALE utilities run above the benchmark.',
+      checked: [{ what: 'FAKE-CHECKED T12 utilities against the benchmark', source: 't12' }, { what: 'FAKE-CHECKED local utility rates', source: 'web', site: 'FAKE-SITE', date: '2026-10' }] },
+    { title: 'FAKE-UNCONFIRMED bill residents back', rank: 2, impact: 'about $30,000 a year', impactInPlace: 30000, impactSafe: 29000, impactAggressive: 29000, lever: 'utility reimbursement', effort: 'moderate', rationale: 'Bill the residents back.', checked: [] },
+    { title: 'FAKE-UNCONFIRMED raise fees', rank: 3, impact: 'about $5,000 a year', impactInPlace: 5000, impactSafe: 4900, impactAggressive: 4900, lever: 'fee increase', effort: 'light', rationale: 'This assumes no fee increase is already in the leases, which should be checked first.', checked: [{ what: 'T12 other income', source: 't12' }] } ] };
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0, usage: { server_tool_use: { web_search_requests: 2 } } }));
 });
 
 function answerT12(raw){
@@ -122,4 +135,23 @@ function answerChat(raw) {
   try { fs.writeFileSync(process.env.LDS_FAKE_CHAT_FILE, JSON.stringify(q)); } catch (e) {}
   if (r && typeof r === 'object' && r.error) { console.log(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: r.error })); return; }
   console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: String(r), total_cost_usd: 0 }));
+}
+
+function answerStories(raw){
+  let input = null; try { input = JSON.parse(raw); } catch (e) {}
+  if (process.env.LDS_FAKE_STORIES_INPUT) { try { fs.writeFileSync(process.env.LDS_FAKE_STORIES_INPUT, JSON.stringify(input)); } catch (e) {} }
+  // pictures: a fixed made-up answer from $LDS_FAKE_STORIES_FILE ({summary, stories})
+  if (process.env.LDS_FAKE_STORIES_FILE) { const d = JSON.parse(fs.readFileSync(process.env.LDS_FAKE_STORIES_FILE, 'utf8')); console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: d, result: JSON.stringify(d), total_cost_usd: 0 })); return; }
+  const find = (re) => { for (const l of (input && input.lines) || []) for (const ac of l.accounts || []) if (re.test(ac.account)) return { line: l.line, account: ac.account, t12: ac.t12, months: ac.months }; return null; };
+  const stories = [], snow = find(/snow/i), bank = find(/bank charges/i);
+  if (snow) stories.push({ line: snow.line, account: snow.account, how: 'accountTotal', value: 9000, kind: 'normalized', story: 'FAKE-STORY Snow removal ran far above a normal winter; normalized to a normal year.',
+    basis: 'FAKE-BASIS the four winter months total ' + snow.t12 + '; a normal winter is taken as 9,000.', backedBy: 'FAKE-BACKED the snow-removal invoices for the last three winters', confidence: 'strong', column: 'both',
+    checked: [{ what: 'FAKE-CHECKED the snow months in the T12', source: 't12' }, { what: 'FAKE-CHECKED a record winter in the area', source: 'web', site: 'FAKE-WEATHER', date: '2025-01' }] });
+  if (bank) stories.push({ line: bank.line, account: bank.account, how: 'takeOut', kind: 'partnership', story: 'FAKE-STORY Bank charges belong to the partnership account.', basis: 'FAKE-BASIS 68 a month.', checked: [{ what: 'FAKE-CHECKED bank charges are the partnership account', source: 't12' }], backedBy: 'FAKE-BACKED the bank statements', confidence: 'possible', column: 'aggressive' });
+  stories.push({ line: 'Contract Services', account: 'FAKE-NOT-IN-THE-T12', how: 'takeOut', kind: 'nonRecurring', story: 'x', basis: 'x', checked: [{ what: 'x', source: 't12' }] });
+  // (2026-10-21) never shown: no check named
+  if (snow) stories.push({ line: snow.line, account: snow.account, how: 'accountTotal', value: 5000, kind: 'normalized', story: 'FAKE-UNCONFIRMED-STORY a mild winter is coming.', basis: 'x', checked: [] });
+  const data = { summary: 'FAKE-STORIES-SUMMARY ' + stories.length + ' suggestions', stories, searches: ['FAKE-SEARCH snowfall January 2025'] };
+  // $LDS_FAKE_CLI_ZERO_SEARCHES: like the real Claude Code, whose own usage reads 0 searches when there were some
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0, usage: { server_tool_use: { web_search_requests: process.env.LDS_FAKE_CLI_ZERO_SEARCHES ? 0 : 1 } } }));
 }
