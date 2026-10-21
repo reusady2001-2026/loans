@@ -99,7 +99,7 @@
   // record, a hook or the engine throwing) stays in that row: it comes back with
   // "—" cells and an `error`, and the rest of the portfolio still renders.
   function rowFor(key, rec, group, hooks, gd, C, calcErr){
-    var row = { propKey: key, name: null, units: null, noi: null, uwNoi: null, dscr: null, dy: null, ltv: null,
+    var row = { propKey: key, name: null, units: null, noi: null, uwNoi: null, uwAggNoi: null, dscr: null, dy: null, ltv: null,
                 balance: null, annualDS: null, maturity: null, loans: group.length };
     try {
       group = ordered(group, hooks);
@@ -123,6 +123,7 @@
         row.noiFrom = pn.from || "app";
         // (2026-10-21) the underwriting is the APPROVED Safe pro forma — blank until it is approved, never a figure worked out here
         row.uwNoi = fin(pn.underwritten);
+        row.uwAggNoi = fin(pn.underwrittenAggressive);   // (2026-10-21, the operator) the approved Aggressive, beside Safe
         st = C.stackOn(pnIn, group, hooks) || {};
       } else if (rec) {
         if (calcErr) throw calcErr;
@@ -148,7 +149,7 @@
       row.noNOIDebt = cv ? (fin(cv.noNOIDebt) || 0) : (row.noi == null ? (row.balance || 0) : 0);
     } catch (e) {
       row.error = String((e && e.message) || e);
-      row.noi = row.uwNoi = row.dscr = row.dy = row.ltv = row.balance = row.annualDS = row.value = null;   // half-computed figures are worse than none
+      row.noi = row.uwNoi = row.uwAggNoi = row.dscr = row.dy = row.ltv = row.balance = row.annualDS = row.value = null;   // half-computed figures are worse than none
       row.props = 1; row.noNOIProps = 1; row.noNOIDebt = 0;
       if (row.name == null) { try { row.name = loanName(group) || key; } catch (e2) { row.name = key; } }
     }
@@ -163,7 +164,7 @@
   // below zero when the book's NOI is. The NOI column total stays null while no property has an NOI at all.
   // properties / noNOIProps / noNOIDebt say how many properties the totals cover, how many have no NOI and their debt.
   function totalsOf(rows){
-    var t = { properties: 0, rows: rows.length, loans: 0, noi: null, uwNoi: null, balance: 0, annualDS: 0, value: 0, noiProps: 0,
+    var t = { properties: 0, rows: rows.length, loans: 0, noi: null, uwNoi: null, uwAggNoi: null, balance: 0, annualDS: 0, value: 0, noiProps: 0,
               noNOIProps: 0, noNOIDebt: 0, negativeProps: 0, noLoanProps: 0, dscrNoi: 0, dyNoi: 0, dscr: null, dy: null, ltv: null };
     rows.forEach(function (r){
       var props = r.props > 0 ? r.props : 1;
@@ -172,6 +173,7 @@
       if (r.balance != null)  t.balance  += r.balance;
       if (r.annualDS != null) t.annualDS += r.annualDS;
       if (r.uwNoi != null) t.uwNoi = (t.uwNoi == null ? 0 : t.uwNoi) + r.uwNoi;
+      if (r.uwAggNoi != null) t.uwAggNoi = (t.uwAggNoi == null ? 0 : t.uwAggNoi) + r.uwAggNoi;
       if (r.value > 0) t.value += r.value;
       if (!(r.loans > 0)) t.noLoanProps += props;
       t.noNOIProps += (r.noNOIProps != null ? r.noNOIProps : (r.noi == null ? props : 0));
@@ -267,7 +269,7 @@
   }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
 
-  var COLS = ["Property", "Units", "Loans", "In-place NOI", "Safe UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
+  var COLS = ["Property", "Units", "Loans", "In-place NOI", "Safe UW NOI", "Aggressive UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
   function td(s, cls, title){ return '<td class="py-1 px-2 text-right text-sm tabular-nums ' + (cls || "text-slate-600") + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + s + '</td>'; }
 
   // render(mountEl, buildRows(...), { onOpen(propKey) }). Idempotent: every call
@@ -287,14 +289,14 @@
           : ' tabindex="0" title="Open ' + esc(r.name) + '" class="border-t border-slate-100 cursor-pointer hover:bg-brand-50/40 focus:bg-brand-50/40 outline-none"') + '>' +
         '<td class="py-1 pr-3 text-sm font-semibold ' + (orphan ? 'text-slate-400' : 'text-slate-800') + ' whitespace-nowrap">' + esc(r.name) +
           (r.error ? ' <span data-op-error class="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-700" title="' + esc(r.error) + '">!</span>' : '') + '</td>' +
-        td(int(r.units)) + td(int(r.loans)) + td(money(r.noi), "text-slate-800") + td(money(r.uwNoi)) + td(money(r.balance)) + td(money(r.annualDS)) +
+        td(int(r.units)) + td(int(r.loans)) + td(money(r.noi), "text-slate-800") + td(money(r.uwNoi)) + td(money(r.uwAggNoi)) + td(money(r.balance)) + td(money(r.annualDS)) +
         td(ratio(r.dscr)) + td(pct(r.dy)) + td(pct(r.ltv)) + matCell(r) + '</tr>';
     }).join("");
     var empty = rows.length ? "" : '<tr><td colspan="' + COLS.length + '" class="py-3 text-sm text-slate-400">No properties yet &mdash; add a loan or an operating record.</td></tr>';
     var scope = scopeText(t);
     var total = '<tr data-op-total class="border-t-2 border-slate-200 bg-slate-50/70">' +
       '<td class="py-1 pr-3 text-sm font-bold text-slate-900">Total &mdash; ' + t.properties + (t.properties === 1 ? ' property' : ' properties') + '</td>' +
-      td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") +
+      td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") + td(money(t.uwAggNoi), "text-slate-900 font-bold") +
       td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold", scope) + td(pct(t.dy), "text-slate-900 font-bold", scope) +
       td(pct(t.ltv), "text-slate-900 font-bold", scope) + td("", "text-slate-900") + '</tr>' +
       '<tr data-op-scope><td colspan="' + COLS.length + '" class="pt-1 text-[11px] text-slate-500">' + esc(scope) + '</td></tr>';

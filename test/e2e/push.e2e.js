@@ -53,19 +53,32 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   const imp=await page.evaluate(()=>((document.querySelector('#opScanMount [data-pushimpacts]')||{}).innerText||'').replace(/\s+/g,' '));
   ok(/in.?place/i.test(imp)&&/safe/i.test(imp)&&/aggressive/i.test(imp)&&/40,000/.test(imp)&&/38,000/.test(imp),'each move shows Claude’s own three effects: in-place, Safe and Aggressive ("'+imp+'")');
 
-  // ---- The app hands Claude ONLY the assumptions + the T12 — nothing else, no menu ----
+  // ---- (2026-10-21) only what Claude confirmed is shown, with what it checked and whether it searched the web ----
+  ok(!/FAKE-UNCONFIRMED/.test(panel),'a move with no check named, or one whose own words say it should be checked first, is not shown at all');
+  const chk=await page.evaluate(()=>((document.querySelector('#opScanMount [data-aichecked]')||{}).innerText||'').replace(/\s+/g,' '));
+  ok(/Checked:/.test(chk)&&/FAKE-CHECKED T12 utilities/.test(chk)&&/web · FAKE-SITE · 2026-10/.test(chk),'each move lists what Claude checked, a web page with its site and date ("'+chk.slice(0,160)+'")');
+  ok(/Claude searched the web 2 times/.test(panel)&&/FAKE-SEARCH utility rates/.test(panel),'the panel says how many web searches the run made, and what Claude searched');
+  const stored=await page.evaluate((k)=>window.LDS_getPush(k),KEY);
+  ok(stored&&stored.moves.length===1&&stored.unconfirmed===2,'only the confirmed move is kept (1 kept, 2 left out unseen)');
+
+  // ---- (2026-10-21) The app hands Claude the property's full briefing — the same one Claude's stories get; no menu ----
   const sent=readInput();
   ok(sent&&/Villages of Whitewater/i.test(sent.property||''),'Claude was sent THIS property by name');
   ok(sent&&!('possibleMoves' in sent)&&!('actualsFromStatement' in sent),'no menu of moves and no pre-computed actuals are sent (Claude decides what to push)');
-  ok(sent&&Object.keys(sent).sort().join(',')==='address,appNOI,benchmarksPerUnit,property,t12,underwriting,underwritingAssumptions,units','the payload is exactly { property, address, units, underwritingAssumptions, benchmarksPerUnit, t12, appNOI, underwriting } — nothing more (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
+  const BRIEF='address,alreadyInThePF,appNOI,benchmarksPerUnit,documents,lines,months,profile,property,rentRoll,t12Basis,today,underwriting,underwritingAssumptions,units';
+  ok(sent&&Object.keys(sent).sort().join(',')===BRIEF,'the payload is the shared briefing { '+BRIEF+' } (got: '+(sent&&Object.keys(sent).sort().join(','))+')');
+  ok(sent&&/^\d{4}-\d{2}-\d{2}$/.test(sent.today||'')&&sent.profile&&typeof sent.profile==='object','…with today\'s date and the property\'s profile');
   // 2.9.11 (the operator's decision) — the APP'S OWN in-place and underwritten NOI go with it, so Claude never works out a second one
   const gdn=await page.evaluate((k)=>{ const m=window.LDS_gdNOICache?window.LDS_gdNOICache():null; return (m&&m[k])||null; }, KEY).catch(()=>null);
   ok(sent&&sent.appNOI&&typeof sent.appNOI.inPlace==='number'&&typeof sent.appNOI.safe==='number'&&typeof sent.appNOI.aggressive==='number'&&typeof sent.appNOI.reserves==='number','Claude is given the app’s in-place NOI '+(sent&&sent.appNOI&&sent.appNOI.inPlace)+' and the approved Safe '+(sent&&sent.appNOI&&sent.appNOI.safe)+' / Aggressive '+(sent&&sent.appNOI&&sent.appNOI.aggressive)+' (after reserves)');
   ok(sent&&sent.underwriting&&sent.underwriting.safe&&Array.isArray(sent.underwriting.safe.changes)&&sent.underwriting.aggressive&&typeof sent.underwriting.safe.noi==='number','…and the approved underwriting itself — Safe and Aggressive, each with its changes and stories (so a push never repeats a story’s lever)');
   ok(!gdn||(Math.abs(gdn.inPlace-sent.appNOI.inPlace)<1&&Math.abs(gdn.underwritten-sent.appNOI.safe)<1),'…the same figures the app keeps ('+(gdn?gdn.inPlace+' / '+gdn.underwritten:'n/a')+')');
-  ok(sent&&sent.t12&&Array.isArray(sent.t12.income)&&sent.t12.income.length>0&&Array.isArray(sent.t12.expense)&&sent.t12.expense.length>0,'Claude is sent the property’s own classified T12 (income + expense lines)');
-  ok(sent&&sent.t12.income.every(r=>r.line&&typeof r.annual==='number')&&sent.t12.expense.some(r=>/repairs and maintenance/i.test(r.line)),'the T12 lines are full-word labels with actual annual dollars (e.g. "repairs and maintenance")');
-  ok(sent&&sent.t12.income.some(r=>/gross potential rent/i.test(r.line))&&sent.t12.income.some(r=>/vacancy/i.test(r.line)),'the T12 carries gross potential rent AND the vacancy line, so Claude can derive the actual vacancy itself');
+  const inc=(sent&&sent.lines||[]).filter(r=>r.side==='income'), exp=(sent&&sent.lines||[]).filter(r=>r.side==='expense');
+  ok(inc.length>0&&exp.length>0,'Claude is sent the property’s own classified T12 (income + expense lines)');
+  ok(sent&&sent.months.length===12&&sent.lines.every(r=>r.line&&typeof r.t12==='number'&&Array.isArray(r.accounts))&&exp.some(r=>/repairs/i.test(r.line)),'every T12 line comes with its T12 dollars and its accounts (e.g. repairs and maintenance), and the 12 month names');
+  const acct=[].concat(...(sent?sent.lines:[]).map(r=>r.accounts)).find(a=>Array.isArray(a.months));
+  ok(acct&&acct.months.length===12&&typeof acct.t12==='number','…every account with its 12 monthly amounts (What to push sees the accounts now, not only the line totals)');
+  ok(inc.some(r=>/gross potential rent/i.test(r.line))&&inc.some(r=>/vacancy/i.test(r.line)),'the T12 carries gross potential rent AND the vacancy line, so Claude can derive the actual vacancy itself');
 
   // ---- The assumptions are the user's editable VARIABLES (from bench), not hardcoded ----
   ok(sent&&sent.underwritingAssumptions&&Math.abs(sent.underwritingAssumptions.vacancy-0.05)<1e-9&&typeof sent.underwritingAssumptions.managementFee==='number'&&typeof sent.underwritingAssumptions.reservePerUnit==='number'&&typeof sent.underwritingAssumptions.capRate==='number','Claude is sent the editable underwriting assumptions (vacancy, management fee, reserves, cap rate)');

@@ -250,7 +250,7 @@ section("render — table, data-op-prop, formatting, totals row, idempotent re-r
   ok(av.includes(">10.00%<") && av.includes(">55.00%<"), "Avalon: DY 10.00%, LTV 55.00%");
   ok(av.includes(">02/10/2028<"), "Avalon: earliest maturity shown 02/10/2028");
   const ml = rowHtml(K.mlofts);
-  ok((ml.match(/>—</g) || []).length === 6, "loan-only row: units, NOI, UW NOI, DSCR, DY, LTV are all — (6 dashes, got " + (ml.match(/>—</g) || []).length + ")");
+  ok((ml.match(/>—</g) || []).length === 7, "loan-only row: units, NOI, Safe and Aggressive UW NOI, DSCR, DY, LTV are all — (7 dashes, got " + (ml.match(/>—</g) || []).length + ")");
   ok(ml.includes(">$6,370,000.00<") && ml.includes(">$360,000.00<") && ml.includes(">05/01/2027<"), "loan-only row still shows balance, DS, maturity");
   const le = rowHtml(K.lease);
   ok(le.includes(">-$50,000.00<"), "negative money rendered -$50,000.00");
@@ -371,7 +371,7 @@ section("hardening — null lines, mezz-only names, hooks.maturity, per-row erro
   ok(/no schedule/.test(byKey(hb.rows)[K.mlofts].error) && byKey(hb.rows)[K.mlofts].balance === null && byKey(hb.rows)[K.mlofts].annualDS === null && !("error" in byKey(hb.rows)[K.weaver]), "a throwing hook fails only that property's row");
   const em = mount(); PR.render(em, res, {});
   const bh = rowHtmlOf(em.innerHTML, K.weaver);
-  ok(bh.includes("data-op-error") && bh.includes('title="boom line"') && bh.includes(">!<") && (bh.match(/>—</g) || []).length === 7, "render: \"!\" marker with the message as title, 7 dashed cells");
+  ok(bh.includes("data-op-error") && bh.includes('title="boom line"') && bh.includes(">!<") && (bh.match(/>—</g) || []).length === 8, "render: \"!\" marker with the message as title, 8 dashed cells");
   ok(!rowHtmlOf(em.innerHTML, K.avalon).includes("data-op-error"), "healthy rows carry no marker");
 });
 
@@ -505,12 +505,17 @@ section("2.9.12 — the roll-up runs on the app's ONE NOI (hooks.propertyNOI), n
     const hk = (over) => hooksFor([lC], Object.assign({ annualDebtService: l => DSx[l._id], currentBalance: l => BALx[l._id], capRate: l => CAPx[l._id] }, over || {}));
     const before = PR.buildRows(recs, [lC], hk(), GD).rows[0];
     ok(cents(before.noi, 925080.37), "with no app NOI, the row falls back to the operating lines' total (925,080.37)");
-    const one = { inPlace: 2171632.44, underwritten: 1950000, from: "t12" };
+    const one = { inPlace: 2171632.44, underwritten: 1950000, underwrittenAggressive: 2080000, from: "t12" };
     const row = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? one : null) }), GD).rows[0];
     ok(cents(row.noi, 2171632.44), "NOI = the app's T12-rule NOI (2,171,632.44), not the lines' 925,080.37");
     ok(cents(row.uwNoi, 1950000), "Safe UW NOI = the app's APPROVED Safe underwriting");
+    ok(cents(row.uwAggNoi, 2080000), "Aggressive UW NOI = the app's APPROVED Aggressive underwriting, beside Safe (2026-10-21)");
+    const tt = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? one : null) }), GD).totals;
+    ok(cents(tt.uwNoi, 1950000) && cents(tt.uwAggNoi, 2080000), "the totals add up Safe and Aggressive each on its own");
+    const rh = (() => { const e = { innerHTML: "", addEventListener() {} }; PR.render(e, PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? one : null) }), GD), {}); return e.innerHTML; })();
+    ok(/Safe UW NOI<\/th><th[^>]*>Aggressive UW NOI<\/th>/.test(rh) && rh.indexOf("$2,080,000.00") > rh.indexOf("$1,950,000.00"), "the table shows an Aggressive UW NOI column right after Safe");
     const draft = PR.buildRows(recs, [lC], hk({ propertyNOI: k => (k === kC ? { inPlace: 2171632.44, underwritten: null, from: "t12" } : null) }), GD).rows[0];
-    ok(cents(draft.noi, 2171632.44) && draft.uwNoi === null, "not approved yet → Safe UW NOI blank (never worked out from the lines), the in-place NOI still shows");
+    ok(cents(draft.noi, 2171632.44) && draft.uwNoi === null && draft.uwAggNoi === null, "not approved yet → Safe and Aggressive UW NOI blank (never worked out from the lines), the in-place NOI still shows");
     ok(approx(row.dscr, 2171632.44 / 1745000) && approx(row.dy, 2171632.44 / 24200000) && approx(row.ltv, 24200000 / (2171632.44 / 0.065)), "DSCR / debt yield / LTV all run on that one NOI");
     const noRec = PR.buildRows({}, [lC], hk({ propertyNOI: () => one }), GD).rows[0];
     ok(cents(noRec.noi, 2171632.44) && approx(noRec.dscr, 2171632.44 / 1745000), "a property with no operating record still shows the app's NOI and its ratios");

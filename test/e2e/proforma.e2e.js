@@ -98,6 +98,12 @@ const T12_NOI=616006.36, T12_EGI=1155640;
   const csIn=sin.lines.find(l=>l.line==='Contract Services'), pool=csIn&&csIn.accounts.find(a=>a.account==='Pool Service'), snowIn=csIn&&csIn.accounts.find(a=>a.account==='Snow Removal');
   ok(sin.months.length===12 && snowIn && snowIn.months.join(',')==='0,0,0,0,1400,4200,4800,3600,0,0,0,0' && pool && pool.t12===0 && near(sin.underwritingAssumptions.managementFee,0.025),
      'Claude gets every account with its 12 months (snow by month; the $0 pool service too) and the assumptions');
+  // (2026-10-21, the operator) the same full briefing as What to push; only confirmed stories, with what Claude checked
+  ok(Object.keys(sin).sort().join(',')==='address,alreadyInThePF,appNOI,benchmarksPerUnit,documents,lines,months,profile,property,rentRoll,t12Basis,today,underwriting,underwritingAssumptions,units',
+     'the stories get the same full briefing What to push gets (the property, its profile, rent roll, documents, underwriting and today\'s date)');
+  ok(!/FAKE-UNCONFIRMED-STORY/.test(s.txt) && !/FAKE-UNCONFIRMED-STORY/.test(s.left), 'a story with no check named is not shown at all — not even under "left out"');
+  ok(/Checked:/.test(s.txt) && /FAKE-CHECKED a record winter in the area/.test(s.txt) && /web · FAKE-WEATHER · 2025-01/.test(s.txt), 'each story lists what Claude checked — the snow months in the T12, and the winter on the web with its site and date');
+  ok(/Claude searched the web 1 time for this/.test(s.txt) && /FAKE-SEARCH snowfall January 2025/.test(s.txt), 'the stories say how many web searches the run made, and what Claude searched');
   // put the snow story in the draft: the panel opens on Contract Services with Snow Removal filled in
   await page.click('[data-pfputsug^="claude:CS|snow removal"]'); await page.waitForTimeout(500);
   s=await page.evaluate(()=>({ title:document.getElementById('pfTitle').textContent, open:(document.querySelector('#pfModal tr.bg-teal-50[data-pfacct]')||{}).textContent||'', v:(document.querySelector('#pfModal [data-pfin="value"]')||{}).value,
