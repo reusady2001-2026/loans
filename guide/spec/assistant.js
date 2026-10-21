@@ -21,7 +21,7 @@ const newChat = async (h) => { await open(h); await h.js(() => document.getEleme
 module.exports = {
   id: "assistant",
   title: "The Assistant (Claude)",
-  intro: "Ask Claude about your loans and properties, or ask it to do things in the app. It reads your data and the files you give it, and every change it proposes waits on a card for your Approve.",
+  intro: "Ask Claude about your loans and properties, or ask it to do things in the app. It reads your data and the files you give it, can search the web (a market, a county’s taxes, the weather in a given month) and names where each web fact came from, and every change it proposes waits on a card for your Approve.",
   env: (udata) => ({ LDS_FAKE_CHAT_FILE: path.join(udata, "chat.json"), LDS_FAKE_CHAT_LOG: path.join(udata, "chat-log.jsonl") }),
   setup: async (h) => {
     fs.writeFileSync(path.join(h.ctx.UDATA, "chat.json"), "[]");

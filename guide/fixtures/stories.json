@@ -1,7 +1,98 @@
-{"summary":"Four accounts carry a one-time or every-few-years cost, or one that is not the building's — about $21,100 of NOI if the lender accepts them.",
- "stories":[
-  {"line":"Contract Services","account":"Snow Removal","how":"accountTotal","value":9000,"kind":"normalized","story":"Snow removal ran $14,000 in a heavy winter (November to February); a normal winter at this property runs about $9,000.","basis":"The four winter months total $14,000 ($1,400, $4,200, $4,800, $3,600); $9,000 is a normal winter — the owner confirms it from prior years.","backedBy":"The snow-removal invoices for the last three winters","confidence":"strong","column":"both"},
-  {"line":"Contract Services","account":"Pest Control","how":"accountTotal","value":3600,"kind":"nonRecurring","story":"A one-time treatment in March cost $3,800 above the usual $300 a month; the contract runs $3,600 a year.","basis":"Eleven months at $300 and March at $4,100: a normal year is 12 × $300 = $3,600.","backedBy":"The March treatment invoice and the pest-control contract","confidence":"strong","column":"both"},
-  {"line":"Repairs & Maintenance","account":"Exterior Painting","how":"spread","years":5,"kind":"spread","story":"The exterior is painted every five years; this year's $14,400 counts as $2,880 a year.","basis":"One payment of $14,400 in May 2026; $14,400 ÷ 5 = $2,880.","backedBy":"The painting contract and the date of the last painting","confidence":"strong","column":"both"},
-  {"line":"General & Admin","account":"Bank Charges","how":"takeOut","kind":"partnership","story":"The bank charges are on the partnership's account, not the building's.","basis":"$68 a month, $816 a year.","backedBy":"The bank statements showing which account the charges are on","confidence":"possible","column":"aggressive"}
- ]}
+{
+ "summary": "Four accounts carry a one-time or every-few-years cost, or one that is not the building's — about $21,100 of NOI if the lender accepts them.",
+ "stories": [
+  {
+   "line": "Contract Services",
+   "account": "Snow Removal",
+   "how": "accountTotal",
+   "value": 9000,
+   "kind": "normalized",
+   "story": "Snow removal ran $14,000 in a heavy winter (November to February); a normal winter at this property runs about $9,000.",
+   "basis": "The four winter months total $14,000 ($1,400, $4,200, $4,800, $3,600); $9,000 is a normal winter — the owner confirms it from prior years.",
+   "backedBy": "The snow-removal invoices for the last three winters",
+   "confidence": "strong",
+   "column": "both",
+   "checked": [
+    {
+     "what": "snow removal ran $14,000 from November to February ($1,400, $4,200, $4,800, $3,600), against about $9,000 in a normal winter",
+     "source": "t12"
+    },
+    {
+     "what": "The 2025–26 winter brought about twice the normal snowfall in the area",
+     "source": "web",
+     "site": "sample weather service",
+     "date": "2026-03"
+    }
+   ]
+  },
+  {
+   "line": "Contract Services",
+   "account": "Pest Control",
+   "how": "accountTotal",
+   "value": 3600,
+   "kind": "nonRecurring",
+   "story": "A one-time treatment in March cost $3,800 above the usual $300 a month; the contract runs $3,600 a year.",
+   "basis": "Eleven months at $300 and March at $4,100: a normal year is 12 × $300 = $3,600.",
+   "backedBy": "The March treatment invoice and the pest-control contract",
+   "confidence": "strong",
+   "column": "both",
+   "checked": [
+    {
+     "what": "eleven months at $300 and March at $4,100",
+     "source": "t12"
+    },
+    {
+     "what": "The March invoice is a one-time treatment; the contract is $300 a month",
+     "source": "document"
+    }
+   ]
+  },
+  {
+   "line": "Repairs & Maintenance",
+   "account": "Exterior Painting",
+   "how": "spread",
+   "years": 5,
+   "kind": "spread",
+   "story": "The exterior is painted every five years; this year's $14,400 counts as $2,880 a year.",
+   "basis": "One payment of $14,400 in May 2026; $14,400 ÷ 5 = $2,880.",
+   "backedBy": "The painting contract and the date of the last painting",
+   "confidence": "strong",
+   "column": "both",
+   "checked": [
+    {
+     "what": "one payment of $14,400 in May 2026, nothing in the other eleven months",
+     "source": "t12"
+    },
+    {
+     "what": "The painting contract: the exterior is painted every five years",
+     "source": "document"
+    }
+   ]
+  },
+  {
+   "line": "General & Admin",
+   "account": "Bank Charges",
+   "how": "takeOut",
+   "kind": "partnership",
+   "story": "The bank charges are on the partnership's account, not the building's.",
+   "basis": "$68 a month, $816 a year.",
+   "backedBy": "The bank statements showing which account the charges are on",
+   "confidence": "possible",
+   "column": "aggressive",
+   "checked": [
+    {
+     "what": "$68 a month of bank charges, $816 a year",
+     "source": "t12"
+    },
+    {
+     "what": "The bank statements show the charges on the partnership's account",
+     "source": "document"
+    }
+   ]
+  }
+ ],
+ "searches": [
+  "snowfall winter 2025-26 sample town",
+  "how often apartment exteriors are repainted"
+ ]
+}

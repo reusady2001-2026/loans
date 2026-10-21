@@ -310,9 +310,9 @@ module.exports = {
           shot: "#pfBox",
           marks: [ { sel: "#pfModal [data-pfsuglistrow]", label: "A suggestion", text: "Where, what and its story." }, { sel: "#pfModal [data-pfusesug]", label: "Open the account", text: "Opens the line with the suggestion filled in." } ] }
       ] },
-    { id: "pf-stories", title: "Draft — Claude’s stories", intro: "Under the table: Claude reads every account month by month and offers stories a lender would accept — only ones that raise the NOI.",
+    { id: "pf-stories", title: "Draft — Claude’s stories", intro: "Under the table: Claude reads every account month by month, the rent roll, the property’s documents and its profile, searches the web around the property, and offers stories a lender would accept — only ones that raise the NOI, and only ones it confirmed.",
       steps: [
-        { title: "Claude’s stories for the underwriting", text: "Each card: the line and the account, the change and its kind, the story, how Claude got the number and what you need to back it with the lender, and how much it raises the NOI. Claude may not invent an event or a figure; a story that would lower the NOI is never offered — it is listed as left out.",
+        { title: "Claude’s stories for the underwriting", text: "Each card: the line and the account, the change and its kind, the story, how Claude got the number and what you need to back it with the lender, and how much it raises the NOI. Claude may not invent an event or a figure: it confirms each story from the T12, the rent roll, the documents or the web (that month’s weather around the property, for example), and lists what it checked. A story it could not confirm is never shown; one that would lower the NOI is listed as left out.",
           go: async (h) => { await h.closeModals(); await h.click("#pfStoriesRun", { wait: 4000 }); await h.scroll("#opStoriesMount", 0, "start"); },
           shot: "#opStoriesMount",
           marks: [
@@ -320,6 +320,8 @@ module.exports = {
             { sel: "#opStoriesMount [data-pfstory]", label: "A story", text: "One account, one change, its story.", nth: 1 },
             { sel: "#opStoriesMount >> text=How Claude got the number", label: "How Claude got the number", text: "From the statement’s own figures.", nth: 0 },
             { sel: "#opStoriesMount >> text=To back it with the lender", label: "To back it", text: "What you need on hand to prove it.", nth: 0 },
+            { sel: "#opStoriesMount [data-aichecked]", label: "Checked", text: "What Claude checked before it suggested this — the T12, the rent roll, a document, or a web page with its site and date. A story it could not confirm is never shown.", nth: 0 },
+            { sel: "#opStoriesMount [data-aiweb]", label: "The web", text: "How many times Claude searched the web for this, and what it searched.", optional: true },
             { sel: "#opStoriesMount [data-pfputsug]", label: "Put it in the draft", text: "Opens the account with it filled in, to check and save.", optional: true },
             { sel: "#opStoriesMount >> text=In the pro forma", label: "In the pro forma ✓", text: "Already in the draft.", optional: true },
             { sel: "#opStoriesMount [data-pfstoriesleft]", label: "Left out", text: "What Claude suggested that can’t go in — an account the T12 doesn’t have, or a change that would lower the NOI.", optional: true }
@@ -444,9 +446,9 @@ module.exports = {
           after: async (h) => { await approve(h); } }
       ] },
     // ------------------------------------------------------------------------------------------------------------------
-    { id: "push", title: "What to push", intro: "After the approval: what you can still push from the approved underwriting — things not proven yet, so not stories in it — measured on the in-place T12, on Safe and on Aggressive.",
+    { id: "push", title: "What to push", intro: "After the approval: what you can still push from the approved underwriting — things not proven yet, so not stories in it — measured on the in-place T12, on Safe and on Aggressive. Claude reads the same as for the stories (every account, the rent roll, the documents, the profile, the web around the property) and shows only what it confirmed.",
       steps: [
-        { title: "Claude’s pushes", text: "It runs by itself once the underwriting is approved (Claude must be connected), and again when you approve again. Each push only raises the NOI, never pulls a lever a story already pulls (one that sits beside a story names it), and shows its effect three ways, each net of what that version already counts. These are your plan, not the lender’s: tick them in the refinance to see what loan they would get you.",
+        { title: "Claude’s pushes", text: "It runs by itself once the underwriting is approved (Claude must be connected), and again when you approve again. Each push only raises the NOI, never pulls a lever a story already pulls (one that sits beside a story names it), and shows its effect three ways, each net of what that version already counts. Each one lists what Claude checked, and one it could not confirm is never shown. Utilities the owner pays are in the rent, so no billing them back; no push toward 100% occupancy; next year’s rent growth at the market’s usual rate counts on top of the underwritten rent. These are your plan, not the lender’s: tick them in the refinance to see what loan they would get you.",
           go: async (h) => { await h.page.waitForFunction(() => !!document.querySelector("#opScanMount [data-pushimpacts]"), null, { timeout: 30000 }); await h.calm(); await h.scroll("#opScanMount", 0, "start"); await h.js(() => window.scrollBy(0, -60)); await h.wait(300); },
           shot: card("#opScanMount"),
           marks: [
@@ -455,6 +457,8 @@ module.exports = {
             { sel: "#opScanMount [data-pushimpacts]", label: "Its effect, three ways", text: "On the in-place T12, on Safe and on Aggressive — Claude’s estimates, a starting point, not advice.", nth: 0 },
             { sel: "#opScanMount >> text=lever:", label: "The lever", text: "What it moves — never one a story in the underwriting already moves.", nth: 0 },
             { sel: "#opScanMount >> text=beside the story", label: "Beside the story", text: "The underwriting story it sits next to: a different lever, so both count.", nth: 0, optional: true },
+            { sel: "#opScanMount [data-aichecked]", label: "Checked", text: "What Claude checked before it suggested this push. One it could not confirm is never shown.", nth: 0 },
+            { sel: "#opScanMount [data-aiweb]", label: "The web", text: "How many times Claude searched the web for this, and what it searched.", optional: true },
             { sel: "#opScanMount [data-pushdropped]", label: "Left out", text: "A push that would lower the NOI on any version — never shown as one.", optional: true }
           ] }
       ] },
@@ -488,21 +492,23 @@ module.exports = {
       // the property opened again (another one, then back): the General Data card and the roll-up are drawn when a property is opened
       before: async (h) => { await h.uwProperty("name:villages of burlington"); await h.uwProperty(KEY); await h.wait(1500); await h.calm(); },
       steps: [
-        { title: "General Data — operating history", text: "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before.",
+        { title: "General Data — operating history", text: "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before. Click its title to fold it; the app remembers.",
           go: async (h) => { await h.scroll('h3:has-text("General Data")', 0, "start"); },
           shot: card('h3:has-text("General Data")'),
           marks: [
             { sel: card('h3:has-text("General Data")') + " >> text=In-place NOI", label: "In-place NOI", text: "The same NOI as everywhere in the app, and how it was worked out." },
             { sel: card('h3:has-text("General Data")') + " >> text=Underwriting NOI", label: "Underwriting NOI — Safe · Aggressive", text: "The approved underwriting, and when it was approved (“not approved yet” before)." },
             { sel: card('h3:has-text("General Data")') + " >> text=general-data.json", label: "Saved to the folder", text: "Kept in the property’s folder (general-data.json)." },
-            { sel: card('h3:has-text("General Data")') + " >> text=Trailing", label: "Trailing 12-mo", text: "Each line’s last 12 months, and its change." }
+            { sel: card('h3:has-text("General Data")') + " >> text=Trailing", label: "Trailing 12-mo", text: "Each line’s last 12 months, and its change." },
+            { sel: card('h3:has-text("General Data")') + " >> summary", label: "Fold", text: "Click the title to fold the card or open it again." }
           ] },
-        { title: "Portfolio roll-up", text: "Every property: units, loans, in-place NOI, the approved Safe underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity — with the total row. Click a property to underwrite it.",
+        { title: "Portfolio roll-up", text: "Every property: units, loans, in-place NOI, the approved Safe and Aggressive underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity — with the total row. Click a property to underwrite it.",
           go: async (h) => { await h.scroll("#opRollupMount", 0, "start"); },
           shot: card("#opRollupMount"),
           marks: [
             { sel: "#opRollupMount th >> text=In-place NOI", label: "In-place NOI", text: "Each property’s NOI." },
             { sel: "#opRollupMount th >> text=Safe UW NOI", label: "Safe UW NOI", text: "The approved Safe underwriting — blank until it is approved." },
+            { sel: "#opRollupMount th >> text=Aggressive UW NOI", label: "Aggressive UW NOI", text: "The approved Aggressive underwriting, beside Safe." },
             { sel: "#opRollupMount th >> text=DSCR", label: "DSCR", text: "NOI ÷ its yearly debt service." },
             { sel: "#opRollupMount >> text=Sample Gardens (example)", label: "A property", text: "Click it to open it here." }
           ] }

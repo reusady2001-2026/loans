@@ -1206,60 +1206,76 @@
   {
    "id": "pf-stories",
    "title": "Draft — Claude’s stories",
-   "intro": "Under the table: Claude reads every account month by month and offers stories a lender would accept — only ones that raise the NOI.",
+   "intro": "Under the table: Claude reads every account month by month, the rent roll, the property’s documents and its profile, searches the web around the property, and offers stories a lender would accept — only ones that raise the NOI, and only ones it confirmed.",
    "steps": [
     {
      "title": "Claude’s stories for the underwriting",
-     "text": "Each card: the line and the account, the change and its kind, the story, how Claude got the number and what you need to back it with the lender, and how much it raises the NOI. Claude may not invent an event or a figure; a story that would lower the NOI is never offered — it is listed as left out.",
+     "text": "Each card: the line and the account, the change and its kind, the story, how Claude got the number and what you need to back it with the lender, and how much it raises the NOI. Claude may not invent an event or a figure: it confirms each story from the T12, the rent roll, the documents or the web (that month’s weather around the property, for example), and lists what it checked. A story it could not confirm is never shown; one that would lower the NOI is listed as left out.",
      "img": "img/underwriting/pf-stories-01.jpg",
      "w": 1279,
-     "h": 603,
+     "h": 868,
      "marks": [
       {
        "x": 92.2,
-       "y": 2.2,
+       "y": 1.5,
        "w": 7.8,
-       "h": 5,
+       "h": 3.5,
        "label": "Find stories / Look again",
        "text": "Asks Claude (it needs Claude connected)."
       },
       {
        "x": 0,
-       "y": 36.9,
+       "y": 32.7,
        "w": 100,
-       "h": 19.1,
+       "h": 20.3,
        "label": "A story",
        "text": "One account, one change, its story."
       },
       {
        "x": 1,
-       "y": 28.3,
+       "y": 19.7,
        "w": 73.1,
-       "h": 2.7,
+       "h": 1.9,
        "label": "How Claude got the number",
        "text": "From the statement’s own figures."
       },
       {
        "x": 1,
-       "y": 31,
+       "y": 21.6,
        "w": 73.1,
-       "h": 2.7,
+       "h": 1.9,
        "label": "To back it",
        "text": "What you need on hand to prove it."
       },
       {
+       "x": 1,
+       "y": 23.9,
+       "w": 73.1,
+       "h": 6.6,
+       "label": "Checked",
+       "text": "What Claude checked before it suggested this — the T12, the rent roll, a document, or a web page with its site and date. A story it could not confirm is never shown."
+      },
+      {
+       "x": 0,
+       "y": 96.1,
+       "w": 100,
+       "h": 1.7,
+       "label": "The web",
+       "text": "How many times Claude searched the web for this, and what it searched."
+      },
+      {
        "x": 88.9,
-       "y": 45.6,
+       "y": 38.7,
        "w": 10,
-       "h": 4.1,
+       "h": 2.8,
        "label": "Put it in the draft",
        "text": "Opens the account with it filled in, to check and save."
       },
       {
        "x": 90,
-       "y": 20.2,
+       "y": 14,
        "w": 9,
-       "h": 2.2,
+       "h": 1.5,
        "label": "In the pro forma ✓",
        "text": "Already in the draft."
       }
@@ -1495,21 +1511,21 @@
      "text": "Changed lines are outlined with a teal dot; hover one to see its kinds. The NOI rows follow.",
      "img": "img/underwriting/pf-result-01.jpg",
      "w": 1313,
-     "h": 2228,
+     "h": 2493,
      "marks": [
       {
        "x": 79.8,
-       "y": 33,
+       "y": 29.5,
        "w": 0.5,
-       "h": 0.3,
+       "h": 0.2,
        "label": "A changed line",
        "text": "Teal dot: this line has changes."
       },
       {
        "x": 67.6,
-       "y": 38.3,
+       "y": 34.3,
        "w": 20.9,
-       "h": 1.3,
+       "h": 1.2,
        "label": "Underwriting NOI",
        "text": "In the NOI row, after the reserves."
       }
@@ -1734,54 +1750,70 @@
   {
    "id": "push",
    "title": "What to push",
-   "intro": "After the approval: what you can still push from the approved underwriting — things not proven yet, so not stories in it — measured on the in-place T12, on Safe and on Aggressive.",
+   "intro": "After the approval: what you can still push from the approved underwriting — things not proven yet, so not stories in it — measured on the in-place T12, on Safe and on Aggressive. Claude reads the same as for the stories (every account, the rent roll, the documents, the profile, the web around the property) and shows only what it confirmed.",
    "steps": [
     {
      "title": "Claude’s pushes",
-     "text": "It runs by itself once the underwriting is approved (Claude must be connected), and again when you approve again. Each push only raises the NOI, never pulls a lever a story already pulls (one that sits beside a story names it), and shows its effect three ways, each net of what that version already counts. These are your plan, not the lender’s: tick them in the refinance to see what loan they would get you.",
+     "text": "It runs by itself once the underwriting is approved (Claude must be connected), and again when you approve again. Each push only raises the NOI, never pulls a lever a story already pulls (one that sits beside a story names it), and shows its effect three ways, each net of what that version already counts. Each one lists what Claude checked, and one it could not confirm is never shown. Utilities the owner pays are in the rent, so no billing them back; no push toward 100% occupancy; next year’s rent growth at the market’s usual rate counts on top of the underwritten rent. These are your plan, not the lender’s: tick them in the refinance to see what loan they would get you.",
      "img": "img/underwriting/push-01.jpg",
      "w": 1313,
-     "h": 580,
+     "h": 800,
      "marks": [
       {
        "x": 91.1,
-       "y": 7.1,
+       "y": 5.1,
        "w": 7.6,
-       "h": 5.2,
+       "h": 3.8,
        "label": "Re-analyse",
        "text": "Asks Claude again."
       },
       {
        "x": 1.3,
-       "y": 25.4,
+       "y": 18.4,
        "w": 97.4,
-       "h": 23.7,
+       "h": 27,
        "label": "A push",
        "text": "What to do, why (from this statement’s own figures) and the effort."
       },
       {
        "x": 73.6,
-       "y": 27.3,
+       "y": 19.8,
        "w": 24.1,
-       "h": 5.8,
+       "h": 4.2,
        "label": "Its effect, three ways",
        "text": "On the in-place T12, on Safe and on Aggressive — Claude’s estimates, a starting point, not advice."
       },
       {
-       "x": 1.3,
-       "y": 17.1,
-       "w": 89.2,
-       "h": 6.2,
+       "x": 12.1,
+       "y": 41.6,
+       "w": 13.6,
+       "h": 2.4,
        "label": "The lever",
        "text": "What it moves — never one a story in the underwriting already moves."
       },
       {
-       "x": 19.8,
-       "y": 43.9,
+       "x": 26.3,
+       "y": 41.6,
        "w": 40.6,
-       "h": 3.3,
+       "h": 2.4,
        "label": "Beside the story",
        "text": "The underwriting story it sits next to: a different lever, so both count."
+      },
+      {
+       "x": 2.3,
+       "y": 31.6,
+       "w": 95.4,
+       "h": 9.3,
+       "label": "Checked",
+       "text": "What Claude checked before it suggested this push. One it could not confirm is never shown."
+      },
+      {
+       "x": 1.3,
+       "y": 93.1,
+       "w": 97.4,
+       "h": 1.9,
+       "label": "The web",
+       "text": "How many times Claude searched the web for this, and what it searched."
       }
      ]
     }
@@ -1938,7 +1970,7 @@
    "steps": [
     {
      "title": "General Data — operating history",
-     "text": "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before.",
+     "text": "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before. Click its title to fold it; the app remembers.",
      "img": "img/underwriting/history-01.jpg",
      "w": 1313,
      "h": 660,
@@ -1974,45 +2006,61 @@
        "h": 3.3,
        "label": "Trailing 12-mo",
        "text": "Each line’s last 12 months, and its change."
+      },
+      {
+       "x": 1.3,
+       "y": 2.6,
+       "w": 97.4,
+       "h": 2.5,
+       "label": "Fold",
+       "text": "Click the title to fold the card or open it again."
       }
      ]
     },
     {
      "title": "Portfolio roll-up",
-     "text": "Every property: units, loans, in-place NOI, the approved Safe underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity — with the total row. Click a property to underwrite it.",
+     "text": "Every property: units, loans, in-place NOI, the approved Safe and Aggressive underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity — with the total row. Click a property to underwrite it.",
      "img": "img/underwriting/history-02.jpg",
      "w": 1313,
-     "h": 972,
+     "h": 974,
      "marks": [
       {
-       "x": 30.7,
+       "x": 28.5,
        "y": 4.2,
-       "w": 10.6,
-       "h": 2.7,
+       "w": 9.6,
+       "h": 4.4,
        "label": "In-place NOI",
        "text": "Each property’s NOI."
       },
       {
-       "x": 41.3,
+       "x": 38.2,
        "y": 4.2,
-       "w": 8.7,
-       "h": 2.7,
+       "w": 7.9,
+       "h": 4.4,
        "label": "Safe UW NOI",
        "text": "The approved Safe underwriting — blank until it is approved."
       },
       {
-       "x": 73.2,
+       "x": 46,
        "y": 4.2,
-       "w": 4.8,
-       "h": 2.7,
+       "w": 9.6,
+       "h": 4.4,
+       "label": "Aggressive UW NOI",
+       "text": "The approved Aggressive underwriting, beside Safe."
+      },
+      {
+       "x": 76.6,
+       "y": 4.2,
+       "w": 4.2,
+       "h": 4.4,
        "label": "DSCR",
        "text": "NOI ÷ its yearly debt service."
       },
       {
        "x": 1.3,
-       "y": 45.7,
-       "w": 20.7,
-       "h": 3,
+       "y": 46.6,
+       "w": 19.2,
+       "h": 2.9,
        "label": "A property",
        "text": "Click it to open it here."
       }

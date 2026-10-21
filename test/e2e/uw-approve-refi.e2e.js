@@ -10,7 +10,7 @@ const {_electron:electron}=require((process.env.GN||'/opt/node22/lib/node_module
 const UDATA=fs.mkdtempSync(path.join(os.tmpdir(),'lds-uwrefi-'));
 fs.mkdirSync(path.join(UDATA,'claude'),{recursive:true}); fs.writeFileSync(path.join(UDATA,'claude','signed-in.marker'),'ok');
 const K1='name:villages of whitewater', K2='name:villages of whitewater ii', P1='Villages of Whitewater', P2='Villages of Whitewater II';
-const VAC='Bring vacancy from 3.6% down to 2.6%';
+const VAC='Raise rents about 3% at renewal next year';   // the sample's top push (guide/fixtures/push.json)
 const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!c)fails.n++;};
 const num=s=>Number(String(s||'').replace(/[^0-9.\-]/g,''))||0;
 const near=(a,b,t)=>a!=null&&b!=null&&Math.abs(a-b)<=(t==null?1:t);
@@ -98,7 +98,7 @@ const money=n=>n==null?'null':'$'+Number(n).toLocaleString('en-US',{minimumFract
   ok(g1&&near(g1.uw,g1.inPlace-24000,0.02)&&near(g1.ag,g1.uw,0.02)&&g1.model===2&&g1.ap&&g1.ap.current===true&&!!g1.ap.at,'3b. General Data: underwritten = Safe after reserves '+money(g1&&g1.uw)+', Aggressive '+money(g1&&g1.ag)+', uwModel 2, approval current');
   await page.waitForFunction(()=>(document.querySelectorAll('#opScanMount [data-pushimpacts]')||[]).length>=3,null,{timeout:25000}).catch(()=>{});
   const pm=await page.evaluate(()=>({ n:document.querySelectorAll('#opScanMount [data-pushimpacts]').length, t:((document.querySelector('#opScanMount [data-pushimpacts]')||{}).innerText||'').replace(/\s+/g,' '), txt:(document.getElementById('opScanMount')||{}).innerText||'' }));
-  ok(pm.n===3&&/Bring vacancy/.test(pm.txt),'3c. What to push runs on the approved underwriting: 3 pushes ('+pm.n+')');
+  ok(pm.n===3&&/Raise rents about 3%/.test(pm.txt),'3c. What to push runs on the approved underwriting: 3 pushes ('+pm.n+')');
   ok(/11,800/.test(pm.t)&&/11,500/.test(pm.t)&&/in.?place/i.test(pm.t)&&/safe/i.test(pm.t)&&/aggressive/i.test(pm.t),'3d. each push has three effects — in-place, Safe, Aggressive ("'+pm.t+'")');
 
   // ================= the refinance =================
