@@ -1088,7 +1088,9 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   - **Rent roll reader:** keeps each unit's move-in, lease end and move-out (an Excel date, M/D/YYYY or YYYY-MM-DD; a
     blank stays blank).
   - **Underwriting:** the General Data card folds (kept on this computer, `lds.gdCardOpen`); the portfolio roll-up has
-    an "Aggressive UW NOI" column beside "Safe UW NOI", with its total.
+    an "Aggressive UW NOI" column beside "Safe UW NOI", with its total; its cells are a little tighter (6px, 13px) so
+    the table still fits a 1,440-pixel window (with eight-figure NOIs in every column it scrolls about 44 pixels, as
+    it did before the column came in). The Guide's menu-closing helper leaves the General Data card alone.
   - **Tests:** `test/e2e/ai-briefing.e2e.js` (22 checks: the briefing's parts, the web allowed on every request, the
     card folding); `push.e2e` and `proforma.e2e` check that unconfirmed items stay hidden and the checks show;
     `rent-roll.test.js` (lease dates, turnover), `portfolio-rollup.test.js` (the Aggressive column).

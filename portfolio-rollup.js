@@ -264,13 +264,14 @@
   function shortDecision(s){ s = String(s || ""); return /undecid/i.test(s) ? "undecided" : /matur/i.test(s) ? "matured" : /extend/i.test(s) ? "extended" : s.toLowerCase(); }
   function matCell(r){
     if (!r.decision) return td(day(r.maturity));
-    return '<td class="py-1 px-2 text-right text-sm tabular-nums font-semibold text-rose-700 whitespace-nowrap" title="' + esc(r.decision) + '">' +
+    return '<td class="py-1 px-1.5 text-right text-[13px] tabular-nums font-semibold text-rose-700 whitespace-nowrap" title="' + esc(r.decision) + '">' +
       day(r.maturity) + ' <span class="rounded bg-rose-100 px-1 text-[9px] font-bold uppercase text-rose-700">' + esc(shortDecision(r.decision)) + '</span></td>';
   }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
 
   var COLS = ["Property", "Units", "Loans", "In-place NOI", "Safe UW NOI", "Aggressive UW NOI", "Balance", "Annual DS", "DSCR", "Debt yield", "LTV", "Maturity"];
-  function td(s, cls, title){ return '<td class="py-1 px-2 text-right text-sm tabular-nums ' + (cls || "text-slate-600") + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + s + '</td>'; }
+  // (2026-10-21) a little tighter (6px, 13px) since the Aggressive UW NOI column came in, so the table still fits a laptop screen
+  function td(s, cls, title){ return '<td class="py-1 px-1.5 text-right text-[13px] tabular-nums ' + (cls || "text-slate-600") + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + s + '</td>'; }
 
   // render(mountEl, buildRows(...), { onOpen(propKey) }). Idempotent: every call
   // repaints the whole table; the click/keyboard handler is bound ONCE per mount
@@ -279,7 +280,7 @@
     if (!mountEl) return;
     opts = opts || {};
     var rows = (data && data.rows) || [], t = (data && data.totals) || totalsOf(rows);
-    var head = COLS.map(function (c, i){ return '<th class="pb-2' + (i ? ' px-2 text-right' : '') + '">' + c + '</th>'; }).join("");
+    var head = COLS.map(function (c, i){ return '<th class="pb-2' + (i ? ' px-1.5 text-right' : '') + '">' + c + '</th>'; }).join("");
     var body = rows.map(function (r){
       // A record with no loan in the book cannot be opened (the picker lists loans'
       // properties only), so its row is inert and muted; a failed row carries a "!".
@@ -287,7 +288,7 @@
       return '<tr data-op-prop="' + esc(r.propKey) + '"' + (orphan
           ? ' data-op-orphan="1" title="No loan in the book for this property" class="border-t border-slate-100 text-slate-400"'
           : ' tabindex="0" title="Open ' + esc(r.name) + '" class="border-t border-slate-100 cursor-pointer hover:bg-brand-50/40 focus:bg-brand-50/40 outline-none"') + '>' +
-        '<td class="py-1 pr-3 text-sm font-semibold ' + (orphan ? 'text-slate-400' : 'text-slate-800') + ' whitespace-nowrap">' + esc(r.name) +
+        '<td class="py-1 pr-3 text-[13px] font-semibold ' + (orphan ? 'text-slate-400' : 'text-slate-800') + ' whitespace-nowrap">' + esc(r.name) +
           (r.error ? ' <span data-op-error class="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold text-amber-700" title="' + esc(r.error) + '">!</span>' : '') + '</td>' +
         td(int(r.units)) + td(int(r.loans)) + td(money(r.noi), "text-slate-800") + td(money(r.uwNoi)) + td(money(r.uwAggNoi)) + td(money(r.balance)) + td(money(r.annualDS)) +
         td(ratio(r.dscr)) + td(pct(r.dy)) + td(pct(r.ltv)) + matCell(r) + '</tr>';
@@ -295,7 +296,7 @@
     var empty = rows.length ? "" : '<tr><td colspan="' + COLS.length + '" class="py-3 text-sm text-slate-400">No properties yet &mdash; add a loan or an operating record.</td></tr>';
     var scope = scopeText(t);
     var total = '<tr data-op-total class="border-t-2 border-slate-200 bg-slate-50/70">' +
-      '<td class="py-1 pr-3 text-sm font-bold text-slate-900">Total &mdash; ' + t.properties + (t.properties === 1 ? ' property' : ' properties') + '</td>' +
+      '<td class="py-1 pr-3 text-[13px] font-bold text-slate-900">Total &mdash; ' + t.properties + (t.properties === 1 ? ' property' : ' properties') + '</td>' +
       td("", "text-slate-900 font-bold") + td(int(t.loans), "text-slate-900 font-bold") + td(money(t.noi), "text-slate-900 font-bold") + td(money(t.uwNoi), "text-slate-900 font-bold") + td(money(t.uwAggNoi), "text-slate-900 font-bold") +
       td(money(t.balance), "text-slate-900 font-bold") + td(money(t.annualDS), "text-slate-900 font-bold") + td(ratio(t.dscr), "text-slate-900 font-bold", scope) + td(pct(t.dy), "text-slate-900 font-bold", scope) +
       td(pct(t.ltv), "text-slate-900 font-bold", scope) + td("", "text-slate-900") + '</tr>' +

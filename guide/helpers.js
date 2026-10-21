@@ -37,7 +37,7 @@ module.exports = function (page, app, ctx) {
     // close whatever window is open over the app (the pro forma, the guide, a dialog) and any open menu
     closeModals: async () => {
       await page.evaluate(() => {
-        document.querySelectorAll("details[open]").forEach(d => { d.open = false; });
+        document.querySelectorAll("details[open]:not([data-gdcard])").forEach(d => { d.open = false; });   // menus — not the General Data card, a folding section (2026-10-21)
         const pf = document.getElementById("pfModal"); if (pf && !pf.classList.contains("hidden")){ const c = pf.querySelector("[data-pfclose]"); if (c) c.click(); }
         const g = document.getElementById("guideModal"); if (g && !g.classList.contains("hidden")) window.LDS_Guide.close();
         const hm = document.getElementById("historyModal"); if (hm && !hm.classList.contains("hidden")){ const c = document.getElementById("historyClose"); if (c) c.click(); }
