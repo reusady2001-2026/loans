@@ -322,6 +322,7 @@ module.exports = {
             { sel: "#opStoriesMount >> text=To back it with the lender", label: "To back it", text: "What you need on hand to prove it.", nth: 0 },
             { sel: "#opStoriesMount [data-aichecked]", label: "Checked", text: "What Claude checked before it suggested this — the T12, the rent roll, a document, or a web page with its site and date. A story it could not confirm is never shown.", nth: 0 },
             { sel: "#opStoriesMount [data-aiweb]", label: "The web", text: "How many times Claude searched the web for this, and what it searched.", optional: true },
+            { sel: "#opStoriesMount [data-aigaps]", label: "Claude didn’t have", text: "What the property is missing for Claude (units, a rent roll, the tax bill, who pays the utilities): anything resting on it was left out. Add it and look again.", optional: true },
             { sel: "#opStoriesMount [data-pfputsug]", label: "Put it in the draft", text: "Opens the account with it filled in, to check and save.", optional: true },
             { sel: "#opStoriesMount >> text=In the pro forma", label: "In the pro forma ✓", text: "Already in the draft.", optional: true },
             { sel: "#opStoriesMount [data-pfstoriesleft]", label: "Left out", text: "What Claude suggested that can’t go in — an account the T12 doesn’t have, or a change that would lower the NOI.", optional: true }
@@ -459,6 +460,7 @@ module.exports = {
             { sel: "#opScanMount >> text=beside the story", label: "Beside the story", text: "The underwriting story it sits next to: a different lever, so both count.", nth: 0, optional: true },
             { sel: "#opScanMount [data-aichecked]", label: "Checked", text: "What Claude checked before it suggested this push. One it could not confirm is never shown.", nth: 0 },
             { sel: "#opScanMount [data-aiweb]", label: "The web", text: "How many times Claude searched the web for this, and what it searched.", optional: true },
+            { sel: "#opScanMount [data-aigaps]", label: "Claude didn’t have", text: "What the property is missing for Claude: a push resting on it was left out. Add it and re-analyse for more.", optional: true },
             { sel: "#opScanMount [data-pushdropped]", label: "Left out", text: "A push that would lower the NOI on any version — never shown as one.", optional: true }
           ] }
       ] },
