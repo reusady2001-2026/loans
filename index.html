@@ -11694,7 +11694,7 @@ tr.flagged:hover td{background:#fee2e2}
     function refiPoolNOIHtml(loan){
       const ps = refiPoolParts(loan); if(!ps) return "";
       const miss = ps.filter(p => p.noi == null), lev = refiLevers(loan).reduce((a, lv) => a + ((lv && lv.on && isFinite(lv.amount)) ? lv.amount : 0), 0);
-      const tot = miss.length ? null : ps.reduce((a, p) => a + p.noi + p.push, 0) + lev;
+      const tot = miss.length ? null : ps.reduce((a, p) => a + p.noi + p.push, 0) + lev, boostAll = ps.reduce((a, p) => a + (p.push || 0), 0);
       const sel = (p) => { if(!p.hasT12) return '<span class="font-semibold text-amber-800">no T12</span>';
         return '<select data-refikeybasis="'+escapeHtml(p.key)+'" class="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs">'+
           ["inplace", "underwritten", "aggressive"].map(b => '<option value="'+b+'"'+(p.basis === b ? ' selected' : '')+(p.nois[b] == null ? ' disabled' : '')+'>'+REFI_BASIS_LABEL[b]+(p.nois[b] == null ? ' (approve it first)' : '')+'</option>').join('')+'</select>'; };
@@ -11708,7 +11708,8 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">NOI by property &mdash; pick each one&rsquo;s basis</div>'+
         '<table class="mt-1 w-full"><thead><tr class="text-left text-[10px] uppercase tracking-wide text-slate-400"><th>Property</th><th class="px-2">Basis</th><th class="px-2 text-right">NOI</th><th class="px-2 text-right">+ ticked pushes</th><th class="pl-2">From</th></tr></thead><tbody>'+rows+
         (lev ? '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-sm text-slate-600" colspan="3">Your own levers</td><td class="py-1 px-2 text-sm text-right tabular-nums text-emerald-700">'+(lev > 0 ? '+' : '&minus;')+fmtMoney(Math.abs(lev))+'</td><td></td></tr>' : '')+
-        '<tr class="border-t-2 border-slate-200 font-bold"><td class="py-1 pr-3 text-sm text-slate-900" colspan="3">Total &mdash; '+ps.length+' properties</td><td class="py-1 px-2 text-sm text-right tabular-nums" data-refipooltotal>'+(tot != null ? fmtMoney(tot) : '&mdash;')+'</td><td></td></tr></tbody></table>'+
+        '<tr class="border-t-2 border-slate-200 font-bold"><td class="py-1 pr-3 text-sm text-slate-900" colspan="2">Total &mdash; '+ps.length+' properties</td><td class="py-1 px-2 text-sm text-right tabular-nums" data-refipooltotal>'+(tot != null ? fmtMoney(tot) : '&mdash;')+'</td>'+
+          '<td class="py-1 px-2 text-right text-[11px] font-normal text-slate-500">'+(tot != null && (boostAll || lev) ? 'incl. '+(boostAll + lev >= 0 ? '+' : '&minus;')+fmtMoney(Math.abs(boostAll + lev)) : '')+'</td><td></td></tr></tbody></table>'+
         (miss.length ? '<p class="mt-2 text-[11px] font-semibold text-amber-800" data-refipoolmissing>'+miss.length+' of '+ps.length+' have no T12: '+miss.map(p => escapeHtml(p.name)).join(", ")+'. Nothing is sized until each one&rsquo;s T12 is uploaded.</p>' : '')+
       '</div>';
     }
@@ -12188,6 +12189,7 @@ tr.flagged:hover td{background:#fee2e2}
            : binding === "DSCR IO"    ? "debt coverage on the interest-only payment (income ÷ interest, held at " + fmtX2(lim.dscrIO) + ")"
            : "a lender limit";
     }
+    function refiSizedOnText(loan){ return refiBasis(loan) === "mixed" ? "each property&rsquo;s NOI on the basis chosen for it" : "the " + refiBasisWord(loan) + " NOI"; }
     function refiBasisWord(loan){
       const b = refiBasis(loan);
       return b === "underwritten" ? "Safe underwriting" : b === "inplace" ? "in-place T12" : b === "aggressive" ? "Aggressive underwriting" : b === "mixed" ? "the basis chosen per property" : "no NOI yet";
@@ -12593,7 +12595,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex items-center gap-3">'+
           '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes?"&#10003;":decision?"?":pay?"!":"&#10007;")+'</span>'+
           '<div><p class="text-xl font-extrabold '+bhead+'">'+(yes?"Refinance":decision?"Your decision":pay?"Act before "+fmtDateLong(v.must.resetting && v.reset ? v.reset.date : v.ends.date)+" &mdash; pay down "+fmtMoney(v.payDown):"Don&rsquo;t refinance")+'</p>'+
-          '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on the '+refiBasisWord(loan)+' NOI at the proposed loan&rsquo;s rate, '+fmtPct(can.rate)+'.</p></div>'+
+          '<p class="text-sm text-slate-600">'+(refiGroupLabel(loan) || (loan._combined?"The whole property":"This property"))+' &mdash; sized on '+refiSizedOnText(loan)+' at the proposed loan&rsquo;s rate, '+fmtPct(can.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You owe (payoff)", fmtMoney(can.payoff))+
@@ -12963,7 +12965,7 @@ tr.flagged:hover td{background:#fee2e2}
         '<div class="flex items-center gap-3">'+
           '<span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+bhead+'">'+(yes ? (pay ? "!" : "&#10003;") : "&#10007;")+'</span>'+
           '<div><p class="text-xl font-extrabold '+bhead+'">'+title+'</p>'+
-          '<p class="text-sm text-slate-600">'+escapeHtml(loanLabel(loan))+(loan.lenderName ? ' &mdash; with '+escapeHtml(loan.lenderName) : '')+', sized on the '+refiBasisWord(loan)+' NOI at the extension&rsquo;s rate, '+fmtPct(r.rate)+'.</p></div>'+
+          '<p class="text-sm text-slate-600">'+escapeHtml(loanLabel(loan))+(loan.lenderName ? ' &mdash; with '+escapeHtml(loan.lenderName) : '')+', sized on '+refiSizedOnText(loan)+' at the extension&rsquo;s rate, '+fmtPct(r.rate)+'.</p></div>'+
         '</div>'+
         '<dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 text-sm">'+
           refiStat("You&rsquo;ll owe on "+fmtDateUS(t.date), fmtMoney(r.owed))+

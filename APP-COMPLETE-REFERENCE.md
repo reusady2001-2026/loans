@@ -1042,7 +1042,10 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     leases (a leftover from the removed line pins); "At maturity" read $0 for a loan maturing on the 1st of a month
     (the final payment was counted); Claude's stories box showed an error instead of the cards, stayed empty after
     switching property, and listed a story already in the draft as "it would lower the NOI" (now "In the draft ✓");
-    General Data kept an approval "current" after new units moved the reserves (now it follows the chip).
+    General Data kept an approval "current" after new units moved the reserves (now it follows the chip); a package
+    with mixed bases read "sized on the the basis chosen per property NOI" (now "each property's NOI on the basis
+    chosen for it"); the package total sat under "+ ticked pushes" (now under NOI, with what the pushes add beside
+    it); the Guide's search opened scrolled to the end of the results.
   - **Assistant:** `set_refi_noi_basis {name, basis, property?}` takes in-place / safe / aggressive (a package names the
     property); `toggle_refi_move` ticks a push on its own property; `pin_underwriting_line` is refused (lines aren't
     pinned); `read_property` gives `underwritingSafe`, `underwritingAggressive`, `underwritingApproved`.

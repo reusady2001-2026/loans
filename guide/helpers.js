@@ -53,7 +53,7 @@ module.exports = function (page, app, ctx) {
       const b64 = await page.evaluate((a) => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a.g), a.s || "T12"); return XLSX.write(wb, { type: "base64", bookType: "xlsx" }); }, { g: grid, s: sheet });
       const f = path.join(ctx.UDATA, name); fs.writeFileSync(f, Buffer.from(b64, "base64")); return f;
     },
-    uwUpload: async (file) => { await page.setInputFiles("#uwFile", file); await page.waitForFunction(() => !!document.querySelector("input[data-uwline]"), null, { timeout: 30000 }).catch(() => {}); await page.waitForTimeout(1500); await h.calm(); },
+    uwUpload: async (file) => { await page.setInputFiles("#uwFile", file); await page.waitForFunction(() => !!document.querySelector("[data-pfline]"), null, { timeout: 30000 }).catch(() => {}); await page.waitForTimeout(1500); await h.calm(); },
 
     // scroll an element to the top of the window, clear of the window's own title bar
     into: async (l) => { await l.evaluate(e => { e.scrollIntoView({ block: "start" }); const r = e.getBoundingClientRect(); if (r.top < 8) window.scrollBy(0, r.top - 8); }); await page.waitForTimeout(200); },

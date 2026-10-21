@@ -206,7 +206,7 @@
     lit = null;
     nav.innerHTML = navHtml();
     var c = st.ch ? chapter(st.ch) : null;
-    if (st.q && st.q.trim()) main.innerHTML = searchHtml(st.q.trim());
+    if (st.q && st.q.trim()){ main.innerHTML = searchHtml(st.q.trim()); main.scrollTop = 0; }   // results open at their heading
     else main.innerHTML = c ? chapterHtml(c) : homeHtml();
     fit(); crumb();
   }
