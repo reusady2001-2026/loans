@@ -751,7 +751,7 @@ module.exports = {
             { sel: RV + "[data-refipooltotal]", label: "Total", text: "Worked out again." }
           ] },
         { title: "Each property’s pushes", text: "What to push lists each property’s pushes under its name, ticked one by one; a push counts its effect on the basis picked for its property. A property whose underwriting isn’t approved has none yet.",
-          go: async (h) => { await tick(h, RV + '[data-refipoolnoi] ~ * [data-refimove], ' + RV + "[data-refimove]", true); await h.scroll(PUSHBOX); },
+          go: async (h) => { await tick(h, RV + "[data-refimove]", true); await h.scroll(PUSHBOX); },
           shot: { sel: PUSHBOX, grow: true },
           marks: [
             { sel: PUSHBOX + ' div.uppercase:has-text("Villages of Whitewater")', label: "Villages of Whitewater · on the Aggressive underwriting", text: "Its pushes, counted on the basis picked for it." },

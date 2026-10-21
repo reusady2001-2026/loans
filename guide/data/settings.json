@@ -249,7 +249,7 @@
     },
     {
      "title": "The guide window",
-     "text": "The guide opens on its contents: one card per tab or screen of the app (the pictures in this chapter are taken on a wide window). Click a card (or a name on the left) to see its topics, then a topic to walk through it. Type in the search box to find a button or a word anywhere in the guide. Esc or × closes it.",
+     "text": "The guide opens on its contents: one card per chapter — a tab or screen of the app (the pictures in this chapter are taken on a wide window). Click a card, or a chapter on the left, to open it. Type in the search box to find a button or a word anywhere in the guide. Esc or × closes it.",
      "img": "img/settings/menu-07.jpg",
      "w": 1920,
      "h": 1000,
@@ -260,7 +260,7 @@
        "w": 73.7,
        "h": 2.4,
        "label": "Where you are",
-       "text": "The chapter and topic you are in."
+       "text": "The chapter and the topic you are reading."
       },
       {
        "x": 78.9,
@@ -292,79 +292,154 @@
        "w": 24.2,
        "h": 26.1,
        "label": "A chapter",
-       "text": "Click to see its topics."
+       "text": "Click to open it: the whole chapter on one page."
       }
      ]
     },
     {
-     "title": "A walkthrough step",
-     "text": "Each step is a picture of the app with numbered markers, and a list saying what each number is and does. Point at a number (in the picture or the list) to light up the part it marks. Click the picture to see it full size. Back and Next — or the ← and → keys — move through the steps, and at the end of a topic Next goes on to the next topic. Under the picture, one dot per step: click a dot to jump to that step.",
+     "title": "A chapter — one page you scroll",
+     "text": "A chapter opens as one long page: every topic is a heading, and every step follows under it — its words, then a picture of the app with numbered markers, and beside the picture what each number is and does (under it on a narrow window). Scroll down to read on; there is no Back or Next. Pictures load as they come into view.",
      "img": "img/settings/menu-08.jpg",
      "w": 1920,
      "h": 1000,
      "marks": [
       {
        "x": 19.9,
-       "y": 15.9,
-       "w": 16,
-       "h": 2.8,
-       "label": "The step",
-       "text": "What this step shows."
-      },
-      {
-       "x": 81.5,
-       "y": 14,
-       "w": 3.8,
-       "h": 1.8,
-       "label": "Step 1 of …",
-       "text": "Where you are in the topic."
-      },
-      {
-       "x": 85.7,
        "y": 13.4,
-       "w": 3.8,
-       "h": 3,
-       "label": "Back",
-       "text": "The step before (← key)."
-      },
-      {
-       "x": 89.9,
-       "y": 13.5,
-       "w": 3.6,
+       "w": 8.9,
        "h": 2.8,
-       "label": "Next",
-       "text": "The next step (→ key); at the end, the next topic."
+       "label": "The chapter",
+       "text": "Its name, what it covers, and how many topics and steps it has."
       },
       {
-       "x": 19.9,
-       "y": 31.2,
-       "w": 34.7,
-       "h": 68.8,
+       "x": 89.4,
+       "y": 14.2,
+       "w": 4.2,
+       "h": 1.8,
+       "label": "All chapters",
+       "text": "Back to the contents."
+      },
+      {
+       "x": 22.8,
+       "y": 26.3,
+       "w": 18.7,
+       "h": 2.6,
+       "label": "A topic",
+       "text": "Each topic is a heading on the page, numbered."
+      },
+      {
+       "x": 20.1,
+       "y": 33.9,
+       "w": 73.3,
+       "h": 2.3,
+       "label": "A step",
+       "text": "What this step shows, in words."
+      },
+      {
+       "x": 20.1,
+       "y": 44,
+       "w": 46.2,
+       "h": 55.4,
        "label": "The picture",
-       "text": "Click it to see it full size."
+       "text": "The real app, with a numbered marker on every button and box. Click it to see it full size."
       },
       {
-       "x": 20.2,
-       "y": 31.9,
-       "w": 1.3,
-       "h": 2.4,
-       "label": "A marker",
-       "text": "Point at it to light up what it marks."
-      },
-      {
-       "x": 73.6,
-       "y": 31.2,
-       "w": 20,
-       "h": 68.8,
+       "x": 67.1,
+       "y": 44,
+       "w": 26.3,
+       "h": 56,
        "label": "What each number does",
-       "text": "The same numbers, in words."
+       "text": "Beside the picture: the same numbers, in words."
+      },
+      {
+       "x": 4.7,
+       "y": 16,
+       "w": 13.3,
+       "h": 2.6,
+       "label": "The topics",
+       "text": "The chapter's topics. The one you are reading is lit, and it follows you as you scroll."
+      }
+     ]
+    },
+    {
+     "title": "Jump to a topic",
+     "text": "Click a topic on the left and the page scrolls to it; the topic stays lit, and “Where you are” at the top says it too.",
+     "img": "img/settings/menu-09.jpg",
+     "w": 1920,
+     "h": 1000,
+     "marks": [
+      {
+       "x": 4.7,
+       "y": 21.6,
+       "w": 13.3,
+       "h": 2.6,
+       "label": "The topic picked",
+       "text": "Lit while you read it."
+      },
+      {
+       "x": 4.7,
+       "y": 7.7,
+       "w": 73.7,
+       "h": 2.4,
+       "label": "Where you are",
+       "text": "The chapter › the topic."
+      },
+      {
+       "x": 22.8,
+       "y": 13.9,
+       "w": 38,
+       "h": 2.6,
+       "label": "Its heading",
+       "text": "The page has scrolled to the topic."
+      }
+     ]
+    },
+    {
+     "title": "Point at a number",
+     "text": "Point at a number — on the picture or in the list beside it — and both light up, with the part of the screen it marks.",
+     "img": "img/settings/menu-10.jpg",
+     "w": 1920,
+     "h": 1000,
+     "marks": [
+      {
+       "x": 67.1,
+       "y": 19.8,
+       "w": 26.3,
+       "h": 2.8,
+       "label": "A number in the list",
+       "text": "Pointed at: it lights up…"
+      },
+      {
+       "x": 21.9,
+       "y": 28.3,
+       "w": 3.6,
+       "h": 2.3,
+       "label": "…and its box",
+       "text": "…and so does the part of the picture it marks."
+      }
+     ]
+    },
+    {
+     "title": "Full size",
+     "text": "Click a picture to see it full size over the guide. Click it again, or press Esc, to go back.",
+     "img": "img/settings/menu-11.jpg",
+     "w": 1920,
+     "h": 1000,
+     "marks": [
+      {
+       "x": 12.1,
+       "y": 2.4,
+       "w": 75,
+       "h": 90,
+       "label": "Full size",
+       "text": "The picture at its own size; scroll to see all of it. Click or Esc to close."
       }
      ]
     },
     {
      "title": "Search the guide",
-     "text": "Type in the search box: every step that mentions all the words you typed is listed. Click one to open it at that step.",
-     "img": "img/settings/menu-09.jpg",
+     "text": "Type in the search box: every step that mentions all the words you typed is listed, with its chapter and topic. Click one to jump to it.",
+     "img": "img/settings/menu-12.jpg",
      "w": 1920,
      "h": 1000,
      "marks": [
@@ -390,7 +465,40 @@
        "w": 73.7,
        "h": 5.4,
        "label": "A result",
-       "text": "Its chapter and topic, and the step. Click to open it."
+       "text": "Its chapter and topic, and the step. Click to jump to it."
+      }
+     ]
+    },
+    {
+     "title": "A search result",
+     "text": "Its chapter opens as its page, scrolled to that step, which lights up for a moment. Read on from there, or scroll back up.",
+     "img": "img/settings/menu-13.jpg",
+     "w": 1920,
+     "h": 1000,
+     "marks": [
+      {
+       "x": 20.1,
+       "y": 14.2,
+       "w": 73.3,
+       "h": 2.3,
+       "label": "The step found",
+       "text": "The page is scrolled to it."
+      },
+      {
+       "x": 4.7,
+       "y": 7.7,
+       "w": 73.7,
+       "h": 2.4,
+       "label": "Where you are",
+       "text": "Its chapter and topic."
+      },
+      {
+       "x": 4.7,
+       "y": 16,
+       "w": 13.3,
+       "h": 2.6,
+       "label": "Its topic",
+       "text": "Lit on the left."
       }
      ]
     }

@@ -4151,6 +4151,7 @@ tr.flagged:hover td{background:#fee2e2}
       opRenderSections(view);   // per-property operating model: picker + sheet + assumptions above, roll-up + action scan below
       try{ uwRenderRentRollBox(); }catch(e){}   // 2.9.4 — the focused property's rent-roll summary; auto-loads units + avg rent
       try{ uwRefreshHistoryLinks(); }catch(e){}   // 2.9.7 (#253)
+      try{ pfRenderStories(); }catch(e){}   // Claude's stories sit with the underwriting draft — after every full render too
     }
 
     // 2.9.2 — pin a line's underwritten value (a total, or a $/unit in the per-unit view). Cleared → reset to
@@ -4598,7 +4599,8 @@ tr.flagged:hover td{background:#fee2e2}
       });
       const st = pfStoriesOf(opFocusKey);
       ((st && st.items) || []).forEach(s => { const m = ProForma.matchSuggestion(R.input, s); if(!m.change) return;
-        if(!(pfStoryEffect(R, m.change) > 0)) return;   // a story that would lower the NOI (or change nothing) is never suggested
+        const sid = "claude:" + m.change.line + "|" + pfNorm(m.account.name) + "|" + m.change.how, inDraft = pfChangesOn(m.change.line, pfAcctById(R, m.account.id)).length > 0;
+        if(!inDraft && !skipped[sid] && !(pfStoryEffect(R, m.change) > 0)) return;   // a story that would lower the NOI (or change nothing) is never suggested — one already in the draft stays listed as taken
         out.push({ id: "claude:" + m.change.line + "|" + pfNorm(m.account.name) + "|" + m.change.how, source: "claude", line: m.change.line, acctId: m.account.id, change: m.change,
           why: String(s.basis || ""), backedBy: String(s.backedBy || ""), confidence: String(s.confidence || "") }); });
       out.forEach(s => { s.skipped = !!skipped[s.id]; s.taken = pfChangesOn(s.line, pfAcctById(R, s.acctId)).length > 0; s.open = !s.skipped && !s.taken; });
@@ -5048,7 +5050,7 @@ tr.flagged:hover td{background:#fee2e2}
           if(!m.change){ left.push((it.account || it.line || "?") + " — " + m.reason); return; }
           const id = "claude:" + m.change.line + "|" + pfNorm(m.account.name) + "|" + m.change.how, sg = sugs.find(x => x.id === id);
           const eff = pfStoryEffect(R, m.change);
-          if(!(eff > 0)){ left.push((it.account || it.line || "?") + " — it would lower the NOI"); return; }   // never a story that lowers the NOI
+          if(!(sg && (sg.taken || sg.skipped)) && !(eff > 0)){ left.push((it.account || it.line || "?") + " — it would lower the NOI"); return; }   // never a story that lowers the NOI (one already in the draft adds nothing more: it stays listed)
           const state = sg && sg.taken ? '<span class="text-[11px] font-semibold text-emerald-700">In the pro forma &#10003;</span>' : sg && sg.skipped ? '<span class="text-[11px] text-slate-400">Set aside</span>'
             : (can ? '<button type="button" data-pfputsug="'+escapeHtml(id)+'" class="rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-500">Put it in the draft</button>' : '');
           cards.push('<li class="rounded-xl border border-violet-200 bg-white px-3 py-2.5" data-pfstory="'+escapeHtml(id)+'"><div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0">'+
@@ -5057,7 +5059,7 @@ tr.flagged:hover td{background:#fee2e2}
             '<div class="italic text-[12px] text-slate-600">“'+escapeHtml(m.change.story)+'”</div>'+
             (it.basis ? '<div class="text-[11px] text-slate-500">How Claude got the number: '+escapeHtml(it.basis)+'</div>' : '')+
             (it.backedBy ? '<div class="text-[11px] font-semibold text-violet-800">To back it with the lender: '+escapeHtml(it.backedBy)+'</div>' : '')+'</div>'+
-            '<div class="shrink-0 text-right">'+(sg && sg.taken ? '' : '<div class="text-sm font-extrabold tabular-nums '+(eff >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(eff)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">pro forma NOI &middot; '+PF_COL[v]+'</div>')+'<div class="mt-1">'+state+'</div></div></div></li>');
+            '<div class="shrink-0 text-right">'+(sg && sg.taken ? '' : '<div class="text-sm font-extrabold tabular-nums '+(eff >= 0 ? 'text-emerald-700' : 'text-rose-700')+'">'+pfSigned(eff)+'</div><div class="text-[10px] uppercase tracking-wide text-slate-400">pro forma NOI &middot; '+PF_COL[m.change.column === "aggressive" ? "aggressive" : "base"]+'</div>')+'<div class="mt-1">'+state+'</div></div></div></li>');
         });
         body = (st.summary ? '<p class="mt-2 text-[12px] font-semibold text-slate-700">'+escapeHtml(st.summary)+'</p>' : '')+
           (cards.length ? '<ul class="mt-2 space-y-2">'+cards.join('')+'</ul>' : '<p class="mt-2 text-[12px] text-slate-500">Claude found no account to change.</p>')+

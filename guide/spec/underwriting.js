@@ -317,9 +317,9 @@ module.exports = {
           shot: "#opStoriesMount",
           marks: [
             { sel: "#pfStoriesRun", label: "Find stories / Look again", text: "Asks Claude (it needs Claude connected)." },
-            { sel: "#opStoriesMount [data-pfstory]", label: "A story", text: "One account, one change, its story.", nth: 1, optional: true /*TEMPV*/ },
-            { sel: "#opStoriesMount >> text=How Claude got the number", label: "How Claude got the number", text: "From the statement’s own figures.", nth: 0, optional: true /*TEMPV*/ },
-            { sel: "#opStoriesMount >> text=To back it with the lender", label: "To back it", text: "What you need on hand to prove it.", nth: 0, optional: true /*TEMPV*/ },
+            { sel: "#opStoriesMount [data-pfstory]", label: "A story", text: "One account, one change, its story.", nth: 1 },
+            { sel: "#opStoriesMount >> text=How Claude got the number", label: "How Claude got the number", text: "From the statement’s own figures.", nth: 0 },
+            { sel: "#opStoriesMount >> text=To back it with the lender", label: "To back it", text: "What you need on hand to prove it.", nth: 0 },
             { sel: "#opStoriesMount [data-pfputsug]", label: "Put it in the draft", text: "Opens the account with it filled in, to check and save.", optional: true },
             { sel: "#opStoriesMount >> text=In the pro forma", label: "In the pro forma ✓", text: "Already in the draft.", optional: true },
             { sel: "#opStoriesMount [data-pfstoriesleft]", label: "Left out", text: "What Claude suggested that can’t go in — an account the T12 doesn’t have, or a change that would lower the NOI.", optional: true }
@@ -485,6 +485,8 @@ module.exports = {
       ] },
     // ------------------------------------------------------------------------------------------------------------------
     { id: "history", title: "Operating history and the roll-up", intro: "The property’s months kept from every T12 with its approved underwriting, and the whole portfolio’s NOI and coverage in one table.",
+      // the property opened again (another one, then back): the General Data card and the roll-up are drawn when a property is opened
+      before: async (h) => { await h.uwProperty("name:villages of burlington"); await h.uwProperty(KEY); await h.wait(1500); await h.calm(); },
       steps: [
         { title: "General Data — operating history", text: "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before.",
           go: async (h) => { await h.scroll('h3:has-text("General Data")', 0, "start"); },

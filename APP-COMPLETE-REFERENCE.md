@@ -1040,7 +1040,9 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     assumption alone is saved.
   - **Bugs found and fixed in round 2:** the Underwriting table crashed on a property whose rent roll has commercial
     leases (a leftover from the removed line pins); "At maturity" read $0 for a loan maturing on the 1st of a month
-    (the final payment was counted).
+    (the final payment was counted); Claude's stories box showed an error instead of the cards, stayed empty after
+    switching property, and listed a story already in the draft as "it would lower the NOI" (now "In the draft ✓");
+    General Data kept an approval "current" after new units moved the reserves (now it follows the chip).
   - **Assistant:** `set_refi_noi_basis {name, basis, property?}` takes in-place / safe / aggressive (a package names the
     property); `toggle_refi_move` ticks a push on its own property; `pin_underwriting_line` is refused (lines aren't
     pinned); `read_property` gives `underwritingSafe`, `underwritingAggressive`, `underwritingApproved`.
