@@ -1047,6 +1047,11 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     chosen for it"); the package total sat under "+ ticked pushes" (now under NOI, with what the pushes add beside
     it); the Guide's search opened scrolled to the end of the results; after approving, the General Data card and the
     portfolio roll-up kept the old figures until the property was opened again (now they redraw at once).
+  - **A T12 that flipped back to "reading" (found by the full test run, there since before round 2):** a saved T12
+    reading was the same object the gate kept changing, so a T12 already marked ready could read "reading" again.
+    It is now saved as a copy. A general-data record loaded while a write was in progress no longer replaces the newer
+    copy (`gdWriteGen`); the extras save reads the file before merging; the record reads (assumptions, general,
+    profile, history) try again, up to 4 times, when the newest file can't be read yet.
   - **Assistant:** `set_refi_noi_basis {name, basis, property?}` takes in-place / safe / aggressive (a package names the
     property); `toggle_refi_move` ticks a push on its own property; `pin_underwriting_line` is refused (lines aren't
     pinned); `read_property` gives `underwritingSafe`, `underwritingAggressive`, `underwritingApproved`.
