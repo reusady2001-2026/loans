@@ -2714,8 +2714,7 @@
       if(!key) return { entries: [] };
       if(propHistCache[key]) return propHistCache[key];
       let h = { entries: [] };
-      try{ if(window.ldsShell && ldsShell.docList && ldsShell.docRead){ const list = await ldsShell.docList(key); const f = list && list.ok && (list.files || []).filter(x => x.role === "history").sort((a, b) => b.savedAt - a.savedAt)[0];
-        if(f){ const rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64){ const j = JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))); if(j && Array.isArray(j.entries)) h = j; } } } }catch(e){}
+      try{ const j = await opReadRecordJson(key, "history"); if(j && Array.isArray(j.entries)) h = j; }catch(e){}
       propHistCache[key] = h; return h;
     }
     const propHistQueue = {};
@@ -5358,7 +5357,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // A property's answers (general-data.json → fileParts).
     function gdRecordsOf(key){ var gd = gdFullCache[key]; return (gd && Array.isArray(gd.fileParts)) ? gd.fileParts : []; }
-    async function gdRecordsLoad(key){ if(!Object.prototype.hasOwnProperty.call(gdFullCache, key) || gdFullCache[key] == null){ try{ var gd = await opLoadGeneralData(key); if(gd) gdFullCache[key] = gd; }catch(e){} } return gdRecordsOf(key); }
+    async function gdRecordsLoad(key){ if(!Object.prototype.hasOwnProperty.call(gdFullCache, key) || gdFullCache[key] == null){ try{ var gen0 = gdWriteGen[key] || 0, gd = await opLoadGeneralData(key); if(gd && ((gdWriteGen[key] || 0) === gen0 || gdFullCache[key] == null)) gdFullCache[key] = gd; }catch(e){} } return gdRecordsOf(key); }
     function opRecordFilePart(key, rec){
       return gdSerial(key, async () => {
         var gd = await opLoadGeneralData(key); if(!gd) gd = { propKey: key, noT12: true, note: "no T12 yet" };
@@ -5667,14 +5666,22 @@ tr.flagged:hover td{background:#fee2e2}
         if(sz.dscrMin === 1.2 && !(ov.sizingEdited && ov.sizingEdited.dscrMin)) delete sz.dscrMin;
         b.sizing = Object.assign({}, b.sizing, sz); }
       else if(k !== "sizing" && (typeof ov[k] === "number" || typeof ov[k] === "object")) b[k] = ov[k]; }); } return b; }
-    async function opLoadAssumptions(key){
+    // The app's own records (profile, assumptions, general data, history) are read in two steps: the folder's list,
+    // then the file. A save in between replaces the file (a new stored copy, the old one removed), so a read that
+    // misses lists again and reads the new copy — a property never looks as if it had no record (no T12, default
+    // assumptions, an empty history) because a save happened at the same moment. null = there is no such record.
+    async function opReadRecordJson(key, role){
       if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
-      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
-        var f = (list.files || []).filter(function(x){ return x.role === "assumptions"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
-        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
-        return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64)));
-      }catch(e){ return null; }
+      for(var attempt = 0; attempt < 4; attempt++){
+        var list = null; try{ list = await ldsShell.docList(key); }catch(e){}
+        if(!list || !list.ok) return null;
+        var f = (list.files || []).filter(function(x){ return x.role === role; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
+        try{ var rd = await ldsShell.docRead(key, f.id); if(rd && rd.ok && rd.base64) return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))); }catch(e){}
+        await new Promise(function(res){ setTimeout(res, 25 * (attempt + 1)); });
+      }
+      return null;
     }
+    async function opLoadAssumptions(key){ try{ return await opReadRecordJson(key, "assumptions"); }catch(e){ return null; } }
     async function opSaveAssumptions(key, opts){
       if(!key || !(window.ldsShell && ldsShell.docSave)) return;
       try{ assumptionHistoryQueue(key, uwState.input.bench, (opts && opts.from) || "typed"); }catch(e){}   // 2.9.7 (#253)
@@ -5714,6 +5721,7 @@ tr.flagged:hover td{background:#fee2e2}
     // logic is general-data.js; here we only do the disk I/O and feed it the
     // app's own parse + classifier + Setup so the figures match the tab exactly.
     var gdNOICache = {};    // propKey -> { inPlace, underwritten, period } | null — synchronous read for the refi panel
+    var gdWriteGen = {};   // propKey -> how many times its general-data.json was written this session
     var gdFullCache = {};   // propKey -> the whole general-data record | null — synchronous read for the history card
     function opClassifyLine(name, section, sub, row){
       try{
@@ -5724,14 +5732,7 @@ tr.flagged:hover td{background:#fee2e2}
         return { code: cc.code, role: role, label: label };
       }catch(e){ return null; }
     }
-    async function opLoadGeneralData(key){
-      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
-      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
-        var f = (list.files || []).filter(function(x){ return x.role === "general"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
-        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
-        return JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64)));
-      }catch(e){ return null; }
-    }
+    async function opLoadGeneralData(key){ try{ return await opReadRecordJson(key, "general"); }catch(e){ return null; } }
     async function opWriteGeneralDataFile(key, gd){
       if(!key || !(window.ldsShell && ldsShell.docSave)) return;
       // 2.9.10 — every write drops an old copy of the name, address or units (the profile is their one source)
@@ -5740,6 +5741,7 @@ tr.flagged:hover td{background:#fee2e2}
         var pr = opProp(key);
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "general-data.json", base64: btoa(str), text: "", type: "application/json", role: "general" });
       }catch(e){}
+      gdWriteGen[key] = (gdWriteGen[key] || 0) + 1;   // a read that started before this write must not put its older copy back
     }
     // ── 2.9.1 — Property Profile storage (profile.json in the property folder) ─────────────────────
     // The profile is the static, hand-entered / AI-extracted facts a property carries that its loans and
@@ -5748,14 +5750,7 @@ tr.flagged:hover td{background:#fee2e2}
     // its own (role "profile") and is NEVER rebuilt from the T12.
     var profileCache = {};   // propKey -> coerced Profile record; synchronous read for the UI
     function opOperator(){ try{ return localStorage.getItem("lds.operator") || "You"; }catch(e){ return "You"; } }
-    async function opLoadProfile(key){
-      if(!key || !(window.ldsShell && ldsShell.docList && ldsShell.docRead)) return null;
-      try{ var list = await ldsShell.docList(key); if(!list || !list.ok) return null;
-        var f = (list.files || []).filter(function(x){ return x.role === "profile"; }).sort(function(a,b){ return b.savedAt - a.savedAt; })[0]; if(!f) return null;
-        var rd = await ldsShell.docRead(key, f.id); if(!rd || !rd.ok || !rd.base64) return null;
-        return Profile.coerce(JSON.parse(new TextDecoder().decode(opB64ToBytes(rd.base64))), key);
-      }catch(e){ return null; }
-    }
+    async function opLoadProfile(key){ try{ var j = await opReadRecordJson(key, "profile"); return j ? Profile.coerce(j, key) : null; }catch(e){ return null; } }
     async function opWriteProfile(key, profile){
       if(!key || !(window.ldsShell && ldsShell.docSave)) return { ok: true, skipped: true };
       try{ var json = JSON.stringify(profile), bytes = new TextEncoder().encode(json), str = "";
@@ -6238,7 +6233,7 @@ tr.flagged:hover td{background:#fee2e2}
     async function opPersistGeneralExtrasNow(key, extras){
       try{
         if(!key || !extras) return;
-        var gd = gdFullCache[key] || await opLoadGeneralData(key);
+        var gd = await opLoadGeneralData(key) || gdFullCache[key];   // the file as it is now — never an older copy held in memory
         if(!gd || !gd.noi){ gd = await opUpdateGeneralDataNow(key) || gd; }   // make sure the record exists (built from the folder T12) — already inside this property's turn
         if(!gd) return;
         if(extras.push !== undefined) gd.push = extras.push;
@@ -6455,7 +6450,8 @@ tr.flagged:hover td{background:#fee2e2}
     async function opEnsureGeneralData(key){
       if(!key) return null;
       if(Object.prototype.hasOwnProperty.call(gdNOICache, key)) return gdNOICache[key];
-      var gd = await opLoadGeneralData(key);
+      var gen0 = gdWriteGen[key] || 0, gd = await opLoadGeneralData(key);
+      if((gdWriteGen[key] || 0) !== gen0){ gd = await opLoadGeneralData(key) || gd; }   // written while it was read: read the newer file
       // BACKFILL a missing record (a T12 saved before General Data existed, or added outside the
       // underwriting-tab drop), AND REBUILD a STALE one — a cache computed under a different app
       // version (2.9.0). Recomputing from the folder's T12 under the running code is what makes the
@@ -6466,6 +6462,7 @@ tr.flagged:hover td{background:#fee2e2}
       if(!gd || !gd.noi || stale){
         try{ var made = await opUpdateGeneralData(key); if(made && made.noi) return gdNOICache[key]; }catch(e){}
       }
+      if((gdWriteGen[key] || 0) !== gen0 && gdFullCache[key]) gd = gdFullCache[key];   // a write landed meanwhile: its copy is the newer one
       gdFullCache[key] = gd || null;
       gdNOICache[key] = (gd && gd.noi) ? opGDCache(gd.noi) : null;
       // Hydrate Claude's saved "what to push" (with its two NOI-impact figures) into the session
@@ -7315,7 +7312,9 @@ tr.flagged:hover td{background:#fee2e2}
       return gdSerial(key, async function(){
         var gd = await opLoadGeneralData(key); if(!gd) gd = { propKey: key, noT12: true, note: "no T12 yet" };
         var list = Array.isArray(gd.t12Readings) ? gd.t12Readings.filter(function(e){ return e && e.sig !== entry.sig; }) : [];
-        list.push(entry); gd.t12Readings = list.slice(-40); gd.updatedAt = new Date().toISOString();
+        // a COPY: the check goes on changing its own entry (e.g. "checked" before that is saved) — what everyone else reads
+        // is only ever what was saved, or a T12 would look ready, then "reading" again when the file is read back
+        list.push(JSON.parse(JSON.stringify(entry))); gd.t12Readings = list.slice(-40); gd.updatedAt = new Date().toISOString();
         await opWriteGeneralDataFile(key, gd); gdFullCache[key] = gd; return entry;
       });
     }
