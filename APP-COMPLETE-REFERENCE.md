@@ -1083,6 +1083,15 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   - **Nothing unconfirmed is shown (`aiConfirmed`):** an item without a named check, or whose own words say it should be
     checked, verified or confirmed first (or assume a fact it didn't see), is left out — not listed anywhere. A read saved
     before this (no checks) shows nothing and asks to be run again.
+  - **After the operator's first real run (Villages of Whitewater: one push):** Claude left three moves out because the
+    briefing had no rent roll, no unit count and no tax bill — the rule working, but the app said nothing about it. Now
+    (`aiBriefingGaps`) the read says what Claude didn't have (units, a rent roll, lease dates, the tax bill or
+    assessment, who pays the utilities) and where to add it. Rent growth no longer needs a rent roll: with none, the T12's
+    vacancy line (about 5% of gross potential rent or less) shows the property is stabilized, and the full-year effect
+    once every lease has renewed is measured. **Public records:** Claude looks up the county's assessed value, tax rate
+    and appeal deadline and the unit count for the property's own address, and uses a record only when its address
+    matches. **The web line:** Claude Code's own usage can read 0 searches when there were some (the run quoted RealPage
+    but read "did not search"); from the CLI only a count above 0 is taken, otherwise the searches Claude lists.
   - **Profile:** "Utilities — who pays" (Owner (in the rent) · Residents (their own meters) · Billed back to residents ·
     Split) and "Utilities — which ones".
   - **Rent roll reader:** keeps each unit's move-in, lease end and move-out (an Excel date, M/D/YYYY or YYYY-MM-DD; a

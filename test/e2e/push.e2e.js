@@ -60,6 +60,8 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   ok(/Claude searched the web 2 times/.test(panel)&&/FAKE-SEARCH utility rates/.test(panel),'the panel says how many web searches the run made, and what Claude searched');
   const stored=await page.evaluate((k)=>window.LDS_getPush(k),KEY);
   ok(stored&&stored.moves.length===1&&stored.unconfirmed===2,'only the confirmed move is kept (1 kept, 2 left out unseen)');
+  const gaps=await page.evaluate(()=>((document.querySelector('#opScanMount [data-aigaps]')||{}).innerText||''));
+  ok(/a rent roll \(Documents\)/.test(gaps)&&/who pays the utilities/.test(gaps)&&/add them and run it again/.test(gaps),'the panel says what Claude didn’t have (no rent roll, no utilities answer here) and to add it ("'+gaps.slice(0,140)+'")');
 
   // ---- (2026-10-21) The app hands Claude the property's full briefing — the same one Claude's stories get; no menu ----
   const sent=readInput();

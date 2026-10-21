@@ -4985,7 +4985,8 @@ tr.flagged:hover td{background:#fee2e2}
       "THE SURROUNDINGS: search the web for the property's area — its town, county and metro, from the address — wherever the answer depends on them: rents and rent growth for comparable units, vacancy in the submarket, the county's tax rate, reassessment and appeal rules, utility rates, insurance costs, and the weather or an event in a given month. When an account spikes in one month, search what happened there that month (a record snowfall, a storm, a freeze, a flood) to tell a one-off from a pattern. Search with the place and the time, never with the owner's names or figures.",
       "CONFIRM EVERYTHING: return only what you have confirmed — from the T12's own accounts, the rent roll, the documents, the profile, the underwriting or a web page. In `checked` list every check: what you checked and what it showed, in one plain sentence each (for example \"T12, Other income: none of its 9 accounts is a utility reimbursement\"; \"Rent roll: 128 of 130 units occupied, 41 leases end in the next 12 months\"; \"National Weather Service, Cincinnati, January 2025: 14.2 inches of snow against a normal 7\"), with its `source` (t12, rentRoll, document, profile, underwriting or web) and, for a web page, its `site` and `date`. If an item rests on anything you could not confirm, LEAVE IT OUT: never return an item that says it should be checked, verified or confirmed first, or that assumes a fact you did not see.",
       "UTILITIES: an owner who pays the utilities has them in the rent — the residents pay for them through it. Read `utilitiesPaidBy`, the leases and the T12's accounts first. Never suggest billing residents for utilities their rent already covers: that is a rent increase under another name, and when the underwriting already moves the rent it counts the same money twice.",
-      "OCCUPANCY: some vacancy is natural — leases end through the year and a unit sits empty while it turns over. Work out the natural floor from the rent roll (the leases that end in the next 12 months, and a normal turnover time for this market) and never target a vacancy below it; never target 100% occupancy. A property already about 97% occupied or more has no occupancy or vacancy move.",
+      "PUBLIC RECORDS: when a fact you need is public for THIS property — its county's assessed value, tax rate and appeal deadline (the county auditor's or assessor's site), its number of units (its own website or listing) — look it up before you leave an item out, and use it only when the record's address matches the property's address; a figure for another address is not this property's. Name the record in `checked`.",
+      "OCCUPANCY: some vacancy is natural — leases end through the year and a unit sits empty while it turns over. Work out the natural floor from the rent roll (the leases that end in the next 12 months, and a normal turnover time for this market) and never target a vacancy below it; never target 100% occupancy. Without a rent roll, the T12's vacancy line against gross potential rent shows today's level. A property already about 97% occupied or more has no occupancy or vacancy move.",
       "COMMON SENSE: before you return an item, ask whether an experienced asset manager for this property would say it to the owner. If not, leave it out.",
       "Also return `searches`: the web searches you ran, as you typed them. Use FULL WORDS only; the ONLY abbreviation permitted is NOI."
     ].join(" ");
@@ -5084,12 +5085,31 @@ tr.flagged:hover td{background:#fee2e2}
           const what = lab ? String(c.what).replace(new RegExp("^" + lab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:,]\\s*", "i"), "") : String(c.what);   // "T12: T12, Utilities…" → "T12: Utilities…"
           return '<li><span class="font-semibold text-slate-500">'+escapeHtml(lab)+(c.site ? ' &middot; '+escapeHtml(c.site) : '')+(c.date ? ' &middot; '+escapeHtml(c.date) : '')+':</span> '+escapeHtml(what)+'</li>'; }).join('')+'</ul></div>';
     }
-    // What the run did on the web, from the count Claude Code / the API report (not Claude's own word)
+    // What the run did on the web: the count the API reports when it gives one above 0 (Claude Code's own count can read
+    // 0 when there were searches — ai.js), else the searches Claude lists; "did not search" only when neither shows any
     function aiWebLine(rec){
       if(!rec) return "";
       const n = rec.webSearches, q = Array.isArray(rec.searches) ? rec.searches.filter(Boolean) : [];
-      const txt = (typeof n === "number") ? (n > 0 ? 'Claude searched the web '+n+' time'+(n === 1 ? '' : 's')+' for this.' : 'Claude did not search the web for this.') : (q.length ? 'Claude searched the web for this.' : '');
-      return txt ? '<p class="mt-1 text-[10px] text-slate-500" data-aiweb>'+txt+(q.length ? ' <span class="text-slate-400">Searches: '+escapeHtml(q.slice(0, 12).join(" · "))+'</span>' : '')+'</p>' : '';
+      const txt = (typeof n === "number" && n > 0) ? 'Claude searched the web '+n+' time'+(n === 1 ? '' : 's')+' for this.'
+        : q.length ? 'Claude searched the web for this ('+q.length+' search'+(q.length === 1 ? '' : 'es')+').'
+        : 'Claude did not search the web for this.';
+      return '<p class="mt-1 text-[10px] text-slate-500" data-aiweb>'+txt+(q.length ? ' <span class="text-slate-400">Searches: '+escapeHtml(q.slice(0, 12).join(" · "))+'</span>' : '')+'</p>';
+    }
+    // (2026-10-21, the operator: "it only gave me one thing to push") — what the briefing did not have, so Claude could not
+    // confirm what rests on it: said under the read, with where to add it
+    function aiBriefingGaps(b){
+      if(!b) return [];
+      const out = [], docs = (b.documents && b.documents.given) || [];
+      if(!b.units) out.push("the number of units (the property’s profile → Residential units)");
+      if(!b.rentRoll || b.rentRoll.note) out.push("a rent roll (Documents)");
+      else if(!b.rentRoll.leaseDatesInTheFile) out.push("the lease dates in the rent roll (move-in and lease end)");
+      if(!docs.some(d => /tax|assess|levy|auditor/i.test(d.name + " " + String(d.text || "").slice(0, 2000)))) out.push("the property tax bill or assessment (Documents)");
+      if(!(b.profile && b.profile.utilitiesPaidBy)) out.push("who pays the utilities (the profile → Utilities — who pays)");
+      return out;
+    }
+    function aiGapsHtml(rec){
+      const g = rec && Array.isArray(rec.missing) ? rec.missing : []; if(!g.length) return "";
+      return '<p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900" data-aigaps><b>Claude didn’t have:</b> '+escapeHtml(g.join("; "))+'. Anything that rests on them was left out &mdash; add them and run it again.</p>';
     }
     function aiKeepConfirmed(rec, field){
       if(!rec || !Array.isArray(rec[field])) return rec;
@@ -5107,14 +5127,15 @@ tr.flagged:hover td{background:#fee2e2}
       if(!aiAvailable()){ toast("Finding stories needs the desktop app and a connected Claude.", "error"); return; }
       if(!pfInputNow()){ toast("Read this property’s T12 first (12-month basis)", "info"); return; }
       pfStoriesCache.set(key, { loading: true }); pfRenderStories();
+      let missing = [];
       // (2026-10-21) the shared briefing — the same one What to push gets; Claude may search the web (minutes, not seconds)
       return aiPropertyBriefing(key)
-        .then((input) => { if(!input) throw new Error("Read this property’s T12 first (12-month basis)."); return ldsShell.aiExtract({ instruction: PF_STORY_INSTRUCTION, schema: pfStoriesSchema(), input: JSON.stringify(input), timeoutMs: 900000 }); })
+        .then((input) => { if(!input) throw new Error("Read this property’s T12 first (12-month basis)."); missing = aiBriefingGaps(input); return ldsShell.aiExtract({ instruction: PF_STORY_INSTRUCTION, schema: pfStoriesSchema(), input: JSON.stringify(input), timeoutMs: 900000 }); })
         .then((r) => {
           if(!r || !r.ok){ pfStoriesCache.set(key, { error: (r && r.error) || "Claude could not read this property." }); }
           else { const d = r.data || {}, all = (Array.isArray(d.stories) ? d.stories : []).slice(0, 20);
             // only what Claude confirmed is kept — the rest is not shown at all (the operator, 2026-10-21)
-            const rec = { summary: String(d.summary || ""), items: all.filter(aiConfirmed), unconfirmed: all.filter(x => !aiConfirmed(x)).length, at: new Date().toISOString(), sig: opPushSig(key),
+            const rec = { summary: String(d.summary || ""), items: all.filter(aiConfirmed), unconfirmed: all.filter(x => !aiConfirmed(x)).length, missing: missing, at: new Date().toISOString(), sig: opPushSig(key),
               webSearches: (typeof r.webSearches === "number") ? r.webSearches : null, searches: Array.isArray(d.searches) ? d.searches.slice(0, 30) : [] };
             pfStoriesCache.set(key, rec);
             opPersistGeneralExtras(key, { pfStories: rec });
@@ -5164,7 +5185,7 @@ tr.flagged:hover td{background:#fee2e2}
         body = (st.summary ? '<p class="mt-2 text-[12px] font-semibold text-slate-700">'+escapeHtml(st.summary)+'</p>' : '')+
           (cards.length ? '<ul class="mt-2 space-y-2">'+cards.join('')+'</ul>' : (st.beforeChecks ? aiBeforeChecksHtml(st) : '<p class="mt-2 text-[12px] text-slate-500">Claude found no account to change that it could confirm.</p>'))+
           (left.length ? '<p class="mt-2 text-[11px] text-slate-400" data-pfstoriesleft>Left out ('+left.length+'): '+escapeHtml(left.join("; "))+'.</p>' : '')+
-          aiWebLine(st)+
+          aiGapsHtml(st)+aiWebLine(st)+
           '<p class="mt-1 text-[10px] text-slate-400">Claude&rsquo;s suggestions from this T12, its rent roll, its documents and the web, '+escapeHtml(fmtWhenShort(st.at) || "")+' &mdash; only ones it confirmed. You check every figure and every story before it goes in.</p>';
       } else body = '<p class="mt-2 text-[12px] text-slate-500">Claude will read every account and suggest changes and stories for the draft &mdash; only ones that raise the NOI.</p>';
       mount.innerHTML = '<div class="mt-4 border-t border-violet-100 pt-3">'+intro+body+'</div>';
@@ -7354,7 +7375,7 @@ tr.flagged:hover td{background:#fee2e2}
       "Your job: decide what the owner can still PUSH from here to RAISE the property's NOI in the future — things that are not proven yet, so they are not stories a lender would accept today (for example raising rents at renewal, adding or raising a fee, re-bidding a contract, appealing a tax assessment, cutting a cost that runs above its benchmark). Rank the moves by how much they raise the NOI.",
       "RULE 1 — only moves that RAISE the NOI. Never suggest anything that lowers it, on any version. If a move would lower the NOI on the in-place T12, on Safe or on Aggressive, leave it out.",
       "RULE 2 — never pull the same lever twice. If a story in the underwriting already brings an account to a new figure, do NOT push that account again; if a story already moves the rent, do NOT push the rent again for the same year. A DIFFERENT lever on the same money is fine. When a move sits next to a story, name that story in `besideStory`.",
-      "RENT GROWTH: once the property is stabilized (about 95% occupied or more on the rent roll), next year's increase at renewal at the market's normal yearly rate is a valid move — confirm that rate for this market on the web (it is often about 3%). It is a new year on top of the rent the approved underwriting already counts, not the underwriting's rent story again: measure it on the underwritten rent, net of the vacancy and the management fee each version applies, over the leases that renew in the next 12 months when the rent roll's lease dates show them.",
+      "RENT GROWTH: once the property is stabilized — about 95% occupied or more on the rent roll, or, with no rent roll, a vacancy loss of about 5% of gross potential rent or less on the T12 — next year's increase at renewal at the market's normal yearly rate is a valid move: confirm that rate for this market on the web (it is often about 3%). It is a new year on top of the rent the approved underwriting already counts, not the underwriting's rent story again: measure the full-year effect once every lease has renewed at the higher rent, on the underwritten rent, net of the vacancy and the management fee each version applies, and say so in the rationale. The rent roll's lease dates, when given, show how much of it lands in the next 12 months; they are not needed to confirm the move.",
       "RULE 3 — measure every move three times, each as a plain annual dollar NUMBER, positive when it raises the NOI: impactInPlace on the in-place T12 NOI, impactSafe on the Safe underwriting, impactAggressive on the Aggressive underwriting. Each is NET of what that version already counts and of that version's own rules: where a version already captured part of the gain the impact there is smaller (the same move can be worth $50,000 on the in-place T12 and $35,000 on Safe); where a version sets an account as a % of revenue (percentOfRevenueAccounts — the management fee, for example), more revenue also raises that account there, so the net is smaller; a version where the move adds nothing gets 0.",
       "For each move return: title — a short plain-words heading; impact — your best estimate of the annual effect in words (for example \"about $100,000 a year on the in-place NOI\"); lever — the one thing it pulls, in a few words (for example \"rent growth at renewal\", \"fee increase\", \"contract re-bid\", \"tax appeal\"); accounts — the T12 accounts or lines it acts on, by their names as given; besideStory — the underwriting story it sits next to, or empty; impactInPlace, impactSafe, impactAggressive — the three numbers; effort — light, moderate or heavy; rationale — two or three sentences grounded in the briefing's own figures and what you checked; checked — every check behind it.",
       "Use the benchmark targets to find operational upside: for a line with a benchmark (payroll and repairs and maintenance especially), work out the line's actual dollars per unit from the statement and compare; when it runs more than about 15% ABOVE its benchmark, name it and state the annual dollar gap.",
@@ -8258,9 +8279,10 @@ tr.flagged:hover td{background:#fee2e2}
       const gate = opPushInput(key); if(!gate){ return; }
       const bench = uwState.input.bench, at = { vacancyPct: bench.vacancyPct, mgmtPct: bench.mgmtPct }, sig = opPushSig(key);
       opPushCache.set(key, { loading: true }); opRenderPush();
+      let missing = [];
       // (2026-10-21) the shared briefing — the same one Claude's stories get; Claude may search the web (minutes, not seconds)
       return aiPropertyBriefing(key)
-        .then((input) => { if(!input) throw new Error("Read this property’s T12 and approve its underwriting first."); return ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 900000 }); })
+        .then((input) => { if(!input) throw new Error("Read this property’s T12 and approve its underwriting first."); missing = aiBriefingGaps(input); return ldsShell.aiExtract({ instruction: AI_PUSH_INSTRUCTION, schema: aiPushSchema(), input: JSON.stringify(input), timeoutMs: 900000 }); })
         .then((r) => {
           if(!r || !r.ok){ opPushCache.set(key, { error: (r && r.error) || "Claude could not analyse this property." }); }
           else { const d = r.data || {};
@@ -8270,7 +8292,7 @@ tr.flagged:hover td{background:#fee2e2}
             const raises = all.filter(m => m && !neg(m.impactInPlace) && !neg(m.impactSafe) && !neg(m.impactAggressive));
             const kept = raises.filter(aiConfirmed);
             const dropped = all.filter(m => raises.indexOf(m) < 0).map(m => ({ title: String((m && m.title) || ""), why: "it would lower the NOI" }));
-            const push = { summary: d.summary || "", moves: kept, dropped: dropped, unconfirmed: raises.length - kept.length, overlaps: Array.isArray(d.overlaps) ? d.overlaps : [], at: at, computedAt: new Date().toISOString(), sig: sig,
+            const push = { summary: d.summary || "", moves: kept, dropped: dropped, unconfirmed: raises.length - kept.length, missing: missing, overlaps: Array.isArray(d.overlaps) ? d.overlaps : [], at: at, computedAt: new Date().toISOString(), sig: sig,
               webSearches: (typeof r.webSearches === "number") ? r.webSearches : null, searches: Array.isArray(d.searches) ? d.searches.slice(0, 30) : [],
               appNOI: { inPlace: gate.appNOI.inPlace, safe: gate.appNOI.safe, aggressive: gate.appNOI.aggressive } };   // 2.9.11 — no copy of the address (one source); the NOI it was measured from   // 2.9.7 (#78) — what it was run on
             opPushCache.set(key, push);
@@ -8329,7 +8351,7 @@ tr.flagged:hover td{background:#fee2e2}
           (changed ? '<p class="mt-1 text-[11px] text-amber-700">The approved underwriting changed since this read &mdash; re-analyse to refresh it.</p>' : '')+
           '</div><div class="shrink-0">'+runBtn("Re-analyse")+'</div></div>';
         const moves = state.moves.slice().sort((a,b) => (Number(a.rank)||99) - (Number(b.rank)||99));
-        if(!moves.length){ body = state.beforeChecks ? aiBeforeChecksHtml(state) : '<p class="mt-3 text-[12px] text-slate-500">Claude found no move worth pushing on this property that it could confirm.</p>'+aiWebLine(state); }
+        if(!moves.length){ body = state.beforeChecks ? aiBeforeChecksHtml(state) : '<p class="mt-3 text-[12px] text-slate-500">Claude found no move worth pushing on this property that it could confirm.</p>'+aiGapsHtml(state)+aiWebLine(state); }
         else {
           const effortPill = (e) => { const k = (e||"").toLowerCase(), c = k==="heavy"?"bg-rose-100 text-rose-700":k==="light"?"bg-emerald-100 text-emerald-700":"bg-amber-100 text-amber-800"; return '<span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase '+c+'">'+escapeHtml(e||"moderate")+' effort</span>'; };
           const cards = moves.map((mv,i) => {
@@ -8350,7 +8372,7 @@ tr.flagged:hover td{background:#fee2e2}
             '</li>'; }).join("");
           body = '<ul class="mt-3 space-y-2">'+cards+'</ul>'+
             ((state.dropped && state.dropped.length) ? '<p class="mt-2 text-[11px] text-slate-400" data-pushdropped>Left out ('+state.dropped.length+'): '+escapeHtml(state.dropped.map(d => d.title + " — " + d.why).join("; "))+'.</p>' : '')+
-            aiWebLine(state)+
+            aiGapsHtml(state)+aiWebLine(state)+
             '<p class="mt-2 text-[10px] text-slate-400">Claude read this property&rsquo;s statement, rent roll, documents and approved underwriting, searched around it on the web, and chose, ranked and sized these itself &mdash; only ones it confirmed. The figures are Claude&rsquo;s estimates. A starting point, not advice.</p>';
         }
       } else {

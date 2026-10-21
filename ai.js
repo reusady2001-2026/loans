@@ -345,6 +345,10 @@ async function extract(opts){
 }
 
 function webCount(u){ const n = u && u.server_tool_use && u.server_tool_use.web_search_requests; return (typeof n === 'number' && isFinite(n)) ? n : null; }
+// Claude Code runs its WebSearch tool in a call of its own, so the run's usage can read 0 searches when there were
+// some (the operator saw "did not search" under a read that quoted RealPage). From the CLI only a count above 0 is
+// taken as a fact; otherwise it is unknown (null) and the app goes by the searches Claude lists.
+function cliWebCount(u){ const n = webCount(u); return n > 0 ? n : null; }
 const WEB_TOOLS = 'WebSearch,WebFetch';
 // Every request, with the web on: what it reads (files, statements, web pages) is data, never instructions, and the
 // operator's data never leaves in a search or a web address.
@@ -371,7 +375,7 @@ function runCli({ instruction, schema, input, model, timeoutMs }){
       let data = j.structured_output;
       if (data == null && typeof j.result === 'string') { try { data = JSON.parse(j.result); } catch (e) {} }
       if (data == null) return finish({ ok: false, error: 'The CLI returned no structured output.' });
-      finish({ ok: true, data: data, via: 'cli', cost: j.total_cost_usd, webSearches: webCount(j.usage) });
+      finish({ ok: true, data: data, via: 'cli', cost: j.total_cost_usd, webSearches: cliWebCount(j.usage) });
     });
     try { p.stdin.write(String(input || '')); p.stdin.end(); } catch (e) {}
   });
@@ -433,7 +437,7 @@ function runCliChat({ system, prompt, model, effort, timeoutMs, cancelToken }){
       if (j.is_error || j.subtype !== 'success') return finish({ ok: false, error: (typeof j.result === 'string' ? j.result : 'The CLI reported an error.') });
       const text = (typeof j.result === 'string') ? j.result : '';
       if (!text) return finish({ ok: false, error: 'The CLI returned an empty answer.' });
-      finish({ ok: true, text: text, via: 'cli', cost: j.total_cost_usd, webSearches: webCount(j.usage) });
+      finish({ ok: true, text: text, via: 'cli', cost: j.total_cost_usd, webSearches: cliWebCount(j.usage) });
     });
   });
 }

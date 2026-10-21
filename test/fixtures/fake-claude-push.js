@@ -152,5 +152,6 @@ function answerStories(raw){
   // (2026-10-21) never shown: no check named
   if (snow) stories.push({ line: snow.line, account: snow.account, how: 'accountTotal', value: 5000, kind: 'normalized', story: 'FAKE-UNCONFIRMED-STORY a mild winter is coming.', basis: 'x', checked: [] });
   const data = { summary: 'FAKE-STORIES-SUMMARY ' + stories.length + ' suggestions', stories, searches: ['FAKE-SEARCH snowfall January 2025'] };
-  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0, usage: { server_tool_use: { web_search_requests: 1 } } }));
+  // $LDS_FAKE_CLI_ZERO_SEARCHES: like the real Claude Code, whose own usage reads 0 searches when there were some
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, structured_output: data, result: JSON.stringify(data), total_cost_usd: 0, usage: { server_tool_use: { web_search_requests: process.env.LDS_FAKE_CLI_ZERO_SEARCHES ? 0 : 1 } } }));
 }

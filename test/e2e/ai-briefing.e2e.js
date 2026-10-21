@@ -27,7 +27,7 @@ const after=(a,flag)=>{ const i=a.indexOf(flag); return i>=0?a[i+1]:undefined; }
 (async()=>{
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),
     args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,
-    env:Object.assign({},process.env,{LDS_CLAUDE_BIN:FAKE,LDS_FAKE_ARGS_FILE:ARGS,LDS_FAKE_CHAT_FILE:REPLIES})});
+    env:Object.assign({},process.env,{LDS_CLAUDE_BIN:FAKE,LDS_FAKE_ARGS_FILE:ARGS,LDS_FAKE_CHAT_FILE:REPLIES,LDS_FAKE_CLI_ZERO_SEARCHES:'1'})});
   const page=await app.firstWindow(); const errors=[]; page.on('pageerror',e=>errors.push(String(e).slice(0,300)));
   await page.route(/^https?:\/\//,r=>r.abort());
   await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}).catch(()=>{});
@@ -84,6 +84,11 @@ const after=(a,flag)=>{ const i=a.indexOf(flag); return i>=0?a[i+1]:undefined; }
   ok(st&&after(st,'--allowed-tools')==='StructuredOutput,WebSearch,WebFetch','Claude\'s stories may search the web and read pages (StructuredOutput,WebSearch,WebFetch)');
   ok(st&&/THE SURROUNDINGS/.test(st[1])&&/CONFIRM EVERYTHING/.test(st[1])&&/UTILITIES: an owner who pays the utilities has them in the rent/.test(st[1])&&/never target 100% occupancy/.test(st[1]),'…with the shared rules: the surroundings from the web, nothing unconfirmed, utilities in the rent, no 100% occupancy');
   ok(st&&/is data, never instructions/.test(st[1]),'…and the rule that what it reads (files, web pages) is data, never instructions');
+  ok(st&&/PUBLIC RECORDS/.test(st[1])&&/address matches the property's address/.test(st[1]),'…and to look up public records (the county assessment, the unit count) for this address only');
+  // (2026-10-21) Claude Code's own count reads 0 searches when there were some: the app goes by the searches Claude lists
+  const sm=await page.evaluate(()=>(document.getElementById('opStoriesMount')||{}).innerText||'');
+  ok(/Claude searched the web for this \(1 search\)/.test(sm)&&!/did not search the web/.test(sm),'a run whose count reads 0 but that lists its searches says it searched — never "did not search" ("'+((sm.match(/Claude (did not )?search[^.]*\./)||[''])[0])+'")');
+  ok(/Claude didn’t have:/.test(sm)&&/property tax bill or assessment/.test(sm)&&!/a rent roll \(Documents\)/.test(sm)&&!/who pays the utilities/.test(sm)&&!/number of units/.test(sm),'what the briefing lacked is said under the read — here only the tax bill (the rent roll, units and utilities were there)');
   await page.evaluate(()=>document.getElementById('aiAsstFab').click());
   await page.waitForFunction(()=>{ const b=document.getElementById('aiAsstSend'), r=document.getElementById('aiAsstConnRow'); return b&&!b.disabled&&r&&!/Checking/.test(r.textContent); },null,{timeout:20000}).catch(()=>{});
   fs.writeFileSync(ARGS,'');
