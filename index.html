@@ -4138,7 +4138,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div id="uwRentRollBox"></div>'+
         '</div>'+
         '<div id="uwSetupOut" class="space-y-6">'+(b ? uwSetupOutputHtml(b) : '')+'</div>'+
-        opGeneralDataHtml(opFocusKey);
+        '<div id="uwGDCard">'+opGeneralDataHtml(opFocusKey)+'</div>';
       // attach file-drop handlers (innerHTML was just replaced)
       const fileInput = view.querySelector("#uwFile");
       if(fileInput) fileInput.onchange = (ev)=>{ const f = ev.target.files && ev.target.files[0]; if(f) uwHandleFile(f); };
@@ -5683,6 +5683,9 @@ tr.flagged:hover td{background:#fee2e2}
         var pr = opProp(key);
         await ldsShell.docSave({ propKey: key, propName: pr ? pr.name : key, name: "assumptions.json", base64: btoa(str), text: "", type: "application/json", role: "assumptions" });
         await opRefreshGeneralDataNOI(key);   // the underwritten NOI just moved — keep General Data current
+        // …and what shows it: the General Data card and the portfolio roll-up (an approval, for one, changes both)
+        if(opFocusKey === key){ const gc = el("uwGDCard"); if(gc) gc.innerHTML = opGeneralDataHtml(key); }
+        try{ opRenderPortfolio(); }catch(e){}
       }catch(e){}
     }
 

@@ -1045,7 +1045,8 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     General Data kept an approval "current" after new units moved the reserves (now it follows the chip); a package
     with mixed bases read "sized on the the basis chosen per property NOI" (now "each property's NOI on the basis
     chosen for it"); the package total sat under "+ ticked pushes" (now under NOI, with what the pushes add beside
-    it); the Guide's search opened scrolled to the end of the results.
+    it); the Guide's search opened scrolled to the end of the results; after approving, the General Data card and the
+    portfolio roll-up kept the old figures until the property was opened again (now they redraw at once).
   - **Assistant:** `set_refi_noi_basis {name, basis, property?}` takes in-place / safe / aggressive (a package names the
     property); `toggle_refi_move` ticks a push on its own property; `pin_underwriting_line` is refused (lines aren't
     pinned); `read_property` gives `underwritingSafe`, `underwritingAggressive`, `underwritingApproved`.
