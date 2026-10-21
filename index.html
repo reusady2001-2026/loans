@@ -5080,7 +5080,9 @@ tr.flagged:hover td{background:#fee2e2}
     function aiCheckedHtml(it){
       const cs = (it && Array.isArray(it.checked) ? it.checked : []).filter(c => c && String(c.what || "").trim()); if(!cs.length) return "";
       return '<div class="mt-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-600" data-aichecked><span class="font-semibold text-slate-700">Checked:</span><ul class="ml-3 list-disc">'+
-        cs.map(c => '<li><span class="font-semibold text-slate-500">'+escapeHtml(AI_SRC_LABEL[c.source] || c.source || "")+(c.site ? ' &middot; '+escapeHtml(c.site) : '')+(c.date ? ' &middot; '+escapeHtml(c.date) : '')+':</span> '+escapeHtml(c.what)+'</li>').join('')+'</ul></div>';
+        cs.map(c => { const lab = AI_SRC_LABEL[c.source] || c.source || "";
+          const what = lab ? String(c.what).replace(new RegExp("^" + lab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:,]\\s*", "i"), "") : String(c.what);   // "T12: T12, Utilities…" → "T12: Utilities…"
+          return '<li><span class="font-semibold text-slate-500">'+escapeHtml(lab)+(c.site ? ' &middot; '+escapeHtml(c.site) : '')+(c.date ? ' &middot; '+escapeHtml(c.date) : '')+':</span> '+escapeHtml(what)+'</li>'; }).join('')+'</ul></div>';
     }
     // What the run did on the web, from the count Claude Code / the API report (not Claude's own word)
     function aiWebLine(rec){
