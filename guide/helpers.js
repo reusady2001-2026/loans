@@ -29,7 +29,8 @@ module.exports = function (page, app, ctx) {
     select: async (sel, v, o) => { o = o || {}; await page.locator(sel).nth(o.nth || 0).selectOption(v); await page.waitForTimeout(o.wait != null ? o.wait : 300); },
     hover: async (sel, nth) => { await page.locator(sel).nth(nth || 0).hover(); await page.waitForTimeout(300); },
     scroll: async (sel, nth, block) => { await page.locator(sel).nth(nth || 0).evaluate((e, b) => e.scrollIntoView({ block: b || "start" }), block || "start"); await page.waitForTimeout(250); },
-    top: async () => { await page.evaluate(() => { window.scrollTo(0, 0); document.querySelectorAll("main, [data-scrollroot]").forEach(e => { e.scrollTop = 0; }); }); await page.waitForTimeout(200); },
+    // at once: the page scrolls smoothly by itself, and a picture taken while it is still moving is cut wrong
+    top: async () => { await page.evaluate(() => { window.scrollTo({ top: 0, behavior: "instant" }); document.querySelectorAll("main, [data-scrollroot]").forEach(e => { e.scrollTo({ top: 0, behavior: "instant" }); }); }); await page.waitForTimeout(200); },
     key: async (k) => { await page.keyboard.press(k); await page.waitForTimeout(250); },
     // the tab strip: Portfolio (home), and the "+" menu's Underwriting, Calendar and Data Health
     home: async () => { await page.evaluate(() => { const b = document.querySelector('[data-tabsel="home"]'); if (b) b.click(); }); await page.waitForTimeout(600); await h.calm(); },

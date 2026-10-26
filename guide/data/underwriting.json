@@ -1,2084 +1,3288 @@
 {
  "id": "underwriting",
- "title": "Underwriting & Sizing",
- "intro": "Upload a property’s T12, draft its underwriting — Safe and Aggressive, account by account, each change with its story — approve it, then see what you can still push and what loan each version supports.",
- "cover": "img/underwriting/open-02.jpg",
- "topics": [
+ "pages": [
   {
-   "id": "open",
-   "title": "Open Underwriting",
-   "intro": "Underwriting opens in its own tab, from the “+” at the end of the tab strip.",
-   "steps": [
-    {
-     "title": "The “+” menu",
-     "text": "Click the “+” at the end of the tab strip. It lists the tools that open in a tab of their own.",
-     "img": "img/underwriting/open-01.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 12.4,
-       "y": 15.7,
-       "w": 1.9,
-       "h": 3.1,
-       "label": "+",
-       "text": "Opens this menu: a tool in a new tab."
-      },
-      {
-       "x": 12.8,
-       "y": 24.2,
-       "w": 15.7,
-       "h": 4,
-       "label": "Underwriting & Sizing",
-       "text": "The T12, the underwriting (Safe and Aggressive), what to push and debt sizing — this chapter."
-      },
-      {
-       "x": 12.8,
-       "y": 28.2,
-       "w": 15.7,
-       "h": 6.2,
-       "label": "Maturity & Reset Calendar",
-       "text": "Every maturity, rate reset and interest-only step-up, month by month."
-      },
-      {
-       "x": 12.8,
-       "y": 34.4,
-       "w": 15.7,
-       "h": 4,
-       "label": "Data Health",
-       "text": "What is missing or needs a look, across the whole book."
-      }
-     ]
-    },
-    {
-     "title": "The Underwriting tab",
-     "text": "Underwriting opens as a tab next to Portfolio. Keep several tools open and switch between them; each tab can also open in a window of its own.",
-     "img": "img/underwriting/open-02.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 3.9,
-       "y": 15.2,
-       "w": 7.9,
-       "h": 4.2,
-       "label": "Portfolio",
-       "text": "Back to the portfolio (Home)."
-      },
-      {
-       "x": 12.1,
-       "y": 15.2,
-       "w": 13.7,
-       "h": 4.2,
-       "label": "Underwriting",
-       "text": "This tab."
-      },
-      {
-       "x": 22.3,
-       "y": 16.4,
-       "w": 1.1,
-       "h": 1.8,
-       "label": "Pop out",
-       "text": "Opens this tab in its own window — handy on a second screen."
-      },
-      {
-       "x": 23.8,
-       "y": 16.4,
-       "w": 1.1,
-       "h": 1.8,
-       "label": "Close tab",
-       "text": "Closes the tab. Nothing is lost: the property’s T12, its underwriting and its approval are saved with the property."
-      },
-      {
-       "x": 10.4,
-       "y": 31.1,
-       "w": 83.5,
-       "h": 3.6,
-       "label": "Property",
-       "text": "The property to underwrite. A property that already has a T12 loads it, with its underwriting."
-      },
-      {
-       "x": 5.1,
-       "y": 36.6,
-       "w": 88.8,
-       "h": 14.7,
-       "label": "The T12 box",
-       "text": "Where the property’s T12 file goes (next topic)."
-      },
-      {
-       "x": 90.8,
-       "y": 23.2,
-       "w": 4.2,
-       "h": 3.3,
-       "label": "Clear",
-       "text": "Empties this screen. The property’s saved files and figures stay."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "upload",
+   "id": "upload-a-t12",
+   "kind": "howto",
+   "group": "Underwriting",
    "title": "Upload a T12",
-   "intro": "Two ways: drag the file onto the box, or click “choose a file” and pick it from your computer. Excel and CSV exports are read; the T12 sheet is found by itself. Without a T12 there is no underwriting — and no refinance.",
-   "steps": [
+   "description": "Give a property its T12, so the app can read it and start the underwriting.",
+   "intro": "The T12 is where a property’s underwriting starts: every account, month by month, and the in-place NOI. Upload it in Underwriting: the app saves it in the property’s folder, reads and checks it, and starts the underwriting draft from it. Without a T12 there is no underwriting, and no refinance.",
+   "before": [
+    "The property in the app — see [Add a property](add-a-property).",
+    "The property’s T12 as an Excel or CSV export."
+   ],
+   "sections": [
     {
-     "title": "Pick the property first",
-     "text": "Choose the property in the Property list. The T12 you upload is saved in that property’s folder, and read from there from now on.",
-     "img": "img/underwriting/upload-01.jpg",
-     "w": 1313,
-     "h": 347,
-     "marks": [
+     "id": "open-underwriting",
+     "title": "Open Underwriting",
+     "steps": [
       {
-       "x": 7.2,
-       "y": 4.9,
-       "w": 91.5,
-       "h": 9.2,
-       "label": "Property",
-       "text": "The property this T12 belongs to."
+       "text": "Click **+** at the end of the tab strip, then **Underwriting & Sizing**. Underwriting opens in a tab of its own.",
+       "img": "img/underwriting/upload-a-t12-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 11.6,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens the menu of tools that open in a tab."
+        },
+        {
+         "x": 12.1,
+         "y": 24.2,
+         "w": 15.7,
+         "h": 4,
+         "label": "Underwriting & Sizing",
+         "text": "Opens the Underwriting tab."
+        }
+       ]
       },
       {
-       "x": 1.3,
-       "y": 19,
-       "w": 97.4,
-       "h": 38.2,
-       "label": "Drag and drop",
-       "text": "Drag the T12 file from your folder (File Explorer) and let go over this box."
-      },
-      {
-       "x": 54,
-       "y": 38.1,
-       "w": 7.6,
-       "h": 5.8,
-       "label": "choose a file",
-       "text": "Or click here: your computer’s file window opens — find the T12, click it, then Open."
+       "text": "Pick the property in **Property**. A property that already has a T12 loads it, with its underwriting.",
+       "img": "img/underwriting/upload-a-t12-02.jpg",
+       "w": 1313,
+       "h": 348,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 4.9,
+         "w": 92.3,
+         "h": 9.5,
+         "label": "Property",
+         "text": "The property the T12 belongs to."
+        },
+        {
+         "x": 1.3,
+         "y": 19.3,
+         "w": 97.4,
+         "h": 38.1,
+         "label": "The T12 box",
+         "text": "Drop the file here."
+        },
+        {
+         "x": 53.2,
+         "y": 38.2,
+         "w": 6.5,
+         "h": 5.7,
+         "label": "choose a file",
+         "text": "Or pick the file in your computer’s file window."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Read by the reader and the AI",
-     "text": "The file is saved to the property’s folder and read twice — by the app’s own reader and by Claude — before anything from it is used. When every check passes and both agree, it is used at once, and the underwriting draft starts from it by itself; otherwise a window shows you the rows and you decide (the Documents chapter shows that window in full).",
-     "img": "img/underwriting/upload-02.jpg",
-     "w": 1313,
-     "h": 464,
-     "marks": [
+     "id": "upload-the-file",
+     "title": "Upload the file",
+     "steps": [
       {
-       "x": 33.8,
-       "y": 38.9,
-       "w": 24.8,
-       "h": 5.3,
-       "label": "Setup built",
-       "text": "The file’s name, and that the table below was built from it."
+       "text": "Drag the T12 file from its folder and let go over the box. Or click **choose a file**, pick the T12 and click **Open**."
       },
       {
-       "x": 59.2,
-       "y": 39.3,
-       "w": 7,
-       "h": 4.1,
-       "label": "file verified",
-       "text": "The file was read in full and its totals tie to the statement."
-      },
-      {
-       "x": 1.3,
-       "y": 52.3,
-       "w": 97.4,
-       "h": 9.6,
-       "label": "Checked by the reader and the AI",
-       "text": "Both readings agree — the figures are in use."
-      },
-      {
-       "x": 79.1,
-       "y": 54.3,
-       "w": 10.8,
-       "h": 5.7,
-       "label": "Review the reading",
-       "text": "Opens how each row of the file was read (next step)."
-      },
-      {
-       "x": 90.5,
-       "y": 54.3,
-       "w": 7,
-       "h": 5.7,
-       "label": "Read again",
-       "text": "Reads the file again from the start."
-      },
-      {
-       "x": 19.6,
-       "y": 64.7,
-       "w": 5.9,
-       "h": 2.8,
-       "label": "NOI used",
-       "text": "The in-place NOI the app uses from this file, and the months it covers."
+       "text": "Wait while the file is read. The app’s own reader and Claude each read it. When every check passes and both agree, the T12 is used at once, and the underwriting draft starts from it.",
+       "img": "img/underwriting/upload-a-t12-03.jpg",
+       "w": 1313,
+       "h": 465,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 52.4,
+         "w": 97.4,
+         "h": 9.6,
+         "label": "Checked by the reader and the AI",
+         "text": "Both readings agree: the figures are in use."
+        },
+        {
+         "x": 18.6,
+         "y": 64.8,
+         "w": 5.3,
+         "h": 3,
+         "label": "NOI used",
+         "text": "The in-place NOI from this T12, and the months it covers."
+        },
+        {
+         "x": 81.4,
+         "y": 54.4,
+         "w": 9.4,
+         "h": 5.7,
+         "label": "Review the reading",
+         "text": "How each row of the file was read."
+        }
+       ],
+       "callouts": [
+        {
+         "kind": "note",
+         "text": "When a check fails, Claude reads the file differently, or Claude isn’t connected, a window asks you to decide. Until then the T12 waits, unused. See [Check a T12](check-a-t12)."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Review the reading",
-     "text": "Every row of the file as the reader read it: what it is (an account, a category, a total), income or expense, its category in the file, the underwriting line it lands on, the amount used, and a check against its months. You can change any of these, with a note; nothing is saved until you click Save.",
-     "img": "img/underwriting/upload-03.jpg",
-     "w": 1401,
-     "h": 876,
-     "marks": [
+     "id": "enter-the-units",
+     "title": "Enter the units",
+     "steps": [
       {
-       "x": 1.4,
-       "y": 6.6,
-       "w": 10.9,
-       "h": 1.8,
-       "label": "The verdict",
-       "text": "Whether every check passes and the AI agrees with the reader."
-      },
+       "text": "Type the number of apartments in **Units**. When the app asks to update the property’s profile to match, click **OK**.",
+       "img": "img/underwriting/upload-a-t12-04.jpg",
+       "w": 1313,
+       "h": 465,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Units",
+         "text": "From the rent roll. Sets the replacement reserves and every per-unit figure."
+        },
+        {
+         "x": 34.1,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Gross potential rent — per year",
+         "text": "Optional: a year’s rent with every unit leased at market."
+        },
+        {
+         "x": 66.8,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Average rent per unit — per month",
+         "text": "Or the average monthly rent for one unit."
+        }
+       ]
+      }
+     ],
+     "callouts": [
       {
-       "x": 21,
-       "y": 24.1,
-       "w": 12,
-       "h": 4.4,
-       "label": "What the reader made of it",
-       "text": "Account, category name, total, header… change it when the reader got a row wrong."
-      },
-      {
-       "x": 53.3,
-       "y": 24.1,
-       "w": 13.3,
-       "h": 4.4,
-       "label": "Underwriting line",
-       "text": "The line of the Underwriting table this account adds to."
-      },
-      {
-       "x": 75.7,
-       "y": 24.1,
-       "w": 12.6,
-       "h": 4.4,
-       "label": "Your note",
-       "text": "Why you changed a row — kept with the reading."
-      },
-      {
-       "x": 72.8,
-       "y": 94.7,
-       "w": 13.6,
-       "h": 3.9,
-       "label": "Close without saving",
-       "text": "Closes the window and keeps the reading as it was."
-      },
-      {
-       "x": 87,
-       "y": 94.7,
-       "w": 11.6,
-       "h": 3.9,
-       "label": "Save this reading",
-       "text": "Saves your changes; every figure from this T12 follows them."
+       "kind": "note",
+       "text": "A gross potential rent above the T12’s comes into the draft as a suggestion, never by itself. Leave it blank to keep the statement’s rent."
       }
      ]
+    }
+   ],
+   "next": [
+    {
+     "page": "draft-the-underwriting",
+     "anchor": "",
+     "text": "Draft Safe and Aggressive from the T12."
+    },
+    {
+     "page": "check-a-t12",
+     "anchor": "",
+     "text": "See how each row of a T12 was read, and correct it."
+    },
+    {
+     "page": "ref-underwriting",
+     "anchor": "",
+     "text": "Every part of the Underwriting tab, named."
     }
    ]
   },
   {
-   "id": "units",
-   "title": "Units and rent",
-   "intro": "Three boxes under the file: the units, and the gross potential rent (a year’s figure, or the average rent per unit).",
-   "steps": [
+   "id": "draft-the-underwriting",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "Draft the underwriting",
+   "description": "Turn the T12 into a Safe and an Aggressive underwriting, with a story for every change.",
+   "intro": "The underwriting is the NOI you ask a lender to accept: the T12, with the changes you can explain. It has two versions. Safe is what you would defend line by line; Aggressive is Safe plus the changes a cautious lender may not accept. Both start as the T12 less the replacement reserves, and stay a draft until you approve them.",
+   "before": [
+    "A T12 for the property — see [Upload a T12](upload-a-t12)."
+   ],
+   "sections": [
     {
-     "title": "Units, gross potential rent, average rent",
-     "text": "The units set the replacement reserves (taken off Safe and Aggressive) and every per-unit figure. A gross potential rent above the T12’s comes into the draft as a suggestion; leave it blank to keep the statement’s rent.",
-     "img": "img/underwriting/units-01.jpg",
-     "w": 1313,
-     "h": 464,
-     "marks": [
+     "id": "set-the-assumptions",
+     "title": "Set the assumptions",
+     "steps": [
       {
-       "x": 1.3,
-       "y": 75.8,
-       "w": 31.9,
-       "h": 7.3,
-       "label": "Units",
-       "text": "How many apartments the property has (from the rent roll). Typing it here also asks to save it in the property’s profile."
+       "text": "Scroll down to **Underwriting assumptions**, under the underwriting table."
       },
       {
-       "x": 34.1,
-       "y": 75.8,
-       "w": 31.9,
-       "h": 7.3,
-       "label": "Gross potential rent — per year",
-       "text": "A year’s rent if every unit were leased at market, before vacancy. When it is above the T12’s rent, the draft suggests it (with its story) — never applied by itself."
+       "text": "Type the property’s **Vacancy**, **Management fee** and **Reserves / unit**, and your payroll and R&M benchmarks.",
+       "img": "img/underwriting/draft-the-underwriting-01.jpg",
+       "w": 1279,
+       "h": 282,
+       "marks": [
+        {
+         "x": 57.3,
+         "y": 36.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Vacancy",
+         "text": "A vacancy that runs above it gets a suggestion at it."
+        },
+        {
+         "x": 90.9,
+         "y": 36.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Management fee",
+         "text": "The same, as a % of effective gross income."
+        },
+        {
+         "x": 23.6,
+         "y": 51.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Reserves / unit",
+         "text": "A year’s replacement reserves per unit, taken off Safe and Aggressive."
+        },
+        {
+         "x": 0,
+         "y": 13.3,
+         "w": 12.6,
+         "h": 9.9,
+         "label": "Save to property record",
+         "text": "Keeps them with the property, for every screen."
+        }
+       ]
       },
       {
-       "x": 66.8,
-       "y": 75.8,
-       "w": 31.9,
-       "h": 7.3,
-       "label": "Average rent per unit — per month",
-       "text": "Easier than the yearly figure: the average monthly rent for one unit; the app works out average × units × 12."
+       "text": "Click **Save to property record**."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The assumptions never change the underwriting by themselves. A line that runs worse than one gets a suggestion in the draft; one that would lower the NOI gets only a warning."
       }
      ]
+    },
+    {
+     "id": "read-the-starting-figures",
+     "title": "Read the starting figures",
+     "steps": [
+      {
+       "text": "Scroll back up to the three figures under the T12: the in-place NOI, and the Safe and Aggressive underwriting NOI after the reserves.",
+       "img": "img/underwriting/draft-the-underwriting-02.jpg",
+       "w": 1313,
+       "h": 99,
+       "marks": [
+        {
+         "x": 1,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "In-place NOI",
+         "text": "The T12’s own NOI."
+        },
+        {
+         "x": 34.6,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "Safe underwriting NOI",
+         "text": "The T12 with Safe’s changes, less the reserves."
+        },
+        {
+         "x": 68.3,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "Aggressive underwriting NOI",
+         "text": "Safe plus Aggressive’s own changes, less the reserves."
+        },
+        {
+         "x": 34.6,
+         "y": 56.6,
+         "w": 30.7,
+         "h": 15.2,
+         "label": "draft · not approved yet",
+         "text": "Nothing else uses it until you approve it."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "change-the-accounts",
+     "title": "Change the accounts",
+     "steps": [
+      {
+       "text": "In the underwriting bar above the table, click **Safe** or **Aggressive**. The **Underwriting** column shows that version.",
+       "img": "img/underwriting/draft-the-underwriting-03.jpg",
+       "w": 1279,
+       "h": 126,
+       "marks": [
+        {
+         "x": 13.2,
+         "y": 11.1,
+         "w": 3.9,
+         "h": 19,
+         "label": "Safe",
+         "text": "Shows the Safe version."
+        },
+        {
+         "x": 17.2,
+         "y": 11.1,
+         "w": 7,
+         "h": 19,
+         "label": "Aggressive",
+         "text": "Shows the Aggressive version."
+        },
+        {
+         "x": 25,
+         "y": 14.1,
+         "w": 31.6,
+         "h": 13.1,
+         "label": "The two NOIs",
+         "text": "The version shown first, then the other."
+        }
+       ]
+      },
+      {
+       "text": "Click a figure in the **Underwriting** column. A window opens with every account of that line: change them there, one by one, each with its story. See [Change an account](change-an-account).",
+       "img": "img/underwriting/draft-the-underwriting-04.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 66.4,
+         "y": 13.3,
+         "w": 19,
+         "h": 2.9,
+         "label": "Underwriting · Safe",
+         "text": "The version the switch shows, line by line."
+        },
+        {
+         "x": 78,
+         "y": 74,
+         "w": 7.2,
+         "h": 2.9,
+         "label": "A figure",
+         "text": "Click it to open the line’s accounts."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Aggressive starts as Safe and adds its own changes; on an account changed for both, Aggressive’s own change wins in Aggressive. Every change says where it applies: Safe, Aggressive or Both."
+      },
+      {
+       "kind": "tip",
+       "text": "Money the T12 has no account for goes in with **+ Add an account** — see [Add an account](add-an-account). For the changes Claude finds for you, see [Use Claude’s stories and suggestions](use-claudes-stories)."
+      }
+     ]
+    },
+    {
+     "id": "check-how-it-adds-up",
+     "title": "Check how it adds up",
+     "steps": [
+      {
+       "text": "Scroll below the table. One box per version adds it up: the T12 NOI, each change grouped by its kind with its story, the replacement reserves and the underwriting NOI.",
+       "img": "img/underwriting/draft-the-underwriting-05.jpg",
+       "w": 1279,
+       "h": 157,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 49.5,
+         "h": 100,
+         "label": "Safe — how it adds up",
+         "text": "T12 NOI + each change − reserves."
+        },
+        {
+         "x": 39,
+         "y": 8.8,
+         "w": 9.5,
+         "h": 9.6,
+         "label": "reconciles to the dollar",
+         "text": "The changes add up exactly."
+        },
+        {
+         "x": 42,
+         "y": 79.2,
+         "w": 6.5,
+         "h": 12.5,
+         "label": "= Safe underwriting NOI",
+         "text": "The figure you approve."
+        }
+       ]
+      },
+      {
+       "text": "When both versions are what you would show, approve them — see [Approve the underwriting](approve-the-underwriting). Until then nothing else uses the draft: **What to push**, at the bottom of the tab, waits for the approval.",
+       "img": "img/underwriting/draft-the-underwriting-06.jpg",
+       "w": 1313,
+       "h": 78,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 52.6,
+         "w": 97.4,
+         "h": 25.6,
+         "label": "Approve the underwriting first",
+         "text": "What to push works from the approved Safe and Aggressive."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "change-an-account",
+     "anchor": "",
+     "text": "Change an account, with its kind and story."
+    },
+    {
+     "page": "use-claudes-stories",
+     "anchor": "",
+     "text": "Let Claude find the changes a lender would accept."
+    },
+    {
+     "page": "approve-the-underwriting",
+     "anchor": "",
+     "text": "Make Safe and Aggressive the property’s underwriting."
     }
    ]
   },
   {
-   "id": "table",
-   "title": "The underwriting table",
-   "intro": "Every line of the T12, classified: the statement’s figure (In-Place) and the underwriting (Safe or Aggressive), each per unit. The underwriting starts as the T12 less the reserves — a draft until you approve it.",
-   "steps": [
+   "id": "change-an-account",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "Change an account",
+   "description": "Give one account a new figure in the underwriting, with its kind and the story the lender reads.",
+   "intro": "Every change in the underwriting is made on one account, with its kind (why it changes), the versions it applies to, and a story. Before you save, a preview shows the account’s 12 months before and after, the line and the NOI. Here, a heavy winter’s snow removal is brought to a normal year.",
+   "before": [
+    "A T12 for the property — see [Upload a T12](upload-a-t12)."
+   ],
+   "sections": [
     {
-     "title": "The three figures on top",
-     "text": "In-place NOI (the statement, by the T12 rule), and the Safe and Aggressive underwriting NOI (after the replacement reserves). Until you approve them they read “draft · not approved yet”.",
-     "img": "img/underwriting/table-01.jpg",
-     "w": 1313,
-     "h": 99,
-     "marks": [
+     "id": "open-the-account",
+     "title": "Open the account",
+     "steps": [
       {
-       "x": 1,
-       "y": 28.3,
-       "w": 30.7,
-       "h": 28.3,
-       "label": "In-place NOI",
-       "text": "The T12’s own NOI — the 12-month total, or the last 3 months × 4 when the statement starts in a lease-up."
+       "text": "In the **Underwriting** column, click the figure of the account’s line. The pro forma window opens with every account of the line — a $0 one too — and its 12 months as the statement shows them.",
+       "img": "img/underwriting/change-an-account-01.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 1.7,
+         "y": 10.5,
+         "w": 96.5,
+         "h": 8.9,
+         "label": "The line",
+         "text": "In the T12, in Safe and in Aggressive."
+        },
+        {
+         "x": 1.8,
+         "y": 36,
+         "w": 98.2,
+         "h": 5.5,
+         "label": "An account",
+         "text": "Click it to change it."
+        }
+       ]
       },
       {
-       "x": 1,
-       "y": 56.6,
-       "w": 30.7,
-       "h": 15.2,
-       "label": "How it was worked out",
-       "text": "Which months it comes from."
-      },
-      {
-       "x": 1,
-       "y": 71.7,
-       "w": 30.7,
-       "h": 15.2,
-       "label": "ties to statement NOI",
-       "text": "The lines add up to the NOI printed on the statement."
-      },
-      {
-       "x": 34.6,
-       "y": 28.3,
-       "w": 30.7,
-       "h": 28.3,
-       "label": "Safe underwriting NOI",
-       "text": "The T12 with the changes you can defend line by line, less the reserves."
-      },
-      {
-       "x": 68.3,
-       "y": 28.3,
-       "w": 30.7,
-       "h": 28.3,
-       "label": "Aggressive underwriting NOI",
-       "text": "Safe plus the changes a cautious lender may not accept, less the reserves."
-      },
-      {
-       "x": 34.6,
-       "y": 56.6,
-       "w": 30.7,
-       "h": 15.2,
-       "label": "draft · not approved yet",
-       "text": "A draft until you approve it (its own topic); then it reads “approved” with the date."
+       "text": "Click the account. The ways to change it open under it.",
+       "img": "img/underwriting/change-an-account-02.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 50.1,
+         "w": 8.6,
+         "h": 3.7,
+         "label": "New amount",
+         "text": "A new yearly figure; 0 takes the account out."
+        },
+        {
+         "x": 12,
+         "y": 50.1,
+         "w": 11.4,
+         "h": 3.7,
+         "label": "Spread over years",
+         "text": "For a cost paid once every few years."
+        },
+        {
+         "x": 23.9,
+         "y": 50.1,
+         "w": 7.3,
+         "h": 3.7,
+         "label": "Annualize",
+         "text": "Its last 3, 6 or 12 months, made a year."
+        },
+        {
+         "x": 31.7,
+         "y": 50.1,
+         "w": 9,
+         "h": 3.7,
+         "label": "% of revenue",
+         "text": "A share of revenue."
+        },
+        {
+         "x": 41.2,
+         "y": 50.1,
+         "w": 6.1,
+         "h": 3.7,
+         "label": "Per unit",
+         "text": "Dollars per apartment a year."
+        }
+       ],
+       "callouts": [
+        {
+         "kind": "tip",
+         "text": "These steps use **New amount**. For the other ways, see [The pro forma window](ref-pro-forma#ways-to-change-an-account)."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "The columns",
-     "text": "Every line of the T12, classified (the line names are the app’s; the Documents chapter shows how each account was placed). Two figures per line — the T12 and the underwriting — each also per unit.",
-     "img": "img/underwriting/table-02.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "id": "make-the-change",
+     "title": "Make the change",
+     "steps": [
       {
-       "x": 5.1,
-       "y": 16,
-       "w": 37.3,
-       "h": 2.9,
-       "label": "Line",
-       "text": "The underwriting line; a line far from its benchmark is flagged next to its name."
+       "text": "Click **New amount** and type the account’s yearly figure."
       },
       {
-       "x": 42.4,
-       "y": 16,
-       "w": 15.3,
-       "h": 2.9,
-       "label": "In-Place (T12)",
-       "text": "Each line as the statement shows it."
+       "text": "Pick the **Kind**: why it changes. Here **Normalized**, an unusual year brought to a normal one."
       },
       {
-       "x": 57.7,
-       "y": 16,
-       "w": 8.5,
-       "h": 2.9,
-       "label": "$/unit",
-       "text": "The figure ÷ the units."
+       "text": "Under **Apply to**, click **Safe**, **Aggressive** or **Both**."
       },
       {
-       "x": 66.2,
-       "y": 16,
-       "w": 19.3,
-       "h": 2.9,
-       "label": "Underwriting · Safe",
-       "text": "The underwriting, line by line, in the version the switch shows. Click any figure in it to open that line’s accounts."
+       "text": "Write the **Story**: the reason the lender reads. To start from a draft, click **Draft it with Claude**.",
+       "img": "img/underwriting/change-an-account-03.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 18.1,
+         "y": 35.9,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "Its new amount",
+         "text": "The account’s yearly figure."
+        },
+        {
+         "x": 2.9,
+         "y": 44.1,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Why it changes."
+        },
+        {
+         "x": 49.3,
+         "y": 42.4,
+         "w": 3.9,
+         "h": 3.2,
+         "label": "Apply to",
+         "text": "Safe, Aggressive or Both."
+        },
+        {
+         "x": 2.9,
+         "y": 54.4,
+         "w": 93.8,
+         "h": 7.1,
+         "label": "Story",
+         "text": "Required."
+        },
+        {
+         "x": 4,
+         "y": 66.9,
+         "w": 91.5,
+         "h": 13,
+         "label": "Before → after",
+         "text": "The account’s 12 months in the T12 and after the change."
+        }
+       ]
       },
       {
-       "x": 78,
-       "y": 76.6,
-       "w": 7.2,
-       "h": 2.9,
-       "label": "A figure",
-       "text": "Click it: the line’s accounts open, to change one by one (its own topic)."
+       "text": "Check the preview, then click **Save the change**. The window stays open on the line: the account shows its new figure, and a tag says where it applies and its kind.",
+       "img": "img/underwriting/change-an-account-04.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.5,
+         "y": 36.6,
+         "w": 18.1,
+         "h": 2.4,
+         "label": "The changed account",
+         "text": "Now 9,000 in Safe and in Aggressive."
+        },
+        {
+         "x": 90.9,
+         "y": 37.4,
+         "w": 8.5,
+         "h": 2.5,
+         "label": "The tag",
+         "text": "Where it applies and its kind. Hover it to read the story."
+        },
+        {
+         "x": 1.7,
+         "y": 10.5,
+         "w": 96.5,
+         "h": 8.9,
+         "label": "The line",
+         "text": "The line’s totals follow."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "One cause often moves several accounts. Pick a story you already wrote in **Same story as…** and it fills in; then adjust it."
       }
      ]
     },
     {
-     "title": "The reserves and the NOI",
-     "text": "Subtotals for rental income, effective gross income and expenses, then the replacement reserves and the Net Operating Income — each in both columns and per unit.",
-     "img": "img/underwriting/table-03.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 5.1,
-       "y": 7,
-       "w": 37.3,
-       "h": 3.3,
-       "label": "Effective Gross Income",
-       "text": "All income after vacancy and other deductions."
-      },
-      {
-       "x": 5.1,
-       "y": 41.4,
-       "w": 37.3,
-       "h": 3.3,
-       "label": "Total Operating Expenses",
-       "text": "Every expense line added up."
-      },
-      {
-       "x": 78,
-       "y": 45.2,
-       "w": 7.2,
-       "h": 2.7,
-       "label": "Replacement reserves",
-       "text": "Your reserves per unit × the units — a line in both Safe and Aggressive (the T12 has none)."
-      },
-      {
-       "x": 5.1,
-       "y": 48.4,
-       "w": 88.8,
-       "h": 3.2,
-       "label": "Net Operating Income",
-       "text": "In-place NOI, and the underwriting NOI after the reserves — each per unit."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "draft",
-   "title": "Draft the underwriting — its bar",
-   "intro": "Above the table, the underwriting’s bar: whether it is a draft or approved, the two versions, the tools to change it, and Approve.",
-   "steps": [
-    {
-     "title": "The bar",
-     "text": "Everything you do to the underwriting starts here. Nothing in it is used by the refinance, the roll-up or What to push until you approve it.",
-     "img": "img/underwriting/draft-01.jpg",
-     "w": 1279,
-     "h": 126,
-     "marks": [
-      {
-       "x": 9.8,
-       "y": 13.7,
-       "w": 3.7,
-       "h": 13.9,
-       "label": "draft",
-       "text": "Draft, approved, or changed since approved."
-      },
-      {
-       "x": 14.1,
-       "y": 8.7,
-       "w": 12.4,
-       "h": 23.8,
-       "label": "Safe / Aggressive",
-       "text": "Which version the column shows (next topic)."
-      },
-      {
-       "x": 27.1,
-       "y": 14.1,
-       "w": 33.4,
-       "h": 13.1,
-       "label": "The two NOIs",
-       "text": "Safe and Aggressive underwriting NOI, after the reserves."
-      },
-      {
-       "x": 1,
-       "y": 38.9,
-       "w": 8.5,
-       "h": 21,
-       "label": "Suggestions",
-       "text": "Every open suggestion in one list."
-      },
-      {
-       "x": 10,
-       "y": 38.9,
-       "w": 10.4,
-       "h": 21,
-       "label": "Claude’s stories…",
-       "text": "Jumps to Claude’s stories under the table (and asks Claude for them the first time)."
-      },
-      {
-       "x": 20.8,
-       "y": 38.9,
-       "w": 9.9,
-       "h": 21,
-       "label": "Revenue credit…",
-       "text": "Annualize all revenue accounts at once (its own topic)."
-      },
-      {
-       "x": 31.2,
-       "y": 38.9,
-       "w": 10.3,
-       "h": 21,
-       "label": "+ Add an account",
-       "text": "An account the T12 doesn’t have (its own topic)."
-      },
-      {
-       "x": 41.9,
-       "y": 38.9,
-       "w": 9.5,
-       "h": 21,
-       "label": "For the lender…",
-       "text": "The Excel file for the lender."
-      },
-      {
-       "x": 51.9,
-       "y": 38.9,
-       "w": 5.2,
-       "h": 21,
-       "label": "History",
-       "text": "Every change, with its story, and every approval."
-      },
-      {
-       "x": 57.6,
-       "y": 38.9,
-       "w": 6.6,
-       "h": 21,
-       "label": "Start over",
-       "text": "Takes every change out and starts again from the T12 (asks first). The history keeps them, and the last approval stays in use until you approve again."
-      },
-      {
-       "x": 64.7,
-       "y": 39.7,
-       "w": 14.4,
-       "h": 19.4,
-       "label": "Approve the underwriting",
-       "text": "Safe and Aggressive become this property’s underwriting (its own topic)."
-      },
-      {
-       "x": 1,
-       "y": 63.1,
-       "w": 98,
-       "h": 13.1,
-       "label": "Not approved yet",
-       "text": "What is in use: nothing yet."
-      }
-     ]
-    },
-    {
-     "title": "What to push waits for the approval",
-     "text": "Further down, What to push says so: it works from the approved Safe and Aggressive, so it runs only after you approve.",
-     "img": "img/underwriting/draft-02.jpg",
-     "w": 1313,
-     "h": 78,
-     "marks": [
-      {
-       "x": 1.3,
-       "y": 52.6,
-       "w": 97.4,
-       "h": 25.6,
-       "label": "Approve the underwriting first",
-       "text": "Approve, and Claude works out what you can still push (its own topic)."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-versions",
-   "title": "Draft — Safe and Aggressive",
-   "intro": "Two versions. Safe: what you would defend line by line. Aggressive: Safe plus the changes a cautious lender may not accept.",
-   "steps": [
-    {
-     "title": "Two versions",
-     "text": "Aggressive starts as Safe and adds its own changes; a change made for Aggressive on an account wins over Safe’s in Aggressive. Every change says where it applies: Safe, Aggressive or Both. Use the switch to see either one in the column.",
-     "img": "img/underwriting/pf-versions-01.jpg",
-     "w": 1279,
-     "h": 126,
-     "marks": [
-      {
-       "x": 14.3,
-       "y": 11.1,
-       "w": 4.2,
-       "h": 19,
-       "label": "Safe",
-       "text": "The column shows the Safe version."
-      },
-      {
-       "x": 18.6,
-       "y": 11.1,
-       "w": 7.7,
-       "h": 19,
-       "label": "Aggressive",
-       "text": "The column shows the Aggressive version."
-      },
-      {
-       "x": 27.1,
-       "y": 14.1,
-       "w": 33.4,
-       "h": 13.1,
-       "label": "Both NOIs",
-       "text": "The one shown first, then the other."
-      }
-     ]
-    },
-    {
-     "title": "How each one adds up",
-     "text": "Under the table, one box per version: the T12 NOI, every change grouped by its kind with its story, the NOI before reserves, the replacement reserves, and the underwriting NOI — checked to the dollar.",
-     "img": "img/underwriting/pf-versions-02.jpg",
-     "w": 1279,
-     "h": 157,
-     "marks": [
-      {
-       "x": 0,
-       "y": 0,
-       "w": 49.5,
-       "h": 100,
-       "label": "Safe — how it adds up",
-       "text": "T12 NOI + each change − reserves = the Safe underwriting NOI."
-      },
-      {
-       "x": 50.5,
-       "y": 0,
-       "w": 49.5,
-       "h": 100,
-       "label": "Aggressive — how it adds up",
-       "text": "The same for Aggressive."
-      },
-      {
-       "x": 37.4,
-       "y": 8.8,
-       "w": 11.1,
-       "h": 9.6,
-       "label": "reconciles to the dollar",
-       "text": "The changes add up exactly (worked out twice)."
-      },
-      {
-       "x": 1,
-       "y": 63.9,
-       "w": 47.5,
-       "h": 11.5,
-       "label": "− Replacement reserves",
-       "text": "Your reserves per unit × the units, taken off both versions."
-      },
-      {
-       "x": 41.4,
-       "y": 79.2,
-       "w": 7.1,
-       "h": 12.5,
-       "label": "= Safe underwriting NOI",
-       "text": "The figure that is approved, sized and refinanced on."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-panel",
-   "title": "Draft — a line’s accounts",
-   "intro": "Click a figure in the Underwriting column: a window opens with every account of that line.",
-   "steps": [
-    {
-     "title": "Every account, every month",
-     "text": "The window is about 80% of the screen. On top, the line in the T12, in Safe and in Aggressive. Below, every account of the line — none hidden, a $0 one too — with its 12 months as the statement shows them.",
-     "img": "img/underwriting/pf-panel-01.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 1.7,
-       "y": 10.5,
-       "w": 96.5,
-       "h": 8.9,
-       "label": "The line",
-       "text": "The whole line in the T12, in Safe and in Aggressive, each per unit."
-      },
-      {
-       "x": 1.8,
-       "y": 36.1,
-       "w": 98.2,
-       "h": 5.5,
-       "label": "An account",
-       "text": "Its row in the file, its 12 months, its T12, Safe and Aggressive. Click it to change it."
-      },
-      {
-       "x": 76.7,
-       "y": 27,
-       "w": 5.5,
-       "h": 3.6,
-       "label": "T12",
-       "text": "The account’s year in the statement."
-      },
-      {
-       "x": 82.2,
-       "y": 27,
-       "w": 5.5,
-       "h": 3.6,
-       "label": "Safe / Aggressive",
-       "text": "The account in each version."
-      },
-      {
-       "x": 2.5,
-       "y": 47.6,
-       "w": 18.1,
-       "h": 2.4,
-       "label": "A $0 account",
-       "text": "Shown with its twelve zeros — nothing is hidden."
-      },
-      {
-       "x": 1.8,
-       "y": 52.6,
-       "w": 19.4,
-       "h": 4.1,
-       "label": "The line",
-       "text": "Each month and each column added up."
-      },
-      {
-       "x": 1.7,
-       "y": 59.8,
-       "w": 23.5,
-       "h": 4,
-       "label": "+ Add an account the T12 doesn’t have",
-       "text": "For money the statement has no account for."
-      },
-      {
-       "x": 95.5,
-       "y": 1.6,
-       "w": 2.8,
-       "h": 4.2,
-       "label": "×",
-       "text": "Closes the window."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-change",
-   "title": "Draft — change an account",
-   "intro": "Click an account and its choices open right under it. Each change has a kind, the version it applies to and a story.",
-   "steps": [
-    {
-     "title": "The choices",
-     "text": "New amount (0 takes the account out), Spread over years, Annualize, % of revenue and Per unit. The next topics show each one.",
-     "img": "img/underwriting/pf-change-01.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 2.9,
-       "y": 50.1,
-       "w": 9.6,
-       "h": 3.7,
-       "label": "New amount",
-       "text": "Type the account’s new yearly figure. Type 0 to take it out — it reads “Took out” for the lender."
-      },
-      {
-       "x": 13,
-       "y": 50.1,
-       "w": 13,
-       "h": 3.7,
-       "label": "Spread over years",
-       "text": "A cost paid once every few years counts only its share for one year."
-      },
-      {
-       "x": 26.5,
-       "y": 50.1,
-       "w": 8,
-       "h": 3.7,
-       "label": "Annualize",
-       "text": "The account becomes its last 3, 6 or 12 months × 12 ÷ the months."
-      },
-      {
-       "x": 35.1,
-       "y": 50.1,
-       "w": 10,
-       "h": 3.7,
-       "label": "% of revenue",
-       "text": "The account set as a % of revenue (expenses and rental deductions)."
-      },
-      {
-       "x": 45.6,
-       "y": 50.1,
-       "w": 6.9,
-       "h": 3.7,
-       "label": "Per unit",
-       "text": "A dollar figure per apartment per year × the units."
-      }
-     ]
-    },
-    {
-     "title": "A new amount, its kind and its story",
-     "text": "Snow removal set to $9,000 for a normal winter. Pick the kind, where it applies, and write the story the lender reads — or pick one you already wrote. The preview shows the account’s 12 months before and after, the line and the NOI.",
-     "img": "img/underwriting/pf-change-02.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 19.1,
-       "y": 36,
-       "w": 11.1,
-       "h": 3.9,
-       "label": "Its new amount",
-       "text": "The yearly figure for this account."
-      },
-      {
-       "x": 2.9,
-       "y": 44.2,
-       "w": 30.6,
-       "h": 3.7,
-       "label": "Kind",
-       "text": "Why it changes: non-recurring, spread, normalized, operating change, market norm, partnership/back-office (and revenue credit when annualizing income)."
-      },
-      {
-       "x": 51.1,
-       "y": 42.4,
-       "w": 4.3,
-       "h": 3.2,
-       "label": "Apply to",
-       "text": "Safe, Aggressive or Both."
-      },
-      {
-       "x": 2.9,
-       "y": 54.3,
-       "w": 93.8,
-       "h": 7.1,
-       "label": "Story",
-       "text": "The reason the lender reads. Required."
-      },
-      {
-       "x": 2.9,
-       "y": 61.9,
-       "w": 10.6,
-       "h": 2.2,
-       "label": "Draft it with Claude",
-       "text": "Claude writes a first draft from the account’s months; you edit it."
-      },
-      {
-       "x": 4,
-       "y": 66.8,
-       "w": 91.5,
-       "h": 13,
-       "label": "Before → after",
-       "text": "The account’s 12 months in the T12 and after the change (each month in proportion)."
-      },
-      {
-       "x": 4,
-       "y": 88.6,
-       "w": 91.5,
-       "h": 2.2,
-       "label": "ready to save",
-       "text": "Or what is still missing."
-      },
-      {
-       "x": 84.8,
-       "y": 93.6,
-       "w": 11.8,
-       "h": 3.7,
-       "label": "Save the change",
-       "text": "Saves it; the window stays open on this line."
-      },
-      {
-       "x": 77.9,
-       "y": 93.5,
-       "w": 6.1,
-       "h": 3.9,
-       "label": "Cancel",
-       "text": "Closes the choices without saving."
-      }
-     ]
-    },
-    {
-     "title": "Saved",
-     "text": "The account shows its new figure in Safe and Aggressive, and a tag with where it applies and its kind. The line’s totals follow.",
-     "img": "img/underwriting/pf-change-03.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 2.5,
-       "y": 36.7,
-       "w": 18.1,
-       "h": 2.4,
-       "label": "The changed account",
-       "text": "Now 9,000 in Safe and Aggressive; at the right end of its row, a tag says where it applies and its kind (hover it for the story)."
-      },
-      {
-       "x": 1.7,
-       "y": 10.5,
-       "w": 96.5,
-       "h": 8.9,
-       "label": "The line",
-       "text": "Now $27,500 in both versions."
-      }
-     ]
-    },
-    {
+     "id": "edit-or-remove-a-change",
      "title": "Edit or remove a change",
-     "text": "Click a changed account again: its changes are listed on top, each with Edit and Remove, who made it and when.",
-     "img": "img/underwriting/pf-change-04.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
+     "steps": [
       {
-       "x": 4,
-       "y": 47.6,
-       "w": 91.5,
-       "h": 8.8,
-       "label": "The change",
-       "text": "What, kind, story, who and when, and its effect on the NOI."
+       "text": "Click the changed account again. Its changes are listed on top: what changed, the kind, the story, who made it and when, and its effect on the NOI.",
+       "img": "img/underwriting/change-an-account-05.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 4,
+         "y": 47.5,
+         "w": 91.5,
+         "h": 8.8,
+         "label": "The change",
+         "text": "With its story and its effect on the NOI."
+        },
+        {
+         "x": 89.7,
+         "y": 51.4,
+         "w": 1.8,
+         "h": 2.2,
+         "label": "Edit",
+         "text": "Opens it with its figures, to change."
+        },
+        {
+         "x": 91.8,
+         "y": 51.4,
+         "w": 3.7,
+         "h": 2.2,
+         "label": "Remove",
+         "text": "Takes it out (asks first)."
+        }
+       ]
       },
       {
-       "x": 88.7,
-       "y": 51.5,
-       "w": 2.1,
-       "h": 2.2,
-       "label": "Edit",
-       "text": "Opens it with its figures to change."
-      },
+       "text": "Click **Edit** to change its figures or its story, then **Save the edit**. Or click **Remove** to take it out; the app asks first."
+      }
+     ],
+     "callouts": [
       {
-       "x": 91.2,
-       "y": 51.5,
-       "w": 4.3,
-       "h": 2.2,
-       "label": "Remove",
-       "text": "Removes it (asks first); the history keeps it."
+       "kind": "note",
+       "text": "The underwriting’s **History** keeps every change, edit and removal, with its story."
       }
      ]
     },
     {
-     "title": "Same story as…",
-     "text": "One cause often moves several accounts. Pick a story you already wrote and it fills in — then adjust it if you want.",
-     "img": "img/underwriting/pf-change-05.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
+     "id": "credit-all-revenue-at-once",
+     "title": "Credit all revenue at once",
+     "text": "When the property runs better now than the year shows — it filled up, or rents went up — annualize every revenue account at once from its last months.",
+     "steps": [
       {
-       "x": 66.1,
-       "y": 44.2,
-       "w": 30.6,
-       "h": 3.7,
-       "label": "Same story as…",
-       "text": "The stories already in this underwriting, with their account."
+       "text": "Close the window and click **Revenue credit…** in the underwriting bar."
+      },
+      {
+       "text": "Click **T3 — last 3 months**, or T6, or T12. Each revenue account becomes its last 3 months × 4 (or 6 × 2)."
+      },
+      {
+       "text": "Write the story and click **Save the revenue credit**.",
+       "img": "img/underwriting/change-an-account-06.jpg",
+       "w": 1152,
+       "h": 573,
+       "marks": [
+        {
+         "x": 18.6,
+         "y": 22.9,
+         "w": 10.6,
+         "h": 4.3,
+         "label": "T3 / T6 / T12",
+         "text": "How many recent months."
+        },
+        {
+         "x": 88.7,
+         "y": 29.9,
+         "w": 9.5,
+         "h": 4.1,
+         "label": "Annualized",
+         "text": "Each revenue line after the credit."
+        },
+        {
+         "x": 1.7,
+         "y": 75.6,
+         "w": 96.5,
+         "h": 9.4,
+         "label": "Story",
+         "text": "Required."
+        },
+        {
+         "x": 84.3,
+         "y": 92,
+         "w": 14,
+         "h": 5.2,
+         "label": "Save the revenue credit",
+         "text": "Saves it."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The management fee doesn’t follow the revenue credit. Aggressive uses Safe’s credit until you give it its own."
       }
      ]
+    }
+   ],
+   "next": [
+    {
+     "page": "add-an-account",
+     "anchor": "",
+     "text": "Add money the T12 has no account for."
+    },
+    {
+     "page": "use-claudes-stories",
+     "anchor": "",
+     "text": "Let Claude find the changes a lender would accept."
+    },
+    {
+     "page": "ref-pro-forma",
+     "anchor": "",
+     "text": "Every way to change an account, and each window, named."
     }
    ]
   },
   {
-   "id": "pf-ways",
-   "title": "Draft — spread, annualize, % of revenue, per unit",
-   "intro": "The other ways to change an account.",
-   "steps": [
+   "id": "add-an-account",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "Add an account",
+   "description": "Add income or a cost the T12 has no account for, with its amount and its story.",
+   "intro": "Some money isn’t in the T12 at all: an antenna lease signed after its year, a PILOT tax, bad debt at a market norm. Add it as an account of its own, under the line it belongs to, with its amount, its kind and its story.",
+   "before": [
+    "A T12 for the property — see [Upload a T12](upload-a-t12)."
+   ],
+   "sections": [
     {
-     "title": "Spread over years",
-     "text": "For a cost paid once every few years that landed in this T12. Exterior painting cost $14,400 in May and is done every 5 years: the underwriting counts $14,400 ÷ 5 = $2,880 a year. It divides the whole account — for an account that mixes normal monthly costs with one big bill, use New amount instead.",
-     "img": "img/underwriting/pf-ways-01.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 9,
-       "y": 36,
-       "w": 11.1,
-       "h": 3.9,
-       "label": "Paid every … years",
-       "text": "How often it is paid; it counts one share a year."
-      },
-      {
-       "x": 2.9,
-       "y": 44.2,
-       "w": 30.6,
-       "h": 3.7,
-       "label": "Kind",
-       "text": "Set to “Spread over years” by itself."
-      },
-      {
-       "x": 4,
-       "y": 66.8,
-       "w": 91.5,
-       "h": 13,
-       "label": "Before → after",
-       "text": "$14,400 in May becomes $2,880 for the year."
-      }
-     ]
-    },
-    {
-     "title": "Annualize",
-     "text": "When an account runs differently in its recent months — a new contract, a rent increase — it becomes its last 3, 6 or 12 months × 12 ÷ the months. Each choice shows what it gives; the last 12 months on a normal 12-month T12 is the T12 itself, so it is greyed (“same as the T12”).",
-     "img": "img/underwriting/pf-ways-02.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 2.9,
-       "y": 39.2,
-       "w": 11,
-       "h": 6.3,
-       "label": "Last 3 months",
-       "text": "× 4 — here $28,400 a year."
-      },
-      {
-       "x": 14.4,
-       "y": 39.2,
-       "w": 11,
-       "h": 6.3,
-       "label": "Last 6 months",
-       "text": "× 2 — $29,400."
-      },
-      {
-       "x": 26,
-       "y": 39.2,
-       "w": 19.9,
-       "h": 6.3,
-       "label": "Last 12 months",
-       "text": "Only different from the T12 when the file has more than 12 months, or the T12 rule used the last 3 months × 4."
-      },
-      {
-       "x": 2.9,
-       "y": 46,
-       "w": 93.8,
-       "h": 2.2,
-       "label": "Months used",
-       "text": "The months it comes from."
-      },
-      {
-       "x": 2.9,
-       "y": 52.4,
-       "w": 30.6,
-       "h": 3.7,
-       "label": "Kind",
-       "text": "Operating change for an expense; Revenue credit for an income account."
-      }
-     ]
-    },
-    {
-     "title": "% of revenue",
-     "text": "The account set as a % of revenue: an expense as a % of that version’s effective gross income, a rental deduction (vacancy, bad debt) as a % of gross potential rent. Because you chose it, it moves when that version’s revenue moves — the management fee never moves by itself.",
-     "img": "img/underwriting/pf-ways-03.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 2.9,
-       "y": 48.6,
-       "w": 11.1,
-       "h": 3.9,
-       "label": "%",
-       "text": "The percentage."
-      },
-      {
-       "x": 16,
-       "y": 49.4,
-       "w": 49.4,
-       "h": 2.2,
-       "label": "It follows revenue",
-       "text": "Only because you picked % of revenue."
-      },
-      {
-       "x": 1.7,
-       "y": 7.2,
-       "w": 24,
-       "h": 1.7,
-       "label": "The management fee",
-       "text": "Stays at the T12 unless you change its account."
-      }
-     ]
-    },
-    {
-     "title": "Per unit",
-     "text": "A dollar figure per apartment per year, times the units (120 here) — for a cost quoted per unit, like a maintenance role or turnover.",
-     "img": "img/underwriting/pf-ways-04.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 3.9,
-       "y": 40.3,
-       "w": 11.1,
-       "h": 3.9,
-       "label": "$ per unit a year",
-       "text": "× the property’s units."
-      },
-      {
-       "x": 43.4,
-       "y": 46.7,
-       "w": 7.7,
-       "h": 3.2,
-       "label": "Aggressive",
-       "text": "Here only in the Aggressive version."
-      },
-      {
-       "x": 2.9,
-       "y": 67.7,
-       "w": 93.8,
-       "h": 26.3,
-       "label": "Preview",
-       "text": "Safe unchanged; Aggressive $300 × 120 = $36,000."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-suggest",
-   "title": "Draft — suggestions from your assumptions",
-   "intro": "When a line runs worse than your assumption (or the rent roll proves more rent), its biggest account gets a suggestion with a ready story. A suggestion only ever raises the NOI, and nothing is applied by itself.",
-   "steps": [
-    {
-     "title": "A suggestion on the account",
-     "text": "The management fee runs 3% of revenue; your assumption is 2.5%. Its account carries a “Suggested” chip; open it to see the suggestion and why.",
-     "img": "img/underwriting/pf-suggest-01.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
-      {
-       "x": 96.1,
-       "y": 34.2,
-       "w": 3.9,
-       "h": 2.7,
-       "label": "Suggested",
-       "text": "A suggestion is waiting on this account."
-      },
-      {
-       "x": 2.9,
-       "y": 43.9,
-       "w": 93.8,
-       "h": 11.6,
-       "label": "The suggestion",
-       "text": "The change, its kind, the default story and why."
-      },
-      {
-       "x": 82.1,
-       "y": 45,
-       "w": 6.1,
-       "h": 3.2,
-       "label": "Use this",
-       "text": "Fills the change and its story in — you can still edit before saving."
-      },
-      {
-       "x": 88.9,
-       "y": 45,
-       "w": 6.6,
-       "h": 3.2,
-       "label": "Not this one",
-       "text": "Sets it aside (you can bring it back)."
-      }
-     ]
-    },
-    {
-     "title": "Every suggestion in one list",
-     "text": "The “suggestions” button in the bar lists every open suggestion — from your assumptions and from Claude — each with “Open the account”.",
-     "img": "img/underwriting/pf-suggest-02.jpg",
-     "w": 1152,
-     "h": 289,
-     "marks": [
-      {
-       "x": 1.7,
-       "y": 44.5,
-       "w": 96.5,
-       "h": 23.9,
-       "label": "A suggestion",
-       "text": "Where, what and its story."
-      },
-      {
-       "x": 85.9,
-       "y": 47.7,
-       "w": 11.3,
-       "h": 8.5,
-       "label": "Open the account",
-       "text": "Opens the line with the suggestion filled in."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-stories",
-   "title": "Draft — Claude’s stories",
-   "intro": "Under the table: Claude reads every account month by month, the rent roll, the property’s documents and its profile, searches the web around the property, and offers stories a lender would accept — only ones that raise the NOI, and only ones it confirmed.",
-   "steps": [
-    {
-     "title": "Claude’s stories for the underwriting",
-     "text": "Each card: the line and the account, the change and its kind, the story, how Claude got the number and what you need to back it with the lender, and how much it raises the NOI. Claude may not invent an event or a figure: it confirms each story from the T12, the rent roll, the documents or the web (that month’s weather around the property, for example), and lists what it checked. A story it could not confirm is never shown; one that would lower the NOI is listed as left out.",
-     "img": "img/underwriting/pf-stories-01.jpg",
-     "w": 1279,
-     "h": 910,
-     "marks": [
-      {
-       "x": 92.2,
-       "y": 1.4,
-       "w": 7.8,
-       "h": 3.3,
-       "label": "Find stories / Look again",
-       "text": "Asks Claude (it needs Claude connected)."
-      },
-      {
-       "x": 0,
-       "y": 31.2,
-       "w": 100,
-       "h": 19.4,
-       "label": "A story",
-       "text": "One account, one change, its story."
-      },
-      {
-       "x": 1,
-       "y": 18.7,
-       "w": 73.1,
-       "h": 1.8,
-       "label": "How Claude got the number",
-       "text": "From the statement’s own figures."
-      },
-      {
-       "x": 1,
-       "y": 20.5,
-       "w": 73.1,
-       "h": 1.8,
-       "label": "To back it",
-       "text": "What you need on hand to prove it."
-      },
-      {
-       "x": 1,
-       "y": 22.8,
-       "w": 73.1,
-       "h": 6.3,
-       "label": "Checked",
-       "text": "What Claude checked before it suggested this — the T12, the rent roll, a document, or a web page with its site and date. A story it could not confirm is never shown."
-      },
-      {
-       "x": 0,
-       "y": 96.3,
-       "w": 100,
-       "h": 1.6,
-       "label": "The web",
-       "text": "How many times Claude searched the web for this, and what it searched."
-      },
-      {
-       "x": 0,
-       "y": 92,
-       "w": 100,
-       "h": 3.8,
-       "label": "Claude didn’t have",
-       "text": "What the property is missing for Claude (units, a rent roll, the tax bill, who pays the utilities): anything resting on it was left out. Add it and look again."
-      },
-      {
-       "x": 88.9,
-       "y": 36.9,
-       "w": 10,
-       "h": 2.7,
-       "label": "Put it in the draft",
-       "text": "Opens the account with it filled in, to check and save."
-      },
-      {
-       "x": 90,
-       "y": 13.4,
-       "w": 9,
-       "h": 1.4,
-       "label": "In the pro forma ✓",
-       "text": "Already in the draft."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-add",
-   "title": "Draft — add an account",
-   "intro": "For money the T12 has no account for — a PILOT tax, an antenna lease, bad debt at a market norm.",
-   "steps": [
-    {
+     "id": "pick-the-line",
      "title": "Pick the line",
-     "text": "“+ Add an account” in the bar lists every line — the ones in your T12 first, then the ones it doesn’t have.",
-     "img": "img/underwriting/pf-add-01.jpg",
-     "w": 768,
-     "h": 537,
-     "marks": [
+     "steps": [
       {
-       "x": 27.9,
-       "y": 69,
-       "w": 27.7,
-       "h": 4.9,
-       "label": "A line the T12 doesn’t have",
-       "text": "Adding an account here adds the line to the underwriting."
+       "text": "Click **+ Add an account** in the underwriting bar. A window lists every line by section: the ones in your T12 first, then the ones it doesn’t have.",
+       "img": "img/underwriting/add-an-account-01.jpg",
+       "w": 768,
+       "h": 537,
+       "marks": [
+        {
+         "x": 25.6,
+         "y": 69,
+         "w": 24.7,
+         "h": 4.9,
+         "label": "A line the T12 doesn’t have",
+         "text": "Adding an account here adds the line to the underwriting."
+        }
+       ]
+      },
+      {
+       "text": "Click the line the money belongs to. Here **Antenna Income**."
       }
      ]
     },
     {
-     "title": "Name it, its amount, its story",
-     "text": "Name the account, give its amount (or % of revenue, or per unit), the kind, where it applies and the story.",
-     "img": "img/underwriting/pf-add-02.jpg",
-     "w": 1152,
-     "h": 765,
-     "marks": [
+     "id": "fill-it-in",
+     "title": "Fill it in",
+     "steps": [
       {
-       "x": 11.1,
-       "y": 43.1,
-       "w": 22.2,
-       "h": 3.9,
-       "label": "Account name",
-       "text": "What the lender will see."
+       "text": "Type the **Account name**, as the lender will see it."
       },
       {
-       "x": 16.6,
-       "y": 52.3,
-       "w": 11.1,
-       "h": 3.9,
-       "label": "Its amount",
-       "text": "A year’s figure."
+       "text": "Click **Its amount** and type a year’s figure. Or click **Per unit** for dollars per apartment a year (on an expense line, **% of revenue** is there too)."
       },
       {
-       "x": 2.9,
-       "y": 81.9,
-       "w": 93,
-       "h": 18.1,
-       "label": "Preview",
-       "text": "Nothing in Safe; $500 a month in Aggressive."
+       "text": "Pick the **Kind**, choose where it applies under **Apply to**, and write the **Story**.",
+       "img": "img/underwriting/add-an-account-02.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 10.7,
+         "y": 42.9,
+         "w": 22.2,
+         "h": 3.9,
+         "label": "Account name",
+         "text": "What the lender will see."
+        },
+        {
+         "x": 15.7,
+         "y": 52.1,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "Its amount",
+         "text": "A year’s figure."
+        },
+        {
+         "x": 42.1,
+         "y": 58.5,
+         "w": 6.9,
+         "h": 3.2,
+         "label": "Apply to",
+         "text": "Here only in Aggressive."
+        },
+        {
+         "x": 2.9,
+         "y": 81.8,
+         "w": 93,
+         "h": 18.2,
+         "label": "Preview",
+         "text": "Nothing in Safe; $500 a month in Aggressive."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save the change**."
       }
      ]
+    }
+   ],
+   "next": [
+    {
+     "page": "change-an-account",
+     "anchor": "",
+     "text": "Change an account the T12 already has."
+    },
+    {
+     "page": "approve-the-underwriting",
+     "anchor": "",
+     "text": "Approve Safe and Aggressive when they’re ready."
     }
    ]
   },
   {
-   "id": "pf-revenue",
-   "title": "Draft — revenue credit",
-   "intro": "Every revenue account annualized at once from its last 3, 6 or 12 months — when the property runs better now than the year shows.",
-   "steps": [
+   "id": "use-claudes-stories",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "Use Claude’s stories and suggestions",
+   "description": "Let Claude find the accounts a lender would accept changing, and put the ones you agree with into the draft.",
+   "intro": "Claude reads every account month by month and suggests changes a lender would accept, each with its story — only ones that raise the NOI, and only ones it confirmed. Your own assumptions suggest changes too, when a line runs worse than them. Nothing goes into the draft until you open the account, check it and save it.",
+   "callouts": [
     {
-     "title": "Revenue credit",
-     "text": "Each revenue account becomes its last 3 months × 4 (or 6 × 2). The table shows every revenue line month by month, the months used highlighted, the T12 and the annualized figure; today’s occupancy from the rent roll if there is one. A story is required. The management fee does not follow it.",
-     "img": "img/underwriting/pf-revenue-01.jpg",
-     "w": 1152,
-     "h": 574,
-     "marks": [
+     "kind": "note",
+     "text": "Claude works from four sources, and only four: the T12 (the source of truth), the rent roll, the loan agreement and the property details (its units and address). It searches the web only for the surroundings, such as the weather around the property in a given month. Where it has to assume, it says so under **Checked**."
+    }
+   ],
+   "before": [
+    "Claude connected — see [Connect Claude](connect-claude).",
+    "A T12 for the property — see [Upload a T12](upload-a-t12)."
+   ],
+   "sections": [
+    {
+     "id": "get-claudes-stories",
+     "title": "Get Claude’s stories",
+     "steps": [
       {
-       "x": 2,
-       "y": 22.9,
-       "w": 4.1,
-       "h": 4.3,
-       "label": "Safe / Aggressive (its own)",
-       "text": "Aggressive can have its own; until then it uses Safe’s."
+       "text": "Click **Claude’s stories…** in the underwriting bar. The page scrolls to Claude’s stories under the table, and the first time, Claude starts reading. It can take a few minutes."
       },
       {
-       "x": 20.5,
-       "y": 22.9,
-       "w": 12,
-       "h": 4.3,
-       "label": "T3 / T6 / T12",
-       "text": "How many recent months. T12 changes nothing on a normal 12-month file."
-      },
-      {
-       "x": 59.2,
-       "y": 23.6,
-       "w": 17.8,
-       "h": 2.9,
-       "label": "Months used",
-       "text": "Which months."
-      },
-      {
-       "x": 88.4,
-       "y": 30,
-       "w": 9.8,
-       "h": 4.1,
-       "label": "Annualized",
-       "text": "Each line after the credit."
-      },
-      {
-       "x": 1.7,
-       "y": 75.6,
-       "w": 96.5,
-       "h": 9.4,
-       "label": "Story",
-       "text": "The reason the lender reads."
-      },
-      {
-       "x": 82.1,
-       "y": 92,
-       "w": 16.2,
-       "h": 5.2,
-       "label": "Save the revenue credit",
-       "text": "Saves it."
+       "text": "Read the stories. Each card has the account and its change, the story, how Claude got the number, what to show the lender, and what Claude checked.",
+       "img": "img/underwriting/use-claudes-stories-01.jpg",
+       "w": 1279,
+       "h": 910,
+       "marks": [
+        {
+         "x": 0,
+         "y": 31.2,
+         "w": 100,
+         "h": 19.4,
+         "label": "A story",
+         "text": "One account, its change and its story, and how much it raises the NOI."
+        },
+        {
+         "x": 1,
+         "y": 18.7,
+         "w": 68.6,
+         "h": 1.8,
+         "label": "How Claude got the number",
+         "text": "From the T12’s own figures."
+        },
+        {
+         "x": 1,
+         "y": 22.8,
+         "w": 68.6,
+         "h": 6.3,
+         "label": "Checked",
+         "text": "What Claude checked before it suggested this."
+        },
+        {
+         "x": 0,
+         "y": 92,
+         "w": 100,
+         "h": 3.8,
+         "label": "Claude didn’t have",
+         "text": "Shows only when one of the four sources is missing."
+        }
+       ],
+       "callouts": [
+        {
+         "kind": "note",
+         "text": "A story Claude couldn’t confirm is never shown, and one that would lower the NOI is listed as left out. When the “Claude didn’t have” note names a missing source, add it and click **Look again**."
+        }
+       ]
       }
      ]
+    },
+    {
+     "id": "put-a-story-in-the-draft",
+     "title": "Put a story in the draft",
+     "steps": [
+      {
+       "text": "On a story you agree with, click **Put it in the draft**. The account opens in the pro forma window, with the change and its story filled in.",
+       "img": "img/underwriting/use-claudes-stories-02.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 28,
+         "w": 93.8,
+         "h": 13.7,
+         "label": "Claude suggests",
+         "text": "The story as Claude wrote it."
+        },
+        {
+         "x": 18.1,
+         "y": 50.7,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "Its new amount",
+         "text": "Filled in from the story."
+        },
+        {
+         "x": 2.9,
+         "y": 58.9,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Filled in from the story."
+        },
+        {
+         "x": 2.9,
+         "y": 69.2,
+         "w": 93.8,
+         "h": 7.1,
+         "label": "Story",
+         "text": "Change it if you want."
+        }
+       ]
+      },
+      {
+       "text": "Check the figure, the kind and the story, and change what you want. Then click **Save the change**. The story’s card now reads **In the pro forma ✓**."
+      }
+     ]
+    },
+    {
+     "id": "use-a-suggestion-from-your-assumptions",
+     "title": "Use a suggestion from your assumptions",
+     "text": "When a line runs worse than your assumption, its biggest account gets a suggestion at the assumption, with a ready story. Here the management fee runs 3% of revenue against an assumption of 2.5%.",
+     "steps": [
+      {
+       "text": "Click the yellow **suggestions** button in the underwriting bar. It lists every open suggestion, from your assumptions and from Claude.",
+       "img": "img/underwriting/use-claudes-stories-03.jpg",
+       "w": 1152,
+       "h": 471,
+       "marks": [
+        {
+         "x": 1.7,
+         "y": 27.2,
+         "w": 96.5,
+         "h": 14.6,
+         "label": "A suggestion",
+         "text": "Where, what and its story."
+        },
+        {
+         "x": 87.2,
+         "y": 29.1,
+         "w": 9.9,
+         "h": 5.2,
+         "label": "Open the account",
+         "text": "Opens it with the suggestion filled in."
+        }
+       ]
+      },
+      {
+       "text": "Click **Open the account**. The account opens with the suggestion on top, and its change and story filled in.",
+       "img": "img/underwriting/use-claudes-stories-04.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 28,
+         "w": 93.8,
+         "h": 11.6,
+         "label": "The suggestion",
+         "text": "The change, its kind, its story and why."
+        },
+        {
+         "x": 89.9,
+         "y": 29.2,
+         "w": 5.6,
+         "h": 3.2,
+         "label": "Not this one",
+         "text": "Sets it aside; you can bring it back."
+        },
+        {
+         "x": 2.9,
+         "y": 56.7,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Filled in from the suggestion, like the figure and the story."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save the change** to use it. Or click **Not this one** to set it aside."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A suggestion only ever raises the NOI. An assumption that would lower it shows as a warning in the underwriting bar instead, and the underwriting keeps the T12’s figure."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "approve-the-underwriting",
+     "anchor": "",
+     "text": "Approve Safe and Aggressive when they’re ready."
+    },
+    {
+     "page": "change-an-account",
+     "anchor": "",
+     "text": "Change an account yourself."
+    },
+    {
+     "page": "ref-underwriting",
+     "anchor": "claudes-stories",
+     "text": "Every part of a story card, named."
     }
    ]
   },
   {
-   "id": "assumptions",
-   "title": "Assumptions, benchmarks and warnings",
-   "intro": "The assumptions don’t change the underwriting by themselves: they give the draft its suggestions (only ones that raise the NOI), a warning when they would lower it, and the reserves.",
-   "steps": [
-    {
-     "title": "Assumptions, benchmarks, save",
-     "text": "Per property. A line that runs worse than an assumption gets a suggestion in the draft; the reserves per unit are taken off Safe and Aggressive. Each change is kept in the property’s history.",
-     "img": "img/underwriting/assumptions-01.jpg",
-     "w": 1279,
-     "h": 282,
-     "marks": [
-      {
-       "x": 57.3,
-       "y": 36.2,
-       "w": 7.5,
-       "h": 10.7,
-       "label": "Vacancy",
-       "text": "When the T12 runs above it, the vacancy account gets a suggestion at it; when the T12 already runs below it, a warning — never applied by itself."
-      },
-      {
-       "x": 90.9,
-       "y": 36.2,
-       "w": 7.5,
-       "h": 10.7,
-       "label": "Management fee",
-       "text": "As a % of effective gross income — a suggestion when the T12 runs above it, a warning when it would lower the NOI."
-      },
-      {
-       "x": 23.6,
-       "y": 51.2,
-       "w": 7.5,
-       "h": 10.7,
-       "label": "Reserves / unit",
-       "text": "Replacement reserves a year per unit — taken off Safe and Aggressive."
-      },
-      {
-       "x": 25.2,
-       "y": 74.8,
-       "w": 7.5,
-       "h": 10.7,
-       "label": "Payroll / unit",
-       "text": "Your payroll benchmark for this property; a payroll line 15% off it is flagged."
-      },
-      {
-       "x": 58.8,
-       "y": 74.8,
-       "w": 7.5,
-       "h": 10.7,
-       "label": "R&M / unit",
-       "text": "Your repairs & maintenance benchmark."
-      },
-      {
-       "x": 0,
-       "y": 13.3,
-       "w": 14.5,
-       "h": 9.9,
-       "label": "Save to property record",
-       "text": "Saves the assumptions and benchmarks with the property, so every screen uses them."
-      },
-      {
-       "x": 23.7,
-       "y": 38.4,
-       "w": 9,
-       "h": 5.9,
-       "label": "Change history",
-       "text": "Every change to these, old → new, who and when."
-      }
-     ]
-    },
-    {
-     "title": "An assumption that would lower the NOI — a warning",
-     "text": "Here the management fee assumption is set to 4%, but the T12 runs 3%. That would lower the NOI, so it is never a suggestion: the bar warns you, for information, and the underwriting keeps the T12’s figure. To underwrite 4% anyway, change the account yourself, with its story.",
-     "img": "img/underwriting/assumptions-02.jpg",
-     "w": 1279,
-     "h": 202,
-     "marks": [
-      {
-       "x": 2,
-       "y": 73.7,
-       "w": 95.9,
-       "h": 8.2,
-       "label": "The warning",
-       "text": "Your assumption, what the T12 runs, and how much lower the NOI would be at your assumption."
-      },
-      {
-       "x": 27.1,
-       "y": 8.8,
-       "w": 21.3,
-       "h": 8.2,
-       "label": "The NOIs",
-       "text": "Unchanged — an assumption never moves the underwriting by itself."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "pf-result",
-   "title": "Draft — the result, the lender file, history",
-   "intro": "The column and how it adds up after the changes; the Excel file for the lender; every change’s history.",
-   "steps": [
-    {
-     "title": "The column after the changes",
-     "text": "Changed lines are outlined with a teal dot; hover one to see its kinds. The NOI rows follow.",
-     "img": "img/underwriting/pf-result-01.jpg",
-     "w": 1313,
-     "h": 2536,
-     "marks": [
-      {
-       "x": 79.8,
-       "y": 29,
-       "w": 0.5,
-       "h": 0.2,
-       "label": "A changed line",
-       "text": "Teal dot: this line has changes."
-      },
-      {
-       "x": 67.6,
-       "y": 33.7,
-       "w": 20.9,
-       "h": 1.1,
-       "label": "Underwriting NOI",
-       "text": "In the NOI row, after the reserves."
-      }
-     ]
-    },
-    {
-     "title": "How it adds up",
-     "text": "T12 NOI + the revenue credit + each account change, grouped by kind with its story, less the reserves = the underwriting NOI, for Safe and for Aggressive.",
-     "img": "img/underwriting/pf-result-02.jpg",
-     "w": 1279,
-     "h": 404,
-     "marks": [
-      {
-       "x": 1,
-       "y": 12.7,
-       "w": 47.5,
-       "h": 14.9,
-       "label": "Revenue credit",
-       "text": "The credit’s effect."
-      },
-      {
-       "x": 1,
-       "y": 42.5,
-       "w": 47.5,
-       "h": 14.9,
-       "label": "Normalized",
-       "text": "Snow removal, with its story."
-      },
-      {
-       "x": 1,
-       "y": 77.8,
-       "w": 47.5,
-       "h": 4.5,
-       "label": "− Replacement reserves",
-       "text": "Taken off both versions."
-      },
-      {
-       "x": 41.4,
-       "y": 83.8,
-       "w": 7.1,
-       "h": 4.8,
-       "label": "= Safe underwriting NOI",
-       "text": "What you approve next."
-      }
-     ]
-    },
-    {
-     "title": "For the lender — the Excel file",
-     "text": "Safe only, or Safe and Aggressive. The file has four sheets: Pro forma (each line with its change, kind and story, and the reserves), Changed accounts, Reconciliation and Monthly (the months used for the revenue credit marked).",
-     "img": "img/underwriting/pf-result-03.jpg",
-     "w": 768,
-     "h": 254,
-     "marks": [
-      {
-       "x": 2.6,
-       "y": 59.1,
-       "w": 1.7,
-       "h": 5.1,
-       "label": "Safe only",
-       "text": "One version."
-      },
-      {
-       "x": 2.6,
-       "y": 69.1,
-       "w": 1.7,
-       "h": 5.1,
-       "label": "Safe and Aggressive",
-       "text": "Both, side by side."
-      },
-      {
-       "x": 76.5,
-       "y": 81.9,
-       "w": 20.8,
-       "h": 11.8,
-       "label": "Save the Excel file…",
-       "text": "Asks where to save “<property> — Pro forma — <date>.xlsx”."
-      }
-     ]
-    },
-    {
-     "title": "History",
-     "text": "Every change, edit, removal and set-aside, newest first: which line and account, old → new, the kind and story, who and when. Each approval is kept here too.",
-     "img": "img/underwriting/pf-result-04.jpg",
-     "w": 672,
-     "h": 597,
-     "marks": [
-      {
-       "x": 3,
-       "y": 18,
-       "w": 91.8,
-       "h": 17.6,
-       "label": "An entry",
-       "text": "One change with its story."
-      },
-      {
-       "x": 92.3,
-       "y": 2,
-       "w": 4.8,
-       "h": 5.4,
-       "label": "×",
-       "text": "Closes it."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "approve",
+   "id": "approve-the-underwriting",
+   "kind": "howto",
+   "group": "Underwriting",
    "title": "Approve the underwriting",
-   "intro": "Approving makes Safe and Aggressive this property’s underwriting: the refinance, the portfolio roll-up and What to push work from them. Change the draft later and approve again.",
-   "steps": [
+   "description": "Make Safe and Aggressive the property’s underwriting, so the refinance, the roll-up and What to push use them.",
+   "intro": "Until you approve it, the underwriting is a draft that nothing else uses. Approving makes Safe and Aggressive the property’s underwriting: the refinance, the portfolio roll-up and What to push work from them. You can change the draft later and approve it again.",
+   "before": [
+    "A drafted underwriting — see [Draft the underwriting](draft-the-underwriting)."
+   ],
+   "sections": [
     {
+     "id": "check-it-first",
+     "title": "Check it first",
+     "steps": [
+      {
+       "text": "Under the table, check that every change has its story and that Safe and Aggressive each reconcile to the dollar.",
+       "img": "img/underwriting/approve-the-underwriting-01.jpg",
+       "w": 1279,
+       "h": 371,
+       "marks": [
+        {
+         "x": 1,
+         "y": 13.9,
+         "w": 47.5,
+         "h": 16.2,
+         "label": "Revenue credit",
+         "text": "The credit’s effect, with its story."
+        },
+        {
+         "x": 1,
+         "y": 46.2,
+         "w": 47.5,
+         "h": 16.2,
+         "label": "Normalized",
+         "text": "The snow removal, with its story."
+        },
+        {
+         "x": 1,
+         "y": 68.6,
+         "w": 47.5,
+         "h": 4.9,
+         "label": "− Replacement reserves",
+         "text": "Taken off both versions."
+        },
+        {
+         "x": 42,
+         "y": 75.1,
+         "w": 6.5,
+         "h": 5.3,
+         "label": "= Safe underwriting NOI",
+         "text": "What you approve."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "approve",
      "title": "Approve",
-     "text": "When Safe and Aggressive are what you would show — every change with its story, both adding up to the dollar — click Approve the underwriting.",
-     "img": "img/underwriting/approve-01.jpg",
-     "w": 1279,
-     "h": 126,
-     "marks": [
+     "steps": [
       {
-       "x": 9.8,
-       "y": 13.7,
-       "w": 3.7,
-       "h": 13.9,
-       "label": "draft",
-       "text": "Not approved yet."
+       "text": "Click **Approve the underwriting** at the end of the underwriting bar.",
+       "img": "img/underwriting/approve-the-underwriting-02.jpg",
+       "w": 1279,
+       "h": 126,
+       "marks": [
+        {
+         "x": 9,
+         "y": 13.7,
+         "w": 3.4,
+         "h": 13.9,
+         "label": "draft",
+         "text": "Not approved yet."
+        },
+        {
+         "x": 59.1,
+         "y": 39.7,
+         "w": 12.7,
+         "h": 19.4,
+         "label": "Approve the underwriting",
+         "text": "Approves both versions as they are now."
+        }
+       ]
       },
       {
-       "x": 66.3,
-       "y": 39.7,
-       "w": 14.4,
-       "h": 19.4,
-       "label": "Approve the underwriting",
-       "text": "Approves both versions as they are now — who and when are kept."
+       "text": "The chip now reads **approved**, and the line under the bar says who approved it, when, and the Safe and Aggressive NOI in use.",
+       "img": "img/underwriting/approve-the-underwriting-03.jpg",
+       "w": 1279,
+       "h": 126,
+       "marks": [
+        {
+         "x": 9,
+         "y": 13.7,
+         "w": 5,
+         "h": 13.9,
+         "label": "approved",
+         "text": "This is the property’s underwriting."
+        },
+        {
+         "x": 1,
+         "y": 63.1,
+         "w": 98,
+         "h": 13.1,
+         "label": "Approved by …",
+         "text": "Who, when, and the figures in use."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The figures on top now read **approved** with the date, and What to push starts by itself — see [See what you can still push](use-what-to-push)."
       }
      ]
     },
     {
-     "title": "Approved",
-     "text": "The chip reads “approved”, and the line under the bar says who approved it, when, and the figures now in use.",
-     "img": "img/underwriting/approve-02.jpg",
-     "w": 1279,
-     "h": 126,
-     "marks": [
+     "id": "approve-again-after-a-change",
+     "title": "Approve again after a change",
+     "steps": [
       {
-       "x": 9.8,
-       "y": 13.7,
-       "w": 5.4,
-       "h": 13.9,
-       "label": "approved",
-       "text": "This is the property’s underwriting."
+       "text": "Change anything that moves Safe or Aggressive: an account, the revenue credit, the reserves. Here the reserves go to $250 a unit, and the chip reads **changed since approved**.",
+       "img": "img/underwriting/approve-the-underwriting-04.jpg",
+       "w": 1279,
+       "h": 126,
+       "marks": [
+        {
+         "x": 9,
+         "y": 13.7,
+         "w": 11.2,
+         "h": 13.9,
+         "label": "changed since approved",
+         "text": "The draft no longer matches what you approved."
+        },
+        {
+         "x": 1,
+         "y": 63.1,
+         "w": 98,
+         "h": 13.1,
+         "label": "What is still in use",
+         "text": "The approved figures."
+        },
+        {
+         "x": 59.1,
+         "y": 39.7,
+         "w": 8,
+         "h": 19.4,
+         "label": "Approve again",
+         "text": "Approves the draft as it is now."
+        }
+       ]
       },
       {
-       "x": 1,
-       "y": 63.1,
-       "w": 98,
-       "h": 13.1,
-       "label": "Approved by …",
-       "text": "Who, when, and the Safe and Aggressive NOI the refinance, the roll-up and What to push use."
+       "text": "Click **Approve again**. Until you do, the refinance and What to push keep using the figures you approved."
       }
      ]
     },
     {
-     "title": "The figures on top say so",
-     "text": "The Safe and Aggressive cards read “approved” with the date.",
-     "img": "img/underwriting/approve-03.jpg",
-     "w": 1313,
-     "h": 99,
-     "marks": [
+     "id": "give-the-lender-the-file",
+     "title": "Give the lender the file",
+     "steps": [
       {
-       "x": 34.6,
-       "y": 56.6,
-       "w": 30.7,
-       "h": 15.2,
-       "label": "approved",
-       "text": "Safe, as approved."
+       "text": "Click **For the lender…** in the underwriting bar."
       },
       {
-       "x": 68.3,
-       "y": 56.6,
-       "w": 30.7,
-       "h": 15.2,
-       "label": "approved",
-       "text": "Aggressive, as approved."
+       "text": "Pick **Safe only**, or **Safe and Aggressive** side by side.",
+       "img": "img/underwriting/approve-the-underwriting-05.jpg",
+       "w": 768,
+       "h": 253,
+       "marks": [
+        {
+         "x": 2.6,
+         "y": 59,
+         "w": 1.7,
+         "h": 5.1,
+         "label": "Safe only",
+         "text": "One version."
+        },
+        {
+         "x": 2.6,
+         "y": 69.1,
+         "w": 1.7,
+         "h": 5.1,
+         "label": "Safe and Aggressive",
+         "text": "Both, side by side."
+        },
+        {
+         "x": 79.1,
+         "y": 81.8,
+         "w": 18.3,
+         "h": 11.9,
+         "label": "Save the Excel file…",
+         "text": "Asks where to save it."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save the Excel file…** and choose where to save it. It is named “<property> — Pro forma — <date>.xlsx”."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The file has four sheets: **Pro forma** (each line with its change, kind and story, and the reserves), **Changed accounts**, **Reconciliation** and **Monthly** (the months used for the revenue credit marked)."
       }
      ]
+    }
+   ],
+   "next": [
+    {
+     "page": "use-what-to-push",
+     "anchor": "",
+     "text": "See what you can still push from here."
     },
     {
-     "title": "A change after the approval",
-     "text": "Change anything that moves Safe or Aggressive — here the reserves go to $250 a unit — and the chip reads “changed since approved”. Until you approve again, everything keeps using the figures you approved.",
-     "img": "img/underwriting/approve-04.jpg",
-     "w": 1279,
-     "h": 126,
-     "marks": [
-      {
-       "x": 9.8,
-       "y": 13.7,
-       "w": 12.4,
-       "h": 13.9,
-       "label": "changed since approved",
-       "text": "The draft no longer matches what was approved."
-      },
-      {
-       "x": 1,
-       "y": 63.1,
-       "w": 98,
-       "h": 13.1,
-       "label": "What is still in use",
-       "text": "The approved figures, and who approved them when."
-      },
-      {
-       "x": 66.3,
-       "y": 39.7,
-       "w": 8.9,
-       "h": 19.4,
-       "label": "Approve again",
-       "text": "Approves the draft as it is now; What to push runs again on it."
-      }
-     ]
+     "page": "size-the-debt",
+     "anchor": "",
+     "text": "See the largest loan each version supports."
+    },
+    {
+     "page": "run-a-refinance",
+     "anchor": "",
+     "text": "Refinance on the approved underwriting."
     }
    ]
   },
   {
-   "id": "push",
-   "title": "What to push",
-   "intro": "After the approval: what you can still push from the approved underwriting — things not proven yet, so not stories in it — measured on the in-place T12, on Safe and on Aggressive. Claude reads the same as for the stories (every account, the rent roll, the documents, the profile, the web around the property) and shows only what it confirmed.",
-   "steps": [
+   "id": "use-what-to-push",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "See what you can still push",
+   "description": "Read Claude’s list of what can still raise the NOI after the approved underwriting, measured on each version.",
+   "intro": "The approved underwriting holds what a lender accepts today. What to push is what you can still do from there to raise the NOI — raise rents at renewal, re-bid a contract, cut a cost that runs above its benchmark — measured on the in-place T12, on Safe and on Aggressive. It’s your plan, not the lender’s.",
+   "before": [
+    "The underwriting approved — see [Approve the underwriting](approve-the-underwriting).",
+    "Claude connected — see [Connect Claude](connect-claude)."
+   ],
+   "sections": [
     {
-     "title": "Claude’s pushes",
-     "text": "It runs by itself once the underwriting is approved (Claude must be connected), and again when you approve again. Each push only raises the NOI, never pulls a lever a story already pulls (one that sits beside a story names it), and shows its effect three ways, each net of what that version already counts. Each one lists what Claude checked, and one it could not confirm is never shown. Utilities the owner pays are in the rent, so no billing them back; no push toward 100% occupancy; next year’s rent growth at the market’s usual rate counts on top of the underwritten rent. These are your plan, not the lender’s: tick them in the refinance to see what loan they would get you.",
-     "img": "img/underwriting/push-01.jpg",
-     "w": 1313,
-     "h": 842,
-     "marks": [
+     "id": "read-the-pushes",
+     "title": "Read the pushes",
+     "steps": [
       {
-       "x": 91.1,
-       "y": 4.9,
-       "w": 7.6,
-       "h": 3.6,
-       "label": "Re-analyse",
-       "text": "Asks Claude again."
+       "text": "Scroll to **What to push on this property**, at the bottom of the tab. Claude starts by itself once the underwriting is approved, and again each time you approve it. It can take a few minutes."
       },
       {
-       "x": 1.3,
-       "y": 17.5,
-       "w": 97.4,
-       "h": 25.6,
-       "label": "A push",
-       "text": "What to do, why (from this statement’s own figures) and the effort."
+       "text": "Read each push: what to do and why, its effect three ways, the lever it pulls, and what Claude checked.",
+       "img": "img/underwriting/use-what-to-push-01.jpg",
+       "w": 1313,
+       "h": 824,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 15.7,
+         "w": 97.4,
+         "h": 26.2,
+         "label": "A push",
+         "text": "What to do, and why, from this property’s own figures."
+        },
+        {
+         "x": 76.1,
+         "y": 17,
+         "w": 21.6,
+         "h": 4.1,
+         "label": "Its effect, three ways",
+         "text": "On the in-place T12, on Safe and on Aggressive."
+        },
+        {
+         "x": 11.2,
+         "y": 38.2,
+         "w": 11.4,
+         "h": 2.3,
+         "label": "The lever",
+         "text": "What it pulls."
+        },
+        {
+         "x": 2.3,
+         "y": 28.5,
+         "w": 95.4,
+         "h": 9,
+         "label": "Checked",
+         "text": "What Claude checked before it suggested this."
+        }
+       ],
+       "callouts": [
+        {
+         "kind": "note",
+         "text": "The figures are Claude’s estimates: a starting point, not advice."
+        }
+       ]
       },
       {
-       "x": 73.6,
-       "y": 18.8,
-       "w": 24.1,
-       "h": 4,
-       "label": "Its effect, three ways",
-       "text": "On the in-place T12, on Safe and on Aggressive — Claude’s estimates, a starting point, not advice."
+       "text": "Click **Re-analyse** to ask Claude again — after you add the rent roll or the loan agreement, for example."
       },
       {
-       "x": 12.1,
-       "y": 39.5,
-       "w": 13.6,
-       "h": 2.3,
-       "label": "The lever",
-       "text": "What it moves — never one a story in the underwriting already moves."
-      },
-      {
-       "x": 26.3,
-       "y": 39.5,
-       "w": 40.6,
-       "h": 2.3,
-       "label": "Beside the story",
-       "text": "The underwriting story it sits next to: a different lever, so both count."
-      },
-      {
-       "x": 2.3,
-       "y": 30,
-       "w": 95.4,
-       "h": 8.8,
-       "label": "Checked",
-       "text": "What Claude checked before it suggested this push. One it could not confirm is never shown."
-      },
-      {
-       "x": 1.3,
-       "y": 93.5,
-       "w": 97.4,
-       "h": 1.8,
-       "label": "The web",
-       "text": "How many times Claude searched the web for this, and what it searched."
-      },
-      {
-       "x": 1.3,
-       "y": 88.9,
-       "w": 97.4,
-       "h": 4.1,
-       "label": "Claude didn’t have",
-       "text": "What the property is missing for Claude: a push resting on it was left out. Add it and re-analyse for more."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "sizing",
-   "title": "Debt sizing",
-   "intro": "The largest loan each version supports, side by side, at the limits you set for this property.",
-   "steps": [
-    {
-     "title": "Safe and Aggressive, side by side",
-     "text": "Each limit gives a loan amount on each version’s NOI; the smallest is the maximum supportable loan, and the limit that sets it “binds”. A quick answer while you underwrite — the refinance sizes the real loan with its lender’s own limits.",
-     "img": "img/underwriting/sizing-01.jpg",
-     "w": 1313,
-     "h": 342,
-     "marks": [
-      {
-       "x": 23,
-       "y": 14.3,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Cap rate",
-       "text": "Value = NOI ÷ cap rate."
-      },
-      {
-       "x": 23,
-       "y": 25.5,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Max LTV",
-       "text": "The loan as a share of that value."
-      },
-      {
-       "x": 23,
-       "y": 36.6,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Min DSCR",
-       "text": "NOI ÷ the yearly payment must be at least this."
-      },
-      {
-       "x": 23,
-       "y": 47.7,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Min debt yield",
-       "text": "NOI ÷ the loan must be at least this."
-      },
-      {
-       "x": 23,
-       "y": 58.9,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Interest rate",
-       "text": "The rate the payment is worked out at."
-      },
-      {
-       "x": 23,
-       "y": 70,
-       "w": 7.3,
-       "h": 8.8,
-       "label": "Amortization",
-       "text": "Years the payment pays the loan down over."
-      },
-      {
-       "x": 34.3,
-       "y": 14.3,
-       "w": 31.6,
-       "h": 72.8,
-       "label": "Safe",
-       "text": "Sized on the Safe underwriting NOI."
-      },
-      {
-       "x": 66.8,
-       "y": 14.3,
-       "w": 31.6,
-       "h": 72.8,
-       "label": "Aggressive",
-       "text": "Sized on the Aggressive underwriting NOI."
-      },
-      {
-       "x": 56.9,
-       "y": 25.6,
-       "w": 8,
-       "h": 5.3,
-       "label": "Est. value",
-       "text": "NOI ÷ cap rate."
-      },
-      {
-       "x": 57.5,
-       "y": 33.5,
-       "w": 7.4,
-       "h": 5.3,
-       "label": "Loan @ LTV",
-       "text": "What the LTV limit allows."
-      },
-      {
-       "x": 57.5,
-       "y": 41.4,
-       "w": 7.4,
-       "h": 5.3,
-       "label": "Loan @ DSCR",
-       "text": "What the coverage limit allows."
-      },
-      {
-       "x": 57.5,
-       "y": 49.3,
-       "w": 7.4,
-       "h": 5.3,
-       "label": "Loan @ debt yield",
-       "text": "What the debt-yield limit allows."
-      },
-      {
-       "x": 54.4,
-       "y": 58.7,
-       "w": 9.9,
-       "h": 7,
-       "label": "Max supportable — Safe",
-       "text": "The smallest of the three."
-      },
-      {
-       "x": 86.9,
-       "y": 58.7,
-       "w": 9.9,
-       "h": 7,
-       "label": "Max supportable — Aggressive",
-       "text": "The same on Aggressive."
-      },
-      {
-       "x": 62.1,
-       "y": 69,
-       "w": 2.8,
-       "h": 5.3,
-       "label": "Binds on",
-       "text": "The limit that sets it."
-      },
-      {
-       "x": 51.7,
-       "y": 76.9,
-       "w": 13.2,
-       "h": 5.3,
-       "label": "Implied ratios",
-       "text": "The LTV, DSCR and debt yield at the max loan."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "history",
-   "title": "Operating history and the roll-up",
-   "intro": "The property’s months kept from every T12 with its approved underwriting, and the whole portfolio’s NOI and coverage in one table.",
-   "steps": [
-    {
-     "title": "General Data — operating history",
-     "text": "Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before. Click its title to fold it; the app remembers.",
-     "img": "img/underwriting/history-01.jpg",
-     "w": 1313,
-     "h": 660,
-     "marks": [
-      {
-       "x": 2,
-       "y": 7.7,
-       "w": 30.5,
-       "h": 3,
-       "label": "In-place NOI",
-       "text": "The same NOI as everywhere in the app, and how it was worked out."
-      },
-      {
-       "x": 34.8,
-       "y": 7.7,
-       "w": 30.5,
-       "h": 3,
-       "label": "Underwriting NOI — Safe · Aggressive",
-       "text": "The approved underwriting, and when it was approved (“not approved yet” before)."
-      },
-      {
-       "x": 67.5,
-       "y": 10.7,
-       "w": 30.5,
-       "h": 3,
-       "label": "Saved to the folder",
-       "text": "Kept in the property’s folder (general-data.json)."
-      },
-      {
-       "x": 47.5,
-       "y": 19.9,
-       "w": 28.8,
-       "h": 3.3,
-       "label": "Trailing 12-mo",
-       "text": "Each line’s last 12 months, and its change."
-      },
-      {
-       "x": 1.3,
-       "y": 2.6,
-       "w": 97.4,
-       "h": 2.5,
-       "label": "Fold",
-       "text": "Click the title to fold the card or open it again."
+       "text": "To see what loan the pushes would get you, tick them in the refinance. See [Plan what to push for a refinance](plan-what-to-push)."
       }
      ]
     },
     {
+     "id": "how-claude-chooses",
+     "title": "How Claude chooses",
+     "text": "Claude works from four sources, and only four: the T12 (the source of truth), the rent roll, the loan agreement and the property details (units, address). It searches the web for the surroundings: market rents and rent growth, or the weather or an event in a given month. Every push raises the NOI on every version, never pulls a lever a story in the underwriting already pulls, and lists what Claude checked; one it couldn’t confirm is never shown. The “Claude didn’t have” note shows only when one of the four sources is missing.",
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Claude works out who pays the utilities from the T12 itself. A utilities line big enough for the whole property means the owner pays, in the rent, so Claude never suggests billing the residents for them. A line only big enough for the common areas means the residents pay their own."
+      },
+      {
+       "kind": "note",
+       "text": "Some vacancy is natural, so there is no push toward 100% occupancy. Rent growth at the market’s usual rate is measured on top of the rent the underwriting already counts."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "plan-what-to-push",
+     "anchor": "",
+     "text": "Tick the pushes in the refinance."
+    },
+    {
+     "page": "size-the-debt",
+     "anchor": "",
+     "text": "See the largest loan each version supports."
+    },
+    {
+     "page": "ref-underwriting",
+     "anchor": "what-to-push",
+     "text": "Every part of a push, named."
+    }
+   ]
+  },
+  {
+   "id": "size-the-debt",
+   "kind": "howto",
+   "group": "Underwriting",
+   "title": "Size the debt",
+   "description": "See the largest loan Safe and Aggressive each support, at the limits you set for the property.",
+   "intro": "Debt sizing is a quick answer while you underwrite: the largest loan each version of the underwriting supports, at your cap rate, LTV, coverage and debt-yield limits. The refinance sizes the real loan with its lender’s own limits.",
+   "before": [
+    "A T12 for the property — see [Upload a T12](upload-a-t12)."
+   ],
+   "sections": [
+    {
+     "id": "set-the-limits",
+     "title": "Set the limits",
+     "steps": [
+      {
+       "text": "Scroll to **Debt sizing**, under the underwriting table."
+      },
+      {
+       "text": "Type the property’s limits: **Cap rate**, **Max LTV**, **Min DSCR** and **Min debt yield**, and the **Interest rate** and **Amortization** the payment is worked out at.",
+       "img": "img/underwriting/size-the-debt-01.jpg",
+       "w": 1313,
+       "h": 342,
+       "marks": [
+        {
+         "x": 23,
+         "y": 14.3,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Cap rate",
+         "text": "Value = NOI ÷ cap rate."
+        },
+        {
+         "x": 23,
+         "y": 25.5,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Max LTV",
+         "text": "The loan as a share of that value."
+        },
+        {
+         "x": 23,
+         "y": 36.6,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Min DSCR",
+         "text": "NOI ÷ the yearly payment must be at least this."
+        },
+        {
+         "x": 23,
+         "y": 47.7,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Min debt yield",
+         "text": "NOI ÷ the loan must be at least this."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "read-the-result",
+     "title": "Read the result",
+     "steps": [
+      {
+       "text": "Read **Max supportable** for Safe and for Aggressive: the smallest of the loans the limits allow. **Binds on** names the limit that sets it.",
+       "img": "img/underwriting/size-the-debt-02.jpg",
+       "w": 1313,
+       "h": 342,
+       "marks": [
+        {
+         "x": 55.4,
+         "y": 58.7,
+         "w": 8.9,
+         "h": 7,
+         "label": "Max supportable — Safe",
+         "text": "On the Safe underwriting NOI."
+        },
+        {
+         "x": 87.9,
+         "y": 58.7,
+         "w": 8.9,
+         "h": 7,
+         "label": "Max supportable — Aggressive",
+         "text": "On the Aggressive underwriting NOI."
+        },
+        {
+         "x": 62.4,
+         "y": 69,
+         "w": 2.5,
+         "h": 5.3,
+         "label": "Binds on",
+         "text": "The limit that sets it."
+        },
+        {
+         "x": 53.1,
+         "y": 76.9,
+         "w": 11.8,
+         "h": 5.3,
+         "label": "Implied",
+         "text": "The LTV, DSCR and debt yield at that loan."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Debt sizing works on the underwriting as it stands, draft or approved."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "run-a-refinance",
+     "anchor": "",
+     "text": "Size the real loan with a lender’s limits."
+    },
+    {
+     "page": "ref-underwriting",
+     "anchor": "debt-sizing",
+     "text": "Every figure in Debt sizing, named."
+    }
+   ]
+  },
+  {
+   "id": "ref-underwriting",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "The Underwriting tab",
+   "description": "Every part of the Underwriting & Sizing tab, from the property’s T12 at the top to What to push at the bottom.",
+   "intro": "The tab works top to bottom: the property and its T12, the figures it gives, the underwriting table with its bar, Claude’s stories and your assumptions, debt sizing, the property’s operating history, the portfolio roll-up and What to push. The pictures show a made-up property with its underwriting approved. Point at a number, on the picture or in the list, to find it.",
+   "sections": [
+    {
+     "id": "the-top-of-the-tab",
+     "title": "The top of the tab",
+     "views": [
+      {
+       "text": "Opened from **+** at the end of the tab strip, **Underwriting & Sizing**. Pick the property at the top; everything below is that property’s.",
+       "img": "img/underwriting/ref-underwriting-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.2,
+         "h": 4.2,
+         "label": "Portfolio",
+         "text": "Back to the Portfolio page."
+        },
+        {
+         "x": 11.3,
+         "y": 15.2,
+         "w": 12.7,
+         "h": 4.2,
+         "label": "Underwriting",
+         "text": "This tab."
+        },
+        {
+         "x": 20.5,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Pop out",
+         "text": "Opens the tab in a window of its own, handy on a second screen."
+        },
+        {
+         "x": 22,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Close tab",
+         "text": "Closes the tab. Nothing is lost: the T12, the underwriting and its approval are saved with the property."
+        },
+        {
+         "x": 91.1,
+         "y": 23.2,
+         "w": 3.9,
+         "h": 3.3,
+         "label": "Clear",
+         "text": "Empties this screen. The property’s saved files and figures stay."
+        },
+        {
+         "x": 9.7,
+         "y": 31.1,
+         "w": 84.2,
+         "h": 3.7,
+         "label": "Property",
+         "text": "The property to underwrite. One that already has a T12 loads it, with its underwriting."
+        },
+        {
+         "x": 5.1,
+         "y": 36.7,
+         "w": 88.8,
+         "h": 18.3,
+         "label": "The T12 box",
+         "text": "Where the property’s T12 goes."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-t12-and-the-units",
+     "title": "The T12 and the units",
+     "views": [
+      {
+       "title": "The T12 box",
+       "text": "See [Upload a T12](upload-a-t12).",
+       "img": "img/underwriting/ref-underwriting-02.jpg",
+       "w": 1313,
+       "h": 465,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 3.7,
+         "w": 92.3,
+         "h": 7.1,
+         "label": "Property",
+         "text": "The property this T12 belongs to. The T12 is saved in its folder, and read from there from now on."
+        },
+        {
+         "x": 1.3,
+         "y": 14.4,
+         "w": 97.4,
+         "h": 35.5,
+         "label": "Drag and drop",
+         "text": "Drag the T12 file from its folder and let go over this box. Excel and CSV exports are read; the T12 sheet is found by itself."
+        },
+        {
+         "x": 53.2,
+         "y": 28.6,
+         "w": 6.5,
+         "h": 4.3,
+         "label": "choose a file",
+         "text": "Or click here: your computer’s file window opens. Pick the T12, then click Open."
+        },
+        {
+         "x": 35.9,
+         "y": 39,
+         "w": 21.3,
+         "h": 5.3,
+         "label": "Setup built",
+         "text": "The file’s name, and that the table below was built from it."
+        },
+        {
+         "x": 57.8,
+         "y": 39.6,
+         "w": 6.2,
+         "h": 4.1,
+         "label": "file verified",
+         "text": "The exact file saved in the property’s folder (its checksum is on record), so the same statement can’t be saved twice."
+        },
+        {
+         "x": 1.3,
+         "y": 52.4,
+         "w": 97.4,
+         "h": 9.6,
+         "label": "Checked by the reader and the AI",
+         "text": "The app’s reader and Claude both read the file, and agree: its figures are in use. Otherwise it reads “Waiting for your review”, or “Read by the reader only” when Claude wasn’t connected."
+        },
+        {
+         "x": 81.4,
+         "y": 54.4,
+         "w": 9.4,
+         "h": 5.7,
+         "label": "Review the reading",
+         "text": "How each row of the file was read (below)."
+        },
+        {
+         "x": 91.3,
+         "y": 54.4,
+         "w": 6.1,
+         "h": 5.7,
+         "label": "Read again",
+         "text": "Reads the file again from the start."
+        },
+        {
+         "x": 18.6,
+         "y": 64.8,
+         "w": 5.3,
+         "h": 3,
+         "label": "NOI used",
+         "text": "The in-place NOI the app uses from this file, and the months it covers."
+        }
+       ]
+      },
+      {
+       "title": "Units and rent",
+       "text": "Without the units, the table below says **Units missing**, with a link to set them in the property’s profile instead.",
+       "img": "img/underwriting/ref-underwriting-03.jpg",
+       "w": 1313,
+       "h": 465,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Units",
+         "text": "How many apartments the property has, from the rent roll. Sets the replacement reserves and every per-unit figure. Typing it here asks to update the property’s profile to match."
+        },
+        {
+         "x": 34.1,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Gross potential rent — per year",
+         "text": "A year’s rent with every unit leased at market, before vacancy. Above the T12’s rent, the draft offers it as a suggestion, with its story — never applied by itself."
+        },
+        {
+         "x": 66.8,
+         "y": 75.9,
+         "w": 31.9,
+         "h": 7.3,
+         "label": "Average rent per unit — per month",
+         "text": "Easier than the yearly figure: the average monthly rent for one unit. The app works out average × units × 12."
+        }
+       ]
+      },
+      {
+       "title": "The reading of the T12",
+       "text": "Opened by **Review the reading**: every row of the file as the reader read it. Change any row, with a note; nothing is saved until you click **Save this reading**. See [Check a T12](check-a-t12).",
+       "img": "img/underwriting/ref-underwriting-04.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 6.5,
+         "w": 9.6,
+         "h": 1.9,
+         "label": "The verdict",
+         "text": "Whether every check passes and the AI agrees with the reader."
+        },
+        {
+         "x": 20.6,
+         "y": 24.1,
+         "w": 11.5,
+         "h": 4.4,
+         "label": "What the reader made of it",
+         "text": "Account, category name, total, header… Change it when the reader got a row wrong."
+        },
+        {
+         "x": 52,
+         "y": 24.1,
+         "w": 13.3,
+         "h": 4.4,
+         "label": "Underwriting line",
+         "text": "The line of the underwriting table this account adds to."
+        },
+        {
+         "x": 74.4,
+         "y": 24.1,
+         "w": 12.6,
+         "h": 4.4,
+         "label": "Your note",
+         "text": "Why you changed a row, kept with the reading."
+        },
+        {
+         "x": 76,
+         "y": 94.7,
+         "w": 11.9,
+         "h": 3.9,
+         "label": "Close without saving",
+         "text": "Closes the window and keeps the reading as it was."
+        },
+        {
+         "x": 88.5,
+         "y": 94.7,
+         "w": 10,
+         "h": 3.9,
+         "label": "Save this reading",
+         "text": "Saves your changes; every figure from this T12 follows them."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-figures-on-top",
+     "title": "The figures on top",
+     "views": [
+      {
+       "text": "Under the T12: the statement’s NOI and the two underwriting NOIs. Before the approval each version reads “draft · not approved yet”; after a change to an approved underwriting, “draft · approved:” with the approved figure.",
+       "img": "img/underwriting/ref-underwriting-05.jpg",
+       "w": 1313,
+       "h": 99,
+       "marks": [
+        {
+         "x": 1,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "In-place NOI",
+         "text": "The T12’s own NOI: the 12-month total, or the last 3 months × 4 when the statement starts in a lease-up."
+        },
+        {
+         "x": 1,
+         "y": 56.6,
+         "w": 30.7,
+         "h": 15.2,
+         "label": "How it was worked out",
+         "text": "Which months it comes from."
+        },
+        {
+         "x": 1,
+         "y": 71.7,
+         "w": 30.7,
+         "h": 15.2,
+         "label": "ties to statement NOI",
+         "text": "The lines add up to the NOI printed on the statement."
+        },
+        {
+         "x": 34.6,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "Safe underwriting NOI",
+         "text": "The T12 with the changes you can defend line by line, less the reserves."
+        },
+        {
+         "x": 68.3,
+         "y": 28.3,
+         "w": 30.7,
+         "h": 28.3,
+         "label": "Aggressive underwriting NOI",
+         "text": "Safe plus the changes a cautious lender may not accept, less the reserves."
+        },
+        {
+         "x": 34.6,
+         "y": 56.6,
+         "w": 30.7,
+         "h": 15.2,
+         "label": "approved",
+         "text": "Approved, with the date."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-underwriting-bar",
+     "title": "The underwriting bar",
+     "views": [
+      {
+       "text": "Above the table. The chip says where the underwriting stands: **draft**, **approved** or **changed since approved**. Before the approval, and after a change, **Approve the underwriting** (or **Approve again**) ends the row of tools — see [Approve the underwriting](approve-the-underwriting).",
+       "img": "img/underwriting/ref-underwriting-06.jpg",
+       "w": 1279,
+       "h": 126,
+       "marks": [
+        {
+         "x": 9,
+         "y": 13.7,
+         "w": 5,
+         "h": 13.9,
+         "label": "approved",
+         "text": "Draft, approved, or changed since approved."
+        },
+        {
+         "x": 14.8,
+         "y": 11.1,
+         "w": 3.9,
+         "h": 19,
+         "label": "Safe",
+         "text": "The column shows the Safe version."
+        },
+        {
+         "x": 18.7,
+         "y": 11.1,
+         "w": 7,
+         "h": 19,
+         "label": "Aggressive",
+         "text": "The column shows the Aggressive version."
+        },
+        {
+         "x": 26.6,
+         "y": 14.1,
+         "w": 20.3,
+         "h": 13.1,
+         "label": "The two NOIs",
+         "text": "The version shown first, then the other, after the reserves."
+        },
+        {
+         "x": 1,
+         "y": 38.9,
+         "w": 7.6,
+         "h": 21,
+         "label": "suggestions",
+         "text": "Every open suggestion, from your assumptions and from Claude, in one list."
+        },
+        {
+         "x": 9.1,
+         "y": 38.9,
+         "w": 10.6,
+         "h": 21,
+         "label": "Claude’s stories…",
+         "text": "Jumps to Claude’s stories under the table, and asks Claude for them the first time."
+        },
+        {
+         "x": 20.2,
+         "y": 38.9,
+         "w": 8.8,
+         "h": 21,
+         "label": "Revenue credit…",
+         "text": "Annualizes every revenue account at once from its last months."
+        },
+        {
+         "x": 29.4,
+         "y": 38.9,
+         "w": 9,
+         "h": 21,
+         "label": "+ Add an account",
+         "text": "An account the T12 doesn’t have."
+        },
+        {
+         "x": 38.9,
+         "y": 38.9,
+         "w": 8.3,
+         "h": 21,
+         "label": "For the lender…",
+         "text": "The Excel file for the lender."
+        },
+        {
+         "x": 47.6,
+         "y": 38.9,
+         "w": 4.7,
+         "h": 21,
+         "label": "History",
+         "text": "Every change with its story, and every approval."
+        },
+        {
+         "x": 52.8,
+         "y": 38.9,
+         "w": 5.8,
+         "h": 21,
+         "label": "Start over",
+         "text": "Takes every change out and starts again from the T12 (asks first). The history keeps them, and the last approval stays in use until you approve again."
+        },
+        {
+         "x": 1,
+         "y": 63.1,
+         "w": 98,
+         "h": 13.1,
+         "label": "Approved by …",
+         "text": "Who approved it, when, and the Safe and Aggressive NOI the refinance, the roll-up and What to push use."
+        }
+       ]
+      },
+      {
+       "title": "A warning from an assumption",
+       "text": "An assumption that would lower the NOI is never a suggestion. Here the management fee assumption is set to 4%, but the T12 runs 3%: the bar warns you, for your information, and the underwriting keeps the T12’s figure. To underwrite 4% anyway, change the account yourself, with its story.",
+       "img": "img/underwriting/ref-underwriting-07.jpg",
+       "w": 1279,
+       "h": 202,
+       "marks": [
+        {
+         "x": 2,
+         "y": 73.7,
+         "w": 95.9,
+         "h": 8.2,
+         "label": "The warning",
+         "text": "Your assumption, what the T12 runs, and how much lower the NOI would be at your assumption."
+        },
+        {
+         "x": 26.6,
+         "y": 8.8,
+         "w": 20.3,
+         "h": 8.2,
+         "label": "The NOIs",
+         "text": "Unchanged: an assumption never moves the underwriting by itself."
+        }
+       ]
+      },
+      {
+       "title": "History",
+       "text": "Opened by **History**: every change, edit, removal and set-aside, newest first — which line and account, old → new, the kind and story, who and when. Each approval is kept here too.",
+       "img": "img/underwriting/ref-underwriting-08.jpg",
+       "w": 672,
+       "h": 597,
+       "marks": [
+        {
+         "x": 3,
+         "y": 18,
+         "w": 91.8,
+         "h": 11.2,
+         "label": "An entry",
+         "text": "One change, with its story."
+        },
+        {
+         "x": 92.3,
+         "y": 2,
+         "w": 4.8,
+         "h": 5.4,
+         "label": "×",
+         "text": "Closes the history."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-underwriting-table",
+     "title": "The underwriting table",
+     "views": [
+      {
+       "title": "The columns",
+       "text": "Every line of the T12, classified. Two figures per line, each also per unit: the T12 and the underwriting.",
+       "img": "img/underwriting/ref-underwriting-09.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.1,
+         "y": 31.7,
+         "w": 37.1,
+         "h": 2.9,
+         "label": "Line",
+         "text": "The underwriting line. A line far from its benchmark is flagged next to its name."
+        },
+        {
+         "x": 42.2,
+         "y": 31.7,
+         "w": 15.2,
+         "h": 2.9,
+         "label": "In-Place (T12)",
+         "text": "Each line as the statement shows it."
+        },
+        {
+         "x": 57.4,
+         "y": 31.7,
+         "w": 8.4,
+         "h": 2.9,
+         "label": "$/unit",
+         "text": "The figure ÷ the units."
+        },
+        {
+         "x": 65.8,
+         "y": 31.7,
+         "w": 18.8,
+         "h": 2.9,
+         "label": "Underwriting · Safe",
+         "text": "The underwriting, line by line, in the version the switch shows."
+        },
+        {
+         "x": 77.1,
+         "y": 92.3,
+         "w": 7.2,
+         "h": 2.9,
+         "label": "A figure",
+         "text": "Click it: the line’s accounts open in the pro forma window. See [The pro forma window](ref-pro-forma)."
+        },
+        {
+         "x": 75.7,
+         "y": 36.2,
+         "w": 0.4,
+         "h": 0.7,
+         "label": "Teal dot",
+         "text": "The line has changes (here the revenue credit). Hover its figure to see their kinds."
+        },
+        {
+         "x": 76.6,
+         "y": 81.8,
+         "w": 0.4,
+         "h": 0.7,
+         "label": "Yellow dot",
+         "text": "Suggestions wait on this line."
+        }
+       ]
+      },
+      {
+       "title": "The reserves and the NOI",
+       "text": "Subtotals for rental income, effective gross income and expenses, then the replacement reserves and the Net Operating Income, each in both columns and per unit.",
+       "img": "img/underwriting/ref-underwriting-10.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.1,
+         "y": 6.8,
+         "w": 37.1,
+         "h": 3.3,
+         "label": "Effective Gross Income",
+         "text": "All income after vacancy and the other deductions."
+        },
+        {
+         "x": 5.1,
+         "y": 41.3,
+         "w": 37.1,
+         "h": 3.3,
+         "label": "Total Operating Expenses",
+         "text": "Every expense line added up."
+        },
+        {
+         "x": 77.1,
+         "y": 45.2,
+         "w": 7.2,
+         "h": 2.7,
+         "label": "Replacement reserves",
+         "text": "Your reserves per unit × the units: a line in Safe and Aggressive (the T12 has none)."
+        },
+        {
+         "x": 5.1,
+         "y": 48.4,
+         "w": 88.8,
+         "h": 3.2,
+         "label": "Net Operating Income",
+         "text": "The in-place NOI and the underwriting NOI, each per unit."
+        },
+        {
+         "x": 65.8,
+         "y": 48.4,
+         "w": 18.8,
+         "h": 3.2,
+         "label": "Underwriting NOI",
+         "text": "After the reserves, in the version the switch shows."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "how-it-adds-up",
+     "title": "How it adds up",
+     "views": [
+      {
+       "text": "Under the table, one box per version, checked to the dollar: the T12 NOI, every change grouped by its kind with its story, the NOI before reserves, the replacement reserves and the underwriting NOI.",
+       "img": "img/underwriting/ref-underwriting-11.jpg",
+       "w": 1279,
+       "h": 371,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 49.5,
+         "h": 100,
+         "label": "Safe — how it adds up",
+         "text": "T12 NOI + each change − reserves = the Safe underwriting NOI."
+        },
+        {
+         "x": 50.5,
+         "y": 0,
+         "w": 49.5,
+         "h": 100,
+         "label": "Aggressive — how it adds up",
+         "text": "The same for Aggressive."
+        },
+        {
+         "x": 39,
+         "y": 3.7,
+         "w": 9.5,
+         "h": 4,
+         "label": "reconciles to the dollar",
+         "text": "The changes add up exactly (worked out twice)."
+        },
+        {
+         "x": 1,
+         "y": 13.9,
+         "w": 47.5,
+         "h": 16.2,
+         "label": "Revenue credit",
+         "text": "A group: every change of one kind, each with its story."
+        },
+        {
+         "x": 1,
+         "y": 68.6,
+         "w": 47.5,
+         "h": 4.9,
+         "label": "− Replacement reserves",
+         "text": "Your reserves per unit × the units, taken off both versions."
+        },
+        {
+         "x": 42,
+         "y": 75.1,
+         "w": 6.5,
+         "h": 5.3,
+         "label": "= Safe underwriting NOI",
+         "text": "The figure that is approved, sized and refinanced on."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "claudes-stories",
+     "title": "Claude’s stories",
+     "text": "Under the table. Claude reads the T12 account by account, month by month, with the rent roll, the loan agreement and the property details, and searches the web around the property. It offers stories a lender would accept: only ones that raise the NOI, and only ones it confirmed. Nothing goes in until you open the account and save it. See [Use Claude’s stories and suggestions](use-claudes-stories).",
+     "views": [
+      {
+       "text": "",
+       "img": "img/underwriting/ref-underwriting-12.jpg",
+       "w": 1279,
+       "h": 910,
+       "marks": [
+        {
+         "x": 93,
+         "y": 1.4,
+         "w": 7,
+         "h": 3.3,
+         "label": "Look again",
+         "text": "Asks Claude again (**Find stories with Claude** the first time). Needs Claude connected."
+        },
+        {
+         "x": 0,
+         "y": 31.2,
+         "w": 100,
+         "h": 19.4,
+         "label": "A story",
+         "text": "One account, one change, its kind and story, and how much it raises the NOI."
+        },
+        {
+         "x": 1,
+         "y": 18.7,
+         "w": 68.6,
+         "h": 1.8,
+         "label": "How Claude got the number",
+         "text": "From the statement’s own figures."
+        },
+        {
+         "x": 1,
+         "y": 20.5,
+         "w": 68.6,
+         "h": 1.8,
+         "label": "To back it with the lender",
+         "text": "What you show the lender to prove it."
+        },
+        {
+         "x": 1,
+         "y": 22.8,
+         "w": 68.6,
+         "h": 6.3,
+         "label": "Checked",
+         "text": "What Claude checked before it suggested this: the T12’s months, the rent roll, the loan agreement, the property details, or a web page with its site and date. A story it couldn’t confirm is never shown."
+        },
+        {
+         "x": 0,
+         "y": 92,
+         "w": 100,
+         "h": 3.8,
+         "label": "Claude didn’t have",
+         "text": "Shows only when one of Claude’s four sources is missing: the T12, the rent roll, the loan agreement or the property details (units, address). Claude worked from what it had; add the missing one and click **Look again**."
+        },
+        {
+         "x": 0,
+         "y": 96.3,
+         "w": 100,
+         "h": 1.6,
+         "label": "The web",
+         "text": "How many times Claude searched the web for this, and what it searched."
+        },
+        {
+         "x": 90.6,
+         "y": 57.2,
+         "w": 8.4,
+         "h": 2.7,
+         "label": "Put it in the draft",
+         "text": "Opens the account with the story filled in, to check and save."
+        },
+        {
+         "x": 91.4,
+         "y": 13.4,
+         "w": 7.6,
+         "h": 1.5,
+         "label": "In the pro forma ✓",
+         "text": "Already in the draft."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "assumptions-and-benchmarks",
+     "title": "Assumptions and benchmarks",
+     "views": [
+      {
+       "text": "Under Claude’s stories, per property. They don’t change the underwriting by themselves: a line that runs worse than an assumption gets a suggestion in the draft (never one that lowers the NOI), and the reserves per unit are taken off Safe and Aggressive. Each change is kept in the property’s history.",
+       "img": "img/underwriting/ref-underwriting-13.jpg",
+       "w": 1279,
+       "h": 282,
+       "marks": [
+        {
+         "x": 57.3,
+         "y": 36.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Vacancy",
+         "text": "When the T12 runs above it, the vacancy account gets a suggestion at it; when the T12 already runs below it, a warning. Never applied by itself."
+        },
+        {
+         "x": 90.9,
+         "y": 36.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Management fee",
+         "text": "As a % of effective gross income: a suggestion when the T12 runs above it, a warning when it would lower the NOI."
+        },
+        {
+         "x": 23.6,
+         "y": 51.2,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Reserves / unit",
+         "text": "Replacement reserves a year per unit, taken off Safe and Aggressive."
+        },
+        {
+         "x": 25.2,
+         "y": 74.8,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "Payroll / unit",
+         "text": "Your payroll benchmark for this property. A payroll line 15% off it is flagged."
+        },
+        {
+         "x": 58.8,
+         "y": 74.8,
+         "w": 7.5,
+         "h": 10.7,
+         "label": "R&M / unit",
+         "text": "Your repairs and maintenance benchmark."
+        },
+        {
+         "x": 0,
+         "y": 13.3,
+         "w": 12.6,
+         "h": 9.9,
+         "label": "Save to property record",
+         "text": "Saves the assumptions and benchmarks with the property, so every screen uses them."
+        },
+        {
+         "x": 25,
+         "y": 38.4,
+         "w": 7.8,
+         "h": 5.9,
+         "label": "Change history",
+         "text": "Every change to these, old → new, who and when."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "debt-sizing",
+     "title": "Debt sizing",
+     "views": [
+      {
+       "text": "The largest loan each version supports, side by side, at the limits you set for this property. Each limit gives a loan on each version’s NOI; the smallest is the maximum supportable loan. See [Size the debt](size-the-debt).",
+       "img": "img/underwriting/ref-underwriting-14.jpg",
+       "w": 1313,
+       "h": 342,
+       "marks": [
+        {
+         "x": 23,
+         "y": 14.3,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Cap rate",
+         "text": "Value = NOI ÷ cap rate."
+        },
+        {
+         "x": 23,
+         "y": 25.5,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Max LTV",
+         "text": "The loan as a share of that value."
+        },
+        {
+         "x": 23,
+         "y": 36.6,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Min DSCR",
+         "text": "NOI ÷ the yearly payment must be at least this."
+        },
+        {
+         "x": 23,
+         "y": 47.7,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Min debt yield",
+         "text": "NOI ÷ the loan must be at least this."
+        },
+        {
+         "x": 23,
+         "y": 58.9,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Interest rate",
+         "text": "The rate the payment is worked out at."
+        },
+        {
+         "x": 23,
+         "y": 70,
+         "w": 7.3,
+         "h": 8.8,
+         "label": "Amortization",
+         "text": "The years the payment pays the loan down over."
+        },
+        {
+         "x": 34.3,
+         "y": 14.3,
+         "w": 31.6,
+         "h": 72.8,
+         "label": "Safe",
+         "text": "Sized on the Safe underwriting NOI."
+        },
+        {
+         "x": 66.8,
+         "y": 14.3,
+         "w": 31.6,
+         "h": 72.8,
+         "label": "Aggressive",
+         "text": "Sized on the Aggressive underwriting NOI."
+        },
+        {
+         "x": 57.6,
+         "y": 25.6,
+         "w": 7.2,
+         "h": 5.3,
+         "label": "Est. value",
+         "text": "NOI ÷ cap rate."
+        },
+        {
+         "x": 58.2,
+         "y": 33.5,
+         "w": 6.7,
+         "h": 5.3,
+         "label": "Loan @ LTV",
+         "text": "What the LTV limit allows."
+        },
+        {
+         "x": 58.2,
+         "y": 41.4,
+         "w": 6.7,
+         "h": 5.3,
+         "label": "Loan @ DSCR",
+         "text": "What the coverage limit allows."
+        },
+        {
+         "x": 58.2,
+         "y": 49.3,
+         "w": 6.7,
+         "h": 5.3,
+         "label": "Loan @ debt yield",
+         "text": "What the debt-yield limit allows."
+        },
+        {
+         "x": 55.4,
+         "y": 58.7,
+         "w": 8.9,
+         "h": 7,
+         "label": "Max supportable — Safe",
+         "text": "The smallest of the three."
+        },
+        {
+         "x": 87.9,
+         "y": 58.7,
+         "w": 8.9,
+         "h": 7,
+         "label": "Max supportable — Aggressive",
+         "text": "The same on Aggressive."
+        },
+        {
+         "x": 62.4,
+         "y": 69,
+         "w": 2.5,
+         "h": 5.3,
+         "label": "Binds on",
+         "text": "The limit that sets it."
+        },
+        {
+         "x": 53.1,
+         "y": 76.9,
+         "w": 11.8,
+         "h": 5.3,
+         "label": "Implied LTV · DSCR · debt yield",
+         "text": "The ratios at the maximum loan."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "operating-history",
+     "title": "Operating history",
+     "views": [
+      {
+       "text": "The General Data card. Every T12 you upload adds its months (up to 24 are kept). The card shows the in-place NOI and the approved underwriting (Safe · Aggressive); each line shows its trailing 12 months and the change against the 12 before. Click its title to fold it; the app remembers.",
+       "img": "img/underwriting/ref-underwriting-15.jpg",
+       "w": 1313,
+       "h": 645,
+       "marks": [
+        {
+         "x": 2,
+         "y": 7.8,
+         "w": 30.5,
+         "h": 3.1,
+         "label": "In-place NOI",
+         "text": "The same NOI as everywhere in the app, and how it was worked out."
+        },
+        {
+         "x": 34.8,
+         "y": 7.8,
+         "w": 30.5,
+         "h": 3.1,
+         "label": "Underwriting NOI — Safe · Aggressive",
+         "text": "The approved underwriting, and when it was approved (“not approved yet” before)."
+        },
+        {
+         "x": 67.5,
+         "y": 10.9,
+         "w": 30.5,
+         "h": 3.1,
+         "label": "Saved to the folder",
+         "text": "Kept in the property’s folder (general-data.json)."
+        },
+        {
+         "x": 47.4,
+         "y": 20.4,
+         "w": 29.2,
+         "h": 3.4,
+         "label": "Trailing 12-mo",
+         "text": "Each line’s last 12 months, and its change."
+        },
+        {
+         "x": 1.3,
+         "y": 2.6,
+         "w": 97.4,
+         "h": 2.6,
+         "label": "Fold",
+         "text": "Click the title to fold the card or open it again."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "portfolio-roll-up",
      "title": "Portfolio roll-up",
-     "text": "Every property: units, loans, in-place NOI, the approved Safe and Aggressive underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity — with the total row. Click a property to underwrite it.",
-     "img": "img/underwriting/history-02.jpg",
-     "w": 1313,
-     "h": 974,
-     "marks": [
+     "views": [
       {
-       "x": 28.5,
-       "y": 4.2,
-       "w": 9.6,
-       "h": 4.4,
-       "label": "In-place NOI",
-       "text": "Each property’s NOI."
+       "text": "Every property: units, loans, in-place NOI, the approved Safe and Aggressive underwriting NOI (blank until approved), balance, yearly debt service, DSCR, debt yield, LTV and maturity, with a total row.",
+       "img": "img/underwriting/ref-underwriting-16.jpg",
+       "w": 1313,
+       "h": 957,
+       "marks": [
+        {
+         "x": 27.1,
+         "y": 4.3,
+         "w": 9.4,
+         "h": 2.7,
+         "label": "In-place NOI",
+         "text": "Each property’s NOI."
+        },
+        {
+         "x": 36.5,
+         "y": 4.3,
+         "w": 7.7,
+         "h": 2.7,
+         "label": "Safe UW NOI",
+         "text": "The approved Safe underwriting; blank until it is approved."
+        },
+        {
+         "x": 44.2,
+         "y": 4.3,
+         "w": 10.7,
+         "h": 2.7,
+         "label": "Aggressive UW NOI",
+         "text": "The approved Aggressive underwriting, beside Safe."
+        },
+        {
+         "x": 75.3,
+         "y": 4.3,
+         "w": 4,
+         "h": 2.7,
+         "label": "DSCR",
+         "text": "NOI ÷ its yearly debt service."
+        },
+        {
+         "x": 1.3,
+         "y": 45.7,
+         "w": 17.8,
+         "h": 3,
+         "label": "A property",
+         "text": "Click it to open it here."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "what-to-push",
+     "title": "What to push",
+     "text": "At the bottom of the tab. It runs by itself once the underwriting is approved, and again when you approve again; before that it reads “Approve the underwriting first”. Claude reads the same four sources as for the stories — the T12, the rent roll, the loan agreement and the property details — with the approved underwriting, and searches the web around the property. These pushes are your plan, not the lender’s. See [See what you can still push](use-what-to-push).",
+     "views": [
+      {
+       "text": "",
+       "img": "img/underwriting/ref-underwriting-17.jpg",
+       "w": 1313,
+       "h": 824,
+       "marks": [
+        {
+         "x": 91.7,
+         "y": 5,
+         "w": 7,
+         "h": 3.6,
+         "label": "Re-analyse",
+         "text": "Asks Claude again."
+        },
+        {
+         "x": 1.3,
+         "y": 15.7,
+         "w": 97.4,
+         "h": 26.2,
+         "label": "A push",
+         "text": "What to do, why (from this property’s own figures) and the effort."
+        },
+        {
+         "x": 76.1,
+         "y": 17,
+         "w": 21.6,
+         "h": 4.1,
+         "label": "Its effect, three ways",
+         "text": "On the in-place T12, on Safe and on Aggressive, each net of what that version already counts. Claude’s estimates: a starting point, not advice."
+        },
+        {
+         "x": 11.2,
+         "y": 38.2,
+         "w": 11.4,
+         "h": 2.3,
+         "label": "The lever",
+         "text": "What it pulls: never one a story in the underwriting already pulls."
+        },
+        {
+         "x": 23.3,
+         "y": 38.2,
+         "w": 34.5,
+         "h": 2.3,
+         "label": "Beside the story",
+         "text": "The underwriting story it sits next to: a different lever, so both count."
+        },
+        {
+         "x": 2.3,
+         "y": 28.5,
+         "w": 95.4,
+         "h": 9,
+         "label": "Checked",
+         "text": "What Claude checked before it suggested this push. One it couldn’t confirm is never shown."
+        },
+        {
+         "x": 1.3,
+         "y": 88.7,
+         "w": 97.4,
+         "h": 4.2,
+         "label": "Claude didn’t have",
+         "text": "Shows only when one of the four sources is missing: the T12, the rent roll, the loan agreement or the property details. Claude worked from what it had; add the missing one and click **Re-analyse**."
+        },
+        {
+         "x": 1.3,
+         "y": 93.3,
+         "w": 97.4,
+         "h": 1.8,
+         "label": "The web",
+         "text": "How many times Claude searched the web for this, and what it searched."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Claude works out who pays the utilities from the T12: a utilities line big enough for the whole property means the owner pays, in the rent, so no billing them back; one only big enough for the common areas means the residents pay their own. There is no push toward 100% occupancy, and next year’s rent growth at the market’s usual rate is measured on top of the underwritten rent."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ref-pro-forma",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "The pro forma window",
+   "description": "The window that opens over the Underwriting tab: a line’s accounts, every way to change one, the suggestions, and the windows for a new account, the revenue credit and the lender file.",
+   "intro": "Click a figure in the Underwriting column, or a tool in the underwriting bar, and this window opens over the tab, about 80% of the screen. Nothing in it is saved until you click its save button. Point at a number, on the picture or in the list, to find it.",
+   "sections": [
+    {
+     "id": "a-lines-accounts",
+     "title": "A line’s accounts",
+     "views": [
+      {
+       "text": "Opened by a figure in the **Underwriting** column. On top, the line in the T12, in Safe and in Aggressive. Below, every account of the line — none hidden, a $0 one too — with its 12 months as the statement shows them.",
+       "img": "img/underwriting/ref-pro-forma-01.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 1.7,
+         "y": 10.5,
+         "w": 96.5,
+         "h": 8.9,
+         "label": "The line",
+         "text": "The whole line in the T12, in Safe and in Aggressive, each per unit."
+        },
+        {
+         "x": 1.8,
+         "y": 36,
+         "w": 98.2,
+         "h": 5.5,
+         "label": "An account",
+         "text": "Its row in the file, its 12 months, its T12, Safe and Aggressive. Click it to change it."
+        },
+        {
+         "x": 72.8,
+         "y": 26.9,
+         "w": 5.1,
+         "h": 3.6,
+         "label": "T12",
+         "text": "The account’s year in the statement."
+        },
+        {
+         "x": 77.9,
+         "y": 26.9,
+         "w": 5.1,
+         "h": 3.6,
+         "label": "Safe / Aggressive",
+         "text": "The account in each version; a changed one in bold."
+        },
+        {
+         "x": 90.9,
+         "y": 37.4,
+         "w": 8.5,
+         "h": 2.5,
+         "label": "A change’s tag",
+         "text": "Where the change applies and its kind. Hover it to read the story."
+        },
+        {
+         "x": 2.5,
+         "y": 47.6,
+         "w": 18.1,
+         "h": 2.4,
+         "label": "A $0 account",
+         "text": "Shown with its twelve zeros: nothing is hidden."
+        },
+        {
+         "x": 1.8,
+         "y": 52.5,
+         "w": 19.4,
+         "h": 4.1,
+         "label": "The line",
+         "text": "Each month and each column added up."
+        },
+        {
+         "x": 1.7,
+         "y": 59.7,
+         "w": 20.1,
+         "h": 4,
+         "label": "+ Add an account the T12 doesn’t have",
+         "text": "For money the statement has no account for."
+        },
+        {
+         "x": 95.5,
+         "y": 1.6,
+         "w": 2.8,
+         "h": 4.2,
+         "label": "×",
+         "text": "Closes the window."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "ways-to-change-an-account",
+     "title": "Ways to change an account",
+     "text": "Click an account and its choices open right under it. Each change has a kind, the versions it applies to and a story. See [Change an account](change-an-account).",
+     "views": [
+      {
+       "title": "The choices",
+       "text": "Which ways show depends on the account: **% of revenue**, for one, only on an expense or a rent deduction.",
+       "img": "img/underwriting/ref-pro-forma-02.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 44.6,
+         "w": 8.6,
+         "h": 3.7,
+         "label": "New amount",
+         "text": "Type the account’s new yearly figure. Type 0 to take it out: the lender’s file then reads “Took out”."
+        },
+        {
+         "x": 12,
+         "y": 44.6,
+         "w": 11.4,
+         "h": 3.7,
+         "label": "Spread over years",
+         "text": "A cost paid once every few years counts only its share for one year."
+        },
+        {
+         "x": 23.9,
+         "y": 44.6,
+         "w": 7.3,
+         "h": 3.7,
+         "label": "Annualize",
+         "text": "The account becomes its last 3, 6 or 12 months × 12 ÷ the months."
+        },
+        {
+         "x": 31.7,
+         "y": 44.6,
+         "w": 9,
+         "h": 3.7,
+         "label": "% of revenue",
+         "text": "The account as a % of revenue (expenses and rental deductions)."
+        },
+        {
+         "x": 41.2,
+         "y": 44.6,
+         "w": 6.1,
+         "h": 3.7,
+         "label": "Per unit",
+         "text": "A dollar figure per apartment a year × the units."
+        }
+       ]
       },
       {
-       "x": 38.2,
-       "y": 4.2,
-       "w": 7.9,
-       "h": 4.4,
-       "label": "Safe UW NOI",
-       "text": "The approved Safe underwriting — blank until it is approved."
+       "title": "New amount, kind and story",
+       "text": "Here the snow-removal change, opened again with **Edit**. The preview shows the account’s 12 months before and after, the line and the NOI.",
+       "img": "img/underwriting/ref-pro-forma-03.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 18.1,
+         "y": 20.9,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "Its new amount",
+         "text": "The yearly figure for this account."
+        },
+        {
+         "x": 2.9,
+         "y": 29.1,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Why it changes: non-recurring, spread over years, normalized, operating change, market norm or partnership/back-office (and revenue credit when you annualize income)."
+        },
+        {
+         "x": 49.3,
+         "y": 27.3,
+         "w": 3.9,
+         "h": 3.2,
+         "label": "Apply to",
+         "text": "Safe, Aggressive or Both."
+        },
+        {
+         "x": 66.1,
+         "y": 29.1,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Same story as…",
+         "text": "The stories already in this underwriting, with their account. Pick one and it fills in."
+        },
+        {
+         "x": 2.9,
+         "y": 39.3,
+         "w": 93.8,
+         "h": 7.1,
+         "label": "Story",
+         "text": "The reason the lender reads. Required."
+        },
+        {
+         "x": 2.9,
+         "y": 46.9,
+         "w": 8.8,
+         "h": 2.2,
+         "label": "Draft it with Claude",
+         "text": "Claude writes a first draft from the account’s months; you edit it."
+        },
+        {
+         "x": 4,
+         "y": 51.8,
+         "w": 91.5,
+         "h": 13,
+         "label": "Before → after",
+         "text": "The account’s 12 months in the T12 and after the change (each month in proportion)."
+        },
+        {
+         "x": 4,
+         "y": 73.6,
+         "w": 91.5,
+         "h": 2.2,
+         "label": "ready to save",
+         "text": "Or what is still missing."
+        },
+        {
+         "x": 88,
+         "y": 78.6,
+         "w": 8.6,
+         "h": 3.7,
+         "label": "Save",
+         "text": "**Save the change**, or **Save the edit** for one you opened with Edit. The window stays open on the line."
+        },
+        {
+         "x": 81.6,
+         "y": 78.5,
+         "w": 5.8,
+         "h": 3.9,
+         "label": "Cancel",
+         "text": "Closes the choices without saving."
+        }
+       ]
       },
       {
-       "x": 46,
-       "y": 4.2,
-       "w": 9.6,
-       "h": 4.4,
-       "label": "Aggressive UW NOI",
-       "text": "The approved Aggressive underwriting, beside Safe."
+       "title": "Spread over years",
+       "text": "For a cost paid once every few years that landed in this T12. Exterior painting cost $14,400 in May and is done every 5 years: the underwriting counts $14,400 ÷ 5 = $2,880 a year. It divides the whole account; for an account that mixes normal monthly costs with one big bill, use **New amount** instead.",
+       "img": "img/underwriting/ref-pro-forma-04.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 8.7,
+         "y": 50.7,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "Paid every … years",
+         "text": "How often it is paid; it counts one share a year."
+        },
+        {
+         "x": 2.9,
+         "y": 58.9,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Set to “Spread over years” by itself."
+        },
+        {
+         "x": 4,
+         "y": 81.6,
+         "w": 91.5,
+         "h": 13,
+         "label": "Before → after",
+         "text": "$14,400 in May becomes $2,880 for the year."
+        }
+       ]
       },
       {
-       "x": 76.6,
-       "y": 4.2,
-       "w": 4.2,
-       "h": 4.4,
-       "label": "DSCR",
-       "text": "NOI ÷ its yearly debt service."
+       "title": "Annualize",
+       "text": "When an account runs differently in its recent months — a new contract, a rent increase — it becomes its last 3, 6 or 12 months × 12 ÷ the months. Each choice shows what it gives. On a normal 12-month T12 the last 12 months are the T12 itself, so that choice is greyed (“same as the T12”).",
+       "img": "img/underwriting/ref-pro-forma-05.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 39.1,
+         "w": 10.7,
+         "h": 6.3,
+         "label": "Last 3 months",
+         "text": "× 4: here $28,400 a year."
+        },
+        {
+         "x": 14.1,
+         "y": 39.1,
+         "w": 10.7,
+         "h": 6.3,
+         "label": "Last 6 months",
+         "text": "× 2: $29,400."
+        },
+        {
+         "x": 25.4,
+         "y": 39.1,
+         "w": 19.1,
+         "h": 6.3,
+         "label": "Last 12 months",
+         "text": "Only different from the T12 when the file has more than 12 months, or the T12 rule used the last 3 months × 4."
+        },
+        {
+         "x": 2.9,
+         "y": 45.9,
+         "w": 93.8,
+         "h": 2.2,
+         "label": "Months used",
+         "text": "The months it comes from."
+        },
+        {
+         "x": 2.9,
+         "y": 52.4,
+         "w": 30.6,
+         "h": 3.8,
+         "label": "Kind",
+         "text": "Operating change for an expense; Revenue credit for an income account."
+        }
+       ]
       },
       {
-       "x": 1.3,
-       "y": 46.6,
-       "w": 19.2,
-       "h": 2.9,
-       "label": "A property",
-       "text": "Click it to open it here."
+       "title": "% of revenue",
+       "text": "An expense as a % of that version’s effective gross income, or a rent deduction (vacancy, bad debt) as a % of gross potential rent. Because you chose it, it moves when that version’s revenue moves. The management fee never moves by itself.",
+       "img": "img/underwriting/ref-pro-forma-06.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 2.9,
+         "y": 48.5,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "%",
+         "text": "The percentage."
+        },
+        {
+         "x": 16,
+         "y": 49.4,
+         "w": 46.2,
+         "h": 2.2,
+         "label": "It follows revenue",
+         "text": "Only because you picked % of revenue."
+        },
+        {
+         "x": 1.7,
+         "y": 7.1,
+         "w": 20.4,
+         "h": 1.8,
+         "label": "The management fee",
+         "text": "Stays at the T12 unless you change its account."
+        }
+       ]
+      },
+      {
+       "title": "Per unit",
+       "text": "A dollar figure per apartment a year, times the units (120 here): for a cost quoted per unit, such as a maintenance role or turnover.",
+       "img": "img/underwriting/ref-pro-forma-07.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 40.1,
+         "w": 11.1,
+         "h": 3.9,
+         "label": "$ per unit a year",
+         "text": "× the property’s units."
+        },
+        {
+         "x": 42.4,
+         "y": 46.5,
+         "w": 6.9,
+         "h": 3.2,
+         "label": "Aggressive",
+         "text": "Here only in the Aggressive version."
+        },
+        {
+         "x": 2.9,
+         "y": 67.6,
+         "w": 93.8,
+         "h": 26.3,
+         "label": "Preview",
+         "text": "Safe unchanged; Aggressive $300 × 120 = $36,000."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "suggestions",
+     "title": "Suggestions",
+     "views": [
+      {
+       "title": "A suggestion on an account",
+       "text": "When a line runs worse than your assumption, its biggest account gets a suggestion at the assumption, with a ready story, and a **Suggested** chip in its row (**Claude suggests** for one of Claude’s stories). Here the management fee runs 3% of revenue against an assumption of 2.5%. A suggestion only ever raises the NOI, and nothing is applied by itself.",
+       "img": "img/underwriting/ref-pro-forma-08.jpg",
+       "w": 1152,
+       "h": 765,
+       "marks": [
+        {
+         "x": 90.9,
+         "y": 34.2,
+         "w": 5.7,
+         "h": 2.7,
+         "label": "Suggested",
+         "text": "A suggestion waits on this account."
+        },
+        {
+         "x": 2.9,
+         "y": 43.8,
+         "w": 93.8,
+         "h": 11.6,
+         "label": "The suggestion",
+         "text": "The change, its kind, the ready story and why."
+        },
+        {
+         "x": 83.8,
+         "y": 45,
+         "w": 5.5,
+         "h": 3.2,
+         "label": "Use this",
+         "text": "Fills the change and its story in; you can still edit them before you save."
+        },
+        {
+         "x": 89.9,
+         "y": 45,
+         "w": 5.6,
+         "h": 3.2,
+         "label": "Not this one",
+         "text": "Sets it aside (**Bring it back** undoes it)."
+        }
+       ]
+      },
+      {
+       "title": "Every suggestion in one list",
+       "text": "Opened by the yellow **suggestions** button in the underwriting bar: every open suggestion, from your assumptions and from Claude.",
+       "img": "img/underwriting/ref-pro-forma-09.jpg",
+       "w": 1152,
+       "h": 471,
+       "marks": [
+        {
+         "x": 1.7,
+         "y": 27.2,
+         "w": 96.5,
+         "h": 14.6,
+         "label": "A suggestion",
+         "text": "Where, what and its story."
+        },
+        {
+         "x": 87.2,
+         "y": 29.1,
+         "w": 9.9,
+         "h": 5.2,
+         "label": "Open the account",
+         "text": "Opens the line with the suggestion filled in."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "a-new-account",
+     "title": "A new account",
+     "views": [
+      {
+       "text": "Opened by **+ Add an account** in the underwriting bar: every line by section — rental income and deductions, other income, expenses — the ones in your T12 first. Pick the line, then name the account and fill it in like any other change. See [Add an account](add-an-account).",
+       "img": "img/underwriting/ref-pro-forma-10.jpg",
+       "w": 768,
+       "h": 537,
+       "marks": [
+        {
+         "x": 80.9,
+         "y": 80,
+         "w": 15.3,
+         "h": 4.9,
+         "label": "A line in the underwriting",
+         "text": "The new account goes under it."
+        },
+        {
+         "x": 32.3,
+         "y": 62.9,
+         "w": 22.8,
+         "h": 4.9,
+         "label": "A line the T12 doesn’t have",
+         "text": "Marked “(not in the T12)”: an account here adds the line to the underwriting."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-revenue-credit",
+     "title": "The revenue credit",
+     "views": [
+      {
+       "text": "Opened by **Revenue credit…** in the underwriting bar: every revenue account annualized at once from its last months, for when the property runs better now than the year shows. The table shows each revenue line month by month, the months used highlighted, the T12 and the annualized figure; with a rent roll, today’s occupancy too. A story is required. The management fee doesn’t follow it.",
+       "img": "img/underwriting/ref-pro-forma-11.jpg",
+       "w": 1152,
+       "h": 573,
+       "marks": [
+        {
+         "x": 2,
+         "y": 22.9,
+         "w": 3.8,
+         "h": 4.3,
+         "label": "Safe / Aggressive (its own)",
+         "text": "Aggressive can have its own; until then it uses Safe’s."
+        },
+        {
+         "x": 18.6,
+         "y": 22.9,
+         "w": 10.6,
+         "h": 4.3,
+         "label": "T3 / T6 / T12",
+         "text": "How many recent months. T12 changes nothing on a normal 12-month file."
+        },
+        {
+         "x": 52.5,
+         "y": 23.6,
+         "w": 16.6,
+         "h": 2.9,
+         "label": "Months used",
+         "text": "Which months."
+        },
+        {
+         "x": 88.7,
+         "y": 29.9,
+         "w": 9.5,
+         "h": 4.1,
+         "label": "Annualized",
+         "text": "Each line after the credit."
+        },
+        {
+         "x": 1.7,
+         "y": 75.6,
+         "w": 96.5,
+         "h": 9.4,
+         "label": "Story",
+         "text": "The reason the lender reads."
+        },
+        {
+         "x": 84.3,
+         "y": 92,
+         "w": 14,
+         "h": 5.2,
+         "label": "Save the revenue credit",
+         "text": "Saves it."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-lender-file",
+     "title": "The lender file",
+     "views": [
+      {
+       "text": "Opened by **For the lender…** in the underwriting bar: an Excel file with four sheets — **Pro forma** (each line with its change, kind and story, and the reserves), **Changed accounts**, **Reconciliation** and **Monthly** (the months used for the revenue credit marked). See [Approve the underwriting](approve-the-underwriting#give-the-lender-the-file).",
+       "img": "img/underwriting/ref-pro-forma-12.jpg",
+       "w": 768,
+       "h": 253,
+       "marks": [
+        {
+         "x": 2.6,
+         "y": 59,
+         "w": 1.7,
+         "h": 5.1,
+         "label": "Safe only",
+         "text": "One version."
+        },
+        {
+         "x": 2.6,
+         "y": 69.1,
+         "w": 1.7,
+         "h": 5.1,
+         "label": "Safe and Aggressive",
+         "text": "Both, side by side."
+        },
+        {
+         "x": 79.1,
+         "y": 81.8,
+         "w": 18.3,
+         "h": 11.9,
+         "label": "Save the Excel file…",
+         "text": "Asks where to save “<property> — Pro forma — <date>.xlsx”."
+        }
+       ]
       }
      ]
     }
