@@ -13705,7 +13705,9 @@ tr.flagged:hover td{background:#fee2e2}
        Claude-connection dialog and the assistant's connection panel.
        ================================================================ */
     function aiAvailable(){ return !!(window.ldsShell && ldsShell.aiExtract); }
-    function aiChatAvailable(){ return !!(window.ldsShell && ldsShell.aiChat); }   // free-form chat bridge (Assistant)
+    function aiChatAvailable(){ return !!(window.ldsShell && ldsShell.aiChat); }
+    // with no API key left, "API only" can't work: back to Automatic (the subscription when it is signed in)
+    function aiKeyClearedMode(){ return Promise.resolve(ldsShell.aiStatus ? ldsShell.aiStatus() : null).then(function(st){ if(st && st.mode === "api" && ldsShell.aiSetMode) return ldsShell.aiSetMode("auto"); }).catch(function(){}); }   // free-form chat bridge (Assistant)
     // Last aiStatus() snapshot, shared by every connection-status reader below
     // (settings badge, connection dialog, the assistant's model/effort pickers).
     // Must live in this always-present section: under "use strict" a bare
@@ -13838,7 +13840,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(so) so.addEventListener("click", ()=>{ ldsShell.aiLogout().then(()=>{ toast("Signed out of your Claude subscription"); claudeConnRefresh(); }); });
       const ki=el("claudeKeyInput"), ks=el("claudeKeySave"), kc=el("claudeKeyClear");
       if(ks) ks.addEventListener("click", ()=>{ const v=(ki&&ki.value||"").trim(); if(!v) return; ldsShell.aiSetKey(v).then(()=>ldsShell.aiSetMode("api")).then(()=>{ if(ki) ki.value=""; toast("API key saved","check"); claudeConnRefresh(); }); });
-      if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(()=>{ toast("API key cleared"); claudeConnRefresh(); }); });
+      // (2026-10-26) Save switches to the API; Clear switches an API-only setting back to Automatic, so a signed-in
+      // subscription is used again (before, the app stayed on "API mode is selected but no API key is set")
+      if(kc) kc.addEventListener("click", ()=>{ ldsShell.aiSetKey("").then(aiKeyClearedMode).then(()=>{ toast("API key cleared"); claudeConnRefresh(); }); });
     }
     // Keep only known input fields; coerce numbers; drop nulls; validate select options.
     function aiSanitize(data){
@@ -16923,7 +16927,7 @@ tr.flagged:hover td{background:#fee2e2}
       p.querySelectorAll('input[name="aiAsstMode"]').forEach(function(r){ r.addEventListener("change", function(){ ldsShell.aiSetMode(r.value).then(function(){ aiAsstRefreshConn(); }); }); });
       var ki=el("aiAsstKeyInput"), ks=el("aiAsstKeySave"), kc=el("aiAsstKeyClear");
       if(ks) ks.addEventListener("click", function(){ var v=(ki&&ki.value||"").trim(); if(!v){ return; } ldsShell.aiSetKey(v).then(function(){ if(ki) ki.value=""; toast("API key saved","check"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
-      if(kc) kc.addEventListener("click", function(){ ldsShell.aiSetKey("").then(function(){ toast("API key cleared"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
+      if(kc) kc.addEventListener("click", function(){ ldsShell.aiSetKey("").then(aiKeyClearedMode).then(function(){ toast("API key cleared"); aiAsstRefreshConn(); aiAsstRenderSettings(); }); });
     }
 
     /* ================================================================

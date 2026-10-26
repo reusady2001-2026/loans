@@ -1,1348 +1,2130 @@
 {
  "id": "cloud",
- "title": "The shared database",
- "intro": "With the shared database your team works on one copy of the loans, properties and files: you sign in, every change is saved with a reason, and the group’s admin decides who can change what.",
- "cover": "img/cloud/chip-01.jpg",
- "topics": [
+ "pages": [
   {
-   "id": "signin",
-   "title": "Sign in, or create an account",
-   "intro": "With a shared database the app opens on its sign-in screen. Each person has their own account in their organization’s group.",
-   "steps": [
+   "id": "sign-in",
+   "kind": "howto",
+   "group": "Shared database",
+   "title": "Sign in or create an account",
+   "description": "Open your group’s data with your account, ask to join as someone new, or set a new password.",
+   "intro": "With a shared database, your team works on one copy of the loans, properties and files, and the app opens on its sign-in window. Each person has their own account in their company’s group. The group’s admin approves everyone who asks to join.",
+   "sections": [
     {
-     "title": "The sign-in screen",
-     "text": "Type your email and password and click Sign in: the app opens on your group’s data.",
-     "img": "img/cloud/signin-01.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "id": "sign-in",
+     "title": "Sign in",
+     "steps": [
       {
-       "x": 37.4,
-       "y": 25.6,
-       "w": 25.1,
-       "h": 4.7,
-       "label": "Email",
-       "text": "The email address of your account."
+       "text": "Type your **Email** and **Password**.",
+       "img": "img/cloud/sign-in-01.jpg",
+       "w": 420,
+       "h": 402,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 36.4,
+         "w": 86.2,
+         "h": 10.5,
+         "label": "Email",
+         "text": "The email address of your account."
+        },
+        {
+         "x": 6.9,
+         "y": 56.2,
+         "w": 86.2,
+         "h": 10.5,
+         "label": "Password",
+         "text": "Your password."
+        },
+        {
+         "x": 6.9,
+         "y": 71.7,
+         "w": 18.5,
+         "h": 10,
+         "label": "Sign in",
+         "text": "Opens the app on your group’s data."
+        }
+       ]
       },
       {
-       "x": 37.4,
-       "y": 34.4,
-       "w": 25.1,
-       "h": 4.7,
-       "label": "Password",
-       "text": "Your password."
-      },
+       "text": "Click **Sign in**. The app opens on your group’s loans, properties and files."
+      }
+     ],
+     "callouts": [
       {
-       "x": 37.4,
-       "y": 41.3,
-       "w": 6,
-       "h": 4.5,
-       "label": "Sign in",
-       "text": "Opens the app on your group’s loans, properties and files."
-      },
-      {
-       "x": 52,
-       "y": 41.3,
-       "w": 10.5,
-       "h": 4.5,
-       "label": "Create an account",
-       "text": "For someone new: asks to join your organization’s group."
-      },
-      {
-       "x": 37.4,
-       "y": 46.3,
-       "w": 13.1,
-       "h": 4.5,
-       "label": "Forgot your password?",
-       "text": "Emails you a code to set a new password."
-      },
-      {
-       "x": 93.6,
-       "y": 0,
-       "w": 3.2,
-       "h": 4,
-       "label": "Minimize",
-       "text": "Hides the window to the taskbar."
-      },
-      {
-       "x": 96.8,
-       "y": 0,
-       "w": 3.2,
-       "h": 4,
-       "label": "Close",
-       "text": "Closes the app."
+       "kind": "note",
+       "text": "Signed in, but in no group yet? The window lets you ask to join from there. See [In no group yet](ref-shared-database#in-no-group-yet)."
       }
      ]
     },
     {
-     "title": "Forgot your password — the email",
-     "text": "Type your account’s email and click “Email me a code”. A 6-digit code is sent to that address.",
-     "img": "img/cloud/signin-02.jpg",
-     "w": 420,
-     "h": 278,
-     "marks": [
+     "id": "set-a-new-password",
+     "title": "Set a new password",
+     "text": "If you forgot your password, the app emails you a code to set a new one.",
+     "steps": [
       {
-       "x": 6.9,
-       "y": 52.6,
-       "w": 86.2,
-       "h": 15.2,
-       "label": "Email",
-       "text": "The email of the account whose password you forgot."
+       "text": "Click **Forgot your password?**."
       },
       {
-       "x": 6.9,
-       "y": 75,
-       "w": 38.3,
-       "h": 14.5,
-       "label": "Email me a code",
-       "text": "Sends the code. The screen then asks for it."
+       "text": "Type your account’s email and click **Email me a code**. A 6-digit code is sent to that address.",
+       "img": "img/cloud/sign-in-02.jpg",
+       "w": 420,
+       "h": 278,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 52.6,
+         "w": 86.2,
+         "h": 15.2,
+         "label": "Email",
+         "text": "The email of your account."
+        },
+        {
+         "x": 6.9,
+         "y": 75,
+         "w": 33.7,
+         "h": 14.5,
+         "label": "Email me a code",
+         "text": "Sends the code."
+        }
+       ]
       },
       {
-       "x": 63.4,
-       "y": 75,
-       "w": 29.7,
-       "h": 14.5,
-       "label": "Back to sign in",
-       "text": "Returns to the sign-in screen."
+       "text": "Type the code from the email, then your new password twice (at least 8 characters).",
+       "img": "img/cloud/sign-in-03.jpg",
+       "w": 420,
+       "h": 490,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 29.8,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "The code",
+         "text": "The 6 digits from the email."
+        },
+        {
+         "x": 6.9,
+         "y": 46.1,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "New password",
+         "text": "At least 8 characters."
+        },
+        {
+         "x": 6.9,
+         "y": 62.3,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "Again",
+         "text": "The same new password."
+        }
+       ]
+      },
+      {
+       "text": "Click **Set the password and sign in**. The app opens on your group’s data."
       }
      ]
     },
     {
-     "title": "Forgot your password — the code",
-     "text": "Type the code from the email and a new password twice, then click “Set the password and sign in”.",
-     "img": "img/cloud/signin-03.jpg",
-     "w": 420,
-     "h": 490,
-     "marks": [
-      {
-       "x": 6.9,
-       "y": 86.1,
-       "w": 86.2,
-       "h": 7.9,
-       "label": "Sent",
-       "text": "Says the code is on its way (it only goes to an email that has an account)."
-      },
-      {
-       "x": 6.9,
-       "y": 29.8,
-       "w": 86.2,
-       "h": 8.6,
-       "label": "The code",
-       "text": "The 6 digits from the email."
-      },
-      {
-       "x": 6.9,
-       "y": 46.1,
-       "w": 86.2,
-       "h": 8.6,
-       "label": "New password",
-       "text": "At least 8 characters."
-      },
-      {
-       "x": 6.9,
-       "y": 62.3,
-       "w": 86.2,
-       "h": 8.6,
-       "label": "Again",
-       "text": "The same new password, to be sure it’s typed right."
-      },
-      {
-       "x": 6.9,
-       "y": 75.1,
-       "w": 62.3,
-       "h": 8.2,
-       "label": "Set the password and sign in",
-       "text": "Saves the new password and opens your group’s data."
-      }
-     ]
-    },
-    {
+     "id": "create-an-account",
      "title": "Create an account",
-     "text": "Click “Create an account”. Type the first 3 letters of your organization and pick it from the names that appear, then your name, email and a password. The group’s admin approves you.",
-     "img": "img/cloud/signin-04.jpg",
-     "w": 420,
-     "h": 682,
-     "marks": [
+     "text": "For someone new: you ask to join your organization’s group, and its admin approves you.",
+     "steps": [
       {
-       "x": 6.9,
-       "y": 21.4,
-       "w": 86.2,
-       "h": 6.2,
-       "label": "Organization",
-       "text": "Type the first 3 letters of its name."
+       "text": "On the sign-in window, click **Create an account**."
       },
       {
-       "x": 6.9,
-       "y": 28.5,
-       "w": 86.2,
-       "h": 11.7,
-       "label": "Pick yours",
-       "text": "The groups whose name starts with those letters. Click yours; only these can be joined."
+       "text": "Type the first 3 letters of your organization in **Organization**, then click its name in the list.",
+       "img": "img/cloud/sign-in-04.jpg",
+       "w": 420,
+       "h": 682,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 21.4,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Organization",
+         "text": "The first 3 letters of its name."
+        },
+        {
+         "x": 6.9,
+         "y": 28.5,
+         "w": 86.2,
+         "h": 11.7,
+         "label": "Pick yours",
+         "text": "The groups whose name starts with them. Only these can be joined."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 45.6,
-       "w": 86.2,
-       "h": 6.2,
-       "label": "Full name",
-       "text": "Your name, as the admin and the change history will show it."
+       "text": "Type your **Full name** and **Email**, and a password (at least 8 characters) twice."
       },
       {
-       "x": 6.9,
-       "y": 57.3,
-       "w": 86.2,
-       "h": 6.2,
-       "label": "Email",
-       "text": "Your work email — the admin sees it, and the confirmation goes there."
+       "text": "Click **Sign up**. Your request goes to the group’s admin, in the app and by email.",
+       "img": "img/cloud/sign-in-05.jpg",
+       "w": 420,
+       "h": 232,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 12.5,
+         "w": 86.2,
+         "h": 12.5,
+         "label": "Waiting for approval",
+         "text": "Your request is with the admin."
+        },
+        {
+         "x": 6.9,
+         "y": 26.7,
+         "w": 86.2,
+         "h": 34.9,
+         "label": "What happens next",
+         "text": "The group, its admin, and what to do once you are approved."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 69,
-       "w": 86.2,
-       "h": 6.2,
-       "label": "Password",
-       "text": "At least 8 characters."
+       "text": "When the admin approves you, an email asks you to confirm your address. Confirm it, then sign in."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Until the admin approves you, the sign-in window reminds you of your request, and signing in says the account isn’t ready yet."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "start-the-group",
+     "anchor": "",
+     "text": "The admin’s first sign-in: bring the starting data."
+    },
+    {
+     "page": "save-a-change",
+     "anchor": "",
+     "text": "Save a change for everyone in the group."
+    },
+    {
+     "page": "ref-shared-database",
+     "anchor": "signing-in",
+     "text": "Every control on the sign-in window."
+    }
+   ]
+  },
+  {
+   "id": "start-the-group",
+   "kind": "howto",
+   "group": "Shared database",
+   "title": "Start the group (admin)",
+   "description": "Bring the group’s starting data, the first time its admin signs in.",
+   "intro": "A new group has no data. Its admin uploads the starting data once: the loans, properties, documents and chats on their own computer, or a backup file. From then on, everyone in the group works on that one copy.",
+   "before": [
+    "The group, made by the maintainer with your email as its admin. See [The maintainer](ref-shared-database#the-maintainer).",
+    "Your account: **Create an account**, then the group’s name. As its admin you need no approval, only to confirm your email."
+   ],
+   "sections": [
+    {
+     "id": "upload-the-starting-data",
+     "title": "Upload the starting data",
+     "steps": [
+      {
+       "text": "Sign in. A banner under the window bar says the group has no data yet.",
+       "img": "img/cloud/start-the-group-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 0,
+         "y": 3.6,
+         "w": 100,
+         "h": 3.4,
+         "label": "No data yet",
+         "text": "The group is empty. A member who isn’t the admin is told the admin brings the starting data."
+        },
+        {
+         "x": 12.4,
+         "y": 4.2,
+         "w": 11.3,
+         "h": 2,
+         "label": "Upload this computer’s data",
+         "text": "Opens the upload."
+        },
+        {
+         "x": 62,
+         "y": 0.5,
+         "w": 14.4,
+         "h": 2.7,
+         "label": "You",
+         "text": "Who is signed in, and their role. Click it for the menu."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 80.7,
-       "w": 86.2,
-       "h": 6.2,
-       "label": "Again",
-       "text": "The same password again."
+       "text": "Click **Upload this computer’s data** on the banner. The window says what goes up.",
+       "img": "img/cloud/start-the-group-02.jpg",
+       "w": 512,
+       "h": 382,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 48.2,
+         "w": 91.8,
+         "h": 5.2,
+         "label": "What goes up",
+         "text": "How many loans, properties and documents, and how big the files are."
+        },
+        {
+         "x": 4.1,
+         "y": 54.5,
+         "w": 40.2,
+         "h": 5.2,
+         "label": "From a backup file",
+         "text": "Upload a backup file instead (**Data** › **Back up to a file…**, from any computer)."
+        },
+        {
+         "x": 4.1,
+         "y": 68.1,
+         "w": 91.8,
+         "h": 9.9,
+         "label": "Why",
+         "text": "Kept in the change history."
+        },
+        {
+         "x": 64.2,
+         "y": 87.7,
+         "w": 16.1,
+         "h": 8.9,
+         "label": "Not now",
+         "text": "Closes; the group stays empty."
+        },
+        {
+         "x": 81.8,
+         "y": 88,
+         "w": 14.1,
+         "h": 8.4,
+         "label": "Upload",
+         "text": "Sends it, file by file."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 89.8,
-       "w": 21.8,
-       "h": 5.9,
-       "label": "Sign up",
-       "text": "Sends your request to join to the group’s admin."
+       "text": "Check the reason in **Why**, or type your own."
       },
       {
-       "x": 58,
-       "y": 89.8,
-       "w": 35.1,
-       "h": 5.9,
-       "label": "I have an account",
-       "text": "Back to the sign-in screen."
+       "text": "Click **Upload**. The files go up one by one, then the app opens on the group’s data. Everyone in the group sees the same, and changes reach every open app by themselves.",
+       "img": "img/cloud/start-the-group-03.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 60.9,
+         "y": 0.5,
+         "w": 14.4,
+         "h": 2.7,
+         "label": "Online",
+         "text": "Green: online, live with the group. Blue: a change of yours isn’t saved yet. Amber: offline."
+        },
+        {
+         "x": 4.2,
+         "y": 23.8,
+         "w": 11.8,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "The whole group’s portfolio."
+        },
+        {
+         "x": 5.1,
+         "y": 43.4,
+         "w": 19.6,
+         "h": 1.8,
+         "label": "The group’s loans",
+         "text": "The same for everyone in the group."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Nothing on this computer changes. If people have asked to join already, their requests open as you sign in: click **Close** to decide later. See [Manage members and codes](manage-members)."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "manage-members",
+     "anchor": "",
+     "text": "Let people in, and choose what each can do."
+    },
+    {
+     "page": "save-a-change",
+     "anchor": "",
+     "text": "Save a change for everyone in the group."
+    }
+   ]
+  },
+  {
+   "id": "manage-members",
+   "kind": "howto",
+   "group": "Shared database",
+   "title": "Manage members and codes",
+   "description": "Let people into the group, choose what each one can do, and set your approval and offline codes.",
+   "intro": "The group’s admin decides who is in the group and what each person can do: **Editor** (can change data) or **View only**. The admin also sets two codes: one to approve a member’s change on the spot, and one to keep working offline.",
+   "before": [
+    "You are the group’s admin."
+   ],
+   "sections": [
+    {
+     "id": "let-someone-join",
+     "title": "Let someone join",
+     "steps": [
+      {
+       "text": "Click your name in the window bar. Its menu has the group’s screens.",
+       "img": "img/cloud/manage-members-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 60.9,
+         "y": 0.5,
+         "w": 14.4,
+         "h": 2.7,
+         "label": "Your name",
+         "text": "With your role, and how many people ask to join."
+        },
+        {
+         "x": 54,
+         "y": 18.5,
+         "w": 21,
+         "h": 5.8,
+         "label": "Asking to join",
+         "text": "People who asked to join."
+        },
+        {
+         "x": 54,
+         "y": 24.3,
+         "w": 21,
+         "h": 7.7,
+         "label": "Members and codes",
+         "text": "Who is in the group, and your codes."
+        }
+       ]
+      },
+      {
+       "text": "Click **Asking to join**. Each person shows with their email and when they asked.",
+       "img": "img/cloud/manage-members-02.jpg",
+       "w": 512,
+       "h": 338,
+       "marks": [
+        {
+         "x": 6.6,
+         "y": 52.4,
+         "w": 48.6,
+         "h": 5.9,
+         "label": "Who asks",
+         "text": "Their name, email and when they asked."
+        },
+        {
+         "x": 56.8,
+         "y": 56.8,
+         "w": 19.1,
+         "h": 8.9,
+         "label": "Turn down",
+         "text": "They get an email saying so."
+        },
+        {
+         "x": 77.5,
+         "y": 57.1,
+         "w": 15.9,
+         "h": 8.3,
+         "label": "Approve",
+         "text": "They join as an editor."
+        },
+        {
+         "x": 83.3,
+         "y": 86.1,
+         "w": 12.6,
+         "h": 10.1,
+         "label": "Close",
+         "text": "Decide later: the request waits."
+        }
+       ]
+      },
+      {
+       "text": "Click **Approve**. They get an email to confirm their address, then join as an editor.",
+       "img": "img/cloud/manage-members-03.jpg",
+       "w": 512,
+       "h": 318,
+       "marks": [
+        {
+         "x": 6.6,
+         "y": 55.7,
+         "w": 86.7,
+         "h": 12.6,
+         "label": "Approved",
+         "text": "What happens next for them."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Requests also reach you by email. Deciding in either place decides it."
       }
      ]
     },
     {
-     "title": "Waiting for approval",
-     "text": "After Sign up the request goes to the group’s admin (in the app, and by email). When they approve it you get an email: confirm your address from it, then sign in.",
-     "img": "img/cloud/signin-05.jpg",
-     "w": 420,
-     "h": 232,
-     "marks": [
+     "id": "choose-what-each-person-can-do",
+     "title": "Choose what each person can do",
+     "steps": [
       {
-       "x": 6.9,
-       "y": 12.5,
-       "w": 86.2,
-       "h": 12.5,
-       "label": "What happens now",
-       "text": "“Waiting for approval”. (Someone the admin already added is told to confirm their email instead.)"
+       "text": "In the menu under your name, click **Members and codes**.",
+       "img": "img/cloud/manage-members-04.jpg",
+       "w": 896,
+       "h": 531,
+       "marks": [
+        {
+         "x": 71.5,
+         "y": 36.5,
+         "w": 10.6,
+         "h": 4.7,
+         "label": "Can",
+         "text": "Editor or View only."
+        },
+        {
+         "x": 91.5,
+         "y": 37,
+         "w": 6.1,
+         "h": 3.8,
+         "label": "Remove",
+         "text": "Takes them out of the group."
+        },
+        {
+         "x": 26.9,
+         "y": 30.5,
+         "w": 26.5,
+         "h": 2.6,
+         "label": "Not signed in yet",
+         "text": "Approved, but hasn’t confirmed the email and signed in yet."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 26.7,
-       "w": 86.2,
-       "h": 34.9,
-       "label": "Who approves",
-       "text": "The group and its admin, and the next steps."
+       "text": "Under **Can**, pick **Editor** or **View only**. It takes effect in their app at once."
       },
       {
-       "x": 6.9,
-       "y": 70.2,
-       "w": 35.4,
-       "h": 17.3,
-       "label": "Back to sign in",
-       "text": "The sign-in screen, with your email filled in."
+       "text": "To take someone out of the group, click **Remove** and confirm. Their app says so."
       }
      ]
     },
     {
-     "title": "Signing in before approval",
-     "text": "Until the admin approves, the sign-in screen reminds you of your request, and signing in says the account isn’t ready yet.",
-     "img": "img/cloud/signin-06.jpg",
-     "w": 420,
-     "h": 601,
-     "marks": [
+     "id": "set-your-codes",
+     "title": "Set your codes",
+     "steps": [
       {
-       "x": 6.9,
-       "y": 20.4,
-       "w": 86.2,
-       "h": 15.9,
-       "label": "Your request",
-       "text": "Which group you asked to join, and what to do once approved."
+       "text": "Under **Your codes**, type an **Approval code** and an **Offline code**, at least 6 characters each.",
+       "img": "img/cloud/manage-members-05.jpg",
+       "w": 854,
+       "h": 143,
+       "marks": [
+        {
+         "x": 0,
+         "y": 73.4,
+         "w": 41.5,
+         "h": 26.6,
+         "label": "Approval code",
+         "text": "To approve a member’s change on their screen."
+        },
+        {
+         "x": 42.4,
+         "y": 73.4,
+         "w": 41.5,
+         "h": 26.6,
+         "label": "Offline code",
+         "text": "To keep changing data with no connection."
+        },
+        {
+         "x": 84.8,
+         "y": 73.4,
+         "w": 15.2,
+         "h": 26.6,
+         "label": "Save the codes",
+         "text": "Saves both."
+        }
+       ]
       },
       {
-       "x": 6.9,
-       "y": 82.5,
-       "w": 86.2,
-       "h": 12.7,
-       "label": "Not ready yet",
-       "text": "Why signing in didn’t work yet."
+       "text": "Click **Save the codes**. A box left empty keeps that code as it is."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The **approval code** is what you type on a member’s screen to approve, on the spot, a change to something you changed. The **offline code** lets you keep changing data on your own computer when the shared database can’t be reached."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "save-a-change",
+     "anchor": "",
+     "text": "What a member sees when your approval is needed."
+    },
+    {
+     "page": "see-history-and-backups",
+     "anchor": "",
+     "text": "Who changed what, and the daily backups."
+    },
+    {
+     "page": "ref-shared-database",
+     "anchor": "members-and-codes",
+     "text": "Every control on Members and codes."
+    }
+   ]
+  },
+  {
+   "id": "save-a-change",
+   "kind": "howto",
+   "group": "Shared database",
+   "title": "Save a change",
+   "description": "Save what you changed for everyone in the group, with the reason why.",
+   "intro": "In the shared database, a change is first only on your computer. You say why, then save it for everyone in the group. The reason is kept in the change history, with your name.",
+   "sections": [
+    {
+     "id": "save-with-a-reason",
+     "title": "Save with a reason",
+     "steps": [
+      {
+       "text": "Change anything: a loan’s terms, a property’s profile, a document. A bar at the bottom of the window lists what isn’t saved yet."
+      },
+      {
+       "text": "Type why in the bar. Here, a loan’s lender changed.",
+       "img": "img/cloud/save-a-change-01.jpg",
+       "w": 920,
+       "h": 106,
+       "marks": [
+        {
+         "x": 1.8,
+         "y": 31.1,
+         "w": 96.3,
+         "h": 17,
+         "label": "What changed",
+         "text": "Point at it for the full list."
+        },
+        {
+         "x": 1.8,
+         "y": 55.7,
+         "w": 81.6,
+         "h": 32.1,
+         "label": "Why",
+         "text": "Required. Kept in the change history with your name."
+        },
+        {
+         "x": 84.3,
+         "y": 56.6,
+         "w": 6.2,
+         "h": 30.2,
+         "label": "Save",
+         "text": "Saves for everyone in the group."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save**, or press Enter. The change is saved for everyone and reaches every open app by itself."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "**Undo** in the bar drops your changes: the data goes back to how it was."
       }
      ]
     },
     {
-     "title": "Signed in, but in no group",
-     "text": "An account that isn’t in a group yet (say, its admin removed it) can ask to join from here.",
-     "img": "img/cloud/signin-07.jpg",
-     "w": 720,
-     "h": 501,
-     "marks": [
+     "id": "when-the-admins-approval-is-needed",
+     "title": "When the admin’s approval is needed",
+     "text": "A member who changes something the admin changed needs the admin’s approval. Here Eddie, an editor, changes the lender the admin just changed.",
+     "steps": [
       {
-       "x": 4,
-       "y": 5.8,
-       "w": 91.9,
-       "h": 5.8,
-       "label": "Not in a group",
-       "text": "You’re signed in, but no group has you yet."
+       "text": "Make your change, type why, and click **Save**. A window says the admin’s approval is needed.",
+       "img": "img/cloud/save-a-change-02.jpg",
+       "w": 512,
+       "h": 452,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 31.9,
+         "w": 91.8,
+         "h": 17.3,
+         "label": "The change",
+         "text": "What, its value now, and your change."
+        },
+        {
+         "x": 4.1,
+         "y": 56.2,
+         "w": 91.8,
+         "h": 8.4,
+         "label": "Approval code",
+         "text": "Where the admin types their code."
+        },
+        {
+         "x": 61.4,
+         "y": 90,
+         "w": 34.5,
+         "h": 7.1,
+         "label": "Approve with the code",
+         "text": "Saves at once with the admin’s code."
+        },
+        {
+         "x": 68.3,
+         "y": 80.8,
+         "w": 27.6,
+         "h": 7.5,
+         "label": "Send to the admin",
+         "text": "Sends it to the admin’s app."
+        },
+        {
+         "x": 39.4,
+         "y": 80.8,
+         "w": 27.4,
+         "h": 7.5,
+         "label": "Undo my change",
+         "text": "Drops it."
+        }
+       ]
       },
       {
-       "x": 4,
-       "y": 12.4,
-       "w": 91.9,
-       "h": 8.1,
-       "label": "Signed in as",
-       "text": "The account you’re signed in with, and what to do."
+       "text": "If the admin is with you, they type their code in **Approval code** and click **Approve with the code**. The change is saved at once."
       },
       {
-       "x": 4,
-       "y": 36.6,
-       "w": 91.9,
-       "h": 8.4,
-       "label": "Organization",
-       "text": "Type the first 3 letters of its name …"
-      },
-      {
-       "x": 4,
-       "y": 46.2,
-       "w": 91.9,
-       "h": 8,
-       "label": "Pick it",
-       "text": "… and click it."
-      },
-      {
-       "x": 4,
-       "y": 61.7,
-       "w": 91.9,
-       "h": 8.4,
-       "label": "Full name",
-       "text": "Your name for the admin."
-      },
-      {
-       "x": 4,
-       "y": 74.1,
-       "w": 16.1,
-       "h": 8,
-       "label": "Ask to join",
-       "text": "Sends the request to the group’s admin."
-      },
-      {
-       "x": 4,
-       "y": 86.2,
-       "w": 17.8,
-       "h": 8,
-       "label": "Check again",
-       "text": "Once the admin approves, this opens the group."
-      },
-      {
-       "x": 85.7,
-       "y": 86.2,
-       "w": 10.3,
-       "h": 8,
-       "label": "Sign out",
-       "text": "Back to the sign-in screen."
+       "text": "If not, click **Send to** and the admin’s name (here **Send to Operator**). It pops up in their app. The current value stays until they approve, and you get a note when they decide."
       }
      ]
     },
     {
+     "id": "approve-a-members-change-admin",
+     "title": "Approve a member’s change (admin)",
+     "steps": [
+      {
+       "text": "When a member sends you a change, it pops up in your app: who asked and when, why, and the change.",
+       "img": "img/cloud/save-a-change-03.jpg",
+       "w": 896,
+       "h": 325,
+       "marks": [
+        {
+         "x": 3.8,
+         "y": 32.6,
+         "w": 4.3,
+         "h": 5.2,
+         "label": "Who and when",
+         "text": "The member who asked, and when."
+        },
+        {
+         "x": 3.8,
+         "y": 47.1,
+         "w": 92.4,
+         "h": 8.9,
+         "label": "The change",
+         "text": "What, its value now, and their change."
+        },
+        {
+         "x": 75.3,
+         "y": 58.5,
+         "w": 10.9,
+         "h": 9.2,
+         "label": "Turn down",
+         "text": "Nothing changes."
+        },
+        {
+         "x": 87.1,
+         "y": 58.5,
+         "w": 9.1,
+         "h": 9.2,
+         "label": "Approve",
+         "text": "Their change takes effect for everyone."
+        }
+       ]
+      },
+      {
+       "text": "Click **Approve**. Their change takes effect for everyone."
+      },
+      {
+       "text": "Or click **Turn down**, and add a note for them if you like. Nothing changes."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "Click **Close** to decide later. The change waits under **Requests** in the menu under your name."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "see-history-and-backups",
+     "anchor": "",
+     "text": "Find who changed what, when and why."
+    },
+    {
+     "page": "manage-members",
+     "anchor": "",
+     "text": "Set the approval code."
+    },
+    {
+     "page": "ref-shared-database",
+     "anchor": "saving-a-change",
+     "text": "Every control on the bar and the approvals."
+    }
+   ]
+  },
+  {
+   "id": "see-history-and-backups",
+   "kind": "howto",
+   "group": "Shared database",
+   "title": "See the change history and backups",
+   "description": "Find who changed what, when and why, and put the group’s data back as it was on a day.",
+   "intro": "Every change to the group’s data is kept: who made it, when, and why. The admin can also put the whole group’s data back as it was on any of the last 30 days.",
+   "sections": [
+    {
+     "id": "find-a-change",
+     "title": "Find a change",
+     "steps": [
+      {
+       "text": "Click your name in the window bar, then **Change history**. The newest changes come first."
+      },
+      {
+       "text": "Type a name, a property or a reason in the box. Only the changes with those words stay.",
+       "img": "img/cloud/see-history-and-backups-01.jpg",
+       "w": 896,
+       "h": 361,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 25.5,
+         "w": 95.3,
+         "h": 10.5,
+         "label": "Find",
+         "text": "Here, a property’s name."
+        },
+        {
+         "x": 18.8,
+         "y": 39.3,
+         "w": 11.1,
+         "h": 6.9,
+         "label": "Who",
+         "text": "Who made the change, and who approved it."
+        },
+        {
+         "x": 78.4,
+         "y": 39.3,
+         "w": 19.3,
+         "h": 6.9,
+         "label": "Why",
+         "text": "The reason typed when it was saved."
+        }
+       ]
+      },
+      {
+       "text": "Click **Older changes** to load the next 200."
+      }
+     ]
+    },
+    {
+     "id": "put-a-day-back-admin",
+     "title": "Put a day back (admin)",
+     "text": "A backup of the group’s data is taken every day and kept 30 days.",
+     "steps": [
+      {
+       "text": "In the menu under your name, click **Daily backups**. There is one line for each day.",
+       "img": "img/cloud/see-history-and-backups-02.jpg",
+       "w": 512,
+       "h": 322,
+       "marks": [
+        {
+         "x": 74.7,
+         "y": 24.8,
+         "w": 21,
+         "h": 6.2,
+         "label": "Put this day back",
+         "text": "For the day on its line."
+        },
+        {
+         "x": 63.6,
+         "y": 46.3,
+         "w": 32.1,
+         "h": 4.7,
+         "label": "Empty",
+         "text": "Taken before the group had data: nothing to put back."
+        }
+       ]
+      },
+      {
+       "text": "Click **Put this day back** on the day you want.",
+       "img": "img/cloud/see-history-and-backups-03.jpg",
+       "w": 512,
+       "h": 230,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 47,
+         "w": 91.8,
+         "h": 16.5,
+         "label": "Why",
+         "text": "Required. Kept in the change history."
+        },
+        {
+         "x": 77.3,
+         "y": 80,
+         "w": 18.6,
+         "h": 13.9,
+         "label": "Put it back",
+         "text": "Puts the day back for everyone."
+        }
+       ]
+      },
+      {
+       "text": "Type why and click **Put it back**. The group’s data goes back to how it was that day."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "warning",
+       "text": "Putting a day back changes the group’s data for everyone in the group. Every change it makes is in the change history, with your reason."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "save-a-change",
+     "anchor": "",
+     "text": "Every change is saved with a reason."
+    },
+    {
+     "page": "ref-shared-database",
+     "anchor": "change-history",
+     "text": "Every column of the change history."
+    }
+   ]
+  },
+  {
+   "id": "ref-shared-database",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "The shared database screens",
+   "description": "The sign-in window, the menu under your name, the bar for unsaved changes, the admin’s and the maintainer’s screens, offline and view only.",
+   "intro": "With the shared database your team works on one copy of the loans, properties and files: you sign in, every change is saved with a reason, and the group’s admin decides who can change what. Each picture names its controls. Every person, email address and group in the pictures is made up.",
+   "sections": [
+    {
+     "id": "signing-in",
+     "title": "Signing in",
+     "text": "With a shared database, the app opens on its sign-in window. See [Sign in or create an account](sign-in).",
+     "views": [
+      {
+       "title": "The sign-in window",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 37.4,
+         "y": 25.6,
+         "w": 25.1,
+         "h": 4.7,
+         "label": "Email",
+         "text": "The email address of your account."
+        },
+        {
+         "x": 37.4,
+         "y": 34.4,
+         "w": 25.1,
+         "h": 4.7,
+         "label": "Password",
+         "text": "Your password."
+        },
+        {
+         "x": 37.4,
+         "y": 41.3,
+         "w": 5.4,
+         "h": 4.5,
+         "label": "Sign in",
+         "text": "Opens the app on your group’s loans, properties and files."
+        },
+        {
+         "x": 53.4,
+         "y": 41.3,
+         "w": 9.1,
+         "h": 4.5,
+         "label": "Create an account",
+         "text": "For someone new: asks to join your company’s group."
+        },
+        {
+         "x": 37.4,
+         "y": 46.3,
+         "w": 11.3,
+         "h": 4.5,
+         "label": "Forgot your password?",
+         "text": "Emails you a code to set a new password."
+        },
+        {
+         "x": 93.6,
+         "y": 0,
+         "w": 3.2,
+         "h": 4,
+         "label": "Minimize",
+         "text": "Hides the window to the taskbar."
+        },
+        {
+         "x": 96.8,
+         "y": 0,
+         "w": 3.2,
+         "h": 4,
+         "label": "Close",
+         "text": "Closes the app."
+        }
+       ]
+      },
+      {
+       "title": "A new password: the email",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-02.jpg",
+       "w": 420,
+       "h": 278,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 52.6,
+         "w": 86.2,
+         "h": 15.2,
+         "label": "Email",
+         "text": "The email of the account whose password you forgot."
+        },
+        {
+         "x": 6.9,
+         "y": 75,
+         "w": 33.7,
+         "h": 14.5,
+         "label": "Email me a code",
+         "text": "Sends a 6-digit code. The window then asks for it."
+        },
+        {
+         "x": 67.8,
+         "y": 75,
+         "w": 25.3,
+         "h": 14.5,
+         "label": "Back to sign in",
+         "text": "Returns to the sign-in window."
+        }
+       ]
+      },
+      {
+       "title": "A new password: the code",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-03.jpg",
+       "w": 420,
+       "h": 490,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 86.1,
+         "w": 86.2,
+         "h": 7.9,
+         "label": "Sent",
+         "text": "The code is on its way (it only goes to an email that has an account)."
+        },
+        {
+         "x": 6.9,
+         "y": 29.8,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "The code",
+         "text": "The 6 digits from the email."
+        },
+        {
+         "x": 6.9,
+         "y": 46.1,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "New password",
+         "text": "At least 8 characters."
+        },
+        {
+         "x": 6.9,
+         "y": 62.3,
+         "w": 86.2,
+         "h": 8.6,
+         "label": "Again",
+         "text": "The same new password, to be sure it’s typed right."
+        },
+        {
+         "x": 6.9,
+         "y": 75.1,
+         "w": 53.9,
+         "h": 8.2,
+         "label": "Set the password and sign in",
+         "text": "Saves the new password and opens your group’s data."
+        }
+       ]
+      },
+      {
+       "title": "Create an account",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-04.jpg",
+       "w": 420,
+       "h": 682,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 21.4,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Organization",
+         "text": "Type the first 3 letters of its name."
+        },
+        {
+         "x": 6.9,
+         "y": 28.5,
+         "w": 86.2,
+         "h": 11.7,
+         "label": "Pick yours",
+         "text": "The groups whose name starts with those letters. Click yours; only these can be joined."
+        },
+        {
+         "x": 6.9,
+         "y": 45.6,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Full name",
+         "text": "Your name, as the admin and the change history will show it."
+        },
+        {
+         "x": 6.9,
+         "y": 57.3,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Email",
+         "text": "Your work email. The admin sees it, and the confirmation goes there."
+        },
+        {
+         "x": 6.9,
+         "y": 69,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Password",
+         "text": "At least 8 characters."
+        },
+        {
+         "x": 6.9,
+         "y": 80.7,
+         "w": 86.2,
+         "h": 6.2,
+         "label": "Again",
+         "text": "The same password again."
+        },
+        {
+         "x": 6.9,
+         "y": 89.8,
+         "w": 19.7,
+         "h": 5.9,
+         "label": "Sign up",
+         "text": "Sends your request to join to the group’s admin."
+        },
+        {
+         "x": 62.9,
+         "y": 89.8,
+         "w": 30.2,
+         "h": 5.9,
+         "label": "I have an account",
+         "text": "Back to the sign-in window."
+        }
+       ]
+      },
+      {
+       "title": "Waiting for approval",
+       "text": "After **Sign up** the request goes to the group’s admin, in the app and by email. When they approve it, you get an email: confirm your address from it, then sign in.",
+       "img": "img/cloud/ref-shared-database-05.jpg",
+       "w": 420,
+       "h": 232,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 12.5,
+         "w": 86.2,
+         "h": 12.5,
+         "label": "What happens now",
+         "text": "“Waiting for approval”. (Someone the admin already added is told to confirm their email instead.)"
+        },
+        {
+         "x": 6.9,
+         "y": 26.7,
+         "w": 86.2,
+         "h": 34.9,
+         "label": "Who approves",
+         "text": "The group and its admin, and the next steps."
+        },
+        {
+         "x": 6.9,
+         "y": 70.2,
+         "w": 31,
+         "h": 17.3,
+         "label": "Back to sign in",
+         "text": "The sign-in window, with your email filled in."
+        }
+       ]
+      },
+      {
+       "title": "Signing in before approval",
+       "text": "Until the admin approves, the sign-in window reminds you of your request, and signing in says the account isn’t ready yet.",
+       "img": "img/cloud/ref-shared-database-06.jpg",
+       "w": 420,
+       "h": 583,
+       "marks": [
+        {
+         "x": 6.9,
+         "y": 21,
+         "w": 86.2,
+         "h": 13.1,
+         "label": "Your request",
+         "text": "Which group you asked to join, and what to do once approved."
+        },
+        {
+         "x": 6.9,
+         "y": 81.9,
+         "w": 86.2,
+         "h": 13.1,
+         "label": "Not ready yet",
+         "text": "Why signing in didn’t work yet."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "in-no-group-yet",
+     "title": "In no group yet",
+     "views": [
+      {
+       "text": "An account that isn’t in a group yet (say, its admin removed it) can ask to join from here.",
+       "img": "img/cloud/ref-shared-database-07.jpg",
+       "w": 720,
+       "h": 501,
+       "marks": [
+        {
+         "x": 4,
+         "y": 5.8,
+         "w": 91.9,
+         "h": 5.8,
+         "label": "Not in a group",
+         "text": "You’re signed in, but no group has you yet."
+        },
+        {
+         "x": 4,
+         "y": 12.4,
+         "w": 91.9,
+         "h": 8.1,
+         "label": "Signed in as",
+         "text": "The account you’re signed in with, and what to do."
+        },
+        {
+         "x": 4,
+         "y": 36.6,
+         "w": 91.9,
+         "h": 8.4,
+         "label": "Organization",
+         "text": "Type the first 3 letters of its name …"
+        },
+        {
+         "x": 4,
+         "y": 46.2,
+         "w": 91.9,
+         "h": 8,
+         "label": "Pick it",
+         "text": "… and click it."
+        },
+        {
+         "x": 4,
+         "y": 61.7,
+         "w": 91.9,
+         "h": 8.4,
+         "label": "Full name",
+         "text": "Your name for the admin."
+        },
+        {
+         "x": 4,
+         "y": 74.1,
+         "w": 14.2,
+         "h": 8,
+         "label": "Ask to join",
+         "text": "Sends the request to the group’s admin."
+        },
+        {
+         "x": 4,
+         "y": 86.2,
+         "w": 16.1,
+         "h": 8,
+         "label": "Check again",
+         "text": "Once the admin approves, this opens the group."
+        },
+        {
+         "x": 87.1,
+         "y": 86.2,
+         "w": 8.8,
+         "h": 8,
+         "label": "Sign out",
+         "text": "Back to the sign-in window."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-maintainer",
      "title": "The maintainer",
-     "text": "The maintainer (who looks after the shared database for every company) signs in here too. Each company is a group with one admin; the maintainer makes the groups and names their admins.",
-     "img": "img/cloud/signin-08.jpg",
-     "w": 720,
-     "h": 863,
-     "marks": [
+     "text": "The maintainer looks after the shared database for every company. Each company is a group with one admin; the maintainer makes the groups and names their admins.",
+     "views": [
       {
-       "x": 4,
-       "y": 3.4,
-       "w": 91.9,
-       "h": 3.4,
-       "label": "The maintainer",
-       "text": "Signed in as the maintainer, in no group of their own."
+       "title": "On the sign-in window",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-08.jpg",
+       "w": 720,
+       "h": 846,
+       "marks": [
+        {
+         "x": 4,
+         "y": 3.4,
+         "w": 91.9,
+         "h": 3.4,
+         "label": "The maintainer",
+         "text": "Signed in as the maintainer, in no group of their own."
+        },
+        {
+         "x": 4,
+         "y": 19.3,
+         "w": 91.9,
+         "h": 5,
+         "label": "Ask to join a group",
+         "text": "A maintainer can also ask to join a group, like anyone in no group."
+        },
+        {
+         "x": 4,
+         "y": 53.2,
+         "w": 91.9,
+         "h": 8.8,
+         "label": "A group",
+         "text": "Each group, its admin (“hasn’t signed in yet” until they do) and how many people it has."
+        },
+        {
+         "x": 82.8,
+         "y": 54.2,
+         "w": 12.4,
+         "h": 6.8,
+         "label": "New admin…",
+         "text": "Makes someone else the group’s admin. The old admin stays in the group as an editor."
+        },
+        {
+         "x": 4,
+         "y": 84.4,
+         "w": 26,
+         "h": 5,
+         "label": "New group",
+         "text": "The company’s name."
+        },
+        {
+         "x": 31.1,
+         "y": 84.4,
+         "w": 26,
+         "h": 5,
+         "label": "Its admin’s email",
+         "text": "The person who will run the group."
+        },
+        {
+         "x": 58.2,
+         "y": 84.4,
+         "w": 26,
+         "h": 5,
+         "label": "Admin’s name",
+         "text": "Their full name."
+        },
+        {
+         "x": 85.3,
+         "y": 84.7,
+         "w": 10.7,
+         "h": 4.8,
+         "label": "Create",
+         "text": "Makes the group. Its admin then creates an account (**Create an account**, then the group’s name) and needs no approval, only to confirm the email."
+        },
+        {
+         "x": 4,
+         "y": 91.8,
+         "w": 16.1,
+         "h": 4.8,
+         "label": "Check again",
+         "text": "Opens the group, once the maintainer is in one."
+        },
+        {
+         "x": 87.1,
+         "y": 91.8,
+         "w": 8.8,
+         "h": 4.8,
+         "label": "Sign out",
+         "text": "Back to the sign-in window."
+        }
+       ]
       },
       {
-       "x": 4,
-       "y": 18.9,
-       "w": 91.9,
-       "h": 4.9,
-       "label": "Ask to join a group",
-       "text": "A maintainer can also ask to join a group, like anyone in no group."
-      },
-      {
-       "x": 4,
-       "y": 54.2,
-       "w": 91.9,
-       "h": 8.7,
-       "label": "A group",
-       "text": "Each group, its admin (“hasn’t signed in yet” until they do) and how many people it has."
-      },
-      {
-       "x": 81.9,
-       "y": 55.2,
-       "w": 13.2,
-       "h": 6.7,
-       "label": "New admin…",
-       "text": "Makes someone else the group’s admin. The old admin stays in the group as an editor."
-      },
-      {
-       "x": 4,
-       "y": 84.8,
-       "w": 25.6,
-       "h": 4.9,
-       "label": "New group",
-       "text": "The company’s name."
-      },
-      {
-       "x": 30.8,
-       "y": 84.8,
-       "w": 25.6,
-       "h": 4.9,
-       "label": "Its admin’s email",
-       "text": "The person who will run the group."
-      },
-      {
-       "x": 57.5,
-       "y": 84.8,
-       "w": 25.6,
-       "h": 4.9,
-       "label": "Admin’s name",
-       "text": "Their full name."
-      },
-      {
-       "x": 84.3,
-       "y": 85,
-       "w": 11.7,
-       "h": 4.7,
-       "label": "Create",
-       "text": "Makes the group. Its admin then creates an account (Create an account → the group’s name) and needs no approval — only to confirm the email."
-      },
-      {
-       "x": 4,
-       "y": 92,
-       "w": 17.8,
-       "h": 4.7,
-       "label": "Check again",
-       "text": "Opens the group, once the maintainer is in one."
-      },
-      {
-       "x": 85.7,
-       "y": 92,
-       "w": 10.3,
-       "h": 4.7,
-       "label": "Sign out",
-       "text": "Back to the sign-in screen."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "start",
-   "title": "The admin’s first sign-in",
-   "intro": "The group starts empty: its admin uploads the starting data from their own computer.",
-   "steps": [
-    {
-     "title": "Someone asks to join",
-     "text": "When people are waiting to join, the admin’s app shows them as soon as it opens (they also got an email). Approve or turn down each one.",
-     "img": "img/cloud/start-01.jpg",
-     "w": 512,
-     "h": 338,
-     "marks": [
-      {
-       "x": 6.6,
-       "y": 52.4,
-       "w": 44.9,
-       "h": 5.9,
-       "label": "Who asks",
-       "text": "Their name, email and when they asked."
-      },
-      {
-       "x": 53.1,
-       "y": 56.8,
-       "w": 21.1,
-       "h": 8.9,
-       "label": "Turn down",
-       "text": "They get an email saying so."
-      },
-      {
-       "x": 75.8,
-       "y": 57.1,
-       "w": 17.6,
-       "h": 8.3,
-       "label": "Approve",
-       "text": "They get an email to confirm their address, then join as an editor. (Make them view only in Members and codes.)"
-      },
-      {
-       "x": 82.5,
-       "y": 86.1,
-       "w": 13.4,
-       "h": 10.1,
-       "label": "Close",
-       "text": "Decide later: the request waits (the menu’s “Asking to join” opens it again)."
-      }
-     ]
-    },
-    {
-     "title": "Approved",
-     "text": "Approved: the person confirms their email from the link they get, then signs in.",
-     "img": "img/cloud/start-02.jpg",
-     "w": 512,
-     "h": 318,
-     "marks": [
-      {
-       "x": 6.6,
-       "y": 55.7,
-       "w": 86.7,
-       "h": 12.6,
-       "label": "Done",
-       "text": "What happens next for them."
-      }
-     ]
-    },
-    {
-     "title": "An empty group",
-     "text": "A new group has no data. The banner offers the upload; nothing on this computer is used until you do it.",
-     "img": "img/cloud/start-03.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 0,
-       "y": 3.6,
-       "w": 100,
-       "h": 3.4,
-       "label": "No data yet",
-       "text": "The group is empty (a member who isn’t the admin is told the admin brings the starting data)."
-      },
-      {
-       "x": 13.1,
-       "y": 4.2,
-       "w": 13.4,
-       "h": 2,
-       "label": "Upload this computer’s data",
-       "text": "Opens the upload."
-      },
-      {
-       "x": 65.2,
-       "y": 0.4,
-       "w": 9.5,
-       "h": 2.7,
-       "label": "You",
-       "text": "Who is signed in, and their role. Click it for the menu."
+       "title": "Groups, from the menu",
+       "text": "A maintainer who is also in a group has **Groups** in the menu under their name.",
+       "img": "img/cloud/ref-shared-database-09.jpg",
+       "w": 896,
+       "h": 392,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 29.8,
+         "w": 95.3,
+         "h": 8.3,
+         "label": "A group",
+         "text": "The group, its admin and how many people."
+        },
+        {
+         "x": 87.6,
+         "y": 31.4,
+         "w": 9.9,
+         "h": 5.1,
+         "label": "New admin…",
+         "text": "Makes someone else its admin; the old admin stays as an editor."
+        },
+        {
+         "x": 2.3,
+         "y": 64.8,
+         "w": 28.3,
+         "h": 9.7,
+         "label": "New group",
+         "text": "The company’s name."
+        },
+        {
+         "x": 31.5,
+         "y": 64.8,
+         "w": 28.3,
+         "h": 9.7,
+         "label": "Its admin’s email",
+         "text": "Who will run it."
+        },
+        {
+         "x": 60.7,
+         "y": 64.8,
+         "w": 28.3,
+         "h": 9.7,
+         "label": "Admin’s full name",
+         "text": "Their name."
+        },
+        {
+         "x": 89.9,
+         "y": 65.3,
+         "w": 7.7,
+         "h": 9.2,
+         "label": "Create",
+         "text": "Makes the group. Its admin then creates an account and only confirms the email."
+        },
+        {
+         "x": 90.5,
+         "y": 88,
+         "w": 7.2,
+         "h": 8.7,
+         "label": "Close",
+         "text": "Closes the screen."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Upload this computer’s data",
-     "text": "The loans, properties, their documents and chats on this computer become the group’s starting data. Nothing on this computer changes.",
-     "img": "img/cloud/start-04.jpg",
-     "w": 512,
-     "h": 402,
-     "marks": [
+     "id": "people-asking-to-join",
+     "title": "People asking to join",
+     "views": [
       {
-       "x": 4.1,
-       "y": 45.8,
-       "w": 91.8,
-       "h": 10,
-       "label": "What goes up",
-       "text": "How many loans, properties and documents, and how big the files are."
-      },
-      {
-       "x": 4.1,
-       "y": 56.7,
-       "w": 47,
-       "h": 5,
-       "label": "From a backup file",
-       "text": "Upload a backup file (Data → Back up to a file…, from any computer) instead."
-      },
-      {
-       "x": 4.1,
-       "y": 69.7,
-       "w": 91.8,
-       "h": 9.5,
-       "label": "Why",
-       "text": "Kept in the change history."
-      },
-      {
-       "x": 61,
-       "y": 88.3,
-       "w": 17.9,
-       "h": 8.5,
-       "label": "Not now",
-       "text": "Closes; the group stays empty."
-      },
-      {
-       "x": 80.4,
-       "y": 88.6,
-       "w": 15.5,
-       "h": 8,
-       "label": "Upload",
-       "text": "Sends it, file by file, then opens the group’s data."
+       "text": "The admin’s app shows people waiting to join as soon as it opens (they also got an email). **Asking to join** in the menu opens it again.",
+       "img": "img/cloud/ref-shared-database-10.jpg",
+       "w": 512,
+       "h": 338,
+       "marks": [
+        {
+         "x": 6.6,
+         "y": 52.4,
+         "w": 48.6,
+         "h": 5.9,
+         "label": "Who asks",
+         "text": "Their name, email and when they asked."
+        },
+        {
+         "x": 56.8,
+         "y": 56.8,
+         "w": 19.1,
+         "h": 8.9,
+         "label": "Turn down",
+         "text": "They get an email saying so."
+        },
+        {
+         "x": 77.5,
+         "y": 57.1,
+         "w": 15.9,
+         "h": 8.3,
+         "label": "Approve",
+         "text": "They get an email to confirm their address, then join as an editor. (Make them view only in Members and codes.)"
+        },
+        {
+         "x": 83.3,
+         "y": 86.1,
+         "w": 12.6,
+         "h": 10.1,
+         "label": "Close",
+         "text": "Decide later: the request waits."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "The group’s data",
-     "text": "Uploaded: the group has the data, and Home shows it at once. Everyone in the group sees the same, and changes reach every open app by themselves.",
-     "img": "img/cloud/start-05.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "id": "the-menu-under-your-name",
+     "title": "The menu under your name",
+     "views": [
       {
-       "x": 64.2,
-       "y": 0.4,
-       "w": 9.5,
-       "h": 2.7,
-       "label": "Online",
-       "text": "Green: online, live with the group. Blue: a change of yours isn’t saved yet. Amber: offline."
-      },
-      {
-       "x": 4.2,
-       "y": 23.8,
-       "w": 13,
-       "h": 4.4,
-       "label": "Whole Portfolio",
-       "text": "The whole group’s portfolio."
-      },
-      {
-       "x": 5.1,
-       "y": 43.4,
-       "w": 19.6,
-       "h": 1.8,
-       "label": "The group’s loans",
-       "text": "The same for everyone in the group."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "chip",
-   "title": "The cloud chip and its menu",
-   "intro": "The chip in the title bar shows who is signed in; its menu has the group’s screens.",
-   "steps": [
-    {
-     "title": "The menu (admin)",
-     "text": "Click the chip. An admin sees every screen; an editor or a viewer sees only the change history and Sign out.",
-     "img": "img/cloud/chip-01.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 64.2,
-       "y": 0.4,
-       "w": 9.5,
-       "h": 2.7,
-       "label": "The chip",
-       "text": "Name · role; “offline”, how many changes wait for you and how many people ask to join, when there are."
-      },
-      {
-       "x": 52.4,
-       "y": 4.6,
-       "w": 21,
-       "h": 7.6,
-       "label": "The group",
-       "text": "The group, you, your role, and online (live) or offline (the last picture of the data)."
-      },
-      {
-       "x": 52.4,
-       "y": 12.6,
-       "w": 21,
-       "h": 5.8,
-       "label": "Requests",
-       "text": "Changes members asked you to approve."
-      },
-      {
-       "x": 52.4,
-       "y": 18.4,
-       "w": 21,
-       "h": 5.8,
-       "label": "Asking to join",
-       "text": "People who asked to join."
-      },
-      {
-       "x": 52.4,
-       "y": 24.2,
-       "w": 21,
-       "h": 7.7,
-       "label": "Members and codes",
-       "text": "Who is in the group and who can edit; your approval and offline codes."
-      },
-      {
-       "x": 52.4,
-       "y": 31.9,
-       "w": 21,
-       "h": 5.8,
-       "label": "Daily backups",
-       "text": "Put the group’s data back as it was on a day."
-      },
-      {
-       "x": 52.4,
-       "y": 37.7,
-       "w": 21,
-       "h": 7.7,
-       "label": "Start the group over…",
-       "text": "Removes all the group’s data, to upload the starting data again (asks you to type the group’s name). Before the first upload this is “Upload this computer’s data”."
-      },
-      {
-       "x": 52.4,
-       "y": 45.4,
-       "w": 21,
-       "h": 5.8,
-       "label": "Change history",
-       "text": "Every change: who, when, why."
-      },
-      {
-       "x": 52.4,
-       "y": 51.2,
-       "w": 21,
-       "h": 5.8,
-       "label": "Groups",
-       "text": "Only the maintainer: every group and its admin."
-      },
-      {
-       "x": 52.4,
-       "y": 57.1,
-       "w": 21,
-       "h": 4,
-       "label": "Sign out",
-       "text": "Back to the sign-in screen. Changes not saved yet are dropped (it asks first)."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "save",
-   "title": "Saving a change, with a reason",
-   "intro": "Every change waits in a bar until you say why; then it is saved for everyone.",
-   "steps": [
-    {
-     "title": "Not saved yet",
-     "text": "Change anything (here a loan’s lender): the bar at the bottom lists what isn’t saved yet. Type why, then click Save (or press Enter).",
-     "img": "img/cloud/save-01.jpg",
-     "w": 920,
-     "h": 106,
-     "marks": [
-      {
-       "x": 1.8,
-       "y": 12.3,
-       "w": 96.3,
-       "h": 18.9,
-       "label": "Not saved yet",
-       "text": "Your change is only on this computer until you save it."
-      },
-      {
-       "x": 1.8,
-       "y": 31.1,
-       "w": 96.3,
-       "h": 17,
-       "label": "What changed",
-       "text": "The changes waiting (hover for the full list)."
-      },
-      {
-       "x": 1.8,
-       "y": 55.7,
-       "w": 80.5,
-       "h": 32.1,
-       "label": "Why",
-       "text": "Required — kept in the change history with your name."
-      },
-      {
-       "x": 83.2,
-       "y": 56.6,
-       "w": 6.8,
-       "h": 30.2,
-       "label": "Save",
-       "text": "Saves for everyone in the group."
-      },
-      {
-       "x": 90.9,
-       "y": 55.7,
-       "w": 7.3,
-       "h": 32.1,
-       "label": "Undo",
-       "text": "Drops your changes; the data goes back to how it was."
+       "text": "Click your name in the window bar. An admin sees every screen; an editor or a viewer sees only the change history and **Sign out**.",
+       "img": "img/cloud/ref-shared-database-11.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 67,
+         "y": 0.5,
+         "w": 8.4,
+         "h": 2.7,
+         "label": "The chip",
+         "text": "Name · role; “offline”, how many changes wait for you and how many people ask to join, when there are."
+        },
+        {
+         "x": 54,
+         "y": 4.6,
+         "w": 21,
+         "h": 7.6,
+         "label": "The group",
+         "text": "The group, you, your role, and online (live) or offline (the last picture of the data)."
+        },
+        {
+         "x": 54,
+         "y": 12.6,
+         "w": 21,
+         "h": 5.8,
+         "label": "Requests",
+         "text": "Changes members asked you to approve."
+        },
+        {
+         "x": 54,
+         "y": 18.5,
+         "w": 21,
+         "h": 5.8,
+         "label": "Asking to join",
+         "text": "People who asked to join."
+        },
+        {
+         "x": 54,
+         "y": 24.3,
+         "w": 21,
+         "h": 7.7,
+         "label": "Members and codes",
+         "text": "Who is in the group and who can edit; your approval and offline codes."
+        },
+        {
+         "x": 54,
+         "y": 32,
+         "w": 21,
+         "h": 5.8,
+         "label": "Daily backups",
+         "text": "Put the group’s data back as it was on a day."
+        },
+        {
+         "x": 54,
+         "y": 37.8,
+         "w": 21,
+         "h": 7.7,
+         "label": "Start the group over…",
+         "text": "Removes all the group’s data, to upload the starting data again (asks you to type the group’s name). Before the first upload this is “Upload this computer’s data”."
+        },
+        {
+         "x": 54,
+         "y": 45.5,
+         "w": 21,
+         "h": 5.8,
+         "label": "Change history",
+         "text": "Every change: who, when, why."
+        },
+        {
+         "x": 54,
+         "y": 51.3,
+         "w": 21,
+         "h": 5.8,
+         "label": "Groups",
+         "text": "Only the maintainer: every group and its admin."
+        },
+        {
+         "x": 54,
+         "y": 57.1,
+         "w": 21,
+         "h": 4,
+         "label": "Sign out",
+         "text": "Back to the sign-in window. Changes not saved yet are dropped (it asks first)."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "A member’s change waits for you",
-     "text": "A member who changes what the admin changed needs the admin’s approval: their request pops up in the admin’s app.",
-     "img": "img/cloud/save-02.jpg",
-     "w": 896,
-     "h": 325,
-     "marks": [
+     "id": "saving-a-change",
+     "title": "Saving a change",
+     "text": "See [Save a change](save-a-change).",
+     "views": [
       {
-       "x": 3.8,
-       "y": 32.9,
-       "w": 4.9,
-       "h": 4.9,
-       "label": "Who and when",
-       "text": "The member who asked, and when."
+       "title": "Not saved yet",
+       "text": "**Not saved yet**: any change you make is only on this computer, in this bar, until you say why and save it.",
+       "img": "img/cloud/ref-shared-database-12.jpg",
+       "w": 920,
+       "h": 106,
+       "marks": [
+        {
+         "x": 1.8,
+         "y": 31.1,
+         "w": 96.3,
+         "h": 17,
+         "label": "What changed",
+         "text": "The changes waiting (point at it for the full list)."
+        },
+        {
+         "x": 1.8,
+         "y": 55.7,
+         "w": 81.6,
+         "h": 32.1,
+         "label": "Why",
+         "text": "Required. Kept in the change history with your name."
+        },
+        {
+         "x": 84.3,
+         "y": 56.6,
+         "w": 6.2,
+         "h": 30.2,
+         "label": "Save",
+         "text": "Saves for everyone in the group (so does Enter)."
+        },
+        {
+         "x": 91.4,
+         "y": 55.7,
+         "w": 6.8,
+         "h": 32.1,
+         "label": "Undo",
+         "text": "Drops your changes; the data goes back to how it was."
+        }
+       ]
       },
       {
-       "x": 3.8,
-       "y": 47.1,
-       "w": 92.4,
-       "h": 8.9,
-       "label": "The change",
-       "text": "What, now, and their change."
-      },
-      {
-       "x": 73.2,
-       "y": 58.5,
-       "w": 12.1,
-       "h": 9.2,
-       "label": "Turn down",
-       "text": "Asks for an optional note for them; nothing changes."
-      },
-      {
-       "x": 86.2,
-       "y": 58.5,
-       "w": 10,
-       "h": 9.2,
-       "label": "Approve",
-       "text": "Their change takes effect for everyone."
-      },
-      {
-       "x": 90,
-       "y": 85.5,
-       "w": 7.6,
-       "h": 10.5,
-       "label": "Close",
-       "text": "Decide later (menu → Requests)."
+       "title": "A member’s change waits for the admin",
+       "text": "A member who changes what the admin changed needs the admin’s approval. Their request pops up in the admin’s app.",
+       "img": "img/cloud/ref-shared-database-13.jpg",
+       "w": 896,
+       "h": 325,
+       "marks": [
+        {
+         "x": 3.8,
+         "y": 32.6,
+         "w": 4.3,
+         "h": 5.2,
+         "label": "Who and when",
+         "text": "The member who asked, and when."
+        },
+        {
+         "x": 3.8,
+         "y": 47.1,
+         "w": 92.4,
+         "h": 8.9,
+         "label": "The change",
+         "text": "What, its value now, and their change."
+        },
+        {
+         "x": 75.3,
+         "y": 58.5,
+         "w": 10.9,
+         "h": 9.2,
+         "label": "Turn down",
+         "text": "Asks for an optional note for them; nothing changes."
+        },
+        {
+         "x": 87.1,
+         "y": 58.5,
+         "w": 9.1,
+         "h": 9.2,
+         "label": "Approve",
+         "text": "Their change takes effect for everyone."
+        },
+        {
+         "x": 90.5,
+         "y": 85.5,
+         "w": 7.2,
+         "h": 10.5,
+         "label": "Close",
+         "text": "Decide later (menu › **Requests**)."
+        }
+       ]
       }
      ]
-    }
-   ]
-  },
-  {
-   "id": "members",
-   "title": "Members and codes (the admin)",
-   "intro": "Who is in the group and what they can do, and the admin’s two codes.",
-   "steps": [
+    },
     {
+     "id": "members-and-codes",
      "title": "Members and codes",
-     "text": "Menu → Members and codes. People join by asking from the sign-in screen; here you set what each can do, or remove them.",
-     "img": "img/cloud/members-01.jpg",
-     "w": 896,
-     "h": 528,
-     "marks": [
+     "views": [
       {
-       "x": 2.3,
-       "y": 22.2,
-       "w": 95.3,
-       "h": 6.2,
-       "label": "The admin",
-       "text": "The group’s one admin."
-      },
-      {
-       "x": 71.3,
-       "y": 36.6,
-       "w": 10.9,
-       "h": 4.5,
-       "label": "Can",
-       "text": "Editor (can change data) or View only. It takes effect in their app at once."
-      },
-      {
-       "x": 90.5,
-       "y": 36.8,
-       "w": 7,
-       "h": 3.8,
-       "label": "Remove",
-       "text": "Takes them out of the group (it asks first). Their app says so."
-      },
-      {
-       "x": 27.2,
-       "y": 30.6,
-       "w": 28.6,
-       "h": 2.5,
-       "label": "Not signed in yet",
-       "text": "Approved, but hasn’t confirmed the email and signed in yet."
-      },
-      {
-       "x": 2.3,
-       "y": 78.4,
-       "w": 38.6,
-       "h": 7.2,
-       "label": "Approval code",
-       "text": "Typed on a member’s screen to approve on the spot a change to what you changed."
-      },
-      {
-       "x": 41.9,
-       "y": 78.4,
-       "w": 38.6,
-       "h": 7.2,
-       "label": "Offline code",
-       "text": "Lets you keep changing data on your own computer with no connection."
-      },
-      {
-       "x": 81.4,
-       "y": 78.4,
-       "w": 16.3,
-       "h": 7.2,
-       "label": "Save the codes",
-       "text": "At least 6 characters each; an empty box keeps that code as it is."
-      },
-      {
-       "x": 90,
-       "y": 91.1,
-       "w": 7.6,
-       "h": 6.4,
-       "label": "Close",
-       "text": "Closes the screen."
+       "text": "The admin’s screen: who is in the group and what each person can do. People join by asking from the sign-in window. See [Manage members and codes](manage-members).",
+       "img": "img/cloud/ref-shared-database-14.jpg",
+       "w": 896,
+       "h": 531,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 22,
+         "w": 95.3,
+         "h": 6.1,
+         "label": "The admin",
+         "text": "The group’s one admin."
+        },
+        {
+         "x": 71.5,
+         "y": 36.5,
+         "w": 10.6,
+         "h": 4.7,
+         "label": "Can",
+         "text": "Editor (can change data) or View only. It takes effect in their app at once."
+        },
+        {
+         "x": 91.5,
+         "y": 37,
+         "w": 6.1,
+         "h": 3.8,
+         "label": "Remove",
+         "text": "Takes them out of the group (it asks first). Their app says so."
+        },
+        {
+         "x": 26.9,
+         "y": 30.5,
+         "w": 26.5,
+         "h": 2.6,
+         "label": "Not signed in yet",
+         "text": "Approved, but hasn’t confirmed the email and signed in yet."
+        },
+        {
+         "x": 2.3,
+         "y": 78.5,
+         "w": 39.5,
+         "h": 7.2,
+         "label": "Approval code",
+         "text": "Typed on a member’s screen to approve on the spot a change to what you changed."
+        },
+        {
+         "x": 42.8,
+         "y": 78.5,
+         "w": 39.5,
+         "h": 7.2,
+         "label": "Offline code",
+         "text": "Lets you keep changing data on your own computer with no connection."
+        },
+        {
+         "x": 83.2,
+         "y": 78.5,
+         "w": 14.4,
+         "h": 7.2,
+         "label": "Save the codes",
+         "text": "At least 6 characters each; an empty box keeps that code as it is."
+        },
+        {
+         "x": 90.5,
+         "y": 91.1,
+         "w": 7.2,
+         "h": 6.4,
+         "label": "Close",
+         "text": "Closes the screen."
+        }
+       ]
       }
      ]
-    }
-   ]
-  },
-  {
-   "id": "history",
-   "title": "Change history",
-   "intro": "Every change to the group’s data: who made it, when, and why.",
-   "steps": [
+    },
     {
+     "id": "change-history",
      "title": "Change history",
-     "text": "Menu → Change history. Newest first; type in the box to find a name, a property or a reason.",
-     "img": "img/cloud/history-01.jpg",
-     "w": 896,
-     "h": 361,
-     "marks": [
+     "views": [
       {
-       "x": 2.3,
-       "y": 25.5,
-       "w": 95.3,
-       "h": 10.5,
-       "label": "Find",
-       "text": "Shows only the changes with these words."
-      },
-      {
-       "x": 2.3,
-       "y": 39.3,
-       "w": 18.1,
-       "h": 6.9,
-       "label": "When",
-       "text": "Date and time of the change."
-      },
-      {
-       "x": 20.4,
-       "y": 39.3,
-       "w": 11.1,
-       "h": 6.9,
-       "label": "Who",
-       "text": "Who made it — and who approved it, for a member’s change the admin approved. “The app” for the app’s own work."
-      },
-      {
-       "x": 20.5,
-       "y": 52.9,
-       "w": 10.1,
-       "h": 11.1,
-       "label": "Approved by",
-       "text": "A member’s change the admin approved names them both."
-      },
-      {
-       "x": 31.5,
-       "y": 39.3,
-       "w": 18.2,
-       "h": 6.9,
-       "label": "What",
-       "text": "The property or loan, and the field."
-      },
-      {
-       "x": 49.7,
-       "y": 39.3,
-       "w": 15.2,
-       "h": 6.9,
-       "label": "Before",
-       "text": "The value before."
-      },
-      {
-       "x": 64.9,
-       "y": 39.3,
-       "w": 14,
-       "h": 6.9,
-       "label": "After",
-       "text": "The value after."
-      },
-      {
-       "x": 79,
-       "y": 39.3,
-       "w": 18.7,
-       "h": 6.9,
-       "label": "Why",
-       "text": "The reason typed when it was saved."
-      },
-      {
-       "x": 73.5,
-       "y": 87,
-       "w": 15.6,
-       "h": 9.4,
-       "label": "Older changes",
-       "text": "Loads the next 200 older changes."
-      },
-      {
-       "x": 90,
-       "y": 87,
-       "w": 7.6,
-       "h": 9.4,
-       "label": "Close",
-       "text": "Closes the screen."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "backups",
-   "title": "Daily backups (the admin)",
-   "intro": "A backup of the group’s data is taken every day and kept 30 days.",
-   "steps": [
-    {
-     "title": "The backups",
-     "text": "Menu → Daily backups: one line per day.",
-     "img": "img/cloud/backups-01.jpg",
-     "w": 512,
-     "h": 321,
-     "marks": [
-      {
-       "x": 70.9,
-       "y": 24.9,
-       "w": 24.8,
-       "h": 6.2,
-       "label": "Put this day back",
-       "text": "The group’s data goes back to how it was that day, for everyone (asks why first)."
-      },
-      {
-       "x": 61.4,
-       "y": 46.4,
-       "w": 34.4,
-       "h": 4.4,
-       "label": "Empty",
-       "text": "Taken before the group had data — nothing to put back."
-      },
-      {
-       "x": 82.5,
-       "y": 85.4,
-       "w": 13.4,
-       "h": 10.6,
-       "label": "Close",
-       "text": "Closes the screen."
+       "text": "Every change to the group’s data, newest first. Type in the box to find a name, a property or a reason.",
+       "img": "img/cloud/ref-shared-database-15.jpg",
+       "w": 896,
+       "h": 430,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 21.4,
+         "w": 95.3,
+         "h": 8.8,
+         "label": "Find",
+         "text": "Shows only the changes with these words."
+        },
+        {
+         "x": 2.3,
+         "y": 33,
+         "w": 16.5,
+         "h": 5.8,
+         "label": "When",
+         "text": "Date and time of the change."
+        },
+        {
+         "x": 18.8,
+         "y": 33,
+         "w": 10.9,
+         "h": 5.8,
+         "label": "Who",
+         "text": "Who made it, and who approved it for a member’s change the admin approved. “The app” for the app’s own work."
+        },
+        {
+         "x": 18.9,
+         "y": 44.4,
+         "w": 9.9,
+         "h": 9.3,
+         "label": "Approved by",
+         "text": "A member’s change the admin approved names them both."
+        },
+        {
+         "x": 29.8,
+         "y": 33,
+         "w": 18.3,
+         "h": 5.8,
+         "label": "What",
+         "text": "The property or loan, and the field."
+        },
+        {
+         "x": 48,
+         "y": 33,
+         "w": 15.2,
+         "h": 5.8,
+         "label": "Before",
+         "text": "The value before."
+        },
+        {
+         "x": 63.2,
+         "y": 33,
+         "w": 15.5,
+         "h": 5.8,
+         "label": "After",
+         "text": "The value after."
+        },
+        {
+         "x": 78.7,
+         "y": 33,
+         "w": 19,
+         "h": 5.8,
+         "label": "Why",
+         "text": "The reason typed when it was saved."
+        },
+        {
+         "x": 75.7,
+         "y": 89.1,
+         "w": 13.9,
+         "h": 7.9,
+         "label": "Older changes",
+         "text": "Loads the next 200 older changes."
+        },
+        {
+         "x": 90.5,
+         "y": 89.1,
+         "w": 7.2,
+         "h": 7.9,
+         "label": "Close",
+         "text": "Closes the screen."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Putting a day back",
-     "text": "Type why and click “Put it back”. Every change it makes is in the change history with your reason.",
-     "img": "img/cloud/backups-02.jpg",
-     "w": 512,
-     "h": 230,
-     "marks": [
+     "id": "daily-backups",
+     "title": "Daily backups",
+     "text": "The admin’s screen. A backup of the group’s data is taken every day and kept 30 days.",
+     "views": [
       {
-       "x": 4.1,
-       "y": 47,
-       "w": 91.8,
-       "h": 16.5,
-       "label": "Why",
-       "text": "Required; kept in the change history."
+       "title": "The backups",
+       "text": "",
+       "img": "img/cloud/ref-shared-database-16.jpg",
+       "w": 512,
+       "h": 322,
+       "marks": [
+        {
+         "x": 74.7,
+         "y": 24.8,
+         "w": 21,
+         "h": 6.2,
+         "label": "Put this day back",
+         "text": "The group’s data goes back to how it was that day, for everyone (it asks why first)."
+        },
+        {
+         "x": 63.6,
+         "y": 46.3,
+         "w": 32.1,
+         "h": 4.7,
+         "label": "Empty",
+         "text": "Taken before the group had data: nothing to put back."
+        },
+        {
+         "x": 83.3,
+         "y": 85.4,
+         "w": 12.6,
+         "h": 10.6,
+         "label": "Close",
+         "text": "Closes the screen."
+        }
+       ]
       },
       {
-       "x": 57.7,
-       "y": 79.6,
-       "w": 15.3,
-       "h": 14.8,
-       "label": "Cancel",
-       "text": "Nothing changes."
-      },
-      {
-       "x": 74.6,
-       "y": 80,
-       "w": 21.3,
-       "h": 13.9,
-       "label": "Put it back",
-       "text": "Puts the day back for everyone."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "groups",
-   "title": "Groups (the maintainer)",
-   "intro": "The maintainer sees every group from the menu too, when they are also in a group.",
-   "steps": [
-    {
-     "title": "Groups",
-     "text": "Menu → Groups (only the maintainer has it): every group, its admin and how many people; and a new group.",
-     "img": "img/cloud/groups-01.jpg",
-     "w": 896,
-     "h": 413,
-     "marks": [
-      {
-       "x": 2.3,
-       "y": 28.3,
-       "w": 95.3,
-       "h": 8.1,
-       "label": "A group",
-       "text": "The group, its admin and how many people."
-      },
-      {
-       "x": 86.2,
-       "y": 29.8,
-       "w": 11.4,
-       "h": 4.8,
-       "label": "New admin…",
-       "text": "Makes someone else its admin; the old admin stays as an editor."
-      },
-      {
-       "x": 2.3,
-       "y": 61.7,
-       "w": 28,
-       "h": 9.2,
-       "label": "New group",
-       "text": "The company’s name."
-      },
-      {
-       "x": 31.3,
-       "y": 61.7,
-       "w": 28,
-       "h": 9.2,
-       "label": "Its admin’s email",
-       "text": "Who will run it."
-      },
-      {
-       "x": 60.2,
-       "y": 61.7,
-       "w": 28,
-       "h": 9.2,
-       "label": "Admin’s full name",
-       "text": "Their name."
-      },
-      {
-       "x": 89.1,
-       "y": 62.2,
-       "w": 8.5,
-       "h": 8.7,
-       "label": "Create",
-       "text": "Makes the group; its admin then creates an account and only confirms the email."
-      },
-      {
-       "x": 90,
-       "y": 88.6,
-       "w": 7.6,
-       "h": 8.2,
-       "label": "Close",
-       "text": "Closes the screen."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "offline",
-   "title": "Offline",
-   "intro": "With no connection the app keeps the last picture of the group’s data, view only.",
-   "steps": [
-    {
-     "title": "Offline — view only",
-     "text": "When the shared database can’t be reached, a banner says so and the chip turns amber. You can look at everything; changes can’t be saved until the connection is back — it reconnects by itself.",
-     "img": "img/cloud/offline-01.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 60.7,
-       "y": 0.4,
-       "w": 13,
-       "h": 2.7,
-       "label": "Offline",
-       "text": "The chip says “offline” (amber dot)."
-      },
-      {
-       "x": 0,
-       "y": 3.6,
-       "w": 99,
-       "h": 3.4,
-       "label": "The banner",
-       "text": "What offline means: the last picture of the data, view only."
-      },
-      {
-       "x": 50,
-       "y": 4.2,
-       "w": 9.2,
-       "h": 2,
-       "label": "Use my offline code",
-       "text": "Only the admin: keep changing data while offline."
+       "title": "Putting a day back",
+       "text": "Every change it makes is in the change history, with your reason.",
+       "img": "img/cloud/ref-shared-database-17.jpg",
+       "w": 512,
+       "h": 230,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 47,
+         "w": 91.8,
+         "h": 16.5,
+         "label": "Why",
+         "text": "Required; kept in the change history."
+        },
+        {
+         "x": 61.5,
+         "y": 79.6,
+         "w": 14.3,
+         "h": 14.8,
+         "label": "Cancel",
+         "text": "Nothing changes."
+        },
+        {
+         "x": 77.3,
+         "y": 80,
+         "w": 18.6,
+         "h": 13.9,
+         "label": "Put it back",
+         "text": "Puts the day back for everyone."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "The offline code",
-     "text": "The admin types the offline code (set in Members and codes): changes are kept on this computer, each with its reason, and go up when the connection is back.",
-     "img": "img/cloud/offline-02.jpg",
-     "w": 512,
-     "h": 288,
-     "marks": [
+     "id": "offline",
+     "title": "Offline",
+     "text": "With no connection, the app keeps the last picture of the group’s data, view only. It reconnects by itself.",
+     "views": [
       {
-       "x": 4.1,
-       "y": 57.6,
-       "w": 91.8,
-       "h": 13.2,
-       "label": "Offline code",
-       "text": "The code you set in Members and codes."
+       "title": "Offline: view only",
+       "text": "A banner says so and the chip turns amber. You can look at everything; changes can’t be saved until the connection is back.",
+       "img": "img/cloud/ref-shared-database-18.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 64,
+         "y": 0.5,
+         "w": 11.3,
+         "h": 2.7,
+         "label": "Offline",
+         "text": "The chip says “offline” (amber dot)."
+        },
+        {
+         "x": 0,
+         "y": 3.6,
+         "w": 99,
+         "h": 3.4,
+         "label": "The banner",
+         "text": "What offline means: the last picture of the data, view only."
+        },
+        {
+         "x": 47.2,
+         "y": 4.2,
+         "w": 8,
+         "h": 2,
+         "label": "Use my offline code",
+         "text": "Only the admin: keep changing data while offline."
+        }
+       ]
       },
       {
-       "x": 63.9,
-       "y": 83.7,
-       "w": 15.3,
-       "h": 11.8,
-       "label": "Cancel",
-       "text": "Stay view only."
-      },
-      {
-       "x": 80.8,
-       "y": 84,
-       "w": 15.1,
-       "h": 11.1,
-       "label": "Unlock",
-       "text": "You can change data offline; the banner says how many changes wait to go up."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "members-view",
-   "title": "As an editor, and view only",
-   "intro": "What a member who isn’t the admin sees.",
-   "steps": [
-    {
-     "title": "The admin’s approval is needed",
-     "text": "An editor (here Eddie) changes what the admin changed: Save asks for the admin’s approval. The admin can type the approval code right there, or Eddie sends it to them.",
-     "img": "img/cloud/members-view-01.jpg",
-     "w": 512,
-     "h": 452,
-     "marks": [
-      {
-       "x": 4.1,
-       "y": 31.9,
-       "w": 91.8,
-       "h": 17.3,
-       "label": "The change",
-       "text": "What, its value now, and the change."
-      },
-      {
-       "x": 4.1,
-       "y": 56.2,
-       "w": 91.8,
-       "h": 8.4,
-       "label": "Approval code",
-       "text": "The admin types their code here (on Eddie’s screen) to approve it now."
-      },
-      {
-       "x": 31.8,
-       "y": 80.8,
-       "w": 30.8,
-       "h": 7.5,
-       "label": "Undo my change",
-       "text": "Drops it."
-      },
-      {
-       "x": 64.1,
-       "y": 80.8,
-       "w": 31.8,
-       "h": 7.5,
-       "label": "Send to the admin",
-       "text": "It pops up in the admin’s app. The current value stays until they approve; you get a note when they decide."
-      },
-      {
-       "x": 56.3,
-       "y": 90,
-       "w": 39.6,
-       "h": 7.1,
-       "label": "Approve with the code",
-       "text": "Saves at once with the admin’s code."
+       "title": "The offline code",
+       "text": "The admin types the offline code (set in Members and codes). Changes are kept on this computer, each with its reason, and go up when the connection is back.",
+       "img": "img/cloud/ref-shared-database-19.jpg",
+       "w": 512,
+       "h": 288,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 57.6,
+         "w": 91.8,
+         "h": 13.2,
+         "label": "Offline code",
+         "text": "The code you set in Members and codes."
+        },
+        {
+         "x": 66.2,
+         "y": 83.7,
+         "w": 14.3,
+         "h": 11.8,
+         "label": "Cancel",
+         "text": "Stay view only."
+        },
+        {
+         "x": 82,
+         "y": 84,
+         "w": 13.9,
+         "h": 11.1,
+         "label": "Unlock",
+         "text": "You can change data offline; the banner says how many changes wait to go up."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "The editor’s menu",
-     "text": "A member’s menu has the change history and Sign out.",
-     "img": "img/cloud/members-view-02.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "id": "as-an-editor",
+     "title": "As an editor",
+     "text": "What a member who isn’t the admin sees. Here Eddie is an editor.",
+     "views": [
       {
-       "x": 65.8,
-       "y": 0.4,
-       "w": 7.9,
-       "h": 2.7,
-       "label": "Editor",
-       "text": "Eddie · Editor."
+       "title": "The admin’s approval is needed",
+       "text": "An editor changes what the admin changed: **Save** asks for the admin’s approval. The admin can type the approval code right there, or the editor sends it to them.",
+       "img": "img/cloud/ref-shared-database-20.jpg",
+       "w": 512,
+       "h": 452,
+       "marks": [
+        {
+         "x": 4.1,
+         "y": 31.9,
+         "w": 91.8,
+         "h": 17.3,
+         "label": "The change",
+         "text": "What, its value now, and the change."
+        },
+        {
+         "x": 4.1,
+         "y": 56.2,
+         "w": 91.8,
+         "h": 8.4,
+         "label": "Approval code",
+         "text": "The admin types their code here (on the editor’s screen) to approve it now."
+        },
+        {
+         "x": 39.4,
+         "y": 80.8,
+         "w": 27.4,
+         "h": 7.5,
+         "label": "Undo my change",
+         "text": "Drops it."
+        },
+        {
+         "x": 68.3,
+         "y": 80.8,
+         "w": 27.6,
+         "h": 7.5,
+         "label": "Send to the admin",
+         "text": "It pops up in the admin’s app. The current value stays until they approve; you get a note when they decide."
+        },
+        {
+         "x": 61.4,
+         "y": 90,
+         "w": 34.5,
+         "h": 7.1,
+         "label": "Approve with the code",
+         "text": "Saves at once with the admin’s code."
+        }
+       ]
       },
       {
-       "x": 52.4,
-       "y": 4.6,
-       "w": 21,
-       "h": 7.6,
-       "label": "The group",
-       "text": "The group, who you are and your role, online or offline."
-      },
-      {
-       "x": 52.4,
-       "y": 12.6,
-       "w": 21,
-       "h": 5.8,
-       "label": "Change history",
-       "text": "Every change: who, when, why."
-      },
-      {
-       "x": 52.4,
-       "y": 18.4,
-       "w": 21,
-       "h": 4,
-       "label": "Sign out",
-       "text": "Back to the sign-in screen."
+       "title": "The editor’s menu",
+       "text": "A member’s menu has the change history and **Sign out**.",
+       "img": "img/cloud/ref-shared-database-21.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 68.4,
+         "y": 0.5,
+         "w": 6.9,
+         "h": 2.7,
+         "label": "Editor",
+         "text": "Eddie · Editor."
+        },
+        {
+         "x": 54,
+         "y": 4.6,
+         "w": 21,
+         "h": 7.6,
+         "label": "The group",
+         "text": "The group, who you are and your role, online or offline."
+        },
+        {
+         "x": 54,
+         "y": 12.6,
+         "w": 21,
+         "h": 5.8,
+         "label": "Change history",
+         "text": "Every change: who, when, why."
+        },
+        {
+         "x": 54,
+         "y": 18.5,
+         "w": 21,
+         "h": 4,
+         "label": "Sign out",
+         "text": "Back to the sign-in window."
+        }
+       ]
       }
      ]
     },
     {
+     "id": "view-only",
      "title": "View only",
-     "text": "Someone the admin made view only sees everything in the group but can’t change it: a change they try is refused and the screen goes back.",
-     "img": "img/cloud/members-view-03.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "views": [
       {
-       "x": 64.7,
-       "y": 0.4,
-       "w": 9,
-       "h": 2.7,
-       "label": "View only",
-       "text": "Vera · View only."
-      },
-      {
-       "x": 0,
-       "y": 3.6,
-       "w": 99,
-       "h": 3.4,
-       "label": "The banner",
-       "text": "View only — you can see everything in the group but not change it."
+       "text": "Someone the admin made view only sees everything in the group but can’t change it: a change they try is refused, and the screen goes back.",
+       "img": "img/cloud/ref-shared-database-22.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 67.3,
+         "y": 0.5,
+         "w": 8,
+         "h": 2.7,
+         "label": "View only",
+         "text": "Vera · View only."
+        },
+        {
+         "x": 0,
+         "y": 3.6,
+         "w": 99,
+         "h": 3.4,
+         "label": "The banner",
+         "text": "View only: you can see everything in the group but not change it."
+        }
+       ]
       }
      ]
     }
