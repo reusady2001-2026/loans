@@ -3,8 +3,10 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.1.0 — shipped 2026-10-26. The operator approved the number ("3.1.0") and "Yes, ship now",
-after testing the TEST builds of rounds 1–4. Before that: 3.0.0, shipped 2026-10-14.
+**Current version:** 3.1.1 — shipped 2026-10-26. The operator tested the TEST build and said "ship it as 3.1.1": extending
+with today's lender on several properties and several loans together, and a new loan's interest-only no longer copied.
+Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
+TEST builds of rounds 1–4), and 3.0.0, shipped 2026-10-14.
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
 set up for the app. Used by Azriel's team in the US.
@@ -1273,7 +1275,7 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
 - **Not in the draft:** presets filled from Azriel's numbers (they ship empty); a second extension on top of a saved one
   (undo first).
-- **Several properties, several loans (after 3.1.0, TEST build — the operator, 2026-10-26).** The plan said "extend with
+- **Several properties, several loans (3.1.1 — the operator, 2026-10-26).** The plan said "extend with
   today's lender for one loan, and that's it, no matter how many properties". 3.1.0 had wrongly limited it to a loan on
   one property. The operator also asked: "you should be able to do new loans and extend with today's lenders on a couple
   of properties together".
@@ -1303,7 +1305,7 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
       mezz pay-down; a two-property portfolio; the assistant.
   - **The Guide:** "Extend several loans together" in *Refinance several loans together*, and three reference
     pictures. K2 Sweetwater has a made-up T12 in the refinance chapter.
-- **A new loan's interest-only is never copied (TEST build — the operator, 2026-10-26).** "If a property had a loan,
+- **A new loan's interest-only is never copied (3.1.1 — the operator, 2026-10-26).** "If a property had a loan,
   that in its terms there was an interest only period, it will be duplicated to the new loan agreement without me
   letting myself edit that."
   - The proposed new loan (`buildRefiOption`) starts with **no interest-only**. It used to copy today's loan's
@@ -1344,4 +1346,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.1.0 (shipped 2026-10-26).*
+*Last updated for version 3.1.1 (shipped 2026-10-26).*
