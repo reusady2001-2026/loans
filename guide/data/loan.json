@@ -1,0 +1,3216 @@
+{
+ "id": "loan",
+ "pages": [
+  {
+   "id": "open-a-loan",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Open a loan",
+   "description": "Open a loan’s page from the Portfolio page or from the property list.",
+   "intro": "A loan’s page shows one loan in full: its main figures, its coverage, its terms and every payment. Open it from its row on the Portfolio page, or pick its property under **Specific Property**.",
+   "sections": [
+    {
+     "id": "from-the-portfolio-page",
+     "title": "From the Portfolio page",
+     "steps": [
+      {
+       "text": "On the **Portfolio** tab, scroll down to **Portfolio detail**. Every loan has a row there, grouped by property."
+      },
+      {
+       "text": "Click the loan’s row. A property with two loans is one bold row: click it to show its loans, then click the one you want.",
+       "img": "img/loan/open-a-loan-01.jpg",
+       "w": 1313,
+       "h": 1332,
+       "marks": [
+        {
+         "x": 0.1,
+         "y": 44,
+         "w": 99.8,
+         "h": 2.9,
+         "label": "A loan",
+         "text": "Click the row to open the loan’s page."
+        },
+        {
+         "x": 0.1,
+         "y": 11.3,
+         "w": 99.8,
+         "h": 3.2,
+         "label": "A property with 2 loans",
+         "text": "Click to show or hide its loans. Its row adds the two together."
+        },
+        {
+         "x": 0.1,
+         "y": 17.5,
+         "w": 99.8,
+         "h": 3.1,
+         "label": "One of its loans",
+         "text": "Marked senior or mezz. Click it to open that loan."
+        },
+        {
+         "x": 0.1,
+         "y": 93.8,
+         "w": 99.8,
+         "h": 3.1,
+         "label": "No loan yet",
+         "text": "A property with no loan sits at the bottom. Clicking it opens it in Underwriting."
+        }
+       ]
+      },
+      {
+       "text": "The loan’s page opens on the **Specific Property** side. Scroll down for the Loan Record and the payment schedule.",
+       "img": "img/loan/open-a-loan-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.6,
+         "y": 35.3,
+         "w": 39.7,
+         "h": 5.6,
+         "label": "Select a property",
+         "text": "The property showing. Pick another one here."
+        },
+        {
+         "x": 3.9,
+         "y": 46.3,
+         "w": 91.2,
+         "h": 26.2,
+         "label": "The tiles",
+         "text": "The loan’s main figures, worked out for today."
+        },
+        {
+         "x": 3.9,
+         "y": 87,
+         "w": 91.2,
+         "h": 9.2,
+         "label": "NOI box",
+         "text": "The property’s NOI and coverage."
+        },
+        {
+         "x": 4.2,
+         "y": 21.8,
+         "w": 11.8,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "Back to the Portfolio page."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "from-the-property-list",
+     "title": "From the property list",
+     "steps": [
+      {
+       "text": "Under the tabs, click **Specific Property**."
+      },
+      {
+       "text": "Pick the property in **Select a property**. Its page opens. Next to a name the list says “senior + mezz” (two loans), “in a pooled loan” or “no loan yet”."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "ref-loan-page",
+     "anchor": "",
+     "text": "Every part of a loan’s page, named."
+    },
+    {
+     "page": "edit-a-loan",
+     "anchor": "",
+     "text": "Change a loan’s terms."
+    },
+    {
+     "page": "find-a-loan",
+     "anchor": "",
+     "text": "Find a loan by property or by lender."
+    }
+   ]
+  },
+  {
+   "id": "add-a-loan",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Add a loan",
+   "description": "Put a loan in the book from its terms. The app works out the rest.",
+   "intro": "**Add Loan** opens an empty loan form. You type the terms from the loan papers; the app works out the balance, the payments, the debt service and the whole schedule from them. A new property name makes a new property, so a loan and its property can be added in one go.",
+   "before": [
+    "The loan’s terms, from its papers: the amount, the dates, the term, the amortization and the rate."
+   ],
+   "sections": [
+    {
+     "id": "open-the-form",
+     "title": "Open the form",
+     "steps": [
+      {
+       "text": "Click **Specific Property** and pick the property the loan is on. For a property that isn’t in the app yet, any property will do."
+      },
+      {
+       "text": "Click **Add Loan**. An empty loan form opens, with the property’s name already in **Property Name**.",
+       "img": "img/loan/add-a-loan-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.3,
+         "y": 48.2,
+         "w": 44,
+         "h": 2.7,
+         "label": "Add Loan",
+         "text": "A new loan. (Editing a loan says “Edit Loan”.)"
+        },
+        {
+         "x": 6.5,
+         "y": 62.6,
+         "w": 27.9,
+         "h": 4.2,
+         "label": "Property Name",
+         "text": "The property you were on."
+        },
+        {
+         "x": 84.3,
+         "y": 48.4,
+         "w": 9.3,
+         "h": 4,
+         "label": "Save Loan",
+         "text": "Saves the loan once the form is filled in."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "fill-in-the-loan",
+     "title": "Fill in the loan",
+     "text": "Fields with a red * are required. Leave out what you don’t have.",
+     "steps": [
+      {
+       "text": "In **Loan Identification**, check **Property Name**. To put the loan on another property, type its name; a name the app doesn’t know makes a new property."
+      },
+      {
+       "text": "Type the **Property Address**, the **Lender Name** and the **Loan Number**, and pick the **Property Type**.",
+       "img": "img/loan/add-a-loan-02.jpg",
+       "w": 1271,
+       "h": 577,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Name",
+         "text": "Here a made-up new property, “Maple Court (example)”."
+        },
+        {
+         "x": 34.2,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Address",
+         "text": "Two loans at the same address are one property."
+        }
+       ],
+       "callouts": [
+        {
+         "kind": "note",
+         "text": "Leave **Also secures** empty for a loan on one property. For one loan on several, see [Add a loan on several properties](add-a-pooled-loan)."
+        }
+       ]
+      },
+      {
+       "text": "In **Loan Terms**, type the amount, pick the **Rate Type**, and type the dates, the term, the amortization and any interest-only months."
+      },
+      {
+       "text": "Set the rate. For a new fixed loan, pick the **Index** and type your **Spread**: the green line shows the rate the loan will lock. For a loan that already exists, tick **This is a historical loan** and type its rate.",
+       "img": "img/loan/add-a-loan-03.jpg",
+       "w": 1271,
+       "h": 515,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 6.2,
+         "w": 97.3,
+         "h": 7.4,
+         "label": "Historical loan",
+         "text": "Tick it for a loan that already exists, and type its locked rate."
+        },
+        {
+         "x": 1.3,
+         "y": 75,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Index",
+         "text": "The index the rate is built on."
+        },
+        {
+         "x": 34.2,
+         "y": 75,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Spread",
+         "text": "Your margin over the index, in %."
+        },
+        {
+         "x": 1.3,
+         "y": 89.3,
+         "w": 97.3,
+         "h": 7.4,
+         "label": "Locked rate",
+         "text": "Today’s index + your spread: the rate this new loan locks."
+        }
+       ]
+      },
+      {
+       "text": "Under **Escrows & Reserves** and **Additional Fees**, type the monthly amounts paid with the loan. They add to the loan’s total monthly debt service."
+      }
+     ]
+    },
+    {
+     "id": "save-the-loan",
+     "title": "Save the loan",
+     "steps": [
+      {
+       "text": "Click **Save Loan** at the top of the form. The new loan’s page opens, with its figures worked out.",
+       "img": "img/loan/add-a-loan-04.jpg",
+       "w": 1313,
+       "h": 236,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Total Monthly Debt Service",
+         "text": "P&I, plus the escrows and the fee typed in the form."
+        },
+        {
+         "x": 25.3,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Monthly P&I",
+         "text": "Interest-only for the first 24 months, then the amortizing payment."
+        },
+        {
+         "x": 75.9,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Rate Type",
+         "text": "Fixed, at the rate it locked."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "If a required field is empty, nothing is saved: a red line at the top of the form says what is missing. Fix it and click **Save Loan** again."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "edit-a-loan",
+     "anchor": "",
+     "text": "Change a term later."
+    },
+    {
+     "page": "add-a-loan-stack",
+     "anchor": "",
+     "text": "Add a mezzanine loan behind it."
+    },
+    {
+     "page": "ref-loan-form",
+     "anchor": "",
+     "text": "Every field of the form, explained."
+    }
+   ]
+  },
+  {
+   "id": "edit-a-loan",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Edit a loan",
+   "description": "Change any of a loan’s terms. Every change is kept in the loan’s history.",
+   "intro": "**Edit** in the Loan Record opens the loan form with the loan’s values. Change what you need and save: the tiles and the schedule follow at once, and the change is kept in the loan’s history.",
+   "sections": [
+    {
+     "id": "change-a-field",
+     "title": "Change a field",
+     "steps": [
+      {
+       "text": "Open the loan and scroll down to the **Loan Record**."
+      },
+      {
+       "text": "Click **Edit** in the Loan Record. The form opens with the loan’s values."
+      },
+      {
+       "text": "Change the field. Here the lender’s name is changed.",
+       "img": "img/loan/edit-a-loan-01.jpg",
+       "w": 1271,
+       "h": 577,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 18.4,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "The changed field",
+         "text": "Type the new value."
+        },
+        {
+         "x": 1.3,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Name",
+         "text": "A new name here renames the property (see the note below)."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save Loan**."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A new **Property Name** renames the property: its files and chats move with it, and if that name already has files the app asks first. For a property with several loans, rename it in its profile. **Edit** at the top of the page opens the property’s profile, not the loan."
+      }
+     ]
+    },
+    {
+     "id": "see-what-changed",
+     "title": "See what changed",
+     "steps": [
+      {
+       "text": "Look at the Loan Record. A changed field shows **history (1)**, and **Change history** lists every change to this loan.",
+       "img": "img/loan/edit-a-loan-02.jpg",
+       "w": 1313,
+       "h": 1164,
+       "marks": [
+        {
+         "x": 10.3,
+         "y": 23.5,
+         "w": 3.7,
+         "h": 1.7,
+         "label": "history (1)",
+         "text": "This field’s changes."
+        },
+        {
+         "x": 90.9,
+         "y": 8.6,
+         "w": 7.5,
+         "h": 1.4,
+         "label": "Change history",
+         "text": "Every change to this loan, newest first."
+        }
+       ]
+      },
+      {
+       "text": "Click **history (1)**. Each change shows when it was made, the old and new values, who made it and where it came from.",
+       "img": "img/loan/edit-a-loan-03.jpg",
+       "w": 672,
+       "h": 135,
+       "marks": [
+        {
+         "x": 3,
+         "y": 51.1,
+         "w": 19.3,
+         "h": 17.4,
+         "label": "When",
+         "text": "The day and time of the change."
+        },
+        {
+         "x": 22.3,
+         "y": 51.1,
+         "w": 49.9,
+         "h": 17.4,
+         "label": "Old → new",
+         "text": "What it was and what it became."
+        },
+        {
+         "x": 72.2,
+         "y": 51.1,
+         "w": 8.1,
+         "h": 17.4,
+         "label": "Who",
+         "text": "Who made the change."
+        },
+        {
+         "x": 80.3,
+         "y": 51.1,
+         "w": 16.7,
+         "h": 17.4,
+         "label": "Where from",
+         "text": "Typed by hand, the assistant, an Excel import, a refinance…"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "set-loan-status",
+     "anchor": "",
+     "text": "Flag a loan out of date, or change its status."
+    },
+    {
+     "page": "ref-loan-form",
+     "anchor": "",
+     "text": "What each field of the form means."
+    },
+    {
+     "page": "ref-loan-page",
+     "anchor": "the-loan-record",
+     "text": "The Loan Record and its buttons."
+    }
+   ]
+  },
+  {
+   "id": "set-loan-status",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Mark a loan out of date or change its status",
+   "description": "Flag a loan whose terms are no longer right, and say where a loan stands.",
+   "intro": "When a loan’s terms are no longer right — say it was refinanced and the new loan’s papers haven’t come — mark it out of date. Its figures stay as they are, but every place that shows them warns you. A loan’s status says where it stands: Active, Matured, Extended, Extension undecided or Paid off.",
+   "sections": [
+    {
+     "id": "mark-a-loan-out-of-date",
+     "title": "Mark a loan out of date",
+     "steps": [
+      {
+       "text": "Open the loan and click **Out of date…** in the Loan Record.",
+       "img": "img/loan/set-loan-status-01.jpg",
+       "w": 460,
+       "h": 270,
+       "marks": [
+        {
+         "x": 4.3,
+         "y": 46.7,
+         "w": 91.3,
+         "h": 25.9,
+         "label": "Why",
+         "text": "A short reason. It shows on the loan’s page, its refinance and Needs Attention."
+        },
+        {
+         "x": 66.1,
+         "y": 80,
+         "w": 29.6,
+         "h": 12.6,
+         "label": "Mark out of date",
+         "text": "Flags the loan. Nothing in it is changed."
+        }
+       ]
+      },
+      {
+       "text": "Under **Why**, say why in a few words. The box starts with “Refinanced — waiting for the new loan’s documents”."
+      },
+      {
+       "text": "Click **Mark out of date**. An amber warning shows under the tiles; the loan’s refinance and **Needs Attention** on the Portfolio page say so too.",
+       "img": "img/loan/set-loan-status-02.jpg",
+       "w": 1313,
+       "h": 70,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 100,
+         "h": 100,
+         "label": "Out of date",
+         "text": "Since when, and why. Don’t rely on its figures until the new loan is in."
+        },
+        {
+         "x": 51.3,
+         "y": 48.6,
+         "w": 10,
+         "h": 31.4,
+         "label": "It’s up to date again",
+         "text": "Clears the flag (it asks first)."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "When the new loan’s papers come, add the new loan and set this one’s status to **Paid off**."
+      }
+     ]
+    },
+    {
+     "id": "clear-the-flag",
+     "title": "Clear the flag",
+     "steps": [
+      {
+       "text": "Click **It’s up to date again** on the warning, or **Up to date again** in the Loan Record. It asks once.",
+       "img": "img/loan/set-loan-status-03.jpg",
+       "w": 384,
+       "h": 204,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 12.3,
+         "w": 87,
+         "h": 23.5,
+         "label": "The question",
+         "text": "Clear “out of date” on this loan?"
+        },
+        {
+         "x": 75.8,
+         "y": 69.1,
+         "w": 17.7,
+         "h": 18.6,
+         "label": "Clear",
+         "text": "Clears the flag; the warning goes away."
+        }
+       ]
+      },
+      {
+       "text": "Click **Clear**. The change is kept in the loan’s history."
+      }
+     ]
+    },
+    {
+     "id": "change-the-status",
+     "title": "Change the status",
+     "steps": [
+      {
+       "text": "Click **Edit** in the Loan Record."
+      },
+      {
+       "text": "Pick the status in **Loan Status**, under Loan Terms.",
+       "img": "img/loan/set-loan-status-04.jpg",
+       "w": 1271,
+       "h": 515,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 31.1,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Loan Status",
+         "text": "Here: Extension undecided."
+        },
+        {
+         "x": 1.3,
+         "y": 45.8,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Maturity Date",
+         "text": "With no status set, a loan past this date reads Matured."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save Loan**. The status shows as a tag on the loan’s row on the Portfolio page.",
+       "img": "img/loan/set-loan-status-05.jpg",
+       "w": 1313,
+       "h": 1289,
+       "marks": [
+        {
+         "x": 12.9,
+         "y": 79.4,
+         "w": 9.1,
+         "h": 1.2,
+         "label": "Extension undecided",
+         "text": "The made-up loan’s new status."
+        },
+        {
+         "x": 14.1,
+         "y": 40.1,
+         "w": 3.3,
+         "h": 1.2,
+         "label": "Active",
+         "text": "A loan with no status set, before its maturity."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Left blank, the status reads **Active**, or **Matured** once the maturity date has passed. **Extended**: the lender extended the loan. **Extension undecided**: waiting on an answer. Matured and Extension undecided are also highlighted in the maturity calendar and the roll-up. **Paid off** takes the loan out of every total and lists it under **Removed & paid-off loans** on the Portfolio page."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "check-what-needs-attention",
+     "anchor": "",
+     "text": "See the flag in Needs Attention."
+    },
+    {
+     "page": "remove-a-loan",
+     "anchor": "",
+     "text": "Take a loan out of the totals."
+    },
+    {
+     "page": "read-the-calendar",
+     "anchor": "",
+     "text": "Matured loans in the maturity calendar."
+    }
+   ]
+  },
+  {
+   "id": "add-a-loan-stack",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Add a senior and a mezzanine loan",
+   "description": "Add a mezzanine loan behind a property’s senior loan, and read the two together.",
+   "intro": "A property with a senior loan and a mezzanine loan behind it is one property with two loans. Its page adds them together, and the Loan Record shows each loan and the two combined. Here a made-up mezzanine loan is added to “Hawthorn Place (example)”, whose senior loan is already in the app.",
+   "before": [
+    "The senior loan in the app. See [Add a loan](add-a-loan)."
+   ],
+   "sections": [
+    {
+     "id": "add-the-mezzanine-loan",
+     "title": "Add the mezzanine loan",
+     "steps": [
+      {
+       "text": "Open the property’s page: click **Specific Property** and pick it in the list."
+      },
+      {
+       "text": "Click **Add Loan**. **Property Name** is already the property’s name."
+      },
+      {
+       "text": "Type the same **Property Address** as the senior loan’s. Two loans at the same address are one property."
+      },
+      {
+       "text": "In **Loan Terms**, pick **Mezzanine** in **Lien Position**, and fill in the mezzanine loan’s terms.",
+       "img": "img/loan/add-a-loan-stack-01.jpg",
+       "w": 1271,
+       "h": 515,
+       "marks": [
+        {
+         "x": 67.1,
+         "y": 16.7,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Lien Position",
+         "text": "Mezzanine: paid after the senior loan."
+        },
+        {
+         "x": 67.1,
+         "y": 60.6,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Interest-Only Period",
+         "text": "Here interest-only for the whole term, so no amortization is needed."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save Loan**."
+      }
+     ]
+    },
+    {
+     "id": "read-the-two-loans-together",
+     "title": "Read the two loans together",
+     "steps": [
+      {
+       "text": "Open the property again. In the property list it now reads “senior + mezz”. Its tiles add the two loans: the balance, the P&I and the debt service.",
+       "img": "img/loan/add-a-loan-stack-02.jpg",
+       "w": 1313,
+       "h": 236,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Total Monthly Debt Service",
+         "text": "Both loans together."
+        },
+        {
+         "x": 25.3,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Monthly P&I",
+         "text": "Both P&I payments."
+        },
+        {
+         "x": 50.6,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Current Balance",
+         "text": "Both balances added."
+        },
+        {
+         "x": 75.9,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Rate Type",
+         "text": "Each loan’s type, and the blended rate."
+        }
+       ]
+      },
+      {
+       "text": "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together.",
+       "img": "img/loan/add-a-loan-stack-03.jpg",
+       "w": 1271,
+       "h": 319,
+       "marks": [
+        {
+         "x": 2.1,
+         "y": 23,
+         "w": 41.3,
+         "h": 11.4,
+         "label": "The senior loan",
+         "text": "Click to open only this loan’s page."
+        },
+        {
+         "x": 2.1,
+         "y": 42,
+         "w": 41.3,
+         "h": 11.4,
+         "label": "The mezz loan",
+         "text": "Click to open only the mezz."
+        },
+        {
+         "x": 44.1,
+         "y": 43.3,
+         "w": 2.2,
+         "h": 8.8,
+         "label": "Edit this loan",
+         "text": "Opens this one loan’s form."
+        },
+        {
+         "x": 46.6,
+         "y": 43.3,
+         "w": 2.2,
+         "h": 8.8,
+         "label": "Remove this loan",
+         "text": "Removes only this loan (it asks first)."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "On a property with two loans, the pencil and the bin on each loan’s row edit and remove that one loan. The coverage figures (DSCR, debt yield) stay empty until the property has an NOI."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "ref-loan-page",
+     "anchor": "two-loans-on-one-property",
+     "text": "Every figure in Combined position."
+    },
+    {
+     "page": "add-a-pooled-loan",
+     "anchor": "",
+     "text": "One loan on several properties instead."
+    },
+    {
+     "page": "upload-a-t12",
+     "anchor": "",
+     "text": "Give the property an NOI from its T12."
+    }
+   ]
+  },
+  {
+   "id": "add-a-pooled-loan",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Add a loan on several properties",
+   "description": "Add one loan secured by several properties, and release a property from it later.",
+   "intro": "A pooled loan is one loan secured by several properties: one payment, with coverage read on the whole pool. You add it like any loan, on its main property, and tick the other properties it secures. Here a made-up loan on “Aspen Yard (example)” also secures “Birch Commons (example)” and a property not in the app yet, “Cedar Point (example)”.",
+   "sections": [
+    {
+     "id": "add-the-loan",
+     "title": "Add the loan",
+     "steps": [
+      {
+       "text": "Open the main property’s page and click **Add Loan**. On a property with no loan yet, the button is **+ Add the first loan**."
+      },
+      {
+       "text": "Fill in the loan’s terms as for any loan. See [Add a loan](add-a-loan)."
+      },
+      {
+       "text": "Under **Also secures**, in Loan Identification, tick each other property the loan secures. Type part of a name in **Find a property** to shorten the list."
+      },
+      {
+       "text": "If the lender puts a set part of the loan on a property, type it in that property’s **allocated $** box. Without amounts, each property’s share follows its NOI."
+      },
+      {
+       "text": "For a property that isn’t in the app yet, type its name under the list and click **Add to this loan**.",
+       "img": "img/loan/add-a-pooled-loan-01.jpg",
+       "w": 1271,
+       "h": 532,
+       "marks": [
+        {
+         "x": 2,
+         "y": 50.8,
+         "w": 1,
+         "h": 2.4,
+         "label": "Ticked",
+         "text": "This loan also secures it."
+        },
+        {
+         "x": 19.6,
+         "y": 49.9,
+         "w": 12.6,
+         "h": 4.1,
+         "label": "Allocated $",
+         "text": "Optional: the lender’s part of the loan on this property."
+        },
+        {
+         "x": 2,
+         "y": 71.5,
+         "w": 30.2,
+         "h": 8.6,
+         "label": "New — added when you save",
+         "text": "Not in the app yet: it is created when you save the loan."
+        },
+        {
+         "x": 23.7,
+         "y": 80.9,
+         "w": 8.5,
+         "h": 4.1,
+         "label": "Add to this loan",
+         "text": "Adds the name typed beside it, ticked."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save Loan**. The page shows the pool in place of the NOI box: each property’s row, and coverage read on the whole pool.",
+       "img": "img/loan/add-a-pooled-loan-02.jpg",
+       "w": 1313,
+       "h": 252,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 6.8,
+         "w": 18.4,
+         "h": 8,
+         "label": "Pooled loan",
+         "text": "How many properties secure the loan."
+        },
+        {
+         "x": 60.5,
+         "y": 26.6,
+         "w": 18.5,
+         "h": 13.9,
+         "label": "DSCR (pool)",
+         "text": "Every property’s NOI ÷ the loan’s yearly debt service."
+        },
+        {
+         "x": 77.4,
+         "y": 45.3,
+         "w": 11,
+         "h": 7,
+         "label": "Alloc. DSCR",
+         "text": "Each property’s NOI ÷ its share of the debt service."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Each property in the pool shows the same pool panel on its own page, with an **In a pooled loan** tag. The NOIs in these pictures are made up."
+      }
+     ]
+    },
+    {
+     "id": "release-a-property",
+     "title": "Release a property",
+     "text": "When a property is sold or refinanced on its own, the lender releases it from the pool: its release price is paid down on the loan.",
+     "steps": [
+      {
+       "text": "Click **Release…** on the property’s row in the pool panel.",
+       "img": "img/loan/add-a-pooled-loan-03.jpg",
+       "w": 460,
+       "h": 303,
+       "marks": [
+        {
+         "x": 4.3,
+         "y": 15.8,
+         "w": 91.3,
+         "h": 21.1,
+         "label": "Its share",
+         "text": "Its share of today’s balance, by its allocated amount or by NOI."
+        },
+        {
+         "x": 4.3,
+         "y": 46.9,
+         "w": 44.3,
+         "h": 9.9,
+         "label": "Release price ($)",
+         "text": "What is paid down on the loan."
+        },
+        {
+         "x": 51.3,
+         "y": 46.9,
+         "w": 44.3,
+         "h": 10.6,
+         "label": "Date",
+         "text": "The day of the paydown."
+        },
+        {
+         "x": 4.3,
+         "y": 67.3,
+         "w": 91.3,
+         "h": 9.6,
+         "label": "After the paydown",
+         "text": "Recalculate the payment, or keep it."
+        }
+       ]
+      },
+      {
+       "text": "Check the **Release price ($)**. It starts at the property’s share of today’s balance; lenders often ask for 105–125% of it."
+      },
+      {
+       "text": "Check the **Date**, and pick what happens **After the paydown**: recalculate the payment over the remaining amortization, or keep the payment so the loan pays down faster."
+      },
+      {
+       "text": "Click **Release**. The property leaves the pool and keeps its NOI, with no loan. A line under the pool says what was paid down and when.",
+       "img": "img/loan/add-a-pooled-loan-04.jpg",
+       "w": 1313,
+       "h": 242,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 7,
+         "w": 18.4,
+         "h": 8.3,
+         "label": "One fewer",
+         "text": "The pool now secures 2 properties."
+        },
+        {
+         "x": 1.3,
+         "y": 86.1,
+         "w": 97.4,
+         "h": 6.8,
+         "label": "Released",
+         "text": "Which property, when, how much was paid down, and whether the payment was recalculated."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The schedule shows the paydown in its month. If you release the main property, the loan moves to the property with the largest share."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "ref-loan-page",
+     "anchor": "a-pooled-loan",
+     "text": "Every figure in the pool panel."
+    },
+    {
+     "page": "refinance-together",
+     "anchor": "",
+     "text": "Refinance several properties under one new loan."
+    }
+   ]
+  },
+  {
+   "id": "set-the-reset",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Set what the payment does at the reset",
+   "description": "Tell the app whether a hybrid ARM’s set payment stays the same at the rate reset, or is worked out again.",
+   "intro": "A hybrid ARM with a set monthly payment needs one more answer: what the payment does when the rate resets. The loan’s note says which. The schedule follows your choice from the reset on. Shown on a made-up loan, “Juniper Flats (example)”.",
+   "before": [
+    "A loan whose **Rate Type** is Hybrid ARM and whose **Amortization Type** is Fixed P&I (a set payment from the papers)."
+   ],
+   "sections": [
+    {
+     "id": "choose-what-happens-at-the-reset",
+     "title": "Choose what happens at the reset",
+     "steps": [
+      {
+       "text": "Open the loan and click **Edit** in the Loan Record."
+      },
+      {
+       "text": "In **Loan Terms**, find **At the Reset**. It shows only when Rate Type is Hybrid ARM and Amortization Type is Fixed P&I.",
+       "img": "img/loan/set-the-reset-01.jpg",
+       "w": 1271,
+       "h": 654,
+       "marks": [
+        {
+         "x": 67.1,
+         "y": 4.9,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Hybrid ARM",
+         "text": "Fixed first, then it floats."
+        },
+        {
+         "x": 67.1,
+         "y": 39.5,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Fixed P&I",
+         "text": "A set monthly payment from the papers."
+        },
+        {
+         "x": 1.3,
+         "y": 50.8,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Fixed Amortization Payment",
+         "text": "That set payment."
+        },
+        {
+         "x": 34.2,
+         "y": 50.8,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "At the Reset",
+         "text": "What the payment does when the rate resets."
+        }
+       ]
+      },
+      {
+       "text": "Pick what the note says. **Keep the stated payment**: the payment stays the same across the reset. **Recalculate over the remaining amortization**: a new payment is worked out at the reset, from what is owed then, over the amortization left, at the new rate."
+      },
+      {
+       "text": "Click **Save Loan**."
+      }
+     ]
+    },
+    {
+     "id": "check-the-schedule-at-the-reset",
+     "title": "Check the schedule at the reset",
+     "steps": [
+      {
+       "text": "Scroll down to the payment schedule and find the row marked **Reset →**. With **Keep the stated payment**, the payment stays the same; more of it goes to interest, so less principal is paid.",
+       "img": "img/loan/set-the-reset-02.jpg",
+       "w": 1313,
+       "h": 657,
+       "marks": [
+        {
+         "x": 11.5,
+         "y": 41.9,
+         "w": 6.9,
+         "h": 2.4,
+         "label": "Reset",
+         "text": "The first month at the new rate."
+        },
+        {
+         "x": 63.1,
+         "y": 30.5,
+         "w": 13.8,
+         "h": 9.3,
+         "label": "Payment before",
+         "text": "The stated payment."
+        },
+        {
+         "x": 63.1,
+         "y": 39.8,
+         "w": 13.8,
+         "h": 9.4,
+         "label": "Payment after",
+         "text": "The same payment."
+        },
+        {
+         "x": 76.9,
+         "y": 39.8,
+         "w": 10.8,
+         "h": 9.4,
+         "label": "Principal paid",
+         "text": "Lower than before the reset: the higher rate takes more interest."
+        }
+       ]
+      },
+      {
+       "text": "With **Recalculate over the remaining amortization**, the payment changes at the reset.",
+       "img": "img/loan/set-the-reset-03.jpg",
+       "w": 1313,
+       "h": 657,
+       "marks": [
+        {
+         "x": 11.5,
+         "y": 41.9,
+         "w": 6.9,
+         "h": 2.4,
+         "label": "Reset",
+         "text": "The first month at the new rate."
+        },
+        {
+         "x": 63.1,
+         "y": 30.5,
+         "w": 13.8,
+         "h": 9.3,
+         "label": "Payment before",
+         "text": "The stated payment."
+        },
+        {
+         "x": 63.1,
+         "y": 39.8,
+         "w": 13.8,
+         "h": 9.4,
+         "label": "New payment",
+         "text": "Worked out again at the new rate."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "when-the-kept-payment-is-less-than-the-interest",
+     "title": "When the kept payment is less than the interest",
+     "text": "If the rate after the reset is high enough, a kept payment can be less than the month’s interest. Then no principal is paid, and the unpaid interest is added to what is owed (negative amortization): the balance grows, and is paid back at maturity. Living Lofts, a built-in loan, keeps its payment across its 2026 reset.",
+     "steps": [
+      {
+       "text": "Read the note above the schedule. It says from which month the payment is less than the interest, and how much unpaid interest is added.",
+       "img": "img/loan/set-the-reset-04.jpg",
+       "w": 1313,
+       "h": 715,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 14.4,
+         "w": 70.8,
+         "h": 7,
+         "label": "The payment is less than the interest",
+         "text": "From which month, the payment against the interest, and the unpaid interest added over how many months."
+        },
+        {
+         "x": 74.6,
+         "y": 44.7,
+         "w": 13.3,
+         "h": 8.7,
+         "label": "Principal paid: $0",
+         "text": "Under it, the month’s interest the payment leaves unpaid."
+        },
+        {
+         "x": 88,
+         "y": 44.7,
+         "w": 11.2,
+         "h": 8.7,
+         "label": "Ending balance",
+         "text": "Higher than the starting balance: the unpaid interest is added."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "warning",
+       "text": "Check the note: many loans require a payment of at least the interest. If yours does, pick **Recalculate over the remaining amortization**."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "read-the-calendar",
+     "anchor": "",
+     "text": "See every rate reset coming up."
+    },
+    {
+     "page": "ref-loan-form",
+     "anchor": "loan-terms",
+     "text": "Every Loan Terms field of a hybrid ARM."
+    },
+    {
+     "page": "ref-loan-page",
+     "anchor": "the-payment-schedule",
+     "text": "How to read the schedule."
+    }
+   ]
+  },
+  {
+   "id": "remove-a-loan",
+   "kind": "howto",
+   "group": "Loans",
+   "title": "Remove a loan",
+   "description": "Take one loan out of every total, then restore it or delete it for good.",
+   "intro": "**Remove** in the Loan Record takes one loan out of every total, tile and the calendar. The loan is kept, so you can restore it as it was, or delete its record for good. The property stays, with its files.",
+   "sections": [
+    {
+     "id": "remove-the-loan",
+     "title": "Remove the loan",
+     "steps": [
+      {
+       "text": "Open the loan and scroll down to the **Loan Record**."
+      },
+      {
+       "text": "Click **Remove** in the Loan Record. It asks first.",
+       "img": "img/loan/remove-a-loan-01.jpg",
+       "w": 384,
+       "h": 200,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 28.5,
+         "w": 87,
+         "h": 30,
+         "label": "What happens",
+         "text": "It leaves every total, tile and the calendar, and is listed on the Portfolio page to restore."
+        },
+        {
+         "x": 71,
+         "y": 68.5,
+         "w": 22.5,
+         "h": 19,
+         "label": "Remove",
+         "text": "Removes the loan."
+        }
+       ]
+      },
+      {
+       "text": "Click **Remove**."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "**Remove** at the top of the page is different: it archives the whole property with all its loans."
+      }
+     ]
+    },
+    {
+     "id": "bring-it-back",
+     "title": "Bring it back",
+     "steps": [
+      {
+       "text": "On the **Portfolio** tab, scroll down to **Removed & paid-off loans**, near the bottom.",
+       "img": "img/loan/remove-a-loan-02.jpg",
+       "w": 1313,
+       "h": 67,
+       "marks": [
+        {
+         "x": 30.4,
+         "y": 19.5,
+         "w": 28.5,
+         "h": 45.1,
+         "label": "The removed loan",
+         "text": "Its name, “Removed” (or Paid off), and when."
+        },
+        {
+         "x": 52.2,
+         "y": 24.1,
+         "w": 4.7,
+         "h": 36.1,
+         "label": "Restore",
+         "text": "Back into every total, tile and the calendar."
+        }
+       ]
+      },
+      {
+       "text": "Click **Restore**. The loan is back, exactly as it was."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "A loan that was paid off can get the status **Paid off** instead of being removed: it leaves the totals and is listed here the same way. See [Mark a loan out of date or change its status](set-loan-status#change-the-status)."
+      }
+     ]
+    },
+    {
+     "id": "delete-it-for-good",
+     "title": "Delete it for good",
+     "steps": [
+      {
+       "text": "Open the property’s page. With no active loan, it lists the removed loan, with **Restore** and a bin.",
+       "img": "img/loan/remove-a-loan-03.jpg",
+       "w": 1313,
+       "h": 690,
+       "marks": [
+        {
+         "x": 30.5,
+         "y": 18.7,
+         "w": 21.7,
+         "h": 4.1,
+         "label": "The removed loan",
+         "text": "Its name, “Removed”, and when."
+        },
+        {
+         "x": 52.2,
+         "y": 19,
+         "w": 4.7,
+         "h": 3.5,
+         "label": "Restore",
+         "text": "Brings the loan back; the page becomes its loan page again."
+        },
+        {
+         "x": 56.9,
+         "y": 19.2,
+         "w": 2.1,
+         "h": 3.2,
+         "label": "Delete permanently",
+         "text": "The bin: deletes the loan record."
+        },
+        {
+         "x": 82,
+         "y": 3.2,
+         "w": 10.3,
+         "h": 4.6,
+         "label": "+ Add the first loan",
+         "text": "Adds a new loan to this property."
+        }
+       ]
+      },
+      {
+       "text": "Click the bin. It asks once more.",
+       "img": "img/loan/remove-a-loan-04.jpg",
+       "w": 384,
+       "h": 204,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 39.7,
+         "w": 87,
+         "h": 19.6,
+         "label": "What happens",
+         "text": "The record goes for good; only a backup can bring it back."
+        },
+        {
+         "x": 50.6,
+         "y": 69.1,
+         "w": 42.9,
+         "h": 18.6,
+         "label": "Delete permanently",
+         "text": "Deletes the loan record."
+        }
+       ]
+      },
+      {
+       "text": "Click **Delete permanently**. The property and its files stay."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "warning",
+       "text": "Delete permanently can’t be undone in the app. The automatic backups keep a copy; see [Back up and restore](back-up-and-restore)."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "bring-back-removed",
+     "anchor": "",
+     "text": "Everything removed or archived, on the Portfolio page."
+    },
+    {
+     "page": "archive-or-delete-a-property",
+     "anchor": "",
+     "text": "Archive a whole property instead."
+    }
+   ]
+  },
+  {
+   "id": "ref-loan-page",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "A loan’s page",
+   "description": "Every part of a loan’s page: the bar at the top, the tiles, the rate notice, the NOI box, the Loan Record and the payment schedule.",
+   "intro": "Open a loan (see [Open a loan](open-a-loan)) and its page shows, from the top: the tiles, the rate notice, the NOI box, the property’s profile, rent roll and documents, the Loan Record and the payment schedule. Each picture names its controls.",
+   "sections": [
+    {
+     "id": "the-top-of-the-page",
+     "title": "The top of the page",
+     "views": [
+      {
+       "text": "The bar under the tabs is the same for every property. **Edit** and **Remove** there work on the property; the Loan Record has its own for the loan.",
+       "img": "img/loan/ref-loan-page-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 4.2,
+         "y": 21.8,
+         "w": 11.8,
+         "h": 4.4,
+         "label": "Whole Portfolio",
+         "text": "Back to the Portfolio page."
+        },
+        {
+         "x": 16.3,
+         "y": 21.8,
+         "w": 12.7,
+         "h": 4.4,
+         "label": "Specific Property",
+         "text": "This view: one property and its loans."
+        },
+        {
+         "x": 5.6,
+         "y": 35.3,
+         "w": 39.7,
+         "h": 5.6,
+         "label": "Select a property",
+         "text": "Every property, A to Z. Pick one to open its page. The list marks “senior + mezz”, “in a pooled loan” and “no loan yet”."
+        },
+        {
+         "x": 46.8,
+         "y": 35.9,
+         "w": 8.3,
+         "h": 4.9,
+         "label": "Add Loan",
+         "text": "An empty loan form, with this property’s name filled in. See [Add a loan](add-a-loan)."
+        },
+        {
+         "x": 55.7,
+         "y": 35.8,
+         "w": 10.3,
+         "h": 5.1,
+         "label": "Add Property",
+         "text": "Adds a property by its name. See [Add a property](add-a-property)."
+        },
+        {
+         "x": 66.5,
+         "y": 35.8,
+         "w": 5.8,
+         "h": 5.1,
+         "label": "Edit",
+         "text": "Opens this property’s profile: its units, manager, NOI override. To change the loan, use **Edit** in the Loan Record."
+        },
+        {
+         "x": 72.9,
+         "y": 35.8,
+         "w": 7.8,
+         "h": 5.1,
+         "label": "Remove",
+         "text": "Archives this property with all its loans (it asks first). To remove one loan, use **Remove** in the Loan Record."
+        },
+        {
+         "x": 82.4,
+         "y": 35.8,
+         "w": 10.9,
+         "h": 5.1,
+         "label": "Refi Calculator",
+         "text": "Opens the refinance for this property. See [Run a refinance](run-a-refinance)."
+        },
+        {
+         "x": 3.9,
+         "y": 46.3,
+         "w": 91.2,
+         "h": 26.2,
+         "label": "The tiles",
+         "text": "The loan’s main figures (below)."
+        },
+        {
+         "x": 3.9,
+         "y": 76.1,
+         "w": 91.2,
+         "h": 7.3,
+         "label": "Rate notice",
+         "text": "How a floating or hybrid rate is set this month (below)."
+        },
+        {
+         "x": 3.9,
+         "y": 87,
+         "w": 91.2,
+         "h": 9.2,
+         "label": "NOI box",
+         "text": "The property’s NOI and coverage (below). Further down: the profile, rent roll, documents, the Loan Record and the schedule."
+        },
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.2,
+         "h": 4.2,
+         "label": "Portfolio tab",
+         "text": "This tab. Tools like Underwriting open in tabs next to it."
+        },
+        {
+         "x": 11.6,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens Underwriting, the Calendar or Data Health in a new tab."
+        },
+        {
+         "x": 30.2,
+         "y": 21.7,
+         "w": 7.7,
+         "h": 4.7,
+         "label": "Data",
+         "text": "Back up, restore, and Excel export and import."
+        },
+        {
+         "x": 75.8,
+         "y": 0.4,
+         "w": 7.7,
+         "h": 2.7,
+         "label": "Fetch live rate",
+         "text": "Gets today’s index values (SOFR, Treasuries, Prime)."
+        },
+        {
+         "x": 83.8,
+         "y": 0.3,
+         "w": 5.5,
+         "h": 2.7,
+         "label": "Settings",
+         "text": "The app’s size, the portfolio targets, this guide and more."
+        },
+        {
+         "x": 85.1,
+         "y": 7.1,
+         "w": 5.3,
+         "h": 1.8,
+         "label": "Properties",
+         "text": "How many properties are in the book."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-tiles",
+     "title": "The tiles",
+     "views": [
+      {
+       "text": "Eight figures, worked out for today from the Loan Record; you never type them. Change a term and the tiles follow at once.",
+       "img": "img/loan/ref-loan-page-02.jpg",
+       "w": 1313,
+       "h": 236,
+       "marks": [
+        {
+         "x": 0,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Total Monthly Debt Service",
+         "text": "What goes out each month: principal and interest, plus the escrows and fees in the Loan Record."
+        },
+        {
+         "x": 25.3,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Monthly P&I",
+         "text": "This month’s principal + interest. Under it: interest-only, the phase of a hybrid, or that it amortizes."
+        },
+        {
+         "x": 50.6,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Current Balance",
+         "text": "What is owed today, and how many payments have been made."
+        },
+        {
+         "x": 75.9,
+         "y": 0,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Original Amount",
+         "text": "The loan amount on day one, and today’s rate."
+        },
+        {
+         "x": 0,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Amort / Loan Term",
+         "text": "Amortization years / loan years. “Balloon at mo 120” means the rest is due at month 120."
+        },
+        {
+         "x": 25.3,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Months to Maturity",
+         "text": "Months left, and the maturity date."
+        },
+        {
+         "x": 50.6,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Interest-Only",
+         "text": "The interest-only months at the start (or “None”), and what follows them."
+        },
+        {
+         "x": 75.9,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Rate Type",
+         "text": "Fixed, Floating or Hybrid ARM. A hybrid shows its first rate → its rate after the reset."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-rate-notice",
+     "title": "The rate notice",
+     "text": "A floating loan or a hybrid ARM has a blue notice under the tiles: how its rate is set this month. The rate is captured automatically; there is nothing to do.",
+     "views": [
+      {
+       "title": "A floating loan",
+       "text": "It re-prices on the 1st of each month: the index plus the spread, kept between the floor and the cap. Future months use today’s value; the projection holds it flat.",
+       "img": "img/loan/ref-loan-page-03.jpg",
+       "w": 1313,
+       "h": 66,
+       "marks": [
+        {
+         "x": 4,
+         "y": 21.2,
+         "w": 36.6,
+         "h": 25.8,
+         "label": "How it re-prices",
+         "text": "When the rate changes and which index it follows."
+        },
+        {
+         "x": 47.2,
+         "y": 21.2,
+         "w": 3.4,
+         "h": 25.8,
+         "label": "This month’s rate",
+         "text": "Index + spread = this month’s rate. The floor or cap shows when the loan has one."
+        },
+        {
+         "x": 30.6,
+         "y": 51.5,
+         "w": 16.7,
+         "h": 25.8,
+         "label": "Captured",
+         "text": "When this month’s rate was taken."
+        }
+       ]
+      },
+      {
+       "title": "A hybrid ARM",
+       "text": "Fixed for its first years, then it floats. The notice says how many fixed months are left, or, once it has reset, that it now floats and how often it resets.",
+       "img": "img/loan/ref-loan-page-04.jpg",
+       "w": 1313,
+       "h": 66,
+       "marks": [
+        {
+         "x": 4,
+         "y": 21.2,
+         "w": 39.8,
+         "h": 25.8,
+         "label": "Its phase",
+         "text": "Still fixed (with the months left), or now adjustable."
+        },
+        {
+         "x": 82.5,
+         "y": 21.2,
+         "w": 3.4,
+         "h": 25.8,
+         "label": "The floating rate",
+         "text": "What the index + margin is this month."
+        },
+        {
+         "x": 63.6,
+         "y": 51.5,
+         "w": 16.7,
+         "h": 25.8,
+         "label": "Captured",
+         "text": "When the index value was taken."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-noi-box",
+     "title": "The NOI box",
+     "views": [
+      {
+       "text": "One NOI for the property, the same one Underwriting and the Portfolio page use. (A refinance uses only the T12 or the underwriting approved from it.) It comes from, in this order: your NOI override in the profile, else the T12, else the property’s operating lines, else an NOI typed on the loan. With none, it says “No NOI yet”.",
+       "img": "img/loan/ref-loan-page-05.jpg",
+       "w": 1313,
+       "h": 83,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 28.9,
+         "w": 20.3,
+         "h": 42.2,
+         "label": "Property NOI",
+         "text": "The property’s yearly NOI."
+        },
+        {
+         "x": 22.8,
+         "y": 28.9,
+         "w": 20.3,
+         "h": 42.2,
+         "label": "DSCR (combined)",
+         "text": "NOI ÷ the yearly debt service of every loan on the property."
+        },
+        {
+         "x": 44.3,
+         "y": 28.9,
+         "w": 20.3,
+         "h": 42.2,
+         "label": "Debt yield",
+         "text": "NOI ÷ what is owed today."
+        },
+        {
+         "x": 65.9,
+         "y": 28.9,
+         "w": 20.3,
+         "h": 42.2,
+         "label": "LTV",
+         "text": "What is owed ÷ the property’s value (NOI ÷ cap rate)."
+        },
+        {
+         "x": 87.1,
+         "y": 20.5,
+         "w": 11.6,
+         "h": 36.1,
+         "label": "Build operating model",
+         "text": "Opens this property in Underwriting, where its T12 goes (“Open operating model” once it has one)."
+        },
+        {
+         "x": 87.2,
+         "y": 61.4,
+         "w": 11.5,
+         "h": 18.1,
+         "label": "Where the NOI came from",
+         "text": "Here an NOI typed on the loan, no T12 yet. With two loans it adds “shared by 2 loans”."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-loan-record",
+     "title": "The Loan Record",
+     "views": [
+      {
+       "text": "Every field of the loan in one place. Four parts you type, and one the app works out. A dash means empty.",
+       "img": "img/loan/ref-loan-page-06.jpg",
+       "w": 1313,
+       "h": 1395,
+       "marks": [
+        {
+         "x": 77.5,
+         "y": 1.6,
+         "w": 5.2,
+         "h": 2.2,
+         "label": "Edit",
+         "text": "Opens this loan’s form. See [Edit a loan](edit-a-loan)."
+        },
+        {
+         "x": 83.1,
+         "y": 1.6,
+         "w": 7.8,
+         "h": 2.2,
+         "label": "Out of date…",
+         "text": "Flags the terms as no longer right (“Up to date again” clears it). See [Mark a loan out of date](set-loan-status)."
+        },
+        {
+         "x": 91.3,
+         "y": 1.6,
+         "w": 7.1,
+         "h": 2.2,
+         "label": "Remove",
+         "text": "Takes this one loan out of every total; it can be restored. See [Remove a loan](remove-a-loan)."
+        },
+        {
+         "x": 1.6,
+         "y": 6.7,
+         "w": 47.5,
+         "h": 20.5,
+         "label": "Loan Identification",
+         "text": "The property, the lender, the loan number; for a pooled loan, its other properties and releases."
+        },
+        {
+         "x": 1.6,
+         "y": 28.7,
+         "w": 47.5,
+         "h": 58.4,
+         "label": "Loan Terms",
+         "text": "Amount, rate, dates, term, amortization, interest-only and the index. The schedule is built from these."
+        },
+        {
+         "x": 50.9,
+         "y": 6.7,
+         "w": 47.5,
+         "h": 25.2,
+         "label": "Escrows & Reserves",
+         "text": "The monthly escrows paid with the loan."
+        },
+        {
+         "x": 50.9,
+         "y": 33.4,
+         "w": 47.5,
+         "h": 18.1,
+         "label": "Additional Fees",
+         "text": "Servicing, trustee and other monthly fees."
+        },
+        {
+         "x": 1.6,
+         "y": 87.1,
+         "w": 96.8,
+         "h": 11.4,
+         "label": "Debt Service (computed)",
+         "text": "Balance today, P&I, total debt service, interest-only left, months to maturity, today’s rate."
+        },
+        {
+         "x": 19.8,
+         "y": 90.7,
+         "w": 2.5,
+         "h": 1.1,
+         "label": "calc",
+         "text": "Worked out by the app; it can’t be typed."
+        }
+       ]
+      },
+      {
+       "title": "The change history",
+       "text": "A field that was changed has **history (N)** next to its name; **Change history** at the top of the record lists every change to the loan. Here the made-up Juniper Flats loan’s At the Reset was changed.",
+       "img": "img/loan/ref-loan-page-07.jpg",
+       "w": 672,
+       "h": 135,
+       "marks": [
+        {
+         "x": 3,
+         "y": 11.9,
+         "w": 44.8,
+         "h": 17.8,
+         "label": "Which field",
+         "text": "The field and the loan."
+        },
+        {
+         "x": 3,
+         "y": 51.1,
+         "w": 13.2,
+         "h": 17.4,
+         "label": "When",
+         "text": "The day and time of the change."
+        },
+        {
+         "x": 16.1,
+         "y": 51.1,
+         "w": 64.4,
+         "h": 17.4,
+         "label": "Old → new",
+         "text": "What it was and what it became."
+        },
+        {
+         "x": 80.6,
+         "y": 51.1,
+         "w": 5.4,
+         "h": 17.4,
+         "label": "Who",
+         "text": "Who made the change."
+        },
+        {
+         "x": 85.9,
+         "y": 51.1,
+         "w": 11.1,
+         "h": 17.4,
+         "label": "Where from",
+         "text": "Typed by hand, or where else it came from: the assistant, an Excel import, a refinance…"
+        },
+        {
+         "x": 92.3,
+         "y": 8.9,
+         "w": 4.8,
+         "h": 23.7,
+         "label": "Close",
+         "text": "Closes the window."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-payment-schedule",
+     "title": "The payment schedule",
+     "text": "At the bottom of the page: every month of the loan, from the first payment to the last. Yellow rows are interest-only, the blue row is today, the green row is the balloon (or the last payment).",
+     "views": [
+      {
+       "title": "The schedule",
+       "text": "",
+       "img": "img/loan/ref-loan-page-08.jpg",
+       "w": 1313,
+       "h": 657,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 6.2,
+         "w": 50.2,
+         "h": 2.4,
+         "label": "The loan in one line",
+         "text": "How many months, when interest starts and ends, and that each month is paid on the 1st of the next."
+        },
+        {
+         "x": 1.6,
+         "y": 9.9,
+         "w": 19.3,
+         "h": 4.6,
+         "label": "First interest payment",
+         "text": "Jumps to the first payment and flashes it."
+        },
+        {
+         "x": 21.5,
+         "y": 9.9,
+         "w": 17.4,
+         "h": 4.6,
+         "label": "First P&I payment",
+         "text": "Jumps to the first month with principal (after interest-only)."
+        },
+        {
+         "x": 66.2,
+         "y": 7.3,
+         "w": 6.7,
+         "h": 2.4,
+         "label": "Colors",
+         "text": "What the row colors mean: interest-only, today, balloon / final."
+        },
+        {
+         "x": 86.6,
+         "y": 5.6,
+         "w": 11.8,
+         "h": 5.8,
+         "label": "Schedule CSV",
+         "text": "Saves the whole schedule as a file that opens in Excel."
+        },
+        {
+         "x": 0.1,
+         "y": 17,
+         "w": 4.7,
+         "h": 6.2,
+         "label": "#",
+         "text": "The payment number."
+        },
+        {
+         "x": 4.8,
+         "y": 17,
+         "w": 16,
+         "h": 6.2,
+         "label": "Accrual Month / Pays",
+         "text": "The month interest is counted for, and the day it is paid."
+        },
+        {
+         "x": 33.4,
+         "y": 17,
+         "w": 5.2,
+         "h": 6.2,
+         "label": "Days",
+         "text": "Days in the month: interest is counted on real days (Actual/360) unless the loan is 30/360."
+        },
+        {
+         "x": 38.6,
+         "y": 17,
+         "w": 11.7,
+         "h": 6.2,
+         "label": "Rate",
+         "text": "That month’s rate. A small tag says where it came from (fixed, the index on a date)."
+        }
+       ]
+      },
+      {
+       "title": "Interest-only, then principal",
+       "text": "**First P&I payment** jumps here: the last interest-only month (IO tag), then the first month that pays principal too. The payment goes up and the balance starts to go down.",
+       "img": "img/loan/ref-loan-page-09.jpg",
+       "w": 1313,
+       "h": 657,
+       "marks": [
+        {
+         "x": 11.7,
+         "y": 46.4,
+         "w": 1.7,
+         "h": 2.4,
+         "label": "IO",
+         "text": "An interest-only month: the payment is interest only."
+        },
+        {
+         "x": 0.1,
+         "y": 53.8,
+         "w": 99.1,
+         "h": 9.3,
+         "label": "First P&I month",
+         "text": "From here each payment also pays principal."
+        },
+        {
+         "x": 46.4,
+         "y": 57.4,
+         "w": 2.6,
+         "h": 2.3,
+         "label": "Rate tag",
+         "text": "Point at it to see where the rate came from."
+        },
+        {
+         "x": 50.2,
+         "y": 17,
+         "w": 12.5,
+         "h": 6.2,
+         "label": "Interest Charged",
+         "text": "Balance × rate × days ÷ 360."
+        },
+        {
+         "x": 62.8,
+         "y": 17,
+         "w": 13.7,
+         "h": 6.2,
+         "label": "Scheduled Payment",
+         "text": "What is due that month."
+        },
+        {
+         "x": 76.4,
+         "y": 17,
+         "w": 11.4,
+         "h": 6.2,
+         "label": "Principal Paid",
+         "text": "Payment − interest: what comes off the balance."
+        },
+        {
+         "x": 87.8,
+         "y": 17,
+         "w": 11.4,
+         "h": 6.2,
+         "label": "Ending Balance",
+         "text": "What is owed after that month."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "two-loans-on-one-property",
+     "title": "Two loans on one property",
+     "text": "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains). See [Add a senior and a mezzanine loan](add-a-loan-stack).",
+     "views": [
+      {
+       "title": "Combined position",
+       "text": "At the top of the Loan Record: each loan, and the stack together.",
+       "img": "img/loan/ref-loan-page-10.jpg",
+       "w": 1271,
+       "h": 319,
+       "marks": [
+        {
+         "x": 2.1,
+         "y": 23,
+         "w": 41.3,
+         "h": 11.4,
+         "label": "The senior loan",
+         "text": "Click to open only this loan’s page."
+        },
+        {
+         "x": 2.1,
+         "y": 42,
+         "w": 41.3,
+         "h": 11.4,
+         "label": "The mezz loan",
+         "text": "Click to open only the mezz."
+        },
+        {
+         "x": 44.1,
+         "y": 24.4,
+         "w": 2.2,
+         "h": 8.8,
+         "label": "Edit this loan",
+         "text": "Opens this loan’s form."
+        },
+        {
+         "x": 46.6,
+         "y": 24.4,
+         "w": 2.2,
+         "h": 8.8,
+         "label": "Remove this loan",
+         "text": "Removes only this loan (it asks first)."
+        },
+        {
+         "x": 51.5,
+         "y": 25.2,
+         "w": 8.4,
+         "h": 5,
+         "label": "Combined balance",
+         "text": "Both balances."
+        },
+        {
+         "x": 51.5,
+         "y": 34,
+         "w": 5.7,
+         "h": 5,
+         "label": "Blended rate",
+         "text": "The rate of the two together, weighted by balance."
+        },
+        {
+         "x": 51.5,
+         "y": 42.8,
+         "w": 10.1,
+         "h": 5,
+         "label": "Combined monthly P&I",
+         "text": "Both P&I payments."
+        },
+        {
+         "x": 51.5,
+         "y": 51.6,
+         "w": 6.5,
+         "h": 5,
+         "label": "Combined LTV",
+         "text": "Both balances ÷ the value."
+        },
+        {
+         "x": 51.5,
+         "y": 60.3,
+         "w": 9,
+         "h": 5,
+         "label": "DSCR — senior only",
+         "text": "Coverage of the senior loan alone."
+        },
+        {
+         "x": 51.5,
+         "y": 69.1,
+         "w": 8.5,
+         "h": 5,
+         "label": "DSCR — combined",
+         "text": "Coverage of both loans."
+        },
+        {
+         "x": 51.5,
+         "y": 77.9,
+         "w": 10.4,
+         "h": 5,
+         "label": "Debt yield — combined",
+         "text": "NOI ÷ both balances."
+        },
+        {
+         "x": 1.4,
+         "y": 89.8,
+         "w": 97.2,
+         "h": 5.2,
+         "label": "No NOI yet",
+         "text": "Without an NOI the coverage figures stay empty."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "a-pooled-loan",
+     "title": "A pooled loan",
+     "text": "One loan secured by several properties shows a pool panel in place of the NOI box: one loan, one payment, coverage read on the whole pool. See [Add a loan on several properties](add-a-pooled-loan). The NOIs here are made up.",
+     "views": [
+      {
+       "title": "The pool panel",
+       "text": "",
+       "img": "img/loan/ref-loan-page-11.jpg",
+       "w": 1313,
+       "h": 242,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 7,
+         "w": 18.4,
+         "h": 8.3,
+         "label": "Pooled loan",
+         "text": "How many properties secure the loan."
+        },
+        {
+         "x": 1.3,
+         "y": 27.7,
+         "w": 18.5,
+         "h": 14.5,
+         "label": "Current balance",
+         "text": "What is owed on the one loan."
+        },
+        {
+         "x": 21,
+         "y": 27.7,
+         "w": 18.5,
+         "h": 14.5,
+         "label": "Monthly P&I",
+         "text": "The one payment."
+        },
+        {
+         "x": 40.7,
+         "y": 27.7,
+         "w": 18.5,
+         "h": 14.5,
+         "label": "Pool NOI",
+         "text": "Every property’s NOI added."
+        },
+        {
+         "x": 60.5,
+         "y": 27.7,
+         "w": 18.5,
+         "h": 14.5,
+         "label": "DSCR (pool)",
+         "text": "Pool NOI ÷ the loan’s yearly debt service."
+        },
+        {
+         "x": 80.2,
+         "y": 27.7,
+         "w": 18.5,
+         "h": 14.5,
+         "label": "Debt yield / LTV",
+         "text": "For the whole pool."
+        },
+        {
+         "x": 1.3,
+         "y": 54.5,
+         "w": 97.4,
+         "h": 14.3,
+         "label": "This property",
+         "text": "The property whose page this is."
+        },
+        {
+         "x": 46.9,
+         "y": 47.2,
+         "w": 15.2,
+         "h": 7.2,
+         "label": "Allocated",
+         "text": "Each property’s part of the loan: the amount typed, or an even split of what is left."
+        },
+        {
+         "x": 62.1,
+         "y": 47.2,
+         "w": 15.2,
+         "h": 7.2,
+         "label": "Alloc. balance",
+         "text": "Its part of what is owed today."
+        },
+        {
+         "x": 77.4,
+         "y": 47.2,
+         "w": 11,
+         "h": 7.2,
+         "label": "Alloc. DSCR",
+         "text": "Each property’s NOI ÷ its share of the debt service."
+        },
+        {
+         "x": 93.3,
+         "y": 71.8,
+         "w": 5.4,
+         "h": 9.3,
+         "label": "Release…",
+         "text": "Takes this property out of the pool (below). If the main property is released, the loan moves to the property with the largest share."
+        },
+        {
+         "x": 1.3,
+         "y": 86.1,
+         "w": 97.4,
+         "h": 6.8,
+         "label": "Released",
+         "text": "Each property released so far: when, how much was paid down, and whether the payment was recalculated."
+        }
+       ]
+      },
+      {
+       "title": "The Release window",
+       "text": "",
+       "img": "img/loan/ref-loan-page-12.jpg",
+       "w": 460,
+       "h": 303,
+       "marks": [
+        {
+         "x": 4.3,
+         "y": 15.8,
+         "w": 91.3,
+         "h": 21.1,
+         "label": "Its share",
+         "text": "Its share of today’s balance, by its allocated amount or by NOI. Lenders often ask 105–125% of it."
+        },
+        {
+         "x": 4.3,
+         "y": 46.9,
+         "w": 44.3,
+         "h": 9.9,
+         "label": "Release price ($)",
+         "text": "What is paid down on the loan."
+        },
+        {
+         "x": 51.3,
+         "y": 46.9,
+         "w": 44.3,
+         "h": 10.6,
+         "label": "Date",
+         "text": "The day of the paydown."
+        },
+        {
+         "x": 4.3,
+         "y": 67.3,
+         "w": 91.3,
+         "h": 9.6,
+         "label": "After the paydown",
+         "text": "Recalculate the payment over the amortization left, or keep the payment (the loan pays down faster)."
+        },
+        {
+         "x": 61.3,
+         "y": 82.2,
+         "w": 15.6,
+         "h": 11.2,
+         "label": "Cancel",
+         "text": "Closes it; nothing changes."
+        },
+        {
+         "x": 78.7,
+         "y": 82.2,
+         "w": 16.9,
+         "h": 11.2,
+         "label": "Release",
+         "text": "Pays it down and takes the property out of the pool."
+        }
+       ]
+      },
+      {
+       "title": "A property in the pool",
+       "text": "A property in the pool with no loan of its own opens with an “In a pooled loan” tag and the same pool panel.",
+       "img": "img/loan/ref-loan-page-13.jpg",
+       "w": 1313,
+       "h": 757,
+       "marks": [
+        {
+         "x": 20,
+         "y": 3.7,
+         "w": 8.3,
+         "h": 2.1,
+         "label": "In a pooled loan",
+         "text": "This property secures a pooled loan."
+        },
+        {
+         "x": 82,
+         "y": 2.9,
+         "w": 10.3,
+         "h": 4.2,
+         "label": "+ Add the first loan",
+         "text": "It can still get a loan of its own."
+        },
+        {
+         "x": 93,
+         "y": 2.8,
+         "w": 5.4,
+         "h": 4.5,
+         "label": "Archive",
+         "text": "Archives the property. See [Archive or delete a property](archive-or-delete-a-property)."
+        },
+        {
+         "x": 0,
+         "y": 15.2,
+         "w": 100,
+         "h": 31.9,
+         "label": "The pool",
+         "text": "The same panel as on the main property’s page; this property’s row is marked."
+        },
+        {
+         "x": 0.1,
+         "y": 50.4,
+         "w": 99.8,
+         "h": 6.9,
+         "label": "Profile",
+         "text": "Its facts. See [Fill in a property’s profile](fill-in-the-profile)."
+        },
+        {
+         "x": 0,
+         "y": 60.6,
+         "w": 100,
+         "h": 19.4,
+         "label": "Rent roll",
+         "text": "Its rent roll summary."
+        },
+        {
+         "x": 0,
+         "y": 83.2,
+         "w": 100,
+         "h": 16.8,
+         "label": "Documents",
+         "text": "Its saved files."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "a-property-with-no-active-loan",
+     "title": "A property with no active loan",
+     "views": [
+      {
+       "text": "When every loan of a property is removed or paid off, the property stays. Its page lists the removed loans, with **Restore** and a bin. (The profile opens by itself on this page; here it is folded.)",
+       "img": "img/loan/ref-loan-page-14.jpg",
+       "w": 1313,
+       "h": 690,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 3,
+         "w": 55.7,
+         "h": 4.2,
+         "label": "No loan yet",
+         "text": "The property, with no active loan."
+        },
+        {
+         "x": 82,
+         "y": 3.2,
+         "w": 10.3,
+         "h": 4.6,
+         "label": "+ Add the first loan",
+         "text": "Adds a new loan to this property."
+        },
+        {
+         "x": 93,
+         "y": 3,
+         "w": 5.4,
+         "h": 4.9,
+         "label": "Archive",
+         "text": "Archives the property. See [Archive or delete a property](archive-or-delete-a-property)."
+        },
+        {
+         "x": 30.5,
+         "y": 18.7,
+         "w": 21.7,
+         "h": 4.1,
+         "label": "The removed loan",
+         "text": "Its name, “Removed”, and when."
+        },
+        {
+         "x": 52.2,
+         "y": 19,
+         "w": 4.7,
+         "h": 3.5,
+         "label": "Restore",
+         "text": "Brings the loan back; the page becomes its loan page again."
+        },
+        {
+         "x": 56.9,
+         "y": 19.2,
+         "w": 2.1,
+         "h": 3.2,
+         "label": "Delete permanently",
+         "text": "Deletes the loan record for good (it asks first)."
+        },
+        {
+         "x": 0,
+         "y": 29.8,
+         "w": 100,
+         "h": 12.2,
+         "label": "NOI box",
+         "text": "The property keeps its NOI box (the cap rate now comes from the removed loan)."
+        },
+        {
+         "x": 0.1,
+         "y": 45.6,
+         "w": 99.8,
+         "h": 7.5,
+         "label": "Profile",
+         "text": "Its profile stays."
+        },
+        {
+         "x": 0,
+         "y": 56.8,
+         "w": 100,
+         "h": 21.3,
+         "label": "Rent roll",
+         "text": "Its rent roll stays."
+        },
+        {
+         "x": 0,
+         "y": 81.6,
+         "w": 100,
+         "h": 18.4,
+         "label": "Documents",
+         "text": "Its files stay."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ref-loan-form",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "The loan form",
+   "description": "Every field of the form that adds or edits a loan.",
+   "intro": "**Add Loan** (at the top of a property’s page) and **Edit** (in the Loan Record) open this form. Only what you type is kept: the balance, the payments, the P&I and the debt service are worked out from it. The pictures fill in a made-up loan that is never saved.",
+   "sections": [
+    {
+     "id": "the-form",
+     "title": "The form",
+     "views": [
+      {
+       "text": "Four parts, from the loan papers. Required fields have a red *.",
+       "img": "img/loan/ref-loan-form-01.jpg",
+       "w": 1313,
+       "h": 1739,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 1,
+         "w": 48.3,
+         "h": 1.4,
+         "label": "Add Loan",
+         "text": "A new loan. Editing a loan says “Edit Loan”."
+        },
+        {
+         "x": 81.4,
+         "y": 1,
+         "w": 6.2,
+         "h": 2.2,
+         "label": "Cancel",
+         "text": "Closes the form. Nothing is saved."
+        },
+        {
+         "x": 88.2,
+         "y": 1.1,
+         "w": 10.2,
+         "h": 2.1,
+         "label": "Save Loan",
+         "text": "Checks the form and saves the loan; its page opens."
+        },
+        {
+         "x": 2.9,
+         "y": 8.4,
+         "w": 30.6,
+         "h": 2.2,
+         "label": "Property Name",
+         "text": "Filled in with the property you were on. A new name makes a new property."
+        },
+        {
+         "x": 2.9,
+         "y": 5.4,
+         "w": 12.2,
+         "h": 0.9,
+         "label": "Loan Identification",
+         "text": "Who and what (below)."
+        },
+        {
+         "x": 2.9,
+         "y": 40.4,
+         "w": 7.6,
+         "h": 0.9,
+         "label": "Loan Terms",
+         "text": "The terms from the loan papers (below)."
+        },
+        {
+         "x": 2.9,
+         "y": 71.9,
+         "w": 18.5,
+         "h": 0.9,
+         "label": "Escrows & Reserves",
+         "text": "Monthly escrows (below)."
+        },
+        {
+         "x": 2.9,
+         "y": 88.4,
+         "w": 16.1,
+         "h": 0.9,
+         "label": "Additional Fees",
+         "text": "Monthly fees (below)."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "when-something-is-missing",
+     "title": "When something is missing",
+     "views": [
+      {
+       "text": "**Save Loan** with a required field empty: a red line says what is missing, and nothing is saved until it is right.",
+       "img": "img/loan/ref-loan-form-02.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.3,
+         "y": 56.3,
+         "w": 88.3,
+         "h": 4.2,
+         "label": "What is missing",
+         "text": "The first thing to fix. Fix it and click **Save Loan** again."
+        },
+        {
+         "x": 84.3,
+         "y": 48.4,
+         "w": 9.3,
+         "h": 4,
+         "label": "Save Loan",
+         "text": "Try again once it’s fixed."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "loan-identification",
+     "title": "Loan Identification",
+     "views": [
+      {
+       "text": "Who and what: the property, its address and type, the lender and the loan number.",
+       "img": "img/loan/ref-loan-form-03.jpg",
+       "w": 1271,
+       "h": 577,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Name",
+         "text": "The property this loan is on. Start typing to pick one you already have."
+        },
+        {
+         "x": 34.2,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Address",
+         "text": "Its address. Two loans at the same address are one property."
+        },
+        {
+         "x": 67.1,
+         "y": 5.6,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Property Type",
+         "text": "Office, Retail, Industrial, Multifamily, Mixed-Use or Other."
+        },
+        {
+         "x": 1.3,
+         "y": 18.4,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Lender Name",
+         "text": "Who lent the money."
+        },
+        {
+         "x": 34.2,
+         "y": 18.4,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Loan Number",
+         "text": "The lender’s number for the loan."
+        },
+        {
+         "x": 67.1,
+         "y": 18.4,
+         "w": 31.6,
+         "h": 10.1,
+         "label": "Pool releases",
+         "text": "For a pooled loan: properties released so far. Filled in by **Release…** on the loan’s page, not typed here."
+        },
+        {
+         "x": 1.3,
+         "y": 35.4,
+         "w": 31.6,
+         "h": 61.7,
+         "label": "Also secures",
+         "text": "Empty for a loan on one property. Tick other properties to make one loan on several (below)."
+        }
+       ]
+      },
+      {
+       "title": "Also secures (a pooled loan)",
+       "text": "Tick each other property the loan secures. A property not in the app yet can be added by name.",
+       "img": "img/loan/ref-loan-form-04.jpg",
+       "w": 1271,
+       "h": 593,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 5.4,
+         "w": 31.6,
+         "h": 9.8,
+         "label": "Its main property",
+         "text": "The loan is filed under this property."
+        },
+        {
+         "x": 2,
+         "y": 35.9,
+         "w": 17,
+         "h": 2.8,
+         "label": "How many",
+         "text": "How many other properties this loan secures."
+        },
+        {
+         "x": 2,
+         "y": 40.1,
+         "w": 13.8,
+         "h": 3.7,
+         "label": "Find a property",
+         "text": "Type part of a name to shorten the list."
+        },
+        {
+         "x": 2,
+         "y": 51.4,
+         "w": 1,
+         "h": 2.2,
+         "label": "Tick a property",
+         "text": "Ticked: this loan also secures it."
+        },
+        {
+         "x": 18.9,
+         "y": 50.7,
+         "w": 12.6,
+         "h": 3.7,
+         "label": "allocated $",
+         "text": "Optional: the part of the loan the lender puts on this property. If no property has one, each share follows its NOI."
+        },
+        {
+         "x": 2,
+         "y": 74.5,
+         "w": 29.4,
+         "h": 7.8,
+         "label": "New — added when you save",
+         "text": "A property not in the app yet. It is created when you save the loan."
+        },
+        {
+         "x": 2,
+         "y": 62.3,
+         "w": 29.4,
+         "h": 7.8,
+         "label": "Has its own loan",
+         "text": "A property can be in a pool and still have its own loan."
+        },
+        {
+         "x": 2,
+         "y": 82.9,
+         "w": 21,
+         "h": 3.7,
+         "label": "New property",
+         "text": "Type the name of a property that isn’t in the app yet…"
+        },
+        {
+         "x": 23.7,
+         "y": 82.9,
+         "w": 8.5,
+         "h": 3.7,
+         "label": "Add to this loan",
+         "text": "…and click here to add it to the list, ticked."
+        },
+        {
+         "x": 2,
+         "y": 87.3,
+         "w": 30.2,
+         "h": 8.3,
+         "label": "Allocated so far",
+         "text": "The allocated amounts added up, against the loan amount."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "loan-terms",
+     "title": "Loan Terms",
+     "text": "The terms from the loan papers. The fields change with the **Rate Type**.",
+     "views": [
+      {
+       "title": "A new fixed loan",
+       "text": "A new fixed loan takes its rate from an index + your spread, and the green line shows the rate it will lock. For a loan that already exists, tick **This is a historical loan** and type its rate instead.",
+       "img": "img/loan/ref-loan-form-05.jpg",
+       "w": 1271,
+       "h": 515,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 6.2,
+         "w": 97.3,
+         "h": 7.4,
+         "label": "Historical loan",
+         "text": "Tick it for a loan that already exists: you type its real locked rate. Leave it off for a new loan. (Fixed loans only.)"
+        },
+        {
+         "x": 1.3,
+         "y": 16.7,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Original Loan Amount",
+         "text": "The amount on day one. Required."
+        },
+        {
+         "x": 34.2,
+         "y": 16.7,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Rate Type",
+         "text": "Fixed, Floating or Hybrid ARM. The fields below change to match."
+        },
+        {
+         "x": 67.1,
+         "y": 16.7,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Lien Position",
+         "text": "Senior, or Mezzanine (paid after the senior)."
+        },
+        {
+         "x": 1.3,
+         "y": 31.1,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Loan Status",
+         "text": "Leave blank: it reads Active, or Matured after the maturity date. See [change its status](set-loan-status#change-the-status)."
+        },
+        {
+         "x": 34.2,
+         "y": 31.1,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Origination Date",
+         "text": "When the loan closed. Required."
+        },
+        {
+         "x": 67.1,
+         "y": 31.1,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "First Payment Date",
+         "text": "The first payment of any kind; an interest-only one counts. Required."
+        },
+        {
+         "x": 1.3,
+         "y": 45.8,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Maturity Date",
+         "text": "From the papers. The schedule is anchored to it."
+        },
+        {
+         "x": 34.2,
+         "y": 45.8,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Loan Term (Months)",
+         "text": "Months until the balloon. Required."
+        },
+        {
+         "x": 67.1,
+         "y": 45.8,
+         "w": 31.6,
+         "h": 11.7,
+         "label": "Amortization Period",
+         "text": "Months the payment is worked out over, e.g. 360 for 30 years. Not needed for a loan that is interest-only for its whole term."
+        },
+        {
+         "x": 1.3,
+         "y": 60.6,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Day-Count",
+         "text": "Actual/360 (interest on real days) or 30/360 (the same every month)."
+        },
+        {
+         "x": 34.2,
+         "y": 60.6,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Amortization Type",
+         "text": "Level (normal), Fixed Principal, or Fixed P&I (a set payment from the papers)."
+        },
+        {
+         "x": 67.1,
+         "y": 60.6,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Interest-Only Period",
+         "text": "Months of interest only at the start. 0 if none."
+        },
+        {
+         "x": 1.3,
+         "y": 75,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Index",
+         "text": "The index the rate is built on (SOFR, Prime, a Treasury…)."
+        },
+        {
+         "x": 34.2,
+         "y": 75,
+         "w": 31.6,
+         "h": 11.3,
+         "label": "Spread",
+         "text": "Your margin over the index, in %."
+        },
+        {
+         "x": 1.3,
+         "y": 89.3,
+         "w": 97.3,
+         "h": 7.4,
+         "label": "Locked rate",
+         "text": "Index today + spread = the rate this new loan locks."
+        }
+       ]
+      },
+      {
+       "title": "A hybrid ARM",
+       "text": "Fixed for its first years, then it floats. With **Fixed P&I** it also asks what the payment does at the reset; see [Set what the payment does at the reset](set-the-reset).",
+       "img": "img/loan/ref-loan-form-06.jpg",
+       "w": 1271,
+       "h": 654,
+       "marks": [
+        {
+         "x": 67.1,
+         "y": 4.9,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Hybrid ARM",
+         "text": "Fixed first, then it floats."
+        },
+        {
+         "x": 34.2,
+         "y": 4.9,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Annual Interest Rate",
+         "text": "The fixed rate of the first years."
+        },
+        {
+         "x": 67.1,
+         "y": 39.5,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Fixed P&I",
+         "text": "A set monthly payment from the papers."
+        },
+        {
+         "x": 1.3,
+         "y": 50.8,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Fixed Amortization Payment",
+         "text": "That set payment."
+        },
+        {
+         "x": 34.2,
+         "y": 50.8,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "At the Reset",
+         "text": "Keep the stated payment, or recalculate it over the remaining amortization."
+        },
+        {
+         "x": 34.2,
+         "y": 88.5,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Initial Fixed Period",
+         "text": "Months at the fixed rate (60 = 5 years)."
+        },
+        {
+         "x": 67.1,
+         "y": 88.5,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Adjustment Frequency",
+         "text": "How often the rate resets after that."
+        },
+        {
+         "x": 1.3,
+         "y": 62.1,
+         "w": 31.6,
+         "h": 12.3,
+         "label": "Index",
+         "text": "The index the rate follows after the fixed years."
+        },
+        {
+         "x": 34.2,
+         "y": 62.1,
+         "w": 31.6,
+         "h": 12.3,
+         "label": "Index Value",
+         "text": "Filled from the live index by itself; type a value only to override it. Offline it says it couldn’t fetch."
+        },
+        {
+         "x": 67.1,
+         "y": 62.1,
+         "w": 31.6,
+         "h": 12.3,
+         "label": "Spread",
+         "text": "The margin over the index after the reset."
+        },
+        {
+         "x": 1.3,
+         "y": 76.9,
+         "w": 31.6,
+         "h": 9.2,
+         "label": "Floor",
+         "text": "The rate never goes below this."
+        },
+        {
+         "x": 34.2,
+         "y": 76.9,
+         "w": 31.6,
+         "h": 9.2,
+         "label": "Cap",
+         "text": "The rate never goes above this."
+        },
+        {
+         "x": 67.1,
+         "y": 76.9,
+         "w": 31.6,
+         "h": 9.2,
+         "label": "On 1-Month LIBOR Until",
+         "text": "Only for a loan that started on LIBOR: the last day LIBOR set its rate."
+        },
+        {
+         "x": 1.3,
+         "y": 88.5,
+         "w": 31.6,
+         "h": 8.9,
+         "label": "Spread Over LIBOR",
+         "text": "Blank = the same spread as above."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "escrows-reserves",
+     "title": "Escrows & Reserves",
+     "views": [
+      {
+       "text": "Monthly amounts paid with the loan. Leave any you don’t have empty. They add to Total Monthly Debt Service.",
+       "img": "img/loan/ref-loan-form-07.jpg",
+       "w": 1271,
+       "h": 255,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 12.5,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Real Estate Tax Escrow",
+         "text": "Monthly tax escrow."
+        },
+        {
+         "x": 34.2,
+         "y": 12.5,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Insurance Escrow",
+         "text": "Monthly insurance escrow."
+        },
+        {
+         "x": 67.1,
+         "y": 12.5,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Replacement Reserve",
+         "text": "Monthly reserve for replacements."
+        },
+        {
+         "x": 1.3,
+         "y": 41.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "TI/LC Reserve",
+         "text": "Tenant improvements and leasing commissions reserve."
+        },
+        {
+         "x": 34.2,
+         "y": 41.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Ground Lease Payment",
+         "text": "Monthly ground rent, if any."
+        },
+        {
+         "x": 67.1,
+         "y": 41.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Other Escrow 1 — Description",
+         "text": "Name another escrow…"
+        },
+        {
+         "x": 1.3,
+         "y": 70.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Other Escrow 1 — Amount",
+         "text": "…and its monthly amount."
+        },
+        {
+         "x": 34.2,
+         "y": 70.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Other Escrow 2 — Description",
+         "text": "A second one."
+        },
+        {
+         "x": 67.1,
+         "y": 70.6,
+         "w": 31.6,
+         "h": 22.7,
+         "label": "Other Escrow 2 — Amount",
+         "text": "Its monthly amount."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "additional-fees",
+     "title": "Additional Fees",
+     "views": [
+      {
+       "text": "Monthly fees paid with the loan. They also add to Total Monthly Debt Service.",
+       "img": "img/loan/ref-loan-form-08.jpg",
+       "w": 1271,
+       "h": 181,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 17.7,
+         "w": 31.6,
+         "h": 32,
+         "label": "Servicing Fee",
+         "text": "Monthly servicing fee."
+        },
+        {
+         "x": 34.2,
+         "y": 17.7,
+         "w": 31.6,
+         "h": 32,
+         "label": "Trustee Fee",
+         "text": "Monthly trustee fee."
+        },
+        {
+         "x": 67.1,
+         "y": 17.7,
+         "w": 31.6,
+         "h": 32,
+         "label": "Other Fee 1 — Description",
+         "text": "Name another fee…"
+        },
+        {
+         "x": 1.3,
+         "y": 58.6,
+         "w": 31.6,
+         "h": 32,
+         "label": "Other Fee 1 — Amount",
+         "text": "…and its monthly amount."
+        },
+        {
+         "x": 34.2,
+         "y": 58.6,
+         "w": 31.6,
+         "h": 32,
+         "label": "Other Fee 2 — Description",
+         "text": "A second one."
+        },
+        {
+         "x": 67.1,
+         "y": 58.6,
+         "w": 31.6,
+         "h": 32,
+         "label": "Other Fee 2 — Amount",
+         "text": "Its monthly amount."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

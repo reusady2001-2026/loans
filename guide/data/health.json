@@ -1,0 +1,1256 @@
+{
+ "id": "health",
+ "pages": [
+  {
+   "id": "fix-data-health",
+   "kind": "howto",
+   "group": "Tools",
+   "title": "Fix what Data Health finds",
+   "description": "Open Data Health and work through what it lists: T12s to review, files to sort out, possible duplicates, maturity decisions and missing data.",
+   "intro": "Data Health shows on one page what the app knows about every property, and what needs you. Each list shows only when it has something in it, so work down the page from the top until every line is green.",
+   "sections": [
+    {
+     "id": "open-data-health",
+     "title": "Open Data Health",
+     "steps": [
+      {
+       "text": "Click **+** at the end of the tab strip, then **Data Health**. It reads every property’s files first, which takes a moment with a big book."
+      },
+      {
+       "text": "Look at the lists at the top. Each is something waiting for you; a list with nothing in it shows a green line, or isn’t shown at all.",
+       "img": "img/health/fix-data-health-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 29.3,
+         "w": 91.2,
+         "h": 7.8,
+         "label": "T12s that need your review",
+         "text": "T12s waiting for you before they are used."
+        },
+        {
+         "x": 3.9,
+         "y": 38.8,
+         "w": 91.2,
+         "h": 6.9,
+         "label": "Files with several parts",
+         "text": "Workbooks waiting for you to say which part is whose."
+        },
+        {
+         "x": 3.9,
+         "y": 47.5,
+         "w": 91.2,
+         "h": 12.2,
+         "label": "Files without a property",
+         "text": "Files that no property uses any more."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "review-a-waiting-t12",
+     "title": "Review a waiting T12",
+     "text": "A T12 is read twice, by the app’s reader and by the AI, before it is used. When a check fails or the AI reads it differently, it waits here, and nothing from it is used until you decide.",
+     "steps": [
+      {
+       "text": "Under **T12s that need your review**, click **Review** next to the T12.",
+       "img": "img/health/fix-data-health-02.jpg",
+       "w": 1313,
+       "h": 70,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 55.7,
+         "w": 97.4,
+         "h": 31.4,
+         "label": "A T12 waiting",
+         "text": "The property, the file, and why it waits (here the AI disagrees on 2 points)."
+        },
+        {
+         "x": 63.6,
+         "y": 55.7,
+         "w": 4,
+         "h": 31.4,
+         "label": "Review",
+         "text": "Opens the reading."
+        }
+       ]
+      },
+      {
+       "text": "Read what the window lists under the totals: each failed check, and each point the AI reads differently, with its Excel row. Click a row number to jump to that row.",
+       "img": "img/health/fix-data-health-03.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 6.4,
+         "w": 53.9,
+         "h": 2.3,
+         "label": "The verdict",
+         "text": "Whether every check passes, and whether the AI agrees with the reader."
+        },
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 97.1,
+         "h": 4.1,
+         "label": "What to look at",
+         "text": "Each failed check and each point read differently."
+        },
+        {
+         "x": 1.4,
+         "y": 26.3,
+         "w": 97.1,
+         "h": 57.5,
+         "label": "The rows",
+         "text": "The file’s own rows, what the reader made of each, and the amounts."
+        }
+       ]
+      },
+      {
+       "text": "Change what is wrong in the rows, with a note."
+      },
+      {
+       "text": "Click **Save this reading**. The T12 is used from now on, and it leaves the list."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "Not sure yet? Click **Keep it waiting**: the T12 stays on the list, unused. [Check a T12](check-a-t12) shows this window in full."
+      }
+     ]
+    },
+    {
+     "id": "say-which-part-of-a-file-is-whose",
+     "title": "Say which part of a file is whose",
+     "text": "A workbook can hold several properties’ statements, one per sheet or one after another. The app never guesses which part is a property’s own: until you answer, the file’s numbers aren’t used for it.",
+     "steps": [
+      {
+       "text": "Under **Files with several parts waiting for your answer**, click **Answer** next to the file."
+      },
+      {
+       "text": "Tick the part that belongs to the property, and pick the property in the list under it.",
+       "img": "img/health/fix-data-health-04.jpg",
+       "w": 512,
+       "h": 560,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 41.3,
+         "w": 2.7,
+         "h": 2.5,
+         "label": "The part",
+         "text": "Ticked: this part is linked."
+        },
+        {
+         "x": 6.4,
+         "y": 47.9,
+         "w": 87.1,
+         "h": 4.8,
+         "label": "Property",
+         "text": "The property it belongs to."
+        },
+        {
+         "x": 78.5,
+         "y": 89.6,
+         "w": 17.6,
+         "h": 6.8,
+         "label": "Approve",
+         "text": "Links each ticked part to its property."
+        }
+       ]
+      },
+      {
+       "text": "Click **Approve**. The file leaves the list, and its part goes through the T12 check like any new T12. It may then wait under **T12s that need your review**."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A part can go to any property, and several parts to one property (they are added together). If you tick a part without picking its property, **Approve** saves nothing and says which part still needs one. See [Split a file that covers several properties](split-a-multi-property-file)."
+      }
+     ]
+    },
+    {
+     "id": "attach-files-left-without-a-property",
+     "title": "Attach files left without a property",
+     "text": "Files can be left in a folder that no property uses any more, for example after a rename in an older version.",
+     "steps": [
+      {
+       "text": "Under **Files without a property**, pick the property they belong to in **attach to**.",
+       "img": "img/health/fix-data-health-05.jpg",
+       "w": 1313,
+       "h": 110,
+       "marks": [
+        {
+         "x": 33.2,
+         "y": 57.3,
+         "w": 15.6,
+         "h": 20,
+         "label": "attach to",
+         "text": "The property to move the files to."
+        },
+        {
+         "x": 49.4,
+         "y": 55.5,
+         "w": 4,
+         "h": 23.6,
+         "label": "Attach",
+         "text": "Moves them there, after asking."
+        }
+       ]
+      },
+      {
+       "text": "Click **Attach**, then **Attach** in the question that opens. The files move into that property’s folder."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A file with the same name in that folder is kept as a copy, never replaced."
+      },
+      {
+       "kind": "warning",
+       "text": "**Delete** deletes the files instead, after asking. It can’t be undone here; the automatic backups keep a copy."
+      }
+     ]
+    },
+    {
+     "id": "settle-a-possible-duplicate",
+     "title": "Settle a possible duplicate",
+     "text": "Two properties may be one building entered twice: the same street address and city, or nearly the same name when one has no address. They are never merged by themselves.",
+     "steps": [
+      {
+       "text": "Read each pair under **Possible duplicate properties**, and why it is listed.",
+       "img": "img/health/fix-data-health-06.jpg",
+       "w": 1313,
+       "h": 108,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 59.3,
+         "w": 31,
+         "h": 18.5,
+         "label": "The pair",
+         "text": "The two property names."
+        },
+        {
+         "x": 32.9,
+         "y": 59.3,
+         "w": 14.3,
+         "h": 18.5,
+         "label": "Why",
+         "text": "The same address, or similar names."
+        },
+        {
+         "x": 47.9,
+         "y": 56.5,
+         "w": 7.5,
+         "h": 24.1,
+         "label": "Not a duplicate",
+         "text": "Two different buildings: the pair isn’t shown again."
+        }
+       ]
+      },
+      {
+       "text": "If the two are one building, rename one to match the other, so they become one property. See [Rename a property](rename-a-property)."
+      },
+      {
+       "text": "If they are two buildings, click **Not a duplicate**. The pair isn’t shown again, here or in Settings."
+      }
+     ]
+    },
+    {
+     "id": "settle-a-maturity-decision",
+     "title": "Settle a maturity decision",
+     "steps": [
+      {
+       "text": "Find the loan under **Loans needing a maturity decision**: it has matured, or its extension is undecided.",
+       "img": "img/health/fix-data-health-07.jpg",
+       "w": 1313,
+       "h": 85,
+       "marks": [
+        {
+         "x": 15.4,
+         "y": 53.3,
+         "w": 24,
+         "h": 26.6,
+         "label": "Extension undecided",
+         "text": "An extension is being discussed and not settled."
+        },
+        {
+         "x": 1.3,
+         "y": 53.3,
+         "w": 13.6,
+         "h": 26.6,
+         "label": "Matured",
+         "text": "Past its maturity, not extended or paid off yet."
+        }
+       ]
+      },
+      {
+       "text": "Change the loan’s **Loan Status** in its edit form (**Extended**, **Paid off**…), and save. The loan leaves the list. See [Mark a loan out of date or change its status](set-loan-status)."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The Maturity & Reset Calendar shows the same loans on top. See [Read the maturity calendar](read-the-calendar)."
+      }
+     ]
+    },
+    {
+     "id": "fill-in-what-a-property-is-missing",
+     "title": "Fill in what a property is missing",
+     "steps": [
+      {
+       "text": "Scroll down to **Every property**. Properties missing a T12 or units come first."
+      },
+      {
+       "text": "Read a row’s **Warnings**: what the app still lacks for that property.",
+       "img": "img/health/fix-data-health-08.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 70.7,
+         "y": 46.7,
+         "w": 3.2,
+         "h": 2.9,
+         "label": "no T12",
+         "text": "No T12 in use yet."
+        },
+        {
+         "x": 74.1,
+         "y": 46.7,
+         "w": 5.9,
+         "h": 2.9,
+         "label": "units unknown",
+         "text": "Its number of units isn’t in its profile."
+        },
+        {
+         "x": 90.9,
+         "y": 46.7,
+         "w": 3.2,
+         "h": 2.9,
+         "label": "Open",
+         "text": "Opens Underwriting for this property."
+        }
+       ]
+      },
+      {
+       "text": "Click **Open** to go to Underwriting with that property picked, and add its T12 there. See [Upload a T12](upload-a-t12)."
+      },
+      {
+       "text": "Fill in its units in the property’s profile. See [Fill in a property’s profile](fill-in-the-profile)."
+      }
+     ]
+    },
+    {
+     "id": "work-the-figures-out-again",
+     "title": "Work the figures out again",
+     "steps": [
+      {
+       "text": "Click **Recompute all figures** at the top right of the page."
+      },
+      {
+       "text": "Wait while the button reads “Recomputing…”. The line under it then says when, for how many properties, and “manual”."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "Recompute after changing files outside the app, or when the **Computed** column shows an older version of the app."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "check-a-t12",
+     "anchor": "",
+     "text": "Check a T12 row by row."
+    },
+    {
+     "page": "split-a-multi-property-file",
+     "anchor": "",
+     "text": "Split a file that covers several properties."
+    },
+    {
+     "page": "ref-data-health",
+     "anchor": "",
+     "text": "Every part of Data Health, named."
+    }
+   ]
+  },
+  {
+   "id": "ref-data-health",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "Data Health",
+   "description": "Every part of the Data Health tab: the lists of what needs you, the four numbers, the table of every property, and Recompute.",
+   "intro": "Each picture names its controls. Point at a number, on the picture or in the list, to find it.",
+   "sections": [
+    {
+     "id": "the-top-of-the-page",
+     "title": "The top of the page",
+     "views": [
+      {
+       "text": "On top, what needs you: the T12s waiting for review, files waiting for an answer and files without a property (each list only when it has something in it, or a green line when it is clear). Then four numbers, whether every property has its folder, possible duplicates and maturity decisions. The table of every property is at the bottom.",
+       "img": "img/health/ref-data-health-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 11.3,
+         "y": 15.2,
+         "w": 12,
+         "h": 4.2,
+         "label": "Data Health",
+         "text": "This tab. Pop it out or close it like any tab."
+        },
+        {
+         "x": 3.9,
+         "y": 21.2,
+         "w": 39,
+         "h": 3.1,
+         "label": "Data Health",
+         "text": "The version of the app that is running is named under the title."
+        },
+        {
+         "x": 83.1,
+         "y": 21.2,
+         "w": 12,
+         "h": 3.8,
+         "label": "Recompute all figures",
+         "text": "Works out every property’s figures again from its files (see “Recompute” below)."
+        },
+        {
+         "x": 67.6,
+         "y": 25.4,
+         "w": 27.5,
+         "h": 1.8,
+         "label": "Last recompute",
+         "text": "When the figures were last worked out, for how many properties, and why (by hand, after an update…)."
+        },
+        {
+         "x": 3.9,
+         "y": 29.3,
+         "w": 91.2,
+         "h": 7.8,
+         "label": "T12s that need your review",
+         "text": "T12s waiting for you before they are used."
+        },
+        {
+         "x": 3.9,
+         "y": 38.8,
+         "w": 91.2,
+         "h": 6.9,
+         "label": "Files with several parts",
+         "text": "Workbooks waiting for you to say which part is whose."
+        },
+        {
+         "x": 3.9,
+         "y": 47.5,
+         "w": 91.2,
+         "h": 12.2,
+         "label": "Files without a property",
+         "text": "Folders no property uses any more."
+        },
+        {
+         "x": 3.9,
+         "y": 61.5,
+         "w": 22.2,
+         "h": 12.2,
+         "label": "Properties",
+         "text": "How many properties, and how many active loans."
+        },
+        {
+         "x": 26.9,
+         "y": 61.5,
+         "w": 22.2,
+         "h": 12.2,
+         "label": "With a T12",
+         "text": "How many have a T12 in use; the rest are “missing”."
+        },
+        {
+         "x": 49.9,
+         "y": 61.5,
+         "w": 22.2,
+         "h": 12.2,
+         "label": "Units known",
+         "text": "How many have their number of units set in the profile; the rest are blank."
+        },
+        {
+         "x": 72.9,
+         "y": 61.5,
+         "w": 22.2,
+         "h": 12.2,
+         "label": "Need a maturity decision",
+         "text": "Loans that matured or whose extension is undecided."
+        },
+        {
+         "x": 3.9,
+         "y": 75.5,
+         "w": 91.2,
+         "h": 4.2,
+         "label": "Properties without a folder",
+         "text": "Always 0: every property has its folder with its profile and general data. Anything else names the property the app couldn’t make a folder for."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "t12s-that-need-your-review",
+     "title": "T12s that need your review",
+     "views": [
+      {
+       "title": "The list",
+       "text": "Every T12 waiting for you, with the property, the file and why. Green and “0” when there is nothing to review. A T12 read by an older version that passes every check but hasn’t been read by the AI yet is counted on a grey line under the list; it is checked as soon as Claude is connected.",
+       "img": "img/health/ref-data-health-02.jpg",
+       "w": 1313,
+       "h": 70,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 17.1,
+         "w": 14.9,
+         "h": 28.6,
+         "label": "T12s that need your review",
+         "text": "How many wait for you."
+        },
+        {
+         "x": 1.3,
+         "y": 55.7,
+         "w": 97.4,
+         "h": 31.4,
+         "label": "A T12 waiting",
+         "text": "The property · the file — why it waits (here the AI disagrees on 2 points). Its numbers are not used yet."
+        },
+        {
+         "x": 63.6,
+         "y": 55.7,
+         "w": 4,
+         "h": 31.4,
+         "label": "Review",
+         "text": "Opens the reading, row by row, to decide."
+        },
+        {
+         "x": 87.4,
+         "y": 12.9,
+         "w": 11.3,
+         "h": 37.1,
+         "label": "Re-check every T12 now",
+         "text": "Reads every saved T12 again with the reader and the AI. It shows “Re-checking… 1 of 5” while it works; a T12 that now fails or disagrees is listed here."
+        }
+       ]
+      },
+      {
+       "title": "Review",
+       "text": "The T12 reading: every row of the file and what the reader made of it, the checks, and where the AI disagrees. See [Check a T12](check-a-t12).",
+       "img": "img/health/ref-data-health-03.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 6.4,
+         "w": 53.9,
+         "h": 2.3,
+         "label": "The verdict",
+         "text": "Whether every check passes, and whether the AI agrees with the reader."
+        },
+        {
+         "x": 96.5,
+         "y": 1.4,
+         "w": 2.1,
+         "h": 2.3,
+         "label": "×",
+         "text": "Closes the window, like Keep it waiting."
+        },
+        {
+         "x": 1.4,
+         "y": 11.5,
+         "w": 97.1,
+         "h": 7.9,
+         "label": "Income, Expenses, NOI",
+         "text": "The accounts added up, against the totals the statement prints (✓ when they match)."
+        },
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 97.1,
+         "h": 4.1,
+         "label": "What to look at",
+         "text": "Each failed check and each point the AI reads differently, with its Excel row. Click the row number to jump to it."
+        },
+        {
+         "x": 1.4,
+         "y": 26.3,
+         "w": 97.1,
+         "h": 57.5,
+         "label": "The rows",
+         "text": "The file’s own rows, what the reader made of each, and the amounts; you can change any of them."
+        },
+        {
+         "x": 79,
+         "y": 94.7,
+         "w": 9,
+         "h": 3.9,
+         "label": "Keep it waiting",
+         "text": "Closes the window; the T12 stays on the list, unused."
+        },
+        {
+         "x": 88.5,
+         "y": 94.7,
+         "w": 10,
+         "h": 3.9,
+         "label": "Save this reading",
+         "text": "Saves the reading as it is now; the T12 is used and leaves the list."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "files-with-several-parts",
+     "title": "Files with several parts",
+     "views": [
+      {
+       "title": "Waiting for your answer",
+       "text": "Every file with several parts whose part for a property isn’t answered yet. A file filed before this was asked, matched by its name only, is listed under “Matched by name only — confirm once”, with a **Confirm** button.",
+       "img": "img/health/ref-data-health-04.jpg",
+       "w": 1313,
+       "h": 62,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 14.5,
+         "w": 97.4,
+         "h": 32.3,
+         "label": "Files with several parts waiting",
+         "text": "How many files wait for an answer."
+        },
+        {
+         "x": 1.3,
+         "y": 53.2,
+         "w": 97.4,
+         "h": 32.3,
+         "label": "A file waiting",
+         "text": "The property · the file (how many parts). Its numbers aren’t used until you say which part is its own."
+        },
+        {
+         "x": 58.9,
+         "y": 53.2,
+         "w": 3.4,
+         "h": 32.3,
+         "label": "Answer",
+         "text": "Opens the question."
+        }
+       ]
+      },
+      {
+       "title": "Which part is whose?",
+       "text": "Each part of the file is a line: tick it and pick the property it belongs to. A part can go to any property, several parts to one property (they are added together), or one part to several. Nothing is saved until you approve.",
+       "img": "img/health/ref-data-health-05.jpg",
+       "w": 512,
+       "h": 560,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 3.6,
+         "w": 92.2,
+         "h": 4.3,
+         "label": "Which part of this file belongs to which property?",
+         "text": "The file, how many parts and sheets, and the property it is asked for."
+        },
+        {
+         "x": 6.4,
+         "y": 22.7,
+         "w": 87.1,
+         "h": 6.2,
+         "label": "A part",
+         "text": "Its sheet and name, what it is (T12, rent roll or sheet) and its NOI. Tick it to link it."
+        },
+        {
+         "x": 6.4,
+         "y": 23,
+         "w": 2.7,
+         "h": 2.5,
+         "label": "Tick box",
+         "text": "On = this part is linked to the property chosen below it."
+        },
+        {
+         "x": 6.4,
+         "y": 29.6,
+         "w": 87.1,
+         "h": 4.8,
+         "label": "Property",
+         "text": "Don’t link, this property, any other property, or “Add as a new property” named after the part."
+        },
+        {
+         "x": 6.4,
+         "y": 35.4,
+         "w": 19.6,
+         "h": 2.9,
+         "label": "+ another property",
+         "text": "Adds a second property list: the same part goes to both."
+        },
+        {
+         "x": 61.1,
+         "y": 89.6,
+         "w": 15.8,
+         "h": 6.8,
+         "label": "Cancel",
+         "text": "Closes without saving; the file keeps waiting."
+        },
+        {
+         "x": 78.5,
+         "y": 89.6,
+         "w": 17.6,
+         "h": 6.8,
+         "label": "Approve",
+         "text": "Links each ticked part to its property. Each property reads only its own parts, never another’s numbers."
+        }
+       ]
+      },
+      {
+       "title": "A ticked part needs a property",
+       "text": "Tick a part without picking its property and click **Approve**: a red line says which part still needs one. Pick the property, or untick the part.",
+       "img": "img/health/ref-data-health-06.jpg",
+       "w": 512,
+       "h": 582,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 22.2,
+         "w": 2.7,
+         "h": 2.4,
+         "label": "Ticked",
+         "text": "This part is ticked…"
+        },
+        {
+         "x": 6.4,
+         "y": 28.4,
+         "w": 87.1,
+         "h": 4.6,
+         "label": "…but no property",
+         "text": "…and its property is still “Don’t link”."
+        },
+        {
+         "x": 3.9,
+         "y": 84.2,
+         "w": 92.2,
+         "h": 3.1,
+         "label": "Pick a property for part 1 — or untick it.",
+         "text": "What is missing. Nothing was saved."
+        }
+       ]
+      },
+      {
+       "title": "Answered",
+       "text": "Here part 2 is Sample Oaks’ own: picked for part 2, the others unticked, and approved. The file leaves the list, and its part goes through the T12 check like any new T12.",
+       "img": "img/health/ref-data-health-07.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 41.7,
+         "w": 91.2,
+         "h": 4.2,
+         "label": "Files with several parts waiting: 0",
+         "text": "Green: every file’s part is answered."
+        },
+        {
+         "x": 5.1,
+         "y": 36.5,
+         "w": 88.8,
+         "h": 2.4,
+         "label": "Its part, read",
+         "text": "Sample Oaks’ part went through the T12 check; here the AI read it differently, so it waits for review like any T12."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "files-without-a-property",
+     "title": "Files without a property",
+     "views": [
+      {
+       "title": "The list",
+       "text": "A folder of files that no property uses any more (left behind by a rename in an older version). The list shows only when there is one.",
+       "img": "img/health/ref-data-health-08.jpg",
+       "w": 1313,
+       "h": 110,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 15.5,
+         "w": 97.4,
+         "h": 18.2,
+         "label": "Files without a property",
+         "text": "How many folders belong to no property."
+        },
+        {
+         "x": 1.3,
+         "y": 58.2,
+         "w": 13.4,
+         "h": 18.2,
+         "label": "The old name",
+         "text": "The property name the files were saved under."
+        },
+        {
+         "x": 15.3,
+         "y": 58.2,
+         "w": 12.2,
+         "h": 18.2,
+         "label": "Its files",
+         "text": "How many, and the first few names."
+        },
+        {
+         "x": 33.2,
+         "y": 57.3,
+         "w": 15.6,
+         "h": 20,
+         "label": "attach to",
+         "text": "The property to move them to."
+        },
+        {
+         "x": 49.4,
+         "y": 55.5,
+         "w": 4,
+         "h": 23.6,
+         "label": "Attach",
+         "text": "Moves the files into that property’s folder (asks first)."
+        },
+        {
+         "x": 54,
+         "y": 55.5,
+         "w": 4,
+         "h": 23.6,
+         "label": "Delete",
+         "text": "Deletes the files (asks first)."
+        }
+       ]
+      },
+      {
+       "title": "Attach — the question",
+       "text": "The files move into the chosen property’s folder; a file with the same name there is kept as a copy, never replaced.",
+       "img": "img/health/ref-data-health-09.jpg",
+       "w": 384,
+       "h": 224,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 11.2,
+         "w": 87,
+         "h": 21.4,
+         "label": "Attach these files to …?",
+         "text": "The property you picked."
+        },
+        {
+         "x": 6.5,
+         "y": 36.2,
+         "w": 87,
+         "h": 26.8,
+         "label": "What happens",
+         "text": "Where the files go."
+        },
+        {
+         "x": 50.5,
+         "y": 71.9,
+         "w": 21.1,
+         "h": 17,
+         "label": "Cancel",
+         "text": "Nothing is moved."
+        },
+        {
+         "x": 73.7,
+         "y": 71.9,
+         "w": 19.8,
+         "h": 17,
+         "label": "Attach",
+         "text": "Moves them; the list is drawn again without that folder."
+        }
+       ]
+      },
+      {
+       "title": "Delete — the question",
+       "text": "The files belong to no property, so deleting them changes no figure; the automatic backups still keep a copy.",
+       "img": "img/health/ref-data-health-10.jpg",
+       "w": 384,
+       "h": 204,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 12.3,
+         "w": 87,
+         "h": 23.5,
+         "label": "Delete the files of …?",
+         "text": "The old name."
+        },
+        {
+         "x": 6.5,
+         "y": 39.7,
+         "w": 87,
+         "h": 19.6,
+         "label": "What happens",
+         "text": "It can’t be undone here; the automatic backups keep a copy."
+        },
+        {
+         "x": 50.7,
+         "y": 69.1,
+         "w": 21.1,
+         "h": 18.6,
+         "label": "Cancel",
+         "text": "Nothing is deleted."
+        },
+        {
+         "x": 73.8,
+         "y": 69.1,
+         "w": 19.6,
+         "h": 18.6,
+         "label": "Delete",
+         "text": "Deletes the folder; the list is drawn again."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "possible-duplicate-properties",
+     "title": "Possible duplicate properties",
+     "views": [
+      {
+       "title": "The list",
+       "text": "Two properties that may be one building entered twice: the same street address and city or, when one has no address, nearly the same name (ignoring capitals, punctuation and words like “The” or “Apartments”). They are never merged by themselves.",
+       "img": "img/health/ref-data-health-11.jpg",
+       "w": 1313,
+       "h": 108,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 15.7,
+         "w": 97.4,
+         "h": 18.5,
+         "label": "Possible duplicate properties",
+         "text": "How many pairs."
+        },
+        {
+         "x": 1.3,
+         "y": 59.3,
+         "w": 31,
+         "h": 18.5,
+         "label": "The pair",
+         "text": "The two property names."
+        },
+        {
+         "x": 32.9,
+         "y": 59.3,
+         "w": 14.3,
+         "h": 18.5,
+         "label": "Why",
+         "text": "Same street address and city, or similar names when one or both have no address."
+        },
+        {
+         "x": 47.9,
+         "y": 56.5,
+         "w": 7.5,
+         "h": 24.1,
+         "label": "Not a duplicate",
+         "text": "Remembers that these two are different buildings: the pair is not shown again (here or in Settings)."
+        }
+       ]
+      },
+      {
+       "title": "After “Not a duplicate”",
+       "text": "The pair is gone. With no pair left, a green line says how many distinct properties and loans there are.",
+       "img": "img/health/ref-data-health-12.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 46,
+         "w": 91.2,
+         "h": 5.1,
+         "label": "No duplicate properties detected",
+         "text": "Every property is distinct (the pairs you marked are left out)."
+        },
+        {
+         "x": 3.9,
+         "y": 26,
+         "w": 22.2,
+         "h": 12.2,
+         "label": "Properties",
+         "text": "Both stay as two properties: nothing was merged."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "maturity-decisions",
+     "title": "Maturity decisions",
+     "views": [
+      {
+       "text": "Loans that matured, or whose extension is undecided: set in the loan’s edit form (**Loan Status**), or **Matured** by itself once the maturity date has passed. A loan leaves the list when you change its status (**Extended**, **Paid off**…). The Maturity & Reset Calendar shows the same loans on top.",
+       "img": "img/health/ref-data-health-13.jpg",
+       "w": 1313,
+       "h": 85,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 20.1,
+         "w": 97.4,
+         "h": 23.7,
+         "label": "Loans needing a maturity decision",
+         "text": "How many."
+        },
+        {
+         "x": 15.4,
+         "y": 53.3,
+         "w": 24,
+         "h": 26.6,
+         "label": "Extension undecided",
+         "text": "An extension is being discussed and not settled."
+        },
+        {
+         "x": 1.3,
+         "y": 53.3,
+         "w": 13.6,
+         "h": 26.6,
+         "label": "Matured",
+         "text": "Past (or marked at) its maturity, not extended or paid off yet."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "every-property",
+     "title": "Every property",
+     "views": [
+      {
+       "title": "The columns",
+       "text": "One row per property, with what the app knows about it. Properties missing a T12 or units come first.",
+       "img": "img/health/ref-data-health-14.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 4,
+         "y": 29.9,
+         "w": 25.9,
+         "h": 4,
+         "label": "Property",
+         "text": "Its name (how many loans if more than one) and whether its profile is complete, or what it still needs."
+        },
+        {
+         "x": 29.8,
+         "y": 29.9,
+         "w": 9.6,
+         "h": 4,
+         "label": "Status",
+         "text": "Worked out from its data: Stabilized, No T12 yet, No loan data yet or Third-party managed."
+        },
+        {
+         "x": 39.4,
+         "y": 29.9,
+         "w": 8.1,
+         "h": 4,
+         "label": "T12 / NOI basis",
+         "text": "How the NOI is taken from the T12 (12-month total, last 3 months × 4…) and how many months of history."
+        },
+        {
+         "x": 47.5,
+         "y": 29.9,
+         "w": 4.3,
+         "h": 4,
+         "label": "Units",
+         "text": "From the property’s profile."
+        },
+        {
+         "x": 51.8,
+         "y": 29.9,
+         "w": 7.4,
+         "h": 4,
+         "label": "In-place NOI",
+         "text": "The NOI the app uses for it."
+        },
+        {
+         "x": 59.2,
+         "y": 29.9,
+         "w": 10.7,
+         "h": 4,
+         "label": "Computed",
+         "text": "When its figures were last worked out, and by which app version (red when an older version)."
+        },
+        {
+         "x": 69.9,
+         "y": 29.9,
+         "w": 20,
+         "h": 4,
+         "label": "Warnings",
+         "text": "no T12, units unknown, NOI ≤ 0, loan matured, extension undecided, figures from an older version, or “ok”."
+        },
+        {
+         "x": 90.9,
+         "y": 34.8,
+         "w": 3.2,
+         "h": 2.9,
+         "label": "Open",
+         "text": "Opens Underwriting for that property."
+        }
+       ]
+      },
+      {
+       "title": "Warnings on a row",
+       "text": "A row with a maturity decision pending, another whose loan has matured, and a made-up property with no loan yet. A property whose figures were worked out by an older version of the app shows “figures from v…” and a red version under **Computed**; Recompute fixes that.",
+       "img": "img/health/ref-data-health-15.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 80.3,
+         "y": 46.7,
+         "w": 8,
+         "h": 2.9,
+         "label": "extension undecided",
+         "text": "One of its loans waits for a maturity decision."
+        },
+        {
+         "x": 70.7,
+         "y": 46.7,
+         "w": 3.2,
+         "h": 2.9,
+         "label": "no T12",
+         "text": "No T12 in use yet: add one in its Documents or in Underwriting."
+        },
+        {
+         "x": 74.2,
+         "y": 46.7,
+         "w": 5.9,
+         "h": 2.9,
+         "label": "units unknown",
+         "text": "Its number of units isn’t set in its profile."
+        },
+        {
+         "x": 51.8,
+         "y": 45.7,
+         "w": 7.4,
+         "h": 8.6,
+         "label": "In-place NOI —",
+         "text": "No NOI yet: it comes from the T12."
+        },
+        {
+         "x": 80.3,
+         "y": 25.5,
+         "w": 5.4,
+         "h": 2.9,
+         "label": "loan matured",
+         "text": "A loan of this property has matured."
+        },
+        {
+         "x": 30.7,
+         "y": 74.6,
+         "w": 7.6,
+         "h": 1.8,
+         "label": "No loan data yet",
+         "text": "A property with no loan (here the made-up “Queens Gate”)."
+        },
+        {
+         "x": 4.8,
+         "y": 51.1,
+         "w": 24.2,
+         "h": 2.2,
+         "label": "Profile",
+         "text": "“Profile complete”, or what its profile still needs (address, units…)."
+        },
+        {
+         "x": 90.9,
+         "y": 46.7,
+         "w": 3.2,
+         "h": 2.9,
+         "label": "Open",
+         "text": "Opens Underwriting for this property."
+        }
+       ]
+      },
+      {
+       "title": "Open",
+       "text": "**Open** takes you to Underwriting with that property picked, ready for its T12 and figures.",
+       "img": "img/health/ref-data-health-16.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 23.6,
+         "y": 15.2,
+         "w": 12.7,
+         "h": 4.2,
+         "label": "Underwriting",
+         "text": "Opened (or brought forward) by Open."
+        },
+        {
+         "x": 9.7,
+         "y": 31.1,
+         "w": 84.2,
+         "h": 3.7,
+         "label": "Property",
+         "text": "The property whose Open you clicked."
+        },
+        {
+         "x": 5.1,
+         "y": 52.7,
+         "w": 88.8,
+         "h": 4.7,
+         "label": "Waiting for your review",
+         "text": "Its T12 still waits; Review opens the same window as in Data Health."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "recompute",
+     "title": "Recompute",
+     "views": [
+      {
+       "text": "Every figure from a T12 is kept with the property and worked out again when the app is updated. **Recompute all figures** does it now: the button reads “Recomputing…” while every property’s figures are worked out again from its saved files, then the page is drawn again. Use it after changing files outside the app, or when the **Computed** column shows an older version.",
+       "img": "img/health/ref-data-health-17.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 83.1,
+         "y": 21.2,
+         "w": 12,
+         "h": 3.8,
+         "label": "Recompute all figures",
+         "text": "Works everything out again."
+        },
+        {
+         "x": 70.2,
+         "y": 25.4,
+         "w": 24.9,
+         "h": 1.8,
+         "label": "Last recompute … · manual",
+         "text": "When, how many of the properties, and the reason (manual = this button)."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

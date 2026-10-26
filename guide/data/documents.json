@@ -1,0 +1,1624 @@
+{
+ "id": "documents",
+ "pages": [
+  {
+   "id": "add-a-document",
+   "kind": "howto",
+   "group": "Documents",
+   "title": "Add a document",
+   "description": "Save a T12, a rent roll, a loan agreement or any other file to a property.",
+   "intro": "Every property keeps its files in its own folder. Add them on the property’s page: they stay with the property, and the assistant reads them when you talk about it, so you never upload a file twice.",
+   "sections": [
+    {
+     "id": "add-files",
+     "title": "Add files",
+     "steps": [
+      {
+       "text": "Open the property’s page: click **Specific Property** under the tabs and pick the property. **Documents** is near the bottom of the page."
+      },
+      {
+       "text": "Pick what you are adding in **What you are adding**, or leave **Detect automatically** to let the app look at what is in the file.",
+       "img": "img/documents/add-a-document-01.jpg",
+       "w": 1313,
+       "h": 275,
+       "marks": [
+        {
+         "x": 80.1,
+         "y": 8.7,
+         "w": 10,
+         "h": 10.5,
+         "label": "Detect automatically",
+         "text": "The app reads the file and decides what it is."
+        },
+        {
+         "x": 80.1,
+         "y": 29.8,
+         "w": 10,
+         "h": 10.5,
+         "label": "T12",
+         "text": "Goes through [the T12 check](check-a-t12) before it is used."
+        },
+        {
+         "x": 80.1,
+         "y": 61.5,
+         "w": 10,
+         "h": 10.5,
+         "label": "Other",
+         "text": "Anything else: kept, and used for no figure."
+        }
+       ]
+      },
+      {
+       "text": "Click **Add files**, pick one or more files in the window that opens, and click **Open**. Each file is saved to the property’s folder and listed. Here a made-up loan agreement, added as **Loan agreement**.",
+       "img": "img/documents/add-a-document-02.jpg",
+       "w": 1313,
+       "h": 148,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 56.8,
+         "w": 72.7,
+         "h": 13.5,
+         "label": "The file",
+         "text": "Its name as you saved it; under it, its size, the day it was saved, and how much text the app read from it."
+        },
+        {
+         "x": 77.3,
+         "y": 65.9,
+         "w": 9.1,
+         "h": 17.6,
+         "label": "Type",
+         "text": "What the file is. See [Change or remove a file](change-or-remove-a-file)."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A file with the same name but different content is kept as a copy (“… (2)”), never replaced. The same file twice says “Already on file”. With **Detect automatically**, a rent roll or an agreement that names another of your properties is filed there instead."
+      },
+      {
+       "kind": "tip",
+       "text": "You can also drag files from a folder onto the **Documents** box."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "check-a-t12",
+     "anchor": "",
+     "text": "What happens when the file is a T12."
+    },
+    {
+     "page": "change-or-remove-a-file",
+     "anchor": "",
+     "text": "Change a file’s type, save a copy or remove it."
+    },
+    {
+     "page": "ref-documents",
+     "anchor": "the-documents-box",
+     "text": "Every part of the Documents box."
+    }
+   ]
+  },
+  {
+   "id": "check-a-t12",
+   "kind": "howto",
+   "group": "Documents",
+   "title": "Check a T12",
+   "description": "Look over how a new T12 was read, change what is wrong, and save the reading so its figures are used.",
+   "intro": "Every new T12 is read twice, by the app’s own reader and by Claude (“the AI” in the app’s words), before anything from it is used. When every check of the reader passes and Claude agrees, it is used at once. Otherwise the review window opens, and you decide.",
+   "before": [
+    "Claude connected, for the second reading: see [Connect Claude](connect-claude). Without it, see [When Claude isn’t connected](check-a-t12#when-claude-isnt-connected)."
+   ],
+   "sections": [
+    {
+     "id": "add-the-t12",
+     "title": "Add the T12",
+     "steps": [
+      {
+       "text": "On the property’s page, in **Documents**, leave **Detect automatically** in **What you are adding**, or pick **T12**."
+      },
+      {
+       "text": "Click **Add files** and pick the T12. Here every check of the reader passes on a made-up T12, but Claude reads two rows differently, so the review window opens.",
+       "img": "img/documents/check-a-t12-01.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 6.4,
+         "w": 53.9,
+         "h": 2.3,
+         "label": "The verdict",
+         "text": "How many of the reader’s checks fail, and whether Claude agrees."
+        },
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 97.1,
+         "h": 4.1,
+         "label": "What to look at",
+         "text": "Every failed check (red) and every row Claude reads differently (amber)."
+        },
+        {
+         "x": 88.5,
+         "y": 94.7,
+         "w": 10,
+         "h": 3.9,
+         "label": "Save this reading",
+         "text": "Saves it; its figures are then used everywhere."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Nothing from the T12 is saved or used until you click **Save this reading**."
+      }
+     ]
+    },
+    {
+     "id": "look-at-a-row-claude-reads-differently",
+     "title": "Look at a row Claude reads differently",
+     "steps": [
+      {
+       "text": "In **What to look at**, click a row number. The table jumps to that row, lit up. Here Claude puts Utility Reimbursements on the expense side; the reader has it as income.",
+       "img": "img/documents/check-a-t12-02.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 3.5,
+         "h": 1.8,
+         "label": "Row 17",
+         "text": "Jumps to the row."
+        },
+        {
+         "x": 1.5,
+         "y": 51,
+         "w": 98.5,
+         "h": 6.2,
+         "label": "The row",
+         "text": "Amber: Claude reads it differently."
+        },
+        {
+         "x": 32.7,
+         "y": 51.9,
+         "w": 5.4,
+         "h": 2.5,
+         "label": "Side",
+         "text": "Income here; Claude says Expense."
+        },
+        {
+         "x": 87.6,
+         "y": 51.5,
+         "w": 12.4,
+         "h": 3.4,
+         "label": "AI: …",
+         "text": "What Claude read."
+        }
+       ]
+      },
+      {
+       "text": "Decide from the file which reading is right. To change the row, pick another value in one of its lists. Here Utility Reimbursements moves to its own underwriting line, Utility Reimbursements (RUBS).",
+       "img": "img/documents/check-a-t12-03.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 52.6,
+         "y": 51.7,
+         "w": 12.1,
+         "h": 2.5,
+         "label": "Underwriting line",
+         "text": "Changed by you, so the row is marked “yours”."
+        },
+        {
+         "x": 9.3,
+         "y": 95.8,
+         "w": 7.3,
+         "h": 1.8,
+         "label": "1 change of yours · clear my changes",
+         "text": "How many changes you made; the link undoes them all."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The window works out every check again as soon as you change a row."
+      }
+     ]
+    },
+    {
+     "id": "use-a-different-amount",
+     "title": "Use a different amount",
+     "steps": [
+      {
+       "text": "Type the amount in the row’s **Amount used** box, and click elsewhere. Here it is Claude’s reading of Plumbing Repairs. The box turns green, and the note box red.",
+       "img": "img/documents/check-a-t12-04.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 65.9,
+         "y": 57.9,
+         "w": 8,
+         "h": 2.6,
+         "label": "Amount used",
+         "text": "Your amount (green)."
+        },
+        {
+         "x": 75,
+         "y": 57.9,
+         "w": 11.4,
+         "h": 2.6,
+         "label": "why (needed)",
+         "text": "Red until you write why."
+        },
+        {
+         "x": 87.6,
+         "y": 57.5,
+         "w": 12.4,
+         "h": 6.8,
+         "label": "AI: …",
+         "text": "Claude’s reading of this row: the total, and the month it reads differently."
+        },
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 97.1,
+         "h": 1.8,
+         "label": "A failed check",
+         "text": "With your amount, the expenses no longer add up to the total the statement prints."
+        }
+       ]
+      },
+      {
+       "text": "Write why in the note box, and click elsewhere. The note is kept with the reading and in the property’s change history."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "An amount that differs from the file can’t be saved without a note. **Save this reading** says which row still needs one."
+      }
+     ]
+    },
+    {
+     "id": "save-the-reading",
+     "title": "Save the reading",
+     "steps": [
+      {
+       "text": "Click **Save this reading**. If a check still fails, the app asks first.",
+       "img": "img/documents/check-a-t12-05.jpg",
+       "w": 384,
+       "h": 220,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 11.4,
+         "w": 87,
+         "h": 10.9,
+         "label": "Some checks still fail",
+         "text": "How many checks fail."
+        },
+        {
+         "x": 6.5,
+         "y": 25.9,
+         "w": 87,
+         "h": 36.4,
+         "label": "What is used",
+         "text": "Which figures are used if you save anyway."
+        },
+        {
+         "x": 38.8,
+         "y": 71.4,
+         "w": 21.1,
+         "h": 17.3,
+         "label": "Cancel",
+         "text": "Back to the window, to fix the rows."
+        },
+        {
+         "x": 62,
+         "y": 71.4,
+         "w": 31.5,
+         "h": 17.3,
+         "label": "Save anyway",
+         "text": "Saves the reading as it is."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save anyway** to use the T12 as it is, or **Cancel** to go back and fix the rows. Once saved, its figures are used everywhere."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Saved with a check still failing, your accounts are used as you set them. If you changed no figure, the statement’s printed totals are used, and Underwriting shows the difference."
+      }
+     ]
+    },
+    {
+     "id": "review-it-later",
+     "title": "Review it later",
+     "steps": [
+      {
+       "text": "Click **Keep it waiting** to close the window without saving. The T12 is kept, but nothing from it is used yet. Its row in **Documents** says so.",
+       "img": "img/documents/check-a-t12-06.jpg",
+       "w": 1313,
+       "h": 239,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 57.4,
+         "w": 72.7,
+         "h": 6.9,
+         "label": "T12: Waiting for your review",
+         "text": "Saved in the folder, but not used yet."
+        },
+        {
+         "x": 15.7,
+         "y": 57.4,
+         "w": 2.9,
+         "h": 6.9,
+         "label": "Review",
+         "text": "Opens the review window again."
+        },
+        {
+         "x": 77.3,
+         "y": 44.3,
+         "w": 9.1,
+         "h": 10.9,
+         "label": "Type: T12",
+         "text": "Detected as a T12."
+        }
+       ]
+      },
+      {
+       "text": "To review it from Underwriting instead, pick the property there. The T12 waits above the property’s figures, with **Review**.",
+       "img": "img/documents/check-a-t12-07.jpg",
+       "w": 1313,
+       "h": 402,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 4.2,
+         "w": 92.3,
+         "h": 8.2,
+         "label": "Property",
+         "text": "The property."
+        },
+        {
+         "x": 1.3,
+         "y": 52.6,
+         "w": 97.4,
+         "h": 10.6,
+         "label": "… is waiting for your review",
+         "text": "The file, why it waits, and that nothing from it is used yet."
+        },
+        {
+         "x": 93,
+         "y": 54.8,
+         "w": 4.4,
+         "h": 6.1,
+         "label": "Review",
+         "text": "Opens the review window."
+        }
+       ]
+      },
+      {
+       "text": "Click **Review**, look over the rows, and click **Save this reading**. The T12 is used at once: its NOI reaches the property’s page, the Portfolio page, the debt sizing and the refinance.",
+       "img": "img/documents/check-a-t12-08.jpg",
+       "w": 1313,
+       "h": 239,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 57.4,
+         "w": 72.7,
+         "h": 6.9,
+         "label": "T12: Reviewed by you",
+         "text": "In use. Other words you may see: “Checked by the reader and the AI” (both agreed), “Read by the reader only (Claude wasn’t connected)”, “Being read by the reader and the AI”."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Data Health lists every T12 still waiting, under “T12s that need your review”. See [Fix what Data Health finds](fix-data-health)."
+      }
+     ]
+    },
+    {
+     "id": "if-the-t12-names-no-property",
+     "title": "If the T12 names no property",
+     "text": "When you add a T12 on a property’s page and its sheet doesn’t name that property, the app asks which sheet is the property’s T12.",
+     "steps": [
+      {
+       "text": "Pick the sheet that is the property’s T12, or **None — keep it as a document**.",
+       "img": "img/documents/check-a-t12-09.jpg",
+       "w": 448,
+       "h": 254,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 42.9,
+         "w": 83.7,
+         "h": 12.2,
+         "label": "A sheet",
+         "text": "Use this sheet as the property’s T12."
+        },
+        {
+         "x": 6.5,
+         "y": 55.1,
+         "w": 83.7,
+         "h": 12.2,
+         "label": "None — keep it as a document",
+         "text": "Saved as an “Other” document; no figure is taken from it."
+        },
+        {
+         "x": 78.2,
+         "y": 78,
+         "w": 17.4,
+         "h": 14.2,
+         "label": "Save it",
+         "text": "Saves the file with your answer."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save it**. A sheet you picked then goes through the T12 check, as above."
+      }
+     ]
+    },
+    {
+     "id": "when-claude-isnt-connected",
+     "title": "When Claude isn’t connected",
+     "text": "Without Claude, the T12 can’t be checked against a second reading. The app says so and asks what to do; nothing from the T12 is used yet. The window is pictured in [Documents and the T12 check](ref-documents#when-claude-isnt-connected).",
+     "steps": [
+      {
+       "text": "Click **Use the reader’s reading** to use the T12 as the app’s reader read it. The button is there only when every check of the reader passes. The T12’s row then says “Read by the reader only (Claude wasn’t connected)”."
+      },
+      {
+       "text": "Or click **Review it myself** to open the review window, or **Keep it waiting** to decide later."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "tip",
+       "text": "Once Claude is connected, **Read again** in Underwriting reads the T12 with Claude too, and checks it."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "draft-the-underwriting",
+     "anchor": "",
+     "text": "Underwrite the property from its T12."
+    },
+    {
+     "page": "ref-documents",
+     "anchor": "the-t12-review-window",
+     "text": "Every part of the review window."
+    }
+   ]
+  },
+  {
+   "id": "change-or-remove-a-file",
+   "kind": "howto",
+   "group": "Documents",
+   "title": "Change or remove a file",
+   "description": "Change what a saved file is, save a copy of it on your computer, or remove it from the property.",
+   "intro": "Every file in a property’s **Documents** has a type, which you can change at any time, and every file can be removed. Removing always asks first.",
+   "sections": [
+    {
+     "id": "change-a-files-type",
+     "title": "Change a file’s type",
+     "steps": [
+      {
+       "text": "On the property’s page, find the file in **Documents**."
+      },
+      {
+       "text": "Pick the new type in the list on the file’s row. It is saved at once.",
+       "img": "img/documents/change-or-remove-a-file-01.jpg",
+       "w": 1313,
+       "h": 336,
+       "marks": [
+        {
+         "x": 77.1,
+         "y": 61.8,
+         "w": 7.7,
+         "h": 8.3,
+         "label": "T12",
+         "text": "Read and checked as a T12. (The lit type, Loan agreement, is the one it has now.)"
+        },
+        {
+         "x": 77.1,
+         "y": 86.9,
+         "w": 7.7,
+         "h": 8.3,
+         "label": "Other",
+         "text": "Kept, used for no figure."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Making a file a T12 sends it through [the T12 check](check-a-t12). Taking the T12 type away from the T12 in use rebuilds the property’s numbers from any other T12 on file."
+      }
+     ]
+    },
+    {
+     "id": "save-a-copy-on-your-computer",
+     "title": "Save a copy on your computer",
+     "steps": [
+      {
+       "text": "Click **Save copy** on the file’s row, and pick where to save it in the window that opens."
+      }
+     ]
+    },
+    {
+     "id": "remove-a-file",
+     "title": "Remove a file",
+     "steps": [
+      {
+       "text": "Click **Remove** on the file’s row. The app asks first, and says what goes with the file. Here it is the T12 in use.",
+       "img": "img/documents/change-or-remove-a-file-02.jpg",
+       "w": 384,
+       "h": 284,
+       "marks": [
+        {
+         "x": 6.5,
+         "y": 8.8,
+         "w": 87,
+         "h": 16.9,
+         "label": "Remove “…”?",
+         "text": "The file."
+        },
+        {
+         "x": 6.5,
+         "y": 28.5,
+         "w": 87,
+         "h": 42.3,
+         "label": "What goes with it",
+         "text": "Deleted from the property’s folder; for the T12 in use, its NOI too."
+        },
+        {
+         "x": 47.8,
+         "y": 77.8,
+         "w": 21.1,
+         "h": 13.4,
+         "label": "Cancel",
+         "text": "Keeps the file."
+        },
+        {
+         "x": 71,
+         "y": 77.8,
+         "w": 22.5,
+         "h": 13.4,
+         "label": "Remove",
+         "text": "Deletes it, and rebuilds the property’s numbers."
+        }
+       ]
+      },
+      {
+       "text": "Click **Remove**. The file is deleted from the property’s folder."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "warning",
+       "text": "Removing the T12 in use takes its NOI off the Portfolio page, the DSCR and the refinance. The numbers are rebuilt from any other T12 on file; otherwise the property has no NOI yet. The automatic backups keep a copy of every removed file: see [Back up and restore](back-up-and-restore)."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "add-a-document",
+     "anchor": "",
+     "text": "Add another file."
+    },
+    {
+     "page": "ref-documents",
+     "anchor": "the-documents-box",
+     "text": "Every part of a file’s row."
+    }
+   ]
+  },
+  {
+   "id": "split-a-multi-property-file",
+   "kind": "howto",
+   "group": "Documents",
+   "title": "Split a file that covers several properties",
+   "description": "Say which part of a workbook or a PDF belongs to which property.",
+   "intro": "A workbook can hold several properties’ statements, one per sheet or one after another, and one PDF can hold several agreements. Such a file never goes anywhere by itself: you say which part is whose, and each property reads only its own part.",
+   "sections": [
+    {
+     "id": "say-which-part-is-whose",
+     "title": "Say which part is whose",
+     "steps": [
+      {
+       "text": "On one of the properties’ pages, click **Add files** and pick the file. The app lists its parts, and sets each part whose name matches one of your properties to that property. Here a made-up workbook with three sheets, added on Sample Gardens’ page.",
+       "img": "img/documents/split-a-multi-property-file-01.jpg",
+       "w": 512,
+       "h": 580,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 32,
+         "w": 87.1,
+         "h": 4.7,
+         "label": "This property",
+         "text": "Part 1 names Sample Gardens: set to it."
+        },
+        {
+         "x": 6.4,
+         "y": 49.7,
+         "w": 87.1,
+         "h": 4.7,
+         "label": "Another property",
+         "text": "Part 2 names Sample Oaks: it goes to Sample Oaks’ folder."
+        },
+        {
+         "x": 6.4,
+         "y": 59.7,
+         "w": 87.1,
+         "h": 17.5,
+         "label": "Not linked",
+         "text": "Maple Court is no property in the app: not ticked, “Don’t link”."
+        }
+       ]
+      },
+      {
+       "text": "Check each part’s property, and change any that is wrong. Tick a part to link it; a part that is none of your properties stays on **Don’t link**."
+      },
+      {
+       "text": "To give one part to a second property too, click **+ another property** under it. To make a new property from a part, pick **Add as a new property** in its list.",
+       "img": "img/documents/split-a-multi-property-file-02.jpg",
+       "w": 512,
+       "h": 611,
+       "marks": [
+        {
+         "x": 6.4,
+         "y": 52.2,
+         "w": 87.1,
+         "h": 4.4,
+         "label": "A second property",
+         "text": "Added by **+ another property**: pick the second property, or leave it empty."
+        },
+        {
+         "x": 6.4,
+         "y": 69,
+         "w": 87.1,
+         "h": 4.4,
+         "label": "➕ Add as a new property “Maple Court (made-up)”",
+         "text": "Creates that property and links this part to it."
+        },
+        {
+         "x": 6.4,
+         "y": 63,
+         "w": 2.7,
+         "h": 2.3,
+         "label": "Ticked by itself",
+         "text": "Picking a property ticks the part."
+        }
+       ]
+      },
+      {
+       "text": "Click **Approve**. Each property gets the file with its own part, and each T12 part goes through [the T12 check](check-a-t12) for its property. The file’s row says which part is this property’s, and the T12 line under it where its part stands in the check. Here part 3 was set back to “Don’t link” first.",
+       "img": "img/documents/split-a-multi-property-file-03.jpg",
+       "w": 1313,
+       "h": 346,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 39.7,
+         "w": 72.7,
+         "h": 4.8,
+         "label": "This property’s part: …",
+         "text": "Which sheet of the file is Sample Gardens’: only its numbers are read for it."
+        },
+        {
+         "x": 32.8,
+         "y": 39.7,
+         "w": 3.1,
+         "h": 4.8,
+         "label": "Change",
+         "text": "Asks the question again, to give another answer."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Two parts given to one property are added together."
+      }
+     ]
+    },
+    {
+     "id": "answer-a-file-that-waits",
+     "title": "Answer a file that waits",
+     "text": "A file saved before anyone said which part is whose (by the assistant, say) waits for an answer: none of its numbers are used for the property until you give one.",
+     "steps": [
+      {
+       "text": "On the property’s page, find the file’s row in **Documents**: it asks which part is this property’s. Click **Answer**.",
+       "img": "img/documents/split-a-multi-property-file-04.jpg",
+       "w": 1313,
+       "h": 222,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 87.6,
+         "w": 72.7,
+         "h": 7.4,
+         "label": "It has 3 parts — which one is this property’s?",
+         "text": "Its numbers aren’t used until you say."
+        },
+        {
+         "x": 37.3,
+         "y": 87.6,
+         "w": 3.1,
+         "h": 7.4,
+         "label": "Answer",
+         "text": "Opens the question."
+        }
+       ]
+      },
+      {
+       "text": "Tick the property’s part, and pick the property in its list. When no part names the property, nothing is set for you.",
+       "img": "img/documents/split-a-multi-property-file-05.jpg",
+       "w": 512,
+       "h": 560,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 8.8,
+         "w": 90,
+         "h": 6.6,
+         "label": "Which part is Sample Pines (example)’s?",
+         "text": "Pick it below: nothing is set for you."
+        },
+        {
+         "x": 6.4,
+         "y": 29.6,
+         "w": 87.1,
+         "h": 4.8,
+         "label": "Property",
+         "text": "Pick “Sample Pines (example) (this property)” on the right part."
+        },
+        {
+         "x": 61.1,
+         "y": 89.6,
+         "w": 15.8,
+         "h": 6.8,
+         "label": "Cancel",
+         "text": "The file keeps waiting."
+        },
+        {
+         "x": 78.5,
+         "y": 89.6,
+         "w": 17.6,
+         "h": 6.8,
+         "label": "Approve",
+         "text": "Links the part; its numbers are used from now on."
+        }
+       ]
+      },
+      {
+       "text": "Click **Approve**. The part’s numbers are used from now on."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Data Health lists every file that waits for an answer. See [Fix what Data Health finds](fix-data-health)."
+      }
+     ]
+    },
+    {
+     "id": "split-a-pdf-by-pages",
+     "title": "Split a PDF by pages",
+     "text": "One PDF can hold several agreements (split it into parts by pages), or one agreement can cover several properties (give the part to each).",
+     "steps": [
+      {
+       "text": "On the PDF’s row in **Documents**, click **Pages & properties**. Here a made-up two-page PDF on Sample Gardens’ page.",
+       "img": "img/documents/split-a-multi-property-file-06.jpg",
+       "w": 576,
+       "h": 340,
+       "marks": [
+        {
+         "x": 13,
+         "y": 43.8,
+         "w": 11.1,
+         "h": 7.6,
+         "label": "Pages … to …",
+         "text": "The part’s first and last page."
+        },
+        {
+         "x": 5.7,
+         "y": 52.6,
+         "w": 88.5,
+         "h": 7.9,
+         "label": "Property",
+         "text": "The property this part belongs to."
+        },
+        {
+         "x": 3.5,
+         "y": 72.6,
+         "w": 20.7,
+         "h": 5.3,
+         "label": "+ Add a part (pages)",
+         "text": "Another page range, for another property."
+        }
+       ]
+      },
+      {
+       "text": "For each part, type its first and last page, and pick its property. Click **+ Add a part (pages)** for the next part, or **+ another property** to give the same pages to a second property too."
+      },
+      {
+       "text": "Click **Approve**. The file is copied to each property named, and each property reads only its own pages."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "check-a-t12",
+     "anchor": "",
+     "text": "What happens to each T12 part."
+    },
+    {
+     "page": "ref-documents",
+     "anchor": "files-with-several-parts",
+     "text": "Every control of the parts and pages windows."
+    }
+   ]
+  },
+  {
+   "id": "read-a-scanned-pdf",
+   "kind": "howto",
+   "group": "Documents",
+   "title": "Read a scanned PDF",
+   "description": "Add a PDF whose pages are scans, and see which pages were read by OCR.",
+   "intro": "A PDF is read page by page. A page that is a picture, such as a scan, is read by OCR: the computer reads the letters in the picture. OCR can make mistakes, so the app always says which pages it read that way.",
+   "sections": [
+    {
+     "id": "add-the-pdf",
+     "title": "Add the PDF",
+     "steps": [
+      {
+       "text": "On the property’s page, click **Add files** in **Documents**, and pick the PDF."
+      },
+      {
+       "text": "Watch the card at the bottom left: it shows each page as it is read. You can keep working meanwhile.",
+       "img": "img/documents/read-a-scanned-pdf-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 1.1,
+         "y": 92.4,
+         "w": 25,
+         "h": 5.8,
+         "label": "The reading card",
+         "text": "One card per file being read: its name, and the page it is on (“reading scanned page 2 of 2”: “scanned page” means it is read by OCR)."
+        },
+        {
+         "x": 22.3,
+         "y": 94.1,
+         "w": 3,
+         "h": 2.5,
+         "label": "Stop",
+         "text": "Stops after this page."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "**Stop** saves nothing: add the file again to go on where it stopped (the pages already read are kept). If the app is closed halfway, it goes on reading at the next start."
+      }
+     ]
+    },
+    {
+     "id": "see-how-it-was-read",
+     "title": "See how it was read",
+     "steps": [
+      {
+       "text": "When the card goes away, find the file in **Documents**. Its row says how it was read, with the pages read by OCR in amber.",
+       "img": "img/documents/read-a-scanned-pdf-02.jpg",
+       "w": 1313,
+       "h": 296,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 40.7,
+         "w": 62.7,
+         "h": 5.6,
+         "label": "2 pages · page 2 read by OCR — may contain errors",
+         "text": "The pages read by OCR (amber), and any page that couldn’t be read."
+        },
+        {
+         "x": 67.4,
+         "y": 32.9,
+         "w": 9,
+         "h": 9,
+         "label": "Pages & properties",
+         "text": "Split the PDF by pages, or give it to several properties. See [Split a file that covers several properties](split-a-multi-property-file#split-a-pdf-by-pages)."
+        }
+       ]
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A file with no readable text at all says “no readable text” on its row."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "split-a-multi-property-file",
+     "anchor": "split-a-pdf-by-pages",
+     "text": "Split the PDF by pages."
+    },
+    {
+     "page": "ref-documents",
+     "anchor": "",
+     "text": "Every part of the Documents box."
+    }
+   ]
+  },
+  {
+   "id": "ref-documents",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "Documents and the T12 check",
+   "description": "Every part of a property’s Documents box, the T12 review window, and the windows that ask which part of a file is whose.",
+   "intro": "The pictures use made-up properties and made-up files. Point at a number, on the picture or in the list, to find it.",
+   "sections": [
+    {
+     "id": "the-documents-box",
+     "title": "The Documents box",
+     "text": "On every property’s page, with or without a loan: the files saved in the property’s folder.",
+     "views": [
+      {
+       "title": "No files yet",
+       "text": "",
+       "img": "img/documents/ref-documents-01.jpg",
+       "w": 1313,
+       "h": 127,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 13.4,
+         "w": 39.8,
+         "h": 18.9,
+         "label": "Documents",
+         "text": "The files saved in this property’s folder."
+        },
+        {
+         "x": 1.6,
+         "y": 32.3,
+         "w": 39.8,
+         "h": 12.6,
+         "label": "Saved for …",
+         "text": "Which property. The assistant reads these when you talk about it."
+        },
+        {
+         "x": 80.3,
+         "y": 16.9,
+         "w": 11.7,
+         "h": 24.4,
+         "label": "What you are adding",
+         "text": "The type of the next files you add (next picture)."
+        },
+        {
+         "x": 92.6,
+         "y": 18.1,
+         "w": 5.8,
+         "h": 22,
+         "label": "Add files",
+         "text": "Opens your computer’s file window: pick one or more files and click Open. Dropping files on this box does the same."
+        },
+        {
+         "x": 0.1,
+         "y": 58.3,
+         "w": 99.8,
+         "h": 40.9,
+         "label": "Nothing yet",
+         "text": "Shown until the first file is added."
+        }
+       ]
+      },
+      {
+       "title": "What you are adding",
+       "text": "The same types are in the list on each file’s row, where you can change them later.",
+       "img": "img/documents/ref-documents-02.jpg",
+       "w": 1313,
+       "h": 275,
+       "marks": [
+        {
+         "x": 80.1,
+         "y": 8.7,
+         "w": 10,
+         "h": 10.5,
+         "label": "Detect automatically",
+         "text": "The app reads the file and decides: a T12, a rent roll, an agreement… A rent roll or an agreement that names another property is filed there instead."
+        },
+        {
+         "x": 80.1,
+         "y": 19.3,
+         "w": 10,
+         "h": 10.5,
+         "label": "Loan agreement",
+         "text": "The loan agreement. It is read when you ask to fill in the loan from it, and it is one of Claude’s sources for its stories and What to push."
+        },
+        {
+         "x": 80.1,
+         "y": 29.8,
+         "w": 10,
+         "h": 10.5,
+         "label": "T12",
+         "text": "The operating statement. It goes through the T12 check before it is used."
+        },
+        {
+         "x": 80.1,
+         "y": 40.4,
+         "w": 10,
+         "h": 10.5,
+         "label": "Rent roll",
+         "text": "The rent roll: units, occupancy and rents."
+        },
+        {
+         "x": 80.1,
+         "y": 50.9,
+         "w": 10,
+         "h": 10.5,
+         "label": "Unit Statistics",
+         "text": "A unit statistics report."
+        },
+        {
+         "x": 80.1,
+         "y": 61.5,
+         "w": 10,
+         "h": 10.5,
+         "label": "Other",
+         "text": "Anything else: kept, and used for no figure."
+        }
+       ]
+      },
+      {
+       "title": "A file in the list",
+       "text": "Each file is a row: its name, size and the day it was saved, how it was read, its type, and two buttons.",
+       "img": "img/documents/ref-documents-03.jpg",
+       "w": 1313,
+       "h": 148,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 56.8,
+         "w": 72.7,
+         "h": 13.5,
+         "label": "The file",
+         "text": "Its name as you saved it. Under it: its size and the day it was saved, or “no readable text” when the app can’t read any."
+        },
+        {
+         "x": 3.7,
+         "y": 81.4,
+         "w": 72.7,
+         "h": 11.1,
+         "label": "How it was read",
+         "text": "How much text was read from it; for a PDF, its pages and which were read by OCR."
+        },
+        {
+         "x": 77.3,
+         "y": 65.9,
+         "w": 9.1,
+         "h": 17.6,
+         "label": "Type",
+         "text": "What the file is. Change it here at any time."
+        },
+        {
+         "x": 87.3,
+         "y": 65.7,
+         "w": 5.6,
+         "h": 17.9,
+         "label": "Save copy",
+         "text": "Saves a copy wherever you choose on your computer."
+        },
+        {
+         "x": 93.8,
+         "y": 65.7,
+         "w": 4.6,
+         "h": 17.9,
+         "label": "Remove",
+         "text": "Deletes it from the property’s folder; it asks first."
+        },
+        {
+         "x": 93.6,
+         "y": 14.9,
+         "w": 4.8,
+         "h": 20.3,
+         "label": "Folder",
+         "text": "Opens the documents folder on your computer."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "the-t12-review-window",
+     "title": "The T12 review window",
+     "text": "Opens when a new T12 fails a check of the app’s reader, or Claude reads it differently. Nothing from the T12 is used until you save. A T12’s row in **Documents** says where it stands: “Being read by the reader and the AI”, “Waiting for your review” (with **Review**), “Checked by the reader and the AI”, “Reviewed by you”, or “Read by the reader only (Claude wasn’t connected)”. For the steps, see [Check a T12](check-a-t12).",
+     "views": [
+      {
+       "title": "The window",
+       "text": "",
+       "img": "img/documents/ref-documents-04.jpg",
+       "w": 1401,
+       "h": 876,
+       "marks": [
+        {
+         "x": 1.4,
+         "y": 4.1,
+         "w": 52.4,
+         "h": 1.8,
+         "label": "The file and sheet",
+         "text": "Under the title, which names the property. Rows and columns are numbered as Excel numbers them, so you can find each one in the file."
+        },
+        {
+         "x": 11.9,
+         "y": 6.5,
+         "w": 13.4,
+         "h": 1.9,
+         "label": "The verdict",
+         "text": "How many of the reader’s checks fail (or “every check passes”), then whether the AI agrees."
+        },
+        {
+         "x": 96.5,
+         "y": 1.4,
+         "w": 2.1,
+         "h": 2.3,
+         "label": "×",
+         "text": "Closes the window without saving, like **Keep it waiting**."
+        },
+        {
+         "x": 1.4,
+         "y": 11.5,
+         "w": 97.1,
+         "h": 7.9,
+         "label": "Income · Expenses · NOI",
+         "text": "The accounts added up, against the totals the statement prints: ✓ when they match, ✗ in red when they don’t."
+        },
+        {
+         "x": 1.4,
+         "y": 20.8,
+         "w": 97.1,
+         "h": 4.1,
+         "label": "What to look at",
+         "text": "Every failed check (red) and every point where the AI reads it differently (amber), with its row. Click a row number to jump to it."
+        },
+        {
+         "x": 1.4,
+         "y": 26.3,
+         "w": 97.1,
+         "h": 57.5,
+         "label": "The rows",
+         "text": "Every row of the file and what the reader made of it (next picture)."
+        },
+        {
+         "x": 79,
+         "y": 94.7,
+         "w": 9,
+         "h": 3.9,
+         "label": "Keep it waiting",
+         "text": "Closes the window. The T12 waits, unused, in Documents, Underwriting and Data Health."
+        },
+        {
+         "x": 88.5,
+         "y": 94.7,
+         "w": 10,
+         "h": 3.9,
+         "label": "Save this reading",
+         "text": "Saves the reading with your changes; its figures are used everywhere."
+        }
+       ]
+      },
+      {
+       "title": "How each row was read",
+       "text": "One line per row of the file. The file’s own name column comes first, then what the reader made of the row. The months and the total, as in the file, are further right: scroll the table sideways.",
+       "img": "img/documents/ref-documents-05.jpg",
+       "w": 1361,
+       "h": 504,
+       "marks": [
+        {
+         "x": 0.1,
+         "y": 0.2,
+         "w": 3,
+         "h": 7.6,
+         "label": "Row",
+         "text": "The row number in Excel."
+        },
+        {
+         "x": 20.3,
+         "y": 9.8,
+         "w": 10.7,
+         "h": 4.4,
+         "label": "What the reader made of it",
+         "text": "Account, Category name, Total, Income total, Expense total, Net Operating Income, Not operating, or Above the header, Header row, Empty."
+        },
+        {
+         "x": 32.1,
+         "y": 9.8,
+         "w": 5.5,
+         "h": 4.4,
+         "label": "Side",
+         "text": "Income or Expense (accounts only)."
+        },
+        {
+         "x": 38.2,
+         "y": 8.3,
+         "w": 13.8,
+         "h": 6.8,
+         "label": "Category (in the file)",
+         "text": "The category the account sits under in the file itself."
+        },
+        {
+         "x": 52.7,
+         "y": 9.8,
+         "w": 12.5,
+         "h": 4.4,
+         "label": "Underwriting line",
+         "text": "The line of the Underwriting table it adds to, with the item it is (e.g. “the vacancy”) under it."
+        },
+        {
+         "x": 66.3,
+         "y": 9.8,
+         "w": 8.2,
+         "h": 4.5,
+         "label": "Amount used",
+         "text": "The amount the reader takes (grey). Type another to use yours; it then needs a note."
+        },
+        {
+         "x": 75.7,
+         "y": 9.8,
+         "w": 11.8,
+         "h": 4.5,
+         "label": "Your note",
+         "text": "Why you changed this row. Kept with the reading and in the property’s change history."
+        },
+        {
+         "x": 88.7,
+         "y": 9.2,
+         "w": 11.3,
+         "h": 3,
+         "label": "Check",
+         "text": "✓ = its months add up to its total. A failed check is in red; a row the AI reads differently, in amber, with “AI: …”."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "files-with-several-parts",
+     "title": "Files with several parts",
+     "text": "A workbook with several properties’ statements asks which part is whose before it is saved. Afterwards the file’s row says “This property’s part: …” with **Change**, or, for a file still waiting, “It has N parts — which one is this property’s?” with **Answer**. See [Split a file that covers several properties](split-a-multi-property-file).",
+     "views": [
+      {
+       "title": "Which part is whose?",
+       "text": "A made-up workbook with three sheets, added on Sample Elms’ page.",
+       "img": "img/documents/ref-documents-06.jpg",
+       "w": 512,
+       "h": 580,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 8.3,
+         "w": 92.2,
+         "h": 13.8,
+         "label": "The file",
+         "text": "How many parts and sheets, and which parts are already set to this property."
+        },
+        {
+         "x": 10.7,
+         "y": 28.4,
+         "w": 48.8,
+         "h": 2.8,
+         "label": "Part 1",
+         "text": "Sheet 1 of 3 · its sheet name · the property name in it; under it, what it is (T12) and its NOI."
+        },
+        {
+         "x": 6.4,
+         "y": 25.7,
+         "w": 2.7,
+         "h": 2.4,
+         "label": "Ticked",
+         "text": "This part will be linked."
+        },
+        {
+         "x": 6.4,
+         "y": 32,
+         "w": 87.1,
+         "h": 4.7,
+         "label": "This property",
+         "text": "Set to Sample Elms: its name matches. Each list offers Don’t link, this property, every other property, and “Add as a new property” named after the part."
+        },
+        {
+         "x": 6.4,
+         "y": 49.7,
+         "w": 87.1,
+         "h": 4.7,
+         "label": "Another property",
+         "text": "Part 2 names Sample Oaks: it goes to Sample Oaks’ folder."
+        },
+        {
+         "x": 6.4,
+         "y": 59.7,
+         "w": 87.1,
+         "h": 17.5,
+         "label": "Not linked",
+         "text": "Maple Court is no property in the app: not ticked, “Don’t link”."
+        },
+        {
+         "x": 61.1,
+         "y": 90,
+         "w": 15.8,
+         "h": 6.6,
+         "label": "Cancel",
+         "text": "Nothing is saved."
+        },
+        {
+         "x": 78.5,
+         "y": 90,
+         "w": 17.6,
+         "h": 6.6,
+         "label": "Approve",
+         "text": "Saves the file to each property, with its own part."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "a-t12-that-names-no-property",
+     "title": "A T12 that names no property",
+     "views": [
+      {
+       "text": "A T12 added on a property’s page whose sheet doesn’t name that property.",
+       "img": "img/documents/ref-documents-07.jpg",
+       "w": 448,
+       "h": 254,
+       "marks": [
+        {
+         "x": 4.5,
+         "y": 7.9,
+         "w": 91.1,
+         "h": 9.4,
+         "label": "Which sheet is …’s T12?",
+         "text": "The property you are on."
+        },
+        {
+         "x": 4.5,
+         "y": 18.9,
+         "w": 91.1,
+         "h": 15.7,
+         "label": "Why it asks",
+         "text": "The file doesn’t name this property."
+        },
+        {
+         "x": 6.5,
+         "y": 42.9,
+         "w": 83.7,
+         "h": 12.2,
+         "label": "A sheet",
+         "text": "Use this sheet as the property’s T12; it then goes through the T12 check."
+        },
+        {
+         "x": 6.5,
+         "y": 55.1,
+         "w": 83.7,
+         "h": 12.2,
+         "label": "None — keep it as a document",
+         "text": "Saved as an “Other” document; no figure is taken from it."
+        },
+        {
+         "x": 78.2,
+         "y": 78,
+         "w": 17.4,
+         "h": 14.2,
+         "label": "Save it",
+         "text": "Saves the file with your answer."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "pages-properties",
+     "title": "Pages & properties",
+     "views": [
+      {
+       "text": "Opened by **Pages & properties** on a PDF’s row. Split the PDF into parts by pages, or give a part to several properties: each property reads only its own pages.",
+       "img": "img/documents/ref-documents-08.jpg",
+       "w": 576,
+       "h": 320,
+       "marks": [
+        {
+         "x": 3.5,
+         "y": 6.3,
+         "w": 93.1,
+         "h": 7.5,
+         "label": "Which pages belong to which property?",
+         "text": "The file and how many pages it has."
+        },
+        {
+         "x": 13,
+         "y": 40.3,
+         "w": 11.1,
+         "h": 8.1,
+         "label": "Pages … to …",
+         "text": "The part’s first and last page."
+        },
+        {
+         "x": 40.2,
+         "y": 40.3,
+         "w": 49,
+         "h": 8.1,
+         "label": "What it is",
+         "text": "An optional name for the part (e.g. Loan agreement, Phase 1)."
+        },
+        {
+         "x": 90.2,
+         "y": 40.9,
+         "w": 4,
+         "h": 7,
+         "label": "✕",
+         "text": "Removes the part."
+        },
+        {
+         "x": 5.7,
+         "y": 49.7,
+         "w": 88.5,
+         "h": 8.4,
+         "label": "Property",
+         "text": "The property this part belongs to."
+        },
+        {
+         "x": 5.7,
+         "y": 60,
+         "w": 17.4,
+         "h": 5.2,
+         "label": "+ another property",
+         "text": "The same pages go to a second property too."
+        },
+        {
+         "x": 3.5,
+         "y": 70.9,
+         "w": 20.7,
+         "h": 5.6,
+         "label": "+ Add a part (pages)",
+         "text": "Another page range, for another property."
+        },
+        {
+         "x": 65.4,
+         "y": 81.9,
+         "w": 14.1,
+         "h": 11.9,
+         "label": "Cancel",
+         "text": "Nothing changes."
+        },
+        {
+         "x": 80.9,
+         "y": 81.9,
+         "w": 15.7,
+         "h": 11.9,
+         "label": "Approve",
+         "text": "Saves the parts; the file is copied to each property named."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "when-claude-isnt-connected",
+     "title": "When Claude isn’t connected",
+     "text": "Without Claude, a new T12 can’t be checked against a second reading, so the app asks what to do. Here a made-up T12 added while Claude is signed out.",
+     "views": [
+      {
+       "title": "Claude isn’t connected",
+       "text": "",
+       "img": "img/documents/ref-documents-09.jpg",
+       "w": 512,
+       "h": 210,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 9.5,
+         "w": 92.2,
+         "h": 11.4,
+         "label": "Claude isn’t connected",
+         "text": "“The AI couldn’t read this T12” when Claude is connected but its reading failed."
+        },
+        {
+         "x": 3.9,
+         "y": 24.8,
+         "w": 92.2,
+         "h": 28.6,
+         "label": "The file",
+         "text": "Which property and file, and that it hasn’t been checked. Nothing from it is used yet."
+        },
+        {
+         "x": 3.9,
+         "y": 57.1,
+         "w": 92.2,
+         "h": 9.5,
+         "label": "The reader’s checks",
+         "text": "Whether the app’s own reader passes every check."
+        },
+        {
+         "x": 4.9,
+         "y": 74.3,
+         "w": 24.5,
+         "h": 16.2,
+         "label": "Keep it waiting",
+         "text": "Kept, unused, until you review it, or Claude is back and you read it again."
+        },
+        {
+         "x": 31,
+         "y": 74.3,
+         "w": 37.4,
+         "h": 16.2,
+         "label": "Use the reader’s reading",
+         "text": "Shown only when every check passes: the T12 is used as the reader read it."
+        },
+        {
+         "x": 69.9,
+         "y": 74.3,
+         "w": 26.2,
+         "h": 16.2,
+         "label": "Review it myself",
+         "text": "Opens the review window."
+        }
+       ]
+      },
+      {
+       "title": "Used as the reader read it",
+       "text": "",
+       "img": "img/documents/ref-documents-10.jpg",
+       "w": 1313,
+       "h": 387,
+       "marks": [
+        {
+         "x": 3.7,
+         "y": 35.4,
+         "w": 72.7,
+         "h": 4.3,
+         "label": "T12: Read by the reader only (Claude wasn’t connected)",
+         "text": "In use without Claude’s check. Once Claude is connected, **Read again** in Underwriting checks it with Claude."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
