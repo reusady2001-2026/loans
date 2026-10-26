@@ -21,20 +21,26 @@
   }
 
   // The most each limit allows, and the binding one among those the lender uses.
-  // o: { noi, value, rate, amortMonths, limits:{dscr, dscrIO, ltv, dy}, off:[keys not used] }
+  // o: { noi, value, rate, amortMonths, limits:{dscr, dscrIO, ltv, dy}, off:[keys not used], ahead }
+  // (2026-10-26, the operator: extensions of several loans together) ahead: { amount, constant, rate } — debt that sits
+  // ahead of this loan on the same property (a mezzanine's senior). The lender's limits then apply to the two together,
+  // as a mezzanine lender looks at them: what this loan may be is what the limits allow in all, less the debt ahead.
   function size(o){
     var noi = o.noi, lim = o.limits || {}, off = o.off || [], k = loanConstant(o.rate, o.amortMonths || 360);
+    var a = o.ahead || null, aAmt = (a && a.amount > 0) ? a.amount : 0, aK = (a && a.constant > 0) ? a.constant : 0, aR = (a && a.rate > 0) ? a.rate : 0;
     var legs = {
-      "DSCR": (noi > 0 && lim.dscr > 0 && k > 0) ? noi / (lim.dscr * k) : null,
-      "DSCR IO": (noi > 0 && lim.dscrIO > 0 && o.rate > 0) ? noi / (lim.dscrIO * o.rate) : null,
-      "LTV": (o.value > 0 && lim.ltv > 0) ? lim.ltv * o.value : null,
-      "Debt Yield": (noi > 0 && lim.dy > 0) ? noi / lim.dy : null
+      "DSCR": (noi > 0 && lim.dscr > 0 && k > 0) ? (noi / lim.dscr - aAmt * aK) / k : null,
+      "DSCR IO": (noi > 0 && lim.dscrIO > 0 && o.rate > 0) ? (noi / lim.dscrIO - aAmt * aR) / o.rate : null,
+      "LTV": (o.value > 0 && lim.ltv > 0) ? lim.ltv * o.value - aAmt : null,
+      "Debt Yield": (noi > 0 && lim.dy > 0) ? noi / lim.dy - aAmt : null
     };
-    var caps = Object.keys(legs).filter(function (key){ return isNum(legs[key]) && legs[key] > 0; })
+    // with debt ahead a limit can leave nothing for this loan: it allows $0 (it still binds), never a negative amount
+    if (aAmt > 0) Object.keys(legs).forEach(function (key){ if (isNum(legs[key]) && legs[key] < 0) legs[key] = 0; });
+    var caps = Object.keys(legs).filter(function (key){ return isNum(legs[key]) && (legs[key] > 0 || (aAmt > 0 && legs[key] === 0)); })
       .map(function (key){ return { key: key, amt: legs[key], used: off.indexOf(key) < 0 }; })
       .sort(function (a, b){ return a.amt - b.amt; });
     var used = caps.filter(function (c){ return c.used; }); if (!used.length) used = caps;
-    return { legs: legs, caps: caps, maxLoan: used.length ? used[0].amt : 0, binding: used.length ? used[0].key : null, constant: k };
+    return { legs: legs, caps: caps, maxLoan: used.length ? used[0].amt : 0, binding: used.length ? used[0].key : null, constant: k, ahead: aAmt > 0 ? { amount: aAmt, constant: aK, rate: aR } : null };
   }
 
   // What the lender asks for the early-payoff penalty on an extension (D7, the operator's decision):
@@ -58,20 +64,22 @@
     return r2((isNum(f.value) ? Math.max(0, f.value) : 0) * Math.max(0, amount));
   }
 
-  // Extend with today's lender. o: { owed, noi, value, rate, amortMonths, limits, off, penaltyFull, penalty, fee }
+  // Extend with today's lender. o: { owed, noi, value, rate, amortMonths, limits, off, penaltyFull, penalty, fee, ahead }
+  // With debt ahead (a mezzanine's senior), the coverage it shows is of the two loans together.
   function extend(o){
-    var s = size(o), owed = isNum(o.owed) ? o.owed : 0;
+    var s = size(o), owed = isNum(o.owed) ? o.owed : 0, a = s.ahead;
     var allowed = s.maxLoan, payDown = (allowed > 0) ? Math.max(0, owed - allowed) : owed;
     var amount = Math.max(0, owed - payDown), noi = o.noi;
+    var aAmt = a ? a.amount : 0, tot = amount + aAmt, ds = amount * s.constant + aAmt * (a ? a.constant : 0), dsIO = amount * o.rate + aAmt * (a ? a.rate : 0);
     var implied = amount > 0 ? {
-      dscr: (s.constant > 0 && noi != null) ? noi / (amount * s.constant) : null,
-      dscrIO: (o.rate > 0 && noi != null) ? noi / (amount * o.rate) : null,
-      ltv: o.value > 0 ? amount / o.value : null,
-      dy: noi != null ? noi / amount : null } : null;
+      dscr: (s.constant > 0 && noi != null && ds > 0) ? noi / ds : null,
+      dscrIO: (o.rate > 0 && noi != null && dsIO > 0) ? noi / dsIO : null,
+      ltv: o.value > 0 ? tot / o.value : null,
+      dy: noi != null ? noi / tot : null } : null;
     var pen = penaltyOf(o.penaltyFull, owed, payDown, o.penalty), fee = feeOf(amount, o.fee);
     return { owed: r2(owed), allowed: r2(allowed), binding: s.binding, legs: s.legs, caps: s.caps, constant: s.constant,
              payDown: r2(payDown), needed: payDown > 0.5, amount: r2(amount), implied: implied,
-             penalty: pen, fee: fee, cash: r2(payDown + pen.amount + fee) };
+             penalty: pen, fee: fee, cash: r2(payDown + pen.amount + fee), ahead: a };
   }
 
   // D1 (agreed as revised): a loan that must be dealt with — the property can't support what you owe, and today's loan

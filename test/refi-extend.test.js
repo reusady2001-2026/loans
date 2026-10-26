@@ -36,6 +36,23 @@ ok(P({ how: 'paydown' }).amount === 100000, 'on the pay-down only: 10% of the ba
 ok(P({ how: 'pct', pct: 0.25 }).amount === 250000 && P({ how: 'amt', amt: 300000 }).amount === 300000, 'a part: 25% of it, or $300,000');
 ok(P({ how: 'none' }).amount === 0 && P(null).assumed && P(null).how === 'paydown', 'none; and nothing picked = on the pay-down, assumed');
 
+// (2026-10-26) a mezzanine behind its senior: the limits apply to the two together, less the senior's extended amount
+{ const SR = 30000000, srK = K, srR = RATE, mzR = 0.09, mzc = mzR / 12, mzK = 12 * mzc / (1 - Math.pow(1 + mzc, -360));
+  const ahead = { amount: SR, constant: srK, rate: srR };
+  const m = RX.size({ noi: NOI, value: VALUE, rate: mzR, amortMonths: 360, limits: lim, off: [], ahead: ahead });
+  const hDSCR = (NOI / 1.11 - SR * srK) / mzK, hIO = (NOI / 1.35 - SR * srR) / mzR, hLTV = 0.75 * VALUE - SR, hDY = NOI / 0.07 - SR;
+  ok(near(m.legs.DSCR, hDSCR) && near(m.legs['DSCR IO'], hIO) && near(m.legs.LTV, hLTV) && near(m.legs['Debt Yield'], hDY), 'a mezzanine behind a $30M senior: each limit applies to the two together, less the senior, by hand');
+  ok(near(m.maxLoan, Math.min(hDSCR, hIO, hLTV, hDY)) && m.ahead && m.ahead.amount === SR, '…the smallest binds, and the debt ahead is reported');
+  const mx = RX.extend({ owed: 15000000, noi: NOI, value: VALUE, rate: mzR, amortMonths: 360, limits: lim, off: [], penaltyFull: 0, penalty: { how: 'none' }, fee: null, ahead: ahead });
+  const mAmt = mx.amount;
+  ok(near(mx.payDown, Math.max(0, 15000000 - m.maxLoan)) && near(mx.implied.ltv, (mAmt + SR) / VALUE, 1e-9) && near(mx.implied.dy, NOI / (mAmt + SR), 1e-9) && near(mx.implied.dscr, NOI / (mAmt * mzK + SR * srK), 1e-9),
+     'the mezzanine’s pay-down, and its coverage of the two loans together (DSCR, LTV, debt yield)');
+  const full = RX.size({ noi: NOI, value: VALUE, rate: mzR, amortMonths: 360, limits: lim, off: [], ahead: { amount: 80000000, constant: srK, rate: srR } });
+  ok(full.maxLoan === 0 && Object.keys(full.legs).every(k => full.legs[k] === null || full.legs[k] >= 0), 'a senior that already uses every limit leaves $0 for the mezzanine, never a negative amount');
+  const solo = RX.size({ noi: NOI, value: VALUE, rate: RATE, amortMonths: 360, limits: lim, off: [], ahead: null });
+  ok(near(solo.maxLoan, Math.min(DSCR, IO, LTV, DY)) && solo.ahead === null, 'no debt ahead: the same as before');
+}
+
 // D1 — must be dealt with
 ok(RX.mustAct({ canCover: false, monthsToMaturity: 6 }).must, 'can’t cover and matures in 6 months → must be dealt with');
 ok(RX.mustAct({ canCover: false, monthsToMaturity: 60, monthsToReset: 3 }).must && RX.mustAct({ canCover: false, monthsToMaturity: 60, monthsToReset: 3 }).resetting, 'can’t cover and its rate resets in 3 months → must be dealt with (Queens Gate’s case)');

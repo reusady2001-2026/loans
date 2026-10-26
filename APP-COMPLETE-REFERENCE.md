@@ -3,8 +3,10 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.1.0 — shipped 2026-10-26. The operator approved the number ("3.1.0") and "Yes, ship now",
-after testing the TEST builds of rounds 1–4. Before that: 3.0.0, shipped 2026-10-14.
+**Current version:** 3.1.1 — shipped 2026-10-26. The operator tested the TEST build and said "ship it as 3.1.1": extending
+with today's lender on several properties and several loans together, and a new loan's interest-only no longer copied.
+Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
+TEST builds of rounds 1–4), and 3.0.0, shipped 2026-10-14.
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
 set up for the app. Used by Azriel's team in the US.
@@ -1271,8 +1273,49 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
 - **Tests:** `test/e2e/refi-extend.e2e.js` (Queens Gate: the pay-down worked out on its own and compared with the
   screen, the layout — the deal first, the extension's own verdict, nothing shown twice, its schedule —, each penalty
   choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
-- **Not in the draft:** presets filled from Azriel's numbers (they ship empty); the extension for a pooled or combined
-  loan; a second extension on top of a saved one (undo first).
+- **Not in the draft:** presets filled from Azriel's numbers (they ship empty); a second extension on top of a saved one
+  (undo first).
+- **Several properties, several loans (3.1.1 — the operator, 2026-10-26).** The plan said "extend with
+  today's lender for one loan, and that's it, no matter how many properties". 3.1.0 had wrongly limited it to a loan on
+  one property. The operator also asked: "you should be able to do new loans and extend with today's lenders on a couple
+  of properties together".
+  - **One loan on several properties (a pooled loan):** it extends like any loan. It is sized on all its properties'
+    NOI (each on the basis picked for it) and value; Save and Undo work on the same record.
+  - **Several loans together** (a senior + mezz, or a portfolio from **Create a portfolio…**):
+    - **What kind of deal?** offers **New loan (one for all)** (as before) and **Extend with today's lenders**.
+    - **Each loan has its own lender and its own terms:** date, months, interest-only, amortization, index + spread,
+      penalty and fee. They are kept in the package's record (`refi[<package id>].ext.members[<loan id>]`), with a
+      history entry naming the loan.
+    - **The package's extension limits apply to each loan** (one table, a preset, the lenders-use ticks).
+    - **Each loan is sized on what secures it:** its property, or a pooled loan's properties, on the package's bases and
+      ticked pushes, plus its share of your own levers and of the appraisal.
+    - **A mezzanine is sized behind its senior:** `RefiExtend.size`/`extend` take `ahead`, the debt in front. The limits
+      apply to the two loans together, less the senior's extended amount; a limit the senior already uses leaves $0,
+      never a negative. Its coverage is shown for both loans.
+    - **The verdict lists every loan:** terms end, owed, allowed, pay-down, rate, verdict; then the total and the cash.
+      **Save the extensions** saves every loan to extend now, each on its own record (Extended, its pay-down on its
+      own schedule). Each loan can be undone, or **Undo** all.
+    - The D1 box gives the package's extension pay-down in all.
+    - **The assistant:** `set_extension` on a loan of a package sets its terms in the package; `save_extension` saves
+      the package; the summary names each loan's extension.
+  - **Wording:** "Can't judge the extension yet" now says to upload the T12 (it used to say to type an NOI).
+  - **Tests:**
+    - `refi-extend.test.js` (5 new checks: a mezzanine behind a senior, by hand);
+    - `test/e2e/refi-extend-several.e2e.js` (27 checks): a pooled loan on 3 properties; K2-shaped senior + mezz with a
+      mezz pay-down; a two-property portfolio; the assistant.
+  - **The Guide:** "Extend several loans together" in *Refinance several loans together*, and three reference
+    pictures. K2 Sweetwater has a made-up T12 in the refinance chapter.
+- **A new loan's interest-only is never copied (3.1.1 — the operator, 2026-10-26).** "If a property had a loan,
+  that in its terms there was an interest only period, it will be duplicated to the new loan agreement without me
+  letting myself edit that."
+  - The proposed new loan (`buildRefiOption`) starts with **no interest-only**. It used to copy today's loan's
+    interest-only months (for a package, the senior's, since the package is a copy of the senior). It still matches
+    today's term and amortization.
+  - **"How 'supports $X' is worked out"** has the new loan's **Amortization (years)** and **Interest-only (months)**
+    boxes on its Payment line (`data-refidraftf`). They change the same proposed loan as the proposal card's boxes,
+    and they are there even when the answer is "Don't refinance" and the proposal card isn't shown.
+  - **Tests:** `test/e2e/refi-new-io.e2e.js` (15 checks): a pooled loan, a senior + mezz, a single all-interest-only
+    loan, and a "Don't refinance" loan typed through the new boxes.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
@@ -1303,4 +1346,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.1.0 (shipped 2026-10-26).*
+*Last updated for version 3.1.1 (shipped 2026-10-26).*
