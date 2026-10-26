@@ -1,54 +1,95 @@
 # The in-app Guide
 
-Settings → **Guide** → *Open the guide* opens a window: pick a tab (a chapter) and it opens as **one long page** to
-scroll — every topic a heading, every step under it: its words, then a picture of the real app with a numbered marker on
-every button and, beside it (under it on a narrow window), what each number does. The menu on the left jumps to a topic
-and follows you as you scroll; pictures load as they come into view; the search jumps to a step; click a picture for
-full size; Esc closes. No Back / Next.
+Settings → **Guide** → *Open the guide* opens a window laid out like the Claude Code docs (the operator,
+2026-10-26):
+- the pages in groups on the left;
+- a search at the top (Ctrl K);
+- the page in the middle;
+- "On this page" on the right.
 
-- `guide-viewer.js` — the window (loaded by `index.html`; reads `guide/guide.json`).
-- `guide/spec/<chapter>.js` — what each chapter shows: its topics and steps (how to reach each screen, the picture's
-  area, the markers and the words). `guide/spec/index.js` — the chapters' order.
-- `guide/capture.js` + `guide/helpers.js` — drive the app (Electron + Playwright) through every step and take the
-  pictures: `guide/img/<chapter>/*.jpg`, `guide/data/<chapter>.json`, then `guide/guide.json` (all chapters).
+It opens on the **Overview**. Previous / Next at the foot of every page follow the menu. A picture opens full size
+when clicked; Esc closes it, then the guide.
+
+There are two kinds of page:
+- **How-to** (the Gatsby how-to shape): one task. Each has:
+  - a title that reads after "How to";
+  - a one-line description and a short intro (what and why);
+  - "Before you start";
+  - numbered steps, one action each, with a picture only where the screen changes and numbered markers only on what
+    the step points at;
+  - notes, tips and warnings;
+  - "Next steps".
+- **Reference**: what every control on a screen does, picture by picture, each with numbered markers and their
+  explanations (beside the picture on a wide window, under it on a narrow one).
+
+## Files
+
+- `guide-viewer.js` — the window. `index.html` loads it, and it reads `guide/guide.json`.
+- `guide/spec/index.js` — the menu's groups and the Overview page, written by hand. Its chapter files, in capture
+  order:
+  - `guide/spec/<chapter>.js` — one per area of the app;
+  - each lists its pages: how to reach each screen, the picture's area, the markers and the words.
+- `guide/capture.js` + `guide/helpers.js` — drive the app (Electron + Playwright) through every page and take the
+  pictures. They write `guide/img/<chapter>/*.jpg`, then `guide/data/<chapter>.json`, then `guide/guide.json` (every
+  page, in the menu's order).
 - `guide/fixtures/` — made-up answers for the scripted stand-in Claude (`test/fixtures/fake-claude-push.js`).
 
-The pictures use the app's built-in sample loans and made-up files only — never anyone's real T12, rent roll or
+The pictures use the app's built-in sample loans and made-up files only, never anyone's real T12, rent roll or
 agreement. Retake them whenever a screen changes:
 
 ```
-xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js              # every chapter
-xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js refinance    # one (or more) chapters
-node guide/capture.js --merge                                               # only rebuild guide/guide.json
+xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js                          # every chapter
+xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js refinance                # one (or more) chapters
+xvfb-run -a -s "-screen 0 1920x3000x24" node guide/capture.js refinance --no-merge     # several at once: merge after
+node guide/capture.js --merge                                                           # only rebuild guide/guide.json
 ```
 
-A step whose screen or marker isn't there any more stops the run and names the step (a guide that doesn't match the
-app fails here instead of showing an old picture). `test/guide.test.js` checks `guide.json` (every picture exists,
-every marker sits on its picture); `test/e2e/guide.e2e.js` opens the guide in the app.
+A step whose screen or marker isn't there any more stops the run and names the step, so a guide that doesn't match
+the app fails here instead of showing an old picture.
 
-## Writing a chapter
+Tests:
+- `test/guide.test.js` checks `guide.json`:
+  - every page in the spec was captured;
+  - every link, card and "Next steps" opens a real page;
+  - every picture exists, and every marker sits on its picture;
+  - a how-to step has at most 5 markers.
+- `test/e2e/guide.e2e.js` opens the guide in the app.
+
+## Writing a page
 
 ```js
 module.exports = {
-  id: "calendar", title: "Maturity & Reset Calendar", intro: "One line: what this tab is for.",
-  env: (udata) => ({ /* extra environment for the app, e.g. LDS_FAKE_CHAT_FILE */ }),
-  setup: async (h) => { /* once, before the first topic: made-up data, open the tab */ },
-  topics: [
-    { id: "read", title: "Read the calendar", intro: "One line.", before: async (h) => {},
-      steps: [
-        { title: "The months", text: "What you are looking at, in plain words.",
-          go: async (h) => { await h.newTab("calendar"); },          // how to get to the screen
-          shot: "view" | "#cssSelector" | { sel: "#x", nth: 0 },    // the whole window, or one area (a card, a pop-up)
-          marks: [ { sel: "#btn", label: "The button's name", text: "What it does.", optional: false } ],
-          cover: true }                                              // this picture on the chapter's card
-      ] }
+  id: "loan", env: (udata) => ({ /* extra environment for the app */ }), setup: async (h) => { /* once, first */ },
+  pages: [
+    { id: "add-a-loan", kind: "howto", group: "Loans", title: "Add a loan",
+      description: "One sentence: what this page gets done.",
+      intro: "What the task achieves and why — two or three sentences.",
+      before: ["A real prerequisite."],
+      sections: [
+        { title: "Open the form", text: "An optional lead-in.",
+          steps: [
+            { text: "Click **Add Loan**.",
+              go: async (h) => { /* how to reach the screen */ },
+              shot: "view" | "#cssSelector" | { sel: "#x", nth: 0 },     // only where the screen changes
+              marks: [ { sel: "#btn", label: "Add Loan", text: "Opens the form." } ],   // only what the step points at
+              tip: "A shortcut." }
+          ],
+          note: "Something worth knowing." }
+      ],
+      next: [ { page: "edit-a-loan", text: "Change it later." } ] },
+    { id: "ref-loan-form", kind: "reference", group: "Reference", title: "The loan form", description: "…",
+      sections: [ { title: "Loan terms", views: [ { title: "…", text: "…", go, shot, marks: [ /* every control */ ] } ] } ] }
   ]
 };
 ```
 
-- Plain, short words; say what each button **does**, and what happens after.
-- A marker on every button, box and figure in the picture that someone could ask about.
-- `h` (guide/helpers.js): `click`, `jsClick`, `clickText`, `fill`, `select`, `hover`, `scroll`, `top`, `key`, `js`,
-  `wait`, `home`, `newTab`, `openLoan(/name/)`, `loanId`, `uwProperty(key)`, `xlsx(grid, name)`, `uwUpload(file)`,
-  `closeModals`, `calm`; `h.acceptDialogs = [/regex/]` accepts the confirm boxes whose text matches.
+- Words: `**Bold**` for a button's or a field's name, exactly as the app shows it. `[words](page-id)` or
+  `[words](page-id#section-id)` links to another page.
+- Plain, short sentences. One action per step. Say what each button **does**, and what happens after.
+- `h` (guide/helpers.js) has:
+  - clicking and typing: `click`, `jsClick`, `clickText`, `fill`, `select`, `hover`, `key`;
+  - moving around: `scroll`, `top`, `home`, `newTab`, `openLoan(/name/)`, `loanId`, `uwProperty(key)`;
+  - files and pages: `js`, `wait`, `xlsx(grid, name)`, `uwUpload(file)`, `closeModals`, `calm`.
+
+  `h.acceptDialogs = [/regex/]` accepts the confirm boxes whose text matches.
 - Selectors are Playwright's: CSS, `text=…`, `:has-text("…")`, and `>> xpath=…` chains.

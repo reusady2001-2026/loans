@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /* ============================================================================
-   Takes the Guide's pictures by driving the real app (Electron + Playwright) through every step written in
-   guide/spec/*.js, and writes guide/data/<chapter>.json and guide/guide.json (all chapters, in the order of
-   guide/spec/index.js). The data is the app's built-in portfolio plus MADE-UP files (test/fixtures) — never anyone's
+   Takes the Guide's pictures by driving the real app (Electron + Playwright) through every page written in
+   guide/spec/*.js, and writes guide/data/<chapter>.json and guide/guide.json (every page, grouped as the guide's
+   left menu lists them). The data is the app's built-in portfolio plus MADE-UP files (test/fixtures) — never anyone's
    real T12 or rent roll. Claude is the scripted stand-in (test/fixtures/fake-claude-push.js) with made-up answers.
+
+   (2026-10-26, the operator) The guide is laid out like the Claude Code docs: pages in groups, each a how-to (one task:
+   what it's for, what you need first, numbered steps, a picture only where the screen changes, numbered markers only
+   where a step needs them, notes and tips, next steps) or a reference page (what every control on a screen does).
 
    A step whose screen or marker can't be found stops the run with its name: a guide that no longer matches the app
    fails here, instead of showing an old picture.
@@ -20,17 +24,26 @@ const SPEC = require("./spec/index.js");
 const W = 1440, H = 900, QUALITY = 72;
 
 function chapterSpec(id){ return SPEC.chapters.find(c => c.id === id) || null; }
+const slug = (s) => String(s || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "section";
+const CALLOUTS = ["note", "tip", "warning"];
+// the words of a page, a section or a step: its callouts kept as {kind, text}
+function callouts(x){ const out = []; (x.callouts || []).forEach(c => out.push({ kind: c.kind, text: c.text })); CALLOUTS.forEach(k => { if (x[k]) out.push({ kind: k, text: x[k] }); }); return out; }
 
 function merge(){
-  const out = { version: 1, builtAt: new Date().toISOString(), intro: SPEC.intro, note: SPEC.note, chapters: [] };
+  const pages = SPEC.pages.map(p => Object.assign({ chapter: null }, p));   // the pages written by hand (the overview) lead their group
   SPEC.chapters.forEach(c => {
     const f = path.join(__dirname, "data", c.id + ".json");
     if (!fs.existsSync(f)) return;
-    out.chapters.push(JSON.parse(fs.readFileSync(f, "utf8")));
+    const d = JSON.parse(fs.readFileSync(f, "utf8"));
+    (d.pages || []).forEach(p => pages.push(Object.assign({ chapter: c.id }, p)));
   });
+  // the left menu: the groups in the spec's order, each page in the order its chapter lists it
+  const groups = SPEC.groups.map(g => ({ title: g, pages: pages.filter(p => p.group === g).map(p => p.id) })).filter(g => g.pages.length);
+  const order = []; groups.forEach(g => g.pages.forEach(id => order.push(id)));
+  const out = { version: 2, builtAt: new Date().toISOString(), title: SPEC.title, note: SPEC.note, groups: groups, pages: order.map(id => pages.find(p => p.id === id)) };
   fs.writeFileSync(path.join(__dirname, "guide.json"), JSON.stringify(out, null, 1));
-  let steps = 0; out.chapters.forEach(c => c.topics.forEach(t => { steps += t.steps.length; }));
-  console.log("guide.json: " + out.chapters.length + " chapters, " + out.chapters.reduce((a, c) => a + c.topics.length, 0) + " topics, " + steps + " steps");
+  let pics = 0; out.pages.forEach(p => (p.sections || []).forEach(s => (s.steps || []).concat(s.views || []).forEach(x => { if (x.img) pics++; })));
+  console.log("guide.json: " + groups.length + " groups, " + out.pages.length + " pages, " + pics + " pictures");
 }
 
 async function runChapter(spec){
@@ -59,37 +72,65 @@ async function runChapter(spec){
 
   const imgDir = path.join(__dirname, "img", spec.id);
   fs.rmSync(imgDir, { recursive: true, force: true }); fs.mkdirSync(imgDir, { recursive: true });
-  const outCh = { id: spec.id, title: spec.title, intro: spec.intro || "", cover: null, topics: [] };
-  for (const tp of spec.topics){
-    const outT = { id: tp.id, title: tp.title, intro: tp.intro || "", steps: [] };
-    if (tp.before) await tp.before(h);
-    let n = 0;
-    for (const st of tp.steps){
-      n++;
-      const where = spec.id + " › " + tp.id + " › step " + n + " (" + st.title + ")";
-      try {
-        if (st.go) await st.go(h);
+  const outCh = { id: spec.id, pages: [] };
+  // one step (numbered, in a how-to) or one view (a picture of a screen, in a reference page): run its way to the
+  // screen, then take its picture when it has one
+  const shoot = async (x, where, file) => {
+    try {
+      if (x.go) await x.go(h);
+      let out = { text: x.text || "" };
+      if (x.title) out = Object.assign({ title: x.title }, out);
+      if (x.shot){
         await h.calm();
-        await page.waitForTimeout(st.wait != null ? st.wait : 250);
-        const file = tp.id + "-" + String(n).padStart(2, "0") + ".jpg";
-        const shot = await h.capture(st.shot || "view", st.marks || [], path.join(imgDir, file), QUALITY, st.pad);
-        outT.steps.push({ title: st.title, text: st.text || "", img: "img/" + spec.id + "/" + file, w: shot.w, h: shot.h, marks: shot.marks });
-        if (!outCh.cover && st.cover) outCh.cover = "img/" + spec.id + "/" + file;
-        process.stdout.write(".");
-        if (st.after) await st.after(h);
-      } catch (e) {
-        console.error("\nGUIDE STEP FAILED — " + where + ": " + String(e && e.message || e).split("\n")[0]);
-        try { await page.screenshot({ path: path.join(os.tmpdir(), "guide-fail-" + spec.id + ".png") }); console.error("  (the screen at that moment: " + path.join(os.tmpdir(), "guide-fail-" + spec.id + ".png") + ")"); } catch (x) {}
-        await app.close().catch(() => {}); throw e;
-      }
+        await page.waitForTimeout(x.wait != null ? x.wait : 250);
+        const shot = await h.capture(x.shot, x.marks || [], path.join(imgDir, file), QUALITY, x.pad);
+        Object.assign(out, { img: "img/" + spec.id + "/" + file, w: shot.w, h: shot.h, marks: shot.marks });
+      } else if (x.marks && x.marks.length) throw new Error("markers without a picture");
+      const co = callouts(x); if (co.length) out.callouts = co;
+      if (x.after) await x.after(h);
+      process.stdout.write(x.shot ? "." : "-");
+      return out;
+    } catch (e) {
+      console.error("\nGUIDE STEP FAILED — " + where + ": " + String(e && e.message || e).split("\n")[0]);
+      try { await page.screenshot({ path: path.join(os.tmpdir(), "guide-fail-" + spec.id + ".png") }); console.error("  (the screen at that moment: " + path.join(os.tmpdir(), "guide-fail-" + spec.id + ".png") + ")"); } catch (z) {}
+      await app.close().catch(() => {}); throw e;
     }
-    outCh.topics.push(outT);
+  };
+  for (const pg of spec.pages){
+    const outP = { id: pg.id, kind: pg.kind || "howto", group: pg.group, title: pg.title, description: pg.description || "", intro: pg.intro || "" };
+    const co = callouts(pg); if (co.length) outP.callouts = co;
+    if (pg.before && pg.before.length) outP.before = pg.before.slice();
+    outP.sections = [];
+    if (pg.prep) await pg.prep(h);
+    let pic = 0;
+    const ids = {};
+    for (const sc of (pg.sections || [])){
+      let sid = sc.id || slug(sc.title); while (ids[sid]) sid += "-2"; ids[sid] = 1;
+      const outS = { id: sid, title: sc.title };
+      if (sc.text) outS.text = sc.text;
+      if (sc.cards) outS.cards = sc.cards;   // [{title, text, page, anchor}]
+      if (sc.table) outS.table = sc.table;   // {head: [..], rows: [[text, page], ..]}
+      if (sc.prep) await sc.prep(h);
+      for (const kind of ["steps", "views"]){
+        if (!sc[kind]) continue;
+        outS[kind] = [];
+        let n = 0;
+        for (const x of sc[kind]){
+          n++;
+          const where = spec.id + " › " + pg.id + " › " + sid + " › " + kind.slice(0, -1) + " " + n;
+          outS[kind].push(await shoot(x, where, pg.id + "-" + String(x.shot ? ++pic : pic).padStart(2, "0") + ".jpg"));
+        }
+      }
+      const sco = callouts(sc); if (sco.length) outS.callouts = sco;
+      outP.sections.push(outS);
+    }
+    if (pg.next && pg.next.length) outP.next = pg.next.map(n => ({ page: n.page, anchor: n.anchor || "", text: n.text || "" }));
+    outCh.pages.push(outP);
   }
-  if (!outCh.cover && outCh.topics[0] && outCh.topics[0].steps[0]) outCh.cover = outCh.topics[0].steps[0].img;
   fs.mkdirSync(path.join(__dirname, "data"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "data", spec.id + ".json"), JSON.stringify(outCh, null, 1));
-  let steps = 0; outCh.topics.forEach(t => { steps += t.steps.length; });
-  console.log("\n" + spec.id + ": " + outCh.topics.length + " topics, " + steps + " steps" + (errors.length ? " — page errors: " + errors.join(" | ") : ""));
+  let pics = 0; outCh.pages.forEach(p => p.sections.forEach(s => (s.steps || []).concat(s.views || []).forEach(x => { if (x.img) pics++; })));
+  console.log("\n" + spec.id + ": " + outCh.pages.length + " pages, " + pics + " pictures" + (errors.length ? " — page errors: " + errors.join(" | ") : ""));
   await app.close().catch(() => {});
   try { fs.rmSync(UDATA, { recursive: true, force: true }); } catch (e) {}
   if (errors.length && !process.env.GUIDE_ALLOW_ERRORS) throw new Error("page errors in " + spec.id + ": " + errors.join(" | "));
@@ -98,9 +139,9 @@ async function runChapter(spec){
 (async () => {
   const args = process.argv.slice(2);
   if (args.includes("--merge")){ merge(); return; }
-  if (args.includes("--list")){ SPEC.chapters.forEach(c => console.log(c.id + " — " + c.title + " (" + c.topics.length + " topics)")); return; }
+  if (args.includes("--list")){ SPEC.chapters.forEach(c => console.log(c.id + " — " + c.pages.map(p => p.id).join(", "))); return; }
   const ids = args.filter(a => !a.startsWith("--"));
   const todo = ids.length ? ids.map(id => { const c = chapterSpec(id); if (!c) throw new Error("no chapter " + id); return c; }) : SPEC.chapters;
   for (const c of todo){ console.log("— " + c.id); await runChapter(c); }
-  merge();
+  if (!args.includes("--no-merge")) merge();
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });
