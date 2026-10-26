@@ -698,6 +698,15 @@ saved, the key is used.
       - no page mentions a tax bill, an assessment or a utility bill;
     - `test/e2e/guide.e2e.js` (the window, the Overview, a how-to, "On this page", Previous / Next, a reference page,
       search, full size, wide and narrow windows).
+  - **Bigger pictures (the operator, after installing: "the guide pictures look small"):** they showed at 47–68% of
+    their size. Now:
+    - the window takes 96% × 94% of the app;
+    - a picture uses the page's whole column, up to 85% of the window's height;
+    - a reference picture's list goes under it (beside it only on a column 1,500 px wide or more);
+    - "On this page" sits on the right only when the page is 1,300 px wide or more, and is a row under the title
+      otherwise.
+    A whole-window picture now shows at about 71–83% of its size on a 1,440 × 900 window and 86–97% on 1,920 × 1,080
+    (61–75% on 1,280 × 720). `guide.e2e.js` checks at least 70% at 1,440.
   - **The Guide's sample Claude answers follow Round 4:** they no longer say Claude checked invoices, a contract or
     bank statements; every check rests on the T12 or the web.
   **Fixed while taking the pictures (2026-10-19):** the pooled-loan allocation and a kept payment below the interest

@@ -11,8 +11,12 @@
 (function () {
   "use strict";
   var data = null, loading = null, st = { page: null, section: null, q: "" }, navTarget = null, spyRaf = 0, lit = null;
-  var BESIDE = 1000;   // the page's column at least this wide: a picture's numbered list sits beside it; narrower: under it
-  var TOC = 980;       // the scrolling area at least this wide: "On this page" shows on the right
+  // (2026-10-26, the operator: "the guide pictures look small" — they showed at 47–68% of their size) the pictures get
+  // the room: the page's whole column, up to 85% of the window's height; the numbered list goes beside a picture only
+  // when the column is wide enough to keep the picture big; "On this page" sits on the right only on a wide window,
+  // and above the page otherwise
+  var BESIDE = 1500;   // the page's column at least this wide: a picture's numbered list sits beside it; narrower: under it
+  var TOC = 1300;      // the scrolling area at least this wide: "On this page" on the right; narrower: a row above the page
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function (c){ return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function el(id){ return document.getElementById(id); }
   function sel(v){ return String(v).replace(/["\\]/g, "\\$&"); }
@@ -40,7 +44,7 @@
     s.textContent =
       "#guideMain .gpic-row{display:flex;flex-direction:column;gap:14px;margin-top:12px}" +
       "#guideMain.gbeside .gpic-row.gmany{flex-direction:row;align-items:flex-start}" +
-      "#guideMain.gbeside .gpic-row.gmany .gpic{flex:0 0 64%;max-width:64%}" +
+      "#guideMain.gbeside .gpic-row.gmany .gpic{flex:0 0 72%;max-width:72%}" +
       "#guideMain .gpic{min-width:0}" +
       "#guideMain .gpic-list{flex:1 1 auto;min-width:0}" +
       "#guideMain [data-guideimg]{position:relative;max-width:100%;cursor:zoom-in;overflow:hidden;border-radius:10px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(15,23,42,.08);background:#f8fafc}" +
@@ -58,6 +62,7 @@
       "#guideMain ol.gsteps>li:last-child{padding-bottom:4px}" +
       "#guideNav [data-guidepage][data-on='1']{color:#3f6212;font-weight:600;background:#f4fae8;border-left-color:#639420}" +
       "#guideToc [data-guidetoc][data-on='1']{color:#3f6212;font-weight:600;border-left-color:#639420}" +
+      "#guideMain [data-guidetocrow] [data-guidetoc][data-on='1']{color:#3f6212;font-weight:600;background:#f4fae8}" +
       "#guideMain table.gtable td,#guideMain table.gtable th{border-bottom:1px solid #e2e8f0;padding:8px 12px;text-align:left;vertical-align:top}";
     document.head.appendChild(s);
   }
@@ -78,14 +83,14 @@
     css();
     m = document.createElement("div"); m.id = "guideModal";
     m.className = "fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/50 p-4";
-    m.innerHTML = '<div id="guideBox" class="flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style="width:92vw;max-width:none;height:90vh">' +
+    m.innerHTML = '<div id="guideBox" class="flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style="width:96vw;max-width:none;height:94vh">' +
       '<div class="flex items-center gap-4 border-b border-slate-200 px-5 py-3">' +
         '<button type="button" data-guidepage="overview" class="flex min-w-0 items-center gap-2 text-left"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-600 text-[13px] font-extrabold text-white">?</span><span class="min-w-0"><span class="block text-[10px] font-bold uppercase tracking-wider text-brand-700">Guide</span><span class="block truncate text-[14px] font-bold text-slate-900">Loan Debt Service Hub</span></span></button>' +
         '<div class="relative ml-auto w-full max-w-md"><svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>' +
           '<input id="guideSearch" type="search" placeholder="Search the guide…" class="w-full rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-9 pr-14 text-sm outline-none focus:border-brand-500 focus:bg-white" aria-label="Search the guide">' +
           '<kbd class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-white px-1.5 text-[10px] font-semibold text-slate-400">Ctrl K</kbd></div>' +
         '<button type="button" data-guideclose class="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xl text-slate-400 hover:bg-slate-100" aria-label="Close">&times;</button></div>' +
-      '<div class="flex min-h-0 flex-1"><nav id="guideNav" class="shrink-0 overflow-y-auto border-r border-slate-200 px-3 py-4" style="width:clamp(12rem,19vw,17rem)" aria-label="Guide pages"></nav>' +
+      '<div class="flex min-h-0 flex-1"><nav id="guideNav" class="shrink-0 overflow-y-auto border-r border-slate-200 px-3 py-4" style="width:clamp(11rem,16vw,15rem)" aria-label="Guide pages"></nav>' +
         '<main id="guideMain" tabindex="-1" class="min-w-0 flex-1 overflow-y-auto outline-none" style="position:relative"></main></div></div>' +
       '<div id="guideZoom" class="fixed inset-0 z-[95] hidden cursor-zoom-out overflow-auto bg-slate-900/80 p-6"><img alt="" class="mx-auto max-w-none rounded-lg bg-white shadow-2xl"></div>';
     document.body.appendChild(m);
@@ -122,7 +127,9 @@
   }
   function fit(){
     var mn = el("guideMain"); if (!mn) return;
-    var toc = el("guideToc"); if (toc) toc.style.display = mn.clientWidth >= TOC ? "" : "none";
+    var wide = mn.clientWidth >= TOC, toc = el("guideToc"), row = mn.querySelector("[data-guidetocrow]");
+    if (toc) toc.style.display = wide ? "" : "none";
+    if (row) row.style.display = wide ? "none" : "";
     var col = mn.querySelector("[data-guidecol]"); mn.classList.toggle("gbeside", !!col && col.clientWidth >= BESIDE);
   }
   function hilite(stepEl, n){
@@ -165,7 +172,7 @@
   function setSection(id){
     if (st.section === id) return;
     st.section = id;
-    var toc = el("guideToc"); if (toc) toc.querySelectorAll("[data-guidetoc]").forEach(function (b){ b.setAttribute("data-on", b.getAttribute("data-guidetoc") === id ? "1" : "0"); });
+    var mn = el("guideMain"); if (mn) mn.querySelectorAll("[data-guidetoc]").forEach(function (b){ b.setAttribute("data-on", b.getAttribute("data-guidetoc") === id ? "1" : "0"); });   // on the right, or in the row above the page
   }
 
   function navHtml(){
@@ -185,7 +192,7 @@
         '<div data-guidemk="' + n + '" class="absolute grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-amber-500 text-[11px] font-extrabold text-white shadow ring-2 ring-white" style="left:' + Math.max(1.2, m.x) + '%;top:' + Math.max(1.8, m.y) + '%">' + n + '</div>';
     }).join("");
     // the picture never grows past its own size, nor past three quarters of the window's height
-    var size = 'width:min(100%, ' + w + 'px, calc(75vh * ' + (w / h).toFixed(4) + '));aspect-ratio:' + w + ' / ' + h;
+    var size = 'width:min(100%, ' + w + 'px, calc(85vh * ' + (w / h).toFixed(4) + '));aspect-ratio:' + w + ' / ' + h;
     return '<div class="gpic-row' + (marks.length > 3 ? ' gmany' : '') + '"><div class="gpic"><div data-guideimg="' + esc(img) + '" title="Click to see it full size" style="' + size + '">' +
         '<img src="' + esc(img) + '" alt="' + esc(x.title || x.text || "") + '" width="' + w + '" height="' + h + '" loading="lazy" decoding="async">' + boxes + '</div></div>' +
       (marks.length ? '<ol class="gpic-list space-y-1" data-guidemarks>' + marks.map(function (m, k){
@@ -221,6 +228,9 @@
     var body = '<div class="text-[12px] font-semibold text-brand-700">' + esc(g ? g.title : "") + (p.kind === "reference" && !(g && /^reference$/i.test(g.title)) ? ' · Reference' : '') + '</div>' +
       '<h1 class="mt-1 text-[30px] font-bold leading-tight tracking-tight text-slate-900" data-guidetitle>' + esc(p.title) + '</h1>' +
       (p.description ? '<p class="mt-2 max-w-[46rem] text-[17px] leading-relaxed text-slate-500" data-guidedesc>' + rich(p.description) + '</p>' : '') +
+      // "On this page" as a row above the page, when the window is too narrow for it on the right
+      (toc.length > 1 ? '<div data-guidetocrow class="mt-4 flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-slate-200 py-2 text-[13px]"><span class="mr-2 font-semibold text-slate-900">On this page</span>' +
+        toc.map(function (t){ return '<button type="button" data-guidetoc="' + esc(t.id) + '" class="rounded-md px-2 py-0.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900">' + esc(t.title) + '</button>'; }).join("") + '</div>' : '') +
       (p.intro ? '<p class="mt-5 max-w-[46rem] text-[15px] leading-relaxed text-slate-700">' + rich(p.intro) + '</p>' : '') +
       calloutsHtml(p.callouts);
     if (p.before && p.before.length) body += '<section class="mt-10"><h2 data-guidesec="before-you-start" class="text-[20px] font-bold tracking-tight text-slate-900">Before you start</h2><ul class="mt-3 max-w-[46rem] list-disc space-y-1.5 pl-5 text-[15px] leading-relaxed text-slate-700 marker:text-slate-400">' +
@@ -233,8 +243,8 @@
       (prev ? '<button type="button" data-guidepage="' + esc(prev.id) + '" data-guideprev class="min-w-0 rounded-xl border border-slate-200 px-4 py-3 text-left hover:border-brand-400"><span class="block text-[11px] text-slate-400">← Previous</span><span class="block truncate text-[14px] font-semibold text-slate-800">' + esc(prev.title) + '</span></button>' : '<span></span>') +
       (next ? '<button type="button" data-guidepage="' + esc(next.id) + '" data-guidenext class="min-w-0 rounded-xl border border-slate-200 px-4 py-3 text-right hover:border-brand-400"><span class="block text-[11px] text-slate-400">Next →</span><span class="block truncate text-[14px] font-semibold text-slate-800">' + esc(next.title) + '</span></button>' : '<span></span>') + '</div>' +
       (data.note ? '<p class="mt-6 text-[11px] leading-relaxed text-slate-400">' + esc(data.note) + '</p>' : '');
-    return '<div class="flex gap-10 px-8 py-7"><article data-guidecol class="min-w-0 flex-1" style="max-width:' + (p.kind === "reference" ? "84rem" : "62rem") + '">' + body + '</article>' +
-      (toc.length > 1 ? '<aside id="guideToc" class="w-52 shrink-0"><div class="sticky top-0 pt-1"><div class="mb-2 text-[12px] font-semibold text-slate-900">On this page</div>' +
+    return '<div class="flex gap-8 px-6 py-6"><article data-guidecol class="min-w-0 flex-1">' + body + '</article>' +
+      (toc.length > 1 ? '<aside id="guideToc" class="w-48 shrink-0"><div class="sticky top-0 pt-1"><div class="mb-2 text-[12px] font-semibold text-slate-900">On this page</div>' +
         toc.map(function (t){ return '<button type="button" data-guidetoc="' + esc(t.id) + '" data-on="0" class="block w-full border-l-2 border-slate-200 py-1 pl-3 text-left text-[13px] leading-snug text-slate-500 hover:text-slate-900">' + esc(t.title) + '</button>'; }).join("") + '</div></aside>' : '') + '</div>';
   }
   // every place a search can land: a page (its title and description), a section, a step or view (with its markers)

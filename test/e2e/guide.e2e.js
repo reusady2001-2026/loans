@@ -14,6 +14,8 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 const DATA=JSON.parse(fs.readFileSync(path.join(APP,'guide','guide.json'),'utf8'));
 const ORDER=[]; DATA.groups.forEach(g=>g.pages.forEach(id=>ORDER.push(id)));
 const P=(id)=>DATA.pages.find(p=>p.id===id);
+// "On this page": on the right on a wide window, a row above the page otherwise (2026-10-26)
+const tocSel=(page)=>page.evaluate(()=>(document.getElementById('guideToc')&&document.getElementById('guideToc').offsetParent!==null?'#guideToc':'[data-guidetocrow]'));
 
 (async()=>{
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env)});
@@ -51,12 +53,17 @@ const P=(id)=>DATA.pages.find(p=>p.id===id);
   await page.click('#guideNav [data-guidepage="'+ht.id+'"]'); await page.waitForTimeout(900);
   const want=[]; ht.sections.forEach((q,si)=>(q.steps||[]).forEach((x,i)=>want.push(ht.id+'/'+si+'/s'+i)));
   s=await page.evaluate(()=>{ const m=document.getElementById('guideMain'); return { st:window.LDS_Guide.state(), h1:(m.querySelector('h1')||{}).textContent, desc:(m.querySelector('[data-guidedesc]')||{}).textContent||'',
-    steps:[...m.querySelectorAll('ol.gsteps > li[data-guidestep]')].map(x=>x.getAttribute('data-guidestep')), toc:[...document.querySelectorAll('#guideToc [data-guidetoc]')].map(b=>b.getAttribute('data-guidetoc')),
+    steps:[...m.querySelectorAll('ol.gsteps > li[data-guidestep]')].map(x=>x.getAttribute('data-guidestep')), toc:[...document.querySelectorAll((document.getElementById('guideToc')&&document.getElementById('guideToc').offsetParent!==null?'#guideToc':'[data-guidetocrow]')+' [data-guidetoc]')].map(b=>b.getAttribute('data-guidetoc')),
+    row:!!document.querySelector('[data-guidetocrow]')&&document.querySelector('[data-guidetocrow]').offsetParent!==null, right:!!document.getElementById('guideToc')&&document.getElementById('guideToc').offsetParent!==null,
     lit:(document.querySelector('#guideNav [data-guidepage][data-on="1"]')||{}).getAttribute&&document.querySelector('#guideNav [data-guidepage][data-on="1"]').getAttribute('data-guidepage') }; });
   const wantToc=(ht.before&&ht.before.length?['before-you-start']:[]).concat(ht.sections.map(q=>q.id), ht.next&&ht.next.length?['next-steps']:[]);
   ok(s.st.page===ht.id && s.h1===ht.title && s.desc && s.lit===ht.id, 'a how-to opens with its title, its description and its place lit in the menu ('+ht.title+')');
   ok(JSON.stringify(s.steps)===JSON.stringify(want), '…every one of its '+want.length+' steps numbered, in order');
   ok(JSON.stringify(s.toc)===JSON.stringify(wantToc), '…and “On this page” lists its sections ('+s.toc.join(', ')+')');
+  ok(s.row && !s.right, '…on a 1,440-px window “On this page” is a row above the page, so the pictures get the width');
+  // the pictures get the room (2026-10-26, the operator: "the guide pictures look small"): a whole-window picture shows at 70% or more on a 1,440 × 900 window
+  const big=await page.evaluate(()=>{ const a=[...document.querySelectorAll('#guideMain [data-guideimg]')].map(d=>({w:+d.querySelector('img').getAttribute('width'),s:d.getBoundingClientRect().width})).filter(x=>x.w>=1400); return a.length?Math.min(...a.map(x=>x.s/x.w)):null; });
+  ok(big==null || big>=0.7, 'a whole-window picture shows at '+(big==null?'—':Math.round(big*100)+'%')+' of its size (70% or more)');
   const per=await page.evaluate((ht)=>{ const bad=[]; ht.sections.forEach((q,si)=>(q.steps||[]).forEach((x,i)=>{ const a=document.querySelector('#guideMain [data-guidestep="'+ht.id+'/'+si+'/s'+i+'"]'), n=(x.marks||[]).length;
       const img=a&&a.querySelector('[data-guideimg] img'), boxes=a?a.querySelectorAll('[data-guidebox]').length:-1, items=a?a.querySelectorAll('[data-guidemarks] li').length:-1;
       if(!a||!!img!==!!x.img||boxes!==n||items!==n||(img&&(img.getAttribute('loading')!=='lazy'||!(Number(img.getAttribute('width'))>0)))) bad.push(si+'/'+i+' img '+!!img+'/'+!!x.img+' boxes '+boxes+' items '+items+' / '+n); })); return bad; }, ht);
@@ -64,8 +71,8 @@ const P=(id)=>DATA.pages.find(p=>p.id===id);
 
   // "On this page" jumps to a section, and follows the scroll
   const sec=ht.sections[Math.min(1,ht.sections.length-1)];
-  await page.click('#guideToc [data-guidetoc="'+sec.id+'"]'); await page.waitForTimeout(1200);
-  s=await page.evaluate((id)=>{ const m=document.getElementById('guideMain'), h=m.querySelector('h2[data-guidesec="'+id+'"]'), r=h.getBoundingClientRect(), mr=m.getBoundingClientRect(); return { st:window.LDS_Guide.state(), inView:r.top>=mr.top-2&&r.top<mr.top+m.clientHeight/2, lit:document.querySelector('#guideToc [data-guidetoc="'+id+'"]').getAttribute('data-on') }; }, sec.id);
+  await page.click((await tocSel(page))+' [data-guidetoc="'+sec.id+'"]'); await page.waitForTimeout(1200);
+  s=await page.evaluate((id)=>{ const m=document.getElementById('guideMain'), h=m.querySelector('h2[data-guidesec="'+id+'"]'), r=h.getBoundingClientRect(), mr=m.getBoundingClientRect(); return { st:window.LDS_Guide.state(), inView:r.top>=mr.top-2&&r.top<mr.top+m.clientHeight/2, lit:document.querySelector('[data-guidetocrow] [data-guidetoc="'+id+'"]').getAttribute('data-on') }; }, sec.id);
   ok(s.inView && s.st.section===sec.id && s.lit==='1', 'clicking “'+sec.title+'” in “On this page” scrolls to it and lights it');
   await page.evaluate(()=>{ const m=document.getElementById('guideMain'); m.dispatchEvent(new WheelEvent('wheel',{bubbles:true})); m.scrollTop=m.scrollHeight; }); await page.waitForTimeout(500);
   s=await page.evaluate(()=>window.LDS_Guide.state());
@@ -129,8 +136,9 @@ const P=(id)=>DATA.pages.find(p=>p.id===id);
   if(win){
     await win.evaluate(w=>{ w.setSize(1920,1080); }); await page.waitForTimeout(700);
     await page.evaluate((id)=>window.LDS_Guide.open(id),rf.id); await page.waitForTimeout(800);
-    const wr=await page.evaluate(()=>{ const a=[...document.querySelectorAll('#guideMain [data-guidestep]')].find(x=>x.querySelectorAll('[data-guidemarks] li').length>3); a.scrollIntoView(); const p=a.querySelector('[data-guideimg]').getBoundingClientRect(), l=a.querySelector('[data-guidemarks]').getBoundingClientRect(); const t=document.getElementById('guideToc'); return { beside:l.left>=p.right-1&&l.top<p.bottom, toc:!!t&&t.offsetParent!==null }; });
-    ok(wr.beside && wr.toc, 'on a wide window a reference picture’s list sits beside it, and “On this page” shows');
+    const wr=await page.evaluate(()=>{ const a=[...document.querySelectorAll('#guideMain [data-guidestep]')].find(x=>x.querySelectorAll('[data-guidemarks] li').length>3&&+x.querySelector('[data-guideimg] img').getAttribute('width')>=1400); a.scrollIntoView(); const d=a.querySelector('[data-guideimg]'), p=d.getBoundingClientRect(), l=a.querySelector('[data-guidemarks]').getBoundingClientRect(); const t=document.getElementById('guideToc');
+      return { scale:p.width/+d.querySelector('img').getAttribute('width'), under:l.top>=p.bottom-1, toc:!!t&&t.offsetParent!==null }; });
+    ok(wr.toc && wr.under && wr.scale>=0.85, 'on a 1,920-px window “On this page” sits on the right, and a whole-window reference picture keeps the width ('+Math.round(wr.scale*100)+'% of its size, its list under it)');
     await win.evaluate(w=>{ w.setSize(1000,860); }); await page.waitForTimeout(700);
     const nr=await page.evaluate(()=>{ const m=document.getElementById('guideMain'), a=[...m.querySelectorAll('[data-guidestep]')].find(x=>x.querySelector('[data-guidemarks]')); a.scrollIntoView(); const p=a.querySelector('[data-guideimg]').getBoundingClientRect(), l=a.querySelector('[data-guidemarks]').getBoundingClientRect(); const t=document.getElementById('guideToc'); return { w:m.clientWidth, under:l.top>=p.bottom-1, toc:!!t&&t.offsetParent!==null, sideways:m.scrollWidth>m.clientWidth+1 }; });
     ok(nr.under && !nr.toc && !nr.sideways, 'on a narrow window the list goes under the picture, “On this page” hides and nothing scrolls sideways (the page '+nr.w+' px wide)');
