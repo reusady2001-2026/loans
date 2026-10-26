@@ -3,7 +3,8 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.0.0 — shipped 2026-10-14 (the operator: "ship it")
+**Current version:** 3.1.0 — shipped 2026-10-26. The operator approved the number ("3.1.0") and "Yes, ship now",
+after testing the TEST builds of rounds 1–4. Before that: 3.0.0, shipped 2026-10-14.
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
 set up for the app. Used by Azriel's team in the US.
@@ -1302,4 +1303,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.0.0 (shipped 2026-10-14).*
+*Last updated for version 3.1.0 (shipped 2026-10-26).*

@@ -509,7 +509,7 @@ module.exports = {
       sections: [
         { title: "Check and update",
           steps: [
-            { text: "Click the version chip at the right of the header (here **v3.0.0**). It reads **Checking for updates…**.",
+            { text: "Click the version chip at the right of the header (it shows your version). It reads **Checking for updates…**.",
               go: async (h) => { await normal(h); await portfolio(h); },
               shot: "view",
               marks: [ { sel: "#updateChip", label: "Version", text: "The version you have. Click it to check." } ] },
