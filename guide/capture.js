@@ -62,7 +62,8 @@ async function runChapter(spec){
   page.on("dialog", d => { const m = d.message(); const ok = (h.acceptDialogs || []).some(re => re.test(m)); if (ok) d.accept(); else d.dismiss(); });
   await page.route(/^https?:\/\//, r => r.abort());
   const win = await app.browserWindow(page);
-  const setSize = (w, hh) => win.evaluate((bw, a) => { bw.setSize(a.w, a.h); }, { w: w, h: hh });
+  // (a busy machine can lose the first call while the app starts: "Resulting promise was garbage collected") — try again
+  const setSize = async (w, hh) => { for (let i = 0; ; i++){ try { return await win.evaluate((bw, a) => { bw.setSize(a.w, a.h); }, { w: w, h: hh }); } catch (e) { if (i >= 2) throw e; await page.waitForTimeout(800); } } };
   await setSize(W, H);
   const h = require("./helpers.js")(page, app, { UDATA, APP, setSize, W, H });
   if (spec.waitHome !== false) { await page.waitForSelector("tr[data-goto]", { timeout: 30000, state: "attached" }).catch(() => {}); }

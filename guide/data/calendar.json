@@ -1,744 +1,1160 @@
 {
  "id": "calendar",
- "title": "Maturity & Reset Calendar",
- "intro": "Every balloon (maturity), ARM rate reset and interest-only step-up in the book — as a list or month by month — with the loans that need a maturity decision on top. Click any event to open its loan.",
- "cover": "img/calendar/open-02.jpg",
- "topics": [
+ "pages": [
   {
-   "id": "open",
-   "title": "Open the calendar",
-   "intro": "The calendar opens in its own tab, from the “+” at the end of the tab strip.",
-   "steps": [
+   "id": "read-the-calendar",
+   "kind": "howto",
+   "group": "Tools",
+   "title": "Read the maturity calendar",
+   "description": "See every maturity, rate reset and interest-only change coming up, and open a loan from its event.",
+   "intro": "The Maturity & Reset Calendar lists every balloon, ARM rate reset and interest-only step-up in the book, as a list or month by month. Use it to see what comes due next, and which loans need a decision about their maturity.",
+   "sections": [
     {
-     "title": "The “+” menu",
-     "text": "Click the “+” at the end of the tab strip, then “Maturity & Reset Calendar”.",
-     "img": "img/calendar/open-01.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "id": "open-the-calendar",
+     "title": "Open the calendar",
+     "steps": [
       {
-       "x": 12.4,
-       "y": 15.7,
-       "w": 1.9,
-       "h": 3.1,
-       "label": "+",
-       "text": "Opens this menu: a tool in a tab of its own."
+       "text": "Click **+** at the end of the tab strip, then **Maturity & Reset Calendar**.",
+       "img": "img/calendar/read-the-calendar-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 11.6,
+         "y": 15.7,
+         "w": 1.9,
+         "h": 3.1,
+         "label": "+",
+         "text": "Opens the menu of tools that open in a tab."
+        },
+        {
+         "x": 12.1,
+         "y": 28.2,
+         "w": 15.7,
+         "h": 4,
+         "label": "Maturity & Reset Calendar",
+         "text": "Opens the calendar. If it is already open, it brings its tab forward."
+        }
+       ]
       },
       {
-       "x": 12.8,
-       "y": 28.2,
-       "w": 15.7,
-       "h": 6.2,
-       "label": "Maturity & Reset Calendar",
-       "text": "Opens the calendar (this chapter). If it is already open, it takes you to its tab."
+       "text": "The calendar opens in a tab of its own, in the **List** view. It is built from every active loan in the book and redrawn whenever a loan changes."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "An archived property, and a removed or paid-off loan, are left out of the calendar."
       }
      ]
     },
     {
+     "id": "check-what-needs-a-decision",
+     "title": "Check what needs a decision",
+     "steps": [
+      {
+       "text": "Look at the red **Needs a maturity decision** box at the top. It lists every loan that has matured or whose extension is undecided, with its maturity date and balloon.",
+       "img": "img/calendar/read-the-calendar-02.jpg",
+       "w": 1248,
+       "h": 128,
+       "marks": [
+        {
+         "x": 0.4,
+         "y": 3.9,
+         "w": 99.2,
+         "h": 27.2,
+         "label": "Needs a maturity decision",
+         "text": "How many loans wait for a decision."
+        },
+        {
+         "x": 1.2,
+         "y": 34.2,
+         "w": 97.6,
+         "h": 29.8,
+         "label": "A loan waiting",
+         "text": "Its status, its maturity date and its balloon. Click the row to open the loan."
+        }
+       ]
+      },
+      {
+       "text": "Once the loan is settled, change its status in the loan’s edit form (**Extended**, **Paid off**…). The loan leaves the box. See [Mark a loan out of date or change its status](set-loan-status)."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "A loan stays in the box, even after its date has passed, until you change its status. **Matured** is set by hand, or by itself once the maturity date has passed; **Extension undecided** is set by hand."
+      }
+     ]
+    },
+    {
+     "id": "see-what-comes-due",
+     "title": "See what comes due",
+     "steps": [
+      {
+       "text": "Read the four tiles and the **Maturity wall** under them. The tiles count what falls due in the next 12 months; the wall shows how much debt matures each year.",
+       "img": "img/calendar/read-the-calendar-03.jpg",
+       "w": 1248,
+       "h": 553,
+       "marks": [
+        {
+         "x": 25.4,
+         "y": 0.7,
+         "w": 24,
+         "h": 18.7,
+         "label": "Maturing (next 12 mo)",
+         "text": "Loans whose maturity falls within the next 12 months."
+        },
+        {
+         "x": 50.6,
+         "y": 0.7,
+         "w": 24,
+         "h": 18.7,
+         "label": "ARM resets (next 12 mo)",
+         "text": "Loans whose rate, and payment, change within 12 months."
+        },
+        {
+         "x": 75.7,
+         "y": 0.7,
+         "w": 24,
+         "h": 18.7,
+         "label": "IO step-ups (next 12 mo)",
+         "text": "Loans whose interest-only period ends within 12 months."
+        },
+        {
+         "x": 7.1,
+         "y": 34.2,
+         "w": 44.7,
+         "h": 3.6,
+         "label": "A red bar",
+         "text": "Debt maturing this year or next: the closest refinancings."
+        }
+       ]
+      },
+      {
+       "text": "Scroll down to **Upcoming events**: every event in date order, grouped by year. A yellow row is within the next 12 months; a pink row is a loan that needs a maturity decision.",
+       "img": "img/calendar/read-the-calendar-04.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 2.2,
+         "y": 11.3,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "Within 12 months",
+         "text": "A yellow row is less than a year away."
+        },
+        {
+         "x": 2.2,
+         "y": 27.2,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "Needs a decision",
+         "text": "A pink row: the loan matured or its extension is undecided."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "see-it-month-by-month",
+     "title": "See it month by month",
+     "steps": [
+      {
+       "text": "Click **Calendar** in the tool bar. Each year is a box; the first year with events is open, showing its twelve months.",
+       "img": "img/calendar/read-the-calendar-05.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 7.6,
+         "y": 2.9,
+         "w": 6.7,
+         "h": 4.3,
+         "label": "Calendar",
+         "text": "The month-by-month view."
+        },
+        {
+         "x": 2.3,
+         "y": 51.9,
+         "w": 94.3,
+         "h": 7,
+         "label": "A year",
+         "text": "Click its line to open or close its twelve months."
+        },
+        {
+         "x": 73.7,
+         "y": 83.6,
+         "w": 21.1,
+         "h": 4.9,
+         "label": "An event",
+         "text": "Edged in red for a maturity, amber for an ARM reset, green when interest-only ends."
+        }
+       ]
+      },
+      {
+       "text": "Click a year’s line to open or close its months. Several years can be open at once."
+      },
+      {
+       "text": "Point at an event to read its detail. Click **List** to go back to the list."
+      }
+     ]
+    },
+    {
+     "id": "open-a-loan-from-an-event",
+     "title": "Open a loan from an event",
+     "steps": [
+      {
+       "text": "Click any event: a row in the list, a card in a month, or a line in the decision box."
+      },
+      {
+       "text": "The app goes to **Portfolio**, opens the loan, and lights up the event’s payment in its **Amortization Schedule** for a few seconds.",
+       "img": "img/calendar/read-the-calendar-06.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 5.3,
+         "y": 16.8,
+         "w": 45.8,
+         "h": 2.7,
+         "label": "Amortization Schedule",
+         "text": "The loan’s payment schedule, on the loan’s page under Portfolio."
+        },
+        {
+         "x": 4,
+         "y": 54,
+         "w": 90.3,
+         "h": 6.9,
+         "label": "The payment",
+         "text": "The schedule row of the event’s date, lit up for a few seconds. Here an ARM reset: the first payment at the new rate."
+        }
+       ]
+      },
+      {
+       "text": "Click the **Calendar** tab at the top to go back. It stays open, as you left it."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "filter-the-calendar",
+     "anchor": "",
+     "text": "Show only some lenders, loans or amounts."
+    },
+    {
+     "page": "set-loan-status",
+     "anchor": "",
+     "text": "Settle a loan that needs a maturity decision."
+    },
+    {
+     "page": "ref-calendar",
+     "anchor": "",
+     "text": "Every part of the calendar, named."
+    }
+   ]
+  },
+  {
+   "id": "filter-the-calendar",
+   "kind": "howto",
+   "group": "Tools",
+   "title": "Narrow the calendar down",
+   "description": "Show only some lenders, loans or amounts, sort the list, and print what you see.",
+   "intro": "The tool bar at the top of the calendar narrows it down. The filters work in both views and on the four tiles, and they stay while the tab is open.",
+   "sections": [
+    {
+     "id": "show-one-lenders-loans",
+     "title": "Show one lender’s loans",
+     "steps": [
+      {
+       "text": "Click **Lender** in the tool bar. It lists every lender in the book."
+      },
+      {
+       "text": "Tick one or more lenders. Only their loans are shown, and the button says how many are ticked.",
+       "img": "img/calendar/filter-the-calendar-01.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 15.1,
+         "y": 17.7,
+         "w": 6.9,
+         "h": 5,
+         "label": "Lender (1)",
+         "text": "One lender is ticked."
+        },
+        {
+         "x": 16.4,
+         "y": 26,
+         "w": 1,
+         "h": 1.8,
+         "label": "A tick box",
+         "text": "On: this lender’s loans are shown."
+        }
+       ]
+      },
+      {
+       "text": "Click **Lender** again to close the list. The tiles, the wall and the list now count only those lenders’ loans."
+      }
+     ]
+    },
+    {
+     "id": "pick-loans-by-name",
+     "title": "Pick loans by name",
+     "steps": [
+      {
+       "text": "Click **Loans** in the tool bar."
+      },
+      {
+       "text": "Type part of a name in **Search loans**. Only the loans that match stay in the list.",
+       "img": "img/calendar/filter-the-calendar-02.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 22.1,
+         "y": 24.8,
+         "w": 16.9,
+         "h": 4.3,
+         "label": "Search loans",
+         "text": "Type part of a name."
+        },
+        {
+         "x": 22.1,
+         "y": 29.9,
+         "w": 16.9,
+         "h": 12.9,
+         "label": "The loans",
+         "text": "Tick one to show only it; tick several to show them together."
+        }
+       ]
+      },
+      {
+       "text": "Tick the loans to show, then click **Loans** again to close the list."
+      }
+     ]
+    },
+    {
+     "id": "keep-only-some-amounts-and-sort-them",
+     "title": "Keep only some amounts and sort them",
+     "steps": [
+      {
+       "text": "Type the smallest amount in the first **Amount** box. Type 5m for 5 million, or 750k for 750 thousand."
+      },
+      {
+       "text": "Type the largest amount in the second box, or leave it blank for no limit."
+      },
+      {
+       "text": "Pick an order in **Sort**: **Date** (grouped by year), **Smallest amount** or **Largest amount**.",
+       "img": "img/calendar/filter-the-calendar-03.jpg",
+       "w": 1260,
+       "h": 326,
+       "marks": [
+        {
+         "x": 30.8,
+         "y": 6.2,
+         "w": 6.2,
+         "h": 9.2,
+         "label": "Amount — min",
+         "text": "Here 50m: only events of $50,000,000 or more."
+        },
+        {
+         "x": 47.2,
+         "y": 5.9,
+         "w": 10.5,
+         "h": 9.8,
+         "label": "Sort",
+         "text": "Here **Largest amount**: the list is largest first, and no longer grouped by year."
+        },
+        {
+         "x": 0.8,
+         "y": 65.2,
+         "w": 98.4,
+         "h": 31.7,
+         "label": "Counted again",
+         "text": "The tiles, the wall and the list count only the events that pass."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "use-a-tile-as-a-filter",
+     "title": "Use a tile as a filter",
+     "steps": [
+      {
+       "text": "Click a tile, for example **Maturing (next 12 mo)**. The list shows only the loans that tile counts, and a line under the tiles says what is shown.",
+       "img": "img/calendar/filter-the-calendar-04.jpg",
+       "w": 1248,
+       "h": 139,
+       "marks": [
+        {
+         "x": 25.4,
+         "y": 2.9,
+         "w": 24,
+         "h": 74.5,
+         "label": "The tile you clicked",
+         "text": "Outlined while it filters the list."
+        },
+        {
+         "x": 0.3,
+         "y": 84.6,
+         "w": 99.4,
+         "h": 12.5,
+         "label": "Showing …",
+         "text": "What the list shows now. Click here to show everything again."
+        }
+       ]
+      },
+      {
+       "text": "Click the tile again, or the line under it, to show everything."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "Clicking a tile switches to the **List** view."
+      }
+     ]
+    },
+    {
+     "id": "clear-the-filters-and-print",
+     "title": "Clear the filters and print",
+     "steps": [
+      {
+       "text": "Click **Clear** to remove every filter: the lenders, the loans, the amounts, the search and the tile you clicked.",
+       "img": "img/calendar/filter-the-calendar-05.jpg",
+       "w": 1256,
+       "h": 78,
+       "marks": [
+        {
+         "x": 58.5,
+         "y": 29.5,
+         "w": 4.6,
+         "h": 41,
+         "label": "Clear",
+         "text": "Removes every filter."
+        },
+        {
+         "x": 93.1,
+         "y": 28.9,
+         "w": 5.1,
+         "h": 42.2,
+         "label": "Print",
+         "text": "Prints the calendar as you see it now."
+        }
+       ]
+      },
+      {
+       "text": "Click **Print** to print the calendar, or to save it as a PDF from the print window. The tool bar is left off the paper."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "**Clear** doesn’t change the view or the order. Set **Sort** back to **Date** yourself."
+      }
+     ]
+    }
+   ],
+   "next": [
+    {
+     "page": "read-the-calendar",
+     "anchor": "",
+     "text": "Read the decisions, the tiles, the wall and the events."
+    },
+    {
+     "page": "ref-calendar",
+     "anchor": "",
+     "text": "Every part of the calendar, named."
+    }
+   ]
+  },
+  {
+   "id": "ref-calendar",
+   "kind": "reference",
+   "group": "Reference",
+   "title": "The calendar",
+   "description": "Every part of the Maturity & Reset Calendar tab: the decision box, the tiles, the maturity wall, the events, the month view and the tool bar.",
+   "intro": "Each picture names its controls. Point at a number, on the picture or in the list, to find it.",
+   "sections": [
+    {
+     "id": "the-calendar-tab",
      "title": "The Calendar tab",
-     "text": "The calendar is built from every active loan in the book (an archived property, a removed or paid-off loan is left out) and is redrawn whenever a loan changes. Your view and filters stay as you left them while the tab is open.",
-     "img": "img/calendar/open-02.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
+     "views": [
       {
-       "x": 3.9,
-       "y": 15.2,
-       "w": 7.9,
-       "h": 4.2,
-       "label": "Portfolio",
-       "text": "Back to the portfolio. The calendar tab stays open."
-      },
-      {
-       "x": 12.1,
-       "y": 15.2,
-       "w": 11.4,
-       "h": 4.2,
-       "label": "Calendar",
-       "text": "This tab."
-      },
-      {
-       "x": 20,
-       "y": 16.4,
-       "w": 1.1,
-       "h": 1.8,
-       "label": "Pop out",
-       "text": "Opens the calendar in a window of its own — handy on a second screen. Clicking an event there still opens the loan here."
-      },
-      {
-       "x": 21.5,
-       "y": 16.4,
-       "w": 1.1,
-       "h": 1.8,
-       "label": "Close tab",
-       "text": "Closes the calendar. Nothing is lost — it is rebuilt from the loans next time."
-      },
-      {
-       "x": 19.3,
-       "y": 24.4,
-       "w": 32.3,
-       "h": 2.7,
-       "label": "Maturity & Reset Calendar",
-       "text": "The title, and the day it was built (today)."
-      },
-      {
-       "x": 5.9,
-       "y": 33.9,
-       "w": 86.1,
-       "h": 6.9,
-       "label": "The tool bar",
-       "text": "List or Calendar, the filters, Sort, Clear and Print (the “Narrow it down” topic)."
-      },
-      {
-       "x": 5.9,
-       "y": 43.3,
-       "w": 86.1,
-       "h": 13.4,
-       "label": "Needs a maturity decision",
-       "text": "Loans that have matured or whose extension is undecided — always on top."
-      },
-      {
-       "x": 5.9,
-       "y": 57.1,
-       "w": 86.1,
-       "h": 11.5,
-       "label": "The four tiles",
-       "text": "The totals at a glance; each tile is also a filter."
-      },
-      {
-       "x": 5.9,
-       "y": 75.2,
-       "w": 86.1,
-       "h": 24.8,
-       "label": "Maturity wall",
-       "text": "How much debt comes due each year."
+       "text": "The calendar is built from every active loan in the book (an archived property, a removed or paid-off loan is left out) and is redrawn whenever a loan changes. Your view and filters stay as you left them while the tab is open.",
+       "img": "img/calendar/ref-calendar-01.jpg",
+       "w": 1440,
+       "h": 900,
+       "marks": [
+        {
+         "x": 3.9,
+         "y": 15.2,
+         "w": 7.2,
+         "h": 4.2,
+         "label": "Portfolio",
+         "text": "Back to the portfolio. The calendar tab stays open."
+        },
+        {
+         "x": 11.3,
+         "y": 15.2,
+         "w": 10.8,
+         "h": 4.2,
+         "label": "Calendar",
+         "text": "This tab."
+        },
+        {
+         "x": 18.6,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Pop out",
+         "text": "Opens the calendar in a window of its own, handy on a second screen. Clicking an event there still opens the loan here."
+        },
+        {
+         "x": 20.1,
+         "y": 16.4,
+         "w": 1.1,
+         "h": 1.8,
+         "label": "Close tab",
+         "text": "Closes the calendar. Nothing is lost: it is rebuilt from the loans next time."
+        },
+        {
+         "x": 18.2,
+         "y": 24.4,
+         "w": 30.6,
+         "h": 2.7,
+         "label": "Maturity & Reset Calendar",
+         "text": "The title, and the day it was built (today)."
+        },
+        {
+         "x": 5.9,
+         "y": 33.9,
+         "w": 86.1,
+         "h": 6.9,
+         "label": "The tool bar",
+         "text": "List or Calendar, the filters, Sort, Clear and Print."
+        },
+        {
+         "x": 5.9,
+         "y": 43.3,
+         "w": 86.1,
+         "h": 13.4,
+         "label": "Needs a maturity decision",
+         "text": "Loans that have matured or whose extension is undecided, always on top."
+        },
+        {
+         "x": 5.9,
+         "y": 57.1,
+         "w": 86.1,
+         "h": 11.5,
+         "label": "The four tiles",
+         "text": "The totals at a glance; each tile is also a filter."
+        },
+        {
+         "x": 5.9,
+         "y": 75.2,
+         "w": 86.1,
+         "h": 24.8,
+         "label": "Maturity wall",
+         "text": "How much debt comes due each year."
+        }
+       ]
       }
      ]
-    }
-   ]
-  },
-  {
-   "id": "read",
-   "title": "What’s coming up",
-   "intro": "The List view, from the top: the decisions, the four tiles, the maturity wall and every event in date order.",
-   "steps": [
+    },
     {
+     "id": "needs-a-maturity-decision",
      "title": "Needs a maturity decision",
-     "text": "A red box on top lists every loan that needs a decision about its maturity: a loan whose status is “Matured” (set by hand, or by itself once the maturity date has passed) or “Extension undecided” (set by hand in the loan’s edit form, Loan Status). It stays here — even after the date has passed — until you change the status (Extended, Paid off…).",
-     "img": "img/calendar/read-01.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
+     "views": [
       {
-       "x": 2.3,
-       "y": 2,
-       "w": 94.3,
-       "h": 4.8,
-       "label": "Needs a maturity decision (2)",
-       "text": "How many loans wait for a decision."
-      },
-      {
-       "x": 3.4,
-       "y": 8.7,
-       "w": 11.9,
-       "h": 2.6,
-       "label": "Extension undecided",
-       "text": "The loan’s status: an extension is being discussed and not yet settled."
-      },
-      {
-       "x": 3.4,
-       "y": 14,
-       "w": 5.5,
-       "h": 2.6,
-       "label": "Matured",
-       "text": "The loan has reached its maturity (or you marked it so) and is not extended or paid off yet."
-      },
-      {
-       "x": 15.9,
-       "y": 8.4,
-       "w": 22.4,
-       "h": 3.2,
-       "label": "The loan",
-       "text": "Click the row to open that loan’s page."
-      },
-      {
-       "x": 83,
-       "y": 8.8,
-       "w": 12.5,
-       "h": 2.4,
-       "label": "Date · balloon",
-       "text": "Its maturity date and the balloon (what is left to pay then)."
+       "text": "A red box on top lists every loan whose status is **Matured** (set by hand, or by itself once the maturity date has passed) or **Extension undecided** (set by hand in the loan’s edit form, **Loan Status**). It stays, even after the date has passed, until you change the status (**Extended**, **Paid off**…).",
+       "img": "img/calendar/ref-calendar-02.jpg",
+       "w": 1248,
+       "h": 128,
+       "marks": [
+        {
+         "x": 0.4,
+         "y": 3.9,
+         "w": 99.2,
+         "h": 27.2,
+         "label": "Needs a maturity decision (2)",
+         "text": "How many loans wait for a decision."
+        },
+        {
+         "x": 1.5,
+         "y": 41.5,
+         "w": 11.4,
+         "h": 14.4,
+         "label": "Extension undecided",
+         "text": "An extension is being discussed and not yet settled."
+        },
+        {
+         "x": 1.5,
+         "y": 71.3,
+         "w": 5.5,
+         "h": 14.4,
+         "label": "Matured",
+         "text": "The loan has reached its maturity (or you marked it so) and is not extended or paid off yet."
+        },
+        {
+         "x": 13.6,
+         "y": 39.7,
+         "w": 20.4,
+         "h": 18.1,
+         "label": "The loan",
+         "text": "Click the row to open that loan’s page."
+        },
+        {
+         "x": 85.3,
+         "y": 41.9,
+         "w": 13.2,
+         "h": 13.6,
+         "label": "Date · balloon",
+         "text": "Its maturity date, and the balloon: what is left to pay then."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "The four tiles",
-     "text": "Four totals over the loans the filters let through. Click a tile and the list below shows exactly the loans it counts; click it again to show everything.",
-     "img": "img/calendar/read-02.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
+     "id": "the-tiles-and-the-maturity-wall",
+     "title": "The tiles and the maturity wall",
+     "views": [
       {
-       "x": 2.2,
-       "y": 1.9,
-       "w": 22.8,
-       "h": 14.4,
-       "label": "Debt maturing (shown)",
-       "text": "The balloons of every maturity in the calendar added up, and how many there are."
+       "title": "The four tiles",
+       "text": "Four totals over the loans the filters let through. Click a tile to list exactly the loans it counts; click it again to show everything.",
+       "img": "img/calendar/ref-calendar-03.jpg",
+       "w": 1248,
+       "h": 111,
+       "marks": [
+        {
+         "x": 0.3,
+         "y": 3.6,
+         "w": 24,
+         "h": 92.8,
+         "label": "Debt maturing (shown)",
+         "text": "The balloons of every maturity in the calendar added up, and how many there are."
+        },
+        {
+         "x": 25.4,
+         "y": 3.6,
+         "w": 24,
+         "h": 92.8,
+         "label": "Maturing (next 12 mo)",
+         "text": "Loans whose maturity falls within the next 12 months."
+        },
+        {
+         "x": 50.6,
+         "y": 3.6,
+         "w": 24,
+         "h": 92.8,
+         "label": "ARM resets (next 12 mo)",
+         "text": "Adjustable-rate loans whose rate (and payment) changes within 12 months."
+        },
+        {
+         "x": 75.7,
+         "y": 3.6,
+         "w": 24,
+         "h": 92.8,
+         "label": "IO step-ups (next 12 mo)",
+         "text": "Loans whose interest-only period ends within 12 months: the payment steps up to principal and interest."
+        }
+       ]
       },
       {
-       "x": 26.1,
-       "y": 1.9,
-       "w": 22.8,
-       "h": 14.4,
-       "label": "Maturing (next 12 mo)",
-       "text": "Loans whose maturity falls within the next 12 months."
+       "title": "A tile as a filter",
+       "text": "A clicked tile filters the list (and switches to the List view).",
+       "img": "img/calendar/ref-calendar-04.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 26.1,
+         "y": 16.5,
+         "w": 22.8,
+         "h": 14.4,
+         "label": "The tile you clicked",
+         "text": "Outlined while it filters the list."
+        },
+        {
+         "x": 2.2,
+         "y": 32.2,
+         "w": 94.4,
+         "h": 2.4,
+         "label": "Showing …",
+         "text": "What the list shows now. Click here, or the tile again, to show everything."
+        },
+        {
+         "x": 2.2,
+         "y": 69,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "Only those loans",
+         "text": "The rows are exactly the ones the tile counts."
+        }
+       ]
       },
       {
-       "x": 50,
-       "y": 1.9,
-       "w": 22.8,
-       "h": 14.4,
-       "label": "ARM resets (next 12 mo)",
-       "text": "Adjustable-rate loans whose rate (and payment) changes within 12 months."
-      },
-      {
-       "x": 73.8,
-       "y": 1.9,
-       "w": 22.8,
-       "h": 14.4,
-       "label": "IO step-ups (next 12 mo)",
-       "text": "Loans whose interest-only period ends within 12 months — the payment steps up to principal and interest."
+       "title": "Maturity wall",
+       "text": "Debt coming due by year: one bar per year, as long as that year’s balloons.",
+       "img": "img/calendar/ref-calendar-05.jpg",
+       "w": 1260,
+       "h": 436,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 15.1,
+         "w": 4.1,
+         "h": 4.7,
+         "label": "The year",
+         "text": "Each year with at least one maturity."
+        },
+        {
+         "x": 7.5,
+         "y": 15.1,
+         "w": 44.3,
+         "h": 4.6,
+         "label": "A red bar",
+         "text": "Coming due this year or next: the closest refinancings."
+        },
+        {
+         "x": 7.5,
+         "y": 23.2,
+         "w": 22.2,
+         "h": 4.6,
+         "label": "A green bar",
+         "text": "A later year. The longest bar is the year with the most debt maturing."
+        },
+        {
+         "x": 80.2,
+         "y": 15.2,
+         "w": 17.5,
+         "h": 4.5,
+         "label": "The amount",
+         "text": "The total of that year’s balloons."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Maturity wall",
-     "text": "Debt coming due by year: one bar per year, as long as that year’s balloons. This year’s and next year’s bars are red.",
-     "img": "img/calendar/read-03.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 3.7,
-       "y": 8.9,
-       "w": 4,
-       "h": 2.8,
-       "label": "The year",
-       "text": "Each year with at least one maturity."
-      },
-      {
-       "x": 8.7,
-       "y": 8.9,
-       "w": 42.5,
-       "h": 2.8,
-       "label": "A red bar",
-       "text": "Coming due this year or next — the closest refinancings."
-      },
-      {
-       "x": 8.7,
-       "y": 13.8,
-       "w": 21.3,
-       "h": 2.8,
-       "label": "A green bar",
-       "text": "A later year. The longest bar is the year with the most debt maturing."
-      },
-      {
-       "x": 78.4,
-       "y": 8.9,
-       "w": 16.8,
-       "h": 2.7,
-       "label": "The amount",
-       "text": "The total of that year’s balloons."
-      }
-     ]
-    },
-    {
+     "id": "upcoming-events",
      "title": "Upcoming events",
-     "text": "Every event in date order, grouped by year. A row within the next 12 months has a yellow background; a loan needing a maturity decision has a pink one. Click any row to open that loan.",
-     "img": "img/calendar/read-04.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
+     "views": [
       {
-       "x": 2.2,
-       "y": 1.9,
-       "w": 7.9,
-       "h": 5.1,
-       "label": "Date",
-       "text": "The day of the event: the maturity date, the payment date the new rate starts, or the first full payment after interest-only."
-      },
-      {
-       "x": 10.1,
-       "y": 1.9,
-       "w": 19.3,
-       "h": 5.1,
-       "label": "Event",
-       "text": "Maturity (red), ARM reset (amber) or IO ends (green)."
-      },
-      {
-       "x": 29.5,
-       "y": 1.9,
-       "w": 17.8,
-       "h": 5.1,
-       "label": "Loan",
-       "text": "The loan."
-      },
-      {
-       "x": 47.3,
-       "y": 1.9,
-       "w": 9.1,
-       "h": 5.1,
-       "label": "Amount",
-       "text": "The balloon for a maturity; the balance at that date for a reset or an IO step-up."
-      },
-      {
-       "x": 56.3,
-       "y": 1.9,
-       "w": 40.3,
-       "h": 5.1,
-       "label": "Detail",
-       "text": "In words: the balloon due, the new rate and payment, or the new P&I payment."
-      },
-      {
-       "x": 2.2,
-       "y": 7.1,
-       "w": 94.4,
-       "h": 4.2,
-       "label": "Year",
-       "text": "Where each year’s events start."
-      },
-      {
-       "x": 2.2,
-       "y": 11.3,
-       "w": 94.4,
-       "h": 5.7,
-       "label": "Within 12 months",
-       "text": "A yellow row is less than a year away."
-      },
-      {
-       "x": 11.2,
-       "y": 12.8,
-       "w": 6.1,
-       "h": 2.8,
-       "label": "The kind of event",
-       "text": "Maturity, ARM reset or IO ends."
-      },
-      {
-       "x": 2.2,
-       "y": 26.9,
-       "w": 94.4,
-       "h": 8.3,
-       "label": "Needs a decision",
-       "text": "A pink row: the loan matured or its extension is undecided — its status is shown next to the event."
+       "text": "Every event in date order, grouped by year. Click any row to open that loan at the event’s payment.",
+       "img": "img/calendar/ref-calendar-06.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 2.2,
+         "y": 1.9,
+         "w": 8.1,
+         "h": 5.1,
+         "label": "Date",
+         "text": "The day of the event: the maturity date, the payment date the new rate starts, or the first full payment after interest-only."
+        },
+        {
+         "x": 10.3,
+         "y": 1.9,
+         "w": 18.5,
+         "h": 5.1,
+         "label": "Event",
+         "text": "Maturity (red), ARM reset (amber) or IO ends (green)."
+        },
+        {
+         "x": 28.9,
+         "y": 1.9,
+         "w": 18.1,
+         "h": 5.1,
+         "label": "Loan",
+         "text": "The loan."
+        },
+        {
+         "x": 47,
+         "y": 1.9,
+         "w": 9.4,
+         "h": 5.1,
+         "label": "Amount",
+         "text": "The balloon for a maturity; the balance at that date for a reset or an IO step-up."
+        },
+        {
+         "x": 56.4,
+         "y": 1.9,
+         "w": 40.2,
+         "h": 5.1,
+         "label": "Detail",
+         "text": "In words: the balloon due, the new rate and payment, or the new P&I payment."
+        },
+        {
+         "x": 2.2,
+         "y": 7.1,
+         "w": 94.4,
+         "h": 4.2,
+         "label": "Year",
+         "text": "Where each year’s events start."
+        },
+        {
+         "x": 2.2,
+         "y": 11.3,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "Within 12 months",
+         "text": "A yellow row is less than a year away."
+        },
+        {
+         "x": 11.4,
+         "y": 12.9,
+         "w": 5.5,
+         "h": 2.8,
+         "label": "The kind of event",
+         "text": "Maturity, ARM reset or IO ends."
+        },
+        {
+         "x": 2.2,
+         "y": 27.2,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "Needs a decision",
+         "text": "A pink row: the loan matured or its extension is undecided. Its status is shown next to the event."
+        },
+        {
+         "x": 2.2,
+         "y": 21.3,
+         "w": 94.4,
+         "h": 5.8,
+         "label": "An event",
+         "text": "Click it: the app goes to Portfolio, opens this loan and jumps to that payment in its schedule."
+        }
+       ]
       }
      ]
-    }
-   ]
-  },
-  {
-   "id": "months",
-   "title": "Month by month",
-   "intro": "The Calendar view: one box per year; open a year to see its twelve months.",
-   "steps": [
+    },
     {
+     "id": "the-calendar-view",
      "title": "The Calendar view",
-     "text": "Click “Calendar” in the tool bar. The first year with events is open; the others are closed. Each event is a small card in its month, edged in its colour.",
-     "img": "img/calendar/months-01.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
+     "views": [
       {
-       "x": 3.4,
-       "y": 2.9,
-       "w": 4.2,
-       "h": 4.3,
-       "label": "List",
-       "text": "Back to the list view."
+       "text": "Click **Calendar** in the tool bar: one box per year, and the first year with events open. Each event is a small card in its month, edged in its color.",
+       "img": "img/calendar/ref-calendar-07.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 3.4,
+         "y": 2.9,
+         "w": 4.2,
+         "h": 4.3,
+         "label": "List",
+         "text": "Back to the list view."
+        },
+        {
+         "x": 7.6,
+         "y": 2.9,
+         "w": 6.7,
+         "h": 4.3,
+         "label": "Calendar",
+         "text": "This view."
+        },
+        {
+         "x": 2.2,
+         "y": 47.6,
+         "w": 94.4,
+         "h": 2.4,
+         "label": "The colors",
+         "text": "Red = maturity, amber = ARM reset, green = interest-only ends."
+        },
+        {
+         "x": 2.3,
+         "y": 51.9,
+         "w": 94.3,
+         "h": 7,
+         "label": "A year",
+         "text": "The year, how many events and how much matures. Click it to close or open its months."
+        },
+        {
+         "x": 72.9,
+         "y": 79.5,
+         "w": 22.6,
+         "h": 10.8,
+         "label": "A month",
+         "text": "The month’s events. An empty month shows “—”."
+        },
+        {
+         "x": 73.7,
+         "y": 83.6,
+         "w": 21.1,
+         "h": 4.9,
+         "label": "An event",
+         "text": "The loan, the kind of event and the amount. Point at it to read the detail; click it to open the loan."
+        }
+       ]
       },
       {
-       "x": 7.6,
-       "y": 2.9,
-       "w": 6.7,
-       "h": 4.3,
-       "label": "Calendar",
-       "text": "This view."
-      },
-      {
-       "x": 2.2,
-       "y": 47.6,
-       "w": 94.4,
-       "h": 2.4,
-       "label": "The colours",
-       "text": "Red = maturity, amber = ARM reset, green = interest-only ends."
-      },
-      {
-       "x": 2.3,
-       "y": 51.9,
-       "w": 94.3,
-       "h": 7,
-       "label": "A year",
-       "text": "The year, how many events and how much matures. Click it to close or open its months."
-      },
-      {
-       "x": 72.9,
-       "y": 79.5,
-       "w": 22.6,
-       "h": 10.8,
-       "label": "A month",
-       "text": "The month’s events. An empty month says “—”."
-      },
-      {
-       "x": 73.7,
-       "y": 83.6,
-       "w": 21.1,
-       "h": 4.8,
-       "label": "An event",
-       "text": "The loan, the kind of event and the amount. Point at it to read the detail; click it to open the loan."
+       "title": "Open another year",
+       "text": "Click a closed year’s line to open its twelve months; click an open one to close it. Several years can be open at once.",
+       "img": "img/calendar/ref-calendar-08.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 2.3,
+         "y": 1.3,
+         "w": 94.3,
+         "h": 7,
+         "label": "A closed year",
+         "text": "▸ = closed. Click to open it."
+        },
+        {
+         "x": 2.3,
+         "y": 10.3,
+         "w": 94.3,
+         "h": 7,
+         "label": "An open year",
+         "text": "▾ = open: its twelve months are below."
+        },
+        {
+         "x": 4.1,
+         "y": 26.9,
+         "w": 21.1,
+         "h": 6.6,
+         "label": "Needs a decision",
+         "text": "A loan that matured, or whose extension is undecided, is edged in red (or amber) with a warning line."
+        },
+        {
+         "x": 4.1,
+         "y": 21.5,
+         "w": 21.1,
+         "h": 4.9,
+         "label": "An event",
+         "text": "Click it to open the loan."
+        }
+       ]
       }
      ]
     },
     {
-     "title": "Open another year",
-     "text": "Click a closed year’s line to open its twelve months; click an open one to close it. Several years can be open at once.",
-     "img": "img/calendar/months-02.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
+     "id": "the-tool-bar",
+     "title": "The tool bar",
+     "views": [
       {
-       "x": 2.3,
-       "y": 1.3,
-       "w": 94.3,
-       "h": 7,
-       "label": "A closed year",
-       "text": "▸ = closed. Click to open it."
+       "title": "Lender",
+       "text": "Every lender in the book. Tick one or more to show only their loans.",
+       "img": "img/calendar/ref-calendar-09.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 15.1,
+         "y": 17.7,
+         "w": 5.5,
+         "h": 5,
+         "label": "Lender",
+         "text": "Opens and closes this list."
+        },
+        {
+         "x": 15.1,
+         "y": 23.5,
+         "w": 18.3,
+         "h": 76.3,
+         "label": "Every lender",
+         "text": "Tick a lender to show only its loans; tick several to show all of theirs."
+        },
+        {
+         "x": 16.4,
+         "y": 26,
+         "w": 1,
+         "h": 1.8,
+         "label": "A tick box",
+         "text": "On = this lender’s loans are shown."
+        }
+       ]
       },
       {
-       "x": 2.3,
-       "y": 10.3,
-       "w": 94.3,
-       "h": 7,
-       "label": "An open year",
-       "text": "▾ = open: its twelve months are below."
+       "title": "A lender ticked",
+       "text": "The tiles, the wall and the list count only that lender’s loans. Untick it, or click **Clear**, to see everything again.",
+       "img": "img/calendar/ref-calendar-10.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 15.1,
+         "y": 17.7,
+         "w": 6.9,
+         "h": 5,
+         "label": "Lender (1)",
+         "text": "One lender is ticked."
+        },
+        {
+         "x": 2.2,
+         "y": 39.5,
+         "w": 94.4,
+         "h": 14.4,
+         "label": "The tiles",
+         "text": "Now only that lender’s loans."
+        },
+        {
+         "x": 2.2,
+         "y": 62.2,
+         "w": 94.4,
+         "h": 8.9,
+         "label": "The wall",
+         "text": "Only that lender’s maturities."
+        }
+       ]
       },
       {
-       "x": 4.1,
-       "y": 26.8,
-       "w": 21.1,
-       "h": 6.5,
-       "label": "Needs a decision",
-       "text": "A loan that matured or whose extension is undecided is marked in red (or amber) with a warning line."
+       "title": "Loans",
+       "text": "Pick loans by name. Type in the search box to shorten the list, then tick the loans to show.",
+       "img": "img/calendar/ref-calendar-11.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 21.4,
+         "y": 17.7,
+         "w": 5.1,
+         "h": 5,
+         "label": "Loans",
+         "text": "Opens and closes this list."
+        },
+        {
+         "x": 22.1,
+         "y": 24.8,
+         "w": 16.9,
+         "h": 4.3,
+         "label": "Search loans",
+         "text": "Type part of a name; only the loans that match stay in the list."
+        },
+        {
+         "x": 22.1,
+         "y": 29.9,
+         "w": 16.9,
+         "h": 12.9,
+         "label": "The loans",
+         "text": "Tick a loan to show only it; tick several to show them together."
+        }
+       ]
       },
       {
-       "x": 4.1,
-       "y": 21.5,
-       "w": 21.1,
-       "h": 4.8,
-       "label": "An event",
-       "text": "Click it to open the loan."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "filter",
-   "title": "Narrow it down",
-   "intro": "The tool bar’s filters work in both views and on the four tiles. They stay while the tab is open; Clear removes them all.",
-   "steps": [
-    {
-     "title": "Lender",
-     "text": "Click “Lender” for the list of every lender in the book. Tick one or more: only their loans are shown, and the button says how many are ticked.",
-     "img": "img/calendar/filter-01.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 15.1,
-       "y": 17.7,
-       "w": 6,
-       "h": 5,
-       "label": "Lender",
-       "text": "Opens and closes this list."
+       "title": "Amount and Sort",
+       "text": "**Amount** keeps only the events between a smallest and a largest amount: type 5m for 5 million or 750k for 750 thousand, and leave a box blank for no limit. **Sort** orders the list.",
+       "img": "img/calendar/ref-calendar-12.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 31,
+         "y": 3,
+         "w": 5.9,
+         "h": 4.2,
+         "label": "Amount — min",
+         "text": "The smallest amount shown (here 50m = $50,000,000)."
+        },
+        {
+         "x": 37.9,
+         "y": 3,
+         "w": 5.9,
+         "h": 4.2,
+         "label": "Amount — max",
+         "text": "The largest amount shown. Blank = no limit."
+        },
+        {
+         "x": 46.8,
+         "y": 2.8,
+         "w": 10.1,
+         "h": 4.4,
+         "label": "Sort",
+         "text": "Date, Smallest amount or Largest amount."
+        },
+        {
+         "x": 2.2,
+         "y": 29.7,
+         "w": 94.4,
+         "h": 14.4,
+         "label": "Counted again",
+         "text": "The tiles, the wall and the list count only the events of $50,000,000 or more. Further down, the list is now largest first and not grouped by year."
+        }
+       ]
       },
       {
-       "x": 15.1,
-       "y": 23.5,
-       "w": 18.3,
-       "h": 76.3,
-       "label": "Every lender",
-       "text": "Tick a lender to show only its loans; tick several to show all of theirs."
+       "title": "The Sort choices",
+       "text": "",
+       "img": "img/calendar/ref-calendar-13.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 47.3,
+         "y": 18.4,
+         "w": 10.7,
+         "h": 2.2,
+         "label": "Date",
+         "text": "By date, earliest first, grouped by year (the usual order)."
+        },
+        {
+         "x": 47.3,
+         "y": 20.5,
+         "w": 10.7,
+         "h": 2.2,
+         "label": "Smallest amount",
+         "text": "Smallest amount first."
+        },
+        {
+         "x": 47.3,
+         "y": 22.7,
+         "w": 10.7,
+         "h": 2.2,
+         "label": "Largest amount",
+         "text": "Largest amount first."
+        }
+       ]
       },
       {
-       "x": 16.4,
-       "y": 27.3,
-       "w": 1,
-       "h": 1.8,
-       "label": "A tick box",
-       "text": "On = this lender’s loans are shown."
-      }
-     ]
-    },
-    {
-     "title": "A lender ticked",
-     "text": "With one lender ticked, the tiles, the wall and the list count only that lender’s loans. Untick it (or click Clear) to see everything again.",
-     "img": "img/calendar/filter-02.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 15.1,
-       "y": 17.7,
-       "w": 7.9,
-       "h": 5,
-       "label": "Lender (1)",
-       "text": "One lender is ticked."
-      },
-      {
-       "x": 2.2,
-       "y": 39.5,
-       "w": 94.4,
-       "h": 14.4,
-       "label": "The tiles",
-       "text": "Now only that lender’s loans."
-      },
-      {
-       "x": 2.2,
-       "y": 62.2,
-       "w": 94.4,
-       "h": 8.9,
-       "label": "The wall",
-       "text": "Only that lender’s maturities."
-      }
-     ]
-    },
-    {
-     "title": "Loans",
-     "text": "Click “Loans” to pick loans by name. Type in the search box to shorten the list, then tick the loans to show.",
-     "img": "img/calendar/filter-03.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 21.9,
-       "y": 17.7,
-       "w": 5.4,
-       "h": 5,
-       "label": "Loans",
-       "text": "Opens and closes this list."
-      },
-      {
-       "x": 22.6,
-       "y": 24.8,
-       "w": 16.9,
-       "h": 4.3,
-       "label": "Search loans",
-       "text": "Type part of a name; only the loans that match stay in the list."
-      },
-      {
-       "x": 22.6,
-       "y": 29.9,
-       "w": 16.9,
-       "h": 12.9,
-       "label": "The loans",
-       "text": "Tick a loan to show only it; tick several to show them together."
-      }
-     ]
-    },
-    {
-     "title": "Amount and Sort",
-     "text": "Amount keeps only events between a smallest and a largest amount — type 5m for 5 million or 750k for 750 thousand; leave a box blank for no limit. Sort orders the list by date (grouped by year), or by amount, smallest or largest first.",
-     "img": "img/calendar/filter-04.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 32.2,
-       "y": 3,
-       "w": 5.9,
-       "h": 4.2,
-       "label": "Amount — min",
-       "text": "Smallest amount shown (here 50m = $50,000,000)."
-      },
-      {
-       "x": 39.2,
-       "y": 3,
-       "w": 5.9,
-       "h": 4.2,
-       "label": "Amount — max",
-       "text": "Largest amount shown. Blank = no limit."
-      },
-      {
-       "x": 48.1,
-       "y": 2.8,
-       "w": 10.1,
-       "h": 4.4,
-       "label": "Sort",
-       "text": "Date, Smallest amount or Largest amount."
-      },
-      {
-       "x": 2.2,
-       "y": 29.7,
-       "w": 94.4,
-       "h": 14.4,
-       "label": "Counted again",
-       "text": "The tiles, the wall and the list count only the events of $50,000,000 or more. Further down, the list is now largest first and not grouped by year."
-      }
-     ]
-    },
-    {
-     "title": "The Sort choices",
-     "text": "The three ways to order the list.",
-     "img": "img/calendar/filter-05.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 48.7,
-       "y": 18.4,
-       "w": 10.7,
-       "h": 2.2,
-       "label": "Date",
-       "text": "By date, earliest first, grouped by year (the usual order)."
-      },
-      {
-       "x": 48.7,
-       "y": 20.5,
-       "w": 10.7,
-       "h": 2.2,
-       "label": "Smallest amount",
-       "text": "Smallest amount first."
-      },
-      {
-       "x": 48.7,
-       "y": 22.7,
-       "w": 10.7,
-       "h": 2.2,
-       "label": "Largest amount",
-       "text": "Largest amount first."
-      }
-     ]
-    },
-    {
-     "title": "Clear and Print",
-     "text": "Clear removes every filter (lenders, loans, amounts, search and the tile you clicked); the view and the sort stay. Print opens your computer’s print window with the calendar as you see it now — the tool bar is left off the paper.",
-     "img": "img/calendar/filter-06.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 58.9,
-       "y": 18,
-       "w": 4.4,
-       "h": 4.4,
-       "label": "Clear",
-       "text": "Removes every filter."
-      },
-      {
-       "x": 90.7,
-       "y": 17.9,
-       "w": 4.8,
-       "h": 4.6,
-       "label": "Print",
-       "text": "Prints the calendar (or saves it as a PDF from the print window)."
-      },
-      {
-       "x": 32.2,
-       "y": 18.1,
-       "w": 5.9,
-       "h": 4.2,
-       "label": "Back to blank",
-       "text": "No filter is on after Clear."
-      },
-      {
-       "x": 48.1,
-       "y": 18,
-       "w": 10.1,
-       "h": 4.4,
-       "label": "Sort stays",
-       "text": "Clear doesn’t change the order — set Sort back to Date yourself."
-      }
-     ]
-    },
-    {
-     "title": "A tile as a filter",
-     "text": "Click a tile — here “Maturing (next 12 mo)”. The list switches to just the loans that tile counts, and a line under the tiles says what is shown. Click the tile again, or that line, to show everything.",
-     "img": "img/calendar/filter-07.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 26.1,
-       "y": 18.6,
-       "w": 22.8,
-       "h": 14.4,
-       "label": "The tile you clicked",
-       "text": "Outlined while it filters the list."
-      },
-      {
-       "x": 2.2,
-       "y": 34.3,
-       "w": 94.4,
-       "h": 2.4,
-       "label": "Showing …",
-       "text": "What the list shows now. Click here to show everything again."
-      },
-      {
-       "x": 2.2,
-       "y": 66.9,
-       "w": 94.4,
-       "h": 8.3,
-       "label": "Only those loans",
-       "text": "The rows are exactly the ones the tile counts."
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "goto",
-   "title": "Open a loan from an event",
-   "intro": "Every event — a row in the list, a card in a month, a line in the decision box — opens its loan.",
-   "steps": [
-    {
-     "title": "Click an event",
-     "text": "Click any event.",
-     "img": "img/calendar/goto-01.jpg",
-     "w": 1313,
-     "h": 720,
-     "marks": [
-      {
-       "x": 2.2,
-       "y": 11.3,
-       "w": 94.4,
-       "h": 5.7,
-       "label": "An event",
-       "text": "Click it: the app goes to Portfolio, opens this loan and jumps to that payment in its schedule."
-      }
-     ]
-    },
-    {
-     "title": "The loan, at that payment",
-     "text": "The app switches to Portfolio, opens the loan and scrolls its amortization schedule to the payment of the event, lit up for a few seconds. The Calendar tab stays open in the tab strip at the top — click it to go back.",
-     "img": "img/calendar/goto-02.jpg",
-     "w": 1440,
-     "h": 900,
-     "marks": [
-      {
-       "x": 5.3,
-       "y": 16.8,
-       "w": 49.5,
-       "h": 2.7,
-       "label": "Amortization Schedule",
-       "text": "The loan’s payment schedule, on the loan’s page under Portfolio."
-      },
-      {
-       "x": 4,
-       "y": 54.1,
-       "w": 90.3,
-       "h": 7,
-       "label": "The payment",
-       "text": "The schedule row of the event’s date (“pays MM/DD/YYYY”), lit up for a few seconds — here the final payment, the balloon."
+       "title": "Clear and Print",
+       "text": "**Clear** removes every filter (lenders, loans, amounts, the search and the tile you clicked); the view and the sort stay. **Print** opens your computer’s print window with the calendar as you see it now, without the tool bar.",
+       "img": "img/calendar/ref-calendar-14.jpg",
+       "w": 1313,
+       "h": 720,
+       "marks": [
+        {
+         "x": 57.6,
+         "y": 18,
+         "w": 4.4,
+         "h": 4.4,
+         "label": "Clear",
+         "text": "Removes every filter."
+        },
+        {
+         "x": 90.7,
+         "y": 17.9,
+         "w": 4.8,
+         "h": 4.6,
+         "label": "Print",
+         "text": "Prints the calendar, or saves it as a PDF from the print window."
+        },
+        {
+         "x": 31,
+         "y": 18.1,
+         "w": 5.9,
+         "h": 4.2,
+         "label": "Back to blank",
+         "text": "No filter is on after Clear."
+        },
+        {
+         "x": 46.8,
+         "y": 18,
+         "w": 10.1,
+         "h": 4.4,
+         "label": "Sort stays",
+         "text": "Clear doesn’t change the order. Set Sort back to Date yourself."
+        }
+       ]
       }
      ]
     }
