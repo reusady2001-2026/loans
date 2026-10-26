@@ -138,7 +138,7 @@
         {
          "x": 5.9,
          "y": 1.7,
-         "w": 41.9,
+         "w": 41.7,
          "h": 2.2,
          "label": "The answer",
          "text": "Here: act before the rate resets, and pay down the gap."
@@ -280,7 +280,7 @@
          "x": 2,
          "y": 46.3,
          "w": 46.5,
-         "h": 12.5,
+         "h": 6.3,
          "label": "Rate",
          "text": "The index today + the spread."
         }
@@ -351,7 +351,7 @@
        "h": 532,
        "marks": [
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 37.2,
          "w": 5.2,
          "h": 4.1,
@@ -522,7 +522,7 @@
          "text": "Opens the group’s list of lender presets."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 36.2,
          "w": 5.2,
          "h": 4,
@@ -617,7 +617,7 @@
          "text": "The preset in use."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 38,
          "w": 5.2,
          "h": 4.1,
@@ -872,7 +872,7 @@
    "callouts": [
     {
      "kind": "note",
-     "text": "An extension is with one lender, one loan at a time. For a package of several loans, **Extend with today’s lender** is greyed."
+     "text": "One loan extends the same way however many properties it covers: it is sized on all of them. For several loans together (a senior + mezz, or a portfolio), see [Extend several loans together](refinance-together#extend-several-loans-together)."
     }
    ],
    "before": [
@@ -1214,8 +1214,8 @@
    "kind": "howto",
    "group": "Refinance",
    "title": "Refinance several loans together",
-   "description": "Refinance a senior and a mezzanine loan as one package, or put several properties under one new loan.",
-   "intro": "Loans that depend on one another are refinanced together: a property’s senior and mezzanine loans, or several properties under one new loan. The refinance works the same way, on the package’s total NOI and everything it owes.",
+   "description": "Refinance a senior and a mezzanine loan as one package, put several properties under one new loan, or extend each loan with its own lender.",
+   "intro": "Loans that depend on one another are refinanced together: a property’s senior and mezzanine loans, or several properties under one new loan. The refinance works the same way, on the package’s total NOI and everything it owes. Or keep today’s lenders: each loan is extended with its own lender, on its own terms.",
    "before": [
     "A T12 for every property in the package — see [Upload a T12](upload-a-t12). Nothing is sized until each one has its T12."
    ],
@@ -1357,6 +1357,89 @@
        "text": "**What to push** lists each property’s pushes under its name; tick them to see what the package could carry. See [Plan what to push for a refinance](plan-what-to-push)."
       }
      ]
+    },
+    {
+     "id": "extend-several-loans-together",
+     "title": "Extend several loans together",
+     "text": "Instead of one new loan, each loan stays with today’s lender, on new terms. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
+     "steps": [
+      {
+       "text": "Open the package’s refinance: the property’s **senior + mezz** entry, or **Create a portfolio…**, then **Refi Calculator**."
+      },
+      {
+       "text": "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, what its lender allows, its pay-down, and whether to extend it now.",
+       "img": "img/refinance/refinance-together-04.jpg",
+       "w": 1313,
+       "h": 295,
+       "marks": [
+        {
+         "x": 1.7,
+         "y": 52,
+         "w": 96.6,
+         "h": 18.5,
+         "label": "The mezzanine",
+         "text": "Sized behind its senior."
+        },
+        {
+         "x": 62.8,
+         "y": 52,
+         "w": 10.8,
+         "h": 18.5,
+         "label": "Its pay-down",
+         "text": "What it owes less what fits behind the senior."
+        },
+        {
+         "x": 62.8,
+         "y": 70.5,
+         "w": 10.8,
+         "h": 11.2,
+         "label": "In all",
+         "text": "The pay-downs of the loans to extend now."
+        },
+        {
+         "x": 34,
+         "y": 86.1,
+         "w": 7.6,
+         "h": 5.8,
+         "label": "Cash needed",
+         "text": "Pay-downs + penalties + fees."
+        }
+       ]
+      },
+      {
+       "text": "Scroll to each loan’s card and enter its lender’s quote: the **Spread (bps)**, the months, the penalty and the fee. A mezzanine is sized on the limits for the two loans together, less its senior’s extended amount.",
+       "img": "img/refinance/refinance-together-05.jpg",
+       "w": 1271,
+       "h": 150,
+       "marks": [
+        {
+         "x": 1.3,
+         "y": 22.7,
+         "w": 97.5,
+         "h": 12,
+         "label": "Behind its senior",
+         "text": "The senior’s extended amount comes first."
+        },
+        {
+         "x": 1.3,
+         "y": 40,
+         "w": 35.2,
+         "h": 12,
+         "label": "Each limit",
+         "text": "What it leaves for the mezzanine; the smallest binds."
+        }
+       ]
+      },
+      {
+       "text": "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new rate and term, its pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "The limits table applies to each loan. A loan that shouldn’t be extended now (**Not yet**, or **Don’t extend now**) is left as it is when you save the others."
+      }
+     ]
     }
    ],
    "next": [
@@ -1401,7 +1484,7 @@
          "text": "The loan, and the question: should you refinance?"
         },
         {
-         "x": 69.1,
+         "x": 69,
          "y": 46.9,
          "w": 5,
          "h": 4.2,
@@ -1409,9 +1492,9 @@
          "text": "Back to the loan’s page. Closing saves nothing and loses nothing."
         },
         {
-         "x": 74.7,
+         "x": 74.6,
          "y": 46.9,
-         "w": 20.4,
+         "w": 20.5,
          "h": 4.2,
          "label": "Save as a loan",
          "text": "Shown when there is a loan to propose. Saves it as a new loan and marks today’s loan Paid off (refinanced); it asks first. With a pay-down it says the cash you pay in. See [Save the refinance as a loan](save-the-refinance)."
@@ -2069,7 +2152,7 @@
         {
          "x": 5.9,
          "y": 1.7,
-         "w": 41.9,
+         "w": 41.7,
          "h": 2.2,
          "label": "The answer",
          "text": "Act before the reset — pay down $X. The other answers: Refinance, Your decision, Don’t refinance."
@@ -2177,19 +2260,19 @@
        "text": "The Mews at Princeton, with the lender’s spread typed as 0 for the example: the property supports more than you owe, and the lower rate saves more interest than the early-payoff penalty.",
        "img": "img/refinance/ref-refinance-15.jpg",
        "w": 1313,
-       "h": 1163,
+       "h": 1186,
        "marks": [
         {
          "x": 5.9,
          "y": 1.9,
-         "w": 40.9,
+         "w": 41.2,
          "h": 2.4,
          "label": "Refinance",
          "text": "Both answers are yes."
         },
         {
          "x": 1.7,
-         "y": 7.4,
+         "y": 7.3,
          "w": 8.6,
          "h": 3.4,
          "label": "You owe (payoff)",
@@ -2197,7 +2280,7 @@
         },
         {
          "x": 26.3,
-         "y": 7.4,
+         "y": 7.3,
          "w": 12.7,
          "h": 3.4,
          "label": "Property supports",
@@ -2205,7 +2288,7 @@
         },
         {
          "x": 50.9,
-         "y": 7.4,
+         "y": 7.3,
          "w": 8.5,
          "h": 3.4,
          "label": "Today’s loan rate",
@@ -2213,7 +2296,7 @@
         },
         {
          "x": 75.5,
-         "y": 7.4,
+         "y": 7.3,
          "w": 9.5,
          "h": 3.4,
          "label": "Proposed loan rate",
@@ -2221,39 +2304,39 @@
         },
         {
          "x": 1.7,
-         "y": 12.2,
+         "y": 12,
          "w": 96.6,
-         "h": 13.1,
+         "h": 12.8,
          "label": "Proposed rate",
          "text": "The new loan’s rate type, index and spread. See [Rate & amount](ref-refinance#rate-amount)."
         },
         {
          "x": 1.7,
-         "y": 27.8,
+         "y": 27.2,
          "w": 31.6,
-         "h": 2.6,
+         "h": 2.5,
          "label": "Proposed loan amount",
          "text": "Type a smaller amount to test it. The line under it shows that loan’s coverage, LTV and debt yield."
         },
         {
          "x": 4.4,
-         "y": 34.9,
-         "w": 93.5,
+         "y": 34.2,
+         "w": 93.9,
          "h": 1.7,
          "label": "Can you? Yes",
          "text": "The property supports at least what you owe."
         },
         {
          "x": 4.4,
-         "y": 39.6,
+         "y": 40.8,
          "w": 93.9,
-         "h": 47.6,
+         "h": 46.7,
          "label": "How “supports $X” is worked out",
          "text": "The NOI, rate, payment and value behind the figure, and the lender’s four limits. See [How much it supports](ref-refinance#how-much-it-supports)."
         },
         {
          "x": 4.4,
-         "y": 89.4,
+         "y": 89.6,
          "w": 93.9,
          "h": 1.7,
          "label": "Should you? Yes",
@@ -2261,7 +2344,7 @@
         },
         {
          "x": 1.7,
-         "y": 96.4,
+         "y": 96.5,
          "w": 96.6,
          "h": 1.7,
          "label": "Refinance.",
@@ -2392,7 +2475,7 @@
         {
          "x": 5.9,
          "y": 2,
-         "w": 41.2,
+         "w": 41.8,
          "h": 2.6,
          "label": "Don’t refinance",
          "text": "The answer."
@@ -2594,13 +2677,13 @@
          "x": 2,
          "y": 46.3,
          "w": 46.5,
-         "h": 12.5,
+         "h": 6.3,
          "label": "Rate (fixed period)",
          "text": "The index today + the spread. “Built-in rate — fetch to update” means the index is the app’s own figure until you click **Fetch live rate**. The yellow “starting spread” tag says where the starting spread came from (your recent loans of this kind); it goes once you type the lender’s quote."
         },
         {
          "x": 2,
-         "y": 58.8,
+         "y": 52.5,
          "w": 46.5,
          "h": 4.9,
          "label": "Monthly payment (fixed period)",
@@ -2841,15 +2924,15 @@
          "text": "Tick the limits this lender uses; an unticked one is greyed and doesn’t count."
         },
         {
-         "x": 10.3,
+         "x": 10.2,
          "y": 35.7,
-         "w": 60.2,
+         "w": 60.5,
          "h": 13.4,
          "label": "Lender limit",
          "text": "The limit’s name, how its loan is worked out, and (grey) that loan’s coverage, LTV and debt yield."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 36.9,
          "w": 5.2,
          "h": 4,
@@ -2857,7 +2940,7 @@
          "text": "NOI ÷ (this × the loan constant). Lenders often ask 1.20–1.35×."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 50.3,
          "w": 5.2,
          "h": 4,
@@ -2865,7 +2948,7 @@
          "text": "Leave blank (not used) unless the lender sizes on the interest-only payment."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 59.9,
          "w": 5.2,
          "h": 4,
@@ -2873,7 +2956,7 @@
          "text": "The most it lends, as a % of the value."
         },
         {
-         "x": 72.2,
+         "x": 72.5,
          "y": 73,
          "w": 5.2,
          "h": 4,
@@ -2881,15 +2964,15 @@
          "text": "The least NOI ÷ loan it accepts."
         },
         {
-         "x": 84.5,
+         "x": 84.6,
          "y": 35.7,
-         "w": 15.5,
+         "w": 15.4,
          "h": 13.4,
          "label": "Loan it allows",
          "text": "The biggest loan each limit allows on its own."
         },
         {
-         "x": 30.8,
+         "x": 30.7,
          "y": 37.5,
          "w": 3.3,
          "h": 2.7,
@@ -3461,9 +3544,9 @@
          "text": "Picked."
         },
         {
-         "x": 70.2,
+         "x": 70.4,
          "y": 46.9,
-         "w": 24.9,
+         "w": 24.7,
          "h": 4.2,
          "label": "Save the extension",
          "text": "Shown when the answer is to extend. Saves the extension on today’s loan, with the pay-down it needs; it asks first."
@@ -3480,7 +3563,7 @@
         {
          "x": 5.9,
          "y": 2,
-         "w": 61.8,
+         "w": 62.1,
          "h": 2.6,
          "label": "The answer",
          "text": "Extend — pay down $X, or Not yet, or Don’t extend now."
@@ -3544,7 +3627,7 @@
         {
          "x": 4.4,
          "y": 28.8,
-         "w": 77.2,
+         "w": 76.3,
          "h": 1.6,
          "label": "The pay-down",
          "text": "What you will owe less what the lender’s limits allow, and which limit sets it."
@@ -3592,7 +3675,7 @@
         },
         {
          "x": 71.5,
-         "y": 53,
+         "y": 52.8,
          "w": 5.2,
          "h": 3.7,
          "label": "Interest-only coverage",
@@ -3754,7 +3837,7 @@
         {
          "x": 2.8,
          "y": 63.8,
-         "w": 8.4,
+         "w": 8.6,
          "h": 11.8,
          "label": "At this amount",
          "text": "The extended loan’s coverage, interest-only coverage, LTV and debt yield."
@@ -3966,7 +4049,7 @@
         {
          "x": 5.9,
          "y": 2.1,
-         "w": 57.1,
+         "w": 57.4,
          "h": 2.6,
          "label": "Not yet",
          "text": "Today’s terms end more than 12 months from now."
@@ -3974,7 +4057,7 @@
         {
          "x": 4.4,
          "y": 27.2,
-         "w": 71.2,
+         "w": 72.2,
          "h": 1.9,
          "label": "Can you? Yes",
          "text": "Today’s lender’s limits allow more than you’ll owe: no pay-down needed."
@@ -4002,7 +4085,7 @@
     {
      "id": "several-loans-together",
      "title": "Several loans together",
-     "text": "A property’s senior and mezzanine loans refinance as one package; **Create a portfolio…** puts several properties under one new loan. An extension isn’t offered for a package. See [Refinance several loans together](refinance-together).",
+     "text": "A property’s senior and mezzanine loans refinance as one package; **Create a portfolio…** puts several properties under one new loan. Or each loan is extended with its own lender (**Extend with today’s lenders**). See [Refinance several loans together](refinance-together).",
      "views": [
       {
        "title": "Senior + mezz: the whole property",
@@ -4062,9 +4145,212 @@
        ]
       },
       {
+       "title": "Extend with today’s lenders: the verdict",
+       "text": "**Extend with today’s lenders** on a package: every loan with its own lender, each sized on what secures it. Here K2 Sweetwater (a made-up T12).",
+       "img": "img/refinance/ref-refinance-38.jpg",
+       "w": 1313,
+       "h": 295,
+       "marks": [
+        {
+         "x": 5.9,
+         "y": 7.5,
+         "w": 53.9,
+         "h": 9.5,
+         "label": "The answer",
+         "text": "Extend all of them, some of them now, Not yet, or Don’t extend now — with the pay-down in all."
+        },
+        {
+         "x": 1.7,
+         "y": 33.7,
+         "w": 24.5,
+         "h": 18.3,
+         "label": "Loan",
+         "text": "Each loan, senior first, with its lender."
+        },
+        {
+         "x": 26.2,
+         "y": 27.8,
+         "w": 11.5,
+         "h": 5.9,
+         "label": "Today’s terms end",
+         "text": "When each loan’s new terms would start (set on its card)."
+        },
+        {
+         "x": 37.7,
+         "y": 27.8,
+         "w": 12.5,
+         "h": 5.9,
+         "label": "You’ll owe",
+         "text": "What each loan will owe on that date."
+        },
+        {
+         "x": 50.3,
+         "y": 27.8,
+         "w": 12.5,
+         "h": 5.9,
+         "label": "Its lender allows",
+         "text": "What each lender’s limits allow; a mezzanine’s is what fits behind its senior."
+        },
+        {
+         "x": 62.8,
+         "y": 52,
+         "w": 10.8,
+         "h": 18.5,
+         "label": "Pay-down",
+         "text": "What the loan must pay down to fit."
+        },
+        {
+         "x": 73.6,
+         "y": 27.8,
+         "w": 13.3,
+         "h": 5.9,
+         "label": "Rate",
+         "text": "Today’s rate → the extension’s rate."
+        },
+        {
+         "x": 86.9,
+         "y": 33.7,
+         "w": 11.4,
+         "h": 18.3,
+         "label": "Verdict",
+         "text": "Extend (with a pay-down), Not yet, Don’t extend now, or Extended once saved."
+        },
+        {
+         "x": 1.7,
+         "y": 70.5,
+         "w": 96.6,
+         "h": 11.2,
+         "label": "In all",
+         "text": "What the loans to extend now owe, allow and pay down together."
+        },
+        {
+         "x": 34,
+         "y": 86.1,
+         "w": 7.6,
+         "h": 5.8,
+         "label": "Bottom line",
+         "text": "The loans to extend, the pay-downs and the cash needed (pay-downs + penalties + fees)."
+        }
+       ]
+      },
+      {
+       "title": "Extend with today’s lenders: the limits",
+       "text": "One table for the package: today’s lenders’ limits apply to each loan.",
+       "img": "img/refinance/ref-refinance-39.jpg",
+       "w": 1313,
+       "h": 303,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 21.6,
+         "w": 96.8,
+         "h": 7.6,
+         "label": "Lender preset",
+         "text": "Fills in a lender’s usual limits."
+        },
+        {
+         "x": 4.6,
+         "y": 40.4,
+         "w": 1.2,
+         "h": 5.3,
+         "label": "Lenders use",
+         "text": "Untick a limit the lenders don’t use."
+        },
+        {
+         "x": 35.9,
+         "y": 40.1,
+         "w": 4.9,
+         "h": 7.3,
+         "label": "A limit",
+         "text": "Type the lenders’ own figure."
+        },
+        {
+         "x": 40.7,
+         "y": 87.6,
+         "w": 6.2,
+         "h": 5.4,
+         "label": "Change history",
+         "text": "Every change to the package’s refinance."
+        }
+       ]
+      },
+      {
+       "title": "Extend with today’s lenders: one loan’s card",
+       "text": "Each loan has its own card: its lender’s quote, what it is sized on, and its terms. Here the mezzanine.",
+       "img": "img/refinance/ref-refinance-40.jpg",
+       "w": 1313,
+       "h": 1138,
+       "marks": [
+        {
+         "x": 1.6,
+         "y": 1.8,
+         "w": 96.8,
+         "h": 1.8,
+         "label": "The loan",
+         "text": "Its name, its lender and its verdict. Click to fold it."
+        },
+        {
+         "x": 50.5,
+         "y": 10.2,
+         "w": 47,
+         "h": 2.6,
+         "label": "Its lender’s spread",
+         "text": "Each lender quotes its own rate."
+        },
+        {
+         "x": 2.8,
+         "y": 18.7,
+         "w": 94.4,
+         "h": 1.6,
+         "label": "Secured by",
+         "text": "Its property (or properties), their NOI and value, and the extension’s rate."
+        },
+        {
+         "x": 2.8,
+         "y": 20.6,
+         "w": 94.4,
+         "h": 1.6,
+         "label": "Behind its senior",
+         "text": "A mezzanine: the limits apply to the two together, less the senior’s extended amount."
+        },
+        {
+         "x": 2.8,
+         "y": 22.9,
+         "w": 34.1,
+         "h": 1.6,
+         "label": "Each limit",
+         "text": "What each limit leaves for this loan; the smallest binds."
+        },
+        {
+         "x": 26,
+         "y": 37.6,
+         "w": 23.5,
+         "h": 2.6,
+         "label": "Its terms",
+         "text": "When its terms end, months, interest-only, penalty and fee — this loan’s own."
+        },
+        {
+         "x": 2.8,
+         "y": 47.7,
+         "w": 46.3,
+         "h": 1.8,
+         "label": "Pay-down needed",
+         "text": "This loan’s."
+        },
+        {
+         "x": 1.6,
+         "y": 60.5,
+         "w": 96.8,
+         "h": 37.7,
+         "label": "Its schedule",
+         "text": "With the extension in place."
+        }
+       ]
+      },
+      {
        "title": "Create a portfolio…",
        "text": "On the Portfolio tab, above the Coverage table. Tick every property the one new loan will secure. Nothing changes until you save the new loan on the next screen.",
-       "img": "img/refinance/ref-refinance-38.jpg",
+       "img": "img/refinance/ref-refinance-41.jpg",
        "w": 540,
        "h": 649,
        "marks": [
@@ -4121,7 +4407,7 @@
       {
        "title": "NOI by property",
        "text": "The same refinance screen, for the whole package. Each property has its own row and its own NOI basis; the package is sized on the total.",
-       "img": "img/refinance/ref-refinance-39.jpg",
+       "img": "img/refinance/ref-refinance-42.jpg",
        "w": 887,
        "h": 254,
        "marks": [
@@ -4178,7 +4464,7 @@
       {
        "title": "Each property’s basis",
        "text": "Villages of Whitewater switched to its Aggressive underwriting; Queens Gate and The Mews stay on their in-place T12. The total and everything below follow, and each pick is kept with this refinance.",
-       "img": "img/refinance/ref-refinance-40.jpg",
+       "img": "img/refinance/ref-refinance-43.jpg",
        "w": 887,
        "h": 254,
        "marks": [
@@ -4211,7 +4497,7 @@
       {
        "title": "Each property’s pushes",
        "text": "What to push lists each property’s pushes under its name, ticked one by one; a push counts its effect on the basis picked for its property.",
-       "img": "img/refinance/ref-refinance-41.jpg",
+       "img": "img/refinance/ref-refinance-44.jpg",
        "w": 1313,
        "h": 633,
        "marks": [
@@ -4260,9 +4546,9 @@
       {
        "title": "The package’s verdict",
        "text": "“These 3 properties support …”: the verdict and everything after it work exactly as for one loan. **Save as a loan** puts one new loan on all of them and pays off every loan on them.",
-       "img": "img/refinance/ref-refinance-42.jpg",
+       "img": "img/refinance/ref-refinance-45.jpg",
        "w": 1313,
-       "h": 1205,
+       "h": 1229,
        "marks": [
         {
          "x": 5.9,
@@ -4282,81 +4568,81 @@
         },
         {
          "x": 1.7,
-         "y": 8.8,
+         "y": 8.6,
          "w": 8.6,
-         "h": 3.5,
+         "h": 3.4,
          "label": "You owe (payoff)",
          "text": "Every loan on them, added up."
         },
         {
          "x": 26.3,
-         "y": 8.8,
+         "y": 8.6,
          "w": 12.7,
-         "h": 3.5,
+         "h": 3.4,
          "label": "Properties support",
          "text": "The biggest single loan the properties support together."
         },
         {
          "x": 50.9,
-         "y": 8.8,
+         "y": 8.6,
          "w": 7.8,
-         "h": 3.5,
+         "h": 3.4,
          "label": "Today’s loan rate",
          "text": "The loans’ rate together, weighted by what is owed."
         },
         {
          "x": 75.5,
-         "y": 8.8,
+         "y": 8.6,
          "w": 9.5,
-         "h": 3.5,
+         "h": 3.4,
          "label": "Proposed loan rate",
          "text": "The one new loan’s rate."
         },
         {
          "x": 1.7,
-         "y": 13.3,
+         "y": 13,
          "w": 96.6,
-         "h": 6.3,
+         "h": 8.1,
          "label": "When, and the pay-down",
          "text": "What ends first, and the pay-down a new loan needs."
         },
         {
          "x": 1.7,
-         "y": 20.9,
+         "y": 22.4,
          "w": 96.6,
-         "h": 12.6,
+         "h": 12.4,
          "label": "Proposed rate",
          "text": "The one new loan’s rate type, index and spread."
         },
         {
          "x": 1.7,
-         "y": 35.9,
+         "y": 37.1,
          "w": 31.6,
-         "h": 2.5,
+         "h": 2.4,
          "label": "Proposed loan amount",
          "text": "The one new loan."
         },
         {
          "x": 4.4,
-         "y": 42.8,
+         "y": 43.9,
          "w": 93.9,
-         "h": 1.7,
+         "h": 1.6,
          "label": "Can you?",
          "text": "For all of them together."
         },
         {
          "x": 4.4,
-         "y": 49.2,
+         "y": 50.2,
          "w": 93.9,
-         "h": 46,
+         "h": 45.1,
          "label": "How “supports $X” is worked out",
          "text": "The package’s NOI (every property on its own basis, with its pushes), the rate, the payment, the value and the limits."
         },
         {
          "x": 1.7,
-         "y": 96.5,
+         "y": 96.6,
          "w": 96.6,
-         "h": 1.7,
+         "h": 1.6,
          "label": "Bottom line",
          "text": "What to do for the package."
         }
@@ -4365,7 +4651,7 @@
       {
        "title": "A property with no T12",
        "text": "Here Queens Gate Apartments and Avalon Norwalk, which has no T12. Counting it as $0, or on a typed NOI, would misstate what the package supports, so nothing is sized until its T12 is uploaded.",
-       "img": "img/refinance/ref-refinance-43.jpg",
+       "img": "img/refinance/ref-refinance-46.jpg",
        "w": 1440,
        "h": 900,
        "marks": [

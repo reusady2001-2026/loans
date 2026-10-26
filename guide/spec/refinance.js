@@ -95,7 +95,7 @@ const mewsAt = async (h, bps) => { await openRefi(h, /mews at princeton/); await
 // pick "New loan" / "Extend with today's lender" and wait until the screen shows that deal
 const pickDeal = async (h, deal) => {
   const isOn = () => h.js((d) => { const r = document.querySelector("#refiView [data-refidealrow]");
-    return !!r && (d === "extend" ? /below are the extension/.test(r.innerText) : /below are a new loan/.test(r.innerText)); }, deal);
+    return !!r && (d === "extend" ? /below are the extension|each loan is extended with its own lender/.test(r.innerText) : /below are a new loan/.test(r.innerText)); }, deal);
   for (let k = 0; k < 3 && !(await isOn()); k++){
     await h.click(RV + '[data-refideal="' + deal + '"]', { wait: 1500 }); await h.calm();
     // the property's record may have been re-read just as the click was saved, leaving the screen on the old choice
@@ -125,13 +125,18 @@ const openPicker = async (h, names) => {
 };
 const POOL3 = ["queens gate apartments", "the mews at princeton", "villages of whitewater"];
 const openPool3 = async (h) => { await openPicker(h, POOL3); await h.click("#poolPickGo", { wait: 2500 }); await h.calm(); await h.page.waitForSelector(RV + "[data-refipoolnoitable]", { timeout: 15000 }); };
-// Avalon White Plains' combined entry (senior + mezz) under Specific Property, then Refi Calculator
-const openCombo = async (h) => {
+// a property's combined entry (senior + mezz) under Specific Property, then Refi Calculator — Avalon White Plains by default
+const openComboOf = async (h, name) => {
   await h.closeModals(); await closeRefi(h); await h.home();
   await h.js(() => { const b = document.getElementById("scopeLoanBtn"); if (b) b.click(); }); await h.wait(500);
-  await h.js(() => { const p = window.opProperties().find(x => x.name === "Avalon White Plains"); const s = document.getElementById("loanSelect"); s.value = "combo:" + p.key; s.dispatchEvent(new Event("change", { bubbles: true })); });
+  await h.js((nm) => { const p = window.opProperties().find(x => x.name === nm); const s = document.getElementById("loanSelect"); s.value = "combo:" + p.key; s.dispatchEvent(new Event("change", { bubbles: true })); }, name);
   await h.wait(800); await h.click("#refiBtn", { wait: 1500 }); await h.calm(); await h.top();
 };
+const openCombo = (h) => openComboOf(h, "Avalon White Plains");
+// (2026-10-26) K2 Sweetwater: a senior + mezz that both mature within 12 months — extended with today's lenders
+const K2 = "K2 Sweetwater (FIU Residences)";
+const PKG = RV + "[data-refiextpkg]", MZCARD = RV + "[data-refiextmember] >> nth=1";
+const openK2Extend = async (h) => { await openComboOf(h, K2); await pickDeal(h, "extend"); await h.page.waitForSelector(PKG, { timeout: 15000 }); };
 const hideHistory = async (h) => { await h.js(() => { const m = document.getElementById("historyModal"); if (m){ m.classList.add("hidden"); m.classList.remove("flex"); } }); await h.wait(200); };
 // the made-up lender preset: typed into the presets window's first row
 const fillPreset = async (h) => {
@@ -173,7 +178,7 @@ module.exports = {
     await h.page.waitForFunction((k) => { const c = window.LDS_getPush && window.LDS_getPush(k); return !!(c && Array.isArray(c.moves) && c.moves.length); }, vk, { timeout: 40000 }).catch(() => {});
     await h.wait(1500);
     // the other properties refinanced here: a made-up T12 with the NOI each sample loan already carries
-    for (const [nm, noi] of [["Queens Gate Apartments", 2810007], ["The Mews at Princeton", 10570636], ["The Mint (Rahway)", 5017563], ["Avalon White Plains", 9000000]])
+    for (const [nm, noi] of [["Queens Gate Apartments", 2810007], ["The Mews at Princeton", 10570636], ["The Mint (Rahway)", 5017563], ["Avalon White Plains", 9000000], [K2, 15000000]])
       await uwT12(h, nm, madeUpT12(nm, noi), nm + " T12 (made-up).xlsx");
     await h.home();
   },
@@ -445,7 +450,7 @@ module.exports = {
       description: "Judge an extension with today’s lender, set its terms, and save it on today’s loan.",
       intro: "Instead of a new loan, today’s lender may keep the loan on new terms, usually after a pay-down so it fits the lender’s limits. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it.",
       before: [ "Today’s lender’s quote: the rate, its limits, the penalty and the fee it asks." ],
-      callouts: [ { kind: "note", text: "An extension is with one lender, one loan at a time. For a package of several loans, **Extend with today’s lender** is greyed." } ],
+      callouts: [ { kind: "note", text: "One loan extends the same way however many properties it covers: it is sized on all of them. For several loans together (a senior + mezz, or a portfolio), see [Extend several loans together](refinance-together#extend-several-loans-together)." } ],
       sections: [
         { title: "Pick the extension",
           steps: [
@@ -540,8 +545,8 @@ module.exports = {
 
     // ==================================================================================================================
     { id: "refinance-together", kind: "howto", group: "Refinance", title: "Refinance several loans together",
-      description: "Refinance a senior and a mezzanine loan as one package, or put several properties under one new loan.",
-      intro: "Loans that depend on one another are refinanced together: a property’s senior and mezzanine loans, or several properties under one new loan. The refinance works the same way, on the package’s total NOI and everything it owes.",
+      description: "Refinance a senior and a mezzanine loan as one package, put several properties under one new loan, or extend each loan with its own lender.",
+      intro: "Loans that depend on one another are refinanced together: a property’s senior and mezzanine loans, or several properties under one new loan. The refinance works the same way, on the package’s total NOI and everything it owes. Or keep today’s lenders: each loan is extended with its own lender, on its own terms.",
       before: [ "A T12 for every property in the package — see [Upload a T12](upload-a-t12). Nothing is sized until each one has its T12." ],
       sections: [
         { title: "A senior and a mezzanine loan",
@@ -580,7 +585,31 @@ module.exports = {
             { text: "Read the verdict for the whole package. **Save as a loan** puts one new loan on all of the properties and pays off every loan on them. See [Save the refinance as a loan](save-the-refinance)." }
           ],
           tip: "**What to push** lists each property’s pushes under its name; tick them to see what the package could carry. See [Plan what to push for a refinance](plan-what-to-push).",
-          note: "A ticked property with no T12 stops the package: the screen says **No T12 yet** and offers to upload it in Underwriting. A typed NOI never counts for a refinance." }
+          note: "A ticked property with no T12 stops the package: the screen says **No T12 yet** and offers to upload it in Underwriting. A typed NOI never counts for a refinance." },
+        { title: "Extend several loans together",
+          text: "Instead of one new loan, each loan stays with today’s lender, on new terms. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
+          steps: [
+            { text: "Open the package’s refinance: the property’s **senior + mezz** entry, or **Create a portfolio…**, then **Refi Calculator**." },
+            { text: "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, what its lender allows, its pay-down, and whether to extend it now.",
+              go: openK2Extend,
+              shot: { sel: PKG, grow: true },
+              marks: [
+                { sel: PKG + " [data-refiextrow] >> nth=1", label: "The mezzanine", text: "Sized behind its senior." },
+                { sel: PKG + " [data-refiextrow] >> nth=1 >> [data-refiextrowpay]", label: "Its pay-down", text: "What it owes less what fits behind the senior." },
+                { sel: PKG + " [data-refiextpkgpay]", label: "In all", text: "The pay-downs of the loans to extend now." },
+                { sel: PKG + " [data-refiextcash]", label: "Cash needed", text: "Pay-downs + penalties + fees.", optional: true }
+              ] },
+            { text: "Scroll to each loan’s card and enter its lender’s quote: the **Spread (bps)**, the months, the penalty and the fee. A mezzanine is sized on the limits for the two loans together, less its senior’s extended amount.",
+              go: async (h) => { await h.scroll(MZCARD); },
+              shot: { sel: MZCARD + " >> [data-refiextmemberlegs]", grow: true },
+              marks: [
+                { sel: MZCARD + " >> [data-refiextahead]", label: "Behind its senior", text: "The senior’s extended amount comes first." },
+                { sel: MZCARD + " >> [data-refiextmemberlegs] li >> nth=0", label: "Each limit", text: "What it leaves for the mezzanine; the smallest binds." }
+              ] },
+            { text: "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new rate and term, its pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back.",
+              after: async (h) => { await h.top(); await pickDeal(h, "new"); } }
+          ],
+          note: "The limits table applies to each loan. A loan that shouldn’t be extended now (**Not yet**, or **Don’t extend now**) is left as it is when you save the others." }
       ],
       next: [
         { page: "add-a-pooled-loan", text: "Add a loan that already covers several properties." },
@@ -1109,7 +1138,7 @@ module.exports = {
               ] }
           ] },
         { title: "Several loans together",
-          text: "A property’s senior and mezzanine loans refinance as one package; **Create a portfolio…** puts several properties under one new loan. An extension isn’t offered for a package. See [Refinance several loans together](refinance-together).",
+          text: "A property’s senior and mezzanine loans refinance as one package; **Create a portfolio…** puts several properties under one new loan. Or each loan is extended with its own lender (**Extend with today’s lenders**). See [Refinance several loans together](refinance-together).",
           views: [
             { title: "Senior + mezz: the whole property",
               thin: 1024,
@@ -1124,6 +1153,48 @@ module.exports = {
                 { sel: card("Current debt") + " >> text=Remaining", label: "Remaining", text: "Months until the first of them ends." },
                 { sel: card("Current debt") + " >> text=Matures", label: "Matures", text: "When the first of them is due." }
               ] },
+            { title: "Extend with today’s lenders: the verdict",
+              text: "**Extend with today’s lenders** on a package: every loan with its own lender, each sized on what secures it. Here K2 Sweetwater (a made-up T12).",
+              go: openK2Extend,
+              shot: { sel: PKG, grow: true },
+              marks: [
+                { sel: PKG + " p >> nth=0", label: "The answer", text: "Extend all of them, some of them now, Not yet, or Don’t extend now — with the pay-down in all." },
+                { sel: PKG + " [data-refiextrow] >> nth=0 >> td >> nth=0", label: "Loan", text: "Each loan, senior first, with its lender." },
+                { sel: PKG + " th >> nth=1", label: "Today’s terms end", text: "When each loan’s new terms would start (set on its card)." },
+                { sel: PKG + " th >> nth=2", label: "You’ll owe", text: "What each loan will owe on that date." },
+                { sel: PKG + " th >> nth=3", label: "Its lender allows", text: "What each lender’s limits allow; a mezzanine’s is what fits behind its senior." },
+                { sel: PKG + " [data-refiextrow] >> nth=1 >> [data-refiextrowpay]", label: "Pay-down", text: "What the loan must pay down to fit." },
+                { sel: PKG + " th >> nth=5", label: "Rate", text: "Today’s rate → the extension’s rate." },
+                { sel: PKG + " [data-refiextrow] >> nth=0 >> td >> nth=6", label: "Verdict", text: "Extend (with a pay-down), Not yet, Don’t extend now, or Extended once saved." },
+                { sel: PKG + " tfoot", label: "In all", text: "What the loans to extend now owe, allow and pay down together." },
+                { sel: PKG + " [data-refiextcash]", label: "Bottom line", text: "The loans to extend, the pay-downs and the cash needed (pay-downs + penalties + fees).", optional: true },
+                { sel: "#refiExtSaveBtn", label: "Save the extensions", text: "Saves every loan to extend now, each on its own record; Undo puts them back.", optional: true }
+              ] },
+            { title: "Extend with today’s lenders: the limits",
+              text: "One table for the package: today’s lenders’ limits apply to each loan.",
+              go: async (h) => { await h.scroll(RV + "[data-refiextpkglimits]"); },
+              shot: { sel: RV + "[data-refiextpkglimits]", grow: true },
+              marks: [
+                { sel: RV + "[data-refiextpkglimits] [data-refiextpresetrow]", label: "Lender preset", text: "Fills in a lender’s usual limits." },
+                { sel: RV + '[data-refiextpkglimits] [data-refiextuse="DSCR"]', label: "Lenders use", text: "Untick a limit the lenders don’t use." },
+                { sel: RV + '[data-refiextpkglimits] [data-refiextlim="dscr"]', label: "A limit", text: "Type the lenders’ own figure." },
+                { sel: RV + "[data-refiextpkglimits] [data-refihist]", label: "Change history", text: "Every change to the package’s refinance." }
+              ] },
+            { title: "Extend with today’s lenders: one loan’s card",
+              text: "Each loan has its own card: its lender’s quote, what it is sized on, and its terms. Here the mezzanine.",
+              go: async (h) => { await h.scroll(MZCARD); },
+              shot: { sel: MZCARD, grow: true },
+              marks: [
+                { sel: MZCARD + " >> summary", label: "The loan", text: "Its name, its lender and its verdict. Click to fold it." },
+                { sel: MZCARD + ' >> [data-refiextf="spreadBps"]', label: "Its lender’s spread", text: "Each lender quotes its own rate." },
+                { sel: MZCARD + " >> [data-refiextmemberlegs] p >> nth=0", label: "Secured by", text: "Its property (or properties), their NOI and value, and the extension’s rate." },
+                { sel: MZCARD + " >> [data-refiextahead]", label: "Behind its senior", text: "A mezzanine: the limits apply to the two together, less the senior’s extended amount." },
+                { sel: MZCARD + " >> [data-refiextmemberlegs] li >> nth=0", label: "Each limit", text: "What each limit leaves for this loan; the smallest binds." },
+                { sel: MZCARD + ' >> [data-refiextf="months"]', label: "Its terms", text: "When its terms end, months, interest-only, penalty and fee — this loan’s own." },
+                { sel: MZCARD + ' >> [data-refipaydown="extend-card"]', label: "Pay-down needed", text: "This loan’s." },
+                { sel: MZCARD + " >> [data-refiextsched]", label: "Its schedule", text: "With the extension in place.", optional: true }
+              ],
+              after: async (h) => { await h.top(); await pickDeal(h, "new"); } },
             { title: "Create a portfolio…",
               text: "On the Portfolio tab, above the Coverage table. Tick every property the one new loan will secure. Nothing changes until you save the new loan on the next screen.",
               go: async (h) => { await openPicker(h, POOL3); },
