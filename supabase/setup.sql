@@ -419,6 +419,19 @@ begin
     if rq.id is null or rq.status <> 'waiting' then raise exception 'request_not_waiting' using errcode = 'P0001'; end if;
   end if;
 
+  -- next stage (F4, D13): the group's lender presets are the admin's list — a member's save can't change them
+  if m.role <> 'admin' then
+    for it in select * from jsonb_array_elements(items) loop
+      if it ->> 'path' = 'settings.json' then
+        select * into cur from app.records where group_id = m.group_id and path = 'settings.json';
+        if (cur.content -> 'lds.lenderPresets') is distinct from
+           ((case when it -> 'content' = 'null'::jsonb then null else it -> 'content' end) -> 'lds.lenderPresets') then
+          raise exception 'admin_only_list' using errcode = 'P0001', hint = 'Only the group''s admin can change the lender presets.';
+        end if;
+      end if;
+    end loop;
+  end if;
+
   -- 1. every item must start from the version on the server
   for it in select * from jsonb_array_elements(items) loop
     p := it ->> 'path';

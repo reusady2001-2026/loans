@@ -1,7 +1,8 @@
-/* e2e (cleanup): the per-unit columns are ALWAYS on (no toggle). Every NOI line shows four value columns —
-   in-place $, in-place $/unit, underwritten $ (editable), underwritten $/unit (DERIVED, no input). Commercial
-   income is its own line: in the NOI, but a dash in BOTH residential $/unit columns (residential units are the
-   denominator). Driven through the LDS_uwSetupHtml / LDS_uwSetupNoi diagnostics.
+/* e2e (cleanup): the per-unit columns are ALWAYS on (no toggle). Commercial income is its own line: in the NOI, but a
+   dash in the residential $/unit column (residential units are the denominator). (2026-10-21) the Underwriting column
+   is the approved pro forma — it shows once a T12 gives one (proforma.e2e.js); with figures alone the table is the
+   in-place side only, and no line has an input (lines aren't pinned any more).
+   Driven through the LDS_uwSetupHtml / LDS_uwSetupNoi diagnostics.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/commercial.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -28,13 +29,13 @@ const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
     var d=document.createElement('div'); d.innerHTML=html;
     var trs=Array.prototype.slice.call(d.querySelectorAll('tbody tr'));
     var com=trs.find(function(r){ return /commercial/i.test((r.cells[0]||{}).innerText||''); });
-    var gpr=trs.find(function(r){ return r.querySelector('input[data-uwline="GPR"]'); });
+    var gpr=trs.find(function(r){ return /^Gross Potential Rent/.test((r.cells[0]||{}).innerText||''); });
     var ths=Array.prototype.slice.call(d.querySelectorAll('thead th'));
     return {
       hasCom: !!com,
       comTag: com ? /commercial/i.test(com.cells[0].innerText) : false,
       comDashes: com ? Array.prototype.slice.call(com.cells).filter(function(c){return (c.innerText||'').trim()==='—';}).length : 0,
-      gprHasLineInput: gpr ? !!gpr.querySelector('input[data-uwline="GPR"]') : false,
+      anyLineInput: !!d.querySelector('input[data-uwline]'),
       anyPerInput: !!d.querySelector('input[data-uwlineper]'),
       headerCols: ths.length,
       gprInPlacePer: gpr ? (gpr.cells[2].innerText||'').trim() : ''
@@ -42,10 +43,10 @@ const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
   },WITH_COMM);
   ok(view.hasCom,'the commercial line renders (always on — no toggle)');
   ok(view.comTag,'…tagged "commercial"');
-  ok(view.comDashes>=2,'commercial shows a dash in BOTH residential $/unit columns (in-place & underwritten)');
-  ok(view.gprHasLineInput,'a residential line (GPR) has its editable underwritten input');
+  ok(view.comDashes>=1,'commercial shows a dash in the residential $/unit column');
+  ok(!view.anyLineInput,'no line has an input — lines are not pinned (the underwriting is the approved pro forma)');
   ok(!view.anyPerInput,'there is NO $/unit input anywhere — the $/unit column is derived, not editable');
-  ok(view.headerCols===5,'the table shows 5 columns: line + in-place $ + $/unit + underwritten $ + $/unit');
+  ok(view.headerCols===3,'with no T12 (no pro forma) the table shows 3 columns: line + in-place $ + $/unit (got '+view.headerCols+')');
   ok(/[0-9]/.test(view.gprInPlacePer),'a residential line shows a computed in-place $/unit');
 
   // ---- 2.9.7 (#77): three NOI rows when there is commercial income; EGI $/unit is apartments only ----
@@ -61,10 +62,10 @@ const WITH_COMM={ GPR:1000000, COM:200000, RET:50000 };
   const n=s=>Number(String(s||'').replace(/[^0-9.\-]/g,''))||0;
   ok(split.apts&&split.comm&&split.tot&&!split.plain,'with commercial income the NOI shows three rows: apartments, commercial, total');
   ok(/carries shared expenses/i.test(split.apts[0])&&/rent, no shared expenses/i.test(split.comm[0]),'the labels say "carries shared expenses" / "rent, no shared expenses"');
-  ok(Math.abs(n(split.apts[1])+n(split.comm[1])-n(split.tot[1]))<1 && Math.abs(n(split.apts[3])+n(split.comm[3])-n(split.tot[3]))<1,'apartments + commercial = total, in place and underwritten');
-  ok(Math.abs(n(split.tot[3])-noiComm)<1,'NOI — total is unchanged (the figure DSCR, max loan and the refinance use)');
+  ok(Math.abs(n(split.apts[1])+n(split.comm[1])-n(split.tot[1]))<1,'apartments + commercial = total, in place');
+  ok(Math.abs(n(split.tot[1])-1150000)<1,'NOI — total in place = 1,000,000 + 200,000 − 50,000 = 1,150,000');
   ok(Math.abs(n(split.apts[2])-n(split.apts[1])/100)<0.01,'apartments $/unit = apartments NOI ÷ 100 apartment units ('+split.apts[2]+')');
-  ok(split.tot[2]==='—'&&split.tot[4]==='—','the total has no $/unit');
+  ok(split.tot[2]==='—','the total has no $/unit');
   ok(Math.abs(n(split.egi[2])-(n(split.egi[1])-200000)/100)<0.01,'EGI $/unit shows apartments only (EGI less commercial, ÷ apartment units) ('+split.egi[2]+')');
   ok(split.noNoComm,'without commercial income it stays one "Net Operating Income" row');
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));

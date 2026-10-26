@@ -1,5 +1,6 @@
 /* e2e (cleanup): the $/unit columns are ALWAYS on — there is no per-user toggle. Every NOI line shows
-   in-place $ and $/unit, and underwritten $ (editable) with a DERIVED underwritten $/unit (total ÷ units).
+   in-place $ and a DERIVED $/unit (total ÷ units); (2026-10-21) the Underwriting column (the approved pro forma, with
+   its own $/unit) shows once a T12 gives a pro forma — proforma.e2e.js checks it.
    With no units, the $/unit view shows a "Units missing" state linking to the property profile. Driven
    through LDS_uwSetupHtml (build a Setup from category sums, render the same table the tab uses).
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/per-unit.e2e.js */
@@ -28,13 +29,13 @@ const SUMS={ GPR:1000000, VAC:-50000, PAY:200000, RET:50000 };
     var money=function(s){ return Number(String(s||'').replace(/[^0-9.\-]/g,''))||0; };
     return { err: html.indexOf('ERR:')===0, cols: ths.length, hasPerHdr:/\$\/unit/i.test(html),
       noInput: !d.querySelector('input[data-uwlineper]'),
-      uwTotal: tr?money(tr.cells[3].innerText):0, uwPer: tr?money(tr.cells[4].innerText):0 };
+      inTotal: tr?money(tr.cells[1].innerText):0, inPer: tr?money(tr.cells[2].innerText):0 };
   },[SUMS,100]);
   ok(!on.err,'the setup renders');
-  ok(on.cols===5,'the table always shows 5 columns: line + in-place $ + $/unit + underwritten $ + $/unit');
+  ok(on.cols===3,'with figures alone (no T12, so no pro forma) the table shows line + in-place $ + $/unit (got '+on.cols+')');
   ok(on.hasPerHdr,'the $/unit columns are present (no toggle needed)');
   ok(on.noInput,'the $/unit column is DERIVED — there is no $/unit input');
-  ok(on.uwPer>0 && Math.abs(on.uwTotal/100 - on.uwPer) <= Math.max(1, on.uwPer*0.01),'the underwritten NOI $/unit ties to the total: '+on.uwPer+' ≈ '+on.uwTotal+' / 100');
+  ok(on.inPer>0 && Math.abs(on.inTotal/100 - on.inPer) <= Math.max(1, on.inPer*0.01),'the NOI $/unit ties to the total: '+on.inPer+' ≈ '+on.inTotal+' / 100');
 
   // ---- units missing: the $/unit cells fall back to a dash and the tab points to the property profile ----
   const missing=await page.evaluate((m)=>window.LDS_uwSetupHtml(m,null,{}),SUMS);

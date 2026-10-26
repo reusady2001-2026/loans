@@ -87,7 +87,9 @@ const FT12=makeT12(), FRR=makeRR();
   await page.evaluate((k)=>window.LDS_openSizing(k),P.key);
   await until(page,()=>!!document.querySelector('#uwView [data-uwcomleases]'),null,15000);
   const com=await page.evaluate(()=>{ const l=(window.LDS_uwLines()||[]).find(x=>x.key==='COM'); const row=document.querySelector('#uwView [data-uwcomleases]'); return { t12:l&&l.t12, uw:l&&l.uw, row: row?row.innerText:'' }; });
-  ok(near(com.uw,COMM_ANNUAL,0.01),'the underwritten Commercial Rent = the leases, 174,000 (got '+com.uw+')');
+  // (2026-10-21) the underwriting is the approved pro forma: the leases come in as a suggestion that raises the line to them
+  const sgC=await page.evaluate(()=>{ const s=(window.LDS_pfSuggestions()||[]).find(x=>x.id==='assume:COM'); return s?{why:s.why,story:s.change&&s.change.story,open:s.open}:null; });
+  ok(sgC&&sgC.open&&/174,000/.test(sgC.story||''),'Underwriting suggests Commercial Rent from the leases, 174,000 a year (got '+JSON.stringify(sgC)+')');
   ok(near(com.t12,120000,0.01),'the in-place Commercial Rent stays the T12’s own (last 3 × 4 = 120,000; got '+com.t12+')');
   ok(/Test Charter Co/.test(com.row)&&/Test Sandwich Co/.test(com.row)&&/\$0 \(vacant\)/.test(com.row)&&/174,000/.test(com.row),'the leases are listed under the line, the vacant one at $0 ("'+com.row.slice(0,160)+'…")');
   const uwNoi=await page.evaluate(()=>{ const e=document.getElementById('uwInPlaceNoi'); return e?e.innerText:''; });
@@ -95,8 +97,13 @@ const FT12=makeT12(), FRR=makeRR();
   // the saved NOI carries the leases
   const gd=await page.evaluate(async(k)=>{ await window.LDS_ensureGD(k); const g=window.LDS_gdNOICache()[k]; return g?{ip:g.inPlace,uw:g.underwritten}:null; },P.key);
   ok(gd&&near(gd.ip,RULE,1),'general-data.json: in-place 1,080,000 (got '+(gd&&gd.ip)+')');
-  const uwNoiShown=await page.evaluate(()=>{ const e=document.getElementById('uwUwNoi'); return e?e.innerText:null; });
-  ok(gd&&gd.uw!=null&&uwNoiShown!=null&&near(gd.uw,num(uwNoiShown),1),'…and its underwritten NOI is the one Underwriting shows (saved '+(gd&&gd.uw)+', shown '+uwNoiShown+')');
+  ok(gd&&gd.uw==null,'…and no underwriting NOI until the underwriting is approved (got '+(gd&&gd.uw)+')');
+  await page.evaluate(()=>document.querySelector('[data-uwapprove]').click());
+  await until(page,(k)=>{ const g=window.LDS_gdNOICache()[k]; return !!(g&&g.underwritten!=null); },P.key,15000);
+  const gd2=await page.evaluate((k)=>{ const g=window.LDS_gdNOICache()[k]; return g?{uw:g.underwritten,ap:g.uwApproved}:null; },P.key);
+  const uwNoiShown=await page.evaluate(()=>{ const e=document.getElementById('uwSafeNoi'); return e?e.innerText:null; });
+  ok(gd2&&gd2.uw!=null&&uwNoiShown!=null&&near(gd2.uw,num(uwNoiShown),1)&&gd2.ap&&gd2.ap.current,'approved → the saved underwriting NOI is the Safe one Underwriting shows (saved '+(gd2&&gd2.uw)+', shown '+uwNoiShown+')');
+  gd.uw=gd2&&gd2.uw;
 
   // ---- (N1) the property page: one NOI ----
   await page.evaluate((k)=>window.LDS_openProfile(k),P.key);
@@ -110,7 +117,7 @@ const FT12=makeT12(), FRR=makeRR();
   // the Underwriting "Portfolio roll-up" row
   const roll=await page.evaluate((k)=>{ const rows=window.PortfolioRollup.buildRows(Object.assign({},window.OperatingStore.all()),window.LDS_loans().filter(l=>!l.archived),window.LDS_OPERATING_HOOKS).rows; const r=rows.find(x=>x.propKey===k); return r?{noi:r.noi,uw:r.uwNoi,dscr:r.dscr}:null; },P.key);
   ok(roll&&near(roll.noi,RULE,1),'the Portfolio roll-up row shows the same NOI, 1,080,000 (got '+(roll&&roll.noi)+')');
-  ok(roll&&gd&&near(roll.uw,gd.uw,1),'…and the same underwritten NOI as Underwriting ('+(roll&&roll.uw)+')');
+  ok(roll&&gd&&near(roll.uw,gd.uw,1),'…and the same Safe underwriting NOI as Underwriting ('+(roll&&roll.uw)+')');
   const opTotal=await page.evaluate((k)=>{ const r=window.OperatingStore.get(k); return r?window.OperatingCalc.effectiveNOI(r):null; },P.key);
   ok(near(opTotal,STMT,1),'(the operating lines still hold the statement’s 12-month total, 480,000 — shown nowhere as the NOI)');
   // the rent-roll card says it

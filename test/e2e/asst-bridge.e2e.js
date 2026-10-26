@@ -46,10 +46,25 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const ui=await page.evaluate(()=>{
     const m=document.getElementById('aiAsstModal');
     const row=document.getElementById('aiAsstConnRow');
-    return { modalShown: !!(m && !m.classList.contains('hidden')), row: row?(row.innerText||'').trim():'(no row)' };
+    const r=m&&m.firstElementChild?m.firstElementChild.getBoundingClientRect():null;
+    return { modalShown: !!(m && !m.classList.contains('hidden')), row: row?(row.innerText||'').trim():'(no row)', w:r?r.width/innerWidth:0, h:r?r.height/innerHeight:0 };
   });
   ok(ui.modalShown,'the assistant modal opened (did not crash out of aiAsstOpen)');
+  ok(Math.abs(ui.w-0.8)<0.02&&Math.abs(ui.h-0.85)<0.02,'the assistant takes about 80% of the app window, like the pro forma panel ('+Math.round(ui.w*100)+'% wide, '+Math.round(ui.h*100)+'% tall)');
   ok(!/could not reach the ai bridge/i.test(ui.row),'the connection row is NOT the false "Could not reach the AI bridge" — reads: "'+ui.row.replace(/\s+/g,' ').slice(0,140)+'"');
+
+  // (3) (2026-10-26) Settings → Claude connection: Save switches the app to the API key; Clear switches it back to
+  // Automatic (before, it stayed on "API mode is selected but no API key is set" even with a subscription signed in)
+  await page.evaluate(()=>{ const c=document.getElementById('aiAsstClose'); if(c) c.click(); document.getElementById('settingsDD').open=true; document.getElementById('settingsClaudeBtn').click(); }); await page.waitForTimeout(800);
+  await page.waitForSelector('#claudeKeyInput',{state:'attached',timeout:10000});
+  await page.evaluate(()=>{ const d=document.querySelector('#claudeConnPanel details'); if(d) d.open=true; }); await page.waitForTimeout(200);
+  await page.fill('#claudeKeyInput','sk-ant-made-up-test-key'); await page.click('#claudeKeySave');
+  await page.waitForSelector('#claudeKeyClear',{state:'attached',timeout:10000}).catch(()=>{});
+  const saved=await page.evaluate(async()=>{ const st=await window.ldsShell.aiStatus(); return { mode:st.mode, key:!!(st.apiKey&&st.apiKey.configured) }; });
+  ok(saved.mode==='api'&&saved.key,'Save keeps the key and switches the app to it ('+JSON.stringify(saved)+')');
+  await page.evaluate(()=>{ const d=document.querySelector('#claudeConnPanel details'); if(d) d.open=true; document.getElementById('claudeKeyClear').click(); }); await page.waitForTimeout(1200);
+  const cleared=await page.evaluate(async()=>{ const st=await window.ldsShell.aiStatus(); return { mode:st.mode, key:!!(st.apiKey&&st.apiKey.configured) }; });
+  ok(cleared.mode==='auto'&&!cleared.key,'Clear removes the key and puts the connection back on Automatic, so a signed-in subscription is used again ('+JSON.stringify(cleared)+')');
 
   ok(errors.length===0,'no page errors overall'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{fs.rmSync(UDATA,{recursive:true,force:true});}catch(e){}

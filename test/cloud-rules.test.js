@@ -228,6 +228,22 @@ async function fails_with(p, code){ try{ await p; return "no error"; }catch(e){ 
       ok(new Set(got).size === 4 && rounds <= 6, "a big group comes in pages");
     });
 
+    await section("the admin's lists: the lender presets (next stage F4, D13)", async () => {
+      const sv = async () => { const p = await A.rpc("lds_pull", { since: 0 }); const r = p.records.find(x => x.path === "settings.json"); return r; };
+      let r = await sv();
+      const presets = [{ id: "p1", name: "Fannie Mae", limits: { dscr: 1.25, ltv: 0.75, dy: 0.07 }, rateTypes: ["Fixed", "Hybrid ARM"] }];
+      ok(await fails_with(E.rpc("lds_save", { items: [{ path: "settings.json", base_version: r.version, content: Object.assign({}, r.content, { "lds.lenderPresets": presets }) }], reason: "Add Fannie" }), "admin_only_list") === true, "an editor can't add a lender preset");
+      const a = await A.rpc("lds_save", { items: [{ path: "settings.json", base_version: r.version, content: Object.assign({}, r.content, { "lds.lenderPresets": presets }) }], reason: "Fannie Mae's limits from Azriel" });
+      ok(a.ok === true, "the admin adds one");
+      r = await sv();
+      ok(await fails_with(E.rpc("lds_save", { items: [{ path: "settings.json", base_version: r.version, content: Object.assign({}, r.content, { "lds.lenderPresets": [] }) }], reason: "Remove" }), "admin_only_list") === true, "an editor can't remove or change it");
+      const e = await E.rpc("lds_save", { items: [{ path: "settings.json", base_version: r.version, content: Object.assign({}, r.content, { "lds.notDuplicate": ["a|b"] }) }], reason: "Not a duplicate" });
+      ok(e.ok === true, "an editor still changes the other settings, the presets untouched");
+      r = await sv();
+      const lp = r.content["lds.lenderPresets"] || [];
+      ok(lp.length === 1 && lp[0].name === "Fannie Mae" && lp[0].limits.dscr === 1.25 && (r.content["lds.notDuplicate"] || [])[0] === "a|b", "the presets are the admin's, the other setting the editor's");
+    });
+
     await section("the maintainer replaces an admin; the admin removes a member", async () => {
       await M.rpc("lds_group_admin", { group_id: g1, admin_email: "ed@g1.com" });
       const ha = await A.rpc("lds_hello"), he = await E.rpc("lds_hello");

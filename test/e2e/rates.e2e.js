@@ -18,7 +18,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
 const near=(a,b,t)=>Math.abs(a-b)<(t||1e-7);
 async function launch(env){
   const app=await electron.launch({executablePath:require(path.join(APP,'node_modules','electron')),
-    args:[APP,'--user-data-dir='+UDATA,'--no-sandbox'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent'},env)});
+    args:[APP,'--user-data-dir='+UDATA,'--no-sandbox','--proxy-server=http://127.0.0.1:9'],cwd:APP,env:Object.assign({},process.env,{LDS_CLAUDE_BIN:'/nonexistent'},env)});   // no web at all: with page.route alone the window still reached the real rate sites under load ("11 refreshed")
   const page=await app.firstWindow();
   await page.route(/^https?:\/\//,r=>r.abort());   // the page itself never reaches the internet here
   await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(800);

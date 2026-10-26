@@ -12,6 +12,8 @@
    #26       a saved rate shows "Last saved rate · <date>"; never fetched → "Built-in rate — fetch to update"
    #80       a hybrid proposal shows both periods; #79 no "Retire mezz into senior" line
    #27/#28/#241 the assistant: the property's refinance in the background, only real NOI choices, ticks by name
+   (2026-10-21) a refinance is sized on the property's T12 (or its approved underwriting): the sample properties get
+   a T12 NOI from test/e2e/_t12seed.js — the NOI each test types, as the in-place T12 NOI
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/refi-rules.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -25,10 +27,12 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.route(/^https?:\/\//,r=>r.abort());
   await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(800);
   const LID=await page.evaluate(()=>window.opProperties().find(p=>p.name==='Villages of Whitewater').loans[0]._id);
+  const seed=(names)=>require('./_t12seed').seedT12(page,names);
   // a controlled single loan: fixed, 40 years left, the NOI at 20% of the payoff (Can = yes)
-  const setup=(rate,prepay,step)=>page.evaluate(({lid,rate,prepay,step})=>{ const l=window.LDS_loans().find(x=>x._id===lid);
+  const setup=async(rate,prepay,step)=>{ const bal=await page.evaluate(({lid,rate,prepay,step})=>{ const l=window.LDS_loans().find(x=>x._id===lid);
     Object.assign(l,{rateType:'Fixed',isHistorical:true,amortType:'Level',capRate:0.05,loanTermMonths:480,amortizationMonths:480,ioMonths:0,annualRate:rate,rateFloor:null,rateCap:null,prepayType:prepay,prepayConfirmed:true,stepDownPct:step||0,maturityDate:null});
     l.noi=window.LDS_computeBalance(l)*0.20; return window.LDS_computeBalance(l); },{lid:LID,rate,prepay,step});
+    await seed(['Villages of Whitewater']); return bal; };   // the T12 NOI = the NOI set here
   const verdict=(patch)=>page.evaluate(({lid,patch})=>{ const l=window.LDS_loans().find(x=>x._id===lid); const v=window.LDS_refiVerdictWith(l,Object.assign({_baseSpread:0},patch||{})); const s=v.should||{};   // 3.0.0 — the lender's quote typed as 0 bps, so the proposal is the lower rate these rules need
     return { can:v.can.can, max:v.can.maxLoan, refi:v.refi, decision:v.decision, kind:s.kind, why:s.why, saved:s.saved, penalty:s.penalty, cashPct:s.cashPct, newRate:s.newRate, curRate:s.curRate, payoff:s.payoff }; },{lid:LID,patch});
 
@@ -54,6 +58,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   ok(v5.kind==='no'&&v5.why==='pricier','a higher new rate with 50% extra cash → Don\'t refinance');
   // (2) ends within 12 months → Refinance, even at a higher rate
   await page.evaluate((lid)=>{ const l=window.LDS_loans().find(x=>x._id===lid); const t=new Date(); const m=new Date(Date.UTC(t.getFullYear(),t.getMonth()+8,1)); l.maturityDate=m.toISOString().slice(0,10); l.loanTermMonths=120; l.amortizationMonths=360; l.noi=window.LDS_computeBalance(l)*0.2; },LID);
+  await seed(['Villages of Whitewater']);
   const v6=await verdict();
   ok(v6.kind==='yes'&&v6.why==='maturity','today\'s loan ends within 12 months → Refinance (even at a higher rate)');
 
@@ -93,6 +98,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const AV=await page.evaluate(()=>{ const p=window.opProperties().find(x=>x.name==='Avalon White Plains'); const combo=window.LDS_getLoan('combo:'+p.key);
     const sum=p.loans.reduce((a,l)=>a+window.LDS_computeBalance(l),0); return { key:p.key, ids:p.loans.map(l=>l._id), sum, payoff:window.LDS_refiPayoff(combo) }; });
   ok(Math.abs(AV.payoff-AV.sum)<0.01,'the senior + mezz payoff is each loan at its own balance ('+Math.round(AV.payoff)+') (#25)');
+  await require('./_t12seed').seedT12(page,[],{[AV.key]:12000000});   // the sample Avalon has no NOI: a T12 of 12,000,000
   await page.evaluate((k)=>{ const s=document.getElementById('loanSelect'); s.value='combo:'+k; s.dispatchEvent(new Event('change',{bubbles:true})); },AV.key);
   await page.waitForTimeout(400); await page.click('#refiBtn'); await page.waitForTimeout(700);
   ok(!/Retire mezz into senior/i.test(await page.evaluate(()=>document.getElementById('refiView').innerText)),'no "Retire mezz into senior" line (#79)');
@@ -104,24 +110,33 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   // #27 — the assistant prepares the property's refinance in the background (screen not opened for it)
   await page.click('#refiCloseBtn'); await page.waitForTimeout(300);
   await page.evaluate(()=>document.getElementById('scopePortfolioBtn').click()); await page.waitForTimeout(400);
-  await page.evaluate(()=>{ const sr=window.LDS_loans().find(x=>x.propertyName==='Avalon White Plains'); sr.noi=14000000; window.__asstRes=window.LDS_asstAction({action:'start_refinance',args:{name:'Avalon WP (Mezz)'}}); });
+  await page.evaluate(()=>{ const sr=window.LDS_loans().find(x=>x.propertyName==='Avalon White Plains'); sr.noi=14000000; });
+  await seed(['Avalon White Plains']);   // its T12: 14,000,000
+  await page.evaluate(()=>{ window.__asstRes=window.LDS_asstAction({action:'start_refinance',args:{name:'Avalon WP (Mezz)'}}); });
   await page.waitForTimeout(500);
   const A27=await page.evaluate(()=>({ mode:!document.getElementById('refiView').hidden, card:(document.getElementById('aiAsstLog')||{}).textContent||'', res:window.__asstRes&&window.__asstRes.msg }));
   const t27=(A27.card||'')+' '+(A27.res||'');
   ok(!A27.mode&&/Avalon White Plains/.test(t27)&&/on 2 loans together/.test(t27),'"refinance Avalon WP (Mezz)" works on the whole property, without opening the screen (#27)');
-  // #28 — only the choices the property has
-  const r28=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'in-place'}}));
-  ok(r28&&r28.ok===false&&/can use: Entered NOI \(\$14,000,000/.test(r28.msg),'asking for a basis the property doesn\'t have lists the ones it has ("'+(r28&&r28.msg)+'")');
-  await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>x.propertyName==='Avalon White Plains'); l.noi=9000000; });   // (it had 14,000,000 typed above)
+  // #28 — only the choices the property has (2026-10-21: In-place T12, and Safe / Aggressive once the underwriting is approved)
+  const r28=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'safe'}}));
+  ok(r28&&r28.ok===false&&/can use: In-place T12 NOI \(\$14,000,000/.test(r28.msg)&&/once the underwriting is approved/.test(r28.msg),'asking for a basis the property doesn\'t have lists the ones it has ("'+(r28&&r28.msg)+'")');
+  const r28t=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'entered'}}));
+  ok(r28t&&r28t.ok===false&&!/Entered/.test(r28t.msg),'a typed ("entered") NOI is never a refinance basis ("'+(r28t&&r28t.msg)+'")');
+  // the underwriting approved: Safe 9,000,000 (in the property's General Data) — the refinance now starts on it
+  await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>x.propertyName==='Avalon White Plains'); window.LDS_setGDNOI(window.propertyKey(l),{inPlace:14000000,underwritten:9000000,underwrittenAggressive:9500000,uwModel:2,uwApproved:{at:new Date().toISOString(),by:'Test',current:true}}); });
+  const r28a=await page.evaluate(()=>window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'safe'}}));
+  ok(r28a&&r28a.ok===false&&/already uses the Safe underwriting NOI \(\$9,000,000/.test(r28a.msg),'once approved, the Safe underwriting is the starting basis ("'+(r28a&&r28a.msg)+'")');
   // 2.9.7 (#95) — a refinance change is behind an Approve card; the result comes back once approved
-  const r28b=await page.evaluate(()=>{ const r=window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'entered'}}); window.__p=r&&r.pending; const c=[...document.querySelectorAll('#aiAsstLog [data-asstcard]')].pop(); return { card:!!(r&&r.pending), msg:r&&r.msg, text:c?c.textContent:'' }; });
+  const r28b=await page.evaluate(()=>{ const r=window.LDS_asstAction({action:'set_refi_noi_basis',args:{name:'Avalon White Plains',basis:'in-place'}}); window.__p=r&&r.pending; const c=[...document.querySelectorAll('#aiAsstLog [data-asstcard]')].pop(); return { card:!!(r&&r.pending), msg:r&&r.msg, text:c?c.textContent:'' }; });
   let r28c=null;
   if(r28b.card){ await page.evaluate(()=>{ [...document.querySelectorAll('#aiAsstLog .aiAsstEditApprove:not(:disabled)')].pop().click(); }); r28c=await page.evaluate(()=>window.__p); }
-  ok(r28b.card&&/Entered NOI \(\$9,000,000/.test(r28b.text)&&r28c&&r28c.ok&&/Entered NOI \(\$9,000,000/.test(r28c.msg),'"entered" works when an NOI was typed — on a card, in plain names, and says so after checking ('+(r28c&&r28c.msg||r28b.msg||'').slice(0,90)+')');
+  ok(r28b.card&&/Safe underwriting NOI \(\$9,000,000/.test(r28b.text)&&/In-place T12 NOI \(\$14,000,000/.test(r28b.text)&&r28c&&r28c.ok&&/In-place T12 NOI \(\$14,000,000/.test(r28c.msg),'Safe → In-place T12 on a card, in plain names, and says so after checking ('+(r28c&&r28c.msg||r28b.msg||'').slice(0,90)+')');
 
   // ---- #24 Save replaces all the property's loans ----
   const MID=await page.evaluate(()=>window.LDS_loans().find(x=>x.propertyName==='M Lofts')._id);
-  await page.evaluate((lid)=>{ const l=window.LDS_loans().find(x=>x._id===lid); l.noi=window.LDS_computeBalance(l)*0.25; const s=document.getElementById('loanSelect'); document.getElementById('scopeLoanBtn').click(); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); window.LDS_resetRefiDraft(); },MID);
+  await page.evaluate((lid)=>{ const l=window.LDS_loans().find(x=>x._id===lid); l.noi=window.LDS_computeBalance(l)*0.25; },MID);
+  await seed(['M Lofts']);   // its T12: 25% of what it owes
+  await page.evaluate((lid)=>{ const s=document.getElementById('loanSelect'); document.getElementById('scopeLoanBtn').click(); s.value=lid; s.dispatchEvent(new Event('change',{bubbles:true})); window.LDS_resetRefiDraft(); },MID);
   await page.waitForTimeout(400); await page.click('#refiBtn'); await page.waitForTimeout(700);
   const hasSave=await page.evaluate(()=>!!document.getElementById('refiSaveBtn'));
   if(hasSave){

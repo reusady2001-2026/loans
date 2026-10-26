@@ -39,6 +39,9 @@ async function setNOIs(page, props) {
       await window.LDS_ensureProfile(key);
       if (p.addr) { try { await window.LDS_setProfileField(key, 'propertyAddress', p.addr); } catch (e) {} }
       await window.LDS_setProfileField(key, 'noiOverride', p.noi);
+      // (2026-10-21) a refinance is sized on the property's T12 (or the underwriting approved from it), never a typed
+      // NOI: these made-up properties get a T12 with that same NOI, so every figure the pool checks stays the same
+      const n = Number(p.noi); if (p.noi !== '' && p.noi != null && isFinite(n)) window.LDS_setGDNOI(key, { inPlace: n });
       out[p.name] = key;
     }
     try { window.LDS_renderPortfolio && window.LDS_renderPortfolio(); } catch (e) {}

@@ -26,6 +26,12 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   await page.waitForFunction(()=>/operating history/i.test((document.getElementById('uwView')||{}).innerText||''),null,{timeout:12000}).catch(()=>{});
   await page.waitForTimeout(400);
 
+  // (2026-10-21) the underwriting is the APPROVED pro forma: approve it, then both NOIs are kept
+  await page.waitForFunction(()=>!!document.querySelector('[data-uwapprove]')&&!document.querySelector('[data-uwapprove]').disabled,null,{timeout:20000}).catch(()=>{});
+  await page.evaluate(()=>{ const b=document.querySelector('[data-uwapprove]'); if(b) b.click(); });
+  await page.waitForFunction((k)=>{ const g=window.LDS_gdNOICache()[k]; return !!(g&&g.underwritten!=null); },KEY,{timeout:20000}).catch(()=>{});
+  await page.waitForTimeout(800);
+
   // the in-memory cache has the NOIs now (from the upload path)
   const warm=await page.evaluate((k)=>{ const g=window.LDS_gdNOICache()[k]; return { has:!!g, inPlace:g?g.inPlace:null, underwritten:g?g.underwritten:null }; },KEY);
   ok(warm.has && warm.inPlace!=null && warm.underwritten!=null, 'after upload, the in-memory cache holds both NOIs (in-place '+warm.inPlace+', underwritten '+warm.underwritten+')');

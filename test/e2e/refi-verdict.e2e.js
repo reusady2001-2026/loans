@@ -5,7 +5,8 @@
      Stage 2 — SHOULD you (only if you can)? Same money at a LOWER rate = yes; same
        money at a higher-or-equal rate = no. Cash-out and a maturing loan are separate yeses.
    The proposed-loan card + amortization schedule + "Save as a loan" appear ONLY when both
-   stages clear. A single-loan property with no T12 on disk lets us drive refiNOI via l.noi.
+   stages clear. (2026-10-21) A refinance is sized on the property's T12: each scenario gives the single-loan
+   property a T12 NOI (General Data's in-place) as a multiple of the payoff.
    Run: GN=/opt/node22/lib/node_modules xvfb-run -a /opt/node22/bin/node test/e2e/refi-verdict.e2e.js */
 const path=require('path'),os=require('os'),fs=require('fs');
 const APP=path.resolve(__dirname,'..','..');
@@ -25,6 +26,7 @@ async function scenario(page, loanId, factor, rate){
     l.loanTermMonths=480; l.amortizationMonths=480; l.ioMonths=0; l.annualRate=rate;   // far maturity → the maturity-forced path never fires
     l.floatIndexValue=null; l.floatIndexLive=null; l.floatRepricedOn=null; l.armInitialFixedMonths=null; l.armAdjustFreqMonths=null; l.rateFloor=null; l.rateCap=null; l.stackWith=null;
     const payoff = window.LDS_computeBalance(l); l.noi = payoff*factor;
+    window.LDS_setGDNOI(window.propertyKey(l), { inPlace: l.noi });   // the property's T12 NOI (a refinance never sizes on a typed NOI)
     window.LDS_resetRefiDraft();
     const v = window.LDS_refiVerdict(l);
     return { payoff, noi:l.noi, can:v.can.can, binding:v.can.binding, maxLoan:v.can.maxLoan, gap:v.can.gap, should:(v.should?v.should.should:null), refi:v.refi };

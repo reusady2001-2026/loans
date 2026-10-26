@@ -38,7 +38,7 @@ const ROLE_FILE = { profile: "profile.json", assumptions: "assumptions.json", ge
 // Raise it together with the number in setup.sql whenever that file changes; an older server is shown to the admin.
 const SETUP_NEEDED = 1;
 const RATE_KEYS = ["ldsHub.liveRates.v1", "ldsHub.rateHist.v2", "ldsHub.nyfedHist.v1", "ldsHub.trezHist.v1"];
-const SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate"].concat(RATE_KEYS);
+const SHARED_KEYS = ["lds.portfolioTargets", "lds.customCategories", "lds.notDuplicate", "lds.lenderPresets"].concat(RATE_KEYS);   // next stage (F4) — the lender presets (the admin's list; the server refuses anyone else's change)
 const sha1 = s => crypto.createHash("sha1").update(String(s || "")).digest("hex");
 const h16 = s => sha1(s).slice(0, 16);
 

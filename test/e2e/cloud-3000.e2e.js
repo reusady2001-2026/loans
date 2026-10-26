@@ -74,6 +74,9 @@ const personEdit = (page, idx, field, value) => page.evaluate(([i, f, v]) => { d
     await A.page.waitForSelector('#cuWhy');
     await A.page.click('#cuGo');
     ok(await until(A.page, (n) => LDS_loans().length === n, localCount, 60000), 'uploaded: the group has this computer’s ' + localCount + ' loans');
+    // the app opened with no loans ("No loans yet"): once they arrive, Home shows them on the portfolio dashboard at once
+    ok(await until(A.page, () => document.getElementById('emptyState').hidden && !document.getElementById('portfolioView').hidden && document.querySelectorAll('#portfolioView tr[data-goto]').length > 0, null, 15000),
+       'Home shows the uploaded loans at once — not "No loans yet" until Whole Portfolio is clicked');
     ok(fs.readFileSync(path.join(OP, 'loans.json'), 'utf8') === localLoans, 'today’s loans file on this computer is untouched');
     ok(Number((await si.sql("select count(*) n from app.records where path like 'props/%/profile.json'")).rows[0].n) > 20, 'the properties’ records are in the shared database');
     ok(Number((await si.sql("select count(*) n from app.locks")).rows[0].n) === 0, 'the starting data locks nothing');

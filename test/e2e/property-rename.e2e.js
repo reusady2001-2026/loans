@@ -26,6 +26,10 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
     return { key:p.key, id:p.loans[0]._id, chat:ch.conversation.id }; });
   await page.evaluate((k)=>window.LDS_openProfile(k),S.key); await page.waitForTimeout(800);
   await setPf('propertyName','Middlesex Lofts');
+  // the folder move runs in the background: wait for it to finish (a busy machine takes longer than the pause above)
+  for(let t=0;t<40;t++){ const done=await page.evaluate(async(S)=>{ const l=window.LDS_loans().find(x=>x._id===S.id); const k2=window.propertyKey(l); if(k2===S.key) return false;
+      const d2=await window.ldsShell.docList(k2), d1=await window.ldsShell.docList(S.key); return (d2.files||[]).some(f=>f.name==='lease-abstract.txt') && !(d1.files||[]).length; },S).catch(()=>false);
+    if(done) break; await page.waitForTimeout(250); }
   const R=await page.evaluate(async(S)=>{ const l=window.LDS_loans().find(x=>x._id===S.id); const k2=window.propertyKey(l);
     const d2=await window.ldsShell.docList(k2), d1=await window.ldsShell.docList(S.key), c2=await window.ldsShell.chatList({scope:k2}), c1=await window.ldsShell.chatList({scope:S.key});
     return { name:l.propertyName, k2, docNew:(d2.files||[]).some(f=>f.name==='lease-abstract.txt'), docOld:(d1.files||[]).length, chatNew:(c2.conversations||[]).some(c=>c.id===S.chat), chatOld:(c1.conversations||[]).length,
