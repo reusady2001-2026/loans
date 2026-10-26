@@ -1303,6 +1303,17 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
       mezz pay-down; a two-property portfolio; the assistant.
   - **The Guide:** "Extend several loans together" in *Refinance several loans together*, and three reference
     pictures. K2 Sweetwater has a made-up T12 in the refinance chapter.
+- **A new loan's interest-only is never copied (TEST build — the operator, 2026-10-26).** "If a property had a loan,
+  that in its terms there was an interest only period, it will be duplicated to the new loan agreement without me
+  letting myself edit that."
+  - The proposed new loan (`buildRefiOption`) starts with **no interest-only**. It used to copy today's loan's
+    interest-only months (for a package, the senior's, since the package is a copy of the senior). It still matches
+    today's term and amortization.
+  - **"How 'supports $X' is worked out"** has the new loan's **Amortization (years)** and **Interest-only (months)**
+    boxes on its Payment line (`data-refidraftf`). They change the same proposed loan as the proposal card's boxes,
+    and they are there even when the answer is "Don't refinance" and the proposal card isn't shown.
+  - **Tests:** `test/e2e/refi-new-io.e2e.js` (15 checks): a pooled loan, a senior + mezz, a single all-interest-only
+    loan, and a "Don't refinance" loan typed through the new boxes.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared

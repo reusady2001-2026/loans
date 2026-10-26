@@ -904,6 +904,7 @@ module.exports = {
                 { sel: BASIS + " >> text=NOI >> nth=0", label: "NOI", text: "The NOI used, and where it comes from." },
                 { sel: BASIS + " >> text=Rate >> nth=0", label: "Rate", text: "The proposed loan’s rate (index + spread)." },
                 { sel: BASIS + " >> text=Payment >> nth=0", label: "Payment", text: "How the payment is figured: amortizing, interest-only months." },
+                { sel: RV + "[data-refidraftrow]", label: "Amortization and interest-only", text: "The new loan’s own: type them here. A new loan starts with no interest-only; today’s loan’s is never copied." },
                 { sel: BASIS + " >> text=Value >> nth=0", label: "Value", text: "NOI ÷ cap rate, or the appraisal once you type one. The loan-to-value limit works on this." },
                 { sel: RV + '[data-refiappr="value"]', label: "Appraised value", text: "Type an appraisal to use it instead of NOI ÷ cap rate." },
                 { sel: RV + '[data-refiappr="date"]', label: "Dated", text: "The appraisal’s date, kept with it." },
@@ -989,7 +990,7 @@ module.exports = {
               ] }
           ] },
         { title: "The proposed loan",
-          text: "Shown when the answer is **Refinance**, **Your decision** or a pay-down: the new loan’s terms and its payment schedule. It matches today’s term and interest-only period, priced at today’s rate; every box is editable and the verdict updates as you type. **Save as a loan** at the top saves it; see [Save the refinance as a loan](save-the-refinance).",
+          text: "Shown when the answer is **Refinance**, **Your decision** or a pay-down: the new loan’s terms and its payment schedule. It matches today’s term and amortization, with no interest-only unless you type it, priced at today’s rate; every box is editable and the verdict updates as you type. **Save as a loan** at the top saves it; see [Save the refinance as a loan](save-the-refinance).",
           views: [
             { title: "Proposed New Loan",
               go: async (h) => { await mewsAt(h, 0); await h.scroll(card("Proposed New Loan")); },
