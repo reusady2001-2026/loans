@@ -61,7 +61,7 @@ const readInput=()=>{try{return JSON.parse(fs.readFileSync(INPUT,'utf8'));}catch
   const stored=await page.evaluate((k)=>window.LDS_getPush(k),KEY);
   ok(stored&&stored.moves.length===1&&stored.unconfirmed===2,'only the confirmed move is kept (1 kept, 2 left out unseen)');
   const gaps=await page.evaluate(()=>((document.querySelector('#opScanMount [data-aigaps]')||{}).innerText||''));
-  ok(/a rent roll \(Documents\)/.test(gaps)&&/who pays the utilities/.test(gaps)&&/add them and run it again/.test(gaps),'the panel says what Claude didn’t have (no rent roll, no utilities answer here) and to add it ("'+gaps.slice(0,140)+'")');
+  ok(/the rent roll \(Documents\)/.test(gaps)&&/the loan agreement \(Documents\)/.test(gaps)&&!/tax|utilit|assess/i.test(gaps)&&/run it again/.test(gaps),'the panel names only the four sources it lacked (here the rent roll and the loan agreement) — never a tax bill or who pays the utilities ("'+gaps.slice(0,160)+'")');
 
   // ---- (2026-10-21) The app hands Claude the property's full briefing — the same one Claude's stories get; no menu ----
   const sent=readInput();

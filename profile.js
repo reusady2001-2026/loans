@@ -52,14 +52,6 @@
       help: "Used when the property has no T12 - once a T12 is uploaded, its NOI is used instead. Negative is allowed." },
     { key: "noiOverride",     label: "NOI override",        type: "money",    group: "NOI", unit: "$ a year",
       help: "Typed by you only. Replaces the T12's NOI everywhere - DSCR, debt yield, the roll-up and the refinance. Clear it to go back to the T12." },
-    // (2026-10-21, the operator) who pays the utilities — Claude reads it before it suggests anything about utilities
-    // (an owner who pays them has them in the rent: the residents pay through it). Blank = not known: Claude then checks
-    // the leases and the T12's own accounts, and suggests nothing about utilities it can't confirm.
-    { key: "utilitiesPaidBy", label: "Utilities — who pays", type: "select",   group: "Utilities",
-      options: ["", "Owner (in the rent)", "Residents (their own meters)", "Billed back to residents", "Split — owner and residents"],
-      help: "Claude reads this before it suggests anything about utilities. Leave it blank if you're not sure: Claude then checks the leases and the T12." },
-    { key: "utilitiesNote",   label: "Utilities — which ones", type: "text",  group: "Utilities",
-      help: "For example: owner pays water, sewer and trash; residents pay electric and gas." },
     { key: "notes",           label: "Notes",               type: "textarea", group: "Notes" }
   ];
 

@@ -1096,7 +1096,7 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     a T12 review decision emptied the property's cached NOI and then read it again; for a second or two (longer on a busy
     machine) the property had no NOI — Home, the roll-up or the refinance could show none. They now read it again and swap
     the new figures in (`opEnsureGeneralData(key, true)`); only deleting the property or its T12 empties it.
-  - **Profile:** "Utilities — who pays" (Owner (in the rent) · Residents (their own meters) · Billed back to residents ·
+  - **Profile (removed in Round 4):** "Utilities — who pays" (Owner (in the rent) · Residents (their own meters) · Billed back to residents ·
     Split) and "Utilities — which ones".
   - **Rent roll reader:** keeps each unit's move-in, lease end and move-out (an Excel date, M/D/YYYY or YYYY-MM-DD; a
     blank stays blank).
@@ -1107,6 +1107,38 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   - **Tests:** `test/e2e/ai-briefing.e2e.js` (22 checks: the briefing's parts, the web allowed on every request, the
     card folding); `push.e2e` and `proforma.e2e` check that unconfirmed items stay hidden and the checks show;
     `rent-roll.test.js` (lease dates, turnover), `portfolio-rollup.test.js` (the Aggressive column).
+- **Round 4 (the operator, 2026-10-26) — four sources, and Claude works like the analyst it replaces.** This replaces
+  the parts of Round 3 that asked for more papers.
+  - **Claude's sources are four, and only four:** the T12 (the source of truth), the rent roll, the loan agreement and
+    the property details. Its only other source is the web, for the surroundings. When the profile has no address,
+    Claude takes it from the loan agreement. Of the property's documents, the briefing now sends only the loan agreement
+    (role `agreement`, or a file named "loan agreement"). Other documents stay in the property's folder but are no
+    longer sent.
+  - **No more asking for papers:** Claude never asks for a tax bill, an assessment, a utility contract or any other
+    document. It never says a figure can't be worked out because a paper is missing, and it never returns an item that
+    says it should be checked, verified or confirmed first. Where it has to assume, it states the assumption in
+    `checked`. A stated assumption is no longer filtered out (`AI_HEDGE_RE` no longer drops it). The PUBLIC RECORDS rule
+    (county assessed value, tax-appeal deadline) and "appealing a tax assessment" as an example lever are gone.
+  - **Utilities, from the T12:** no file says who pays, and the profile no longer asks. Its fields "Utilities — who
+    pays" and "Utilities — which ones" are removed. If the T12's utilities expense is enough to serve the whole
+    property, the owner pays and the rent covers it, so Claude never suggests billing the residents. If it is only
+    enough for the common areas, the residents pay their own. Claude says which it concluded, and from which figure, in
+    `checked`.
+  - **Stories:** an event comes from the T12's own months (a spike the other months don't have) and, where it helps,
+    the web. Invoices and contracts are no longer named as sources.
+  - **"Claude didn't have" (`aiBriefingGaps`) names only the four sources:**
+    - the T12;
+    - the rent roll (Documents);
+    - the loan agreement (Documents);
+    - the property details (its units; its address, when the loan agreement doesn't give it either).
+    It reads "… Claude worked from what it had — add them and run it again for a fuller read." It no longer names a tax
+    bill, an assessment, utilities or lease dates.
+  - **Tests:** `ai-briefing.e2e.js`:
+    - no utilities fields in the profile;
+    - only the loan agreement is sent;
+    - the four-sources rules are in;
+    - no note when all four are present.
+    `push.e2e.js` checks the note's new wording.
 - **Not in the draft yet:** listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
   Real-file check against Azriel's Queens Gate $3.34M waits for his file.
 

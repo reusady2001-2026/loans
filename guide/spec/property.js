@@ -224,8 +224,6 @@ const SPEC = {
             { sel: PF("dataSource"), label: "Data source", text: "Living Yardi, Third-party or Manual." },
             { sel: PF("yardiCode"), label: "Yardi property code", text: "Its code in Yardi." },
             { sel: PF("noiOverride"), label: "NOI override", text: "Typed by you only. Replaces the T12’s NOI everywhere. Clear it to go back." },
-            { sel: PF("utilitiesPaidBy"), label: "Utilities — who pays", text: "Owner (in the rent), residents, billed back, or split. Claude reads it before it suggests anything about utilities." },
-            { sel: PF("utilitiesNote"), label: "Utilities — which ones", text: "For example: owner pays water, sewer and trash." },
             { sel: PF("notes"), label: "Notes", text: "Anything else." }
           ] },
         { title: "Fill it in", text: "Type into a field and leave it (Tab or click away): it is saved, with who and when under it. Units, sq ft and year built are checked first — a wrong number is not saved. With the name, units, acquisition date and manager set, the profile is complete.",
