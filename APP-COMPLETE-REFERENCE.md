@@ -667,6 +667,39 @@ saved, the key is used.
   data 0.5 MB. What has no picture is said in the step's words: the computer's own Open / Save / Print / folder
   windows, the pop-out window, update-chip states other than the running version, the app at a scale other than 100%,
   toasts, and states no sample loan reaches ("Out of date", "Don't extend now", "Matched by name only — Confirm").
+  **Rebuilt like the Claude Code docs (the operator, 2026-10-26; this replaces the chapter-per-scroll layout
+  above).**
+  - **The window:**
+    - the pages in groups on the left (Getting started, Portfolio, Loans, Properties, Underwriting, Refinance,
+      Documents, Tools, Assistant, Settings & data, Shared database, Reference);
+    - a search at the top (Ctrl K; Enter opens the first result);
+    - the page in the middle, with "On this page" on the right (it follows the scroll and hides on a narrow window);
+    - Previous / Next at the foot of every page, in the menu's order.
+  - **Overview** (written by hand in `guide/spec/index.js`): "Get started", "What you can do" cards, and a "What do
+    you want to do?" table, each row linking to its page.
+  - **How-to pages** (the Gatsby how-to shape):
+    - one task, with a title that reads after "How to";
+    - a one-line description and a short intro (what and why);
+    - "Before you start";
+    - numbered steps, one action each;
+    - a picture only where the screen changes;
+    - **numbered markers only on what the step points at** (the operator: "keep the numbered markers … exactly as you
+      recommended"; at most 5 a step, checked by the test);
+    - Note / Tip / Warning boxes and "Next steps".
+  - **Reference pages** (one per screen): what every control does, picture by picture, with the full marker lists of
+    the old guide. The list sits beside a picture on a wide window and under it otherwise.
+  - **Spec format:** `pages → sections → steps` (numbered) or `views` (reference); words take `**bold**` and
+    `[links](page-id#section)`.
+  - **Tests:**
+    - `test/guide.test.js`:
+      - every spec page captured;
+      - every link, card, table row and Next step opens a real page and section;
+      - how-tos carry a minority of the markers;
+      - no page mentions a tax bill, an assessment or a utility bill;
+    - `test/e2e/guide.e2e.js` (the window, the Overview, a how-to, "On this page", Previous / Next, a reference page,
+      search, full size, wide and narrow windows).
+  - **The Guide's sample Claude answers follow Round 4:** they no longer say Claude checked invoices, a contract or
+    bank statements; every check rests on the T12 or the web.
   **Fixed while taking the pictures (2026-10-19):** the pooled-loan allocation and a kept payment below the interest
   (§4.2), the profile's entered NOI after the loans are removed (§4.3), "1 part" (not "1 parts"), Home after the
   first upload to a shared database (it stayed on "No loans yet"), the chat on a short window with Claude not
@@ -1142,6 +1175,18 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
   - **The assistant window** takes about 80% of the app window (80% wide, 85% tall), like the pro forma panel. On a
     short window the status and connection choices scroll inside it, so the message box and Send stay in view.
     `asst-bridge.e2e.js` checks the size, and `guide-found-bugs.e2e.js` checks the 900-pixel window.
+  - **The Guide is rebuilt like the Claude Code docs** (§ The Guide, above). Its pages are how-tos and reference pages.
+  - **Found while rebuilding the Guide, fixed:**
+    - **Clearing the API key:** Clear (Settings → Claude connection, or the assistant's connection settings) now puts an
+      API-only connection back on Automatic. Before, the app stayed on "API mode is selected but no API key is set"
+      even with a subscription signed in. `asst-bridge.e2e.js`.
+    - **A loan interest-only for its whole term:** its schedule now reads "interest only for the whole term". Before,
+      it read "amortized as if null months" (K2 Sweetwater). `guide-found-bugs.e2e.js` 11.
+    - **A senior + mezz stack with no NOI:** its note now points to the T12 (Underwriting) or the profile's NOI
+      override. Before, it said "open a refinance analysis". `guide-found-bugs.e2e.js` 12.
+    - **The refinance's "Can't judge this yet":** it now says to upload the T12 in Underwriting. Before, it said to
+      type an NOI, which a refinance never uses.
+    - **The refinance's empty proposal box:** it no longer says to close and reopen to reset the proposal.
 - **Not in the draft yet:** listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
   Real-file check against Azriel's Queens Gate $3.34M waits for his file.
 

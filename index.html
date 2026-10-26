@@ -12665,8 +12665,8 @@ tr.flagged:hover td{background:#fee2e2}
         return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm">'+
           '<p class="text-lg font-extrabold text-amber-800">Can&rsquo;t judge this yet</p>'+
           (refiPoolMissing(loan).length
-            ? '<p class="mt-1 text-sm text-slate-700" data-refinonoi>No NOI for <strong>'+refiPoolMissing(loan).map(p => escapeHtml(p.name)).join(", ")+'</strong>. Counting '+(refiPoolMissing(loan).length === 1 ? 'it' : 'them')+' as $0 would understate what these properties support, so nothing is sized yet &mdash; upload each one&rsquo;s T12 or type its NOI in <strong>NOI by property</strong> above, then this is sized against the '+fmtMoney(can.payoff)+' you owe.</p>'
-            : '<p class="mt-1 text-sm text-slate-700">Enter this property&rsquo;s NOI &mdash; use <strong>Edit inputs</strong> in Coverage &amp; value above, or upload its T12 &mdash; so the refinance can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>')+
+            ? '<p class="mt-1 text-sm text-slate-700" data-refinonoi>No NOI for <strong>'+refiPoolMissing(loan).map(p => escapeHtml(p.name)).join(", ")+'</strong>. Counting '+(refiPoolMissing(loan).length === 1 ? 'it' : 'them')+' as $0 would understate what these properties support, so nothing is sized yet &mdash; upload each one&rsquo;s T12 in Underwriting (a refinance is sized on the T12 and the underwriting approved from it, never a typed NOI), then this is sized against the '+fmtMoney(can.payoff)+' you owe.</p>'
+            : '<p class="mt-1 text-sm text-slate-700">Upload this property&rsquo;s T12 in Underwriting &mdash; a refinance is sized on the T12 and the underwriting approved from it, never a typed NOI &mdash; so it can be sized against the '+fmtMoney(can.payoff)+' you owe.</p>')+
           pricing+
         '</div>';
       }
@@ -13303,7 +13303,7 @@ tr.flagged:hover td{background:#fee2e2}
               (verdict.can && verdict.can.can
                 ? 'Right now you can, but by your rule it isn&rsquo;t worth doing &mdash; change the rate quote above to find your target.'
                 : 'Right now the property can&rsquo;t support a loan the size of the payoff, so there&rsquo;s no loan to propose.')+
-              ' Change the NOI basis or your inputs above; close and reopen to reset the proposal.</p>'+
+              ' Change the NOI basis or your inputs above and this updates at once.</p>'+
             '</div>'));
 
       // The proposed loan follows the current loan's rate type + term, priced at today's
