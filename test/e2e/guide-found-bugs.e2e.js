@@ -129,6 +129,15 @@ const t12=(top,rent,tax)=>[[top],['12 Month Statement'],['Account'].concat(M,['T
   ok(seen==='extend'&&after==='extend','10 "Extend with today’s lender" clicked while the record is being read: the screen shows Extend when the read lands ('+seen+') and it is saved ('+after+')');
   await page.evaluate((id)=>window.LDS_refiRecRace(id,'new'),QG.id); await page.waitForTimeout(1200);
 
+  // ---- 11 (2026-10-26): a loan interest-only for its whole term — its schedule said "amortized as if null months" ----
+  const k2=await page.evaluate(()=>{ const l=window.LDS_loans().find(x=>/K2 Sweetwater \(FIU/.test(x.propertyName||'')&&!/mezz/i.test(x.loanName||'')); return l?l._id:null; });
+  await homeTab(page); await page.waitForTimeout(500); await page.evaluate((i)=>{ const tr=document.querySelector('tr[data-goto="'+i+'"]'); if(tr) tr.click(); },k2); await page.waitForTimeout(1200);
+  const meta=await page.evaluate(()=>(document.getElementById('scheduleMeta')||{}).textContent||'');
+  ok(!!k2&&!/null|undefined|NaN/.test(meta)&&/interest only for the whole term/.test(meta),'11 a loan interest-only for its whole term: the schedule says so, never “amortized as if null months” ("'+meta.trim()+'")');
+  // ---- 12 (2026-10-26): a senior + mezz stack with no NOI says where its NOI comes from, not "open a refinance analysis" ----
+  const stackNote=await page.evaluate(()=>{ const t=document.body.innerHTML; return { old:/open a refinance analysis/.test(t) }; });
+  ok(!stackNote.old && !/open a refinance analysis/.test(require('fs').readFileSync(require('path').join(APP,'index.html'),'utf8')),'12 the combined-position note never says to “open a refinance analysis” for the NOI (it comes from the T12 or the profile’s NOI override)');
+
   ok(errors.length===0,'no page errors'+(errors.length?': '+errors.join(' | '):''));
   await app.close(); try{ fs.rmSync(UDATA,{recursive:true,force:true}); }catch(e){}
   console.log(fails.n?fails.n+' FAILED':'all found-bug checks passed');

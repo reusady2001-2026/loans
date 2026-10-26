@@ -2904,7 +2904,8 @@
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
       dom.scheduleMeta.textContent = term + " months · accrues " + startLabel + " – " + end +
         " · paid in arrears on the 1st of the next month" +
-        (sameTerm ? "" : " · amortized as if " + loan.amortizationMonths + " months");
+        // (2026-10-26) a loan that is interest-only for its whole term has no amortization ("as if null months" before)
+        (sameTerm ? "" : (loan.amortizationMonths > 0 ? " · amortized as if " + loan.amortizationMonths + " months" : ((loan.ioMonths || 0) >= term && term > 0 ? " · interest only for the whole term" : "")));
       dom.scheduleBody.innerHTML = scheduleRowsHtml(result.rows, d.paymentsMade);
 
       // Quick-jump buttons for the two dates borrowers care about most: the first
@@ -11480,7 +11481,7 @@ tr.flagged:hover td{background:#fee2e2}
             stat("Debt yield &mdash; combined", cp.debtYield != null ? fmtPct(cp.debtYield) : "&mdash;")+
           '</dl>'+
         '</div>'+
-        (cp.noi == null ? '<p class="mt-2 text-[11px] text-amber-700">Enter the property NOI (open a refinance analysis) to see combined DSCR, debt yield and LTV.</p>' : '')+
+        (cp.noi == null ? '<p class="mt-2 text-[11px] text-amber-700">No NOI for this property yet: upload its T12 in Underwriting, or type it in the profile’s NOI override, to see the combined DSCR, debt yield and LTV.</p>' : '')+
       '</section>';
     }
     function pctFieldStr(dec){ return String(+((dec||0) * 100).toFixed(3)); }   // 0.055 -> "5.5"
@@ -13673,7 +13674,7 @@ tr.flagged:hover td{background:#fee2e2}
         const endLabel = r.newComp.rows.length ? r.newComp.rows[r.newComp.rows.length-1].label : "—";
         if(el("refiScheduleMeta")) el("refiScheduleMeta").textContent =
           nterm+" months · "+(nl.rateType||"Fixed")+" @ "+fmtPct(r.newComp.derived.currentRate)+" · accrues "+stLabel+" – "+endLabel+
-          (nterm!==nl.amortizationMonths ? " · amortized as if "+nl.amortizationMonths+" mo, balloon at mo "+nterm : "");
+          (nterm!==nl.amortizationMonths && nl.amortizationMonths > 0 ? " · amortized as if "+nl.amortizationMonths+" mo, balloon at mo "+nterm : "");
         const wrap = el("refiScheduleWrap"); if(wrap) wrap.classList.remove("hidden");
       }
     }
