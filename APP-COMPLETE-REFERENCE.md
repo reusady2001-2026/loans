@@ -1139,6 +1139,9 @@ test installer that the development branch builds ("Loan Debt Service Hub TEST")
     - the four-sources rules are in;
     - no note when all four are present.
     `push.e2e.js` checks the note's new wording.
+  - **The assistant window** takes about 80% of the app window (80% wide, 85% tall), like the pro forma panel. On a
+    short window the status and connection choices scroll inside it, so the message box and Send stay in view.
+    `asst-bridge.e2e.js` checks the size, and `guide-found-bugs.e2e.js` checks the 900-pixel window.
 - **Not in the draft yet:** listing changes that aren't counted in Data Health; the cloud test-bed checks (two computers, view-only).
   Real-file check against Azriel's Queens Gate $3.34M waits for his file.
 

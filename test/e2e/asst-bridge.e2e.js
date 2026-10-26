@@ -46,9 +46,11 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   const ui=await page.evaluate(()=>{
     const m=document.getElementById('aiAsstModal');
     const row=document.getElementById('aiAsstConnRow');
-    return { modalShown: !!(m && !m.classList.contains('hidden')), row: row?(row.innerText||'').trim():'(no row)' };
+    const r=m&&m.firstElementChild?m.firstElementChild.getBoundingClientRect():null;
+    return { modalShown: !!(m && !m.classList.contains('hidden')), row: row?(row.innerText||'').trim():'(no row)', w:r?r.width/innerWidth:0, h:r?r.height/innerHeight:0 };
   });
   ok(ui.modalShown,'the assistant modal opened (did not crash out of aiAsstOpen)');
+  ok(Math.abs(ui.w-0.8)<0.02&&Math.abs(ui.h-0.85)<0.02,'the assistant takes about 80% of the app window, like the pro forma panel ('+Math.round(ui.w*100)+'% wide, '+Math.round(ui.h*100)+'% tall)');
   ok(!/could not reach the ai bridge/i.test(ui.row),'the connection row is NOT the false "Could not reach the AI bridge" — reads: "'+ui.row.replace(/\s+/g,' ').slice(0,140)+'"');
 
   ok(errors.length===0,'no page errors overall'+(errors.length?': '+errors.join(' | '):''));
