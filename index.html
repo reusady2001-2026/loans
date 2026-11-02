@@ -874,6 +874,7 @@
       <!-- ===================== LOAN VIEW (read-only) ===================== -->
       <section id="loanView" class="space-y-8" hidden>
         <!-- KPI cards -->
+        <div id="stackSwitch" hidden></div>
         <div id="kpiGrid" class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
         <!-- Floating-rate monthly re-pricing notice -->
@@ -2092,6 +2093,8 @@
 
     // Full computation: schedule + all computed fields.
     function compute(loan){
+      // (2026-11-02) a property's combined position (a senior + mezz, or a portfolio): the sum of its loans
+      if(loan && loan._combined && typeof loan._id === "string" && /^(combo|multi):/.test(loan._id)){ const ms = comboMembers(loan._id).filter(m => m && !m._combined); if(ms.length > 1) return computeCombined(loan, ms); }
       const { rows, totalInterest, totalPaid, segments, openingPaydowns } = buildSchedule(loan);
       const term = loan.loanTermMonths || loan.amortizationMonths || 0;
       const fp = firstPayParts(loan);                        // real first payment (origination-anchored)
@@ -2154,6 +2157,45 @@
           currentRate, resetRate: (loan.rateType==="Hybrid ARM") ? resetRate(loan) : null,
         },
       };
+    }
+
+    // (2026-11-02, the operator: "Fix it in a way that I won't have any problems with it after all") — a property's
+    // combined position is the SUM of its loans, month by month: each loan on its own rate, interest-only, extensions
+    // and pay-downs (a loan that starts later or ends sooner counts only while it is owed). Each month's rate is the
+    // loans' rates weighted by what each owes then. Before, it was one made-up loan — the senior with the total balance
+    // and a blended rate — so an extension of the senior carried the senior's own rate into it.
+    function computeCombined(loan, ms){
+      const cs = ms.map(m => compute(m)), at = new Map();
+      cs.forEach(c => c.rows.forEach(r => {
+        const k = r.paymentDate; if(!k) return;
+        let a = at.get(k);
+        if(!a){ a = { label: r.label, days: r.days, startingBalance: 0, interest: 0, payment: 0, principalPaid: 0, endingBalance: 0, rw: 0, n: 0, io: 0, balloon: 0, final: 0, isReset: false, ext: false, extStart: false, paydown: 0, principalPay: 0, paydowns: [], unpaidInterest: 0 }; at.set(k, a); }
+        a.startingBalance += r.startingBalance || 0; a.interest += r.interest || 0; a.payment += r.payment || 0; a.principalPaid += r.principalPaid || 0; a.endingBalance += r.endingBalance || 0;
+        a.rw += (r.rate || 0) * (r.startingBalance || 0); a.n++;
+        if(r.type === "io") a.io++; else if(r.type === "balloon") a.balloon++; else if(r.type === "final") a.final++;
+        if(r.isReset) a.isReset = true; if(r.ext) a.ext = true; if(r.extStart) a.extStart = true;
+        if(r.paydown){ a.paydown += r.paydown; (r.paydowns || []).forEach(x => a.paydowns.push(x)); }
+        if(r.principalPay) a.principalPay += r.principalPay; a.unpaidInterest += r.unpaidInterest || 0;
+      }));
+      const keys = [...at.keys()].sort();
+      const rows = keys.map((k, i) => { const a = at.get(k), last = i === keys.length - 1;
+        const row = { index: i + 1, label: a.label, paymentDate: k, startingBalance: a.startingBalance, days: a.days, rate: a.startingBalance > 0 ? a.rw / a.startingBalance : 0,
+          interest: a.interest, payment: a.payment, principalPaid: a.principalPaid, endingBalance: a.endingBalance, unpaidInterest: a.unpaidInterest, loans: a.n,
+          type: a.balloon ? "balloon" : (a.final && last) ? "final" : a.io === a.n ? "io" : "amort", isReset: a.isReset, ext: a.ext, extStart: a.extStart };
+        if(a.paydown){ row.paydown = a.paydown; row.paydowns = a.paydowns; } if(a.principalPay) row.principalPay = a.principalPay;
+        return row; });
+      const ds = cs.map(c => c.derived), sum = (f) => ds.reduce((t, d) => t + (Number(d[f]) || 0), 0), now = todayParts(), today = partsToISO(now.y, now.mo, now.d);
+      const bal = sum("currentBalance"), owing = ds.filter(d => (d.currentBalance || 0) > 0.005);
+      const currentRate = bal > 0 ? ds.reduce((t, d) => t + (d.currentRate || 0) * (d.currentBalance || 0), 0) / bal : (ds.length ? ds.reduce((t, d) => t + (d.currentRate || 0), 0) / ds.length : 0);
+      // when the property has to act: the earliest maturity of a loan still owed
+      let first = null; (owing.length ? owing : ds).forEach(d => { if(d.maturityDate && (!first || d.maturityDate < first.maturityDate)) first = d; });
+      const monthlyPI = sum("monthlyPI"), amortizingPI = sum("amortizingPI");
+      return { fixedPayment: monthlyPI, rows, combined: ms.length, totalInterest: cs.reduce((t, c) => t + (c.totalInterest || 0), 0), totalPaid: cs.reduce((t, c) => t + (c.totalPaid || 0), 0),
+        segments: [{ startMonth: 0, rate: currentRate, payment: amortizingPI }], openingPaydowns: [],
+        derived: { currentBalance: bal, maturityDate: first ? first.maturityDate : "", monthlyPI: monthlyPI, amortizingPI: amortizingPI, inIONow: owing.length > 0 && owing.every(d => d.inIONow),
+          totalDebtService: sum("totalDebtService"), originalIO: Math.max.apply(null, ds.map(d => d.originalIO || 0)), monthsToMaturity: first ? first.monthsToMaturity : 0,
+          paymentsMade: rows.filter(r => r.paymentDate <= today).length, escrowTotal: sum("escrowTotal"), feeTotal: sum("feeTotal"),
+          ioRemaining: Math.max.apply(null, ds.map(d => d.ioRemaining || 0)), interestOnly: ds.every(d => d.interestOnly === "Y") ? "Y" : "N", currentRate: currentRate, resetRate: null } };
     }
 
     /* ================================================================
@@ -2491,7 +2533,9 @@
       const id = state.activeId;
       if(typeof id === "string" && (id.slice(0,6) === "combo:" || id.slice(0,5) === "prop:")) return id;
       const l = loans.find(x => x._id === id); if(!l) return id;
-      return positionIdForProperty(opProperties().find(p => p.key === propertyKey(l))) || id;
+      const p = opProperties().find(q => q.key === propertyKey(l));
+      if(p && p.loans.length > 1 && p.loans.some(x => x._id === l._id)) return "loan:" + l._id;   // (2026-11-02) one loan of several: its own entry
+      return positionIdForProperty(p) || id;
     }
     // 2.9.7 (#134) — the dropdown names a property's stack from its real loans: "senior + mezz",
     // "2 senior loans", "senior + 2 mezz", "2 mezz loans".
@@ -2504,7 +2548,8 @@
     function renderSelect(){
       const props = opProperties();
       dom.loanSelect.innerHTML = props.map(p =>
-        '<option value="'+escapeHtml(positionIdForProperty(p))+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  "+propStackLabel(p.loans) : (!p.loans.length ? (p.pledged && p.pledged.length ? "  &middot;  in a pooled loan" : "  &middot;  no loan yet") : ""))+'</option>'
+        '<option value="'+escapeHtml(positionIdForProperty(p))+'">'+escapeHtml(p.name)+(p.loans.length > 1 ? "  &middot;  "+propStackLabel(p.loans)+" (combined)" : (!p.loans.length ? (p.pledged && p.pledged.length ? "  &middot;  in a pooled loan" : "  &middot;  no loan yet") : ""))+'</option>'+
+        (p.loans.length > 1 ? p.loans.map(l => '<option value="loan:'+escapeHtml(l._id)+'">&nbsp;&nbsp;&nbsp;&nbsp;&#8627; '+(isMezz(l) ? "Mezz" : "Senior")+' loan only'+(l.lenderName ? " &middot; "+escapeHtml(l.lenderName) : "")+'</option>').join("") : "")
       ).join("");
       const av = activePositionId();
       if(av) dom.loanSelect.value = av;
@@ -2534,6 +2579,18 @@
       const d = result.derived;
       const termTxt = termLabel(loan.amortizationMonths) + " / " + termLabel(loan.loanTermMonths);
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
+      if(loan._combined){ const ms = comboMembers(loan._id).filter(m => m && !m._combined); if(ms.length > 1){   // (2026-11-02) each loan's own terms, named — never the senior's alone
+        const tag = (m) => isMezz(m) ? "mezz" : "senior", ioOf = (m) => (m.ioMonths || 0) >= (m.loanTermMonths || Infinity) ? "IO whole term" : (m.ioMonths || 0) > 0 ? (m.ioMonths + " mo IO") : "no IO";
+        dom.kpiGrid.innerHTML =
+          kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub: ms.length + " loans · P&I + escrows + fees" }) +
+          kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub: d.inIONow ? "interest-only now" : "the loans together" }) +
+          kpiCard("Current Balance", fmtMoney(d.currentBalance), { sub: "the loans together" }) +
+          kpiCard("Original Amount", fmtMoney(ms.reduce((a, m) => a + (Number(m.originalAmount) || 0), 0)), { sub: "combined rate now " + fmtPct(d.currentRate) }) +
+          kpiCard("Amort / Loan Term", "Each loan’s own", { sub: ms.map(m => tag(m) + " " + termLabel(m.amortizationMonths) + " / " + termLabel(m.loanTermMonths)).join(" · ") }) +
+          kpiCard("Months to Maturity", fmtInt(d.monthsToMaturity), { sub: d.maturityDate ? "First loan matures " + fmtDateUS(d.maturityDate) : "—" }) +
+          kpiCard("Interest-Only", ms.every(m => (m.ioMonths || 0) <= 0) ? "None" : "Each loan’s own", { sub: ms.map(m => tag(m) + " " + ioOf(m)).join(" · ") }) +
+          kpiCard("Rate Type", loan._rateTypeLabel || "—", { sub: (loan._rateTypeSub || "") + " · combined " + fmtPct(d.currentRate) });
+        return; } }
       dom.kpiGrid.innerHTML =
         kpiCard("Total Monthly Debt Service", fmtMoney(d.totalDebtService), { highlight:true, sub:"P&I + escrows + fees" }) +
         kpiCard("Monthly P&I", fmtMoney(d.monthlyPI), { sub:
@@ -2910,6 +2967,9 @@
       const startLabel = MONTH_NAMES[start.mo]+" "+start.y;
       const end = result.rows.length ? result.rows[result.rows.length-1].label : "—";
       const sameTerm = loan.loanTermMonths === loan.amortizationMonths;
+      if(result.combined) dom.scheduleMeta.textContent = "The property's " + result.combined + " loans added together, month by month — each on its own rate, interest-only, extensions and pay-downs · " +
+        (result.rows.length ? result.rows[0].label : "—") + " – " + end + " · the rate is each month's combined rate (each loan's rate, weighted by what it owes)";
+      else
       dom.scheduleMeta.textContent = term + " months · accrues " + startLabel + " – " + end +
         " · paid in arrears on the 1st of the next month" +
         // (2026-10-26) a loan that is interest-only for its whole term has no amortization ("as if null months" before)
@@ -3599,6 +3659,7 @@
       renderSelect();
       const hasLoans = loans.length > 0;
       const loan = getLoan(state.activeId);
+      renderStackSwitch(state.mode === "view" ? loan : null);
 
       dom.editBtn.disabled = !loan || state.mode!=="view";      // 2.9.4 — Edit edits the PROPERTY's info (works for a combined position too)
       dom.removeBtn.disabled = !loan || state.mode!=="view";    // 2.9.4 — Remove ARCHIVES the property (works for a combined position too)
@@ -3633,8 +3694,10 @@
       } else if(state.mode==="prop"){
         renderPropPage();
       } else if(state.mode==="view" && loan){
-        if(loan.rateType==="Floating" || loan.rateType==="Hybrid ARM"){ ensureIndexLive(loan.index, render); ensureRateHistory(loan, render); }
-        repriceFloatingIndex(loan);   // re-price the live index for the current month (floating + ARM)
+        // re-price the live index for the current month (floating + ARM) — a combined position's loans each (2026-11-02)
+        (loan._combined ? comboMembers(loan._id).filter(m => m && !m._combined) : [loan]).forEach(l => {
+          if(l.rateType==="Floating" || l.rateType==="Hybrid ARM"){ ensureIndexLive(l.index, render); ensureRateHistory(l, render); }
+          repriceFloatingIndex(l); });
         const result = compute(loan);
         renderKPIs(loan, result);
         renderProfile(loan, result);
@@ -9853,9 +9916,27 @@ tr.flagged:hover td{background:#fee2e2}
        9. ACTIONS
        ================================================================ */
     function selectLoan(id){
+      if(typeof id === "string" && id.slice(0,5) === "loan:") id = id.slice(5);   // (2026-11-02) one loan of a property's several, from the dropdown
       state.activeId = id;
       if(typeof id === "string" && id.slice(0,5) === "prop:"){ setMode("prop"); return; }   // 2.9.7 (#3)
       if(loans.length) setMode("view"); else setMode("empty");
+    }
+    // (2026-11-02, the operator: "make it so I will be able to pick the combined position... and then I can't select back
+    // the combined position of the property") — on a property with several loans: the combined position, or one loan
+    function renderStackSwitch(loan){
+      const box = el("stackSwitch"); if(!box) return;
+      const p = loan ? opProperties().find(q => q.key === propertyKey(loan)) : null;
+      if(!p || !p.loans || p.loans.length < 2){ box.hidden = true; box.innerHTML = ""; return; }
+      const combo = positionIdForProperty(p), cur = loan._combined ? combo : loan._id;
+      const btn = (id, label, sub) => '<button type="button" data-stackpick="'+escapeHtml(id)+'" aria-pressed="'+(cur === id)+'" class="px-4 py-2 text-left text-sm font-semibold transition '+(cur === id ? 'bg-brand-600 text-white' : 'bg-white text-brand-700 hover:bg-brand-50')+'">'+label+(sub ? '<span class="block text-[10px] font-normal '+(cur === id ? 'text-white/80' : 'text-slate-500')+'">'+sub+'</span>' : '')+'</button>';
+      box.innerHTML = '<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/50 px-4 py-2.5" data-stackswitch>'+
+        '<span class="text-[11px] font-bold uppercase tracking-wider text-brand-700">'+escapeHtml(p.name)+' &middot; showing</span>'+
+        '<div class="inline-flex flex-wrap divide-x divide-brand-200 overflow-hidden rounded-lg border border-brand-300">'+
+          btn(combo, "Combined position", p.loans.length + " loans together")+
+          p.loans.map(l => btn(l._id, (isMezz(l) ? "Mezz" : "Senior")+" loan only", escapeHtml(l.lenderName || ""))).join("")+
+        '</div></div>';
+      box.hidden = false;
+      box.querySelectorAll("[data-stackpick]").forEach(b => b.addEventListener("click", () => { if(b.getAttribute("data-stackpick") !== cur) selectLoan(b.getAttribute("data-stackpick")); }));
     }
     function propViewKey(){ const id = state.activeId; return (typeof id === "string" && id.slice(0,5) === "prop:") ? id.slice(5) : ""; }
 
@@ -10810,8 +10891,8 @@ tr.flagged:hover td{background:#fee2e2}
       state.mode = "refi"; render(); window.scrollTo({ top:0, behavior:"smooth" });
     }
     function closeRefi(){
-      // A combined-property refi has no single loan to view — return to the senior.
-      if(typeof state.activeId === "string" && state.activeId.slice(0,6) === "combo:"){ const c = getLoan(state.activeId); if(c && c._seniorId) state.activeId = c._seniorId; }
+      // (2026-11-02) back to where the refinance was opened from — a combined position stays combined (it has its own
+      // page and schedule; it used to switch to the senior alone)
       setMode(loans.length ? (getLoan(state.activeId) ? "view" : "empty") : "empty");
     }
 
@@ -11219,6 +11300,7 @@ tr.flagged:hover td{background:#fee2e2}
         combo._rateTypeLabel = types.length === 1 ? types[0] : "Mixed";
         combo._rateTypeSub = list.map(l => (isMezz(l) ? "mezz " : "senior ") + (l.rateType || "Fixed")).join(" · "); }
       combo.index = null; combo.spread = null; combo.stackWith = null;
+      delete combo.extension; combo.principalPayments = null;   // (2026-11-02) the senior's own — the combined schedule is the loans' sum (compute)
       combo.noi = cp.noi; combo.capRate = loanCapRate(sr);
       return combo;
     }
