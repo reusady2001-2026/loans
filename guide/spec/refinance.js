@@ -180,6 +180,12 @@ module.exports = {
     // the other properties refinanced here: a made-up T12 with the NOI each sample loan already carries
     for (const [nm, noi] of [["Queens Gate Apartments", 2810007], ["The Mews at Princeton", 10570636], ["The Mint (Rahway)", 5017563], ["Avalon White Plains", 9000000], [K2, 15000000]])
       await uwT12(h, nm, madeUpT12(nm, noi), nm + " T12 (made-up).xlsx");
+    // (2026-11-02) the pictures were first taken in Oct 2026, two months before Queens Gate's sample rate reset (Dec 2026):
+    // its dates move by the months since then, so the reset stays two months ahead whatever today is
+    await h.js(() => { const t = new Date(), n = (t.getFullYear() * 12 + t.getMonth()) - (2026 * 12 + 9); if (n <= 0) return;
+      const l = window.LDS_loans().find(x => /queens gate/i.test(x.propertyName || "")); if (!l) return;
+      const mv = (v) => { if (!/^\d{4}-\d{2}-\d{2}/.test(v || "")) return v; const k = (+v.slice(0, 4)) * 12 + (+v.slice(5, 7) - 1) + n; return Math.floor(k / 12) + "-" + String(k % 12 + 1).padStart(2, "0") + v.slice(7); };
+      ["originationDate", "firstPaymentDate", "maturityDate"].forEach(f => { if (l[f]) l[f] = mv(l[f]); }); });
     await h.home();
   },
   pages: withThin([
