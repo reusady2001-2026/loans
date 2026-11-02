@@ -103,7 +103,7 @@ const SPEC = {
         { title: "From the property list",
           steps: [
             { text: "Under the tabs, click **Specific Property**." },
-            { text: "Pick the property in **Select a property**. Its page opens. Next to a name the list says “senior + mezz” (two loans), “in a pooled loan” or “no loan yet”." }
+            { text: "Pick the property in **Select a property**. Its page opens. Next to a name the list says “senior + mezz (combined)” (two loans, together), “in a pooled loan” or “no loan yet”. Under a property with two loans, **↳ Senior loan only** and **↳ Mezz loan only** open one of them; picking the property again brings back the two together." }
           ] }
       ],
       next: [
@@ -327,20 +327,21 @@ const SPEC = {
           ] },
         { title: "Read the two loans together",
           steps: [
-            { text: "Open the property again. In the property list it now reads “senior + mezz”. Its tiles add the two loans: the balance, the P&I and the debt service.",
+            { text: "Open the property again. In the property list it now reads “senior + mezz (combined)”. Its tiles add the two loans: the balance, the P&I and the debt service; the terms are each loan’s own. The payment schedule below adds the two loans month by month, each on its own rate, interest-only and terms; its rate is their combined rate.",
               go: async (h) => { await pick(h, "Hawthorn Place (example)"); },
               shot: "#kpiGrid",
               marks: [
                 Object.assign(TILE(0), { label: "Total Monthly Debt Service", text: "Both loans together." }),
-                Object.assign(TILE(1), { label: "Monthly P&I", text: "Both P&I payments." }),
                 Object.assign(TILE(2), { label: "Current Balance", text: "Both balances added." }),
-                Object.assign(TILE(7), { label: "Rate Type", text: "Each loan’s type, and the blended rate." })
+                Object.assign(TILE(4), { label: "Amort / Loan Term", text: "Each loan’s own, named." }),
+                Object.assign(TILE(7), { label: "Rate Type", text: "Each loan’s type, and the combined rate." })
               ] },
-            { text: "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together.",
+            { text: "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together. Click a loan to see only that loan; **Combined position**, under the loans, brings back the two together.",
               shot: COMBINED,
               marks: [
                 { sel: "[data-loanjump]", nth: 0, label: "The senior loan", text: "Click to open only this loan’s page." },
                 { sel: "[data-loanjump]", nth: 1, label: "The mezz loan", text: "Click to open only the mezz." },
+                { sel: "[data-combojump]", label: "Combined position", text: "The two loans together (lit: the page you are on). From one loan’s page, it brings them back." },
                 { sel: "[data-loanedit]", nth: 1, label: "Edit this loan", text: "Opens this one loan’s form." },
                 { sel: "[data-loanremove]", nth: 1, label: "Remove this loan", text: "Removes only this loan (it asks first)." }
               ] }
@@ -573,7 +574,7 @@ const SPEC = {
               marks: [
                 { sel: "#scopePortfolioBtn", label: "Whole Portfolio", text: "Back to the Portfolio page." },
                 { sel: "#scopeLoanBtn", label: "Specific Property", text: "This view: one property and its loans." },
-                { sel: "#loanSelect", label: "Select a property", text: "Every property, A to Z. Pick one to open its page. The list marks “senior + mezz”, “in a pooled loan” and “no loan yet”." },
+                { sel: "#loanSelect", label: "Select a property", text: "Every property, A to Z. Pick one to open its page. The list marks “senior + mezz (combined)”, “in a pooled loan” and “no loan yet”; under a property with two loans, each loan on its own (↳ Senior loan only, ↳ Mezz loan only)." },
                 { sel: "#addBtn", label: "Add Loan", text: "An empty loan form, with this property’s name filled in. See [Add a loan](add-a-loan)." },
                 { sel: "#addPropBtn", label: "Add Property", text: "Adds a property by its name. See [Add a property](add-a-property)." },
                 { sel: "#editBtn", label: "Edit", text: "Opens this property’s profile: its units, manager, NOI override. To change the loan, use **Edit** in the Loan Record." },
@@ -705,7 +706,7 @@ const SPEC = {
               ] }
           ] },
         { title: "Two loans on one property",
-          text: "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains). See [Add a senior and a mezzanine loan](add-a-loan-stack).",
+          text: "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains): its tiles and its payment schedule are the two loans added month by month, each on its own terms. See [Add a senior and a mezzanine loan](add-a-loan-stack).",
           views: [
             { title: "Combined position",
               text: "At the top of the Loan Record: each loan, and the stack together.",
@@ -714,10 +715,11 @@ const SPEC = {
               marks: [
                 { sel: "[data-loanjump]", nth: 0, label: "The senior loan", text: "Click to open only this loan’s page." },
                 { sel: "[data-loanjump]", nth: 1, label: "The mezz loan", text: "Click to open only the mezz." },
+                { sel: "[data-combojump]", label: "Combined position", text: "The loans together: tiles and schedule added month by month. From one loan’s page, it brings them back." },
                 { sel: "[data-loanedit]", nth: 0, label: "Edit this loan", text: "Opens this loan’s form." },
                 { sel: "[data-loanremove]", nth: 0, label: "Remove this loan", text: "Removes only this loan (it asks first)." },
                 { sel: '#profileBody dt:has-text("Combined balance")', label: "Combined balance", text: "Both balances." },
-                { sel: '#profileBody dt:has-text("Blended rate")', label: "Blended rate", text: "The rate of the two together, weighted by balance." },
+                { sel: '#profileBody dt:has-text("Blended rate")', label: "Blended rate", text: "The rate of the two together, weighted by balance (the schedule’s rate each month)." },
                 { sel: '#profileBody dt:has-text("Combined monthly P")', label: "Combined monthly P&I", text: "Both P&I payments." },
                 { sel: '#profileBody dt:has-text("Combined LTV")', label: "Combined LTV", text: "Both balances ÷ the value." },
                 { sel: '#profileBody dt:has-text("senior only")', label: "DSCR — senior only", text: "Coverage of the senior loan alone." },

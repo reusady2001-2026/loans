@@ -3,9 +3,11 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.1.1 — shipped 2026-10-26. The operator tested the TEST build and said "ship it as 3.1.1": extending
-with today's lender on several properties and several loans together, and a new loan's interest-only no longer copied.
-Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
+**Current version:** 3.1.2 — shipped 2026-11-02. The operator tested the TEST build ("I installed it, everything works")
+and said "ship it as 3.1.2": any number of extensions; an extension keeps today's terms (a new quote and a pay-down only
+when today's lender asks); a property's combined position as the sum of its loans, with a Combined position button;
+readable windows. Before that: 3.1.1, shipped 2026-10-26 (extending with today's lender on several properties and several
+loans together, and a new loan's interest-only no longer copied). Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
 TEST builds of rounds 1–4), and 3.0.0, shipped 2026-10-14.
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
@@ -1254,7 +1256,8 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   index + spread, the ARM fields cleared, the new term and maturity, status Extended, the pay-down as
   `principalPayments[{id, date, amount, note}]`, and `extension{date, months, ioMonths, amortMonths, lender, index,
   spread, owed, payDown, penalty, fee, cash, rate, at, by, before}` (`before` = the fields it changed). A history entry
-  per field, noted "Extended with <lender>: …". **Undo the extension** restores `before`.
+  per field, noted "Extended with <lender>: …". **Undo the extension** restores `before`. *(After 3.1.1: no limit on
+  the number of extensions; see "Any number of extensions" below.)*
 - **The schedule (`buildSchedule`):** a loan with `extension` runs on its `before` terms up to the date, then the
   extension's rate (the loan's own fields now hold it), its interest-only months, then a level payment over its
   amortization to the new maturity; `principalPayments` come off after the last payment on or before their date. The
@@ -1273,8 +1276,8 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
 - **Tests:** `test/e2e/refi-extend.e2e.js` (Queens Gate: the pay-down worked out on its own and compared with the
   screen, the layout — the deal first, the extension's own verdict, nothing shown twice, its schedule —, each penalty
   choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
-- **Not in the draft:** presets filled from Azriel's numbers (they ship empty); a second extension on top of a saved one
-  (undo first).
+- **Not in the draft:** presets filled from Azriel's numbers (they ship empty). *(A second extension on top of a saved
+  one is built after 3.1.1: see "Any number of extensions" below.)*
 - **Several properties, several loans (3.1.1 — the operator, 2026-10-26).** The plan said "extend with
   today's lender for one loan, and that's it, no matter how many properties". 3.1.0 had wrongly limited it to a loan on
   one property. The operator also asked: "you should be able to do new loans and extend with today's lenders on a couple
@@ -1316,6 +1319,88 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
     and they are there even when the answer is "Don't refinance" and the proposal card isn't shown.
   - **Tests:** `test/e2e/refi-new-io.e2e.js` (15 checks): a pooled loan, a senior + mezz, a single all-interest-only
     loan, and a "Don't refinance" loan typed through the new boxes.
+- **Any number of extensions (3.1.2 — the operator, 2026-11-02).** "Put no limit on the number of
+  extensions that you can make." Before, a saved extension had to be undone before another could be made.
+  - **Stored as a chain:** saving an extension keeps the one before it in `extension.before.extension` (null for the
+    first). `loanExtensions(l)` lists them, oldest first. Extensions saved before this change have no
+    `before.extension` and read as the first.
+  - **The schedule (`buildSchedule`)** runs each extension in turn: the loan's terms before any (the first one's
+    `before`) up to the first date, then each extension from its own date on its own terms (the loan as it was right
+    after it, which the next one kept in its `before`): its rate, interest-only months and amortization. One balance
+    throughout; "Extension starts" marks each.
+  - **The next one:** once one is saved, the refinance judges the next extension of the loan as it now is, by the same
+    rule (from when the saved one ends; a date on or before the saved one's is refused). The saved box lists every
+    extension (numbered when there are several, each with the maturity it gave) and is followed by the next one's
+    verdict; the button reads **Save another extension**. The schedule shows the next one only when the answer is to
+    extend; otherwise the saved ones.
+  - **Undo takes back only the latest** (**Undo the latest extension** when there are several): the loan goes back to
+    its terms before it, with the extension before it (if any) as its latest. Each Undo takes back one more.
+  - **A package** (a senior + mezz, or a portfolio): each loan's saved extensions and its next one (**Extend again**);
+    **Save the extensions** saves the next one of every loan that should extend now; **Undo each loan's latest
+    extension** takes back one per loan.
+  - **The assistant:** `save_extension` works on an extended loan (it saves the next one); `undo_extension` takes back
+    the latest.
+  - **Tests:** `test/e2e/refi-extend-again.e2e.js` (23 checks): one loan extended three times (the schedule runs each
+    in turn, one balance, each on its own rate), Undo one at a time, the date guard, the assistant, and a senior +
+    mezz extended twice together.
+- **An extension keeps today's terms (3.1.2 — the operator, 2026-11-02).** Testing a senior + mezz,
+  the mezz's extension was re-priced from its fixed 13.5% to SOFR + 200 bps (5.893%) and asked for a pay-down: "The
+  whole point of extending with today's lender is to remain with the same terms… It should just extend the loan with
+  the same rate. There shouldn't be any paydown." The cause was the design above (D7, 2026-10-15, from Queens Gate:
+  today's lender re-quotes at an index + a spread and sizes the loan to its limits): every extension became Floating at
+  SOFR + 200 (`REFI_DEFAULT_FLOAT_BPS`) unless the loan already floated, and was sized on the new loan's 1.25× / 75% / 7%
+  — a mezz, behind its senior on the two loans together, almost never fits those. The operator chose: "Same terms;
+  quote optional".
+  - **The rate:** `refiExtTerms(...).rateHow` is `"same"` by default — the loan's own rate after the date
+    (`refiExtSame`: the next row's rate, else `rateForMonth`); saving keeps the loan's own rate fields (a fixed rate stays
+    fixed; an ARM keeps resetting by its own terms). **The extension's rate** box has **Rate: The same as today /
+    Today's lender's new quote**; the quote is the index + spread, as before (`rateHow: "quote"`, the record then
+    Floating).
+  - **The pay-down:** none unless **Today's lender asks for a pay-down to fit its limits** is ticked
+    (`refiExtTerms(...).payDown`, `RefiExtend.extend({ noPayDown })`). Off, the whole amount extends; what the limits
+    would allow is still worked out and shown. "Can't judge yet" (no NOI) only matters when the pay-down is on.
+  - **Interest-only and amortization** start as the loan pays on the date (`refiExtSame`): interest-only for the whole
+    extension when it pays interest-only to the end, the IO months left, or none; and the amortization that keeps the
+    same payment (the payment before and after the extension starts is the same).
+  - **A package:** each loan's own switches (`ext.members[<loan id>].rateHow / payDown`); the rate column shows each
+    loan's rate (marked same).
+  - **The assistant:** `set_extension` takes `rate` ("same" / "quote"; an index or spread makes it a quote) and `payDown`.
+  - **Tests:** `refi-extend.test.js` (23: no pay-down); `refi-extend.e2e.js` checks the default (Queens Gate's own rate,
+    no pay-down), then its case with the quote and the pay-down switched on; `refi-extend-several.e2e.js` checks the
+    senior + mezz default (each at its own rate, the mezz 9% fixed, no pay-down); `refi-extend-again.e2e.js` checks the
+    same payment across the extension. The Guide's "Extend with today's lender" starts from the same terms and shows the
+    two switches.
+- **A property's combined position is the sum of its loans (3.1.2 — the operator, 2026-11-02).** On a
+  senior + mezz both extended, the combined schedule showed the senior's rate — and interest at that rate on the combined
+  balance — until the extension started. The combined position (`combo:` / `multi:`) was one made-up loan
+  (`combinedRefiLoan`: the senior with the total balance and a blended rate); it copied the senior's saved extension, whose
+  `before` holds the senior's own rate. The operator: "Fix it in a way that I won't have any problems with it after all."
+  - **`compute()` of a combined position is `computeCombined()`:** the loans' own schedules added month by month (by
+    payment date): balance, interest, payment, principal, pay-downs; each month's rate is the loans' rates weighted by
+    what each owes; a loan that starts later or ends sooner counts only while it is owed; "Extension starts" and resets
+    marked. Its figures are the loans' sums (balance, payment, debt service); the rate now is the balance-weighted rate;
+    its maturity is the first maturity of a loan still owed. `combinedRefiLoan` no longer carries the senior's
+    extension or pay-downs.
+  - **The page:** the cards name each loan's own terms ("Each loan's own" — amortization / term, interest-only); the
+    schedule line says it is the loans added together; each loan's live rate is refreshed.
+- **Always able to pick the combined position (same build).** "Make it so I will be able to pick the combined position…
+  I can't select back the combined position of the property."
+  - **Close** from a combined refinance goes back to the combined position (it used to switch to the senior alone).
+  - **One Combined position button** in the Combined position panel, under the loans (`data-combojump`, the operator:
+    "just put one button where I just gave you the picture that will, if pressed, take the combined position instead of
+    one loan"): lit ("this view") on the combined page; from a loan's page it brings back the loans together. (A
+    "Showing" line above the cards was tried first and taken out at the operator's word.)
+  - **The dropdown** lists each loan under its property ("↳ Senior loan only · lender", value `loan:<id>`), so the property's
+    own entry — the combined position — can always be picked again.
+  - **Test:** `test/e2e/combined-position.e2e.js` (16 checks).
+- **Readable windows (same build).** "It's too cramped… not all crammed up in one single paragraph." The shared confirm
+  window (`confirmDialog`) takes a laid-out body (`confirmBodyHtml`): a summary line; a block per loan (or thing) with
+  its rows, "before → after" where something changes (a "same" tag where it doesn't); a list; the total that matters
+  (cash) on its own; the small print. It is wider when it carries figures (`max-w-2xl`; otherwise `max-w-md`), scrolls
+  inside when long, and its button is red only for what removes or takes back (delete, remove, undo, archive, start
+  fresh, restore a backup) — a save is the app's own colour. Laid out: save / undo the extension(s), save the refinance
+  (what it pays off, the new loan, what you pay in, what happens after), restore a backup, delete a property / start
+  fresh (the list of what goes), and a T12 reading whose checks still fail.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared
@@ -1346,4 +1431,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.1.1 (shipped 2026-10-26).*
+*Last updated for version 3.1.2 (shipped 2026-11-02).*

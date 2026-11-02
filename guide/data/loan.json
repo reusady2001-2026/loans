@@ -106,7 +106,7 @@
        "text": "Under the tabs, click **Specific Property**."
       },
       {
-       "text": "Pick the property in **Select a property**. Its page opens. Next to a name the list says “senior + mezz” (two loans), “in a pooled loan” or “no loan yet”."
+       "text": "Pick the property in **Select a property**. Its page opens. Next to a name the list says “senior + mezz (combined)” (two loans, together), “in a pooled loan” or “no loan yet”. Under a property with two loans, **↳ Senior loan only** and **↳ Mezz loan only** open one of them; picking the property again brings back the two together."
       }
      ]
     }
@@ -420,31 +420,31 @@
         {
          "x": 3,
          "y": 51.1,
-         "w": 19.3,
+         "w": 17.6,
          "h": 17.4,
          "label": "When",
          "text": "The day and time of the change."
         },
         {
-         "x": 22.3,
+         "x": 20.6,
          "y": 51.1,
-         "w": 49.9,
+         "w": 51,
          "h": 17.4,
          "label": "Old → new",
          "text": "What it was and what it became."
         },
         {
-         "x": 72.2,
+         "x": 71.6,
          "y": 51.1,
-         "w": 8.1,
+         "w": 8.3,
          "h": 17.4,
          "label": "Who",
          "text": "Who made the change."
         },
         {
-         "x": 80.3,
+         "x": 79.9,
          "y": 51.1,
-         "w": 16.7,
+         "w": 17.1,
          "h": 17.4,
          "label": "Where from",
          "text": "Typed by hand, the assistant, an Excel import, a refinance…"
@@ -550,22 +550,22 @@
       {
        "text": "Click **It’s up to date again** on the warning, or **Up to date again** in the Loan Record. It asks once.",
        "img": "img/loan/set-loan-status-03.jpg",
-       "w": 384,
-       "h": 204,
+       "w": 448,
+       "h": 180,
        "marks": [
         {
-         "x": 6.5,
-         "y": 12.3,
-         "w": 87,
-         "h": 23.5,
+         "x": 5.6,
+         "y": 13.9,
+         "w": 88.8,
+         "h": 13.3,
          "label": "The question",
          "text": "Clear “out of date” on this loan?"
         },
         {
-         "x": 75.8,
-         "y": 69.1,
-         "w": 17.7,
-         "h": 18.6,
+         "x": 79.2,
+         "y": 65,
+         "w": 15.2,
+         "h": 21.1,
          "label": "Clear",
          "text": "Clears the flag; the warning goes away."
         }
@@ -716,7 +716,7 @@
      "title": "Read the two loans together",
      "steps": [
       {
-       "text": "Open the property again. In the property list it now reads “senior + mezz”. Its tiles add the two loans: the balance, the P&I and the debt service.",
+       "text": "Open the property again. In the property list it now reads “senior + mezz (combined)”. Its tiles add the two loans: the balance, the P&I and the debt service; the terms are each loan’s own. The payment schedule below adds the two loans month by month, each on its own rate, interest-only and terms; its rate is their combined rate.",
        "img": "img/loan/add-a-loan-stack-02.jpg",
        "w": 1313,
        "h": 236,
@@ -730,14 +730,6 @@
          "text": "Both loans together."
         },
         {
-         "x": 25.3,
-         "y": 0,
-         "w": 24.1,
-         "h": 46.6,
-         "label": "Monthly P&I",
-         "text": "Both P&I payments."
-        },
-        {
          "x": 50.6,
          "y": 0,
          "w": 24.1,
@@ -746,17 +738,25 @@
          "text": "Both balances added."
         },
         {
+         "x": 0,
+         "y": 53.4,
+         "w": 24.1,
+         "h": 46.6,
+         "label": "Amort / Loan Term",
+         "text": "Each loan’s own, named."
+        },
+        {
          "x": 75.9,
          "y": 53.4,
          "w": 24.1,
          "h": 46.6,
          "label": "Rate Type",
-         "text": "Each loan’s type, and the blended rate."
+         "text": "Each loan’s type, and the combined rate."
         }
        ]
       },
       {
-       "text": "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together.",
+       "text": "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together. Click a loan to see only that loan; **Combined position**, under the loans, brings back the two together.",
        "img": "img/loan/add-a-loan-stack-03.jpg",
        "w": 1271,
        "h": 319,
@@ -776,6 +776,14 @@
          "h": 11.4,
          "label": "The mezz loan",
          "text": "Click to open only the mezz."
+        },
+        {
+         "x": 1.4,
+         "y": 58.2,
+         "w": 48.1,
+         "h": 19.1,
+         "label": "Combined position",
+         "text": "The two loans together (lit: the page you are on). From one loan’s page, it brings them back."
         },
         {
          "x": 44.1,
@@ -1249,21 +1257,21 @@
       {
        "text": "Click **Remove** in the Loan Record. It asks first.",
        "img": "img/loan/remove-a-loan-01.jpg",
-       "w": 384,
+       "w": 448,
        "h": 200,
        "marks": [
         {
-         "x": 6.5,
+         "x": 5.6,
          "y": 28.5,
-         "w": 87,
+         "w": 88.8,
          "h": 30,
          "label": "What happens",
          "text": "It leaves every total, tile and the calendar, and is listed on the Portfolio page to restore."
         },
         {
-         "x": 71,
+         "x": 75.1,
          "y": 68.5,
-         "w": 22.5,
+         "w": 19.3,
          "h": 19,
          "label": "Remove",
          "text": "Removes the loan."
@@ -1294,13 +1302,13 @@
         {
          "x": 30.4,
          "y": 19.5,
-         "w": 28.5,
+         "w": 28.3,
          "h": 45.1,
          "label": "The removed loan",
          "text": "Its name, “Removed” (or Paid off), and when."
         },
         {
-         "x": 52.2,
+         "x": 52,
          "y": 24.1,
          "w": 4.7,
          "h": 36.1,
@@ -1333,13 +1341,13 @@
         {
          "x": 30.5,
          "y": 18.7,
-         "w": 21.7,
+         "w": 21.5,
          "h": 4.1,
          "label": "The removed loan",
          "text": "Its name, “Removed”, and when."
         },
         {
-         "x": 52.2,
+         "x": 52,
          "y": 19,
          "w": 4.7,
          "h": 3.5,
@@ -1347,7 +1355,7 @@
          "text": "Brings the loan back; the page becomes its loan page again."
         },
         {
-         "x": 56.9,
+         "x": 56.7,
          "y": 19.2,
          "w": 2.1,
          "h": 3.2,
@@ -1367,22 +1375,22 @@
       {
        "text": "Click the bin. It asks once more.",
        "img": "img/loan/remove-a-loan-04.jpg",
-       "w": 384,
-       "h": 204,
+       "w": 448,
+       "h": 180,
        "marks": [
         {
-         "x": 6.5,
-         "y": 39.7,
-         "w": 87,
-         "h": 19.6,
+         "x": 5.6,
+         "y": 31.7,
+         "w": 88.8,
+         "h": 22.2,
          "label": "What happens",
          "text": "The record goes for good; only a backup can bring it back."
         },
         {
-         "x": 50.6,
-         "y": 69.1,
-         "w": 42.9,
-         "h": 18.6,
+         "x": 57.7,
+         "y": 65,
+         "w": 36.8,
+         "h": 21.1,
          "label": "Delete permanently",
          "text": "Deletes the loan record."
         }
@@ -1453,7 +1461,7 @@
          "w": 39.7,
          "h": 5.6,
          "label": "Select a property",
-         "text": "Every property, A to Z. Pick one to open its page. The list marks “senior + mezz”, “in a pooled loan” and “no loan yet”."
+         "text": "Every property, A to Z. Pick one to open its page. The list marks “senior + mezz (combined)”, “in a pooled loan” and “no loan yet”; under a property with two loans, each loan on its own (↳ Senior loan only, ↳ Mezz loan only)."
         },
         {
          "x": 46.8,
@@ -1560,7 +1568,7 @@
          "text": "The app’s size, the portfolio targets, this guide and more."
         },
         {
-         "x": 85.1,
+         "x": 85.5,
          "y": 7.1,
          "w": 5.3,
          "h": 1.8,
@@ -1678,9 +1686,9 @@
          "text": "Index + spread = this month’s rate. The floor or cap shows when the loan has one."
         },
         {
-         "x": 30.6,
+         "x": 30.8,
          "y": 51.5,
-         "w": 16.7,
+         "w": 16.5,
          "h": 25.8,
          "label": "Captured",
          "text": "When this month’s rate was taken."
@@ -1697,13 +1705,13 @@
         {
          "x": 4,
          "y": 21.2,
-         "w": 39.8,
+         "w": 47.1,
          "h": 25.8,
          "label": "Its phase",
          "text": "Still fixed (with the months left), or now adjustable."
         },
         {
-         "x": 82.5,
+         "x": 81.6,
          "y": 21.2,
          "w": 3.4,
          "h": 25.8,
@@ -1711,9 +1719,9 @@
          "text": "What the index + margin is this month."
         },
         {
-         "x": 63.6,
+         "x": 62.6,
          "y": 51.5,
-         "w": 16.7,
+         "w": 16.5,
          "h": 25.8,
          "label": "Captured",
          "text": "When the index value was taken."
@@ -1886,31 +1894,31 @@
         {
          "x": 3,
          "y": 51.1,
-         "w": 13.2,
+         "w": 11.2,
          "h": 17.4,
          "label": "When",
          "text": "The day and time of the change."
         },
         {
-         "x": 16.1,
+         "x": 14.2,
          "y": 51.1,
-         "w": 64.4,
+         "w": 66,
          "h": 17.4,
          "label": "Old → new",
          "text": "What it was and what it became."
         },
         {
-         "x": 80.6,
+         "x": 80.2,
          "y": 51.1,
-         "w": 5.4,
+         "w": 5.5,
          "h": 17.4,
          "label": "Who",
          "text": "Who made the change."
         },
         {
-         "x": 85.9,
+         "x": 85.7,
          "y": 51.1,
-         "w": 11.1,
+         "w": 11.3,
          "h": 17.4,
          "label": "Where from",
          "text": "Typed by hand, or where else it came from: the assistant, an Excel import, a refinance…"
@@ -1982,31 +1990,31 @@
         {
          "x": 0.1,
          "y": 17,
-         "w": 4.7,
+         "w": 4.8,
          "h": 6.2,
          "label": "#",
          "text": "The payment number."
         },
         {
-         "x": 4.8,
+         "x": 4.9,
          "y": 17,
-         "w": 16,
+         "w": 16.4,
          "h": 6.2,
          "label": "Accrual Month / Pays",
          "text": "The month interest is counted for, and the day it is paid."
         },
         {
-         "x": 33.4,
+         "x": 34,
          "y": 17,
-         "w": 5.2,
+         "w": 5.3,
          "h": 6.2,
          "label": "Days",
          "text": "Days in the month: interest is counted on real days (Actual/360) unless the loan is 30/360."
         },
         {
-         "x": 38.6,
+         "x": 39.4,
          "y": 17,
-         "w": 11.7,
+         "w": 9.8,
          "h": 6.2,
          "label": "Rate",
          "text": "That month’s rate. A small tag says where it came from (fixed, the index on a date)."
@@ -2021,7 +2029,7 @@
        "h": 657,
        "marks": [
         {
-         "x": 11.7,
+         "x": 11.8,
          "y": 46.4,
          "w": 1.7,
          "h": 2.4,
@@ -2037,7 +2045,7 @@
          "text": "From here each payment also pays principal."
         },
         {
-         "x": 46.4,
+         "x": 45.4,
          "y": 57.4,
          "w": 2.6,
          "h": 2.3,
@@ -2045,33 +2053,33 @@
          "text": "Point at it to see where the rate came from."
         },
         {
-         "x": 50.2,
+         "x": 49.2,
          "y": 17,
-         "w": 12.5,
+         "w": 12.8,
          "h": 6.2,
          "label": "Interest Charged",
          "text": "Balance × rate × days ÷ 360."
         },
         {
-         "x": 62.8,
+         "x": 62,
          "y": 17,
-         "w": 13.7,
+         "w": 13.9,
          "h": 6.2,
          "label": "Scheduled Payment",
          "text": "What is due that month."
         },
         {
-         "x": 76.4,
+         "x": 75.9,
          "y": 17,
-         "w": 11.4,
+         "w": 11.6,
          "h": 6.2,
          "label": "Principal Paid",
          "text": "Payment − interest: what comes off the balance."
         },
         {
-         "x": 87.8,
+         "x": 87.5,
          "y": 17,
-         "w": 11.4,
+         "w": 11.6,
          "h": 6.2,
          "label": "Ending Balance",
          "text": "What is owed after that month."
@@ -2083,7 +2091,7 @@
     {
      "id": "two-loans-on-one-property",
      "title": "Two loans on one property",
-     "text": "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains). See [Add a senior and a mezzanine loan](add-a-loan-stack).",
+     "text": "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains): its tiles and its payment schedule are the two loans added month by month, each on its own terms. See [Add a senior and a mezzanine loan](add-a-loan-stack).",
      "views": [
       {
        "title": "Combined position",
@@ -2107,6 +2115,14 @@
          "h": 11.4,
          "label": "The mezz loan",
          "text": "Click to open only the mezz."
+        },
+        {
+         "x": 1.4,
+         "y": 58.2,
+         "w": 48.1,
+         "h": 19.1,
+         "label": "Combined position",
+         "text": "The loans together: tiles and schedule added month by month. From one loan’s page, it brings them back."
         },
         {
          "x": 44.1,
@@ -2138,7 +2154,7 @@
          "w": 5.7,
          "h": 5,
          "label": "Blended rate",
-         "text": "The rate of the two together, weighted by balance."
+         "text": "The rate of the two together, weighted by balance (the schedule’s rate each month)."
         },
         {
          "x": 51.5,
@@ -2463,13 +2479,13 @@
         {
          "x": 30.5,
          "y": 18.7,
-         "w": 21.7,
+         "w": 21.5,
          "h": 4.1,
          "label": "The removed loan",
          "text": "Its name, “Removed”, and when."
         },
         {
-         "x": 52.2,
+         "x": 52,
          "y": 19,
          "w": 4.7,
          "h": 3.5,
@@ -2477,7 +2493,7 @@
          "text": "Brings the loan back; the page becomes its loan page again."
         },
         {
-         "x": 56.9,
+         "x": 56.7,
          "y": 19.2,
          "w": 2.1,
          "h": 3.2,

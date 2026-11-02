@@ -64,11 +64,12 @@
     return r2((isNum(f.value) ? Math.max(0, f.value) : 0) * Math.max(0, amount));
   }
 
-  // Extend with today's lender. o: { owed, noi, value, rate, amortMonths, limits, off, penaltyFull, penalty, fee, ahead }
-  // With debt ahead (a mezzanine's senior), the coverage it shows is of the two loans together.
+  // Extend with today's lender. o: { owed, noi, value, rate, amortMonths, limits, off, penaltyFull, penalty, fee, ahead, noPayDown }
+  // With debt ahead (a mezzanine's senior), the coverage it shows is of the two loans together. noPayDown (2026-11-02: the
+  // lender extends the whole amount, on the loan's own terms): no pay-down; what the limits allow is still worked out.
   function extend(o){
     var s = size(o), owed = isNum(o.owed) ? o.owed : 0, a = s.ahead;
-    var allowed = s.maxLoan, payDown = (allowed > 0) ? Math.max(0, owed - allowed) : owed;
+    var allowed = s.maxLoan, payDown = o.noPayDown ? 0 : (allowed > 0) ? Math.max(0, owed - allowed) : owed;
     var amount = Math.max(0, owed - payDown), noi = o.noi;
     var aAmt = a ? a.amount : 0, tot = amount + aAmt, ds = amount * s.constant + aAmt * (a ? a.constant : 0), dsIO = amount * o.rate + aAmt * (a ? a.rate : 0);
     var implied = amount > 0 ? {

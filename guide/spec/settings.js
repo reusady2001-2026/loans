@@ -145,7 +145,7 @@ module.exports = {
                 { sel: "[data-guideclose]", label: "Close", text: "Closes the guide (so does Esc)." },
                 { sel: '#guideNav [data-guidepage="get-around"]', label: "The pages", text: "Every page, in its group. The page you are reading is lit." },
                 { sel: "#guideMain [data-guidetitle]", label: "The page", text: "Its title, what it gets done, and what you need first." },
-                { sel: "#guideToc > div", label: "On this page", text: "The page’s sections. Click one to jump to it; the one you are reading is lit." }
+                { sel: "#guideMain [data-guidetocrow]:visible, #guideToc:visible > div", label: "On this page", text: "The page’s sections (a row above the page, or on the right on a wide window). Click one to jump to it; the one you are reading is lit." }
               ] },
             { title: "Steps and pictures",
               text: "Each step is one action. A picture shows the app where the screen changes, with numbers on what the step points at. At the foot of each page, **Next steps** and **Previous** / **Next** lead on.",

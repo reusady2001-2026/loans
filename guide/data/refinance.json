@@ -868,7 +868,7 @@
    "group": "Refinance",
    "title": "Extend with today’s lender",
    "description": "Judge an extension with today’s lender, set its terms, and save it on today’s loan.",
-   "intro": "Instead of a new loan, today’s lender may keep the loan on new terms, usually after a pay-down so it fits the lender’s limits. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it.",
+   "intro": "Instead of a new loan, today’s lender may extend the loan. The extension starts on today’s loan’s own terms: the same rate (a fixed rate stays fixed), the same interest-only and payment, and no pay-down. If today’s lender re-prices it, or asks for a pay-down so it fits its limits, you switch that on. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it. There is no limit: an extended loan can be extended again, as many times as you need.",
    "callouts": [
     {
      "kind": "note",
@@ -876,7 +876,7 @@
     }
    ],
    "before": [
-    "Today’s lender’s quote: the rate, its limits, the penalty and the fee it asks."
+    "What today’s lender offers: how many months; and, if it changes them, its new rate, its limits, the penalty and the fee."
    ],
    "sections": [
     {
@@ -892,47 +892,88 @@
      ]
     },
     {
-     "id": "enter-todays-lenders-quote",
-     "title": "Enter today’s lender’s quote",
+     "id": "if-todays-lender-re-prices-it-or-asks-for-a-pay-down",
+     "title": "If today’s lender re-prices it or asks for a pay-down",
+     "text": "Skip this when today’s lender keeps today’s terms. Here Queens Gate’s lender re-prices the loan at an index + a spread and asks for a pay-down to fit its limits (made-up figures).",
      "steps": [
       {
-       "text": "In the verdict box, under **The extension’s rate**, pick the **Index** and type today’s lender’s **Spread (bps)**."
+       "text": "In the verdict box, under **The extension’s rate**, pick **Today’s lender’s new quote**. Then pick the **Index** and type today’s lender’s **Spread (bps)**.",
+       "img": "img/refinance/extend-with-your-lender-01.jpg",
+       "w": 1269,
+       "h": 189,
+       "marks": [
+        {
+         "x": 1,
+         "y": 31,
+         "w": 35.3,
+         "h": 15.4,
+         "label": "Rate",
+         "text": "The same as today (today’s loan’s own), or today’s lender’s new quote."
+        },
+        {
+         "x": 1,
+         "y": 61.8,
+         "w": 48.5,
+         "h": 15.4,
+         "label": "Index",
+         "text": "What the new rate floats on."
+        },
+        {
+         "x": 50.5,
+         "y": 61.8,
+         "w": 48.5,
+         "h": 15.9,
+         "label": "Spread (bps)",
+         "text": "Today’s lender’s quote over the index."
+        },
+        {
+         "x": 3.7,
+         "y": 82.5,
+         "w": 4,
+         "h": 9,
+         "label": "The extension’s rate",
+         "text": "Index + spread."
+        }
+       ]
+      },
+      {
+       "text": "Under **The extension’s terms**, tick **Today’s lender asks for a pay-down to fit its limits**. Off, the whole amount extends."
       },
       {
        "text": "In the limits table under it, type today’s lender’s own limits, and untick **Lender uses** on any it doesn’t use. Here 1.11× amortizing and 1.35× interest-only (made-up).",
-       "img": "img/refinance/extend-with-your-lender-01.jpg",
+       "img": "img/refinance/extend-with-your-lender-02.jpg",
        "w": 1233,
-       "h": 594,
+       "h": 558,
        "marks": [
         {
          "x": 71.3,
-         "y": 40.6,
+         "y": 36.7,
          "w": 5.2,
-         "h": 3.7,
+         "h": 3.9,
          "label": "Amortizing coverage",
          "text": "Today’s lender’s DSCR."
         },
         {
          "x": 71.3,
-         "y": 53,
+         "y": 50,
          "w": 5.2,
-         "h": 3.7,
+         "h": 3.9,
          "label": "Interest-only coverage",
          "text": "Its coverage on the interest-only payment."
         },
         {
          "x": 4.2,
-         "y": 41.2,
+         "y": 37.4,
          "w": 1.3,
-         "h": 2.7,
+         "h": 2.9,
          "label": "Lender uses",
          "text": "Untick a limit it doesn’t use."
         },
         {
          "x": 0,
-         "y": 89.7,
+         "y": 89.1,
          "w": 100,
-         "h": 3,
+         "h": 3.2,
          "label": "What today’s lender allows",
          "text": "The smallest of the limits it uses."
         }
@@ -951,53 +992,53 @@
      "title": "Set the terms",
      "steps": [
       {
-       "text": "Scroll to **The extension’s terms**. Set **Today’s terms end on**, **Months on the new terms**, **Interest-only** and the amortization after it."
+       "text": "Scroll to **The extension’s terms**. Set **Today’s terms end on** and **Months on the new terms**. **Interest-only** and the amortization start as today’s loan pays then (the same payment); change them only if today’s lender does. Here Queens Gate’s lender extends it interest-only."
       },
       {
        "text": "Pick what this lender asks in **Early-payoff penalty — this lender asks**, and set the **Extension fee**. Until you pick, the penalty is assumed to be on the pay-down only.",
-       "img": "img/refinance/extend-with-your-lender-02.jpg",
+       "img": "img/refinance/extend-with-your-lender-03.jpg",
        "w": 1313,
-       "h": 357,
+       "h": 405,
        "marks": [
         {
          "x": 1.6,
-         "y": 41.4,
+         "y": 48.4,
          "w": 23.5,
-         "h": 8.1,
+         "h": 7.2,
          "label": "Early-payoff penalty",
          "text": "The full penalty, on the pay-down only, a part, or none."
         },
         {
          "x": 50.5,
-         "y": 41.4,
+         "y": 48.4,
          "w": 23.5,
-         "h": 8.4,
+         "h": 7.4,
          "label": "Extension fee",
          "text": "In % of the extended amount, or dollars."
         },
         {
+         "x": 1.6,
+         "y": 21.7,
+         "w": 1.2,
+         "h": 4,
+         "label": "Asks for a pay-down",
+         "text": "Ticked here: the loan is paid down to fit the lender’s limits."
+        },
+        {
          "x": 2.8,
-         "y": 56.5,
+         "y": 61.7,
          "w": 46.3,
-         "h": 5.6,
+         "h": 4.9,
          "label": "Pay-down needed",
          "text": "So the loan fits the lender’s limits."
         },
         {
          "x": 78.1,
-         "y": 77.6,
+         "y": 80.2,
          "w": 8.5,
-         "h": 4.8,
+         "h": 4.2,
          "label": "Cash needed",
          "text": "Pay-down + penalty + fee."
-        },
-        {
-         "x": 67.1,
-         "y": 71.1,
-         "w": 13.7,
-         "h": 3.4,
-         "label": "Assumed",
-         "text": "Confirm the penalty with the lender."
         }
        ]
       }
@@ -1009,39 +1050,39 @@
      "steps": [
       {
        "text": "Scroll back up to the verdict box. **Can you?** gives the pay-down the extension needs, and the last line says what to do and the cash it takes.",
-       "img": "img/refinance/extend-with-your-lender-03.jpg",
+       "img": "img/refinance/extend-with-your-lender-04.jpg",
        "w": 1313,
-       "h": 1088,
+       "h": 1146,
        "marks": [
         {
          "x": 5.9,
-         "y": 2,
+         "y": 1.9,
          "w": 61.8,
-         "h": 2.6,
+         "h": 2.4,
          "label": "The answer",
          "text": "Here: Extend, with a pay-down."
         },
         {
          "x": 4.4,
-         "y": 28.7,
-         "w": 75.9,
-         "h": 1.6,
+         "y": 32.3,
+         "w": 76.3,
+         "h": 1.5,
          "label": "The pay-down",
          "text": "What you will owe less what the lender’s limits allow."
         },
         {
          "x": 4.4,
-         "y": 90.7,
+         "y": 91.2,
          "w": 93.9,
-         "h": 1.8,
+         "h": 1.7,
          "label": "Should you?",
          "text": "Yes here: the rate resets within 12 months."
         },
         {
          "x": 1.7,
-         "y": 96.1,
+         "y": 96.3,
          "w": 96.6,
-         "h": 1.8,
+         "h": 1.7,
          "label": "Bottom line",
          "text": "What to do, with the cash it takes."
         }
@@ -1049,39 +1090,39 @@
       },
       {
        "text": "Click **Save the extension** at the top. A box lists what will change.",
-       "img": "img/refinance/extend-with-your-lender-04.jpg",
-       "w": 384,
-       "h": 320,
+       "img": "img/refinance/extend-with-your-lender-05.jpg",
+       "w": 672,
+       "h": 493,
        "marks": [
         {
-         "x": 6.5,
-         "y": 7.8,
-         "w": 87,
-         "h": 7.5,
+         "x": 3.7,
+         "y": 5.1,
+         "w": 92.6,
+         "h": 4.9,
          "label": "Save the extension?",
          "text": "It asks first."
         },
         {
-         "x": 6.5,
-         "y": 17.8,
-         "w": 87,
-         "h": 56.3,
+         "x": 3.7,
+         "y": 11.6,
+         "w": 92.6,
+         "h": 71.6,
          "label": "What happens",
          "text": "The new terms, the pay-down, the penalty, the new maturity, the status and the cash needed."
         },
         {
-         "x": 51.7,
-         "y": 80.3,
-         "w": 41.7,
-         "h": 11.9,
+         "x": 72.4,
+         "y": 87.2,
+         "w": 23.9,
+         "h": 7.7,
          "label": "Save the extension",
          "text": "Saves it."
         },
         {
-         "x": 28.6,
-         "y": 80.3,
-         "w": 21.1,
-         "h": 11.9,
+         "x": 59.2,
+         "y": 87.2,
+         "w": 12.1,
+         "h": 7.7,
          "label": "Cancel",
          "text": "Nothing changes."
         }
@@ -1094,7 +1135,7 @@
      "callouts": [
       {
        "kind": "note",
-       "text": "**Save the extension** shows only when the answer is to extend. **Not yet** means nothing ends or resets within 12 months, so you decide closer to the date. **Don’t extend now** means the lower rate doesn’t pay for the penalty."
+       "text": "**Save the extension** shows only when the answer is to extend. **Not yet** means nothing ends or resets within 12 months, so you decide closer to the date. **Don’t extend now** means the lower rate doesn’t pay for the penalty. Once an extension is saved, the refinance judges the next one, from when the saved one ends, by the same rule; the button then reads **Save another extension**."
       }
      ]
     },
@@ -1104,14 +1145,14 @@
      "steps": [
       {
        "text": "Open the loan’s refinance again. It shows the saved extension.",
-       "img": "img/refinance/extend-with-your-lender-05.jpg",
+       "img": "img/refinance/extend-with-your-lender-06.jpg",
        "w": 929,
        "h": 194,
        "marks": [
         {
          "x": 8.4,
          "y": 11.3,
-         "w": 61.5,
+         "w": 69.8,
          "h": 14.4,
          "label": "Extended with today’s lender",
          "text": "The extension is saved on today’s loan."
@@ -1119,10 +1160,10 @@
         {
          "x": 8.4,
          "y": 25.8,
-         "w": 61.5,
+         "w": 69.8,
          "h": 10.3,
          "label": "Saved",
-         "text": "When, and by whom. The loan’s own page has the extension too."
+         "text": "When, and by whom, and from when it can be extended again. The loan’s own page has the extension too."
         },
         {
          "x": 2.4,
@@ -1130,7 +1171,7 @@
          "w": 95.3,
          "h": 20.6,
          "label": "What was saved",
-         "text": "The new terms, the pay-down, the new maturity and the cash it took."
+         "text": "Each extension, numbered when there are several: its terms, the pay-down, the maturity it gave and the cash it took."
         },
         {
          "x": 2.4,
@@ -1138,7 +1179,7 @@
          "w": 17.8,
          "h": 19.6,
          "label": "Undo the extension",
-         "text": "Puts today’s loan back as it was before."
+         "text": "Puts today’s loan back as it was before. With several extensions it reads **Undo the latest extension**."
         },
         {
          "x": 21.5,
@@ -1152,39 +1193,39 @@
       },
       {
        "text": "Click **Undo the extension**.",
-       "img": "img/refinance/extend-with-your-lender-06.jpg",
-       "w": 384,
-       "h": 220,
+       "img": "img/refinance/extend-with-your-lender-07.jpg",
+       "w": 672,
+       "h": 337,
        "marks": [
         {
-         "x": 6.5,
-         "y": 11.4,
-         "w": 87,
-         "h": 10.9,
+         "x": 3.7,
+         "y": 7.4,
+         "w": 92.6,
+         "h": 7.1,
          "label": "Undo the extension?",
          "text": "It asks first."
         },
         {
-         "x": 6.5,
-         "y": 25.9,
-         "w": 87,
-         "h": 36.4,
+         "x": 3.7,
+         "y": 16.9,
+         "w": 92.6,
+         "h": 58.5,
          "label": "What happens",
          "text": "The loan goes back to its terms before the extension; the pay-down comes off the schedule; the history keeps both."
         },
         {
-         "x": 51,
-         "y": 71.4,
-         "w": 42.5,
-         "h": 17.3,
+         "x": 72,
+         "y": 81.3,
+         "w": 24.3,
+         "h": 11.3,
          "label": "Undo the extension",
          "text": "Does it."
         },
         {
-         "x": 27.8,
-         "y": 71.4,
-         "w": 21.1,
-         "h": 17.3,
+         "x": 58.7,
+         "y": 81.3,
+         "w": 12.1,
+         "h": 11.3,
          "label": "Cancel",
          "text": "Keeps the extension."
         }
@@ -1192,6 +1233,12 @@
       },
       {
        "text": "Click **Undo the extension** in the box. The rate, the maturity, the status and the schedule are put back, and the undo is in the history too."
+      }
+     ],
+     "callouts": [
+      {
+       "kind": "note",
+       "text": "With several extensions, Undo takes back only the latest; the ones before it stay. Click it again to take back the one before."
       }
      ]
     }
@@ -1318,7 +1365,7 @@
        "h": 254,
        "marks": [
         {
-         "x": 20.2,
+         "x": 20.4,
          "y": 30.9,
          "w": 30.1,
          "h": 9.1,
@@ -1326,7 +1373,7 @@
          "text": "The NOI this property counts with."
         },
         {
-         "x": 51.2,
+         "x": 51.4,
          "y": 25.4,
          "w": 14.3,
          "h": 19.3,
@@ -1334,7 +1381,7 @@
          "text": "Its NOI on that basis."
         },
         {
-         "x": 51.2,
+         "x": 51.4,
          "y": 83.5,
          "w": 14.3,
          "h": 11.4,
@@ -1361,13 +1408,13 @@
     {
      "id": "extend-several-loans-together",
      "title": "Extend several loans together",
-     "text": "Instead of one new loan, each loan stays with today’s lender, on new terms. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
+     "text": "Instead of one new loan, each loan stays with today’s lender, by default on its own terms: its own rate and no pay-down. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
      "steps": [
       {
        "text": "Open the package’s refinance: the property’s **senior + mezz** entry, or **Create a portfolio…**, then **Refi Calculator**."
       },
       {
-       "text": "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, what its lender allows, its pay-down, and whether to extend it now.",
+       "text": "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, its rate (its own, unless its lender re-prices it), any pay-down, and whether to extend it now.",
        "img": "img/refinance/refinance-together-04.jpg",
        "w": 1313,
        "h": 295,
@@ -1378,20 +1425,20 @@
          "w": 96.6,
          "h": 18.5,
          "label": "The mezzanine",
-         "text": "Sized behind its senior."
+         "text": "Marked mezz, at its own rate (marked same)."
         },
         {
-         "x": 69.6,
+         "x": 73.1,
          "y": 52,
-         "w": 7.6,
+         "w": 8,
          "h": 18.5,
          "label": "Its pay-down",
-         "text": "What it owes less what fits behind the senior."
+         "text": "None: it extends whole, unless its lender asks for a pay-down."
         },
         {
-         "x": 69.6,
+         "x": 73.1,
          "y": 70.5,
-         "w": 7.6,
+         "w": 8,
          "h": 11.2,
          "label": "In all",
          "text": "The pay-downs of the loans to extend now."
@@ -1407,7 +1454,7 @@
        ]
       },
       {
-       "text": "Scroll to each loan’s card and enter its lender’s quote: the **Spread (bps)**, the months, the penalty and the fee. A mezzanine is sized on the limits for the two loans together, less its senior’s extended amount.",
+       "text": "Scroll to each loan’s card and set its months, penalty and fee. Its rate starts as its own: if its lender re-prices it, pick **Today’s lender’s new quote** there and type the **Spread (bps)**; if it asks for a pay-down, tick it. A mezzanine is then sized on the limits for the two loans together, less its senior’s extended amount.",
        "img": "img/refinance/refinance-together-05.jpg",
        "w": 1271,
        "h": 150,
@@ -1431,7 +1478,7 @@
        ]
       },
       {
-       "text": "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new rate and term, its pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back."
+       "text": "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new term (on its own terms unless re-priced), any pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back."
       }
      ],
      "callouts": [
@@ -2211,7 +2258,7 @@
          "w": 94.1,
          "h": 1.7,
          "label": "To extend",
-         "text": "The pay-down today’s lender would need at its limits, and the cash it takes. Pick **Extend with today’s lender** to see it or to fill in its terms."
+         "text": "What extending with today’s lender takes: no pay-down unless it asks for one (then the pay-down to fit its limits), and the cash. Pick **Extend with today’s lender** to see it or to fill it in."
         },
         {
          "x": 1.7,
@@ -3552,26 +3599,26 @@
          "text": "Picked."
         },
         {
-         "x": 70.2,
+         "x": 83.9,
          "y": 46.9,
-         "w": 24.9,
+         "w": 11.1,
          "h": 4.2,
          "label": "Save the extension",
-         "text": "Shown when the answer is to extend. Saves the extension on today’s loan, with the pay-down it needs; it asks first."
+         "text": "Shown when the answer is to extend. Saves the extension on today’s loan (with a pay-down only when today’s lender asks for one); it asks first."
         }
        ]
       },
       {
        "title": "The extension’s verdict",
-       "text": "The same rule as a new loan, applied to the extension: the pay-down it needs to fit today’s lender’s limits, and whether it is worth doing.",
+       "text": "The same rule as a new loan, applied to the extension: whether it is worth doing, and, only when today’s lender asks for one, the pay-down to fit its limits. It starts on today’s loan’s own terms.",
        "img": "img/refinance/ref-refinance-30.jpg",
        "w": 1313,
-       "h": 1084,
+       "h": 1083,
        "marks": [
         {
          "x": 5.9,
          "y": 2,
-         "w": 61.8,
+         "w": 61.5,
          "h": 2.6,
          "label": "The answer",
          "text": "Extend — pay down $X, or Not yet, or Don’t extend now."
@@ -3579,7 +3626,7 @@
         {
          "x": 1.7,
          "y": 7.9,
-         "w": 12.4,
+         "w": 12.6,
          "h": 3.9,
          "label": "You’ll owe on …",
          "text": "What you will owe on the day today’s terms end."
@@ -3587,10 +3634,10 @@
         {
          "x": 26.3,
          "y": 7.9,
-         "w": 10.8,
+         "w": 8.8,
          "h": 3.9,
-         "label": "Today’s lender allows",
-         "text": "The biggest loan today’s lender’s limits allow at the extension’s rate."
+         "label": "Extended amount",
+         "text": "All you will owe: the whole amount extends unless today’s lender asks for a pay-down (then this shows what its limits allow)."
         },
         {
          "x": 50.9,
@@ -3606,36 +3653,28 @@
          "w": 7.2,
          "h": 3.9,
          "label": "Extension rate",
-         "text": "The index + today’s lender’s spread."
+         "text": "Today’s loan’s own (marked same), or today’s lender’s new quote."
         },
         {
          "x": 2.7,
          "y": 18.7,
-         "w": 46.9,
+         "w": 34.1,
          "h": 2.7,
-         "label": "Index",
-         "text": "What the extension’s rate floats on: every rate the app has."
-        },
-        {
-         "x": 50.5,
-         "y": 18.7,
-         "w": 46.9,
-         "h": 2.8,
-         "label": "Spread (bps)",
-         "text": "Today’s lender’s quote over the index."
+         "label": "Rate",
+         "text": "The same as today, or today’s lender’s new quote: an index + a spread, typed here."
         },
         {
          "x": 4.4,
-         "y": 26.8,
+         "y": 26.7,
          "w": 93.9,
          "h": 1.8,
          "label": "Can you?",
-         "text": "Yes, with or without a pay-down."
+         "text": "Yes; with a pay-down only when today’s lender asks for one."
         },
         {
          "x": 4.4,
          "y": 28.8,
-         "w": 77.2,
+         "w": 45.8,
          "h": 1.6,
          "label": "The pay-down",
          "text": "What you will owe less what the lender’s limits allow, and which limit sets it."
@@ -3674,7 +3713,7 @@
        "h": 594,
        "marks": [
         {
-         "x": 71.5,
+         "x": 71.1,
          "y": 40.6,
          "w": 5.2,
          "h": 3.7,
@@ -3682,15 +3721,15 @@
          "text": "Today’s lender’s DSCR."
         },
         {
-         "x": 71.5,
-         "y": 53,
+         "x": 71.1,
+         "y": 52.8,
          "w": 5.2,
          "h": 3.7,
          "label": "Interest-only coverage",
          "text": "Its coverage on the interest-only payment."
         },
         {
-         "x": 71.5,
+         "x": 71.1,
          "y": 65.3,
          "w": 5.2,
          "h": 3.7,
@@ -3698,7 +3737,7 @@
          "text": "Today’s lender’s most loan-to-value, here on the appraisal."
         },
         {
-         "x": 71.5,
+         "x": 71.1,
          "y": 77.6,
          "w": 5.2,
          "h": 3.7,
@@ -3765,144 +3804,152 @@
       },
       {
        "title": "The extension’s terms",
-       "text": "When today’s terms end, how long the new terms run, interest-only, the amortization after it, the lender’s penalty and the fee, and what it all adds up to.",
+       "text": "Whether today’s lender asks for a pay-down, when today’s terms end, how long the new terms run, interest-only, the amortization after it, the lender’s penalty and the fee, and what it all adds up to.",
        "img": "img/refinance/ref-refinance-32.jpg",
        "w": 1313,
-       "h": 357,
+       "h": 405,
        "marks": [
         {
          "x": 1.6,
-         "y": 24.3,
+         "y": 33.3,
          "w": 23.5,
-         "h": 9,
+         "h": 7.9,
          "label": "Today’s terms end on",
          "text": "Starts at the payment before the rate resets (or the maturity)."
         },
         {
          "x": 26,
-         "y": 24.3,
+         "y": 33.3,
          "w": 23.5,
-         "h": 8.4,
+         "h": 7.4,
          "label": "Months on the new terms",
          "text": "How long the extension runs."
         },
         {
+         "x": 1.6,
+         "y": 21.7,
+         "w": 1.2,
+         "h": 4,
+         "label": "Asks for a pay-down",
+         "text": "Off: the whole amount extends. Tick it when today’s lender asks for a pay-down to fit its limits."
+        },
+        {
          "x": 50.5,
-         "y": 24.3,
+         "y": 33.3,
          "w": 23.5,
-         "h": 8.1,
+         "h": 7.2,
          "label": "Interest-only",
-         "text": "The whole term, the first N months, or none."
+         "text": "Starts as today’s loan pays then: the whole term, the first N months, or none."
         },
         {
          "x": 74.9,
-         "y": 24.3,
+         "y": 33.3,
          "w": 23.5,
-         "h": 8.4,
+         "h": 7.4,
          "label": "Amortization",
-         "text": "Months the payment is figured over after interest-only."
+         "text": "Starts at the months that keep today’s payment."
         },
         {
          "x": 1.6,
-         "y": 41.4,
+         "y": 48.4,
          "w": 23.5,
-         "h": 8.1,
+         "h": 7.2,
          "label": "Early-payoff penalty",
          "text": "What this lender asks: the full penalty, on the pay-down only, a part, or none. Until you pick, it assumes on the pay-down."
         },
         {
          "x": 26,
-         "y": 41.4,
+         "y": 48.4,
          "w": 23.5,
-         "h": 8.1,
+         "h": 7.2,
          "label": "Extension fee in",
          "text": "% of the extended amount, or dollars."
         },
         {
          "x": 50.5,
-         "y": 41.4,
+         "y": 48.4,
          "w": 23.5,
-         "h": 8.4,
+         "h": 7.4,
          "label": "Extension fee",
          "text": "The fee."
         },
         {
          "x": 2.8,
-         "y": 56.5,
+         "y": 61.7,
          "w": 46.3,
-         "h": 5.6,
+         "h": 4.9,
          "label": "Pay-down needed",
-         "text": "What you pay down so the loan fits the lender’s limits."
+         "text": "None unless today’s lender asks for a pay-down; then what you pay down so the loan fits its limits."
         },
         {
          "x": 50.9,
-         "y": 56.5,
+         "y": 61.7,
          "w": 8.8,
-         "h": 5.6,
+         "h": 4.9,
          "label": "Extended amount",
-         "text": "What you owe after the pay-down."
+         "text": "What you owe, less any pay-down."
         },
         {
          "x": 2.8,
-         "y": 63.8,
-         "w": 8.4,
-         "h": 11.8,
+         "y": 68.1,
+         "w": 8.7,
+         "h": 10.4,
          "label": "At this amount",
          "text": "The extended loan’s coverage, interest-only coverage, LTV and debt yield."
         },
         {
          "x": 50.9,
-         "y": 63.8,
-         "w": 6.7,
-         "h": 11.8,
+         "y": 68.1,
+         "w": 7.3,
+         "h": 10.4,
          "label": "Penalty",
          "text": "In dollars, how it was worked out, and the full penalty today."
         },
         {
-         "x": 67.1,
-         "y": 71.1,
+         "x": 65,
+         "y": 74.6,
          "w": 13.7,
-         "h": 3.4,
+         "h": 3,
          "label": "Assumed",
          "text": "Until you pick what this lender asks, the penalty is assumed to be on the pay-down only. Confirm it with the lender."
         },
         {
          "x": 2.8,
-         "y": 77.3,
+         "y": 80,
          "w": 6.8,
-         "h": 5.9,
+         "h": 5.2,
          "label": "Extension fee",
          "text": "The fee in dollars."
         },
         {
-         "x": 78.1,
-         "y": 77.6,
-         "w": 8.5,
-         "h": 4.8,
+         "x": 83.5,
+         "y": 80.2,
+         "w": 3.1,
+         "h": 4.2,
          "label": "Cash needed",
          "text": "Pay-down + penalty + fee."
         },
         {
          "x": 2.8,
-         "y": 84.9,
+         "y": 86.7,
          "w": 15.9,
-         "h": 5.9,
+         "h": 5.2,
          "label": "First payment",
          "text": "The date and amount of the first payment on the new terms."
         },
         {
          "x": 50.9,
-         "y": 84.9,
+         "y": 86.7,
          "w": 6.7,
-         "h": 5.9,
+         "h": 5.2,
          "label": "New maturity",
          "text": "When the extended loan is due."
         },
         {
          "x": 84.2,
-         "y": 86,
+         "y": 87.7,
          "w": 13,
-         "h": 3.9,
+         "h": 3.5,
          "label": "Earlier than today’s",
          "text": "A warning: these terms would end before today’s loan does. Type more months if that isn’t what you mean."
         }
@@ -3913,37 +3960,37 @@
        "text": "**A part (%)** asks what share of the full penalty the lender wants. **The first N months** of interest-only asks how many months.",
        "img": "img/refinance/ref-refinance-33.jpg",
        "w": 1313,
-       "h": 414,
+       "h": 462,
        "marks": [
         {
          "x": 50.5,
-         "y": 35.7,
+         "y": 42.4,
          "w": 23.5,
-         "h": 7.3,
+         "h": 6.5,
          "label": "Part of the full penalty (%)",
          "text": "Here 40% of today’s full penalty."
         },
         {
          "x": 74.9,
-         "y": 20.9,
+         "y": 29.2,
          "w": 23.5,
-         "h": 7.3,
+         "h": 6.5,
          "label": "Interest-only months",
          "text": "How many months are interest-only (shown when you pick The first N months)."
         },
         {
          "x": 50.9,
-         "y": 69.3,
+         "y": 72.5,
          "w": 10.2,
-         "h": 9.7,
+         "h": 8.7,
          "label": "Penalty",
          "text": "Now 40% of the full penalty, no longer assumed."
         },
         {
-         "x": 78.1,
-         "y": 80.7,
-         "w": 8.5,
-         "h": 4.1,
+         "x": 79.7,
+         "y": 82.7,
+         "w": 6.8,
+         "h": 3.7,
          "label": "Cash needed",
          "text": "Follows at once."
         }
@@ -3954,53 +4001,53 @@
        "text": "**A part ($)** asks for the penalty the lender quotes, in dollars; the fee can be in dollars too. Here a made-up $100,000 penalty and a $25,000 fee.",
        "img": "img/refinance/ref-refinance-34.jpg",
        "w": 1313,
-       "h": 414,
+       "h": 462,
        "marks": [
         {
          "x": 26,
-         "y": 35.7,
+         "y": 42.4,
          "w": 23.5,
-         "h": 7,
+         "h": 6.3,
          "label": "A part — a dollar amount",
          "text": "The other choices: the full penalty, on the pay-down only, a part (%), none."
         },
         {
          "x": 50.5,
-         "y": 35.7,
+         "y": 42.4,
          "w": 23.5,
-         "h": 7.3,
+         "h": 6.5,
          "label": "Penalty the lender asks ($)",
          "text": "The lender’s figure."
         },
         {
          "x": 74.9,
-         "y": 35.7,
+         "y": 42.4,
          "w": 23.5,
-         "h": 7,
+         "h": 6.3,
          "label": "Extension fee in dollars",
          "text": "Or % of the extended amount."
         },
         {
          "x": 1.6,
-         "y": 49.9,
+         "y": 55.2,
          "w": 23.5,
-         "h": 7.3,
+         "h": 6.5,
          "label": "Extension fee",
          "text": "Here $25,000."
         },
         {
          "x": 2.8,
-         "y": 80.4,
+         "y": 82.5,
          "w": 6.8,
-         "h": 5.1,
+         "h": 4.5,
          "label": "Fee",
          "text": "Counted in the cash needed."
         },
         {
-         "x": 78.1,
-         "y": 80.7,
-         "w": 8.5,
-         "h": 4.1,
+         "x": 79.7,
+         "y": 82.7,
+         "w": 6.8,
+         "h": 3.7,
          "label": "Cash needed",
          "text": "Pay-down + $100,000 + $25,000."
         }
@@ -4022,16 +4069,8 @@
          "text": "The whole schedule with the extension in place."
         },
         {
-         "x": 17.3,
-         "y": 21.6,
-         "w": 10.2,
-         "h": 2.3,
-         "label": "Paid down",
-         "text": "The pay-down, as a principal payment."
-        },
-        {
-         "x": 18.5,
-         "y": 27.1,
+         "x": 18.6,
+         "y": 26.9,
          "w": 7.5,
          "h": 2.3,
          "label": "Extension starts",
@@ -4039,7 +4078,7 @@
         },
         {
          "x": 1.7,
-         "y": 31,
+         "y": 30.8,
          "w": 95.9,
          "h": 5.5,
          "label": "Extension months",
@@ -4052,37 +4091,37 @@
        "text": "The Mews at Princeton: today’s lender’s limits cover what you’ll owe, but nothing ends or resets within 12 months, so the answer is Not yet and there is no **Save the extension**. When a lower rate doesn’t pay for the penalty, the answer is Don’t extend now.",
        "img": "img/refinance/ref-refinance-36.jpg",
        "w": 1313,
-       "h": 1060,
+       "h": 1022,
        "marks": [
         {
          "x": 5.9,
-         "y": 2.1,
-         "w": 57.1,
-         "h": 2.6,
+         "y": 2.2,
+         "w": 57.2,
+         "h": 2.7,
          "label": "Not yet",
          "text": "Today’s terms end more than 12 months from now."
         },
         {
          "x": 4.4,
-         "y": 27.2,
-         "w": 71.2,
-         "h": 1.9,
+         "y": 28.1,
+         "w": 46.9,
+         "h": 2,
          "label": "Can you? Yes",
          "text": "Today’s lender’s limits allow more than you’ll owe: no pay-down needed."
         },
         {
          "x": 4.4,
-         "y": 90.5,
+         "y": 90.1,
          "w": 93.9,
-         "h": 1.9,
+         "h": 2,
          "label": "Should you? Not yet",
          "text": "When today’s terms end, and that nothing ends or resets within 12 months."
         },
         {
          "x": 1.7,
-         "y": 96,
+         "y": 95.9,
          "w": 96.6,
-         "h": 1.9,
+         "h": 2,
          "label": "Bottom line",
          "text": "Not yet: decide closer to the date."
         }
@@ -4170,55 +4209,55 @@
         {
          "x": 1.7,
          "y": 33.7,
-         "w": 27.3,
+         "w": 28.7,
          "h": 18.3,
          "label": "Loan",
          "text": "Each loan, senior first, with its lender."
         },
         {
-         "x": 29,
+         "x": 30.3,
          "y": 27.8,
-         "w": 12.8,
+         "w": 13.5,
          "h": 5.9,
          "label": "Today’s terms end",
          "text": "When each loan’s new terms would start (set on its card)."
         },
         {
-         "x": 41.8,
+         "x": 43.8,
          "y": 27.8,
-         "w": 13.9,
+         "w": 14.6,
          "h": 5.9,
          "label": "You’ll owe",
          "text": "What each loan will owe on that date."
         },
         {
-         "x": 55.7,
+         "x": 58.5,
          "y": 27.8,
-         "w": 13.9,
+         "w": 14.6,
          "h": 5.9,
          "label": "Its lender allows",
          "text": "What each lender’s limits allow; a mezzanine’s is what fits behind its senior."
         },
         {
-         "x": 69.6,
+         "x": 73.1,
          "y": 52,
-         "w": 7.6,
+         "w": 8,
          "h": 18.5,
          "label": "Pay-down",
          "text": "What the loan must pay down to fit."
         },
         {
-         "x": 77.2,
+         "x": 81.1,
          "y": 27.8,
-         "w": 14.8,
+         "w": 10.6,
          "h": 5.9,
          "label": "Rate",
          "text": "Today’s rate → the extension’s rate."
         },
         {
-         "x": 92,
+         "x": 91.7,
          "y": 33.7,
-         "w": 6.3,
+         "w": 6.6,
          "h": 18.3,
          "label": "Verdict",
          "text": "Extend (with a pay-down), Not yet, Don’t extend now, or Extended once saved."
@@ -4287,7 +4326,7 @@
        "text": "Each loan has its own card: its lender’s quote, what it is sized on, and its terms. Here the mezzanine.",
        "img": "img/refinance/ref-refinance-40.jpg",
        "w": 1313,
-       "h": 1138,
+       "h": 1185,
        "marks": [
         {
          "x": 1.6,
@@ -4298,58 +4337,58 @@
          "text": "Its name, its lender and its verdict. Click to fold it."
         },
         {
-         "x": 50.5,
-         "y": 10.2,
-         "w": 47,
-         "h": 2.6,
-         "label": "Its lender’s spread",
-         "text": "Each lender quotes its own rate."
+         "x": 2.6,
+         "y": 9.8,
+         "w": 34.1,
+         "h": 2.4,
+         "label": "Its rate",
+         "text": "Its own (here the mezzanine’s), unless its lender re-prices it: then an index + its lender’s spread."
         },
         {
          "x": 2.8,
-         "y": 18.7,
+         "y": 17.8,
          "w": 94.4,
-         "h": 1.6,
+         "h": 1.5,
          "label": "Secured by",
          "text": "Its property (or properties), their NOI and value, and the extension’s rate."
         },
         {
          "x": 2.8,
-         "y": 20.6,
+         "y": 19.7,
          "w": 94.4,
-         "h": 1.6,
+         "h": 1.5,
          "label": "Behind its senior",
          "text": "A mezzanine: the limits apply to the two together, less the senior’s extended amount."
         },
         {
          "x": 2.8,
-         "y": 22.9,
+         "y": 21.9,
          "w": 34.1,
-         "h": 1.6,
+         "h": 1.5,
          "label": "Each limit",
          "text": "What each limit leaves for this loan; the smallest binds."
         },
         {
          "x": 26,
-         "y": 37.6,
+         "y": 40.1,
          "w": 23.5,
-         "h": 2.6,
+         "h": 2.5,
          "label": "Its terms",
          "text": "When its terms end, months, interest-only, penalty and fee — this loan’s own."
         },
         {
          "x": 2.8,
-         "y": 47.7,
+         "y": 49.8,
          "w": 46.3,
-         "h": 1.8,
+         "h": 1.7,
          "label": "Pay-down needed",
          "text": "This loan’s."
         },
         {
          "x": 1.6,
-         "y": 60.5,
+         "y": 62.1,
          "w": 96.8,
-         "h": 37.7,
+         "h": 36.2,
          "label": "Its schedule",
          "text": "With the extension in place."
         }
@@ -4428,7 +4467,7 @@
          "text": "One row per property in the package."
         },
         {
-         "x": 20.2,
+         "x": 20.4,
          "y": 30.9,
          "w": 30.1,
          "h": 9.1,
@@ -4436,7 +4475,7 @@
          "text": "The NOI this property counts with. Safe and Aggressive are greyed (“approve it first”) until its underwriting is approved."
         },
         {
-         "x": 51.2,
+         "x": 51.4,
          "y": 25.4,
          "w": 14.3,
          "h": 19.3,
@@ -4444,23 +4483,23 @@
          "text": "Its NOI on the basis picked."
         },
         {
-         "x": 65.6,
+         "x": 65.7,
          "y": 25.4,
-         "w": 10.9,
+         "w": 11,
          "h": 19.3,
          "label": "+ ticked pushes",
          "text": "What its ticked pushes add."
         },
         {
-         "x": 76.5,
+         "x": 76.7,
          "y": 25.4,
-         "w": 22,
+         "w": 21.8,
          "h": 19.3,
          "label": "From",
          "text": "Where the figure comes from: the T12 and its months, or the approved underwriting and when it was approved."
         },
         {
-         "x": 51.2,
+         "x": 51.4,
          "y": 83.5,
          "w": 14.3,
          "h": 11.4,
@@ -4477,7 +4516,7 @@
        "h": 254,
        "marks": [
         {
-         "x": 19.4,
+         "x": 19.5,
          "y": 69.5,
          "w": 19.5,
          "h": 9.1,
@@ -4485,7 +4524,7 @@
          "text": "Picked for this property only."
         },
         {
-         "x": 50.4,
+         "x": 50.5,
          "y": 64,
          "w": 14.3,
          "h": 19.5,
@@ -4493,7 +4532,7 @@
          "text": "Now its approved Aggressive figure."
         },
         {
-         "x": 50.4,
+         "x": 50.5,
          "y": 83.5,
          "w": 14.3,
          "h": 11.4,
@@ -4738,38 +4777,38 @@
       {
        "text": "Read **Save the refinance?**: the new loan, the loan it pays off, and any cash you pay in.",
        "img": "img/refinance/save-the-refinance-02.jpg",
-       "w": 384,
-       "h": 220,
+       "w": 672,
+       "h": 509,
        "marks": [
         {
-         "x": 6.5,
-         "y": 11.4,
-         "w": 87,
-         "h": 10.9,
+         "x": 3.7,
+         "y": 4.9,
+         "w": 92.6,
+         "h": 4.7,
          "label": "Save the refinance?",
          "text": "It asks first."
         },
         {
-         "x": 6.5,
-         "y": 25.9,
-         "w": 87,
-         "h": 36.4,
+         "x": 3.7,
+         "y": 11.2,
+         "w": 92.6,
+         "h": 72.5,
          "label": "What happens",
          "text": "The new loan, the old loan(s) paid off, and any cash paid in."
         },
         {
-         "x": 52.3,
-         "y": 71.4,
-         "w": 41.2,
-         "h": 17.3,
+         "x": 72.7,
+         "y": 87.6,
+         "w": 23.6,
+         "h": 7.5,
          "label": "Save the refinance",
          "text": "Does it."
         },
         {
-         "x": 29.1,
-         "y": 71.4,
-         "w": 21.1,
-         "h": 17.3,
+         "x": 59.5,
+         "y": 87.6,
+         "w": 12.1,
+         "h": 7.5,
          "label": "Cancel",
          "text": "Nothing changes."
         }
@@ -4807,13 +4846,13 @@
         {
          "x": 43.1,
          "y": 21.1,
-         "w": 37.8,
+         "w": 37.5,
          "h": 42.1,
          "label": "Today’s loan",
          "text": "Paid off (refinanced), with the date."
         },
         {
-         "x": 80.9,
+         "x": 80.7,
          "y": 24.1,
          "w": 6.6,
          "h": 36.1,
