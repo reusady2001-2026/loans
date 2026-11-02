@@ -1368,6 +1368,35 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
     senior + mezz default (each at its own rate, the mezz 9% fixed, no pay-down); `refi-extend-again.e2e.js` checks the
     same payment across the extension. The Guide's "Extend with today's lender" starts from the same terms and shows the
     two switches.
+- **A property's combined position is the sum of its loans (after 3.1.1, TEST build — the operator, 2026-11-02).** On a
+  senior + mezz both extended, the combined schedule showed the senior's rate — and interest at that rate on the combined
+  balance — until the extension started. The combined position (`combo:` / `multi:`) was one made-up loan
+  (`combinedRefiLoan`: the senior with the total balance and a blended rate); it copied the senior's saved extension, whose
+  `before` holds the senior's own rate. The operator: "Fix it in a way that I won't have any problems with it after all."
+  - **`compute()` of a combined position is `computeCombined()`:** the loans' own schedules added month by month (by
+    payment date): balance, interest, payment, principal, pay-downs; each month's rate is the loans' rates weighted by
+    what each owes; a loan that starts later or ends sooner counts only while it is owed; "Extension starts" and resets
+    marked. Its figures are the loans' sums (balance, payment, debt service); the rate now is the balance-weighted rate;
+    its maturity is the first maturity of a loan still owed. `combinedRefiLoan` no longer carries the senior's
+    extension or pay-downs.
+  - **The page:** the cards name each loan's own terms ("Each loan's own" — amortization / term, interest-only); the
+    schedule line says it is the loans added together; each loan's live rate is refreshed.
+- **Always able to pick the combined position (same build).** "Make it so I will be able to pick the combined position…
+  I can't select back the combined position of the property."
+  - **Close** from a combined refinance goes back to the combined position (it used to switch to the senior alone).
+  - **A switch** above the cards of a property with several loans: **Combined position · Senior loan only · Mezz loan
+    only** (`#stackSwitch`, `data-stackpick`).
+  - **The dropdown** lists each loan under its property ("↳ Senior loan only · lender", value `loan:<id>`), so the property's
+    own entry — the combined position — can always be picked again.
+  - **Test:** `test/e2e/combined-position.e2e.js` (16 checks).
+- **Readable windows (same build).** "It's too cramped… not all crammed up in one single paragraph." The shared confirm
+  window (`confirmDialog`) takes a laid-out body (`confirmBodyHtml`): a summary line; a block per loan (or thing) with
+  its rows, "before → after" where something changes (a "same" tag where it doesn't); a list; the total that matters
+  (cash) on its own; the small print. It is wider when it carries figures (`max-w-2xl`; otherwise `max-w-md`), scrolls
+  inside when long, and its button is red only for what removes or takes back (delete, remove, undo, archive, start
+  fresh, restore a backup) — a save is the app's own colour. Laid out: save / undo the extension(s), save the refinance
+  (what it pays off, the new loan, what you pay in, what happens after), restore a backup, delete a property / start
+  fresh (the list of what goes), and a T12 reading whose checks still fail.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared

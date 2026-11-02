@@ -1021,9 +1021,9 @@
 
   <!-- Confirm modal -->
   <div id="confirmModal" class="fixed inset-0 z-[99] hidden items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div id="confirmBox" class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
       <h3 id="confirmTitle" class="text-base font-bold text-slate-900">Are you sure?</h3>
-      <p id="confirmText" class="mt-2 text-sm text-slate-500">This action cannot be undone.</p>
+      <div id="confirmText" class="mt-2 max-h-[65vh] overflow-y-auto text-sm text-slate-600">This action cannot be undone.</div>
       <div class="mt-5 flex justify-end gap-2">
         <button id="confirmCancel" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
         <button id="confirmAlt" type="button" hidden class="rounded-lg border border-brand-300 bg-white px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"></button>
@@ -6127,8 +6127,8 @@ tr.flagged:hover td{background:#fee2e2}
         confirmDialog("“"+c.name+"” already exists"+propArchivedOnText(c.archivedAt),
           "Restore it with its data, or start fresh? Starting fresh deletes the archived property’s data for good.",
           async function(){ await opArchiveProperty(c.key, false); toast("Restored “"+c.name+"” with its data.", "check"); }, "Restore it",
-          { altLabel:"Start fresh", onAlt: async function(){ var what = await propDeleteSummary(c.key);
-            confirmDialog("Start fresh as “"+name+"”?", "This deletes the archived property’s data for good: "+what+". It can’t be undone here; the automatic backups keep a copy.",
+          { danger:false, altLabel:"Start fresh", onAlt: async function(){ var what = await propDeleteSummary(c.key);
+            confirmDialog("Start fresh as “"+name+"”?", { lead: "This deletes the archived property’s data for good:", list: String(what).split(" · "), note: "It can’t be undone here; the automatic backups keep a copy." },
               async function(){ var r = await opStartFreshProperty(c.key, name); toast(r.ok ? "Started fresh — “"+name+"” has no loans yet." : (r.error || "Couldn’t start fresh"), r.ok ? "success" : "error"); }, "Delete and start fresh"); } });
         return null;
       }
@@ -6277,7 +6277,7 @@ tr.flagged:hover td{background:#fee2e2}
     async function propDeleteAsk(key, name, after){
       const what = await propDeleteSummary(key);
       confirmDialog("Delete “" + name + "” permanently?",
-        "This deletes " + what + ". It can’t be undone here; the automatic backups keep a copy. Portfolio conversations that mention it are kept.",
+        { lead: "This deletes, for good:", list: String(what).split(" · "), note: "It can’t be undone here; the automatic backups keep a copy. Portfolio conversations that mention it are kept." },
         async () => {
           const r = await opDeletePropertyPermanent(key);
           if(!r.ok){
@@ -7866,9 +7866,9 @@ tr.flagged:hover td{background:#fee2e2}
         await t12Accept(key, sig, { status: ovs.length ? "reviewed" : (st.entry.ai && st.entry.ai.status === "agree" && fails === 0 ? "checked" : "reviewed"), overrides: ovs, reader: reader });
       };
       var yoursFig = res.some(function(rr){ return rr && rr.parsed && rr.parsed.checked && rr.parsed.checked.yours; });
-      if(fails) confirmDialog("Some checks still fail", fails + " check" + (fails === 1 ? " still fails" : "s still fail") + ". Save this reading anyway? " + (yoursFig
+      if(fails) confirmDialog("Some checks still fail", { lead: fails + " check" + (fails === 1 ? " still fails" : "s still fail") + ". Save this reading anyway?", note: yoursFig
         ? "Your reading is used: income, expenses and the NOI are the accounts as you set them (the statement’s printed totals are not)."
-        : "The statement’s printed totals are used; what the accounts don’t add up to goes into Other income or General & administrative, and Underwriting shows the gap."), go, "Save anyway");
+        : "The statement’s printed totals are used; what the accounts don’t add up to goes into Other income or General & administrative, and Underwriting shows the gap." }, go, "Save anyway");
       else await go();
     }
     document.addEventListener("click", function(ev){
@@ -10655,9 +10655,31 @@ tr.flagged:hover td{background:#fee2e2}
     let confirmCb = null;
     // opts.cancelLabel / opts.onCancel turn it into a two-answer question (Yes / No — both do something).
     let confirmCancelCb = null;
+    // (2026-11-02, the operator: "it's too cramped... not all crammed up in one single paragraph") — a window that carries
+    // figures takes them laid out: a short summary line; a block per loan (or per thing) with its rows, "before → after"
+    // where something changes; a list; the total that matters (cash) on its own; then the small print. Escaped throughout.
+    //   { lead, sections: [{ title, sub, rows: [[label, value] | [label, from, to, note]] }], list: [..], listTitle, total: { label, value, note }, note }
+    function confirmBodyHtml(b){
+      const e = escapeHtml, row = (r) => { const same = r.length >= 3 && r[1] === r[2];
+        const val = r.length >= 3 ? (same ? e(r[2])+' <span class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">same</span>' : '<span class="text-slate-400">'+e(r[1])+'</span> <span class="text-slate-400">&rarr;</span> <strong class="text-slate-900">'+e(r[2])+'</strong>') : '<strong class="text-slate-900">'+e(r[1])+'</strong>';
+        return '<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-1" data-confirmrow><span class="text-slate-500">'+e(r[0])+'</span><span class="text-right tabular-nums">'+val+(r[3] ? ' <span class="text-[11px] text-slate-400">'+e(r[3])+'</span>' : '')+'</span></div>'; };
+      return (b.lead ? '<p class="text-slate-700" data-confirmlead>'+e(b.lead)+'</p>' : '')+
+        (b.sections || []).map(sec => '<div class="mt-3 rounded-xl border border-slate-200 px-4 py-2.5" data-confirmsection>'+
+          (sec.title ? '<p class="font-semibold text-slate-900">'+e(sec.title)+(sec.sub ? ' <span class="text-[12px] font-normal text-slate-500">&middot; '+e(sec.sub)+'</span>' : '')+'</p>' : '')+
+          '<div class="mt-1 divide-y divide-slate-100">'+(sec.rows || []).map(row).join("")+'</div></div>').join("")+
+        (b.list && b.list.length ? (b.listTitle ? '<p class="mt-3 font-semibold text-slate-900">'+e(b.listTitle)+'</p>' : '')+'<ul class="mt-1 list-disc space-y-0.5 pl-5 text-slate-700" data-confirmlist>'+b.list.map(x => '<li>'+e(x)+'</li>').join("")+'</ul>' : '')+
+        (b.total ? '<div class="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 rounded-xl bg-slate-50 px-4 py-2.5" data-confirmtotal><span class="font-semibold text-slate-900">'+e(b.total.label)+'</span><span class="text-right"><strong class="text-base tabular-nums text-slate-900">'+e(b.total.value)+'</strong>'+(b.total.note ? '<span class="block text-[11px] text-slate-500">'+e(b.total.note)+'</span>' : '')+'</span></div>' : '')+
+        (b.note ? '<p class="mt-3 text-[12px] text-slate-500" data-confirmnote>'+e(b.note)+'</p>' : '');
+    }
     function confirmDialog(title, text, cb, okLabel, opts){
       opts = opts || {};
-      dom.confirmTitle.textContent = title; dom.confirmText.textContent = text; confirmCb = cb; confirmCancelCb = opts.onCancel || null;
+      const laid = !!(text && typeof text === "object"), box = el("confirmBox");
+      dom.confirmTitle.textContent = title; confirmCb = cb; confirmCancelCb = opts.onCancel || null;
+      if(laid) dom.confirmText.innerHTML = confirmBodyHtml(text); else dom.confirmText.textContent = text;
+      if(box) box.className = "w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl " + (laid && (text.sections || text.list || text.total) ? "max-w-2xl" : "max-w-md");   // sized to what it carries
+      // the OK button's colour says what it does: red only for what removes or takes back
+      const danger = opts.danger != null ? !!opts.danger : /^(delete|remove|undo|archive|start fresh|restore)/i.test(okLabel || title || "");
+      if(dom.confirmOk) dom.confirmOk.className = "rounded-lg px-4 py-2 text-sm font-semibold text-white " + (danger ? "bg-rose-600 hover:bg-rose-500" : "bg-brand-600 hover:bg-brand-500");
       confirmAltCb = opts.onAlt || null; const alt = el("confirmAlt"); if(alt){ alt.hidden = !opts.altLabel; alt.textContent = opts.altLabel || ""; }   // 2.9.7 (#44, #233) — a third choice (e.g. "Open it" / "Start fresh")
       if(dom.confirmOk) dom.confirmOk.textContent = okLabel || ((/^([A-Za-z]+)/.exec(title || "") || [])[1]) || "Confirm";   // the OK button names the ACTUAL action — the title's leading verb (Remove / Restore / Delete / Archive), never a hardcoded "Remove"
       if(dom.confirmCancel) dom.confirmCancel.textContent = opts.cancelLabel || "Cancel";
@@ -10765,6 +10787,17 @@ tr.flagged:hover td{background:#fee2e2}
         else toast("Backup failed"+(res && res.error?": "+res.error:""), "info");
       }).catch(()=> toast("Backup failed", "info"));
     }
+    // (2026-11-02) laid out: what is on this computer now, what the backup has, and that today's data is kept first
+    function restoreConfirmBody(parsed, res, fromWhat){
+      const cur = loans.length, full = !!(res && res.full), when = parsed.exportedAt ? fmtBackupWhen(parsed.exportedAt) : "";
+      return full
+        ? { lead: "This replaces everything on this computer with the backup.", sections: [
+              { title: "On this computer now", rows: [["Loans", String(cur)], ["Property folders", "every one (profile, assumptions, T12s, documents)"], ["Chats", "every one"]] },
+              { title: "The backup", sub: fromWhat + (when ? " · " + when : ""), rows: [["Loans", String(parsed.count)], ["Property folders", String(parsed.propertyFolders || 0)], ["Chats", String(parsed.chatCount || 0)]] }],
+            note: "Your current data is saved first as a “Before a restore” snapshot, so you can switch back." }
+        : { lead: "This replaces the loans on this computer with the backup’s.", sections: [{ title: "Loans", rows: [["On this computer now", String(cur)], ["In the backup" + (when ? " (" + when + ")" : ""), String(parsed.count)]] }],
+            note: "This older backup holds only the loans — your property files and chats stay as they are. Your current data is saved first." };
+    }
     function restoreConfirmText(parsed, res, fromWhat){
       const cur = loans.length, full = !!(res && res.full);
       return full
@@ -10778,7 +10811,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(!res.ok){ toast("Couldn't open that file"+(res.error?": "+res.error:""), "info"); return; }
         const parsed = parseBackup(res.content);
         if(!parsed.ok){ toast(parsed.err, "info"); return; }
-        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmText(parsed, res, res.name || "the backup"),
+        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmBody(parsed, res, res.name || "the backup"),
           () => applyRestore(parsed, res.name || "file", res));
       }).catch(()=> toast("Restore failed", "info"));
     }
@@ -10789,7 +10822,7 @@ tr.flagged:hover td{background:#fee2e2}
         if(!res || !res.ok){ toast("Couldn't read that backup"+(res && res.error?": "+res.error:""), "info"); return; }
         const parsed = parseBackup(res.content);
         if(!parsed.ok){ toast(parsed.err, "info"); return; }
-        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmText(parsed, res, "this automatic snapshot"),
+        confirmDialog("Restore "+backupContentsText(parsed, !!res.full)+"?", restoreConfirmBody(parsed, res, "this automatic snapshot"),
           () => { const dd = el("dataDD"); if(dd) dd.open = false; applyRestore(parsed, "automatic snapshot", res); });
       }).catch(()=> toast("Restore failed", "info"));
     }
@@ -13067,6 +13100,14 @@ tr.flagged:hover td{background:#fee2e2}
         " at " + refiExtRateWords(t, r.rate) + " from " + fmtDateUS(t.date) + (r.payDown > 0.5 ? "; paid down " + fmtMoney(r.payDown) : "; no pay-down") +
         (r.penalty.amount > 0 ? "; penalty " + fmtMoney(r.penalty.amount) + (r.penalty.assumed ? " (assumed)" : "") : "") + (r.fee > 0 ? "; fee " + fmtMoney(r.fee) : "");
     }
+    // (2026-11-02) one loan's extension, laid out: what changes, before → after
+    function refiExtConfirmSection(loan, r, curRate, withLien){
+      const t = r.terms, payWords = r.io >= t.months ? "interest-only" : r.io > 0 ? r.io + " months interest-only, then amortizing over " + Math.round(t.amortMonths / 12) + " years" : "amortizing over " + Math.round(t.amortMonths / 12) + " years";
+      return { title: loanLabel(loan), sub: [withLien ? (isMezz(loan) ? "mezz" : "senior") : "", loan.lenderName || ""].filter(Boolean).join(" · "),
+        rows: [["Maturity", fmtDateUS(r.oldMaturity), fmtDateUS(r.newMaturity), "+" + t.months + " months from " + fmtDateUS(t.date)],
+               ["Rate", fmtPct(curRate != null ? curRate : (compute(loan).derived.currentRate || 0)), fmtPct(r.rate), t.rateHow === "same" ? "" : indexShort(t.index) + " + " + Math.round(t.spreadBps) + " bps"],
+               ["Payment", payWords], ["Pay-down", r.needed ? fmtMoney(r.payDown) : "none"], ["Extended amount", fmtMoney(r.amount)]] };
+    }
     function refiExtSave(loan, opts){
       opts = opts || {};
       if(refiIsPkg(loan)) return refiExtPkgSave(loan, opts);
@@ -13075,8 +13116,11 @@ tr.flagged:hover td{background:#fee2e2}
       const go = () => refiExtCommit(loan, opts.from || "typed");
       if(opts.confirmed) return go();
       const nx = loanExtensions(loan).length;
-      confirmDialog(nx ? "Save another extension?" : "Save the extension?", "Today's loan stays the same record. " + refiExtNote(loan, r) + ". New maturity " + fmtDateUS(r.newMaturity) + "; status Extended. Cash needed " + fmtMoney(r.cash) +
-        " (pay-down + penalty + fee)." + (nx ? " Its " + (nx === 1 ? "saved extension stays" : nx + " saved extensions stay") + "; this one starts when it ends." : "") + " Every change goes in the loan's history, and you can undo it.", go, "Save the extension");
+      confirmDialog(nx ? "Save another extension?" : "Save the extension?", {
+        lead: "Today’s loan stays the same record. From " + fmtDateUS(r.terms.date) + " it has these terms, and its status becomes Extended." + (nx ? " Its " + (nx === 1 ? "saved extension stays" : nx + " saved extensions stay") + "; this one starts when it ends." : ""),
+        sections: [refiExtConfirmSection(loan, r)],
+        total: { label: "Cash needed", value: fmtMoney(r.cash), note: "pay-down " + fmtMoney(r.payDown) + " · penalty " + fmtMoney(r.penalty.amount) + (r.penalty.assumed ? " (assumed)" : "") + " · fee " + fmtMoney(r.fee) },
+        note: "Every change goes in the loan’s history, and you can undo it." }, go, "Save the extension");
       return { ok: true, asked: true };
     }
     function refiExtCommit(loan, from, rIn, quiet){
@@ -13110,7 +13154,10 @@ tr.flagged:hover td{background:#fee2e2}
         return { ok: true };
       };
       if(opts.confirmed) return go();
-      confirmDialog(left ? "Undo the latest extension?" : "Undo the extension?", loanLabel(loan) + " goes back to its terms before " + (left ? "its latest extension" : "the extension") + " (maturity " + fmtDateUS(e.before.maturityDate) + "); its pay-down comes off the schedule." + (left ? " " + (left === 1 ? "The extension before it stays." : "The " + left + " extensions before it stay.") : "") + " The history keeps both.", go, left ? "Undo the latest extension" : "Undo the extension");
+      confirmDialog(left ? "Undo the latest extension?" : "Undo the extension?", {
+        lead: loanLabel(loan) + " goes back to its terms before " + (left ? "its latest extension." : "the extension."),
+        sections: [{ title: loanLabel(loan), sub: loan.lenderName || "", rows: [["Maturity", fmtDateUS(loan.maturityDate), fmtDateUS(e.before.maturityDate)], ["Status", loanStatusOf(loan) || "Extended", e.before.loanStatus || "Active"], ["Pay-down", e.payDown > 0.5 ? fmtMoney(e.payDown) + " comes off the schedule" : "none"]] }],
+        note: (left ? (left === 1 ? "The extension before it stays. " : "The " + left + " extensions before it stay. ") : "") + "The history keeps both." }, go, left ? "Undo the latest extension" : "Undo the extension");
       return { ok: true, asked: true };
     }
     // Save one of the extension's terms (shared with the team, with a history entry).
@@ -13258,10 +13305,13 @@ tr.flagged:hover td{background:#fee2e2}
         return { ok: true, saved: done.length, payDown: P.payDown, cash: P.cash, loans: done };
       };
       if(opts.confirmed) return go();
-      const lines = P.yes.map(x => loanLabel(x.m) + ": " + refiExtNote(x.m, x.ev.r) + "; new maturity " + fmtDateUS(x.ev.r.newMaturity)).join(". ");
-      const skip = P.open.filter(x => x.ev.kind !== "yes").map(x => loanLabel(x.m));
-      confirmDialog("Save " + P.yes.length + " extension" + (P.yes.length === 1 ? "" : "s") + "?", "Each loan stays the same record, with new terms from the date its terms end; status Extended. " + lines + ". Cash needed " + fmtMoney(P.cash) +
-        " in all (pay-downs + penalties + fees)." + (skip.length ? " Not extended now: " + skip.join(", ") + "." : "") + " Every change goes in each loan's history, and each can be undone.", go, "Save the extensions");
+      const skip = P.open.filter(x => x.ev.kind !== "yes").map(x => loanLabel(x.m)), sumOf = (f) => P.yes.reduce((t, x) => t + (f(x.ev.r) || 0), 0);
+      confirmDialog("Save " + P.yes.length + " extension" + (P.yes.length === 1 ? "" : "s") + "?", {
+        lead: "Each loan stays its own record. From the date its terms end it has these terms, and its status becomes Extended.",
+        sections: P.yes.map(x => refiExtConfirmSection(x.m, x.ev.r, x.ev.curRate, true)),
+        list: skip, listTitle: skip.length ? "Not extended now" : "",
+        total: { label: "Cash needed in all", value: fmtMoney(P.cash), note: "pay-downs " + fmtMoney(sumOf(r => r.payDown)) + " · penalties " + fmtMoney(sumOf(r => r.penalty.amount)) + " · fees " + fmtMoney(sumOf(r => r.fee)) },
+        note: "Every change goes in each loan’s history, and each can be undone." }, go, "Save the extensions");
       return { ok: true, asked: true };
     }
     function refiExtPkgUndo(pkg, opts){
@@ -13273,7 +13323,11 @@ tr.flagged:hover td{background:#fee2e2}
         refiDraftsKey = ""; save(); toast("The extensions are undone — " + ms.length + " loan" + (ms.length === 1 ? " is" : "s are") + " back to the terms before them.", "check");
         try{ redrawAll(); }catch(e){} if(state.mode === "refi") renderRefi(pkg); return { ok: true, undone: ms.length }; };
       if(opts.confirmed) return go();
-      confirmDialog("Undo " + ms.length + (many ? " latest" : "") + " extension" + (ms.length === 1 ? "" : "s") + "?", ms.map(loanLabel).join(", ") + " go back to their terms before " + (many ? "their latest extension (the earlier ones stay)" : "the extension") + "; the pay-downs come off the schedules. The history keeps both.", go, "Undo the extensions");
+      confirmDialog("Undo " + ms.length + (many ? " latest" : "") + " extension" + (ms.length === 1 ? "" : "s") + "?", {
+        lead: "Each loan goes back to its terms before " + (many ? "its latest extension (the earlier ones stay)." : "the extension."),
+        sections: ms.map(m => ({ title: loanLabel(m), sub: [isMezz(m) ? "mezz" : "senior", m.lenderName || ""].filter(Boolean).join(" · "),
+          rows: [["Maturity", fmtDateUS(m.maturityDate), fmtDateUS(m.extension.before.maturityDate)], ["Pay-down", m.extension.payDown > 0.5 ? fmtMoney(m.extension.payDown) + " comes off the schedule" : "none"]] })),
+        note: "The history keeps both." }, go, "Undo the extensions");
       return { ok: true, asked: true };
     }
     // a loan's inputs inside a package carry its id, so the screen saves them to that loan's terms
@@ -13871,9 +13925,17 @@ tr.flagged:hover td{background:#fee2e2}
     function refiSaveSummary(loan){
       const olds = refiMembers(loan).filter(l => l && !l._combined), draft = refiDrafts[1];
       const payIn = draft ? Math.max(0, refiPayoff(loan) - (draft.originalAmount || 0)) : 0;   // next stage (F4) — D1: the gap you pay in
-      return { olds, payIn, text: "This replaces " + olds.map(l => "“" + loanLabel(l) + "”").join(" and ") + " with one new " + fmtMoney(draft ? draft.originalAmount : 0) + " loan at " + fmtPct(draft ? compute(draft).derived.currentRate : 0) + ". " +
-        (payIn > 0.5 ? "You pay in " + fmtMoney(payIn) + " (what you owe less the new loan). " : "") +
-        (olds.length === 1 ? "The old loan is" : "The old loans are") + " marked Paid off (refinanced) today and kept on Home under Removed & paid-off loans." };
+      const after = (olds.length === 1 ? "The old loan is" : "The old loans are") + " marked Paid off (refinanced) today and kept on Home under Removed & paid-off loans.";
+      // (2026-11-02) laid out for the confirm window: what it pays off, the new loan, what you pay in, what happens after
+      const dd = draft ? compute(draft).derived : null, yrs = (m) => Math.round((m || 0) / 12) + " years";
+      const body = { lead: "One new loan replaces " + (olds.length === 1 ? "today’s loan." : "the property’s " + olds.length + " loans."),
+        sections: [{ title: "Pays off", rows: olds.map(l => { const d = compute(l).derived; return [loanLabel(l), fmtMoney(d.currentBalance) + " at " + fmtPct(d.currentRate)]; }) }].concat(draft ? [{ title: "The new loan",
+          rows: [["Amount", fmtMoney(draft.originalAmount || 0)], ["Rate", fmtPct(dd.currentRate) + " " + (draft.rateType === "Hybrid ARM" ? "hybrid" : String(draft.rateType || "").toLowerCase())], ["Term", yrs(draft.loanTermMonths)],
+                 ["Payment", (draft.ioMonths || 0) >= (draft.loanTermMonths || Infinity) ? "interest-only for the whole term" : ((draft.ioMonths || 0) > 0 ? draft.ioMonths + " months interest-only, then " : "") + "amortizing over " + yrs(draft.amortizationMonths)],
+                 ["Monthly payment now", fmtMoney(dd.totalDebtService || dd.monthlyPI || 0)], ["First payment", fmtDateUS(draft.firstPaymentDate)]] }] : []),
+        total: payIn > 0.5 ? { label: "You pay in", value: fmtMoney(payIn), note: "what you owe less the new loan" } : null, note: after };
+      return { olds, payIn, body, text: "This replaces " + olds.map(l => "“" + loanLabel(l) + "”").join(" and ") + " with one new " + fmtMoney(draft ? draft.originalAmount : 0) + " loan at " + fmtPct(draft ? compute(draft).derived.currentRate : 0) + ". " +
+        (payIn > 0.5 ? "You pay in " + fmtMoney(payIn) + " (what you owe less the new loan). " : "") + after };
     }
     function saveActiveRefiOption(loan, opts){
       opts = opts || {};
@@ -13881,7 +13943,7 @@ tr.flagged:hover td{background:#fee2e2}
       const sm = refiSaveSummary(loan);
       const go = () => refiCommitSave(loan, opts.from || "typed");
       if(opts.confirmed) return go();
-      confirmDialog("Save the refinance?", sm.text, go, "Save the refinance");
+      confirmDialog("Save the refinance?", sm.body, go, "Save the refinance");
       return { ok:true, asked:true };
     }
     function refiCommitSave(loan, from){
