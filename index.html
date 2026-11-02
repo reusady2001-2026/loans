@@ -12535,7 +12535,8 @@ tr.flagged:hover td{background:#fee2e2}
         '<p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">How &ldquo;'+(X ? 'today&rsquo;s lender allows ' : 'supports ')+fmtMoney(can.maxLoan)+'&rdquo; is worked out</p>'+
         '<div class="space-y-0.5">'+
           fact("NOI", '<strong class="tabular-nums">'+fmtMoney(can.noi)+'</strong> &mdash; '+(parts ? parts.length + ' properties together, each one&rsquo;s NOI and source in <strong>NOI by property</strong> above' : refiNOISourceText(loan))+(boost ? ' (including '+(boost > 0 ? '+' : '&minus;')+fmtMoney(Math.abs(boost))+' from the moves ticked below)' : ''))+
-          fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; '+(X ? 'the extension&rsquo;s rate: '+escapeHtml(tenorShort(opts.index))+' '+fmtPct(liveIndexVal(opts.index) || 0)+' + '+Math.round(opts.spreadBps)+' bps, floating' : 'the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft))+' (never today&rsquo;s loan&rsquo;s rate)')+
+          fact("Rate", '<strong class="tabular-nums">'+fmtPct(can.rate)+'</strong> &mdash; '+(X && opts.rateHow === "same" ? 'the extension&rsquo;s rate: today&rsquo;s loan&rsquo;s own, kept after the date its terms end'   // (2026-11-02) the same terms
+            : (X ? 'the extension&rsquo;s rate: '+escapeHtml(tenorShort(opts.index))+' '+fmtPct(liveIndexVal(opts.index) || 0)+' + '+Math.round(opts.spreadBps)+' bps, floating' : 'the proposed loan&rsquo;s rate: '+refiRateBuild(loan, draft))+' (never today&rsquo;s loan&rsquo;s rate)'))+
           fact("Payment", '<span data-refipay>'+pay+'</span>'+payEdit)+
           fact("Value", refiValueFactHtml(loan, can))+
         '</div>'+
@@ -13354,7 +13355,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div><p class="text-sm font-bold text-slate-800">Can you? '+(pay ? "Yes, with a pay-down" : "Yes")+'</p>'+
           '<p class="text-sm leading-relaxed text-slate-700">'+canLine+'</p></div>'+
         '</div>'+
-        refiCapsBlock(loan, can, null, { ext: true, io: r.io, term: t.months, index: t.index, spreadBps: t.spreadBps, preset: t.preset })+
+        refiCapsBlock(loan, can, null, { ext: true, rateHow: t.rateHow, io: r.io, term: t.months, index: t.index, spreadBps: t.spreadBps, preset: t.preset })+
         '<div class="mt-3 flex items-start gap-3 border-t border-slate-200/70 pt-3">'+mark(yes)+
           '<div class="flex-1"><p class="text-sm font-bold text-slate-800">Should you? '+(yes ? "Yes" : ev.why === "notyet" ? "Not yet" : "No")+'</p>'+
           '<div class="text-sm leading-relaxed text-slate-700">'+sLine+'</div></div>'+

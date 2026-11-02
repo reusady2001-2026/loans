@@ -100,8 +100,10 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   // default the extension keeps today's loan's own rate and asks for no pay-down
   const d0=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id), r=window.LDS_refiExtResult(l), rows=window.LDS_compute(l).rows; let k=-1; rows.forEach((x,i)=>{ if(x.paymentDate<=r.terms.date) k=i; });
     return { how:r.terms.rateHow, pd:r.terms.payDown, rate:r.rate, own:rows[k+1]?rows[k+1].rate:null, payDown:r.payDown, amount:r.amount, owed:r.owed, sel:(document.querySelector('#refiView select[data-refiextf="rateHow"]')||{}).value, idx:!!document.querySelector('#refiView [data-refiextf="spreadBps"]'),
-      can:(document.querySelector('#refiView [data-refipaydown="extend"]')||{}).textContent||'', box:!!document.querySelector('#refiView input[data-refiextf="payDown"]:not(:checked)') }; },ids.q);
+      can:(document.querySelector('#refiView [data-refipaydown="extend"]')||{}).textContent||'', box:!!document.querySelector('#refiView input[data-refiextf="payDown"]:not(:checked)'),
+      rateLine:([...document.querySelectorAll('#refiView [data-refibasisext] .flex.gap-2')].map(d=>d.textContent).find(t=>/^Rate/.test(t))||'') }; },ids.q);
   ok(d0.how==='same'&&d0.sel==='same'&&!d0.idx&&near(d0.rate,d0.own,1e-9), 'by default the extension keeps today’s loan’s own rate ('+(d0.rate*100).toFixed(3)+'%, the rate its own terms give after the date) — no index or spread to type');
+  ok(/today’s loan’s own/.test(d0.rateLine)&&!/floating|never today/.test(d0.rateLine), '“How it’s worked out” says so too ('+d0.rateLine.trim().slice(0,90)+')');
   ok(!d0.pd&&d0.payDown===0&&d0.amount===d0.owed&&/No pay-down/.test(d0.can)&&d0.box, 'and no pay-down: the whole '+Math.round(d0.owed)+' extends (“'+d0.can.trim().slice(0,60)+'…”), the pay-down switch off');
   // Queens Gate's case (2026-10-15): today's lender re-prices it at an index + a spread and asks for a pay-down to its limits
   await extF('rateHow','quote'); await page.check('#refiView input[data-refiextf="payDown"]'); await page.waitForTimeout(1200);
