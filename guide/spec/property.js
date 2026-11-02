@@ -261,7 +261,7 @@ const SPEC = {
               marks: [
                 { sel: "#scopePortfolioBtn", label: "Whole Portfolio", text: "Back to the whole book." },
                 { sel: "#scopeLoanBtn", label: "Specific Property", text: "One property at a time (on now)." },
-                { sel: "#loanSelect", label: "Select a property", text: "Pick a property; its page opens below. Next to a name: “senior + mezz” (two loans), “in a pooled loan” or “no loan yet”." },
+                { sel: "#loanSelect", label: "Select a property", text: "Pick a property; its page opens below. Next to a name: “senior + mezz (combined)” (two loans, together), “in a pooled loan” or “no loan yet”; under a property with two loans, each loan on its own." },
                 { sel: "#addBtn", label: "Add Loan", text: "A new loan on this property. See [Add a loan](add-a-loan)." },
                 { sel: "#addPropBtn", label: "Add Property", text: "A new property, by its name. See [Add a property](add-a-property)." },
                 { sel: "#editBtn", label: "Edit", text: "Opens this property’s profile." },
