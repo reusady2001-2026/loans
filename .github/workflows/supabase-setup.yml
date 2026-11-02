@@ -1,0 +1,73 @@
+name: Update the shared database (Supabase)
+
+# 3.0.0 — every release brings the shared database up to date by itself: this runs supabase/setup.sql on the
+# Supabase project, the same file the operator used to paste into the SQL Editor. Running it again is safe — it only
+# adds what is missing and replaces the functions — and it runs in one transaction: all of it, or none of it.
+#
+# Needs one secret, SUPABASE_DB_URL: the project's "Session pooler" connection string with the database password in
+# it (SUPABASE-SETUP.md, step 9). It is kept in the GitHub environment "supabase", which only workflows running on
+# the release branch may use — not other branches, not pull requests, never the release files. GitHub never shows
+# it again once saved and hides it in the logs. If it is missing or wrong, this run fails and says so; after fixing
+# the secret, re-run the failed run (Actions -> this run -> "Re-run jobs"). When the login fails, the step after it
+# (supabase/db-url-check.js) shows what the secret looks like — the username, address, the password's length and the
+# kinds of characters in it, never the password — names plain mistakes, and tries the login once more to tell a wrong
+# password from Supabase's pooler still holding an older one.
+
+on:
+  push:
+    branches: ["claude/awesome-ptolemy-4s9eez"]   # the release branch (the same one build-windows.yml publishes from)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-setup
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    environment: supabase   # the secret lives here; the environment allows the release branch only
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Check the secret is set
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::The secret SUPABASE_DB_URL isn't set, so the shared database wasn't updated. Add it (SUPABASE-SETUP.md, step 9), then re-run this run."
+            exit 1
+          fi
+
+      - name: Install the PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update -q && sudo apt-get install -y -q postgresql-client; fi
+          psql --version
+
+      - name: Run supabase/setup.sql
+        id: setup
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "30"
+        run: psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f supabase/setup.sql
+
+      - name: If the login failed, say why (the password itself is never shown)
+        if: failure() && steps.setup.outcome == 'failure'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node supabase/db-url-check.js --login
+
+      - name: Check the database has this setup's version
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "30"
+        run: |
+          want=$(grep -oE 'app\.setup_version\(\) returns int language sql immutable as \$\$ select [0-9]+ \$\$' supabase/setup.sql | grep -oE '[0-9]+ \$\$' | grep -oE '[0-9]+')
+          have=$(psql "$SUPABASE_DB_URL" -X -tA -c "select app.setup_version()")
+          echo "setup.sql version $want; the database now reports $have"
+          if [ -z "$want" ] || [ "$have" != "$want" ]; then echo "::error::The database reports setup version '$have', expected '$want'."; exit 1; fi
+          echo "### The shared database is up to date (setup version $have)" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Confirm your email — Loan Debt Service Hub</title>
+<style>
+  :root { --brand: #4c721b; --ink: #1f231f; --muted: #565d56; --line: #e6e8e6; --bg: #f6f8f2; --bad: #b42318; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 48px 16px 64px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .app { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .bad { color: var(--bad); }
+  .tick { display: inline-block; width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #fff; text-align: center; line-height: 28px; margin-right: 8px; font-size: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <div class="app">Loan Debt Service Hub</div>
+    <h1 id="title">Confirming your email…</h1>
+    <p id="text"></p>
+  </div>
+</main>
+<script src="config.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), id = q.get("r") || "", token = q.get("t") || "";
+  var title = document.getElementById("title"), text = document.getElementById("text");
+  function bad(m) { title.textContent = "This link didn't work"; text.textContent = m; text.className = "bad"; }
+  if (!id || !token) { bad("This link isn't complete. Open it again from the email."); return; }
+  var cfg = window.LDS_JOIN || {};
+  fetch(cfg.url, { method: "POST", headers: { "Content-Type": "application/json", apikey: cfg.key || "" },
+                   body: JSON.stringify({ action: "confirm", id: id, token: token }) })
+    .then(function (r) { return r.json().catch(function () { return { ok: false, message: "The server didn't answer properly (" + r.status + "). Open the link again in a minute." }; }); })
+    .catch(function () { return { ok: false, message: "The server can't be reached. Check the connection and open the link again." }; })
+    .then(function (r) {
+      if (!r.ok) { bad(r.message || "This link isn't right. Ask your group's admin."); return; }
+      title.innerHTML = '<span class="tick">&#10003;</span>';
+      title.appendChild(document.createTextNode("Your email is confirmed"));
+      text.textContent = "Go back to Loan Debt Service Hub and sign in with " + r.email + " and your password" +
+                         (r.group_name ? " — " + r.group_name + " opens." : ".") + " You can close this page.";
+    });
+})();
+</script>
+</body>
+</html>
