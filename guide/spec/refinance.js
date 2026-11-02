@@ -454,8 +454,8 @@ module.exports = {
     // ==================================================================================================================
     { id: "extend-with-your-lender", kind: "howto", group: "Refinance", title: "Extend with today’s lender",
       description: "Judge an extension with today’s lender, set its terms, and save it on today’s loan.",
-      intro: "Instead of a new loan, today’s lender may keep the loan on new terms, usually after a pay-down so it fits the lender’s limits. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it. There is no limit: an extended loan can be extended again, as many times as you need.",
-      before: [ "Today’s lender’s quote: the rate, its limits, the penalty and the fee it asks." ],
+      intro: "Instead of a new loan, today’s lender may extend the loan. The extension starts on today’s loan’s own terms: the same rate (a fixed rate stays fixed), the same interest-only and payment, and no pay-down. If today’s lender re-prices it, or asks for a pay-down so it fits its limits, you switch that on. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it. There is no limit: an extended loan can be extended again, as many times as you need.",
+      before: [ "What today’s lender offers: how many months; and, if it changes them, its new rate, its limits, the penalty and the fee." ],
       callouts: [ { kind: "note", text: "One loan extends the same way however many properties it covers: it is sized on all of them. For several loans together (a senior + mezz, or a portfolio), see [Extend several loans together](refinance-together#extend-several-loans-together)." } ],
       sections: [
         { title: "Pick the extension",
@@ -465,9 +465,20 @@ module.exports = {
             { text: "Under **What kind of deal?**, click **Extend with today’s lender**. The verdict, the limits and the schedule below now judge the extension. **New loan** switches back, and each keeps its own figures.",
               go: async (h) => { await pickDeal(h, "extend"); } }
           ] },
-        { title: "Enter today’s lender’s quote",
+        { title: "If today’s lender re-prices it or asks for a pay-down",
+          text: "Skip this when today’s lender keeps today’s terms. Here Queens Gate’s lender re-prices the loan at an index + a spread and asks for a pay-down to fit its limits (made-up figures).",
           steps: [
-            { text: "In the verdict box, under **The extension’s rate**, pick the **Index** and type today’s lender’s **Spread (bps)**." },
+            { text: "In the verdict box, under **The extension’s rate**, pick **Today’s lender’s new quote**. Then pick the **Index** and type today’s lender’s **Spread (bps)**.",
+              go: async (h) => { await pickVal(h, RV + '[data-refiextf="rateHow"]', "quote"); await setVal(h, RV + '[data-refiextf="spreadBps"]', 200); await h.scroll(RV + "[data-refiextpricing]"); },
+              shot: { sel: RV + "[data-refiextpricing]", grow: true },
+              marks: [
+                { sel: RV + '[data-refiextf="rateHow"]', label: "Rate", text: "The same as today (today’s loan’s own), or today’s lender’s new quote." },
+                { sel: RV + '[data-refiextf="index"]', label: "Index", text: "What the new rate floats on." },
+                { sel: RV + '[data-refiextf="spreadBps"]', label: "Spread (bps)", text: "Today’s lender’s quote over the index." },
+                { sel: RV + "[data-refiextrate]", label: "The extension’s rate", text: "Index + spread." }
+              ] },
+            { text: "Under **The extension’s terms**, tick **Today’s lender asks for a pay-down to fit its limits**. Off, the whole amount extends.",
+              go: async (h) => { await h.js(() => { const c = document.querySelector('#refiView input[data-refiextf="payDown"]'); if (c && !c.checked) c.click(); }); await h.wait(1500); await h.calm(); } },
             { text: "In the limits table under it, type today’s lender’s own limits, and untick **Lender uses** on any it doesn’t use. Here 1.11× amortizing and 1.35× interest-only (made-up).",
               go: async (h) => { await setVal(h, RV + '[data-refiextlim="dscr"]', 1.11); await setVal(h, RV + '[data-refiextlim="dscrIO"]', 1.35); },
               shot: { sel: RV + "[data-refibasisext]", grow: true },
@@ -481,16 +492,17 @@ module.exports = {
           tip: "If the group has today’s lender’s preset, pick it in **Lender preset** there instead. It fills in the limits and the penalty that lender usually asks." },
         { title: "Set the terms",
           steps: [
-            { text: "Scroll to **The extension’s terms**. Set **Today’s terms end on**, **Months on the new terms**, **Interest-only** and the amortization after it." },
+            { text: "Scroll to **The extension’s terms**. Set **Today’s terms end on** and **Months on the new terms**. **Interest-only** and the amortization start as today’s loan pays then (the same payment); change them only if today’s lender does. Here Queens Gate’s lender extends it interest-only.",
+              go: async (h) => { await pickVal(h, RV + '[data-refiextf="io"]', "whole"); } },
             { text: "Pick what this lender asks in **Early-payoff penalty — this lender asks**, and set the **Extension fee**. Until you pick, the penalty is assumed to be on the pay-down only.",
               go: async (h) => { await h.scroll(EXTCARD); },
               shot: { sel: EXTCARD, grow: true },
               marks: [
                 { sel: RV + '[data-refiextf="penaltyHow"]', label: "Early-payoff penalty", text: "The full penalty, on the pay-down only, a part, or none." },
                 { sel: RV + '[data-refiextf="feeValue"]', label: "Extension fee", text: "In % of the extended amount, or dollars." },
+                { sel: RV + '[data-refiextf="payDown"]', label: "Asks for a pay-down", text: "Ticked here: the loan is paid down to fit the lender’s limits." },
                 { sel: RV + '[data-refipaydown="extend-card"]', label: "Pay-down needed", text: "So the loan fits the lender’s limits." },
-                { sel: RV + "[data-refiextcash]", label: "Cash needed", text: "Pay-down + penalty + fee." },
-                { sel: RV + "[data-refiextassumed]", label: "Assumed", text: "Confirm the penalty with the lender.", optional: true }
+                { sel: RV + "[data-refiextcash]", label: "Cash needed", text: "Pay-down + penalty + fee." }
               ] }
           ] },
         { title: "Read the verdict and save",
@@ -541,7 +553,10 @@ module.exports = {
             { text: "Click **Undo the extension** in the box. The rate, the maturity, the status and the schedule are put back, and the undo is in the history too.",
               go: async (h) => { await confirmYes(h); },
               // put back what this page changed: today's lender's own limits, and the kind of deal
-              after: async (h) => { await h.js(() => { const b = document.querySelector("#refiView [data-refiextlimreset]"); if (b) b.click(); }); await h.wait(1200); await h.calm(); await pickDeal(h, "new"); } }
+              after: async (h) => { await h.js(() => { const b = document.querySelector("#refiView [data-refiextlimreset]"); if (b) b.click(); }); await h.wait(1200); await h.calm();
+                // and back to today's terms with no pay-down (the extension's start), for the pages after this one
+                await pickVal(h, RV + '[data-refiextf="rateHow"]', "same"); await h.js(() => { const c = document.querySelector('#refiView input[data-refiextf="payDown"]'); if (c && c.checked) c.click(); }); await h.wait(1500); await h.calm();
+                await pickDeal(h, "new"); } }
           ],
           note: "With several extensions, Undo takes back only the latest; the ones before it stay. Click it again to take back the one before." }
       ],
@@ -594,26 +609,26 @@ module.exports = {
           tip: "**What to push** lists each property’s pushes under its name; tick them to see what the package could carry. See [Plan what to push for a refinance](plan-what-to-push).",
           note: "A ticked property with no T12 stops the package: the screen says **No T12 yet** and offers to upload it in Underwriting. A typed NOI never counts for a refinance." },
         { title: "Extend several loans together",
-          text: "Instead of one new loan, each loan stays with today’s lender, on new terms. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
+          text: "Instead of one new loan, each loan stays with today’s lender, by default on its own terms: its own rate and no pay-down. Here K2 Sweetwater’s senior and mezzanine loans, which both mature within 12 months (with a made-up T12).",
           steps: [
             { text: "Open the package’s refinance: the property’s **senior + mezz** entry, or **Create a portfolio…**, then **Refi Calculator**." },
-            { text: "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, what its lender allows, its pay-down, and whether to extend it now.",
+            { text: "Under **What kind of deal?**, click **Extend with today’s lenders**. The verdict lists every loan: what you’ll owe when its terms end, its rate (its own, unless its lender re-prices it), any pay-down, and whether to extend it now.",
               go: openK2Extend,
               shot: { sel: PKG, grow: true },
               marks: [
-                { sel: PKG + " [data-refiextrow] >> nth=1", label: "The mezzanine", text: "Sized behind its senior." },
-                { sel: PKG + " [data-refiextrow] >> nth=1 >> [data-refiextrowpay]", label: "Its pay-down", text: "What it owes less what fits behind the senior." },
+                { sel: PKG + " [data-refiextrow] >> nth=1", label: "The mezzanine", text: "Marked mezz, at its own rate (marked same)." },
+                { sel: PKG + " [data-refiextrow] >> nth=1 >> [data-refiextrowpay]", label: "Its pay-down", text: "None: it extends whole, unless its lender asks for a pay-down." },
                 { sel: PKG + " [data-refiextpkgpay]", label: "In all", text: "The pay-downs of the loans to extend now." },
                 { sel: PKG + " [data-refiextcash]", label: "Cash needed", text: "Pay-downs + penalties + fees.", optional: true }
               ] },
-            { text: "Scroll to each loan’s card and enter its lender’s quote: the **Spread (bps)**, the months, the penalty and the fee. A mezzanine is sized on the limits for the two loans together, less its senior’s extended amount.",
+            { text: "Scroll to each loan’s card and set its months, penalty and fee. Its rate starts as its own: if its lender re-prices it, pick **Today’s lender’s new quote** there and type the **Spread (bps)**; if it asks for a pay-down, tick it. A mezzanine is then sized on the limits for the two loans together, less its senior’s extended amount.",
               go: async (h) => { await h.scroll(MZCARD); },
               shot: { sel: MZCARD + " >> [data-refiextmemberlegs]", grow: true },
               marks: [
                 { sel: MZCARD + " >> [data-refiextahead]", label: "Behind its senior", text: "The senior’s extended amount comes first." },
                 { sel: MZCARD + " >> [data-refiextmemberlegs] li >> nth=0", label: "Each limit", text: "What it leaves for the mezzanine; the smallest binds." }
               ] },
-            { text: "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new rate and term, its pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back.",
+            { text: "Click **Save the extensions** at the top. Each loan stays its own record: from the date its terms end it has the new term (on its own terms unless re-priced), any pay-down is recorded on its own schedule, and its status becomes Extended. **Undo** puts them all back.",
               after: async (h) => { await h.top(); await pickDeal(h, "new"); } }
           ],
           note: "The limits table applies to each loan. A loan that shouldn’t be extended now (**Not yet**, or **Don’t extend now**) is left as it is when you save the others." }
@@ -804,7 +819,7 @@ module.exports = {
                 { sel: VERDICT + " >> text=Proposed loan rate", label: "Proposed loan rate", text: "The new loan’s rate, from the rate boxes below." },
                 { sel: RV + "[data-refimustwhen]", label: "When", text: "What is ending: the rate reset (with the new payment) or the maturity." },
                 { sel: RV + '[data-refipaydown="refi"]', label: "To refinance", text: "The pay-down a new loan needs: what you owe less what the property supports." },
-                { sel: RV + '[data-refipaydown^="extend"]', label: "To extend", text: "The pay-down today’s lender would need at its limits, and the cash it takes. Pick **Extend with today’s lender** to see it or to fill in its terms." },
+                { sel: RV + '[data-refipaydown^="extend"]', label: "To extend", text: "What extending with today’s lender takes: no pay-down unless it asks for one (then the pay-down to fit its limits), and the cash. Pick **Extend with today’s lender** to see it or to fill it in." },
                 { sel: PRICE, label: "Proposed rate", text: "The new loan’s rate type, index and spread. See [Rate & amount](ref-refinance#rate-amount)." },
                 { sel: "#o1_amount", label: "Proposed loan amount", text: "Starts at what the property supports; type a smaller amount to test it. The line under it shows that loan’s coverage, LTV and debt yield." },
                 { sel: VERDICT + " >> text=/^Can you\\?/", label: "Can you?", text: "Stage one: can the property support a loan the size of what you owe? Here no, and why." },
@@ -1040,21 +1055,20 @@ module.exports = {
               shot: "view",
               marks: [
                 { sel: RV + '[data-refideal="extend"]', label: "Extend with today’s lender", text: "Picked." },
-                { sel: "#refiExtSaveBtn", label: "Save the extension", text: "Shown when the answer is to extend. Saves the extension on today’s loan, with the pay-down it needs; it asks first." }
+                { sel: "#refiExtSaveBtn", label: "Save the extension", text: "Shown when the answer is to extend. Saves the extension on today’s loan (with a pay-down only when today’s lender asks for one); it asks first." }
               ] },
             { title: "The extension’s verdict",
-              text: "The same rule as a new loan, applied to the extension: the pay-down it needs to fit today’s lender’s limits, and whether it is worth doing.",
+              text: "The same rule as a new loan, applied to the extension: whether it is worth doing, and, only when today’s lender asks for one, the pay-down to fit its limits. It starts on today’s loan’s own terms.",
               go: async (h) => { await h.scroll(VERDICT); },
               shot: { sel: VERDICT, grow: true },
               marks: [
                 { sel: VERDICT + " >> p >> nth=0", label: "The answer", text: "Extend — pay down $X, or Not yet, or Don’t extend now." },
                 { sel: VERDICT + " >> text=/^You.ll owe on/", label: "You’ll owe on …", text: "What you will owe on the day today’s terms end." },
-                { sel: VERDICT + " >> text=Today’s lender allows", label: "Today’s lender allows", text: "The biggest loan today’s lender’s limits allow at the extension’s rate." },
+                { sel: VERDICT + " >> text=Extended amount", label: "Extended amount", text: "All you will owe: the whole amount extends unless today’s lender asks for a pay-down (then this shows what its limits allow)." },
                 { sel: VERDICT + " >> text=/Today.s loan rate/", label: "Today’s loan rate", text: "With the reset ahead." },
-                { sel: VERDICT + " >> text=Extension rate", label: "Extension rate", text: "The index + today’s lender’s spread." },
-                { sel: RV + '[data-refiextf="index"]', label: "Index", text: "What the extension’s rate floats on: every rate the app has." },
-                { sel: RV + '[data-refiextf="spreadBps"]', label: "Spread (bps)", text: "Today’s lender’s quote over the index." },
-                { sel: VERDICT + " >> text=/^Can you\\?/", label: "Can you?", text: "Yes, with or without a pay-down." },
+                { sel: VERDICT + " >> text=Extension rate", label: "Extension rate", text: "Today’s loan’s own (marked same), or today’s lender’s new quote." },
+                { sel: RV + '[data-refiextf="rateHow"]', label: "Rate", text: "The same as today, or today’s lender’s new quote: an index + a spread, typed here." },
+                { sel: VERDICT + " >> text=/^Can you\\?/", label: "Can you?", text: "Yes; with a pay-down only when today’s lender asks for one." },
                 { sel: RV + '[data-refipaydown="extend"]', label: "The pay-down", text: "What you will owe less what the lender’s limits allow, and which limit sets it.", optional: true },
                 { sel: RV + "[data-refibasisext]", label: "Today’s lender’s limits", text: "The limits table for the extension, kept apart from a new loan’s. See the next picture." },
                 { sel: VERDICT + " >> text=/^Should you\\?/", label: "Should you?", text: "Yes when today’s loan ends or resets within 12 months; Not yet when nothing ends or resets within 12 months; otherwise yes only when the lower rate saves more than the penalty." },
@@ -1078,19 +1092,20 @@ module.exports = {
                 { sel: RV + "[data-refibasisext] [data-refihist]", label: "Change history", text: "Every change to the refinance, these limits included." }
               ] },
             { title: "The extension’s terms",
-              text: "When today’s terms end, how long the new terms run, interest-only, the amortization after it, the lender’s penalty and the fee, and what it all adds up to.",
+              text: "Whether today’s lender asks for a pay-down, when today’s terms end, how long the new terms run, interest-only, the amortization after it, the lender’s penalty and the fee, and what it all adds up to.",
               go: async (h) => { await h.scroll(EXTCARD); },
               shot: { sel: EXTCARD, grow: true },
               marks: [
                 { sel: RV + '[data-refiextf="date"]', label: "Today’s terms end on", text: "Starts at the payment before the rate resets (or the maturity)." },
                 { sel: RV + '[data-refiextf="months"]', label: "Months on the new terms", text: "How long the extension runs." },
-                { sel: RV + '[data-refiextf="io"]', label: "Interest-only", text: "The whole term, the first N months, or none." },
-                { sel: RV + '[data-refiextf="amortMonths"]', label: "Amortization", text: "Months the payment is figured over after interest-only." },
+                { sel: RV + '[data-refiextf="payDown"]', label: "Asks for a pay-down", text: "Off: the whole amount extends. Tick it when today’s lender asks for a pay-down to fit its limits." },
+                { sel: RV + '[data-refiextf="io"]', label: "Interest-only", text: "Starts as today’s loan pays then: the whole term, the first N months, or none." },
+                { sel: RV + '[data-refiextf="amortMonths"]', label: "Amortization", text: "Starts at the months that keep today’s payment." },
                 { sel: RV + '[data-refiextf="penaltyHow"]', label: "Early-payoff penalty", text: "What this lender asks: the full penalty, on the pay-down only, a part, or none. Until you pick, it assumes on the pay-down." },
                 { sel: RV + '[data-refiextf="feeKind"]', label: "Extension fee in", text: "% of the extended amount, or dollars." },
                 { sel: RV + '[data-refiextf="feeValue"]', label: "Extension fee", text: "The fee." },
-                { sel: RV + '[data-refipaydown="extend-card"]', label: "Pay-down needed", text: "What you pay down so the loan fits the lender’s limits." },
-                { sel: EXTCARD + ' dt:text-is("Extended amount")', label: "Extended amount", text: "What you owe after the pay-down." },
+                { sel: RV + '[data-refipaydown="extend-card"]', label: "Pay-down needed", text: "None unless today’s lender asks for a pay-down; then what you pay down so the loan fits its limits." },
+                { sel: EXTCARD + ' dt:text-is("Extended amount")', label: "Extended amount", text: "What you owe, less any pay-down." },
                 { sel: EXTCARD + " dl > div >> nth=2 >> dt", label: "At this amount", text: "The extended loan’s coverage, interest-only coverage, LTV and debt yield." },
                 { sel: EXTCARD + ' dt:text-is("Early-payoff penalty")', label: "Penalty", text: "In dollars, how it was worked out, and the full penalty today." },
                 { sel: RV + "[data-refiextassumed]", label: "Assumed", text: "Until you pick what this lender asks, the penalty is assumed to be on the pay-down only. Confirm it with the lender.", optional: true },
@@ -1129,7 +1144,7 @@ module.exports = {
               shot: { sel: RV + "[data-refiextsched]", grow: true },
               marks: [
                 { sel: RV + "[data-refiextsched] h3", label: "From today to …", text: "The whole schedule with the extension in place." },
-                { sel: RV + "[data-schedpaid]", label: "Paid down", text: "The pay-down, as a principal payment." },
+                { sel: RV + "[data-schedpaid]", label: "Paid down", text: "A pay-down, as a principal payment (only when today’s lender asks for one).", optional: true },
                 { sel: RV + "[data-schedext]", label: "Extension starts", text: "The first payment on the new terms." },
                 { sel: RV + "[data-schedext-row] >> nth=1", label: "Extension months", text: "Shaded: the new rate and terms." }
               ] },
@@ -1194,7 +1209,7 @@ module.exports = {
               shot: { sel: MZCARD, grow: true },
               marks: [
                 { sel: MZCARD + " >> summary", label: "The loan", text: "Its name, its lender and its verdict. Click to fold it." },
-                { sel: MZCARD + ' >> [data-refiextf="spreadBps"]', label: "Its lender’s spread", text: "Each lender quotes its own rate." },
+                { sel: MZCARD + ' >> [data-refiextf="rateHow"]', label: "Its rate", text: "Its own (here the mezzanine’s), unless its lender re-prices it: then an index + its lender’s spread." },
                 { sel: MZCARD + " >> [data-refiextmemberlegs] p >> nth=0", label: "Secured by", text: "Its property (or properties), their NOI and value, and the extension’s rate." },
                 { sel: MZCARD + " >> [data-refiextahead]", label: "Behind its senior", text: "A mezzanine: the limits apply to the two together, less the senior’s extended amount." },
                 { sel: MZCARD + " >> [data-refiextmemberlegs] li >> nth=0", label: "Each limit", text: "What each limit leaves for this loan; the smallest binds." },
