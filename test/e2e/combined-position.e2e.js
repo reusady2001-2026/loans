@@ -8,10 +8,11 @@
       the rate is each loan's rate weighted by what it owes; months before the mezz started count the senior only
    B  after both loans are extended (their own terms), every month before the extension still shows the combined rate
       and the combined interest — never the senior's alone
-   C  the switch on the page: Combined position · Senior loan only · Mezz loan only, and back; the dropdown lists each
-      loan under its property, and picking the property again brings back the combined position
+   C  "just put one button ... that will, if pressed, take the combined position instead of one loan": in Combined
+      position, under the loans; from a loan's page it brings back the combined position (no line above the tiles); the
+      dropdown lists each loan under its property, and picking the property again brings back the combined position
    D  Close from a combined refinance goes back to the combined position (it used to switch to the senior)
-   E  a property with one loan has no switch
+   E  a property with one loan has no such button
    Run: GN=/opt/node22/lib/node_modules LDS_CLOUD_OFF=1 xvfb-run -a /opt/node22/bin/node test/e2e/combined-position.e2e.js */
 const path = require('path');
 const APP = path.resolve(__dirname, '..', '..');
@@ -71,27 +72,28 @@ const LOANS = [
   ok(ext === 2 && b.extRows >= 3, 'B  both loans extended 3 months on their own terms; the combined schedule has the extension’s months (' + b.extRows + ')');
   ok(b.worst < 0.01 && b.rateWorst < 1e-9 && b.seniorRateRows === 0, 'B  every month before the extension still shows the combined rate and interest — never the senior’s alone');
 
-  // ---- C: the switch, and the dropdown ----
-  const sw = () => page.evaluate(() => ({ btns: [...document.querySelectorAll('#stackSwitch [data-stackpick]')].map(b => b.textContent.trim().slice(0, 24) + (b.getAttribute('aria-pressed') === 'true' ? '*' : '')),
-    id: (window.LDS_activeLoan() || {})._id, sel: document.getElementById('loanSelect').value, rate: (document.querySelector('#scheduleBody tr[data-schedrow] td:nth-child(5)') || {}).textContent || '' }));
+  // ---- C: the Combined position button, and the dropdown ----
+  const sw = () => page.evaluate(() => { const b = document.querySelector('#profileBody [data-combojump]');
+    return { btn: !!b, lit: !!b && /this view/.test(b.textContent), top: !!document.getElementById('stackSwitch'),
+      id: (window.LDS_activeLoan() || {})._id, sel: document.getElementById('loanSelect').value, rate: (document.querySelector('#scheduleBody tr[data-schedrow] td:nth-child(5)') || {}).textContent || '' }; });
   let c = await sw();
-  ok(c.btns.length === 3 && /^Combined position.*\*$/.test(c.btns[0]) && /^Senior loan only/.test(c.btns[1]) && /^Mezz loan only/.test(c.btns[2]), 'C  the switch: ' + c.btns.join(' | '));
-  await page.click('#stackSwitch [data-stackpick="ln_sr"]'); await page.waitForTimeout(900); c = await sw();
-  ok(c.id === 'ln_sr' && c.sel === 'loan:ln_sr' && /7\.69/.test(c.rate) && /\*$/.test(c.btns[1]), 'C  Senior loan only: the senior’s page and schedule (' + c.rate.trim() + '), the dropdown on its own entry');
-  await page.click('#stackSwitch [data-stackpick="' + comboId + '"]'); await page.waitForTimeout(900); c = await sw();
-  ok(c.id === comboId && c.sel === comboId && /^Combined position.*\*$/.test(c.btns[0]), 'C  …and back to the combined position in one click');
+  ok(c.btn && c.lit && !c.top, 'C  in Combined position, under the loans: one Combined position button (lit: this view); no line above the tiles');
+  await page.click('#profileBody [data-loanjump="ln_sr"]'); await page.waitForTimeout(900); c = await sw();
+  ok(c.id === 'ln_sr' && c.sel === 'loan:ln_sr' && /7\.69/.test(c.rate) && c.btn && !c.lit, 'C  clicking the senior: its own page and schedule (' + c.rate.trim() + '), the dropdown on its own entry, the button still there');
+  await page.click('#profileBody [data-combojump]'); await page.waitForTimeout(900); c = await sw();
+  ok(c.id === comboId && c.sel === comboId && c.lit, 'C  pressing Combined position brings back the loans together in one click');
   const opts = await page.evaluate(() => [...document.getElementById('loanSelect').options].map(o => o.value));
   const i0 = opts.indexOf(comboId);
   ok(i0 >= 0 && opts[i0 + 1] === 'loan:ln_sr' && opts[i0 + 2] === 'loan:ln_mz', 'C  the dropdown lists the property (combined), then each of its loans on its own');
   await pick('loan:ln_mz'); c = await sw();
   ok(c.id === 'ln_mz' && c.sel === 'loan:ln_mz' && /13\.5/.test(c.rate), 'C  picking the mezz in the dropdown: its own page (' + c.rate.trim() + ')');
   await pick(comboId); c = await sw();
-  ok(c.id === comboId && /^Combined position.*\*$/.test(c.btns[0]), 'C  picking the property again brings back the combined position');
+  ok(c.id === comboId && c.lit, 'C  picking the property again brings back the combined position');
 
   // ---- E: one loan, no switch ----
   await pick('ln_elm');
-  const e = await page.evaluate(() => ({ id: (window.LDS_activeLoan() || {})._id, hidden: document.getElementById('stackSwitch').hidden }));
-  ok(e.id === 'ln_elm' && e.hidden, 'E  a property with one loan: no switch');
+  const e = await page.evaluate(() => ({ id: (window.LDS_activeLoan() || {})._id, btn: !!document.querySelector('[data-combojump]') }));
+  ok(e.id === 'ln_elm' && !e.btn, 'E  a property with one loan: no Combined position button');
 
   ok(s.errors.length === 0, 'no page errors' + (s.errors.length ? ': ' + s.errors.join(' | ') : ''));
   await s.app.close();

@@ -874,7 +874,6 @@
       <!-- ===================== LOAN VIEW (read-only) ===================== -->
       <section id="loanView" class="space-y-8" hidden>
         <!-- KPI cards -->
-        <div id="stackSwitch" hidden></div>
         <div id="kpiGrid" class="stagger grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
         <!-- Floating-rate monthly re-pricing notice -->
@@ -3659,7 +3658,6 @@
       renderSelect();
       const hasLoans = loans.length > 0;
       const loan = getLoan(state.activeId);
-      renderStackSwitch(state.mode === "view" ? loan : null);
 
       dom.editBtn.disabled = !loan || state.mode!=="view";      // 2.9.4 — Edit edits the PROPERTY's info (works for a combined position too)
       dom.removeBtn.disabled = !loan || state.mode!=="view";    // 2.9.4 — Remove ARCHIVES the property (works for a combined position too)
@@ -9921,23 +9919,6 @@ tr.flagged:hover td{background:#fee2e2}
       if(typeof id === "string" && id.slice(0,5) === "prop:"){ setMode("prop"); return; }   // 2.9.7 (#3)
       if(loans.length) setMode("view"); else setMode("empty");
     }
-    // (2026-11-02, the operator: "make it so I will be able to pick the combined position... and then I can't select back
-    // the combined position of the property") — on a property with several loans: the combined position, or one loan
-    function renderStackSwitch(loan){
-      const box = el("stackSwitch"); if(!box) return;
-      const p = loan ? opProperties().find(q => q.key === propertyKey(loan)) : null;
-      if(!p || !p.loans || p.loans.length < 2){ box.hidden = true; box.innerHTML = ""; return; }
-      const combo = positionIdForProperty(p), cur = loan._combined ? combo : loan._id;
-      const btn = (id, label, sub) => '<button type="button" data-stackpick="'+escapeHtml(id)+'" aria-pressed="'+(cur === id)+'" class="px-4 py-2 text-left text-sm font-semibold transition '+(cur === id ? 'bg-brand-600 text-white' : 'bg-white text-brand-700 hover:bg-brand-50')+'">'+label+(sub ? '<span class="block text-[10px] font-normal '+(cur === id ? 'text-white/80' : 'text-slate-500')+'">'+sub+'</span>' : '')+'</button>';
-      box.innerHTML = '<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/50 px-4 py-2.5" data-stackswitch>'+
-        '<span class="text-[11px] font-bold uppercase tracking-wider text-brand-700">'+escapeHtml(p.name)+' &middot; showing</span>'+
-        '<div class="inline-flex flex-wrap divide-x divide-brand-200 overflow-hidden rounded-lg border border-brand-300">'+
-          btn(combo, "Combined position", p.loans.length + " loans together")+
-          p.loans.map(l => btn(l._id, (isMezz(l) ? "Mezz" : "Senior")+" loan only", escapeHtml(l.lenderName || ""))).join("")+
-        '</div></div>';
-      box.hidden = false;
-      box.querySelectorAll("[data-stackpick]").forEach(b => b.addEventListener("click", () => { if(b.getAttribute("data-stackpick") !== cur) selectLoan(b.getAttribute("data-stackpick")); }));
-    }
     function propViewKey(){ const id = state.activeId; return (typeof id === "string" && id.slice(0,5) === "prop:") ? id.slice(5) : ""; }
 
     function startAdd(prefillName){
@@ -11589,11 +11570,17 @@ tr.flagged:hover td{background:#fee2e2}
         '</div>';
       };
       const stat = (label, val, strong) => '<div class="flex items-baseline justify-between gap-3 py-1"><dt class="text-xs text-slate-500">'+label+'</dt><dd class="text-sm '+(strong ? "font-bold" : "font-semibold")+' text-slate-900 tabular-nums">'+val+'</dd></div>';
+      // (2026-11-02, the operator: "just put one button... that will, if pressed, take the combined position instead of
+      // one loan") — under the loans: the two together, from one loan's page (lit when that is the page you are on)
+      const onCombo = !!loan._combined, comboId = "combo:" + propertyKey(sr);
+      const comboBtn = '<button type="button" data-loanjump="'+escapeHtml(comboId)+'" data-combojump class="flex w-full items-center justify-between gap-3 rounded-lg border-2 px-3 py-2 text-left transition '+(onCombo ? 'border-brand-400 bg-brand-100' : 'border-brand-300 bg-white hover:bg-brand-50')+'">'+
+        '<span class="text-sm font-bold text-brand-800">Combined position'+(onCombo ? ' <span class="text-[10px] font-bold uppercase text-brand-600">this view</span>' : '')+'<span class="block text-[11px] font-normal text-slate-500">the '+list.length+' loans together</span></span>'+
+        '<span class="shrink-0 text-right"><span class="block text-sm font-bold tabular-nums text-slate-900">'+fmtMoney(cp.balTot)+'</span><span class="block text-[11px] text-slate-500 tabular-nums">'+fmtPct(cp.blended)+'</span></span></button>';
       return '<section class="mb-5 rounded-xl border-2 border-brand-200 bg-brand-50/40 px-4 py-3.5">'+
         '<h3 class="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-700"><span class="h-3 w-1 rounded-full bg-brand-500"></span>Combined position &middot; this property</h3>'+
-        '<p class="mb-3 text-[11px] text-slate-500">'+list.length+' loans on '+escapeHtml(sr.propertyName || loanLabel(sr))+' &mdash; analysed together (the mezzanine sits behind the senior). Click a loan to view or edit it.</p>'+
+        '<p class="mb-3 text-[11px] text-slate-500">'+list.length+' loans on '+escapeHtml(sr.propertyName || loanLabel(sr))+' &mdash; analysed together (the mezzanine sits behind the senior). Click a loan to view only that loan, or Combined position for the loans together.</p>'+
         '<div class="grid gap-3 lg:grid-cols-2">'+
-          '<div class="space-y-1.5">'+list.map(loanRow).join("")+'</div>'+
+          '<div class="space-y-1.5">'+list.map(loanRow).join("")+comboBtn+'</div>'+
           '<dl class="rounded-lg border border-brand-200 bg-white px-3 py-2">'+
             stat("Combined balance", fmtMoney(cp.balTot), true)+
             stat("Blended rate", fmtPct(cp.blended))+
