@@ -1384,8 +1384,10 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
 - **Always able to pick the combined position (same build).** "Make it so I will be able to pick the combined position…
   I can't select back the combined position of the property."
   - **Close** from a combined refinance goes back to the combined position (it used to switch to the senior alone).
-  - **A switch** above the cards of a property with several loans: **Combined position · Senior loan only · Mezz loan
-    only** (`#stackSwitch`, `data-stackpick`).
+  - **One Combined position button** in the Combined position panel, under the loans (`data-combojump`, the operator:
+    "just put one button where I just gave you the picture that will, if pressed, take the combined position instead of
+    one loan"): lit ("this view") on the combined page; from a loan's page it brings back the loans together. (A
+    "Showing" line above the cards was tried first and taken out at the operator's word.)
   - **The dropdown** lists each loan under its property ("↳ Senior loan only · lender", value `loan:<id>`), so the property's
     own entry — the combined position — can always be picked again.
   - **Test:** `test/e2e/combined-position.e2e.js` (16 checks).

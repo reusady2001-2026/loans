@@ -336,18 +336,12 @@ const SPEC = {
                 Object.assign(TILE(4), { label: "Amort / Loan Term", text: "Each loan’s own, named." }),
                 Object.assign(TILE(7), { label: "Rate Type", text: "Each loan’s type, and the combined rate." })
               ] },
-            { text: "Above the tiles, **Showing** switches between the two loans together and one loan only. **Combined position** always brings back the two together.",
-              shot: "#stackSwitch",
-              marks: [
-                { sel: "#stackSwitch [data-stackpick]", nth: 0, label: "Combined position", text: "The two loans together (on now)." },
-                { sel: "#stackSwitch [data-stackpick]", nth: 1, label: "Senior loan only", text: "Only the senior loan’s page." },
-                { sel: "#stackSwitch [data-stackpick]", nth: 2, label: "Mezz loan only", text: "Only the mezz loan’s page." }
-              ] },
-            { text: "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together.",
+            { text: "Scroll down to **Combined position**, at the top of the Loan Record: each loan, and the two together. Click a loan to see only that loan; **Combined position**, under the loans, brings back the two together.",
               shot: COMBINED,
               marks: [
                 { sel: "[data-loanjump]", nth: 0, label: "The senior loan", text: "Click to open only this loan’s page." },
                 { sel: "[data-loanjump]", nth: 1, label: "The mezz loan", text: "Click to open only the mezz." },
+                { sel: "[data-combojump]", label: "Combined position", text: "The two loans together (lit: the page you are on). From one loan’s page, it brings them back." },
                 { sel: "[data-loanedit]", nth: 1, label: "Edit this loan", text: "Opens this one loan’s form." },
                 { sel: "[data-loanremove]", nth: 1, label: "Remove this loan", text: "Removes only this loan (it asks first)." }
               ] }
@@ -714,15 +708,6 @@ const SPEC = {
         { title: "Two loans on one property",
           text: "A property with a senior and a mezzanine loan opens as one page that adds them together (here the sample Avalon White Plains): its tiles and its payment schedule are the two loans added month by month, each on its own terms. See [Add a senior and a mezzanine loan](add-a-loan-stack).",
           views: [
-            { title: "Showing: together, or one loan",
-              text: "Above the tiles: the two loans together, or one of them only.",
-              go: async (h) => { await pick(h, "Avalon White Plains"); },
-              shot: "#stackSwitch",
-              marks: [
-                { sel: "#stackSwitch [data-stackpick]", nth: 0, label: "Combined position", text: "The two loans together: tiles and schedule added month by month." },
-                { sel: "#stackSwitch [data-stackpick]", nth: 1, label: "Senior loan only", text: "Only the senior loan’s page." },
-                { sel: "#stackSwitch [data-stackpick]", nth: 2, label: "Mezz loan only", text: "Only the mezz loan’s page." }
-              ] },
             { title: "Combined position",
               text: "At the top of the Loan Record: each loan, and the stack together.",
               go: async (h) => { await pick(h, "Avalon White Plains"); },
@@ -730,6 +715,7 @@ const SPEC = {
               marks: [
                 { sel: "[data-loanjump]", nth: 0, label: "The senior loan", text: "Click to open only this loan’s page." },
                 { sel: "[data-loanjump]", nth: 1, label: "The mezz loan", text: "Click to open only the mezz." },
+                { sel: "[data-combojump]", label: "Combined position", text: "The loans together: tiles and schedule added month by month. From one loan’s page, it brings them back." },
                 { sel: "[data-loanedit]", nth: 0, label: "Edit this loan", text: "Opens this loan’s form." },
                 { sel: "[data-loanremove]", nth: 0, label: "Remove this loan", text: "Removes only this loan (it asks first)." },
                 { sel: '#profileBody dt:has-text("Combined balance")', label: "Combined balance", text: "Both balances." },
