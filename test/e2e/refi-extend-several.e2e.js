@@ -65,7 +65,7 @@ const BOOK = { loans: [
   ok(a.kind === 'yes' && /extend/.test(a.verdict || '') && a.save, 'A  …it matures within 12 months: “Extend with today’s lender”, with Save (' + a.kind + ')');
   await page.click('#refiExtSaveBtn'); await confirm(); await page.waitForTimeout(1200);
   let after = await loanOf('ln_pool');
-  ok(after.ext && after.status === 'Extended' && after.maturity > before.maturity && after.rateType === 'Floating', 'A  Save: the same loan record is Extended, maturing ' + after.maturity + ' (was ' + before.maturity + ')');
+  ok(after.ext && after.status === 'Extended' && after.maturity > before.maturity && after.rateType === 'Fixed', 'A  Save: the same loan record is Extended, maturing ' + after.maturity + ' (was ' + before.maturity + '), on its own terms (still ' + after.rateType + ')');
   await openRefiOf('ln_pool');
   ok(await page.evaluate(() => !!document.querySelector('#refiView [data-refiext="saved"]')), 'A  its refinance shows the saved extension, with Undo');
   await page.click('#refiView [data-refiextundo]'); await confirm(); await page.waitForTimeout(1200);
@@ -80,7 +80,18 @@ const BOOK = { loans: [
   ok(/today’s lenders/.test(b.extTxt) && !b.extOff, 'B  “Extend with today’s lenders” can be picked');
   await pickDeal('extend');
   const pk = () => page.evaluate(() => window.LDS_refiExtPkg(window.LDS_activeLoan()));
+  // (2026-11-02, the operator: the mezz was re-priced at SOFR + 200 and asked for a pay-down — "It should just extend the
+  // loan with the same rate. There shouldn't be any paydown") — by default each loan keeps its own rate, no pay-down
   let X = await pk();
+  { const s0 = X.list.find(x => x.id === 'ln_sr'), m0 = X.list.find(x => x.id === 'ln_mz');
+    const mzRow = await page.evaluate(() => ((document.querySelector('#refiView [data-refiextrow="ln_mz"]') || {}).textContent || '').replace(/\s+/g, ' '));
+    ok(m0 && m0.r && near(m0.r.rate, 0.09, 1e-9) && s0 && s0.r && near(s0.r.rate, 0.05, 1e-9), 'B  by default each loan extends at its own rate: the mezz 9.00% (fixed), the senior 5.00% — not SOFR + 200 (' + (m0 && m0.r && (m0.r.rate * 100).toFixed(3)) + '%)');
+    ok(m0.r.payDown === 0 && s0.r.payDown === 0 && X.payDown === 0 && /mezz/.test(mzRow) && /9\.00+% same/.test(mzRow), 'B  …and no pay-down: the mezz (marked mezz) extends whole (' + mzRow.trim().slice(0, 90) + '…)'); }
+  // today's lenders re-price and ask for a pay-down to their limits (as before): the switches on each loan
+  for (const id of ['ln_sr', 'ln_mz']) {
+    await page.selectOption('#refiView select[data-refiextm="' + id + '"][data-refiextf="rateHow"]', 'quote'); await page.dispatchEvent('#refiView select[data-refiextm="' + id + '"][data-refiextf="rateHow"]', 'change'); await page.waitForTimeout(1500);
+    await page.check('#refiView input[data-refiextm="' + id + '"][data-refiextf="payDown"]'); await page.waitForTimeout(1500); }
+  X = await pk();
   const sr = X.list.find(x => x.id === 'ln_sr'), mz = X.list.find(x => x.id === 'ln_mz');
   b = await page.evaluate(() => ({ rows: [...document.querySelectorAll('#refiView [data-refiextrow]')].map(r => r.getAttribute('data-refiextrow')), ahead: (document.querySelector('#refiView [data-refiextmember="ln_mz"] [data-refiextahead]') || {}).textContent || '',
     srAhead: !!document.querySelector('#refiView [data-refiextmember="ln_sr"] [data-refiextahead]'), cards: document.querySelectorAll('#refiView [data-refiextmember]').length, limits: !!document.querySelector('#refiView [data-refiextpkglimits]') }));

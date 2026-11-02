@@ -1341,6 +1341,33 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   - **Tests:** `test/e2e/refi-extend-again.e2e.js` (23 checks): one loan extended three times (the schedule runs each
     in turn, one balance, each on its own rate), Undo one at a time, the date guard, the assistant, and a senior +
     mezz extended twice together.
+- **An extension keeps today's terms (after 3.1.1, TEST build — the operator, 2026-11-02).** Testing a senior + mezz,
+  the mezz's extension was re-priced from its fixed 13.5% to SOFR + 200 bps (5.893%) and asked for a pay-down: "The
+  whole point of extending with today's lender is to remain with the same terms… It should just extend the loan with
+  the same rate. There shouldn't be any paydown." The cause was the design above (D7, 2026-10-15, from Queens Gate:
+  today's lender re-quotes at an index + a spread and sizes the loan to its limits): every extension became Floating at
+  SOFR + 200 (`REFI_DEFAULT_FLOAT_BPS`) unless the loan already floated, and was sized on the new loan's 1.25× / 75% / 7%
+  — a mezz, behind its senior on the two loans together, almost never fits those. The operator chose: "Same terms;
+  quote optional".
+  - **The rate:** `refiExtTerms(...).rateHow` is `"same"` by default — the loan's own rate after the date
+    (`refiExtSame`: the next row's rate, else `rateForMonth`); saving keeps the loan's own rate fields (a fixed rate stays
+    fixed; an ARM keeps resetting by its own terms). **The extension's rate** box has **Rate: The same as today /
+    Today's lender's new quote**; the quote is the index + spread, as before (`rateHow: "quote"`, the record then
+    Floating).
+  - **The pay-down:** none unless **Today's lender asks for a pay-down to fit its limits** is ticked
+    (`refiExtTerms(...).payDown`, `RefiExtend.extend({ noPayDown })`). Off, the whole amount extends; what the limits
+    would allow is still worked out and shown. "Can't judge yet" (no NOI) only matters when the pay-down is on.
+  - **Interest-only and amortization** start as the loan pays on the date (`refiExtSame`): interest-only for the whole
+    extension when it pays interest-only to the end, the IO months left, or none; and the amortization that keeps the
+    same payment (the payment before and after the extension starts is the same).
+  - **A package:** each loan's own switches (`ext.members[<loan id>].rateHow / payDown`); the rate column shows each
+    loan's rate (marked same).
+  - **The assistant:** `set_extension` takes `rate` ("same" / "quote"; an index or spread makes it a quote) and `payDown`.
+  - **Tests:** `refi-extend.test.js` (23: no pay-down); `refi-extend.e2e.js` checks the default (Queens Gate's own rate,
+    no pay-down), then its case with the quote and the pay-down switched on; `refi-extend-several.e2e.js` checks the
+    senior + mezz default (each at its own rate, the mezz 9% fixed, no pay-down); `refi-extend-again.e2e.js` checks the
+    same payment across the extension. The Guide's "Extend with today's lender" starts from the same terms and shows the
+    two switches.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared

@@ -51,6 +51,10 @@ ok(P({ how: 'none' }).amount === 0 && P(null).assumed && P(null).how === 'paydow
   ok(full.maxLoan === 0 && Object.keys(full.legs).every(k => full.legs[k] === null || full.legs[k] >= 0), 'a senior that already uses every limit leaves $0 for the mezzanine, never a negative amount');
   const solo = RX.size({ noi: NOI, value: VALUE, rate: RATE, amortMonths: 360, limits: lim, off: [], ahead: null });
   ok(near(solo.maxLoan, Math.min(DSCR, IO, LTV, DY)) && solo.ahead === null, 'no debt ahead: the same as before');
+  // (2026-11-02) the lender extends the whole amount on the loan's own terms: no pay-down, the limits still worked out
+  const np = RX.extend({ owed: 15000000, noi: NOI, value: VALUE, rate: mzR, amortMonths: 360, limits: lim, off: [], penaltyFull: 500000, penalty: null, fee: { kind: 'pct', value: 0.005 }, ahead: ahead, noPayDown: true });
+  ok(np.payDown === 0 && !np.needed && np.amount === 15000000 && near(np.allowed, m.maxLoan) && np.penalty.amount === 0 && near(np.fee, 75000) && near(np.cash, 75000),
+     'no pay-down: the whole $15M extends, no penalty on a pay-down, the fee on the whole amount; what the limits allow is still shown');
 }
 
 // D1 — must be dealt with

@@ -68,6 +68,8 @@ const LOANS = [
   const after = await page.evaluate(() => { const r = window.LDS_refiRec(window.LDS_activeLoan()); return r && r.ext && r.ext.date; });
   const vd = (await verdict()).date;
   ok(after !== a1.dates[0] && vd === v2.date, 'A  a date on or before the saved extension’s (' + a1.dates[0] + ') is refused: not kept, the next one still starts ' + vd);
+  // the second at today's lender's new quote (the first kept the loan's own 4.90%, the default since 2026-11-02)
+  await page.selectOption('#refiView select:not([data-refiextm])[data-refiextf="rateHow"]', 'quote'); await page.dispatchEvent('#refiView select:not([data-refiextm])[data-refiextf="rateHow"]', 'change'); await page.waitForTimeout(1500);
   await setExt('spreadBps', 400);
   v2 = await verdict();
   await saveOne();
@@ -85,10 +87,12 @@ const LOANS = [
     let gap = 0; for (let i = 1; i < rows.length; i++) gap = Math.max(gap, Math.abs(rows[i].startingBalance - rows[i - 1].endingBalance));
     const starts = rows.map((r, i) => r.extStart ? i : -1).filter(i => i >= 0);
     return { starts: starts, gap: gap, last: rows[rows.length - 1].endingBalance, n: rows.length, nan: rows.some(r => !isFinite(r.payment) || !isFinite(r.endingBalance)),
+      p0: starts.length ? rows[starts[0] - 1].payment : null, p1: starts.length ? rows[starts[0]].payment : null, t0: starts.length ? rows[starts[0] - 1].type : '', t1: starts.length ? rows[starts[0]].type : '',
       r1: starts.length > 1 ? rows[starts[0]].rate : null, r2: starts.length > 1 ? rows[starts[1]].rate : null, r3: starts.length > 2 ? rows[starts[2]].rate : null, mat: c.derived.maturityDate }; });
   ok(sc.starts.length === 3 && sc.starts[0] < sc.starts[1] && sc.starts[1] < sc.starts[2], 'A  the schedule marks where each extension starts (rows ' + sc.starts.map(i => i + 1).join(', ') + ')');
+  ok(sc.t0 === 'amort' && sc.t1 === 'amort' && near(sc.p0, sc.p1, 15), 'A  the first extension keeps the loan’s own terms: amortizing, the same payment before and after it starts (' + (sc.p0 || 0).toFixed(2) + ' → ' + (sc.p1 || 0).toFixed(2) + ')');
   ok(sc.gap < 0.01 && Math.abs(sc.last) < 0.01 && !sc.nan, 'A  …one balance throughout (largest gap ' + sc.gap.toFixed(4) + '), $0 at the end');
-  ok(near(sc.r2 - sc.r1, 400 / 10000 - (a3.spreads[0] / 10000), 0.0005) && near(sc.r3 - sc.r1, (a3.spreads[2] - a3.spreads[0]) / 10000, 0.0005), 'A  …each extension on its own rate (' + [sc.r1, sc.r2, sc.r3].map(r => (r * 100).toFixed(3) + '%').join(' → ') + ')');
+  ok(near(sc.r1, 0.049, 1e-9) && a3.spreads[1] === 400 && a3.spreads[2] === 400 && near(sc.r2, sc.r3, 1e-9) && Math.abs(sc.r2 - sc.r1) > 0.001, 'A  …each extension on its own rate: the first the loan’s own, then today’s lender’s quote (' + [sc.r1, sc.r2, sc.r3].map(r => (r * 100).toFixed(3) + '%').join(' → ') + ')');
   await openRefiOf('ln_elm');
   ui = await page.evaluate(() => ({ rows: document.querySelectorAll('#refiView [data-refiextsavedrow]').length, title: (document.querySelector('#refiView [data-refiext="saved"]') || {}).textContent || '',
     undo: ((document.querySelector('#refiView [data-refiext="saved"] [data-refiextundo]') || {}).textContent || '').trim() }));

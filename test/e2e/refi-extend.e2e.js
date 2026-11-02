@@ -96,7 +96,16 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   const setLim=async(k,v)=>{ await page.fill('#refiView [data-refiextlim="'+k+'"]',String(v)); await page.dispatchEvent('#refiView [data-refiextlim="'+k+'"]','change'); await page.waitForTimeout(900); };
   await setLim('dscr',1.11); await setLim('dscrIO',1.35);
   const extF=async(f,v)=>{ const sel=await page.$('#refiView select[data-refiextf="'+f+'"]'); if(sel) await page.selectOption('#refiView select[data-refiextf="'+f+'"]',String(v)); else await page.fill('#refiView [data-refiextf="'+f+'"]',String(v)); await page.dispatchEvent('#refiView [data-refiextf="'+f+'"]','change'); await page.waitForTimeout(900); };
-  await extF('index','sofr30'); await extF('spreadBps',200); await extF('months',36);
+  // (2026-11-02, the operator: "The whole point of extending with today's lender is to remain with the same terms") — by
+  // default the extension keeps today's loan's own rate and asks for no pay-down
+  const d0=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id), r=window.LDS_refiExtResult(l), rows=window.LDS_compute(l).rows; let k=-1; rows.forEach((x,i)=>{ if(x.paymentDate<=r.terms.date) k=i; });
+    return { how:r.terms.rateHow, pd:r.terms.payDown, rate:r.rate, own:rows[k+1]?rows[k+1].rate:null, payDown:r.payDown, amount:r.amount, owed:r.owed, sel:(document.querySelector('#refiView select[data-refiextf="rateHow"]')||{}).value, idx:!!document.querySelector('#refiView [data-refiextf="spreadBps"]'),
+      can:(document.querySelector('#refiView [data-refipaydown="extend"]')||{}).textContent||'', box:!!document.querySelector('#refiView input[data-refiextf="payDown"]:not(:checked)') }; },ids.q);
+  ok(d0.how==='same'&&d0.sel==='same'&&!d0.idx&&near(d0.rate,d0.own,1e-9), 'by default the extension keeps today’s loan’s own rate ('+(d0.rate*100).toFixed(3)+'%, the rate its own terms give after the date) — no index or spread to type');
+  ok(!d0.pd&&d0.payDown===0&&d0.amount===d0.owed&&/No pay-down/.test(d0.can)&&d0.box, 'and no pay-down: the whole '+Math.round(d0.owed)+' extends (“'+d0.can.trim().slice(0,60)+'…”), the pay-down switch off');
+  // Queens Gate's case (2026-10-15): today's lender re-prices it at an index + a spread and asks for a pay-down to its limits
+  await extF('rateHow','quote'); await page.check('#refiView input[data-refiextf="payDown"]'); await page.waitForTimeout(1200);
+  await extF('index','sofr30'); await extF('spreadBps',200); await extF('months',36); await extF('io','whole');
   const R=()=>page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const r=window.LDS_refiExtResult(l); const c=window.LDS_compute(l);
     return { r, rows:c.rows.map(x=>({d:x.paymentDate,end:x.endingBalance,start:x.startingBalance,type:x.type})), pen:window.LDS_refiPenalty(l),
       pd:(document.querySelector('[data-refipaydown="extend-card"]')||{}).textContent||'', cash:(document.querySelector('[data-refiextcash]')||{}).textContent||'', assumed:!!document.querySelector('[data-refiextassumed]'),
@@ -132,7 +141,7 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   const pure=RefiExtend.extend({ owed, noi:x.r.noi, value:65000000, rate, amortMonths:360, limits:{dscr:1.11,dscrIO:1.35,ltv:0.75,dy:0.07}, off:[], penaltyFull:full, penalty:{how:'paydown'}, fee:{kind:'pct',value:0.005} });
   ok(near(pure.cash,x.r.cash,0.05), 'the screen and refi-extend.js agree on the cash needed');
   const recE=await page.evaluate(async(id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const b=await window.LDS_readAssumptions(window.LDS_refiHomeKey(l)); return b&&b.refi&&b.refi[id]; },ids.q);
-  ok(recE&&recE.deal==='extend'&&recE.ext&&recE.ext.limits&&recE.ext.limits.dscr===1.11&&recE.ext.spreadBps===200&&recE.ext.penalty.how==='paydown', 'the deal and the extension’s terms are kept with the property');
+  ok(recE&&recE.deal==='extend'&&recE.ext&&recE.ext.limits&&recE.ext.limits.dscr===1.11&&recE.ext.spreadBps===200&&recE.ext.rateHow==='quote'&&recE.ext.payDown===true&&recE.ext.penalty.how==='paydown', 'the deal and the extension’s terms are kept with the property');
 
   // ---- D10: save the extension ----
   const before=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); return { loan:JSON.parse(JSON.stringify(l)), rows:JSON.stringify(window.LDS_compute(l).rows.map(r=>[r.paymentDate,r.rate,r.payment,r.endingBalance,r.type])) }; },ids.q);
