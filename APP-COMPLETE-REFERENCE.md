@@ -3,9 +3,11 @@
 *Everything this app is, everything it does, how it was built, what stage 3.0.0 still needs checked, and what
 comes next.*
 
-**Current version:** 3.1.1 — shipped 2026-10-26. The operator tested the TEST build and said "ship it as 3.1.1": extending
-with today's lender on several properties and several loans together, and a new loan's interest-only no longer copied.
-Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
+**Current version:** 3.1.2 — shipped 2026-11-02. The operator tested the TEST build ("I installed it, everything works")
+and said "ship it as 3.1.2": any number of extensions; an extension keeps today's terms (a new quote and a pay-down only
+when today's lender asks); a property's combined position as the sum of its loans, with a Combined position button;
+readable windows. Before that: 3.1.1, shipped 2026-10-26 (extending with today's lender on several properties and several
+loans together, and a new loan's interest-only no longer copied). Before that: 3.1.0, shipped 2026-10-26 (the operator approved the number "3.1.0" and "Yes, ship now", after testing the
 TEST builds of rounds 1–4), and 3.0.0, shipped 2026-10-14.
 **Owner:** BSI (`il.co.bsi.loandebtservice`)
 **Runs on:** Windows desktop — on each computer's own data, or (3.0.0) on one shared database (Supabase) when one is
@@ -1317,7 +1319,7 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
     and they are there even when the answer is "Don't refinance" and the proposal card isn't shown.
   - **Tests:** `test/e2e/refi-new-io.e2e.js` (15 checks): a pooled loan, a senior + mezz, a single all-interest-only
     loan, and a "Don't refinance" loan typed through the new boxes.
-- **Any number of extensions (after 3.1.1, TEST build — the operator, 2026-11-02).** "Put no limit on the number of
+- **Any number of extensions (3.1.2 — the operator, 2026-11-02).** "Put no limit on the number of
   extensions that you can make." Before, a saved extension had to be undone before another could be made.
   - **Stored as a chain:** saving an extension keeps the one before it in `extension.before.extension` (null for the
     first). `loanExtensions(l)` lists them, oldest first. Extensions saved before this change have no
@@ -1341,7 +1343,7 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   - **Tests:** `test/e2e/refi-extend-again.e2e.js` (23 checks): one loan extended three times (the schedule runs each
     in turn, one balance, each on its own rate), Undo one at a time, the date guard, the assistant, and a senior +
     mezz extended twice together.
-- **An extension keeps today's terms (after 3.1.1, TEST build — the operator, 2026-11-02).** Testing a senior + mezz,
+- **An extension keeps today's terms (3.1.2 — the operator, 2026-11-02).** Testing a senior + mezz,
   the mezz's extension was re-priced from its fixed 13.5% to SOFR + 200 bps (5.893%) and asked for a pay-down: "The
   whole point of extending with today's lender is to remain with the same terms… It should just extend the loan with
   the same rate. There shouldn't be any paydown." The cause was the design above (D7, 2026-10-15, from Queens Gate:
@@ -1368,7 +1370,7 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
     senior + mezz default (each at its own rate, the mezz 9% fixed, no pay-down); `refi-extend-again.e2e.js` checks the
     same payment across the extension. The Guide's "Extend with today's lender" starts from the same terms and shows the
     two switches.
-- **A property's combined position is the sum of its loans (after 3.1.1, TEST build — the operator, 2026-11-02).** On a
+- **A property's combined position is the sum of its loans (3.1.2 — the operator, 2026-11-02).** On a
   senior + mezz both extended, the combined schedule showed the senior's rate — and interest at that rate on the combined
   balance — until the extension started. The combined position (`combo:` / `multi:`) was one made-up loan
   (`combinedRefiLoan`: the senior with the total balance and a blended rate); it copied the senior's saved extension, whose
@@ -1429,4 +1431,4 @@ first; the details (mailbox, file matching, what is updated, how a mismatch is r
 
 ---
 
-*Last updated for version 3.1.1 (shipped 2026-10-26).*
+*Last updated for version 3.1.2 (shipped 2026-11-02).*
