@@ -66,7 +66,7 @@ const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
   await dataMenu('restore');
   await page.waitForFunction(()=>{ const m=document.getElementById('confirmModal'); return m&&!m.classList.contains('hidden'); },null,{timeout:8000});
   const ctext=await page.evaluate(()=>document.getElementById('confirmText').textContent);
-  ok(/replaces everything/.test(ctext)&&/property folder/.test(ctext)&&/chat/.test(ctext),'the confirm says it replaces everything — loans, property folders and chats');
+  ok(/replaces everything/.test(ctext)&&/Property folders/i.test(ctext)&&/Chats/i.test(ctext),'the confirm says it replaces everything — loans, property folders and chats');
   await Promise.all([page.waitForEvent('load',{timeout:20000}).catch(()=>{}), confirmOk()]);
   await page.waitForSelector('tr[data-goto]',{timeout:20000,state:'attached'}); await page.waitForTimeout(1200);
   const R=await page.evaluate(async(S)=>{ const l=await window.ldsShell.docList(S.key); const c=await window.ldsShell.chatList({scope:S.key});

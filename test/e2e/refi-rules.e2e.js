@@ -142,7 +142,7 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
   if(hasSave){
     await page.click('#refiSaveBtn'); await page.waitForTimeout(300);
     const ask=await page.evaluate(()=>document.getElementById('confirmText').textContent);
-    ok(/This replaces “M Lofts” with one new/.test(ask)&&/Paid off \(refinanced\)/.test(ask),'Save asks first: "'+ask.slice(0,110)+'…"');
+    ok(/One new loan replaces/.test(ask)&&/Pays off/.test(ask)&&/M Lofts/.test(ask)&&/The new loan/.test(ask)&&/Paid off \(refinanced\)/.test(ask),'Save asks first: "'+ask.slice(0,110)+'…"');
     await page.evaluate(()=>document.getElementById('confirmOk').click()); await page.waitForTimeout(800);
     const R=await page.evaluate((lid)=>{ const old=window.LDS_loans().find(x=>x._id===lid); const nw=window.LDS_loans().filter(x=>x.propertyName==='M Lofts'&&x._id!==lid);
       return { st:old.loanStatus, why:old.paidOffReason, at:old.paidOffAt, n:nw.length, newName:nw[0]&&nw[0].propertyName, key:nw[0]&&window.propertyKey(nw[0])===window.propertyKey(old), hist:(old._history||[]).some(h=>h.new==='Paid off (refinanced)') }; },MID);

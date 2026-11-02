@@ -21,12 +21,13 @@ const fails={n:0}; const ok=(c,m)=>{console.log((c?'  ok   ':'  FAIL ')+m); if(!
     const props=window.opProperties(), loans=window.LDS_loans();
     const stacked=props.find(p=>p.loans.length>=2);
     const vill=loans.find(l=>window.propertyKey(l)===k);
-    return { nOpts:opts.length, nProps:props.length, nLoans:loans.length,
+    return { nOpts:opts.filter(v=>v.slice(0,5)!=='loan:').length, nMember:opts.filter(v=>v.slice(0,5)==='loan:').length, nStackLoans:props.filter(p=>p.loans.length>1).reduce((t,p)=>t+p.loans.length,0), nProps:props.length, nLoans:loans.length,
              label:(document.getElementById('loanCountLabel')||{}).textContent||'',
              stackedCombo: stacked?('combo:'+stacked.key):null, stackedName: stacked?stacked.name:null,
              villagesId: vill?vill._id:null, optsHasCombo: stacked?opts.indexOf('combo:'+stacked.key)>=0:false };
   }, KEY);
   ok(meta.nOpts===meta.nProps, 'the selector lists one option per property ('+meta.nOpts+' options = '+meta.nProps+' properties)');
+  ok(meta.nMember===meta.nStackLoans, '…and under a property with several loans, each of its loans on its own ('+meta.nMember+')');   // (2026-11-02)
   ok(meta.nProps < meta.nLoans, 'fewer than the loan count ('+meta.nProps+' properties < '+meta.nLoans+' loans — senior+mezz collapsed)');
   ok(/propert/i.test(meta.label), 'the count label reads "properties", not "loans" ("'+meta.label.trim()+'")');
   ok(!!meta.stackedCombo && meta.optsHasCombo, 'a stacked property is one option, valued as its combined position'+(meta.stackedName?(' ('+meta.stackedName+')'):''));

@@ -150,7 +150,7 @@ const money=(t)=>{ const m=String(t||'').match(/\$([\d,]+\.\d\d)/); return m?Num
   const exp=x.r;
   await page.click('#refiExtSaveBtn'); await page.waitForTimeout(400);
   const dlg=await page.evaluate(()=>(document.getElementById('confirmText')||{}).textContent||'');
-  ok(/Today's loan stays the same record/.test(dlg)&&/paid down \$/.test(dlg), 'Save the extension asks first ('+dlg.slice(0,90)+'…)');
+  ok(/Today’s loan stays the same record/.test(dlg)&&/Pay-down\$[\d,]+\.\d\d/.test(dlg.replace(/\s+/g,'')), 'Save the extension asks first ('+dlg.slice(0,90)+'…)');
   await page.click('#confirmOk'); await page.waitForTimeout(1200);
   const after=await page.evaluate((id)=>{ const l=window.LDS_loans().find(x=>x._id===id); const c=window.LDS_compute(l); return { l:JSON.parse(JSON.stringify(l)), rows:c.rows.map(r=>({d:r.paymentDate,rate:r.rate,pay:r.payment,end:r.endingBalance,start:r.startingBalance,type:r.type,pd:r.paydown||0,ext:!!r.ext})), d:c.derived }; },ids.q);
   ok(after.l._id===ids.q&&after.l.loanStatus==='Extended'&&after.l.rateType==='Floating'&&after.l.index==='sofr30'&&near(after.l.spread,0.02,1e-9), 'the same loan record: status Extended, rate 30-day SOFR + 200');
