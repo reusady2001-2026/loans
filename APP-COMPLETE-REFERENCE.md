@@ -1254,7 +1254,8 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
   index + spread, the ARM fields cleared, the new term and maturity, status Extended, the pay-down as
   `principalPayments[{id, date, amount, note}]`, and `extension{date, months, ioMonths, amortMonths, lender, index,
   spread, owed, payDown, penalty, fee, cash, rate, at, by, before}` (`before` = the fields it changed). A history entry
-  per field, noted "Extended with <lender>: …". **Undo the extension** restores `before`.
+  per field, noted "Extended with <lender>: …". **Undo the extension** restores `before`. *(After 3.1.1: no limit on
+  the number of extensions; see "Any number of extensions" below.)*
 - **The schedule (`buildSchedule`):** a loan with `extension` runs on its `before` terms up to the date, then the
   extension's rate (the loan's own fields now hold it), its interest-only months, then a level payment over its
   amortization to the new maturity; `principalPayments` come off after the last payment on or before their date. The
@@ -1273,8 +1274,8 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
 - **Tests:** `test/e2e/refi-extend.e2e.js` (Queens Gate: the pay-down worked out on its own and compared with the
   screen, the layout — the deal first, the extension's own verdict, nothing shown twice, its schedule —, each penalty
   choice, save, schedule, history, undo, back to New loan, presets, "not yet", the one-time move, the assistant).
-- **Not in the draft:** presets filled from Azriel's numbers (they ship empty); a second extension on top of a saved one
-  (undo first).
+- **Not in the draft:** presets filled from Azriel's numbers (they ship empty). *(A second extension on top of a saved
+  one is built after 3.1.1: see "Any number of extensions" below.)*
 - **Several properties, several loans (3.1.1 — the operator, 2026-10-26).** The plan said "extend with
   today's lender for one loan, and that's it, no matter how many properties". 3.1.0 had wrongly limited it to a loan on
   one property. The operator also asked: "you should be able to do new loans and extend with today's lenders on a couple
@@ -1316,6 +1317,30 @@ do here reaches your real app or the team." `test/e2e/test-build-local.e2e.js` (
     and they are there even when the answer is "Don't refinance" and the proposal card isn't shown.
   - **Tests:** `test/e2e/refi-new-io.e2e.js` (15 checks): a pooled loan, a senior + mezz, a single all-interest-only
     loan, and a "Don't refinance" loan typed through the new boxes.
+- **Any number of extensions (after 3.1.1, TEST build — the operator, 2026-11-02).** "Put no limit on the number of
+  extensions that you can make." Before, a saved extension had to be undone before another could be made.
+  - **Stored as a chain:** saving an extension keeps the one before it in `extension.before.extension` (null for the
+    first). `loanExtensions(l)` lists them, oldest first. Extensions saved before this change have no
+    `before.extension` and read as the first.
+  - **The schedule (`buildSchedule`)** runs each extension in turn: the loan's terms before any (the first one's
+    `before`) up to the first date, then each extension from its own date on its own terms (the loan as it was right
+    after it, which the next one kept in its `before`): its rate, interest-only months and amortization. One balance
+    throughout; "Extension starts" marks each.
+  - **The next one:** once one is saved, the refinance judges the next extension of the loan as it now is, by the same
+    rule (from when the saved one ends; a date on or before the saved one's is refused). The saved box lists every
+    extension (numbered when there are several, each with the maturity it gave) and is followed by the next one's
+    verdict; the button reads **Save another extension**. The schedule shows the next one only when the answer is to
+    extend; otherwise the saved ones.
+  - **Undo takes back only the latest** (**Undo the latest extension** when there are several): the loan goes back to
+    its terms before it, with the extension before it (if any) as its latest. Each Undo takes back one more.
+  - **A package** (a senior + mezz, or a portfolio): each loan's saved extensions and its next one (**Extend again**);
+    **Save the extensions** saves the next one of every loan that should extend now; **Undo each loan's latest
+    extension** takes back one per loan.
+  - **The assistant:** `save_extension` works on an extended loan (it saves the next one); `undo_extension` takes back
+    the latest.
+  - **Tests:** `test/e2e/refi-extend-again.e2e.js` (23 checks): one loan extended three times (the schedule runs each
+    in turn, one balance, each on its own rate), Undo one at a time, the date guard, the assistant, and a senior +
+    mezz extended twice together.
 
 ### After 3.0.0 — Yardi ingestion (to be defined)
 The approach being considered: Yardi **emails** the T12s and rent rolls to a mailbox; a daily job on the shared

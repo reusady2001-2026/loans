@@ -448,7 +448,7 @@ module.exports = {
     // ==================================================================================================================
     { id: "extend-with-your-lender", kind: "howto", group: "Refinance", title: "Extend with today’s lender",
       description: "Judge an extension with today’s lender, set its terms, and save it on today’s loan.",
-      intro: "Instead of a new loan, today’s lender may keep the loan on new terms, usually after a pay-down so it fits the lender’s limits. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it.",
+      intro: "Instead of a new loan, today’s lender may keep the loan on new terms, usually after a pay-down so it fits the lender’s limits. The refinance judges the extension by the same rule as a new loan: can you, and should you? Saving it changes today’s loan, and you can undo it. There is no limit: an extended loan can be extended again, as many times as you need.",
       before: [ "Today’s lender’s quote: the rate, its limits, the penalty and the fee it asks." ],
       callouts: [ { kind: "note", text: "One loan extends the same way however many properties it covers: it is sized on all of them. For several loans together (a senior + mezz, or a portfolio), see [Extend several loans together](refinance-together#extend-several-loans-together)." } ],
       sections: [
@@ -510,7 +510,7 @@ module.exports = {
             { text: "Click **Save the extension** in the box. Today’s loan stays the same record: from the date its terms end it has the new rate and term, the pay-down becomes a principal payment, and its status becomes Extended. Every changed field goes into the loan’s history.",
               go: async (h) => { await confirmYes(h); await h.wait(800); } }
           ],
-          note: "**Save the extension** shows only when the answer is to extend. **Not yet** means nothing ends or resets within 12 months, so you decide closer to the date. **Don’t extend now** means the lower rate doesn’t pay for the penalty." },
+          note: "**Save the extension** shows only when the answer is to extend. **Not yet** means nothing ends or resets within 12 months, so you decide closer to the date. **Don’t extend now** means the lower rate doesn’t pay for the penalty. Once an extension is saved, the refinance judges the next one, from when the saved one ends, by the same rule; the button then reads **Save another extension**." },
         { title: "Undo an extension",
           steps: [
             { text: "Open the loan’s refinance again. It shows the saved extension.", thin: 1024,
@@ -518,9 +518,9 @@ module.exports = {
               shot: { sel: RV + '[data-refiext="saved"]', grow: true },
               marks: [
                 { sel: RV + '[data-refiext="saved"] p >> nth=0', label: "Extended with today’s lender", text: "The extension is saved on today’s loan." },
-                { sel: RV + '[data-refiext="saved"] p >> nth=1', label: "Saved", text: "When, and by whom. The loan’s own page has the extension too." },
-                { sel: RV + '[data-refiext="saved"] p >> nth=2', label: "What was saved", text: "The new terms, the pay-down, the new maturity and the cash it took." },
-                { sel: RV + "[data-refiextundo]", label: "Undo the extension", text: "Puts today’s loan back as it was before." },
+                { sel: RV + '[data-refiext="saved"] p >> nth=1', label: "Saved", text: "When, and by whom, and from when it can be extended again. The loan’s own page has the extension too." },
+                { sel: RV + "[data-refiextsaved]", label: "What was saved", text: "Each extension, numbered when there are several: its terms, the pay-down, the maturity it gave and the cash it took." },
+                { sel: RV + "[data-refiextundo]", label: "Undo the extension", text: "Puts today’s loan back as it was before. With several extensions it reads **Undo the latest extension**." },
                 { sel: RV + '[data-refiext="saved"] [data-refihist]', label: "Change history", text: "The extension and every change before it." }
               ] },
             { text: "Click **Undo the extension**.",
@@ -536,7 +536,8 @@ module.exports = {
               go: async (h) => { await confirmYes(h); },
               // put back what this page changed: today's lender's own limits, and the kind of deal
               after: async (h) => { await h.js(() => { const b = document.querySelector("#refiView [data-refiextlimreset]"); if (b) b.click(); }); await h.wait(1200); await h.calm(); await pickDeal(h, "new"); } }
-          ] }
+          ],
+          note: "With several extensions, Undo takes back only the latest; the ones before it stay. Click it again to take back the one before." }
       ],
       next: [
         { page: "ref-refinance", anchor: "the-extension", text: "Every box of the extension, named." },

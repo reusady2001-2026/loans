@@ -1952,6 +1952,9 @@
       return { date: e.date, months: Math.max(0, Math.round(Number(e.months) || 0)), io: Math.max(0, Math.round(Number(e.ioMonths) || 0)),
                amortMonths: Math.max(1, Math.round(Number(e.amortMonths) || 360)), before: (e.before && typeof e.before === "object") ? e.before : null };
     }
+    // (2026-11-02, the operator: "Put no limit on the number of extensions that you can make") — a loan can be extended
+    // again and again; each extension keeps the one before it in extension.before.extension. Every one, oldest first.
+    function loanExtensions(l){ const out = []; let e = l && l.extension; for(let n = 0; e && typeof e === "object" && n < 100; n++){ out.unshift(e); e = (e.before && e.before.extension) || null; } return out; }
     // Build the displayed schedule across all rate phases; cut off at the loan
     // term with a balloon that lands the ending balance at exactly $0.00.
     function buildSchedule(loanIn){
@@ -1959,8 +1962,11 @@
       // before it (kept in extension.before), so nothing already paid changes; on the date the pay-down comes off; after
       // it, the extension's rate (the loan's own rate fields now hold it), its interest-only months, then a level payment
       // over the amortization left, to the new maturity. A loan with no extension: exactly as before.
-      const ext = loanExtension(loanIn), extTerms = loanIn;
-      const loan = (ext && ext.before) ? Object.assign({}, loanIn, ext.before) : loanIn;
+      // (2026-11-02) Several extensions: each runs from its own date on its own terms (the loan as it was right after it,
+      // which the next one kept in its "before"); the first one's "before" holds the loan's terms before any.
+      const extPh = []; let loan = loanIn;
+      for(let n = 0; n < 100; n++){ const e = loanExtension(loan); if(!e) break; extPh.unshift({ ext: e, terms: loan }); if(!e.before) break; loan = Object.assign({}, loanIn, e.before, { extension: e.before.extension || null }); }
+      let ext = extPh.length ? extPh[0].ext : null, extTerms = extPh.length ? extPh[0].terms : loanIn;
       const start = accrualStartParts(loan);                 // first accrual month (origination)
       const fpParts = firstPayParts(loan);                   // first (interest-only) payment date, in arrears
       const io = Math.max(0, loan.ioMonths||0);   // interest-only months at the start
@@ -1995,9 +2001,11 @@
       if(pdAt[-1]){ pdAt[-1].forEach(r => { const amt = Math.min(balance, r.amount); balance -= amt; openingPaydowns.push({ date: r.date, amount: amt }); }); if(!isFixedAmort){ currentPayment = solveSegmentPayment(loan, balance, 0, rateForMonth(loan, 0)); segments[0].payment = currentPayment; } }
 
       let mExt = Infinity;
-      if(ext && fpParts){ let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= ext.date) k = i; else break; } mExt = k + 1; }
+      if(fpParts) extPh.forEach(ph => { let k = -1; for(let i = 0; i < term; i++){ const pp = addMonths(fpParts, i); if(partsToISO(pp.y, pp.mo, pp.d) <= ph.ext.date) k = i; else break; } ph.m0 = k + 1; });
+      if(extPh.length && fpParts) mExt = extPh[0].m0;
       for(let m=0; m<term; m++){
         if(m >= mExt){   // next stage (F4) — the extension's months
+          for(let i = extPh.length - 1; i >= 0; i--){ if(m >= extPh[i].m0){ ext = extPh[i].ext; extTerms = extPh[i].terms; mExt = extPh[i].m0; break; } }   // the latest extension started by this month
           if(m === mExt || m === mExt + ext.io){
             const r0 = rateForMonth(extTerms, m);
             currentPayment = (m - mExt < ext.io) ? 0 : (function(b, n, r){ const c = r / 12; return n > 0 ? (c > 0 ? (b * c) / (1 - Math.pow(1 + c, -n)) : b / n) : b; })(balance, ext.amortMonths, r0);
@@ -12898,7 +12906,7 @@ tr.flagged:hover td{background:#fee2e2}
       const ownIdx = loan.rateType === "Floating" && REFI_INDEX_CHOICES.indexOf(loan.index) >= 0;
       return {
         own: pkg ? !!(x && x.members && x.members[loan._id]) : !!x,
-        date: /^\d{4}-\d{2}-\d{2}$/.test(e.date || "") ? e.date : refiExtDefaultDate(loan),
+        date: (/^\d{4}-\d{2}-\d{2}$/.test(e.date || "") && !(loan.extension && e.date <= loan.extension.date)) ? e.date : refiExtDefaultDate(loan),   // (2026-11-02) after a saved one, the next starts later
         months: Math.max(1, Math.round(num(e.months, 36))),
         io: ["whole", "n", "none"].indexOf(e.io) >= 0 ? e.io : "whole",
         ioMonths: Math.max(0, Math.round(num(e.ioMonths, 12))),
@@ -12914,7 +12922,7 @@ tr.flagged:hover td{background:#fee2e2}
     // The extension's numbers: what you owe when today's terms end, what the lender's limits allow at the new rate, the
     // pay-down, the coverage at the extended amount, the penalty (this lender's way), the fee and the cash it takes.
     function refiExtResult(loan, pkg, ahead){
-      if(!refiExtAllowed(loan) || !window.RefiExtend || loan.extension) return null;
+      if(!refiExtAllowed(loan) || !window.RefiExtend) return null;   // (2026-11-02) no limit: an extended loan can be extended again
       if(refiIsPkg(loan) && !pkg) return null;   // a package is extended loan by loan (refiExtPkg)
       const t = refiExtTerms(loan, pkg); if(!t.date) return null;
       const c = compute(loan), rows = c.rows; let k = -1;
@@ -12935,6 +12943,7 @@ tr.flagged:hover td{background:#fee2e2}
     function refiExtApply(target, loan, r){
       const t = r.terms, term = r.k + 1 + t.months, before = {};
       REFI_EXT_FIELDS.forEach(f => { before[f] = (loan[f] === undefined || loan[f] === null) ? null : JSON.parse(JSON.stringify(loan[f])); });
+      before.extension = loan.extension ? JSON.parse(JSON.stringify(loan.extension)) : null;   // (2026-11-02) the extension before this one: Undo goes back to it
       Object.assign(target, { rateType: "Floating", index: t.index, spread: t.spreadBps / 10000, isHistorical: false, annualRate: null,
         armInitialFixedMonths: null, armAdjustFreqMonths: null, rateFloor: null, rateCap: null, floatIndexValue: null, floatRepricedOn: null, floatIndexLive: null, armAssumedIndex: null,
         loanTermMonths: term, maturityDate: r.newMaturity || loan.maturityDate, loanStatus: "Extended" });
@@ -12958,8 +12967,9 @@ tr.flagged:hover td{background:#fee2e2}
       if(!cloudCanWrite()){ toast("View only — you can’t change this loan", "info"); return { ok: false }; }
       const go = () => refiExtCommit(loan, opts.from || "typed");
       if(opts.confirmed) return go();
-      confirmDialog("Save the extension?", "Today's loan stays the same record. " + refiExtNote(loan, r) + ". New maturity " + fmtDateUS(r.newMaturity) + "; status Extended. Cash needed " + fmtMoney(r.cash) +
-        " (pay-down + penalty + fee). Every change goes in the loan's history, and you can undo it.", go, "Save the extension");
+      const nx = loanExtensions(loan).length;
+      confirmDialog(nx ? "Save another extension?" : "Save the extension?", "Today's loan stays the same record. " + refiExtNote(loan, r) + ". New maturity " + fmtDateUS(r.newMaturity) + "; status Extended. Cash needed " + fmtMoney(r.cash) +
+        " (pay-down + penalty + fee)." + (nx ? " Its " + (nx === 1 ? "saved extension stays" : nx + " saved extensions stay") + "; this one starts when it ends." : "") + " Every change goes in the loan's history, and you can undo it.", go, "Save the extension");
       return { ok: true, asked: true };
     }
     function refiExtCommit(loan, from, rIn, quiet){
@@ -12980,19 +12990,20 @@ tr.flagged:hover td{background:#fee2e2}
       opts = opts || {};
       const e = loan && loan.extension; if(!e || !e.before){ toast("This loan has no saved extension", "info"); return { ok: false }; }
       if(!cloudCanWrite()){ toast("View only — you can’t change this loan", "info"); return { ok: false }; }
+      const left = loanExtensions(loan).length - 1;   // (2026-11-02) Undo takes back the latest; the ones before it stay
       const go = () => {
-        const old = JSON.parse(JSON.stringify(loan)), note = "Undid the extension saved " + fmtDateUS(String(e.at || "").slice(0, 10)) + (e.by ? " by " + e.by : "");
+        const old = JSON.parse(JSON.stringify(loan)), note = "Undid the " + (left ? "latest " : "") + "extension saved " + fmtDateUS(String(e.at || "").slice(0, 10)) + (e.by ? " by " + e.by : "");
         REFI_EXT_FIELDS.forEach(f => { const v = e.before[f]; if(v === null || v === undefined) delete loan[f]; else loan[f] = JSON.parse(JSON.stringify(v)); });
-        delete loan.extension;
+        if(e.before.extension) loan.extension = JSON.parse(JSON.stringify(e.before.extension)); else delete loan.extension;
         ["maturityDate","loanTermMonths","rateType","index","spread","loanStatus"].forEach(f => { const a = old[f], b = loan[f]; if(String(a == null ? "" : a) !== String(b == null ? "" : b)){ try{ loanHistoryAdd(loan, f, a == null ? null : a, b == null ? null : b, opts.from === "assistant" ? "assistant" : "extension", { note: note }); }catch(x){} } });
         if(e.payDown > 0.5){ try{ loanHistoryAdd(loan, "principalPayments", fmtMoney(e.payDown) + " on " + fmtDateUS(e.date), null, opts.from === "assistant" ? "assistant" : "extension", { note: note }); }catch(x){} }
         if(opts.quiet) return { ok: true };
-        refiDraftsKey = ""; save(); toast("The extension is undone — " + loanLabel(loan) + " is back to its terms before it.", "check");
+        refiDraftsKey = ""; save(); toast("The " + (left ? "latest " : "") + "extension is undone — " + loanLabel(loan) + " is back to its terms before it" + (left ? " (" + (left === 1 ? "its earlier extension stays" : "its " + left + " earlier extensions stay") + ")" : "") + ".", "check");
         try{ redrawAll(); }catch(x){} if(opts.after) opts.after(); else if(state.mode === "refi") renderRefi(loan);
         return { ok: true };
       };
       if(opts.confirmed) return go();
-      confirmDialog("Undo the extension?", loanLabel(loan) + " goes back to its terms before the extension (maturity " + fmtDateUS(e.before.maturityDate) + "); the pay-down comes off the schedule. The history keeps both.", go, "Undo the extension");
+      confirmDialog(left ? "Undo the latest extension?" : "Undo the extension?", loanLabel(loan) + " goes back to its terms before " + (left ? "its latest extension" : "the extension") + " (maturity " + fmtDateUS(e.before.maturityDate) + "); its pay-down comes off the schedule." + (left ? " " + (left === 1 ? "The extension before it stays." : "The " + left + " extensions before it stay.") : "") + " The history keeps both.", go, left ? "Undo the latest extension" : "Undo the extension");
       return { ok: true, asked: true };
     }
     // Save one of the extension's terms (shared with the team, with a history entry).
@@ -13056,8 +13067,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     function refiExtVerdict(loan, pkg, ahead){
       if(!refiExtAllowed(loan) || (refiIsPkg(loan) && !pkg)) return null;
-      if(loan.extension) return { isSaved: true };
-      const r = refiExtResult(loan, pkg, ahead); if(!r) return null;
+      const r = refiExtResult(loan, pkg, ahead); if(!r) return null;   // (2026-11-02) a saved extension no longer stops the next one
       const c = compute(loan), curRate = c.derived.currentRate || 0, pm = Math.max(0, c.derived.paymentsMade || 0);
       const ends = refiEnds(loan), reset = refiResetInfo(loan), W = REFI_MATURITY_WINDOW_MO;
       const matSoon = ends.months != null && ends.months <= W, resetSoon = !!(reset && reset.months <= W);
@@ -13106,14 +13116,10 @@ tr.flagged:hover td{background:#fee2e2}
       const aheadOf = (m) => { let amount = 0, ds = 0, io = 0; refiKeysOf(m).forEach(k => { const a = aheadAt[k]; if(a){ amount += a.amount; ds += a.ds; io += a.io; } });
         return amount > 0 ? { amount: amount, constant: ds / amount, rate: io / amount } : null; };
       ms.forEach(m => {
-        const mz = isMezz(m), ahead = mz ? aheadOf(m) : null;
-        if(m.extension){
-          const d = compute(m).derived; list.push({ m: m, saved: true, mezz: mz });
-          if(!mz && d.currentBalance > 0) addAhead(m, d.currentBalance, RefiExtend.loanConstant(d.currentRate || 0, m.amortizationMonths || 360) || 0, d.currentRate || 0);
-          return;
-        }
-        const ev = refiExtVerdict(m, pkg, ahead); list.push({ m: m, ev: ev, mezz: mz, ahead: ahead });
+        const mz = isMezz(m), ahead = mz ? aheadOf(m) : null, saved = !!m.extension;   // (2026-11-02) a saved loan can be extended again
+        const ev = refiExtVerdict(m, pkg, ahead); list.push({ m: m, ev: ev, mezz: mz, ahead: ahead, saved: saved });
         if(!mz && ev && ev.r && ev.r.amount > 0) addAhead(m, ev.r.amount, ev.r.constant || 0, ev.r.rate || 0);
+        else if(!mz && saved){ const d = compute(m).derived; if(d.currentBalance > 0) addAhead(m, d.currentBalance, RefiExtend.loanConstant(d.currentRate || 0, m.amortizationMonths || 360) || 0, d.currentRate || 0); }
       });
       const open = list.filter(x => x.ev && x.ev.r), yes = open.filter(x => x.ev.kind === "yes"), sum = (arr, f) => arr.reduce((t, x) => t + (x.ev.r[f] || 0), 0);
       const unsized = open.some(x => x.ev.kind === "unsized") || list.some(x => !x.saved && !(x.ev && x.ev.r));
@@ -13155,20 +13161,25 @@ tr.flagged:hover td{background:#fee2e2}
       opts = opts || {};
       const ms = refiPkgMembers(pkg).filter(m => m.extension && m.extension.before); if(!ms.length){ toast("No saved extension here", "info"); return { ok: false }; }
       if(!cloudCanWrite()){ toast("View only — you can’t change these loans", "info"); return { ok: false }; }
+      const many = ms.some(m => loanExtensions(m).length > 1);   // (2026-11-02) each loan's latest extension; the earlier ones stay
       const go = () => { ms.forEach(m => refiExtUndo(m, { confirmed: true, quiet: true, from: opts.from }));
         refiDraftsKey = ""; save(); toast("The extensions are undone — " + ms.length + " loan" + (ms.length === 1 ? " is" : "s are") + " back to the terms before them.", "check");
         try{ redrawAll(); }catch(e){} if(state.mode === "refi") renderRefi(pkg); return { ok: true, undone: ms.length }; };
       if(opts.confirmed) return go();
-      confirmDialog("Undo " + ms.length + " extension" + (ms.length === 1 ? "" : "s") + "?", ms.map(loanLabel).join(", ") + " go back to their terms before the extension; the pay-downs come off the schedules. The history keeps both.", go, "Undo the extensions");
+      confirmDialog("Undo " + ms.length + (many ? " latest" : "") + " extension" + (ms.length === 1 ? "" : "s") + "?", ms.map(loanLabel).join(", ") + " go back to their terms before " + (many ? "their latest extension (the earlier ones stay)" : "the extension") + "; the pay-downs come off the schedules. The history keeps both.", go, "Undo the extensions");
       return { ok: true, asked: true };
     }
     // a loan's inputs inside a package carry its id, so the screen saves them to that loan's terms
     function refiExtTag(html, id){ return html.replace(/data-refiextf="/g, 'data-refiextm="' + escapeHtml(id) + '" data-refiextf="'); }
     function refiExtKindChip(x){
-      if(x.saved) return '<span class="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-800">extended &#10003;</span>';
-      const ev = x.ev; if(!ev || !ev.r) return '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">no terms yet</span>';
+      const n = x.saved ? loanExtensions(x.m).length : 0, sv = n ? '<span class="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-800">extended'+(n > 1 ? ' &times;'+n : '')+' &#10003;</span>' : '';
+      const ev = x.ev; if(n && !(ev && ev.r)) return sv;
+      return sv + (sv ? ' ' : '') + refiExtNextChip(ev, n > 0);
+    }
+    function refiExtNextChip(ev, again){
+      if(!ev || !ev.r) return '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">no terms yet</span>';
       if(ev.kind === "unsized") return '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800">can&rsquo;t judge yet</span>';
-      if(ev.kind === "yes") return '<span class="rounded '+(ev.r.needed ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800')+' px-1.5 py-0.5 text-[10px] font-bold uppercase">extend'+(ev.r.needed ? ' &middot; pay down' : '')+'</span>';
+      if(ev.kind === "yes") return '<span class="rounded '+(ev.r.needed ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800')+' px-1.5 py-0.5 text-[10px] font-bold uppercase">extend'+(again ? ' again' : '')+(ev.r.needed ? ' &middot; pay down' : '')+'</span>';
       return '<span class="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-800">'+(ev.why === "notyet" ? "not yet" : "don&rsquo;t extend now")+'</span>';
     }
     // the package's extension limits, once (they apply to each loan): the four limits, which the lenders use, a preset
@@ -13200,7 +13211,7 @@ tr.flagged:hover td{background:#fee2e2}
     }
     // the package's extension: the verdict for all its loans, the limits once, then each loan's terms
     function refiExtPkgHtml(pkg, P){
-      const n = P.list.length, allSaved = P.saved.length === n, yes = P.yes.length, notYet = P.open.length && P.open.every(x => x.ev.kind === "no" && x.ev.why === "notyet");
+      const n = P.list.length, allSaved = P.saved.length === n && !P.yes.length, yes = P.yes.length, notYet = P.open.length && P.open.every(x => x.ev.kind === "no" && x.ev.why === "notyet");
       const banner = allSaved ? "border-violet-300 bg-violet-50" : P.unsized ? "border-amber-300 bg-amber-50" : yes ? (P.needed ? "border-orange-400 bg-orange-50" : "border-emerald-400 bg-emerald-50") : "border-rose-300 bg-rose-50";
       const head = allSaved ? "text-violet-800" : P.unsized ? "text-amber-800" : yes ? (P.needed ? "text-orange-800" : "text-emerald-800") : "text-rose-800";
       const title = allSaved ? "Extended with today&rsquo;s lenders" : P.unsized ? "Can&rsquo;t judge the extensions yet"
@@ -13209,11 +13220,11 @@ tr.flagged:hover td{background:#fee2e2}
       const row = (x) => { const m = x.m, ev = x.ev, r = ev && ev.r, e = m.extension;
         return '<tr class="border-t border-slate-100 align-top" data-refiextrow="'+escapeHtml(m._id)+'">'+
           '<td class="py-1.5 pr-2 text-sm text-slate-800">'+escapeHtml(loanLabel(m))+' <span class="text-[10px] uppercase text-slate-400">'+(x.mezz ? 'mezz' : 'senior')+'</span>'+(m.lenderName ? '<div class="text-[11px] text-slate-500">'+escapeHtml(m.lenderName)+'</div>' : '')+'</td>'+
-          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved ? fmtDateUS(e.date) : r ? fmtDateUS(r.terms.date) : '&mdash;')+'</td>'+
-          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved ? fmtMoney(e.owed) : r ? fmtMoney(r.owed) : '&mdash;')+'</td>'+
+          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved && !r ? fmtDateUS(e.date) : r ? fmtDateUS(r.terms.date) : '&mdash;')+'</td>'+
+          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved && !r ? fmtMoney(e.owed) : r ? fmtMoney(r.owed) : '&mdash;')+'</td>'+
           '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(r && ev.kind !== "unsized" ? fmtMoney(r.allowed) : '&mdash;')+'</td>'+
-          '<td class="py-1.5 px-2 text-sm text-right tabular-nums" data-refiextrowpay>'+(x.saved ? (e.payDown > 0.5 ? fmtMoney(e.payDown) : 'none') : r ? (r.needed ? fmtMoney(r.payDown) : 'none') : '&mdash;')+'</td>'+
-          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved ? fmtPct(e.rate || 0) : r ? fmtPct(ev.curRate)+' &rarr; '+fmtPct(r.rate) : '&mdash;')+'</td>'+
+          '<td class="py-1.5 px-2 text-sm text-right tabular-nums" data-refiextrowpay>'+(x.saved && !r ? (e.payDown > 0.5 ? fmtMoney(e.payDown) : 'none') : r ? (r.needed ? fmtMoney(r.payDown) : 'none') : '&mdash;')+'</td>'+
+          '<td class="py-1.5 px-2 text-sm text-right tabular-nums">'+(x.saved && !r ? fmtPct(e.rate || 0) : r ? fmtPct(ev.curRate)+' &rarr; '+fmtPct(r.rate) : '&mdash;')+'</td>'+
           '<td class="py-1.5 pl-2 text-right">'+refiExtKindChip(x)+'</td></tr>'; };
       const verdict = '<div class="boxline rounded-2xl border-2 '+banner+' p-5 shadow-sm" data-refiverdict="'+(allSaved ? "extended" : P.unsized ? "extend-unsized" : yes ? "extend" : "extend-no")+'" data-refiextpkg>'+
         '<div class="flex items-center gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black '+head+'">'+(allSaved ? "&#10003;" : P.unsized ? "?" : yes ? (P.needed ? "!" : "&#10003;") : "&#10007;")+'</span>'+
@@ -13225,18 +13236,17 @@ tr.flagged:hover td{background:#fee2e2}
         '</table></div>'+
         (P.unsized ? '<p class="mt-2 text-sm text-slate-700">A loan here has no NOI to size on: upload its property&rsquo;s T12 in Underwriting &mdash; an extension is sized on the T12 and the underwriting approved from it, never a typed NOI.</p>' : '')+
         (yes && !allSaved ? '<p class="mt-3 text-sm font-semibold text-slate-900">Extend '+yes+' loan'+(yes === 1 ? '' : 's')+(P.needed ? ' &mdash; pay down '+fmtMoney(P.payDown)+' in all' : '')+'; cash needed <span data-refiextcash>'+fmtMoney(P.cash)+'</span> (pay-downs + penalties + fees).'+(P.open.length > yes ? ' The others aren&rsquo;t extended now &mdash; see each one below.' : '')+'</p>' : '')+
-        (P.saved.length ? '<div class="mt-3 flex flex-wrap items-center gap-3"><button type="button" data-refiextundoall class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo '+(P.saved.length === 1 ? 'the saved extension' : 'the '+P.saved.length+' saved extensions')+'</button><button type="button" data-refihist class="text-[12px] font-semibold text-brand-700 hover:underline">Change history</button></div>' : '')+
+        (P.saved.length ? '<div class="mt-3 flex flex-wrap items-center gap-3"><button type="button" data-refiextundoall class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo '+(P.saved.some(x => loanExtensions(x.m).length > 1) ? (P.saved.length === 1 ? 'its latest extension' : 'each loan&rsquo;s latest extension') : P.saved.length === 1 ? 'the saved extension' : 'the '+P.saved.length+' saved extensions')+'</button><button type="button" data-refihist class="text-[12px] font-semibold text-brand-700 hover:underline">Change history</button></div>' : '')+
       '</div>';
-      const cards = P.list.map(x => { const m = x.m;
-        if(x.saved){ const e = m.extension;
-          return '<details open class="boxline rounded-2xl border border-violet-200 bg-violet-50/40 p-5 shadow-sm" data-refiextmember="'+escapeHtml(m._id)+'"><summary class="cursor-pointer text-sm font-bold text-violet-900">'+escapeHtml(loanLabel(m))+(m.lenderName ? ' &middot; '+escapeHtml(m.lenderName) : '')+' '+refiExtKindChip(x)+'</summary>'+
-            '<p class="mt-2 text-sm text-slate-700">'+e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+(e.payDown > 0.5 ? '; paid down '+fmtMoney(e.payDown) : '; no pay-down')+'; new maturity '+fmtDateUS(m.maturityDate)+'. Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+'.</p>'+
-            '<button type="button" data-refiextundo data-refiextm="'+escapeHtml(m._id)+'" class="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Undo this extension</button></details>'; }
-        const ev = x.ev; if(!ev || !ev.r) return '';
-        return '<details open class="boxline rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-refiextmember="'+escapeHtml(m._id)+'"><summary class="cursor-pointer text-sm font-bold text-slate-900">'+escapeHtml(loanLabel(m))+' <span class="text-[10px] uppercase text-slate-400">'+(x.mezz ? 'mezz' : 'senior')+'</span>'+(m.lenderName ? ' &middot; '+escapeHtml(m.lenderName) : '')+' '+refiExtKindChip(x)+'</summary>'+
+      // each loan: its saved extensions (Undo takes back the latest), then the next one's terms, if any (2026-11-02: no limit)
+      const cards = P.list.map(x => { const m = x.m, ev = x.ev, next = !!(ev && ev.r);
+        if(!x.saved && !next) return '';
+        const savedHtml = x.saved ? refiExtSavedListHtml(m)+'<button type="button" data-refiextundo data-refiextm="'+escapeHtml(m._id)+'" class="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">'+(loanExtensions(m).length > 1 ? 'Undo its latest extension' : 'Undo this extension')+'</button>' : '';
+        const nextHtml = next ? (x.saved ? '<p class="mt-4 border-t border-violet-200 pt-3 text-[11px] font-bold uppercase tracking-wide text-violet-700" data-refiextagain>Extend again &mdash; from when these terms end</p>' : '')+
           refiExtTag(refiExtPricingHtml(m, ev.r), m._id)+(ev.kind === "unsized" ? '' : refiExtMemberLegsHtml(pkg, x))+
-          refiExtTag(refiExtCardHtml(m, ev).replace(/^<div class="boxline[^"]*"/, '<div class="mt-3"'), m._id)+
-          refiExtScheduleHtml(m, ev).replace(/^<div class="boxline[^"]*"/, '<div class="mt-3"')+'</details>'; }).join("");
+          refiExtTag(refiExtCardHtml(m, ev).replace(/^<div class="boxline[^"]*"/, '<div class="mt-3"'), m._id) : '';
+        return '<details open class="boxline rounded-2xl border '+(x.saved ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200 bg-white')+' p-5 shadow-sm" data-refiextmember="'+escapeHtml(m._id)+'"><summary class="cursor-pointer text-sm font-bold '+(x.saved ? 'text-violet-900' : 'text-slate-900')+'">'+escapeHtml(loanLabel(m))+' <span class="text-[10px] uppercase text-slate-400">'+(x.mezz ? 'mezz' : 'senior')+'</span>'+(m.lenderName ? ' &middot; '+escapeHtml(m.lenderName) : '')+' '+refiExtKindChip(x)+'</summary>'+
+          savedHtml+nextHtml+refiExtScheduleHtml(m, ev).replace(/^<div class="boxline[^"]*"/, '<div class="mt-3"')+'</details>'; }).join("");
       return verdict + (allSaved ? '' : refiExtPkgLimitsHtml(pkg)) + cards;
     }
     function refiExtPricingHtml(loan, r){
@@ -13250,20 +13260,29 @@ tr.flagged:hover td{background:#fee2e2}
         '<p class="mt-2 text-sm text-slate-700">Rate <span class="font-extrabold text-slate-900" data-refiextrate>'+fmtPct(r.rate)+'</span> <span class="text-[11px] text-slate-500">= '+escapeHtml(tenorShort(t.index))+' '+fmtPct(liveIndexVal(t.index) || 0)+' <span class="text-[10px] text-slate-400">('+escapeHtml(rateSourceText(t.index))+')</span> + '+Math.round(t.spreadBps)+' bps, floating</span></p>'+
       '</div>';
     }
+    // (2026-11-02) every saved extension, oldest first: what each did, and the maturity it gave
+    function refiExtSavedListHtml(loan){
+      const xs = loanExtensions(loan);
+      return '<ol class="mt-3 space-y-1 text-sm text-slate-700" data-refiextsaved>'+xs.map((e, i) => '<li data-refiextsavedrow>'+(xs.length > 1 ? '<span class="font-semibold text-violet-800">'+(i + 1)+'.</span> ' : '')+
+        e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+
+        (e.payDown > 0.5 ? '; paid down '+fmtMoney(e.payDown) : '; no pay-down')+'; '+(i < xs.length - 1 ? 'to ' : 'new maturity ')+fmtDateUS(i < xs.length - 1 ? ((xs[i + 1].before || {}).maturityDate || '') : loan.maturityDate)+'. Cash it took: '+fmtMoney(e.cash || 0)+
+        ' <span class="text-[11px] text-slate-400">saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+'</span></li>').join('')+'</ol>';
+    }
     function refiExtVerdictHtml(loan, ev){
-      const e = loan.extension;
-      if(ev && ev.isSaved && e){   // saved: what it did, and undo
-        return '<div class="boxline rounded-2xl border-2 border-violet-300 bg-violet-50 p-5 shadow-sm" data-refiverdict="extended" data-refiext="saved">'+
+      const e = loan.extension, nx = loanExtensions(loan).length;
+      // saved (2026-11-02: any number of times): what each did, and Undo of the latest; the next extension is judged below
+      const saved = e ? '<div class="boxline rounded-2xl border-2 border-violet-300 bg-violet-50 p-5 shadow-sm" data-refiverdict="extended" data-refiext="saved">'+
           '<div class="flex items-center gap-3"><span class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/70 text-2xl font-black text-violet-800">&#10003;</span>'+
-            '<div><p class="text-xl font-extrabold text-violet-800">Extended with today&rsquo;s lender'+(e.lender ? ' &middot; '+escapeHtml(e.lender) : '')+'</p>'+
-            '<p class="text-sm text-slate-600">Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : '')+' &mdash; the schedule below has it.</p></div></div>'+
-          '<p class="mt-3 text-sm text-slate-700">'+e.months+' months'+(e.ioMonths >= e.months ? ' interest-only' : e.ioMonths > 0 ? ' ('+e.ioMonths+' interest-only)' : '')+' at '+escapeHtml(indexShort(e.index))+' + '+Math.round((e.spread || 0) * 10000)+' bps from '+fmtDateUS(e.date)+
-            (e.payDown > 0.5 ? '; paid down '+fmtMoney(e.payDown) : '; no pay-down')+'; new maturity '+fmtDateUS(loan.maturityDate)+'. Cash it took: '+fmtMoney(e.cash || 0)+'.</p>'+
-          '<div class="mt-3 flex flex-wrap items-center gap-3"><button type="button" data-refiextundo class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Undo the extension</button>'+
+            '<div><p class="text-xl font-extrabold text-violet-800">Extended with today&rsquo;s lender'+(e.lender ? ' &middot; '+escapeHtml(e.lender) : '')+(nx > 1 ? ' &middot; '+nx+' times' : '')+'</p>'+
+            '<p class="text-sm text-slate-600">'+(nx > 1 ? 'Each extension starts when the one before it ends' : 'Saved '+fmtDateUS(String(e.at || '').slice(0, 10))+(e.by ? ' by '+escapeHtml(e.by) : ''))+' &mdash; the schedule below has '+(nx > 1 ? 'them' : 'it')+'. It can be extended again, from '+fmtDateUS(loan.maturityDate)+'.</p></div></div>'+
+          refiExtSavedListHtml(loan)+
+          '<div class="mt-3 flex flex-wrap items-center gap-3"><button type="button" data-refiextundo class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">'+(nx > 1 ? 'Undo the latest extension' : 'Undo the extension')+'</button>'+
           '<button type="button" data-refihist class="text-[12px] font-semibold text-brand-700 hover:underline">Change history</button></div>'+
-        '</div>';
-      }
-      if(!ev || !ev.r) return '';
+        '</div>' : '';
+      if(!ev || !ev.r) return saved;
+      return saved + refiExtNextHtml(loan, ev, nx);
+    }
+    function refiExtNextHtml(loan, ev, nx){
       const r = ev.r, t = r.terms, can = refiExtCan(loan, r);
       if(ev.kind === "unsized"){
         return '<div class="boxline rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 shadow-sm" data-refiverdict="extend-unsized">'+
@@ -13275,7 +13294,7 @@ tr.flagged:hover td{background:#fee2e2}
       const banner = yes ? (pay ? "border-orange-400 bg-orange-50" : "border-emerald-400 bg-emerald-50") : "border-rose-300 bg-rose-50";
       const bhead = yes ? (pay ? "text-orange-800" : "text-emerald-800") : "text-rose-800";
       const mark = (ok, ch) => '<span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full '+(ok ? "bg-emerald-100 text-emerald-700" : ch === "!" ? "bg-orange-100 text-orange-700" : "bg-rose-100 text-rose-700")+' text-sm font-black">'+(ch || (ok ? "&#10003;" : "&#10007;"))+'</span>';
-      const title = yes ? ("Extend with today&rsquo;s lender"+(pay ? " &mdash; pay down "+fmtMoney(r.payDown) : "")) : (ev.why === "notyet" ? "Not yet" : "Don&rsquo;t extend now");
+      const title = yes ? ((nx ? "Extend again with today&rsquo;s lender" : "Extend with today&rsquo;s lender")+(pay ? " &mdash; pay down "+fmtMoney(r.payDown) : "")) : (ev.why === "notyet" ? (nx ? "Not yet &mdash; extending again" : "Not yet") : (nx ? "Don&rsquo;t extend again now" : "Don&rsquo;t extend now"));
       const canLine = pay
         ? '<span data-refipaydown="extend">To extend with today&rsquo;s lender: <strong>pay down '+fmtMoney(r.payDown)+'</strong> &mdash; what you&rsquo;ll owe on '+fmtDateLong(t.date)+' (<strong>'+fmtMoney(r.owed)+'</strong>) less what its limits allow (<strong>'+fmtMoney(r.allowed)+'</strong>).</span> Its '+refiBindingWord(r.binding, r.limits)+' is the limit that sets that.'
         : 'Today&rsquo;s lender&rsquo;s limits allow up to <strong>'+fmtMoney(r.allowed)+'</strong> &mdash; enough to cover the <strong>'+fmtMoney(r.owed)+'</strong> you&rsquo;ll owe on '+fmtDateLong(t.date)+'. <span data-refipaydown="extend">No pay-down needed.</span>';
@@ -13357,8 +13376,9 @@ tr.flagged:hover td{background:#fee2e2}
     // whole loan is on its own page). The pay-down and the extension's months are marked.
     function refiExtScheduleHtml(loan, ev){
       let c = null, title = "";
-      if(ev && ev.isSaved){ c = compute(loan); title = "Payment schedule &mdash; from today to "+fmtDateUS(loan.maturityDate)+", with the extension"; }
-      else if(ev && ev.r){ c = refiExtPreview(loan, ev.r); title = "Payment schedule with the extension &mdash; from today to "+fmtDateUS(ev.r.newMaturity)+(ev.kind === "yes" ? "" : " (if you extended)"); }
+      const nx = loanExtensions(loan).length;   // (2026-11-02) saved extensions: the schedule has them; the next one is previewed only when it's to be saved
+      if(ev && ev.r && (ev.kind === "yes" || !nx)){ c = refiExtPreview(loan, ev.r); title = "Payment schedule with "+(nx ? "another extension" : "the extension")+" &mdash; from today to "+fmtDateUS(ev.r.newMaturity)+(ev.kind === "yes" ? "" : " (if you extended)"); }
+      else if(nx){ c = compute(loan); title = "Payment schedule &mdash; from today to "+fmtDateUS(loan.maturityDate)+", with the "+(nx > 1 ? nx+" saved extensions" : "extension"); }
       if(!c || !c.rows.length) return '';
       const pm = Math.max(0, Math.min(c.rows.length - 1, c.derived.paymentsMade || 0)), rows = c.rows.slice(pm);
       const body = rows.map(r => { const io = r.type === "io", bl = r.type === "balloon" || r.type === "final";
@@ -13450,7 +13470,7 @@ tr.flagged:hover td{background:#fee2e2}
           '<div class="flex flex-wrap gap-2">'+
             '<button id="refiCloseBtn" type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>'+
             (showProposal ? '<button id="refiSaveBtn" type="button" class="rounded-lg bg-gradient-to-br from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white hover:from-brand-400 hover:to-brand-500">'+(verdict.decision ? 'Save as a loan &mdash; Refinance now' : verdict.paydown ? 'Save as a loan &mdash; pay in '+fmtMoney(Math.max(0, verdict.can.payoff - (refiDrafts[1].originalAmount || 0))) : 'Save as a loan')+'</button>' : '')+
-            (showExtSave ? '<button id="refiExtSaveBtn" type="button" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">'+(pkgX ? 'Save the extensions ('+pkgX.yes.length+')'+(pkgX.needed ? ' &mdash; pay down '+fmtMoney(pkgX.payDown) : '') : 'Save the extension'+(ev.r.needed ? ' &mdash; pay down '+fmtMoney(ev.r.payDown) : ''))+'</button>' : '')+
+            (showExtSave ? '<button id="refiExtSaveBtn" type="button" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">'+(pkgX ? 'Save the extensions ('+pkgX.yes.length+')'+(pkgX.needed ? ' &mdash; pay down '+fmtMoney(pkgX.payDown) : '') : (loan.extension ? 'Save another extension' : 'Save the extension')+(ev.r.needed ? ' &mdash; pay down '+fmtMoney(ev.r.payDown) : ''))+'</button>' : '')+
           '</div>'+
         '</div>'+
         '<div class="boxline rounded-2xl border border-slate-200 bg-slate-50 p-5">'+
@@ -13555,7 +13575,7 @@ tr.flagged:hover td{background:#fee2e2}
         const refiExtSet = mem ? ((lp, patch, label, a, b) => refiExtSetMember(lp, mem, patch, label, a, b)) : refiExtSetOne;
         const f = inp.getAttribute("data-refiextf"), raw = String(inp.value || "").trim(), t = mem ? refiExtTerms(mem, loan) : refiExtTerms(loan), v = parseFloat(raw.replace(/[$,\s]/g, ""));
         const lbl = REFI_EXT_LABEL[f] || f;
-        if(f === "date"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(raw)){ toast("Pick a date", "info"); return; } refiExtSet(loan, { date: raw }, lbl, t.date, raw); }
+        if(f === "date"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(raw)){ toast("Pick a date", "info"); return; } const lx = (mem || loan).extension; if(lx && raw <= lx.date){ toast("The next extension starts after the saved one (" + fmtDateUS(lx.date) + ") — pick a later date", "info"); renderRefi(loan); return; } refiExtSet(loan, { date: raw }, lbl, t.date, raw); }
         else if(f === "io" || f === "index"){ refiExtSet(loan, { [f]: raw }, lbl, t[f], raw); }
         else if(f === "penaltyHow"){ const p = raw ? Object.assign({}, t.penalty || {}, { how: raw }) : null; refiExtSet(loan, { penalty: p }, lbl, t.penalty ? RefiExtend.PENALTY_HOWS[t.penalty.how] : "not picked", raw ? RefiExtend.PENALTY_HOWS[raw] : "not picked"); }
         else if(f === "penaltyPct" || f === "penaltyAmt"){ if(!isFinite(v) || v < 0){ toast("Type a number of 0 or more", "info"); return; } const p = Object.assign({}, t.penalty || { how: f === "penaltyPct" ? "pct" : "amt" }); if(f === "penaltyPct") p.pct = Math.min(100, v) / 100; else p.amt = v; refiExtSet(loan, { penalty: p }, lbl, null, f === "penaltyPct" ? Math.min(100, v) + "%" : fmtMoney(v)); }
@@ -13721,8 +13741,9 @@ tr.flagged:hover td{background:#fee2e2}
         s += " Extend with today’s lenders: " + P.list.map(x => loanLabel(x.m) + " — " + (x.saved ? "extended (saved)" : !(x.ev && x.ev.r) ? "no terms yet" : x.ev.kind === "yes" ? "yes" + (x.ev.r.needed ? ", pay down " + fmtMoney(x.ev.r.payDown) : ", no pay-down") + ", cash " + fmtMoney(x.ev.r.cash) + ", new maturity " + fmtDateLong(x.ev.r.newMaturity) : x.ev.kind === "unsized" ? "can’t judge yet" : x.ev.why === "notyet" ? "not yet" : "don’t extend now")).join("; ") +
           (P.yes.length ? ". In all: pay down " + fmtMoney(P.payDown) + ", cash needed " + fmtMoney(P.cash) + "." : "."); }
       else if(refiDeal(t) === "extend"){ const ev = refiExtVerdict(t), x = ev && ev.r;   // next stage (F4) — the extension is judged on its own
-        if(ev && ev.isSaved) s += " Extended with today’s lender (saved); it now matures " + fmtDateLong(t.maturityDate) + ".";
-        else if(x) s += " Extend with today’s lender? " + (ev.kind === "yes" ? "Yes" : ev.why === "notyet" ? "Not yet — today’s terms run to " + fmtDateLong(x.terms.date) : "No") + ". " + refiExtNote(t, x) + "; its limits allow " + fmtMoney(x.allowed) + (x.needed ? " (pay down " + fmtMoney(x.payDown) + ")" : " (no pay-down)") + ", cash needed " + fmtMoney(x.cash) + ", new maturity " + fmtDateLong(x.newMaturity) + "."; }
+        const nx = loanExtensions(t).length;   // (2026-11-02) any number of extensions; the next one is judged too
+        if(nx) s += " Extended with today’s lender" + (nx > 1 ? " " + nx + " times" : "") + " (saved); it now matures " + fmtDateLong(t.maturityDate) + ".";
+        if(x) s += " Extend " + (nx ? "again " : "") + "with today’s lender? " + (ev.kind === "yes" ? "Yes" : ev.why === "notyet" ? "Not yet — today’s terms run to " + fmtDateLong(x.terms.date) : "No") + ". " + refiExtNote(t, x) + "; its limits allow " + fmtMoney(x.allowed) + (x.needed ? " (pay down " + fmtMoney(x.payDown) + ")" : " (no pay-down)") + ", cash needed " + fmtMoney(x.cash) + ", new maturity " + fmtDateLong(x.newMaturity) + "."; }
       if(v.can.can){ const w = v.should;
         s += " Should you? " + (w.kind === "decision" ? "Your decision: refinance now with " + fmtMoney(w.cashNet) + " cash, or wait until " + (w.maturityDate ? fmtDateLong(w.maturityDate) : "today’s loan ends") + "."
           : w.kind === "yes" ? (w.why === "maturity" ? "Yes — today’s loan ends within 12 months." : "Yes — it saves " + fmtMoney(w.saved) + " of interest until today’s loan ends, against a " + fmtMoney(w.penalty) + " early-payoff penalty.")
@@ -14151,7 +14172,7 @@ tr.flagged:hover td{background:#fee2e2}
       "THE PROPERTY'S OWN RECORDS (2.9.10): besides the operator's documents, each property folder holds the app's own records — profile.json (the Profile tab: units, sq ft, year built, acquisition date, manager, Yardi code, entered NOI and override, notes — each with where it came from), general-data.json (its numbers: both NOIs and how they were worked out, the month-by-month T12 line history, what to push, each T12's reading — by the reader and the AI, its status (checked, reviewed, waiting for the operator) and the operator's changes with their notes, which part of each multi-part file is its own), assumptions.json (its Underwriting assumptions) and history.json (the history of its assumption changes). The file list names them apart from the documents. They come with a message only when the operator asks to read all of a property's files; read one by name with read_files (or read_documents) when the operator names it or you need its raw contents. For an ordinary question about a property, read_property gives the same facts in plain form. The property's name, address and units are kept in profile.json — or, when it leaves them empty, on the senior loan's record, and the Profile tab shows them from there: when you read profile.json the app puts \"What the Profile tab shows\" on top, with where each value comes from — use it, and never say a value is stored nowhere when it is on the loan.",
       "- read_files {files:[names], why?}: the app reads only the files a message needs (it says which were not read); read one of those when you need it — you get notes with exact figures and pages. Never guess what an unread file says.",
       "- remove_document {name, file}; set_document_type {name, file, type} (T12, rent roll, loan agreement …). import_rent_roll {name?, file?, section?, sections?, open?}: import a rent roll attached in this chat or saved in the documents, through the parts card above (open:true opens the importer). section: the name of THIS property's section exactly as the file has it (e.g. \"The Euclid(15169)\") when you know which one it is — it is then set to this property on the card; sections: a list of names when the property is SEVERAL sections (its phases) — they are combined. Never promise where a section will go: the card shows it and the result says what happened. import_excel {file?, open?}: import loans from an Excel file attached in this chat or saved (open:true opens the checklist). export_schedule_csv {name}: save a loan's payment schedule as CSV (a save window opens).",
-      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis, property?} (\"in-place\" = the T12; \"safe\" or \"aggressive\" = the APPROVED underwriting, only once it is approved; a property with no T12 can't be refinanced; in a package each property has its own basis — name it in property). toggle_refi_move ticks a What to push move on the property it belongs to (its effect on that property's basis counts). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal); and (draft) deal (\"new\" or \"extend\" — extend with today's lender), appraisedValue (dollars, null = back to NOI ÷ cap rate), appraisalDate, preset (a lender preset's name, or \"none\"). set_extension {name, changes}: the extension with today's lender — date (when today's terms end, YYYY-MM-DD), months, io (\"whole\", \"none\" or a number of months), amortMonths, index, spreadBps, penalty (\"full\", \"paydown\", \"none\", a percent like \"40%\" of the full penalty, or a dollar amount), fee (a percent like \"0.5%\" of the extended amount, or dollars). save_extension {name}: saves it (a card); undo_extension {name}: undoes a saved one (a card). A loan on several properties extends like any loan. In a package (a senior + mezz on one property) each loan is extended with its own lender: set_extension names the loan; save_extension saves every loan of the package that should extend now.",
+      "- start_refinance {name, open?}: prepare the refinance of the PROPERTY the named loan belongs to (all its loans together — a refinance is always of the whole property) and report the verdict; when it says Refinance (or the operator's decision) a card offers to save it, which replaces all the property's loans. open:true shows the refinance screen. set_refi_noi_basis {name, basis, property?} (\"in-place\" = the T12; \"safe\" or \"aggressive\" = the APPROVED underwriting, only once it is approved; a property with no T12 can't be refinanced; in a package each property has its own basis — name it in property). toggle_refi_move ticks a What to push move on the property it belongs to (its effect on that property's basis counts). add_refi_lever {name, label, amount}. toggle_refi_move {name, move, on}. set_refi_terms {name, changes}: amount, termYears, amortYears, ioMonths, rateType (Fixed/Floating/Hybrid), index, spread (decimal); and (draft) deal (\"new\" or \"extend\" — extend with today's lender), appraisedValue (dollars, null = back to NOI ÷ cap rate), appraisalDate, preset (a lender preset's name, or \"none\"). set_extension {name, changes}: the extension with today's lender — date (when today's terms end, YYYY-MM-DD), months, io (\"whole\", \"none\" or a number of months), amortMonths, index, spreadBps, penalty (\"full\", \"paydown\", \"none\", a percent like \"40%\" of the full penalty, or a dollar amount), fee (a percent like \"0.5%\" of the extended amount, or dollars). save_extension {name}: saves it (a card); undo_extension {name}: undoes the latest saved one (a card). A loan can be extended any number of times: once one is saved, the next starts when its terms end, and each undo takes back only the latest. A loan on several properties extends like any loan. In a package (a senior + mezz on one property) each loan is extended with its own lender: set_extension names the loan; save_extension saves every loan of the package that should extend now.",
       "- run_push {name}: re-run Claude's \"what to push\" analysis (needs a T12). split_document {file, name?, parts:[{from, to, title?, names:[property names]}]}: a PDF holding several agreements (or one agreement for several properties) — propose its page ranges and which property each belongs to, from the pages you READ (where each agreement starts and which property it names); a card shows them, the operator changes anything and approves; each property then reads only its own pages (one part can name several properties). Never guess a range you haven't read. check_t12 {name}: read the property's T12 again with the reader AND the AI — the whole reading process (its own sheet(s) only); a failed check or a disagreement opens the review where the operator decides; it changes no number. fetch_live_rate {}: fetch today's market rates. recompute_all {}: recompute every property's figures. backup_now {}; list_backups {}; restore_backup {backup} (replaces everything for good — the app restarts).",
       "Clarifications: cap rate is a PROPERTY underwriting assumption (edit_assumptions {capRate}) — no loan needed. A property is archived before it can be deleted for good; a loan is archived with remove_loan and deleted for good only with delete_loan_permanently.",
       "READING AN AGREEMENT / DOCUMENT: when the operator attaches (or has on file) a loan agreement, term sheet, servicer statement or similar and asks you to read it, extract the terms and propose them in ONE reply — loan terms with propose_loan_change (or propose_new_loan for a loan that isn't in the app yet) and the property's own facts with propose_profile_change — giving sources {field: {file, page, quote}} for every figure, so each line of the card shows where it came from and the operator can tick the lines to approve. If you could not read part of a document, say which part. EXPLAINING / CHECKING a loan: answer directly from the snapshot — walk through its terms, flag anything that looks off (a maturity in the past, a rate or balance that looks wrong, a missing NOI), and show the numbers you used. FILING: any file the operator attaches is saved automatically to the focused property's folder (a rent roll covering several properties is filed to each) — you don't need an action for that; just read its text and act on it.",
@@ -14968,7 +14989,6 @@ tr.flagged:hover td{background:#fee2e2}
       // next stage (F4, draft) — the extension with today's lender: its terms (a card), save it (a card), undo it (a card).
       set_extension: function(a){
         var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan;
-        if(l.extension) return {ok:false,msg:loanLabel(l)+" already has a saved extension — undo_extension first to change it."};
         if(!cloudCanWrite()) return {ok:false,msg:"View only — this refinance can’t be changed from this app."};
         var pk=refiTargetFor(l); if(!refiIsPkg(pk)) pk=null;   // (2026-10-26) a loan of a package (a senior + mezz): its terms are kept in the package
         var c=(a&&a.changes)||{}, t=refiExtTerms(l, pk), patch={}, rows=[], num=function(v){ return Number(String(v).replace(/[$,%\s]/g,"")); };
@@ -15003,8 +15023,7 @@ tr.flagged:hover td{background:#fee2e2}
             return r && r.ok ? {ok:true, html:'✓ Saved '+r.saved+' extension'+(r.saved===1?'':'s')+' — cash needed '+escapeHtml(fmtMoney(r.cash))+' in all.', toast:'Extensions saved'} : {ok:false, html:"Not saved."};
           });
         }
-        if(l.extension) return {ok:false,msg:loanLabel(l)+" already has a saved extension."};
-        var x=refiExtResult(l); if(!x) return {ok:false,msg:"There is no extension to save for "+loanLabel(l)+"."};
+        var x=refiExtResult(l);   // (2026-11-02) no limit: an extended loan can be extended again if(!x) return {ok:false,msg:"There is no extension to save for "+loanLabel(l)+"."};
         if(!cloudCanWrite()) return {ok:false,msg:"View only — this loan can’t be changed from this app."};
         return aiAsstApprovalCard('Save the extension of <b>'+escapeHtml(loanLabel(l))+'</b>? Today’s loan stays the same record.', [
             aiAsstRow("maturityDate","Maturity", fmtDateUS(x.oldMaturity), fmtDateUS(x.newMaturity)),
@@ -15019,9 +15038,10 @@ tr.flagged:hover td{background:#fee2e2}
       undo_extension: function(a){
         var rl=aiAsstResolveLoan(a&&a.name), badl=aiAsstLoanMiss(rl, a&&a.name); if(badl) return badl; var l=rl.loan, e=l.extension;
         if(!e || !e.before) return {ok:false,msg:loanLabel(l)+" has no saved extension."};
-        return aiAsstApprovalCard('Undo the extension of <b>'+escapeHtml(loanLabel(l))+'</b>?', aiAsstRow("maturityDate","Maturity", fmtDateUS(l.maturityDate), fmtDateUS(e.before.maturityDate)), function(){
+        var many=loanExtensions(l).length>1;   // (2026-11-02) the latest one; the ones before it stay
+        return aiAsstApprovalCard('Undo the '+(many?'latest ':'')+'extension of <b>'+escapeHtml(loanLabel(l))+'</b>?', aiAsstRow("maturityDate","Maturity", fmtDateUS(l.maturityDate), fmtDateUS(e.before.maturityDate)), function(){
           var r=refiExtUndo(l, { confirmed:true, from:"assistant" });
-          return r && r.ok ? {ok:true, html:'✓ Undid the extension of '+escapeHtml(loanLabel(l))+'.'} : {ok:false, html:"Not undone."};
+          return r && r.ok ? {ok:true, html:'✓ Undid the '+(many?'latest ':'')+'extension of '+escapeHtml(loanLabel(l))+'.'} : {ok:false, html:"Not undone."};
         });
       }
     };
